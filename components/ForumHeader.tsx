@@ -1,2 +1,61 @@
-import Link from 'next/link';import {getSession} from '@/lib/auth';
-export async function ForumHeader(){const u=await getSession();return <header className="site-header"><div className="header-inner"><Link href="/" className="brand"><div className="brand-mark">W</div><div className="brand-copy"><b>WTSL</b><span>COMMUNITY FORUM</span></div></Link><nav className="nav"><Link href="/discussions">Discussions</Link><Link href="/articles">Articles</Link><Link href="/tournaments">Tournaments</Link><Link href="/players">Community</Link><Link href="/awards">Awards</Link><Link href="/about">About</Link>{u?<><Link href="/profile" className="discord-btn">{u.username}</Link>{u.isAdmin&&<Link href="/admin">Admin</Link>}</>:<a className="discord-btn" href="/api/auth/discord">Sign in with Discord</a>}</nav></div></header>}
+import Link from 'next/link';
+import { getSession, discordAvatar } from '@/lib/auth';
+
+export const NAV = [
+  { href: '/discussions', label: 'Discussions' },
+  { href: '/matches', label: 'Matches' },
+  { href: '/tournaments', label: 'Tournaments' },
+  { href: '/players', label: 'Players' },
+  { href: '/articles', label: 'Articles' },
+  { href: '/awards', label: 'Awards' },
+  { href: '/stats', label: 'WTSL Data' },
+  { href: '/about', label: 'About' },
+];
+
+export async function ForumHeader() {
+  const u = await getSession();
+  return (
+    <header className="site-header">
+      <div className="header-inner">
+        <Link href="/" className="brand" aria-label="WTSL Community home">
+          {/* Official WTSL logo */}
+          <img className="brand-logo" src="/brand/wtsl-logo-200.png" alt="WTSL — World Tennis Simulation League" width={215} height={200} />
+          <span className="brand-text">
+            <b>COMMUNITY</b>
+            <span>Forum &amp; Media Hub</span>
+          </span>
+        </Link>
+
+        <nav className="nav" aria-label="Main">
+          {NAV.map((n) => (
+            <Link key={n.href} href={n.href}>{n.label}</Link>
+          ))}
+          {u?.isAdmin && <Link href="/admin">Admin</Link>}
+          {u ? (
+            <Link href="/profile" className="user-chip">
+              <img src={discordAvatar(u.avatar, u.username)} alt="" />
+              {u.username}
+            </Link>
+          ) : (
+            <a className="btn btn-discord btn-sm nav-cta" href="/api/auth/discord">Join with Discord</a>
+          )}
+        </nav>
+
+        <details className="mobile-menu">
+          <summary aria-label="Open menu"><span className="burger" /></summary>
+          <div className="mobile-panel">
+            {NAV.map((n) => (
+              <Link key={n.href} href={n.href}>{n.label}</Link>
+            ))}
+            {u?.isAdmin && <Link href="/admin">Admin</Link>}
+            {u ? (
+              <Link href="/profile" className="btn btn-ghost">{u.username}</Link>
+            ) : (
+              <a className="btn btn-discord" href="/api/auth/discord">Join with Discord</a>
+            )}
+          </div>
+        </details>
+      </div>
+    </header>
+  );
+}

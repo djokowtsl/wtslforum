@@ -76,3 +76,81 @@ export async function fetchWTSLPlayer(playerUrl: string) {
   const nationality = text.match(/Nationality\s+([^\s]+(?:\s+[^\s]+){0,3})\s+Rank/i)?.[1] ?? '';
   return {id,name,avatarUrl:avatar?.src?abs(avatar.src,playerUrl):null,flagUrl:flag?.src?abs(flag.src,playerUrl):null,country:nationality,rank:rank?Number(rank):null,tourElo:elo?Number(elo):null,eloLabel,officialUrl:playerUrl};
 }
+
+/* ---------- Rankings (full player list) ---------- */
+export const RANKINGS_URL = `${WTSL_BASE}/rankings.php?tour=TE4`;
+
+export type WTSLRankedPlayer = {
+  id: string; name: string; rank: number | null; tourElo: number | null; eloLabel: string | null;
+  country: string | null; avatarUrl: string | null; flagUrl: string | null; officialUrl: string;
+};
+
+/**
+ * Defensive parser: finds every table row that links to a player page (?player=ID), reads the
+ * Rank / Elo / Country columns by their <th> header text, and falls back to sensible guesses.
+ */
+export function parseRankings(html: string, base = RANKINGS_URL): WTSLRankedPlayer[] {
+  const rows = html.match(/<tr[\s\S]*?<\/tr>/gi) ?? [];
+  const cols: { rank?: number; elo?: number; country?: number } = {};
+  const out: WTSLRankedPlayer[] = [];
+  const seen = new Set<string>();
+
+  for (const row of rows) {
+    const heads = row.match(/<th[\s\S]*?<\/th>/gi);
+    if (heads && !/player=/i.test(row)) {
+      heads.forEach((h, i) => {
+        const t = cleanHtml(h).toLowerCase();
+        if (/^(#|rank|pos)/.test(t) && cols.rank === undefined) cols.rank = i;
+        else if (/elo/.test(t) && cols.elo === undefined) cols.elo = i;
+        else if (/(country|nation)/.test(t) && cols.country === undefined) cols.country = i;
+      });
+      continue;
+    }
+    const links = [...row.matchAll(/<a[^>]+href=["']([^"']*player=[^"']+)["'][^>]*>([\s\S]*?)<\/a>/gi)];
+    if (!links.length) continue;
+    const officialUrl = abs(links[0][1].replace(/&amp;/g, '&'), base);
+    let id = '';
+    try { id = new URL(officialUrl).searchParams.get('player') ?? ''; } catch { /* ignore */ }
+    if (!id || seen.has(id)) continue;
+
+    const cells = (row.match(/<td[\s\S]*?<\/td>/gi) ?? []).map(cleanHtml);
+    const imgs = [...row.matchAll(/<img([^>]+)>/gi)].map((m) => ({ src: attr(m[1], 'src'), alt: attr(m[1], 'alt') }));
+    const flag = imgs.find((i) => /flag/i.test(i.src ?? '') || /flag/i.test(i.alt ?? ''));
+    const avatar = imgs.find((i) => i !== flag && i.src);
+
+    const name = links.map((l) => cleanHtml(l[2])).find(Boolean) || avatar?.alt || '';
+    if (!name) continue;
+
+    const rankText = cols.rank !== undefined ? cells[cols.rank] : cells[0];
+    const rank = /^\d+$/.test((rankText ?? '').trim()) ? Number(rankText) : null;
+    const rowText = cleanHtml(row);
+    const eloText = cols.elo !== undefined ? cells[cols.elo] ?? '' : (rowText.match(/Elo\s*(\d+(?:\s*\([^)]*\))?)/i)?.[1] ?? '');
+    const tourElo = eloText.match(/\d+/)?.[0] ? Number(eloText.match(/\d+/)![0]) : null;
+    const eloLabel = eloText.match(/\(([^)]+)\)/)?.[1] ?? null;
+    const country = (cols.country !== undefined ? cells[cols.country] : '') || (flag?.alt ?? '').replace(/flag/i, '').trim() || null;
+
+    seen.add(id);
+    out.push({ id, name, rank, tourElo, eloLabel, country, avatarUrl: avatar?.src ? abs(avatar.src, base) : null, flagUrl: flag?.src ? abs(flag.src, base) : null, officialUrl });
+  }
+  return out;
+}
+
+export async function fetchWTSLRankings(): Promise<WTSLRankedPlayer[]> {
+  const res = await fetch(RANKINGS_URL, { cache: 'no-store', headers: { 'user-agent': 'WTSL-Community-Bridge/1.0' } });
+  if (!res.ok) throw new Error(`WTSL rankings request failed: ${res.status}`);
+  const players = parseRankings(await res.text());
+  if (!players.length) throw new Error('Rankings page returned no parsable players (run the sync with ?debug=1)');
+  return players;
+}
+
+/** Diagnostic used by /api/sync/wtsl?debug=1 — shows what was fetched and what the parser made of it. */
+export async function inspectWTSLRankings() {
+  const res = await fetch(RANKINGS_URL, { cache: 'no-store', headers: { 'user-agent': 'WTSL-Community-Bridge/1.0' } });
+  const html = await res.text();
+  const players = parseRankings(html);
+  return {
+    status: res.status, htmlLength: html.length, tableRows: (html.match(/<tr/gi) ?? []).length, parsed: players.length,
+    sample: players.slice(0, 5),
+    firstRowsHtml: (html.match(/<tr[\s\S]*?<\/tr>/gi) ?? []).slice(0, 3).map((r) => r.slice(0, 700)),
+  };
+}

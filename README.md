@@ -1,4 +1,7 @@
-# WTSL Community Forum V5
+# WTSL Community Forum V6
+
+> **Go live:** follow `SETUP-CHECKLIST.md`. Env var reference: `.env.example`.
+
 
 A standalone WTSL community/media platform for Vercel, with Discord identity, PostgreSQL persistence, tournament/player integration, virtual WTSL Dollar betting, stats, dashboards and a Discord bridge.
 

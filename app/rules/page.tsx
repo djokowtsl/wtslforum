@@ -1,1 +1,22 @@
-export default function Rules(){return <main className="container"><div className="thread"><div className="eyebrow">COMMUNITY GUIDELINES</div><h1 style={{fontFamily:'Bebas Neue',fontSize:56,margin:'10px 0'}}>Community rules</h1><div className="post-content" style={{background:'var(--panel)',border:'1px solid var(--line)',borderRadius:10}}><h3>1. Keep it about the community</h3><p>Discuss WTSL, matches, tournaments, Tennis Elbow and related tennis topics.</p><h3>2. Respect other players</h3><p>Competitive banter is welcome. Personal harassment is not.</p><h3>3. No spam</h3><p>Do not flood discussions, impersonate other players or post malicious links.</p><h3>4. Moderation</h3><p>Admins may edit, hide or remove posts that break the community rules.</p></div></div></main>}
+import type { Metadata } from 'next';
+import PageHero from '@/components/PageHero';
+
+export const metadata: Metadata = { title: 'Community rules' };
+
+const RULES = [
+  ['Keep it about the community', 'Discuss WTSL, matches, tournaments, Tennis Elbow and related tennis topics.'],
+  ['Respect other players', 'Competitive banter is welcome. Personal harassment is not.'],
+  ['No spam', 'Do not flood discussions, impersonate other players or post malicious links.'],
+  ['Moderation', 'Admins may edit, hide or remove posts that break the community rules.'],
+];
+
+export default function Rules() {
+  return (
+    <>
+      <PageHero eyebrow="Community guidelines" title="Community rules">Short and simple — so everyone can enjoy the tour.</PageHero>
+      <main className="container narrow">
+        {RULES.map(([t, d], i) => <div className="rule" key={t}><div className="n">{i + 1}</div><div><b>{t}</b><p>{d}</p></div></div>)}
+      </main>
+    </>
+  );
+}

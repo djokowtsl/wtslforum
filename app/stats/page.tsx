@@ -1,3 +1,40 @@
-import {leaderboard,recentMatches} from '@/lib/stats';
-export const dynamic='force-dynamic';
-export default async function Stats(){const [rows,matches]=await Promise.all([leaderboard(),recentMatches(12)]);return <main className="container"><div className="page-title"><div className="eyebrow">WTSL TE4</div><h1>STATS CENTRE</h1><p>Match statistics, player performance and WTSL leaderboards.</p></div><div className="dashboard-grid"><section className="panel"><div className="panel-head"><h2>Player leaderboard</h2><span>TE4</span></div><table><thead><tr><th>Player</th><th>Matches</th><th>W</th><th>L</th><th>Win %</th><th>Tour Elo</th></tr></thead><tbody>{rows.map((p:any)=><tr key={p.wtsl_player_id}><td><div className="player-line">{p.avatar_url&&<img src={p.avatar_url}/>}<span>{p.name}<small>{p.country||''}</small></span></div></td><td>{p.matches}</td><td>{p.wins}</td><td>{p.losses}</td><td>{p.win_pct}%</td><td>{p.tour_elo??'—'}</td></tr>)}</tbody></table></section><aside className="panel"><div className="panel-head"><h2>Recent matches</h2></div>{matches.map((m:any)=><div className="match-row" key={m.id}><div>{m.player_one_name}<br/><b>{m.score||'—'}</b><br/>{m.player_two_name}</div><span>{m.round_name||m.tournament_key||''}</span></div>)}</aside></div></main>}
+import type { Metadata } from 'next';
+import { safe } from '@/lib/db';
+import { leaderboard, recentMatches } from '@/lib/stats';
+import PageHero from '@/components/PageHero';
+
+export const dynamic = 'force-dynamic';
+export const metadata: Metadata = { title: 'WTSL Data' };
+
+export default async function Stats() {
+  const [rows, matches] = await Promise.all([safe(() => leaderboard(), [] as any[]), safe(() => recentMatches(12), [] as any[])]);
+  return (
+    <>
+      <PageHero eyebrow="WTSL TE4" title="Stats centre">Match statistics, player performance and the WTSL leaderboard.</PageHero>
+      <main className="container">
+        <div className="dashboard-grid">
+          <section className="panel">
+            <div className="panel-head"><h2 className="display">Player leaderboard</h2><span>TE4</span></div>
+            {rows.length === 0 ? <div className="empty"><strong>No stats yet</strong>The leaderboard fills in as matches are recorded.</div> : (
+              <table>
+                <thead><tr><th>Player</th><th>Matches</th><th>W</th><th>L</th><th>Win %</th><th>Tour Elo</th></tr></thead>
+                <tbody>{rows.map((p: any) => (
+                  <tr key={p.wtsl_player_id}>
+                    <td><div className="player-line">{p.avatar_url && <img src={p.avatar_url} alt="" />}<span>{p.name}<small>{p.country || ''}</small></span></div></td>
+                    <td>{p.matches}</td><td>{p.wins}</td><td>{p.losses}</td><td>{p.win_pct}%</td><td>{p.tour_elo ?? '—'}</td>
+                  </tr>
+                ))}</tbody>
+              </table>
+            )}
+          </section>
+          <aside className="panel">
+            <div className="panel-head"><h2 className="display">Recent matches</h2></div>
+            {matches.length === 0 ? <div className="empty">No matches recorded yet.</div> : matches.map((m: any) => (
+              <div className="match-row" key={m.id}><div>{m.player_one_name}<br /><b>{m.score || '—'}</b><br />{m.player_two_name}</div><span>{m.round_name || m.tournament_key || ''}</span></div>
+            ))}
+          </aside>
+        </div>
+      </main>
+    </>
+  );
+}

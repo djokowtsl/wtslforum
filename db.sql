@@ -117,3 +117,9 @@ CREATE TABLE IF NOT EXISTS player_insights (
 CREATE INDEX IF NOT EXISTS betting_fixture_status_idx ON betting_fixtures(status,scheduled_at);
 CREATE INDEX IF NOT EXISTS match_stats_player_date_idx ON match_stats(player_one_id,played_at DESC);
 CREATE INDEX IF NOT EXISTS match_stats_tournament_idx ON match_stats(tournament_key,played_at DESC);
+
+-- Community awards (hall of fame). Insert rows here to publish winners on /awards.
+CREATE TABLE IF NOT EXISTS awards (
+  id BIGSERIAL PRIMARY KEY, season TEXT NOT NULL, category TEXT NOT NULL, winner TEXT NOT NULL,
+  runner_up TEXT, note TEXT, position INT NOT NULL DEFAULT 0, created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);

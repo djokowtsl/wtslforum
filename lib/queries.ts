@@ -1,5 +1,50 @@
-import {sql} from './db';
-export async function getTopics(){return sql`SELECT t.id,t.title,t.slug,t.body,t.pinned,t.locked,t.views,t.created_at,t.updated_at,c.name category,u.display_name author,u.avatar_url avatar,COALESCE((SELECT COUNT(*) FROM replies r WHERE r.topic_id=t.id),0)::int replies FROM topics t LEFT JOIN categories c ON c.id=t.category_id LEFT JOIN users u ON u.id=t.author_id ORDER BY t.pinned DESC,t.updated_at DESC`}
-export async function getTopic(id:number){await sql`UPDATE topics SET views=views+1 WHERE id=${id}`;const topics=await sql`SELECT t.*,c.name category,u.display_name author,u.avatar_url avatar FROM topics t LEFT JOIN categories c ON c.id=t.category_id LEFT JOIN users u ON u.id=t.author_id WHERE t.id=${id} LIMIT 1`; if(!topics[0]) return null; const replies=await sql`SELECT r.id,r.body,r.created_at,u.display_name author,u.avatar_url avatar FROM replies r LEFT JOIN users u ON u.id=r.author_id WHERE r.topic_id=${id} ORDER BY r.created_at ASC`; return {topic:topics[0],replies}}
-export async function getCategories(){return sql`SELECT * FROM categories ORDER BY position`}
-export async function getArticles(publishedOnly=true){return publishedOnly?sql`SELECT a.*,u.display_name author FROM articles a LEFT JOIN users u ON u.id=a.author_id WHERE a.published=true ORDER BY a.created_at DESC`:sql`SELECT a.*,u.display_name author FROM articles a LEFT JOIN users u ON u.id=a.author_id ORDER BY a.created_at DESC`}
+import { sql } from './db';
+
+export async function getTopics(opts: { category?: string | null; limit?: number } = {}) {
+  const cat = opts.category || null;
+  const limit = opts.limit ?? 100;
+  return sql`
+    SELECT t.id,t.title,t.slug,t.pinned,t.locked,t.views,t.created_at,t.updated_at,
+      c.name category,c.slug category_slug,
+      u.display_name author,u.avatar_url avatar,
+      (SELECT COUNT(*) FROM replies r WHERE r.topic_id=t.id)::int replies,
+      (SELECT u2.display_name FROM replies r2 LEFT JOIN users u2 ON u2.id=r2.author_id WHERE r2.topic_id=t.id ORDER BY r2.created_at DESC LIMIT 1) last_author,
+      (SELECT MAX(r3.created_at) FROM replies r3 WHERE r3.topic_id=t.id) last_reply_at
+    FROM topics t
+    LEFT JOIN categories c ON c.id=t.category_id
+    LEFT JOIN users u ON u.id=t.author_id
+    WHERE (${cat}::text IS NULL OR c.slug=${cat})
+    ORDER BY t.pinned DESC, COALESCE((SELECT MAX(r4.created_at) FROM replies r4 WHERE r4.topic_id=t.id), t.created_at) DESC
+    LIMIT ${limit}`;
+}
+
+/** Accepts a numeric id or a slug (tournament threads link by slug). */
+export async function getTopic(ref: string | number) {
+  const isId = /^\d+$/.test(String(ref));
+  const rows = isId
+    ? await sql`SELECT t.*,c.name category,c.slug category_slug,u.display_name author,u.avatar_url avatar FROM topics t LEFT JOIN categories c ON c.id=t.category_id LEFT JOIN users u ON u.id=t.author_id WHERE t.id=${Number(ref)} LIMIT 1`
+    : await sql`SELECT t.*,c.name category,c.slug category_slug,u.display_name author,u.avatar_url avatar FROM topics t LEFT JOIN categories c ON c.id=t.category_id LEFT JOIN users u ON u.id=t.author_id WHERE t.slug=${String(ref)} LIMIT 1`;
+  const topic = rows[0];
+  if (!topic) return null;
+  await sql`UPDATE topics SET views=views+1 WHERE id=${topic.id}`;
+  const replies = await sql`SELECT r.id,r.body,r.created_at,u.display_name author,u.avatar_url avatar,u.is_admin FROM replies r LEFT JOIN users u ON u.id=r.author_id WHERE r.topic_id=${topic.id} ORDER BY r.created_at ASC`;
+  return { topic, replies };
+}
+
+export async function getCategories() {
+  return sql`SELECT * FROM categories ORDER BY position`;
+}
+
+export async function getCategoriesWithCounts() {
+  return sql`SELECT c.id,c.name,c.slug,c.description,c.position,(SELECT COUNT(*) FROM topics t WHERE t.category_id=c.id)::int topics FROM categories c ORDER BY c.position`;
+}
+
+export async function getArticles(publishedOnly = true, limit = 60) {
+  return publishedOnly
+    ? sql`SELECT a.*,u.display_name author FROM articles a LEFT JOIN users u ON u.id=a.author_id WHERE a.published=true ORDER BY a.created_at DESC LIMIT ${limit}`
+    : sql`SELECT a.*,u.display_name author FROM articles a LEFT JOIN users u ON u.id=a.author_id ORDER BY a.created_at DESC LIMIT ${limit}`;
+}
+
+export async function getAwards() {
+  return sql`SELECT * FROM awards ORDER BY season DESC, position ASC, id ASC`;
+}
