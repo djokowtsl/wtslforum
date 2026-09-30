@@ -1,42 +1,53 @@
-# Existing WTSL Bot Integration
+# WTSL Core API integration
 
-The existing Replit WTSL bot remains authoritative. Do **not** point the forum at its database and do **not** migrate or duplicate the WTSL Dollar ledger.
+The existing Replit WTSL bot remains authoritative. The Forum never receives
+Replit database credentials and must not maintain a second WTSL Dollar ledger.
 
-## Recommended bridge
+## Current API
 
-Expose a small HTTPS API from the existing Replit bot/service. Initially make all GET routes read-only:
+The updated Replit integration currently exposes authenticated, read-only
+routes under `/api/core`:
 
-- `GET /players`
-- `GET /players/:id`
-- `GET /stats`
-- `GET /fixtures?status=open`
-- `GET /accounts/:discordId/balance`
-- `GET /accounts/:discordId/bets`
+- `GET /api/core/health`
+- `GET /api/core/capabilities`
+- `GET /api/core/betting/fixtures`
+- `GET /api/core/betting/fixtures/<fixture_key>`
+- `GET /api/core/betting/account/<discord_user_id>`
+- `GET /api/core/betting/account/<discord_user_id>/bets`
+- `GET /api/core/betting/leaderboard`
+- `GET /api/core/results`
+- `GET /api/core/match-schedules`
 
-Only after the read-only integration is tested should you expose the single controlled write endpoint:
+All require:
 
-- `POST /bets`
+`Authorization: Bearer <WTSL_CORE_API_KEY>`
 
-Example body:
+## Forum environment variables
 
-```json
-{"discordId":"123","fixtureId":42,"selectionId":"368","stake":100}
+Set these server-side in Vercel:
+
+```env
+WTSL_CORE_API_URL=https://YOUR-REPLIT-APP.replit.app
+WTSL_CORE_API_KEY=YOUR_LONG_RANDOM_SECRET
 ```
 
-The existing bot must validate balance, fixture status, selection, stake limits, odds, settlement rules and database writes. The forum must never perform those operations against the Replit database itself.
+Do not prefix the key with `NEXT_PUBLIC_`.
 
-## Security
+The same `WTSL_CORE_API_KEY` must be configured as a Replit Secret for
+the existing bot.
 
-Use a long random `WTSL_CORE_API_TOKEN` and require it as a Bearer token. Keep it server-side in Vercel. Add rate limiting and audit logging to the Replit API before enabling `POST /bets`.
+## Current write status
 
-## Why this is safer
+The Replit Core API is intentionally read-only. The Forum therefore does
+not write betting balances, singles or parlays to its own database.
 
-- Existing bot/database remains unchanged.
-- The forum cannot corrupt balances by accident.
-- The forum can be redeployed independently.
-- Discord bot failures do not affect the existing WTSL bot.
-- Betting settlement remains in one authoritative system.
+The Forum's betting placement routes currently return HTTP 501 until an
+explicit authenticated write endpoint is added to the existing WTSL bot.
+This is intentional and prevents two competing WTSL Dollar ledgers.
 
-## Data mapping
+## Future write endpoint
 
-The forum's WTSL player objects should use the canonical WTSL player ID and display avatar, country/flag, ranking and Tour Elo returned by the existing system. Discord ID remains the community identity and is only linked to a WTSL player when explicitly verified.
+When ready, add a controlled write endpoint to the Replit API and route
+Forum betting requests through it. The Replit bot must remain responsible
+for balance validation, fixture validation, odds, stake limits, writes and
+settlement.
