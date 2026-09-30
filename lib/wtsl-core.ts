@@ -104,7 +104,12 @@ export const wtslCore = {
 
   // Intentionally unavailable until the Replit API exposes an authenticated
   // write endpoint. This prevents the Forum from creating a second ledger.
-  placeBet: async () => {
+  placeBet: async (_payload: {
+    discordId: string;
+    fixtureId: string | number;
+    selectionId: string | number;
+    stake: number;
+  }) => {
     throw new Error(
       'Bet placement is currently read-only. The WTSL Core API does not expose a betting write endpoint yet.',
     );
