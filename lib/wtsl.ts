@@ -52,7 +52,8 @@ export async function fetchWTSLTournaments(): Promise<WTSLTournament[]> {
     const championCell = cells[7] ?? '';
     const championLink = [...championCell.matchAll(/<a[^>]+href=[\"']([^\"']+)[\"'][^>]*>([\s\S]*?)<\/a>/gi)][0];
     const champion = cleanHtml(championLink?.[2] ?? championCell).replace(/^N\/A$/i,'') || null;
-    const championUrl = championLink?.[1] ? abs(championLink[1]) : null;
+    const championHref = championLink?.[1] ?? null;
+    const championUrl = championHref ? abs(championHref) : null;
     const key = `${name.toLowerCase().replace(/[^a-z0-9]+/g,'-')}-${startDate ?? 'unknown'}`;
     out.push({key,name,location,country,category,drawSize:Number.isFinite(drawSize)?drawSize:null,surface,startDate,status,champion,championUrl,officialUrl});
   }
