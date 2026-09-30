@@ -1,0 +1,2 @@
+import {getCategories} from '@/lib/queries';import {getSession} from '@/lib/auth';import {redirect} from 'next/navigation';import NewDiscussionForm from '@/components/NewDiscussionForm';
+export default async function NewDiscussion(){const u=await getSession();if(!u)redirect('/api/auth/discord');const cats=await getCategories();return <main className="container narrow"><div className="section-head"><div><h2>START A DISCUSSION</h2><p>Share a match, question, opinion or WTSL story with the community.</p></div></div><NewDiscussionForm categories={cats}/></main>}
