@@ -34,7 +34,7 @@ export async function fetchWTSLTournaments(): Promise<WTSLTournament[]> {
     if (cells.length < 7) continue;
     const links = [...row.matchAll(/<a[^>]+href=["']([^"']+)["'][^>]*>([\s\S]*?)<\/a>/gi)];
     const nameLink = links.find(x => !/SignUp|Finished|Ongoing|Cancelled/i.test(cleanHtml(x[2])));
-    const name = cleanHtml(nameLink?.[2] ?? cells[0]);
+    const name = cleanHtml(nameLink?.[2] ?? cells[0] ?? '');
     if (!name || /Tournament/i.test(name)) continue;
     const officialUrl = abs(nameLink?.[1] ?? '#');
     const locationText = cleanHtml(cells[1]).replace(/^.*?\s(?=[A-Za-zÀ-ÿ' -]+\s*,)/, '');
