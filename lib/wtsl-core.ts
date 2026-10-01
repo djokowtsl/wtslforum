@@ -68,6 +68,15 @@ export type CorePredictionRow = {
   average_score: number;
 };
 
+export type CoreMatchlogLeaderboardRow = {
+  player: string;
+  tour: string;
+  source: string;
+  matches: number;
+  ratings: Record<string, number>;
+  metrics: Record<string, number>;
+};
+
 export const wtslCore = {
   configured: () => Boolean(base && token),
 
@@ -116,6 +125,15 @@ export const wtslCore = {
   predictionsLeaderboard: (limit = 100) =>
     core<CorePredictionRow[]>(
       `/api/core/predictions/leaderboard?limit=${encodeURIComponent(String(limit))}`,
+    ),
+
+  matchlogLeaderboard: (tour: 'atp' | 'wta', minMatches = 20) =>
+    core<{
+      tour: string;
+      min_matches: number;
+      rows: CoreMatchlogLeaderboardRow[];
+    }>(
+      `/api/core/matchlog/leaderboard?tour=${encodeURIComponent(tour)}&min_matches=${encodeURIComponent(String(minMatches))}`,
     ),
 
   results: () => core<unknown[]>('/api/core/results'),

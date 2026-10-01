@@ -53,6 +53,15 @@ export async function playerStats(playerId:string){
   `;
 }
 
+export async function playersByNames(tour: string, names: string[]) {
+  if (names.length === 0) return [];
+  return sql`
+    SELECT wtsl_player_id, name, avatar_url, flag_url
+    FROM wtsl_players
+    WHERE tour=${tour} AND lower(name) = ANY(${names.map((n) => n.toLowerCase())})
+  `;
+}
+
 export async function recentMatches(limit=20, tour='TE4'){
   return sql`
     SELECT m.*,
