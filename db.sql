@@ -199,3 +199,39 @@ CREATE TABLE IF NOT EXISTS media_clips (
   created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );
 CREATE INDEX IF NOT EXISTS media_clips_created_idx ON media_clips(created_at DESC);
+
+-- Migration: real career/YTD win-loss, titles, prize money, form and serve/rally averages,
+-- scraped from the player's official WTSL profile + player statistics table. Safe to re-run.
+DO $$ BEGIN
+  ALTER TABLE player_stats_summary ADD COLUMN IF NOT EXISTS ytd_wins INT NOT NULL DEFAULT 0;
+  ALTER TABLE player_stats_summary ADD COLUMN IF NOT EXISTS ytd_losses INT NOT NULL DEFAULT 0;
+  ALTER TABLE player_stats_summary ADD COLUMN IF NOT EXISTS ytd_win_pct NUMERIC(6,2) NOT NULL DEFAULT 0;
+  ALTER TABLE player_stats_summary ADD COLUMN IF NOT EXISTS titles_main INT NOT NULL DEFAULT 0;
+  ALTER TABLE player_stats_summary ADD COLUMN IF NOT EXISTS finals_main INT NOT NULL DEFAULT 0;
+  ALTER TABLE player_stats_summary ADD COLUMN IF NOT EXISTS prize_money NUMERIC(14,2) NOT NULL DEFAULT 0;
+  ALTER TABLE player_stats_summary ADD COLUMN IF NOT EXISTS prize_currency TEXT;
+  ALTER TABLE player_stats_summary ADD COLUMN IF NOT EXISTS form TEXT;
+  ALTER TABLE player_stats_summary ADD COLUMN IF NOT EXISTS avg_double_faults NUMERIC(8,2) NOT NULL DEFAULT 0;
+  ALTER TABLE player_stats_summary ADD COLUMN IF NOT EXISTS avg_first_serve_speed NUMERIC(8,2) NOT NULL DEFAULT 0;
+  ALTER TABLE player_stats_summary ADD COLUMN IF NOT EXISTS avg_second_serve_speed NUMERIC(8,2) NOT NULL DEFAULT 0;
+  ALTER TABLE player_stats_summary ADD COLUMN IF NOT EXISTS avg_net_points_pct NUMERIC(6,2) NOT NULL DEFAULT 0;
+  ALTER TABLE player_stats_summary ADD COLUMN IF NOT EXISTS avg_forced_errors NUMERIC(8,2) NOT NULL DEFAULT 0;
+  ALTER TABLE player_stats_summary ADD COLUMN IF NOT EXISTS avg_unforced_errors NUMERIC(8,2) NOT NULL DEFAULT 0;
+  ALTER TABLE player_stats_summary ADD COLUMN IF NOT EXISTS avg_short_rally_pct NUMERIC(6,2) NOT NULL DEFAULT 0;
+  ALTER TABLE player_stats_summary ADD COLUMN IF NOT EXISTS avg_medium_rally_pct NUMERIC(6,2) NOT NULL DEFAULT 0;
+  ALTER TABLE player_stats_summary ADD COLUMN IF NOT EXISTS avg_long_rally_pct NUMERIC(6,2) NOT NULL DEFAULT 0;
+  ALTER TABLE player_stats_summary ADD COLUMN IF NOT EXISTS avg_first_serve_won_pct NUMERIC(6,2) NOT NULL DEFAULT 0;
+  ALTER TABLE player_stats_summary ADD COLUMN IF NOT EXISTS avg_second_serve_won_pct NUMERIC(6,2) NOT NULL DEFAULT 0;
+  ALTER TABLE player_stats_summary ADD COLUMN IF NOT EXISTS avg_return_won_pct NUMERIC(6,2) NOT NULL DEFAULT 0;
+  ALTER TABLE player_stats_summary ADD COLUMN IF NOT EXISTS avg_rally_length NUMERIC(8,2) NOT NULL DEFAULT 0;
+  ALTER TABLE player_stats_summary ADD COLUMN IF NOT EXISTS updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW();
+END $$;
+
+-- Recent match results shown on a player's dashboard, refreshed (truncate + reinsert) each sync.
+CREATE TABLE IF NOT EXISTS player_recent_results (
+  id BIGSERIAL PRIMARY KEY, player_id TEXT NOT NULL, tour TEXT NOT NULL DEFAULT 'TE4',
+  tournament_key TEXT, tournament_name TEXT NOT NULL, round_name TEXT NOT NULL,
+  opponent_id TEXT, opponent_name TEXT NOT NULL, score TEXT NOT NULL, played_at DATE,
+  position INT NOT NULL DEFAULT 0
+);
+CREATE INDEX IF NOT EXISTS player_recent_results_player_idx ON player_recent_results(player_id,tour,position);

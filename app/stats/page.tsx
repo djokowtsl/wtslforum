@@ -25,7 +25,7 @@ export default async function Stats({ searchParams }: { searchParams: Promise<{ 
                 <thead><tr><th>Player</th><th>Matches</th><th>W</th><th>L</th><th>Win %</th><th>Tour Elo</th></tr></thead>
                 <tbody>{rows.map((p: any) => (
                   <tr key={p.wtsl_player_id}>
-                    <td><div className="player-line">{p.avatar_url && <img src={p.avatar_url} alt="" />}<span>{p.name}<small>{p.country || ''}</small></span></div></td>
+                    <td><a className="player-line" href={`/players/${p.wtsl_player_id}?tour=${encodeURIComponent(tour)}`}>{p.avatar_url && <img src={p.avatar_url} alt="" />}<span>{p.name}<small>{p.country || ''}</small></span></a></td>
                     <td>{p.matches}</td><td>{p.wins}</td><td>{p.losses}</td><td>{p.win_pct}%</td><td>{p.tour_elo ?? '—'}</td>
                   </tr>
                 ))}</tbody>

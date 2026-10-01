@@ -97,7 +97,107 @@ export async function fetchWTSLPlayer(playerUrl: string) {
   const elo = text.match(/Tour Elo\s+(\d+)/i)?.[1];
   const eloLabel = text.match(/Tour Elo\s+\d+\s*\(([^)]+)\)/i)?.[1] ?? null;
   const nationality = text.match(/Nationality\s+([^\s]+(?:\s+[^\s]+){0,3})\s+Rank/i)?.[1] ?? '';
-  return {id,name,avatarUrl:avatar?.src?abs(avatar.src,playerUrl):null,flagUrl:flag?.src?abs(flag.src,playerUrl):null,country:nationality,rank:rank?Number(rank):null,tourElo:elo?Number(elo):null,eloLabel,officialUrl:playerUrl};
+  // Real win/loss record and season form, scraped from the player's official WTSL profile (player_page.php).
+  const careerWL = text.match(/Career Wins\/Losses\s+(\d+)\s*\/\s*(\d+)/i);
+  const careerWinPct = text.match(/Career Win Percentage\s+(\d+)/i)?.[1];
+  const ytdWL = text.match(/YTD Wins\/Losses\s+(\d+)\s*\/\s*(\d+)/i);
+  const ytdWinPct = text.match(/YTD Win Percentage\s+(\d+)/i)?.[1];
+  const titlesMain = text.match(/Career Titles \(Finals\) - Main Tour\s+(\d+)\s*\((\d+)\)/i);
+  const prizeMoney = text.match(/Career Prize Money\s+([\d,]+)\s*([A-Z]{2,4})/i);
+  const form = text.match(/Form \(Last 10 Matches\)\s*((?:[WL]\s*){1,10})/i)?.[1]?.replace(/\s+/g,'') ?? null;
+  const recentResults = parsePlayerRecentResults(html, playerUrl);
+  return {
+    id,name,avatarUrl:avatar?.src?abs(avatar.src,playerUrl):null,flagUrl:flag?.src?abs(flag.src,playerUrl):null,country:nationality,
+    rank:rank?Number(rank):null,tourElo:elo?Number(elo):null,eloLabel,officialUrl:playerUrl,
+    careerWins:careerWL?Number(careerWL[1]):null,careerLosses:careerWL?Number(careerWL[2]):null,careerWinPct:careerWinPct?Number(careerWinPct):null,
+    ytdWins:ytdWL?Number(ytdWL[1]):null,ytdLosses:ytdWL?Number(ytdWL[2]):null,ytdWinPct:ytdWinPct?Number(ytdWinPct):null,
+    titlesMain:titlesMain?Number(titlesMain[1]):null,finalsMain:titlesMain?Number(titlesMain[2]):null,
+    prizeMoney:prizeMoney?Number(prizeMoney[1].replace(/,/g,'')):null,prizeCurrency:prizeMoney?.[2] ?? null,
+    form,recentResults,
+  };
+}
+
+export type WTSLRecentResult = {
+  tournamentKey: string|null; tournamentName: string; round: string; opponentId: string|null; opponentName: string;
+  date: string|null; score: string;
+};
+
+/** Parses the "Recent Results" table on a player's profile page (tournament/round/opponent/date/score). */
+function parsePlayerRecentResults(html: string, base: string): WTSLRecentResult[] {
+  const section = html.match(/Recent Results[\s\S]*?<table[\s\S]*?<tbody>([\s\S]*?)<\/tbody>/i)?.[1] ?? '';
+  const rows = section.match(/<tr>[\s\S]*?<\/tr>/gi) ?? [];
+  const out: WTSLRecentResult[] = [];
+  for (const row of rows) {
+    const cells = row.match(/<td[\s\S]*?<\/td>/gi) ?? [];
+    if (cells.length < 6) continue;
+    const tournamentLink = cells[1].match(/<a[^>]+href=["']([^"']+)["'][^>]*>([\s\S]*?)<\/a>/i);
+    const opponentLink = cells[3].match(/<a[^>]+href=["']([^"']+)["'][^>]*>([\s\S]*?)<\/a>/i);
+    const tournamentKey = tournamentLink ? (() => { try { return new URL(abs(tournamentLink[1].replace(/&amp;/g,'&'), base)).searchParams.get('tournament'); } catch { return null; } })() : null;
+    const opponentId = opponentLink ? (() => { try { return new URL(abs(opponentLink[1].replace(/&amp;/g,'&'), base)).searchParams.get('player'); } catch { return null; } })() : null;
+    const rawDate = cleanHtml(cells[4]);
+    const m = rawDate.match(/(\d{2})\.(\d{2})\.(\d{4})/);
+    out.push({
+      tournamentKey, tournamentName: cleanHtml(tournamentLink?.[2] ?? cells[1]), round: cleanHtml(cells[2]),
+      opponentId, opponentName: cleanHtml(opponentLink?.[2] ?? cells[3]), date: m ? `${m[3]}-${m[2]}-${m[1]}` : null,
+      score: cleanHtml(cells[5]),
+    });
+  }
+  return out;
+}
+
+/* ---------- Player statistics table (averages per match: serve/rally/return) ---------- */
+export type WTSLPlayerStatLine = {
+  playerId: string; name: string; firstServePct: number|null; avgAces: number|null; avgDoubleFaults: number|null;
+  avgFirstServeSpeed: number|null; avgSecondServeSpeed: number|null; avgNetPointsPct: number|null; avgWinners: number|null;
+  avgForcedErrors: number|null; avgUnforcedErrors: number|null; avgBpConversionPct: number|null; avgShortRalliesPct: number|null;
+  avgMediumRalliesPct: number|null; avgLongRalliesPct: number|null; avgFirstServeWonPct: number|null; avgSecondServeWonPct: number|null;
+  avgReturnWonPct: number|null; avgRallyLength: number|null;
+};
+
+function statsUrl(tour: TourCode) {
+  return `${WTSL_BASE}/player_stats.php?tour=${encodeURIComponent(tour)}`;
+}
+
+function num(s: string | undefined): number | null {
+  if (!s) return null;
+  const n = parseFloat(s.replace(/[^0-9.-]/g,''));
+  return Number.isFinite(n) ? n : null;
+}
+
+/** Parses the per-tour "Player Statistics" table. The markup never closes its <tr> tags, so rows
+ * are split on the literal `<tr>` marker instead of matched with a `<tr>...</tr>` regex. */
+export function parsePlayerStatsTable(html: string): WTSLPlayerStatLine[] {
+  const body = html.match(/<tbody[^>]*>([\s\S]*?)<\/tbody>/i)?.[1] ?? '';
+  const rows = body.split(/<tr>/i).slice(1);
+  const out: WTSLPlayerStatLine[] = [];
+  for (const row of rows) {
+    const cells = (row.match(/<td[\s\S]*?<\/td>/gi) ?? []).map(cleanHtml);
+    if (cells.length < 18) continue;
+    const link = row.match(/<a[^>]+href=["']([^"']*player=[^"']+)["'][^>]*>([\s\S]*?)<\/a>/i);
+    if (!link) continue; // skips the synthetic "Tour average" row
+    let playerId = '';
+    try { playerId = new URL(abs(link[1].replace(/&amp;/g,'&'))).searchParams.get('player') ?? ''; } catch { continue; }
+    if (!playerId) continue;
+    const [, firstServePct, avgAces, avgDoubleFaults, avgFirstServeSpeed, avgSecondServeSpeed, avgNetPointsPct, avgWinners,
+      avgForcedErrors, avgUnforcedErrors, avgBpConversionPct, avgShortRalliesPct, avgMediumRalliesPct, avgLongRalliesPct,
+      avgFirstServeWonPct, avgSecondServeWonPct, avgReturnWonPct, avgRallyLength] = cells;
+    out.push({
+      playerId, name: cleanHtml(link[2]),
+      firstServePct: num(firstServePct), avgAces: num(avgAces), avgDoubleFaults: num(avgDoubleFaults),
+      avgFirstServeSpeed: num(avgFirstServeSpeed), avgSecondServeSpeed: num(avgSecondServeSpeed), avgNetPointsPct: num(avgNetPointsPct),
+      avgWinners: num(avgWinners), avgForcedErrors: num(avgForcedErrors), avgUnforcedErrors: num(avgUnforcedErrors),
+      avgBpConversionPct: num(avgBpConversionPct), avgShortRalliesPct: num(avgShortRalliesPct), avgMediumRalliesPct: num(avgMediumRalliesPct),
+      avgLongRalliesPct: num(avgLongRalliesPct), avgFirstServeWonPct: num(avgFirstServeWonPct), avgSecondServeWonPct: num(avgSecondServeWonPct),
+      avgReturnWonPct: num(avgReturnWonPct), avgRallyLength: num(avgRallyLength),
+    });
+  }
+  return out;
+}
+
+export async function fetchWTSLPlayerStatsTable(tour: TourCode = DEFAULT_TOUR): Promise<WTSLPlayerStatLine[]> {
+  const res = await fetch(statsUrl(tour), { cache:'no-store', headers:{'user-agent':'WTSL-Community-Bridge/1.0'} });
+  if (!res.ok) throw new Error(`WTSL player stats request failed: ${res.status}`);
+  return parsePlayerStatsTable(await res.text());
 }
 
 /* ---------- Rankings (full player list) ---------- */
