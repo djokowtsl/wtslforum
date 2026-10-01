@@ -81,6 +81,8 @@ export default async function Dashboard() {
           <div><span>Articles written</span><b>{contributions.articles}</b></div>
         </div>
 
+        <div className="notice warn" style={{ marginBottom: 20 }}>Stats on this page are still under construction and may not be fully accurate yet. For the most reliable numbers, use <code>/mystats</code> in Discord.</div>
+
         {playerCards.length === 0 ? (
           <section className="panel">
             <div className="panel-head"><h2 className="display">Your tour stats</h2></div>
