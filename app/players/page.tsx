@@ -9,7 +9,7 @@ export default async function PlayersPage() {
   const players = await safe(() => sql`SELECT * FROM wtsl_players ORDER BY rank ASC NULLS LAST,tour_elo DESC NULLS LAST,name LIMIT 200`, [] as any[]);
   return (
     <>
-      <PageHero eyebrow="WTSL Identity" title="Players">Every player card uses the official WTSL avatar, flag and Tour Elo. Discord identity stays separate for community accounts.</PageHero>
+      <PageHero eyebrow="Players" title="Players" />
       <main className="page-shell" style={{ paddingTop: 10 }}>
         {players.length === 0 ? (
           <div className="forum-list"><div className="empty"><strong>No players synced yet</strong>Players appear here once the WTSL rankings sync has run.</div></div>

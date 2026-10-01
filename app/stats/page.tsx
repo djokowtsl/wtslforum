@@ -4,13 +4,13 @@ import { leaderboard, recentMatches } from '@/lib/stats';
 import PageHero from '@/components/PageHero';
 
 export const dynamic = 'force-dynamic';
-export const metadata: Metadata = { title: 'WTSL Data' };
+export const metadata: Metadata = { title: 'Statistics' };
 
 export default async function Stats() {
   const [rows, matches] = await Promise.all([safe(() => leaderboard(), [] as any[]), safe(() => recentMatches(12), [] as any[])]);
   return (
     <>
-      <PageHero eyebrow="WTSL TE4" title="Stats centre">Match statistics, player performance and the WTSL leaderboard.</PageHero>
+      <PageHero eyebrow="WTSL TE4" title="Statistics">Match statistics, player performance and the WTSL leaderboard.</PageHero>
       <main className="container">
         <div className="dashboard-grid">
           <section className="panel">

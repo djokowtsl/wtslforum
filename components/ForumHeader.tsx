@@ -9,7 +9,7 @@ export const NAV = [
   { href: '/players', label: 'Players' },
   { href: '/articles', label: 'Articles' },
   { href: '/awards', label: 'Awards' },
-  { href: '/stats', label: 'WTSL Data' },
+  { href: '/stats', label: 'Statistics' },
   { href: '/about', label: 'About' },
 ];
 
@@ -38,7 +38,7 @@ export async function ForumHeader() {
               {u.username}
             </Link>
           ) : (
-            <a className="btn btn-discord btn-sm nav-cta" href="/api/auth/discord">Join with Discord</a>
+            <a className="btn btn-discord btn-sm nav-cta" href="/api/auth/discord">Log in with Discord</a>
           )}
         </nav>
 

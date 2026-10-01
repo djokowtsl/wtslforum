@@ -41,7 +41,7 @@ export function MobileNav({
         {username ? (
           <Link href="/profile" className="btn btn-ghost" onClick={close}>{username}</Link>
         ) : (
-          <a className="btn btn-discord" href={discordJoinHref} onClick={close}>Join with Discord</a>
+          <a className="btn btn-discord" href={discordJoinHref} onClick={close}>Log in with Discord</a>
         )}
       </div>
     </details>
