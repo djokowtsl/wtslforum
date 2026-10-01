@@ -1,5 +1,8 @@
 import type { Metadata } from 'next';
+import Link from 'next/link';
 import { wtslCore, type CorePredictionRow } from '@/lib/wtsl-core';
+import { getChallongeDisplayMap, type ChallongeDisplay } from '@/lib/challonge-claims';
+import { safe } from '@/lib/db';
 import PageHero from '@/components/PageHero';
 
 export const dynamic = 'force-dynamic';
@@ -17,12 +20,14 @@ async function safeLeaderboard(): Promise<CorePredictionRow[]> {
 const MEDALS = ['🥇', '🥈', '🥉'];
 
 // Small cosmetic aliasing for a couple of usernames, kept in sync with
-// PREDICTION_DISPLAY_NAME_ALIASES in the bot's main.py Discord embed.
+// PREDICTION_DISPLAY_NAME_ALIASES in the bot's main.py Discord embed. Only used as a fallback
+// for predictors who haven't verified their Challonge username on the forum yet.
 const DISPLAY_NAME_ALIASES: Record<string, string> = {
   squeaky94: 'Squeaky',
 };
 
-function predictorName(r: CorePredictionRow): string {
+function predictorName(r: CorePredictionRow, verified?: ChallongeDisplay): string {
+  if (verified) return verified.displayName;
   const username = (r.challonge_username || '').trim();
   const alias = username ? DISPLAY_NAME_ALIASES[username.toLowerCase()] : undefined;
   if (alias) return `${alias} (${username})`;
@@ -30,7 +35,10 @@ function predictorName(r: CorePredictionRow): string {
 }
 
 export default async function Predictions() {
-  const rows = await safeLeaderboard();
+  const [rows, challongeMap] = await Promise.all([
+    safeLeaderboard(),
+    safe(() => getChallongeDisplayMap(), new Map<string, ChallongeDisplay>()),
+  ]);
   return (
     <>
       <PageHero eyebrow="WTSL Forum" title="Predictions leaderboard">
@@ -53,10 +61,17 @@ export default async function Predictions() {
                   const possible = Number(r.total_picks_potential) || 0;
                   const correct = Number(r.total_picks) || 0;
                   const pct = possible > 0 ? Math.round((correct / possible) * 100) : 0;
+                  const verified = challongeMap.get((r.challonge_username || '').trim().toLowerCase());
                   return (
                     <tr key={r.challonge_user_id}>
                       <td>{MEDALS[i] || i + 1}</td>
-                      <td>{predictorName(r)}</td>
+                      <td>
+                        {verified?.wtslPlayerId && verified.tour ? (
+                          <Link href={`/players/${verified.wtslPlayerId}?tour=${encodeURIComponent(verified.tour)}`}>{predictorName(r, verified)}</Link>
+                        ) : (
+                          predictorName(r, verified)
+                        )}
+                      </td>
                       <td><b>{r.total_score}</b></td>
                       <td>{correct}/{possible}{possible > 0 ? ` (${pct}%)` : ''}</td>
                       <td>{r.tournaments}</td>

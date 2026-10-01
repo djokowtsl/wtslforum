@@ -7,6 +7,7 @@ import { getSession, discordAvatar } from '@/lib/auth';
 import { fmtDateTime } from '@/lib/format';
 import ReplyForm from '@/components/ReplyForm';
 import RichText from '@/components/RichText';
+import { StatusDot } from '@/components/StatusDot';
 
 export const dynamic = 'force-dynamic';
 export const metadata: Metadata = { title: 'Discussion' };
@@ -34,8 +35,11 @@ export default async function Thread({ params }: { params: Promise<{ id: string 
       <article className="post op">
         <div className="post-user">
           <img className={'avatar-img' + (!topic.author ? ' av-wtsl' : '')} src={topic.tournament_logo || (!topic.author ? '/brand/wtsl-logo-200.png' : discordAvatar(topic.avatar, topic.author || 'W'))} alt="" />
-          <strong>{topic.author || 'Community'}</strong>
+          <strong>{topic.author && <StatusDot status={topic.author_status} />} {topic.author || 'Community'}</strong>
           <span className="pill role">Original poster</span>
+          {u && topic.author_id && Number(topic.author_id) !== Number(u.id) && (
+            <Link href={`/messages/${topic.author_id}`} className="pill">Message</Link>
+          )}
         </div>
         <div className="post-content"><div className="post-date">{fmtDateTime(topic.created_at)}</div><RichText text={topic.body} /></div>
       </article>
@@ -44,8 +48,11 @@ export default async function Thread({ params }: { params: Promise<{ id: string 
         <article className="post" key={r.id}>
           <div className="post-user">
             <img className="avatar-img" src={discordAvatar(r.avatar, r.author || 'W')} alt="" />
-            <strong>{r.author || 'Community'}</strong>
+            <strong><StatusDot status={r.author_status} /> {r.author || 'Community'}</strong>
             {r.is_admin && <span className="pill cyan role">Admin</span>}
+            {u && r.author_id && Number(r.author_id) !== Number(u.id) && (
+              <Link href={`/messages/${r.author_id}`} className="pill">Message</Link>
+            )}
           </div>
           <div className="post-content"><div className="post-date">{fmtDateTime(r.created_at)}</div><RichText text={r.body} /></div>
         </article>

@@ -91,6 +91,20 @@ export async function playersByNames(tour: string, names: string[]) {
   `;
 }
 
+// Powers the player-search autocomplete on the verification form — nobody can be expected to
+// know their own numeric WTSL player ID, so they find themselves by name instead.
+export async function searchPlayers(tour: string, query: string, limit = 8) {
+  const q = query.trim();
+  if (q.length < 2) return [];
+  return sql`
+    SELECT wtsl_player_id, name, avatar_url, country
+    FROM wtsl_players
+    WHERE tour=${tour} AND name ILIKE ${'%' + q + '%'}
+    ORDER BY name ASC
+    LIMIT ${limit}
+  `;
+}
+
 export async function recentMatches(limit=20, tour='TE4'){
   return sql`
     SELECT m.*,
@@ -107,4 +121,20 @@ export async function recentMatches(limit=20, tour='TE4'){
     ORDER BY m.played_at DESC
     LIMIT ${limit}
   `;
+}
+
+/**
+ * The betting bot's "open fixtures" list can go stale — a fixture stays marked open there even
+ * after the match has actually been played, because closing it depends on the bot's own
+ * settlement job rather than anything the forum controls. We already have the real, synced
+ * results in `match_stats`, so cross-check: any pairing that has a completed match recorded in
+ * the last few weeks is treated as already played and filtered out of "open fixtures" here.
+ */
+export async function recentlyCompletedPairs(tour: string, days = 21): Promise<Set<string>> {
+  const rows = await sql`
+    SELECT player_one_id, player_two_id
+    FROM match_stats
+    WHERE tour=${tour} AND played_at IS NOT NULL AND played_at >= NOW() - (${days} || ' days')::interval
+  `;
+  return new Set(rows.map((r: any) => [String(r.player_one_id), String(r.player_two_id)].sort().join('|')));
 }

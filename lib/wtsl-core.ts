@@ -51,6 +51,13 @@ export type CoreFixture = {
   pool_total?: number | string;
   pool_one?: number | string;
   pool_two?: number | string;
+  // Only present on settled fixtures (status 'settled', from recent_settled).
+  winner_id?: string | number | null;
+  result_note?: string | null;
+  settled_at?: string | null;
+  total_bets?: number;
+  first_bets?: number;
+  second_bets?: number;
 };
 
 export type CorePredictionRow = {
@@ -97,6 +104,13 @@ export const wtslCore = {
     }>('/api/core/betting/fixtures');
     return result.open;
   },
+
+  /** Both the open board and the bot's recently-settled fixtures in one call. */
+  fixturesBoard: async () =>
+    core<{
+      open: CoreFixture[];
+      recent_settled: CoreFixture[];
+    }>('/api/core/betting/fixtures'),
 
   fixture: (fixtureKey: string | number) =>
     core<CoreFixture>(

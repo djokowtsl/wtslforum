@@ -1,18 +1,16 @@
 'use client';
 import { useState, useTransition } from 'react';
 
-export type AdminClaim = {
+export type AdminChallongeClaim = {
   id: string;
   username: string;
   discord_id: string;
-  wtsl_player_id: string;
-  tour: string;
-  player_name: string;
+  challonge_username: string;
   note: string;
   created_at: string;
 };
 
-export default function ClaimAdminPanel({ claims }: { claims: AdminClaim[] }) {
+export default function ChallongeClaimAdminPanel({ claims }: { claims: AdminChallongeClaim[] }) {
   const [rows, setRows] = useState(claims);
   const [pending, start] = useTransition();
   const [error, setError] = useState<string>('');
@@ -23,7 +21,7 @@ export default function ClaimAdminPanel({ claims }: { claims: AdminClaim[] }) {
       const r = await fetch('/api/admin/claims', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ claim_id: claimId, action, kind: 'player' }),
+        body: JSON.stringify({ claim_id: claimId, action, kind: 'challonge' }),
       });
       const data = await r.json();
       if (!r.ok || !data.ok) {
@@ -34,20 +32,20 @@ export default function ClaimAdminPanel({ claims }: { claims: AdminClaim[] }) {
     });
   }
 
-  if (rows.length === 0) return <div className="empty">No pending player verification requests.</div>;
+  if (rows.length === 0) return <div className="empty">No pending Challonge verification requests.</div>;
 
   return (
     <div>
       {error && <p className="notice" style={{ color: '#ff6b6b' }}>{error}</p>}
       <table className="panel-table">
         <thead>
-          <tr><th>Discord account</th><th>Claims to be</th><th>Note</th><th>Submitted</th><th></th></tr>
+          <tr><th>Discord account</th><th>Challonge username</th><th>Note</th><th>Submitted</th><th></th></tr>
         </thead>
         <tbody>
           {rows.map((c) => (
             <tr key={c.id}>
               <td>{c.username}</td>
-              <td>{c.player_name} <small>({c.tour} · ID {c.wtsl_player_id})</small></td>
+              <td>{c.challonge_username}</td>
               <td>{c.note || '—'}</td>
               <td>{new Date(c.created_at).toLocaleDateString()}</td>
               <td style={{ whiteSpace: 'nowrap' }}>

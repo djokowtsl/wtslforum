@@ -1,14 +1,20 @@
 import type { Metadata } from 'next';
+import Link from 'next/link';
 import { safe } from '@/lib/db';
-import { openFixtures, getBalance, getBets, poolOdds, hybridOdds } from '@/lib/betting';
+import { fixturesBoard, getBalance, getBets, poolOdds, hybridOdds } from '@/lib/betting';
+import { recentlyCompletedPairs } from '@/lib/stats';
 import { wtslCore } from '@/lib/wtsl-core';
 import { getSession } from '@/lib/auth';
 import PageHero from '@/components/PageHero';
+import { timeAgo, fmtDateTime } from '@/lib/format';
 
 export const dynamic = 'force-dynamic';
 export const metadata: Metadata = { title: 'Betting fixtures' };
 
 const DISCORD_URL = 'https://discord.com/invite/YkPAtGMUrj';
+// The betting bot only ever runs markets for ATP/WTA singles — used below to cross-check
+// against already-completed matches so a fixture the bot hasn't closed out yet doesn't show as open.
+const BETTING_TOURS = ['TE4', 'TE4_(F)'] as const;
 
 function money(v: unknown) {
   const n = Number(v);
@@ -33,12 +39,24 @@ function sideOdds(f: any, side: 'one' | 'two') {
 
 export default async function Betting() {
   const user = await getSession();
-  const [fx, account, bets] = await Promise.all([
-    safe(() => openFixtures(), [] as any[]),
+  const [board, account, bets, completedPairsByTour] = await Promise.all([
+    safe(() => fixturesBoard(), { open: [] as any[], recent_settled: [] as any[] }),
     user ? safe(() => getBalance(user.discordId), null as any) : Promise.resolve(null),
     user ? safe(() => getBets(user.discordId), [] as any[]) : Promise.resolve([] as any[]),
+    Promise.all(BETTING_TOURS.map((t) => safe(() => recentlyCompletedPairs(t), new Set<string>()))),
   ]);
-  const fixtures = Array.isArray(fx) ? fx : [];
+  const completedByTour = new Map(BETTING_TOURS.map((t, i) => [t, completedPairsByTour[i]]));
+  // The bot's "open fixtures" list can lag behind reality — a match that's already been played
+  // and synced into our own results still shows as open there until its settlement job runs.
+  // (The bot's own settlement job can miss matches entirely too, so this is a best-effort check,
+  // not a guarantee every stale fixture gets caught.)
+  const fixtures = (Array.isArray(board?.open) ? board.open : []).filter((f: any) => {
+    if (!f.first_id || !f.second_id) return true;
+    const pairs = completedByTour.get(f.tour);
+    if (!pairs) return true;
+    return !pairs.has([String(f.first_id), String(f.second_id)].sort().join('|'));
+  });
+  const settled = Array.isArray(board?.recent_settled) ? board.recent_settled : [];
   const betList = Array.isArray(bets) ? bets : [];
 
   return (
@@ -71,11 +89,47 @@ export default async function Betting() {
               return (
                 <article className="fixture-card" key={f.key}>
                   <div className="fixture-top"><span>{f.tournament || 'WTSL'} · {(f.tour || 'TE4').toUpperCase()}</span><b>{String(f.status || 'open').toUpperCase()}</b></div>
-                  <h2>{f.first_name} <small>vs</small> {f.second_name}</h2>
+                  <h2>{f.first_id && f.tour ? <Link href={`/players/${f.first_id}?tour=${encodeURIComponent(f.tour)}`}>{f.first_name}</Link> : f.first_name} <small>vs</small> {f.second_id && f.tour ? <Link href={`/players/${f.second_id}?tour=${encodeURIComponent(f.tour)}`}>{f.second_name}</Link> : f.second_name}</h2>
+                  <div className="topic-meta">{f.scheduled_at ? `Scheduled: ${fmtDateTime(f.scheduled_at)}` : f.round_deadline ? `Deadline: ${fmtDateTime(f.round_deadline)}` : 'Not yet scheduled'}</div>
                   <div className="odds-compare">
                     <div className="odds-head"><span /><span>WTSL</span><span>Live</span><span>Min</span></div>
-                    <div className="odds-side"><b>{f.first_name}</b><span>{one.official.toFixed(2)}</span><span>{one.live.toFixed(2)}</span><span>{one.guaranteed.toFixed(2)}</span></div>
-                    <div className="odds-side"><b>{f.second_name}</b><span>{two.official.toFixed(2)}</span><span>{two.live.toFixed(2)}</span><span>{two.guaranteed.toFixed(2)}</span></div>
+                    <div className="odds-side"><b>{f.first_id && f.tour ? <Link href={`/players/${f.first_id}?tour=${encodeURIComponent(f.tour)}`}>{f.first_name}</Link> : f.first_name}</b><span>{one.official.toFixed(2)}</span><span>{one.live.toFixed(2)}</span><span>{one.guaranteed.toFixed(2)}</span></div>
+                    <div className="odds-side"><b>{f.second_id && f.tour ? <Link href={`/players/${f.second_id}?tour=${encodeURIComponent(f.tour)}`}>{f.second_name}</Link> : f.second_name}</b><span>{two.official.toFixed(2)}</span><span>{two.live.toFixed(2)}</span><span>{two.guaranteed.toFixed(2)}</span></div>
+                  </div>
+                </article>
+              );
+            })}
+          </div>
+        )}
+
+        <div className="section-head section-space">
+          <div>
+            <h2 className="display">Recently settled</h2>
+            <p>Results the bot has closed out, with the winner and final odds. Note the bot doesn&apos;t always close out every finished match promptly, so this list can lag behind what&apos;s actually been played.</p>
+          </div>
+        </div>
+        {settled.length === 0 ? <div className="forum-list"><div className="empty"><strong>No settled fixtures yet</strong>Settled results appear here once the bot closes a market out.</div></div> : (
+          <div className="fixture-grid">
+            {settled.map((f: any) => {
+              const winnerIsFirst = f.winner_id != null && String(f.winner_id) === String(f.first_id);
+              const winnerIsSecond = f.winner_id != null && String(f.winner_id) === String(f.second_id);
+              return (
+                <article className="fixture-card" key={f.key}>
+                  <div className="fixture-top"><span>{f.tournament || 'WTSL'} · {(f.tour || 'TE4').toUpperCase()}</span><b>SETTLED</b></div>
+                  <h2>
+                    {f.first_id && f.tour ? <Link href={`/players/${f.first_id}?tour=${encodeURIComponent(f.tour)}`}>{f.first_name}</Link> : f.first_name}
+                    {winnerIsFirst ? <span className="pill green"> W</span> : null}
+                    {' '}<small>vs</small>{' '}
+                    {f.second_id && f.tour ? <Link href={`/players/${f.second_id}?tour=${encodeURIComponent(f.tour)}`}>{f.second_name}</Link> : f.second_name}
+                    {winnerIsSecond ? <span className="pill green"> W</span> : null}
+                  </h2>
+                  <div className="topic-meta">
+                    {f.result_note ? `${f.result_note} · ` : ''}{f.settled_at ? `Settled ${timeAgo(f.settled_at)}` : ''}
+                  </div>
+                  <div className="odds-compare">
+                    <div className="odds-head"><span /><span>WTSL odds</span></div>
+                    <div className="odds-side"><b>{f.first_name}</b><span>{(Number(f.odds_one) || 0).toFixed(2)}</span></div>
+                    <div className="odds-side"><b>{f.second_name}</b><span>{(Number(f.odds_two) || 0).toFixed(2)}</span></div>
                   </div>
                 </article>
               );

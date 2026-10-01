@@ -24,12 +24,12 @@ export async function getTopics(opts: { category?: string | null; limit?: number
 export async function getTopic(ref: string | number) {
   const isId = /^\d+$/.test(String(ref));
   const rows = isId
-    ? await sql`SELECT t.*,c.name category,c.slug category_slug,u.display_name author,u.avatar_url avatar,tn.logo_url tournament_logo FROM topics t LEFT JOIN categories c ON c.id=t.category_id LEFT JOIN users u ON u.id=t.author_id LEFT JOIN tournaments tn ON tn.discussion_topic_id=t.id WHERE t.id=${Number(ref)} LIMIT 1`
-    : await sql`SELECT t.*,c.name category,c.slug category_slug,u.display_name author,u.avatar_url avatar,tn.logo_url tournament_logo FROM topics t LEFT JOIN categories c ON c.id=t.category_id LEFT JOIN users u ON u.id=t.author_id LEFT JOIN tournaments tn ON tn.discussion_topic_id=t.id WHERE t.slug=${String(ref)} LIMIT 1`;
+    ? await sql`SELECT t.*,c.name category,c.slug category_slug,u.id author_id,u.display_name author,u.avatar_url avatar,u.status author_status,tn.logo_url tournament_logo FROM topics t LEFT JOIN categories c ON c.id=t.category_id LEFT JOIN users u ON u.id=t.author_id LEFT JOIN tournaments tn ON tn.discussion_topic_id=t.id WHERE t.id=${Number(ref)} LIMIT 1`
+    : await sql`SELECT t.*,c.name category,c.slug category_slug,u.id author_id,u.display_name author,u.avatar_url avatar,u.status author_status,tn.logo_url tournament_logo FROM topics t LEFT JOIN categories c ON c.id=t.category_id LEFT JOIN users u ON u.id=t.author_id LEFT JOIN tournaments tn ON tn.discussion_topic_id=t.id WHERE t.slug=${String(ref)} LIMIT 1`;
   const topic = rows[0];
   if (!topic) return null;
   await sql`UPDATE topics SET views=views+1 WHERE id=${topic.id}`;
-  const replies = await sql`SELECT r.id,r.body,r.created_at,u.display_name author,u.avatar_url avatar,u.is_admin FROM replies r LEFT JOIN users u ON u.id=r.author_id WHERE r.topic_id=${topic.id} ORDER BY r.created_at ASC`;
+  const replies = await sql`SELECT r.id,r.body,r.created_at,u.id author_id,u.display_name author,u.avatar_url avatar,u.is_admin,u.status author_status FROM replies r LEFT JOIN users u ON u.id=r.author_id WHERE r.topic_id=${topic.id} ORDER BY r.created_at ASC`;
   return { topic, replies };
 }
 

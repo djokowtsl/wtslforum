@@ -275,6 +275,26 @@ CREATE INDEX IF NOT EXISTS player_claims_user_idx ON player_claims(user_id);
 -- A player can only be verified to one account at a time.
 CREATE UNIQUE INDEX IF NOT EXISTS player_claims_one_owner_idx ON player_claims(wtsl_player_id, tour) WHERE status = 'approved';
 
+-- Identity verification: a member claims "this is my Challonge username" so the predictions
+-- leaderboard (keyed by Challonge usernames from bracket picks, e.g. "Squeaky94") can show their
+-- official WTSL forum identity/name instead of the raw Challonge handle. Same admin-approval
+-- pattern as player_claims — not tour-scoped since one Challonge account covers all tours.
+CREATE TABLE IF NOT EXISTS challonge_claims (
+  id BIGSERIAL PRIMARY KEY,
+  user_id BIGINT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+  challonge_username TEXT NOT NULL,
+  note TEXT NOT NULL DEFAULT '',
+  status TEXT NOT NULL DEFAULT 'pending',
+  reviewed_by BIGINT REFERENCES users(id) ON DELETE SET NULL,
+  reviewed_at TIMESTAMPTZ,
+  review_note TEXT,
+  created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+CREATE INDEX IF NOT EXISTS challonge_claims_status_idx ON challonge_claims(status);
+CREATE INDEX IF NOT EXISTS challonge_claims_user_idx ON challonge_claims(user_id);
+-- A Challonge username can only be verified to one account at a time (case-insensitive).
+CREATE UNIQUE INDEX IF NOT EXISTS challonge_claims_one_owner_idx ON challonge_claims(LOWER(challonge_username)) WHERE status = 'approved';
+
 DO $$ BEGIN
   ALTER TABLE users ADD COLUMN IF NOT EXISTS verified_player_id TEXT;
   ALTER TABLE users ADD COLUMN IF NOT EXISTS verified_player_tour TEXT;
@@ -300,4 +320,28 @@ CREATE TABLE IF NOT EXISTS match_threads (
   id BIGSERIAL PRIMARY KEY, match_key TEXT UNIQUE NOT NULL, topic_id BIGINT NOT NULL REFERENCES topics(id) ON DELETE CASCADE,
   created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );
+
+-- Member-set presence ("online"/"away"/"busy"/"offline") shown next to a user's name/avatar
+-- anywhere they appear on the forum. There is no automatic detection — this is a manual toggle
+-- the member sets for themselves, same idea as classic forum "away" statuses.
+DO $$ BEGIN
+  ALTER TABLE users ADD COLUMN IF NOT EXISTS status TEXT NOT NULL DEFAULT 'online';
+  ALTER TABLE users ADD COLUMN IF NOT EXISTS status_note TEXT NOT NULL DEFAULT '';
+END $$;
+
+-- Direct messages between forum members. A lightweight inbox (list + thread view, polling-based
+-- refresh) rather than real-time chat infrastructure — conversation_key is the two user ids
+-- sorted and joined ("12:45") so both participants' messages land in the same thread regardless
+-- of who sent first.
+CREATE TABLE IF NOT EXISTS direct_messages (
+  id BIGSERIAL PRIMARY KEY,
+  conversation_key TEXT NOT NULL,
+  sender_id BIGINT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+  recipient_id BIGINT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+  body TEXT NOT NULL,
+  read_at TIMESTAMPTZ,
+  created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+CREATE INDEX IF NOT EXISTS direct_messages_conversation_idx ON direct_messages(conversation_key, created_at);
+CREATE INDEX IF NOT EXISTS direct_messages_recipient_unread_idx ON direct_messages(recipient_id) WHERE read_at IS NULL;
 
