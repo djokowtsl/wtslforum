@@ -12,11 +12,16 @@ export const TOURS: { code: TourCode; label: string; short: string }[] = [
 export function isTourCode(value: string | undefined | null): value is TourCode {
   return !!value && TOURS.some((t) => t.code === value);
 }
+/** Past seasons the official site's tournament calendar still has a `year=` filter for — the
+ * default (no `year` param) always shows the current season. Confirmed against the site's own
+ * year dropdown on the tournaments page. */
+export const HISTORICAL_TOURNAMENT_YEARS = ['2025', '2024', '2023', '2022'];
 export function tourLabel(tour: string) {
   return TOURS.find((t) => t.code === tour)?.short ?? tour;
 }
-function tournamentsUrl(tour: TourCode) {
-  return `${WTSL_BASE}/tournaments.php?tour=${encodeURIComponent(tour)}`;
+function tournamentsUrl(tour: TourCode, year?: string) {
+  const y = year ? `&year=${encodeURIComponent(year)}` : '';
+  return `${WTSL_BASE}/tournaments.php?tour=${encodeURIComponent(tour)}${y}`;
 }
 function rankingsUrl(tour: TourCode) {
   return `${WTSL_BASE}/rankings.php?tour=${encodeURIComponent(tour)}`;
@@ -45,8 +50,8 @@ export type WTSLTournament = {
   officialUrl:string; tour:TourCode;
 };
 
-export async function fetchWTSLTournaments(tour: TourCode = DEFAULT_TOUR): Promise<WTSLTournament[]> {
-  const url = tournamentsUrl(tour);
+export async function fetchWTSLTournaments(tour: TourCode = DEFAULT_TOUR, year?: string): Promise<WTSLTournament[]> {
+  const url = tournamentsUrl(tour, year);
   const res = await fetch(url, { cache:'no-store', headers:{'user-agent':'WTSL-Community-Bridge/1.0'} });
   if (!res.ok) throw new Error(`WTSL tournaments request failed: ${res.status}`);
   const html = await res.text();

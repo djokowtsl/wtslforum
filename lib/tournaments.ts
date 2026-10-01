@@ -1,7 +1,7 @@
 import {sql} from './db';
-import {fetchWTSLTournaments,fetchWTSLPlayer,fetchWTSLRankings,fetchWTSLTournamentLogo,TOURS,DEFAULT_TOUR,type TourCode} from './wtsl';
+import {fetchWTSLTournaments,fetchWTSLPlayer,fetchWTSLRankings,fetchWTSLTournamentLogo,TOURS,DEFAULT_TOUR,HISTORICAL_TOURNAMENT_YEARS,type TourCode} from './wtsl';
 
-export {TOURS, DEFAULT_TOUR};
+export {TOURS, DEFAULT_TOUR, HISTORICAL_TOURNAMENT_YEARS};
 export type {TourCode};
 
 const PLAYER_UPSERT_NOTE = 'keeps existing avatar/flag/elo when a refresh omits them';
@@ -41,8 +41,9 @@ async function ensureChampion(url: string | null, tour: TourCode): Promise<strin
   return id;
 }
 
-export async function syncTournaments(tour: TourCode = DEFAULT_TOUR) {
-  const tournaments = await fetchWTSLTournaments(tour);
+export async function syncTournaments(tour: TourCode = DEFAULT_TOUR, opts: { year?: string; createDiscussion?: boolean } = {}) {
+  const { year, createDiscussion = true } = opts;
+  const tournaments = await fetchWTSLTournaments(tour, year);
   let created = 0, updated = 0;
   for (const t of tournaments) {
     const championId = await ensureChampion(t.championUrl, tour);
@@ -60,13 +61,29 @@ export async function syncTournaments(tour: TourCode = DEFAULT_TOUR) {
       updated++;
     } else {
       const inserted = await sql`INSERT INTO tournaments(wtsl_tournament_key,tour,name,location,country,category,draw_size,surface,start_date,status,champion_player_id,official_url,logo_url) VALUES(${t.key},${tour},${t.name},${t.location},${t.country},${t.category},${t.drawSize},${t.surface},${t.startDate},${t.status},${championId},${t.officialUrl},${logoUrl}) RETURNING id`;
-      const cat = (await sql`SELECT id FROM categories WHERE slug='tournaments' LIMIT 1`)[0];
-      const topic = await sql`INSERT INTO topics(category_id,title,slug,body,pinned) VALUES(${cat?.id ?? null},${`🏆 ${t.name} — Tournament Discussion`},${`tournament-${t.key}`},${`Official community discussion for ${t.name}.\n\n${t.location}, ${t.country} · ${t.category} · ${t.surface}\n\n**Status:** ${t.status}\n\n[View the official WTSL tournament page](${t.officialUrl})`},${t.status==='ongoing'}) RETURNING id`;
-      await sql`UPDATE tournaments SET discussion_topic_id=${topic[0].id} WHERE id=${inserted[0].id}`;
+      // Backfilling past seasons shouldn't spam the forum with a "Tournament Discussion" thread
+      // for every historical event — only the live sync (current season) creates one.
+      if (createDiscussion) {
+        const cat = (await sql`SELECT id FROM categories WHERE slug='tournaments' LIMIT 1`)[0];
+        const topic = await sql`INSERT INTO topics(category_id,title,slug,body,pinned) VALUES(${cat?.id ?? null},${`🏆 ${t.name} — Tournament Discussion`},${`tournament-${t.key}`},${`Official community discussion for ${t.name}.\n\n${t.location}, ${t.country} · ${t.category} · ${t.surface}\n\n**Status:** ${t.status}\n\n[View the official WTSL tournament page](${t.officialUrl})`},${t.status==='ongoing'}) RETURNING id`;
+        await sql`UPDATE tournaments SET discussion_topic_id=${topic[0].id} WHERE id=${inserted[0].id}`;
+      }
       created++;
     }
   }
-  return { tour, seen: tournaments.length, created, updated };
+  return { tour, year: year ?? 'current', seen: tournaments.length, created, updated };
+}
+
+/** One-time backfill of past tournament seasons (the site's calendar supports a `year=` filter
+ * going back to 2022). Safe to re-run — syncTournaments upserts by the tournament's own stable
+ * key, so already-imported events are just refreshed, not duplicated. */
+export async function backfillTournamentHistory(tour: TourCode = DEFAULT_TOUR) {
+  const results = [];
+  for (const year of HISTORICAL_TOURNAMENT_YEARS) {
+    try { results.push(await syncTournaments(tour, { year, createDiscussion: false })); }
+    catch (e) { results.push({ tour, year, error: e instanceof Error ? e.message : 'Sync failed' }); }
+  }
+  return results;
 }
 
 export async function syncTournamentsAllTours() {
