@@ -74,7 +74,7 @@ export default async function Home({ searchParams }: { searchParams: Promise<{ e
 
       <section className="live">
         <div className="live-inner">
-          <div className="live-head"><span className="live-dot" /><h2 className="display">Live on the tour</h2><Link href="/matches">All matches →</Link></div>
+          <div className="live-head"><span className="live-dot" /><h2 className="display">Happening now</h2><Link href="/matches">All matches →</Link></div>
           {hasTour ? (
             <>
               {results.length > 0 && (<><div className="live-sub" style={{ marginTop: 0 }}>Latest results</div><div className="live-grid">{results.map((m: any) => <ResultCard key={m.id} m={m} tournamentNames={tournamentNames} />)}</div></>)}
