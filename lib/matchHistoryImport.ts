@@ -13,6 +13,25 @@ export type MatchHistoryRow = {
 };
 
 /**
+ * Resolves one side's name to a `wtsl_players` id. In Competitive Doubles (TE4_CD) the bot's
+ * workbook stores each side as "RankedPlayer & CPU Partner" (every doubles match is actually
+ * ranked-player-plus-CPU, not two humans) — the CPU partner is never in `wtsl_players`, so when
+ * a direct name match fails, each "&"-separated part is tried in turn and whichever one resolves
+ * is used. This is a no-op for singles tours, where names essentially never contain "&".
+ */
+function resolvePlayerId(name: string, byName: Map<string, string>): string | undefined {
+  const direct = byName.get(normalizePlayerName(name));
+  if (direct) return direct;
+  const parts = name.split(/\s*&\s*/).map((p) => p.trim()).filter(Boolean);
+  if (parts.length < 2) return undefined;
+  for (const part of parts) {
+    const id = byName.get(normalizePlayerName(part));
+    if (id) return id;
+  }
+  return undefined;
+}
+
+/**
  * Bulk-imports completed matches from an external source (the Discord bot's own results-channel
  * log, which has far deeper history than anything the public WTSL site exposes) straight into
  * `match_stats`. Player names are matched against `wtsl_players` with the same emoji/"aka"-
@@ -35,8 +54,8 @@ export async function importMatchHistory(tour: TourCode, rows: MatchHistoryRow[]
   for (const r of rows) {
     const sets = parseSets(r.score);
     if (!sets) { skippedNoScore++; continue; }
-    const p1 = byName.get(normalizePlayerName(r.player1));
-    const p2 = byName.get(normalizePlayerName(r.player2));
+    const p1 = resolvePlayerId(r.player1, byName);
+    const p2 = resolvePlayerId(r.player2, byName);
     if (!p1 || !p2) {
       if (!p1) unmatched.add(r.player1);
       if (!p2) unmatched.add(r.player2);
