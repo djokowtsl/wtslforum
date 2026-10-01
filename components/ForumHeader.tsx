@@ -1,5 +1,6 @@
 import Link from 'next/link';
 import { getSession, discordAvatar } from '@/lib/auth';
+import { MobileNav } from './MobileNav';
 
 export const NAV = [
   { href: '/discussions', label: 'Discussions' },
@@ -41,20 +42,12 @@ export async function ForumHeader() {
           )}
         </nav>
 
-        <details className="mobile-menu">
-          <summary aria-label="Open menu"><span className="burger" /></summary>
-          <div className="mobile-panel">
-            {NAV.map((n) => (
-              <Link key={n.href} href={n.href}>{n.label}</Link>
-            ))}
-            {u?.isAdmin && <Link href="/admin">Admin</Link>}
-            {u ? (
-              <Link href="/profile" className="btn btn-ghost">{u.username}</Link>
-            ) : (
-              <a className="btn btn-discord" href="/api/auth/discord">Join with Discord</a>
-            )}
-          </div>
-        </details>
+        <MobileNav
+          items={NAV}
+          isAdmin={!!u?.isAdmin}
+          username={u?.username}
+          discordJoinHref="/api/auth/discord"
+        />
       </div>
     </header>
   );
