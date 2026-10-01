@@ -1,7 +1,7 @@
 import type { Metadata } from 'next';
 import Link from 'next/link';
 import { safe } from '@/lib/db';
-import { leaderboard } from '@/lib/stats';
+import { leaderboard, LEADERBOARD_MIN_MATCHES } from '@/lib/stats';
 import PageHero from '@/components/PageHero';
 import TourTabs from '@/components/TourTabs';
 import { DEFAULT_TOUR, isTourCode, tourLabel, type TourCode } from '@/lib/wtsl';
@@ -38,12 +38,12 @@ export default async function Leaderboard({ searchParams }: { searchParams: Prom
 
   return (
     <>
-      <PageHero eyebrow="WTSL TE4" title="Leaderboard">Players ranked by stat, highest first. Looking for the full A–Z breakdown instead? Head to <Link href="/stats" style={{ color: 'var(--lime)' }}>Statistics</Link>.</PageHero>
+      <PageHero eyebrow="WTSL TE4" title="Leaderboard">Players ranked by stat, highest first — only players with {LEADERBOARD_MIN_MATCHES}+ recorded matches are ranked, to keep small sample sizes from skewing the top spots. Looking for the full A–Z breakdown instead? Head to <Link href="/stats" style={{ color: 'var(--lime)' }}>Statistics</Link>.</PageHero>
       <main className="container">
         <TourTabs basePath="/leaderboard" current={tour} extraParams={{ metric }} />
         <div className="section-head">
-          <div><h2 className="display">Ranked by {valueCol.label.toLowerCase()}</h2><span>{tourLabel(tour)}</span></div>
-          <div className="tour-tabs">
+          <div><h2 className="display">Ranked by {valueCol.label.toLowerCase()}</h2><span>{tourLabel(tour)} · {LEADERBOARD_MIN_MATCHES}+ matches played</span></div>
+          <div className="tabs-scroll">
             {METRICS.map((m) => (
               <Link key={m.key} className={`tour-tab${m.key === metric ? ' active' : ''}`} href={`/leaderboard?tour=${encodeURIComponent(tour)}&metric=${encodeURIComponent(m.key)}`}>{m.label}</Link>
             ))}
