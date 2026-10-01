@@ -4,6 +4,7 @@ import Link from 'next/link';
 import { usePathname } from 'next/navigation';
 import { useEffect, useRef } from 'react';
 import { ThemeToggle } from './ThemeToggle';
+import { SearchBar } from './SearchBar';
 
 type NavItem = { href: string; label: string };
 
@@ -12,11 +13,13 @@ export function MobileNav({
   isAdmin,
   username,
   discordJoinHref,
+  unreadMessages = 0,
 }: {
   items: NavItem[];
   isAdmin: boolean;
   username?: string;
   discordJoinHref: string;
+  unreadMessages?: number;
 }) {
   const detailsRef = useRef<HTMLDetailsElement>(null);
   const pathname = usePathname();
@@ -35,10 +38,16 @@ export function MobileNav({
     <details className="mobile-menu" ref={detailsRef}>
       <summary aria-label="Open menu"><span className="burger" /></summary>
       <div className="mobile-panel">
+        <SearchBar className="mobile-search" onNavigate={close} />
         {items.map((n) => (
           <Link key={n.href} href={n.href} onClick={close}>{n.label}</Link>
         ))}
         {isAdmin && <Link href="/admin" onClick={close}>Admin</Link>}
+        {username && (
+          <Link href="/messages" onClick={close}>
+            Messages{unreadMessages > 0 && <span className="pill red nav-badge">{unreadMessages}</span>}
+          </Link>
+        )}
         <div className="mobile-theme-row"><span>Theme</span><ThemeToggle /></div>
         {username ? (
           <Link href="/profile" className="btn btn-ghost" onClick={close}>{username}</Link>

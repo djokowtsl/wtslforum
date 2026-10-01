@@ -5,10 +5,12 @@ import { getSession, discordAvatar } from '@/lib/auth';
 import { safe } from '@/lib/db';
 import { getClaimsForUser, type PlayerClaim } from '@/lib/player-claims';
 import { getLatestChallongeClaimForUser, type ChallongeClaim } from '@/lib/challonge-claims';
+import { getUserStatus } from '@/lib/presence';
 import { TOURS } from '@/lib/wtsl';
 import PageHero from '@/components/PageHero';
 import PlayerClaimForm from '@/components/PlayerClaimForm';
 import ChallongeClaimForm from '@/components/ChallongeClaimForm';
+import StatusPicker from '@/components/StatusPicker';
 
 export const dynamic = 'force-dynamic';
 export const metadata: Metadata = { title: 'Your profile' };
@@ -19,6 +21,7 @@ export default async function Profile() {
   const claims = await safe(() => getClaimsForUser(u.id), [] as PlayerClaim[]);
   const claimByTour = new Map(claims.map((c) => [c.tour, c]));
   const challongeClaim = await safe(() => getLatestChallongeClaimForUser(u.id), null as ChallongeClaim | null);
+  const status = await safe(() => getUserStatus(u.id), 'online' as const);
 
   return (
     <>
@@ -29,6 +32,10 @@ export default async function Profile() {
           <h3 className="display" style={{ marginTop: 14, fontSize: 34 }}>{u.username}</h3>
           <p>Discord-connected WTSL community account</p>
           {u.isAdmin && <p><span className="pill cyan">Admin</span></p>}
+          <div className="status-row">
+            <span>Your status:</span>
+            <StatusPicker initial={status} />
+          </div>
           <form action="/api/auth/logout" method="post"><button className="btn">Sign out</button></form>
         </div>
 

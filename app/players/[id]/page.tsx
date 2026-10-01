@@ -3,9 +3,10 @@ import { notFound } from 'next/navigation';
 import { safe, sql } from '@/lib/db';
 import { playerStats } from '@/lib/stats';
 import { getVerifiedOwner } from '@/lib/player-claims';
-import { discordAvatar } from '@/lib/auth';
+import { discordAvatar, getSession } from '@/lib/auth';
 import Link from 'next/link';
 import PageHero from '@/components/PageHero';
+import { StatusDot } from '@/components/StatusDot';
 import { DEFAULT_TOUR, isTourCode, tourLabel, type TourCode } from '@/lib/wtsl';
 
 export const dynamic = 'force-dynamic';
@@ -30,6 +31,7 @@ export default async function PlayerDashboard({ params, searchParams }: Props) {
 
   const recent = await safe(() => sql`SELECT * FROM player_recent_results WHERE player_id=${id} AND tour=${tour} ORDER BY position ASC LIMIT 10`, [] as any[]);
   const verifiedOwner = await safe(() => getVerifiedOwner(id, tour), null as any);
+  const viewer = await safe(() => getSession(), null);
 
   const form: string = p.form ?? '';
   const statLines: { label: string; value: string | number }[] = [
@@ -76,7 +78,10 @@ export default async function PlayerDashboard({ params, searchParams }: Props) {
               <p style={{ marginTop: 8 }}>
                 <span className="pill cyan">Verified account</span>{' '}
                 <img src={discordAvatar(verifiedOwner.avatar_url, verifiedOwner.display_name)} alt="" style={{ width: 20, height: 20, borderRadius: '50%', verticalAlign: 'middle', marginRight: 4 }} />
-                {verifiedOwner.display_name}
+                <StatusDot status={verifiedOwner.status} /> {verifiedOwner.display_name}
+                {viewer && Number(verifiedOwner.id) !== Number(viewer.id) && (
+                  <> · <Link href={`/messages/${verifiedOwner.id}`}>Message</Link></>
+                )}
               </p>
             )}
           </div>

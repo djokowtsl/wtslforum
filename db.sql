@@ -321,3 +321,27 @@ CREATE TABLE IF NOT EXISTS match_threads (
   created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );
 
+-- Member-set presence ("online"/"away"/"busy"/"offline") shown next to a user's name/avatar
+-- anywhere they appear on the forum. There is no automatic detection — this is a manual toggle
+-- the member sets for themselves, same idea as classic forum "away" statuses.
+DO $$ BEGIN
+  ALTER TABLE users ADD COLUMN IF NOT EXISTS status TEXT NOT NULL DEFAULT 'online';
+  ALTER TABLE users ADD COLUMN IF NOT EXISTS status_note TEXT NOT NULL DEFAULT '';
+END $$;
+
+-- Direct messages between forum members. A lightweight inbox (list + thread view, polling-based
+-- refresh) rather than real-time chat infrastructure — conversation_key is the two user ids
+-- sorted and joined ("12:45") so both participants' messages land in the same thread regardless
+-- of who sent first.
+CREATE TABLE IF NOT EXISTS direct_messages (
+  id BIGSERIAL PRIMARY KEY,
+  conversation_key TEXT NOT NULL,
+  sender_id BIGINT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+  recipient_id BIGINT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+  body TEXT NOT NULL,
+  read_at TIMESTAMPTZ,
+  created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+CREATE INDEX IF NOT EXISTS direct_messages_conversation_idx ON direct_messages(conversation_key, created_at);
+CREATE INDEX IF NOT EXISTS direct_messages_recipient_unread_idx ON direct_messages(recipient_id) WHERE read_at IS NULL;
+
