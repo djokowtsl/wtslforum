@@ -48,7 +48,7 @@ type MatchRatingRow = { player: string; matches: number; value: number; matched?
 function MatchRatingTable({ tour, label, rows }: { tour: TourCode; label: string; rows: MatchRatingRow[] }) {
   return (
     <section className="panel">
-      <div className="panel-head"><h2 className="display">{label}</h2><span>From the Discord match log</span></div>
+      <div className="panel-head"><h2 className="display">{label}</h2></div>
       <table>
         <thead><tr><th>Player</th><th>Matches</th><th>Rating</th></tr></thead>
         <tbody>{rows.map((r) => (
