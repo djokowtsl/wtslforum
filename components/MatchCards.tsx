@@ -5,6 +5,13 @@ function Face({ src, name }: { src?: string | null; name?: string | null }) {
   return src ? <img src={src} alt="" /> : <div className="ph">{initial(name)}</div>;
 }
 
+/** Links straight into (or creates) the Match Talk thread for this exact match, so you don't
+ * have to go find/start it yourself in the Discussions section. */
+function DiscussLink({ params }: { params: Record<string, string | undefined> }) {
+  const qs = new URLSearchParams(Object.entries(params).filter(([, v]) => v) as [string, string][]).toString();
+  return <Link href={`/api/match-thread?${qs}`} className="discuss-link">💬 Discuss</Link>;
+}
+
 /** Links a player's name to their forum profile for the tour this match/fixture belongs to —
  * falls back to plain text if we don't have an id (e.g. a bye or TBC slot). */
 function PlayerLink({ id, tour, name }: { id?: string | number | null; tour?: string | null; name?: string | null }) {
@@ -34,6 +41,7 @@ export function ResultCard({ m, tournamentNames }: { m: any; tournamentNames?: R
         <span className={`nm ${p1win ? 'lost' : ''}`}><PlayerLink id={m.player_two_id} tour={m.tour} name={m.player_two_name} /></span>
       </div>
       <div className="match-score">{m.score || '—'}{m.played_at ? ` · ${timeAgo(m.played_at)}` : ''}</div>
+      <DiscussLink params={{ key: `match-${m.id}`, p1: m.player_one_name, p2: m.player_two_name, tournament: t, round: m.round_name, score: m.score }} />
     </div>
   );
 }
@@ -60,6 +68,7 @@ export function FixtureCard({ f }: { f: any }) {
           {f.scheduled_at ? `Scheduled: ${new Date(f.scheduled_at).toLocaleString('en-GB', { day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit' })}` : `Deadline: ${new Date(f.round_deadline).toLocaleString('en-GB', { day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit' })}`}
         </div>
       )}
+      <DiscussLink params={{ key: `fixture-${f.key}`, p1: f.first_name, p2: f.second_name, tournament: f.tournament }} />
     </div>
   );
 }

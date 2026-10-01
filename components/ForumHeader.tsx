@@ -40,7 +40,7 @@ export async function ForumHeader() {
           </span>
         </Link>
 
-        <SearchBar className="header-search" />
+        <SearchBar className="header-search" compact />
 
         <nav className="nav" aria-label="Main">
           {NAV.map((n) => (

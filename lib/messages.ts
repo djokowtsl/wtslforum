@@ -77,3 +77,31 @@ export async function unreadMessageCount(userId: string | number): Promise<numbe
   const rows = await sql`SELECT COUNT(*)::int c FROM direct_messages WHERE recipient_id = ${Number(userId)} AND read_at IS NULL`;
   return rows[0]?.c ?? 0;
 }
+
+export type MemberResult = { id: number; display_name: string; avatar_url: string | null; status: string | null };
+
+/** Forum-member lookup for starting a new conversation — matched by display name, not WTSL
+ * player id (nobody knows another member's numeric user id), excluding the signed-in user. */
+export async function searchMembers(query: string, excludeUserId: string | number, limit = 10): Promise<MemberResult[]> {
+  const q = query.trim();
+  if (q.length < 2) return [];
+  const rows = await sql`
+    SELECT id, display_name, avatar_url, status
+    FROM users
+    WHERE display_name ILIKE ${'%' + q + '%'} AND id != ${Number(excludeUserId)}
+    ORDER BY display_name ASC
+    LIMIT ${limit}`;
+  return rows as MemberResult[];
+}
+
+/** Members currently set to "online", for the inbox's quick-start panel — newest status change
+ * first so recently-active members surface at the top. */
+export async function listOnlineMembers(excludeUserId: string | number, limit = 20): Promise<MemberResult[]> {
+  const rows = await sql`
+    SELECT id, display_name, avatar_url, status
+    FROM users
+    WHERE status = 'online' AND id != ${Number(excludeUserId)}
+    ORDER BY display_name ASC
+    LIMIT ${limit}`;
+  return rows as MemberResult[];
+}
