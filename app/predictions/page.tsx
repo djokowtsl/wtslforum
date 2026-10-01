@@ -43,7 +43,7 @@ export default async function Predictions() {
                   return (
                     <tr key={r.challonge_user_id}>
                       <td>{MEDALS[i] || i + 1}</td>
-                      <td>{r.prediction_name || r.challonge_username || 'Unknown'}{r.discord_user_id ? <small> · Discord-linked</small> : null}</td>
+                      <td>{r.display_name || r.challonge_username || r.prediction_name || 'Unknown'}{r.challonge_username && (r.display_name || r.challonge_username) !== r.challonge_username ? <small> ({r.challonge_username})</small> : null}{r.discord_user_id ? <small> · Discord-linked</small> : null}</td>
                       <td><b>{r.total_score}</b></td>
                       <td>{correct}/{possible}{possible > 0 ? ` (${pct}%)` : ''}</td>
                       <td>{r.tournaments}</td>
