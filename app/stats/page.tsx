@@ -77,6 +77,10 @@ export default async function Stats({ searchParams }: { searchParams: Promise<{ 
     <>
       <PageHero eyebrow="WTSL TE4" title="Statistics">Match statistics and player performance, A–Z. Want players ranked by a stat instead? Check the <Link href="/leaderboard" style={{ color: 'var(--lime)' }}>Leaderboard</Link>.</PageHero>
       <main className="container">
+        <div className="notice warn" style={{ marginBottom: 20, display: 'flex', gap: 10, alignItems: 'flex-start', fontWeight: 600 }}>
+          <span>🚧</span>
+          <span>These statistics are still under construction and may not reflect every match in the WTSL database yet. For the most complete and accurate numbers, use <code>/wtslstats</code> in Discord.</span>
+        </div>
         <TourTabs basePath="/stats" current={tour} />
         <div className="dashboard-grid">
           <section className="panel">
