@@ -1,6 +1,6 @@
 import { NextResponse } from 'next/server';
 import { getSession } from '@/lib/auth';
-import { syncTournaments, syncPlayers, TOURS } from '@/lib/tournaments';
+import { syncTournaments, syncPlayers, HISTORICAL_TOURNAMENT_YEARS, TOURS } from '@/lib/tournaments';
 import { syncPlayerStats } from '@/lib/playerStats';
 import type { TourCode } from '@/lib/wtsl';
 
@@ -23,6 +23,7 @@ export async function POST(req: Request) {
   const body = await req.json().catch(() => ({}));
   const category = body?.category as string | undefined;
   const tour = body?.tour as string | undefined;
+  const year = body?.year as string | undefined;
   if (!tour || !VALID_TOURS.has(tour as TourCode)) {
     return NextResponse.json({ error: 'Unknown tour' }, { status: 400 });
   }
@@ -31,6 +32,16 @@ export async function POST(req: Request) {
     let result: unknown;
     if (category === 'players') result = await syncPlayers(tour as TourCode);
     else if (category === 'tournaments') result = await syncTournaments(tour as TourCode);
+    // One (tour, year) pair per request — same "small steps" reasoning as the regular sync
+    // (below): scraping+saving a whole historical season (with champion profile lookups) in a
+    // single request keeps every call comfortably inside the 60s function limit even for tours
+    // with a long back catalogue.
+    else if (category === 'tournamentHistory') {
+      if (!year || !(HISTORICAL_TOURNAMENT_YEARS as string[]).includes(year)) {
+        return NextResponse.json({ error: 'Unknown year' }, { status: 400 });
+      }
+      result = await syncTournaments(tour as TourCode, { year, createDiscussion: false });
+    }
     else if (category === 'playerStats') result = await syncPlayerStats(tour as TourCode);
     else return NextResponse.json({ error: 'Unknown category' }, { status: 400 });
     return NextResponse.json({ ok: true, result });
