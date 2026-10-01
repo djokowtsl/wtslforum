@@ -1,5 +1,7 @@
 import Link from 'next/link';
 import { getSession, discordAvatar } from '@/lib/auth';
+import { MobileNav } from './MobileNav';
+import { ThemeToggle } from './ThemeToggle';
 
 export const NAV = [
   { href: '/discussions', label: 'Discussions' },
@@ -7,8 +9,10 @@ export const NAV = [
   { href: '/tournaments', label: 'Tournaments' },
   { href: '/players', label: 'Players' },
   { href: '/articles', label: 'Articles' },
+  { href: '/media', label: 'Media' },
   { href: '/awards', label: 'Awards' },
-  { href: '/stats', label: 'WTSL Data' },
+  { href: '/stats', label: 'Statistics' },
+  { href: '/predictions', label: 'Predictions' },
   { href: '/about', label: 'About' },
 ];
 
@@ -31,30 +35,23 @@ export async function ForumHeader() {
             <Link key={n.href} href={n.href}>{n.label}</Link>
           ))}
           {u?.isAdmin && <Link href="/admin">Admin</Link>}
+          <ThemeToggle />
           {u ? (
             <Link href="/profile" className="user-chip">
               <img src={discordAvatar(u.avatar, u.username)} alt="" />
               {u.username}
             </Link>
           ) : (
-            <a className="btn btn-discord btn-sm nav-cta" href="/api/auth/discord">Join with Discord</a>
+            <a className="btn btn-discord btn-sm nav-cta" href="/api/auth/discord">Log in with Discord</a>
           )}
         </nav>
 
-        <details className="mobile-menu">
-          <summary aria-label="Open menu"><span className="burger" /></summary>
-          <div className="mobile-panel">
-            {NAV.map((n) => (
-              <Link key={n.href} href={n.href}>{n.label}</Link>
-            ))}
-            {u?.isAdmin && <Link href="/admin">Admin</Link>}
-            {u ? (
-              <Link href="/profile" className="btn btn-ghost">{u.username}</Link>
-            ) : (
-              <a className="btn btn-discord" href="/api/auth/discord">Join with Discord</a>
-            )}
-          </div>
-        </details>
+        <MobileNav
+          items={NAV}
+          isAdmin={!!u?.isAdmin}
+          username={u?.username}
+          discordJoinHref="/api/auth/discord"
+        />
       </div>
     </header>
   );

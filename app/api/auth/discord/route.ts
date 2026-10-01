@@ -1,5 +1,7 @@
 import { NextResponse } from 'next/server';
 
+export const dynamic = 'force-dynamic';
+
 export async function GET(req: Request) {
   const u = new URL(req.url);
   if (!process.env.DISCORD_CLIENT_ID) return NextResponse.redirect(new URL('/?error=discord_not_configured', u));

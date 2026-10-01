@@ -2,6 +2,8 @@ import { NextResponse } from 'next/server';
 import { cookies } from 'next/headers';
 import { upsertDiscordUser, createSession, authConfigured } from '@/lib/auth';
 
+export const dynamic = 'force-dynamic';
+
 const go = (url: URL, err: string) => NextResponse.redirect(new URL(`/?error=${err}`, url));
 
 export async function GET(req: Request) {

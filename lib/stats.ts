@@ -22,6 +22,7 @@ export async function leaderboard(tour='TE4', metric='wins'){
     LEFT JOIN player_stats_summary s
       ON s.player_id=p.wtsl_player_id
       AND s.tour=${tour}
+    WHERE p.tour=${tour}
     ORDER BY
       CASE
         WHEN ${order} = 'win_pct' THEN
@@ -52,7 +53,7 @@ export async function playerStats(playerId:string){
   `;
 }
 
-export async function recentMatches(limit=20){
+export async function recentMatches(limit=20, tour='TE4'){
   return sql`
     SELECT m.*,
       p1.name player_one_name,
@@ -62,8 +63,9 @@ export async function recentMatches(limit=20){
       p2.avatar_url player_two_avatar,
       p2.flag_url player_two_flag
     FROM match_stats m
-    LEFT JOIN wtsl_players p1 ON p1.wtsl_player_id=m.player_one_id
-    LEFT JOIN wtsl_players p2 ON p2.wtsl_player_id=m.player_two_id
+    LEFT JOIN wtsl_players p1 ON p1.wtsl_player_id=m.player_one_id AND p1.tour=m.tour
+    LEFT JOIN wtsl_players p2 ON p2.wtsl_player_id=m.player_two_id AND p2.tour=m.tour
+    WHERE m.tour=${tour}
     ORDER BY m.played_at DESC
     LIMIT ${limit}
   `;

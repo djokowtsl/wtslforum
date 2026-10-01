@@ -10,17 +10,18 @@
   },
   "dependencies": {
     "@neondatabase/serverless": "latest",
+    "@vercel/blob": "^2.8.0",
     "jose": "latest",
+    "lucide-react": "latest",
     "next": "latest",
     "react": "latest",
     "react-dom": "latest",
-    "lucide-react": "latest",
     "zod": "latest"
   },
   "devDependencies": {
-    "typescript": "latest",
     "@types/node": "latest",
     "@types/react": "latest",
-    "@types/react-dom": "latest"
+    "@types/react-dom": "latest",
+    "typescript": "latest"
   }
 }

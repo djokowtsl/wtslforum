@@ -14,7 +14,7 @@ export default async function Betting() {
     <>
       <PageHero eyebrow="WTSL Community" title="Betting fixtures">Virtual WTSL Dollars only. Follow fixtures, odds and community selections.</PageHero>
       <main className="container">
-        <div className="notice" style={{ marginBottom: 22 }}>Fixtures and odds are read from the WTSL bot. Placing bets on the site is temporarily disabled while the Core API is read-only — keep betting in Discord for now.{!wtslCore.configured() && ' (The WTSL Core API is not configured on this deployment.)'}</div>
+        <div className="notice" style={{ marginBottom: 22 }}>Placing bets on the site is temporarily disabled, keep betting in Discord for now.{!wtslCore.configured() && ' (The WTSL Core API is not configured on this deployment.)'}</div>
         {fixtures.length === 0 ? <div className="forum-list"><div className="empty"><strong>No open fixtures</strong>New fixtures appear when the next round opens.</div></div> : (
           <div className="fixture-grid">
             {fixtures.map((f: any) => (

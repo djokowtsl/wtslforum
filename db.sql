@@ -39,7 +39,8 @@ ON CONFLICT (slug) DO NOTHING;
 
 CREATE TABLE IF NOT EXISTS wtsl_players (
  id BIGSERIAL PRIMARY KEY,
- wtsl_player_id TEXT UNIQUE NOT NULL,
+ wtsl_player_id TEXT NOT NULL,
+ tour TEXT NOT NULL DEFAULT 'TE4',
  name TEXT NOT NULL,
  avatar_url TEXT,
  flag_url TEXT,
@@ -48,12 +49,14 @@ CREATE TABLE IF NOT EXISTS wtsl_players (
  tour_elo INT,
  elo_label TEXT,
  official_url TEXT NOT NULL,
- synced_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+ synced_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+ UNIQUE(wtsl_player_id,tour)
 );
 
 CREATE TABLE IF NOT EXISTS tournaments (
  id BIGSERIAL PRIMARY KEY,
  wtsl_tournament_key TEXT UNIQUE NOT NULL,
+ tour TEXT NOT NULL DEFAULT 'TE4',
  name TEXT NOT NULL,
  location TEXT,
  country TEXT,
@@ -70,7 +73,22 @@ CREATE TABLE IF NOT EXISTS tournaments (
 
 CREATE INDEX IF NOT EXISTS tournaments_status_idx ON tournaments(status);
 CREATE INDEX IF NOT EXISTS tournaments_start_date_idx ON tournaments(start_date);
+CREATE INDEX IF NOT EXISTS tournaments_tour_idx ON tournaments(tour);
 CREATE INDEX IF NOT EXISTS wtsl_players_name_idx ON wtsl_players(name);
+CREATE INDEX IF NOT EXISTS wtsl_players_tour_idx ON wtsl_players(tour);
+
+-- Migration for existing databases created before multi-tour support was added
+-- (ATP / WTA / Competitive Doubles / Coop / Created Characters). Safe to re-run.
+DO $$ BEGIN
+  ALTER TABLE wtsl_players ADD COLUMN IF NOT EXISTS tour TEXT NOT NULL DEFAULT 'TE4';
+  ALTER TABLE tournaments ADD COLUMN IF NOT EXISTS tour TEXT NOT NULL DEFAULT 'TE4';
+  IF EXISTS (SELECT 1 FROM pg_constraint WHERE conname = 'wtsl_players_wtsl_player_id_key') THEN
+    ALTER TABLE wtsl_players DROP CONSTRAINT wtsl_players_wtsl_player_id_key;
+  END IF;
+  IF NOT EXISTS (SELECT 1 FROM pg_constraint WHERE conname = 'wtsl_players_wtsl_player_id_tour_key') THEN
+    ALTER TABLE wtsl_players ADD CONSTRAINT wtsl_players_wtsl_player_id_tour_key UNIQUE(wtsl_player_id,tour);
+  END IF;
+END $$;
 
 -- WTSL betting / stats / dashboard layer, adapted from the WTSL Discord bot.
 CREATE TABLE IF NOT EXISTS betting_accounts (
@@ -123,3 +141,97 @@ CREATE TABLE IF NOT EXISTS awards (
   id BIGSERIAL PRIMARY KEY, season TEXT NOT NULL, category TEXT NOT NULL, winner TEXT NOT NULL,
   runner_up TEXT, note TEXT, position INT NOT NULL DEFAULT 0, created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );
+
+-- Awards nomination/voting system (admin gated: nominees must be added and voting opened before members can vote).
+CREATE TABLE IF NOT EXISTS award_cycles (
+  id BIGSERIAL PRIMARY KEY, season TEXT NOT NULL UNIQUE, voting_open BOOLEAN NOT NULL DEFAULT FALSE,
+  created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+CREATE TABLE IF NOT EXISTS award_categories (
+  id BIGSERIAL PRIMARY KEY, cycle_id BIGINT NOT NULL REFERENCES award_cycles(id) ON DELETE CASCADE,
+  name TEXT NOT NULL, slug TEXT NOT NULL, description TEXT NOT NULL DEFAULT '',
+  allow_write_in BOOLEAN NOT NULL DEFAULT TRUE, position INT NOT NULL DEFAULT 0,
+  UNIQUE(cycle_id,slug)
+);
+CREATE TABLE IF NOT EXISTS award_nominees (
+  id BIGSERIAL PRIMARY KEY, category_id BIGINT NOT NULL REFERENCES award_categories(id) ON DELETE CASCADE,
+  name TEXT NOT NULL, note TEXT NOT NULL DEFAULT '', position INT NOT NULL DEFAULT 0,
+  created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+-- voter_key is the Discord id for on-site votes, or the imported identifier (handle/email) for Google Form rows;
+-- the unique constraint stops a single voter from casting more than one vote per category per source.
+CREATE TABLE IF NOT EXISTS award_votes (
+  id BIGSERIAL PRIMARY KEY, category_id BIGINT NOT NULL REFERENCES award_categories(id) ON DELETE CASCADE,
+  source TEXT NOT NULL DEFAULT 'site', voter_key TEXT NOT NULL,
+  nominee_id BIGINT REFERENCES award_nominees(id) ON DELETE SET NULL, write_in TEXT,
+  created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+  UNIQUE(category_id,source,voter_key)
+);
+CREATE INDEX IF NOT EXISTS award_categories_cycle_idx ON award_categories(cycle_id);
+CREATE INDEX IF NOT EXISTS award_votes_category_idx ON award_votes(category_id);
+
+-- Seed this season's award categories (voting stays closed until an admin opens it).
+DO $$
+DECLARE cyc_id BIGINT;
+BEGIN
+  INSERT INTO award_cycles(season,voting_open) VALUES ('2026', FALSE) ON CONFLICT(season) DO NOTHING;
+  SELECT id INTO cyc_id FROM award_cycles WHERE season='2026';
+  INSERT INTO award_categories(cycle_id,name,slug,position) VALUES
+    (cyc_id,'Fans Favourite Award','fans-favourite',1),
+    (cyc_id,'Stefan Edberg Sportsmanship Award','stefan-edberg-sportsmanship',2),
+    (cyc_id,'Most Improved Player','most-improved-player',3),
+    (cyc_id,'Newcomer of the Year','newcomer-of-the-year',4),
+    (cyc_id,'Arthur Ashe Humanitarian Award','arthur-ashe-humanitarian',5),
+    (cyc_id,'🦑 Farmer of the Year','farmer-of-the-year',6),
+    (cyc_id,'Comedian/Troll of the Year','comedian-troll-of-the-year',7),
+    (cyc_id,'Trickiest Player','trickiest-player',8),
+    (cyc_id,'Best Dressed Player','best-dressed-player',9),
+    (cyc_id,'Coach of the Year','coach-of-the-year',10),
+    (cyc_id,'Upset of the Year','upset-of-the-year',11),
+    (cyc_id,'Match of the Year','match-of-the-year',12)
+  ON CONFLICT (cycle_id,slug) DO NOTHING;
+END $$;
+
+-- Media/clips: members submit a link (YouTube/Twitch/Streamable/Discord) or upload a file to Vercel Blob.
+CREATE TABLE IF NOT EXISTS media_clips (
+  id BIGSERIAL PRIMARY KEY, submitted_by BIGINT REFERENCES users(id) ON DELETE SET NULL,
+  title TEXT NOT NULL, description TEXT NOT NULL DEFAULT '', url TEXT NOT NULL, tour TEXT,
+  created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+CREATE INDEX IF NOT EXISTS media_clips_created_idx ON media_clips(created_at DESC);
+
+-- Migration: real career/YTD win-loss, titles, prize money, form and serve/rally averages,
+-- scraped from the player's official WTSL profile + player statistics table. Safe to re-run.
+DO $$ BEGIN
+  ALTER TABLE player_stats_summary ADD COLUMN IF NOT EXISTS ytd_wins INT NOT NULL DEFAULT 0;
+  ALTER TABLE player_stats_summary ADD COLUMN IF NOT EXISTS ytd_losses INT NOT NULL DEFAULT 0;
+  ALTER TABLE player_stats_summary ADD COLUMN IF NOT EXISTS ytd_win_pct NUMERIC(6,2) NOT NULL DEFAULT 0;
+  ALTER TABLE player_stats_summary ADD COLUMN IF NOT EXISTS titles_main INT NOT NULL DEFAULT 0;
+  ALTER TABLE player_stats_summary ADD COLUMN IF NOT EXISTS finals_main INT NOT NULL DEFAULT 0;
+  ALTER TABLE player_stats_summary ADD COLUMN IF NOT EXISTS prize_money NUMERIC(14,2) NOT NULL DEFAULT 0;
+  ALTER TABLE player_stats_summary ADD COLUMN IF NOT EXISTS prize_currency TEXT;
+  ALTER TABLE player_stats_summary ADD COLUMN IF NOT EXISTS form TEXT;
+  ALTER TABLE player_stats_summary ADD COLUMN IF NOT EXISTS avg_double_faults NUMERIC(8,2) NOT NULL DEFAULT 0;
+  ALTER TABLE player_stats_summary ADD COLUMN IF NOT EXISTS avg_first_serve_speed NUMERIC(8,2) NOT NULL DEFAULT 0;
+  ALTER TABLE player_stats_summary ADD COLUMN IF NOT EXISTS avg_second_serve_speed NUMERIC(8,2) NOT NULL DEFAULT 0;
+  ALTER TABLE player_stats_summary ADD COLUMN IF NOT EXISTS avg_net_points_pct NUMERIC(6,2) NOT NULL DEFAULT 0;
+  ALTER TABLE player_stats_summary ADD COLUMN IF NOT EXISTS avg_forced_errors NUMERIC(8,2) NOT NULL DEFAULT 0;
+  ALTER TABLE player_stats_summary ADD COLUMN IF NOT EXISTS avg_unforced_errors NUMERIC(8,2) NOT NULL DEFAULT 0;
+  ALTER TABLE player_stats_summary ADD COLUMN IF NOT EXISTS avg_short_rally_pct NUMERIC(6,2) NOT NULL DEFAULT 0;
+  ALTER TABLE player_stats_summary ADD COLUMN IF NOT EXISTS avg_medium_rally_pct NUMERIC(6,2) NOT NULL DEFAULT 0;
+  ALTER TABLE player_stats_summary ADD COLUMN IF NOT EXISTS avg_long_rally_pct NUMERIC(6,2) NOT NULL DEFAULT 0;
+  ALTER TABLE player_stats_summary ADD COLUMN IF NOT EXISTS avg_first_serve_won_pct NUMERIC(6,2) NOT NULL DEFAULT 0;
+  ALTER TABLE player_stats_summary ADD COLUMN IF NOT EXISTS avg_second_serve_won_pct NUMERIC(6,2) NOT NULL DEFAULT 0;
+  ALTER TABLE player_stats_summary ADD COLUMN IF NOT EXISTS avg_return_won_pct NUMERIC(6,2) NOT NULL DEFAULT 0;
+  ALTER TABLE player_stats_summary ADD COLUMN IF NOT EXISTS avg_rally_length NUMERIC(8,2) NOT NULL DEFAULT 0;
+  ALTER TABLE player_stats_summary ADD COLUMN IF NOT EXISTS updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW();
+END $$;
+
+-- Recent match results shown on a player's dashboard, refreshed (truncate + reinsert) each sync.
+CREATE TABLE IF NOT EXISTS player_recent_results (
+  id BIGSERIAL PRIMARY KEY, player_id TEXT NOT NULL, tour TEXT NOT NULL DEFAULT 'TE4',
+  tournament_key TEXT, tournament_name TEXT NOT NULL, round_name TEXT NOT NULL,
+  opponent_id TEXT, opponent_name TEXT NOT NULL, score TEXT NOT NULL, played_at DATE,
+  position INT NOT NULL DEFAULT 0
+);
+CREATE INDEX IF NOT EXISTS player_recent_results_player_idx ON player_recent_results(player_id,tour,position);

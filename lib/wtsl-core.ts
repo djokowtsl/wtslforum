@@ -53,6 +53,21 @@ export type CoreFixture = {
   pool_two?: number | string;
 };
 
+export type CorePredictionRow = {
+  challonge_user_id: string;
+  challonge_username: string | null;
+  prediction_name: string | null;
+  discord_user_id: number | null;
+  tournaments: number;
+  tournaments_won: number;
+  total_score: number;
+  total_score_potential: number;
+  total_picks: number;
+  total_picks_potential: number;
+  total_losers_bracket_points: number;
+  average_score: number;
+};
+
 export const wtslCore = {
   configured: () => Boolean(base && token),
 
@@ -97,6 +112,11 @@ export const wtslCore = {
 
   leaderboard: () =>
     core<unknown[]>('/api/core/betting/leaderboard'),
+
+  predictionsLeaderboard: (limit = 100) =>
+    core<CorePredictionRow[]>(
+      `/api/core/predictions/leaderboard?limit=${encodeURIComponent(String(limit))}`,
+    ),
 
   results: () => core<unknown[]>('/api/core/results'),
 
