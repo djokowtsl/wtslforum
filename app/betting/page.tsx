@@ -116,12 +116,16 @@ export default async function Betting() {
               return (
                 <article className="fixture-card" key={f.key}>
                   <div className="fixture-top"><span>{f.tournament || 'WTSL'} · {(f.tour || 'TE4').toUpperCase()}</span><b>SETTLED</b></div>
-                  <h2>
-                    {f.first_id && f.tour ? <Link href={`/players/${f.first_id}?tour=${encodeURIComponent(f.tour)}`}>{f.first_name}</Link> : f.first_name}
-                    {winnerIsFirst ? <span className="pill green"> W</span> : null}
-                    {' '}<small>vs</small>{' '}
-                    {f.second_id && f.tour ? <Link href={`/players/${f.second_id}?tour=${encodeURIComponent(f.tour)}`}>{f.second_name}</Link> : f.second_name}
-                    {winnerIsSecond ? <span className="pill green"> W</span> : null}
+                  <h2 className="fixture-matchup">
+                    <span className={winnerIsFirst ? 'winner' : ''}>
+                      {f.first_id && f.tour ? <Link href={`/players/${f.first_id}?tour=${encodeURIComponent(f.tour)}`}>{f.first_name}</Link> : f.first_name}
+                      {winnerIsFirst ? <span className="winner-check">✓</span> : null}
+                    </span>
+                    <small>vs</small>
+                    <span className={winnerIsSecond ? 'winner' : ''}>
+                      {f.second_id && f.tour ? <Link href={`/players/${f.second_id}?tour=${encodeURIComponent(f.tour)}`}>{f.second_name}</Link> : f.second_name}
+                      {winnerIsSecond ? <span className="winner-check">✓</span> : null}
+                    </span>
                   </h2>
                   <div className="topic-meta">
                     {f.result_note ? `${f.result_note} · ` : ''}{f.settled_at ? `Settled ${timeAgo(f.settled_at)}` : ''}
