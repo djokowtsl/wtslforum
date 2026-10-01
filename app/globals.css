@@ -285,10 +285,11 @@ h1, h2, h3 { margin: 0; }
 .compose input, .compose select, .compose textarea { width: 100%; background: var(--bg-2); border: 1px solid var(--line-2); color: var(--text-strong); border-radius: 10px; padding: 12px 13px; font: inherit; font-weight: 400; outline: none; }
 .compose textarea { resize: vertical; line-height: 1.6; }
 .compose input:focus, .compose select:focus, .compose textarea:focus { border-color: var(--lime); box-shadow: 0 0 0 3px rgba(176, 244, 59, 0.12); }
-.claim-search-results { margin-top: 8px; border: 1px solid var(--line-2); border-radius: 10px; max-height: 220px; overflow-y: auto; background: var(--bg-2); }
+.claim-combobox { position: relative; }
+.claim-search-results { position: absolute; top: calc(100% + 4px); left: 0; right: 0; z-index: 20; margin-top: 0; border: 1px solid var(--line-2); border-radius: 10px; max-height: 220px; overflow-y: auto; background: var(--bg-2); box-shadow: 0 10px 24px rgba(0, 0, 0, 0.28); }
 .claim-search-row { display: flex; align-items: center; gap: 10px; width: 100%; padding: 10px 13px; background: transparent; border: none; border-bottom: 1px solid var(--line-2); color: var(--text-strong); text-align: left; font: inherit; cursor: pointer; }
 .claim-search-row:last-child { border-bottom: none; }
-.claim-search-row:hover { background: rgba(176, 244, 59, 0.08); }
+.claim-search-row:hover, .claim-search-row.active { background: rgba(176, 244, 59, 0.08); }
 .claim-search-row img { width: 26px; height: 26px; border-radius: 50%; object-fit: cover; }
 .claim-search-hint { padding: 10px 13px; font-size: 13px; color: var(--muted); }
 .verify-tour-row { border-top: 1px solid var(--line-2); padding: 18px 0; }

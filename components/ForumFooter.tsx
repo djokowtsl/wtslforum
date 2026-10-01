@@ -33,6 +33,7 @@ export function ForumFooter() {
           <Link href="/players">Players</Link>
           <Link href="/stats">Stats centre</Link>
           <Link href="/betting">Betting fixtures</Link>
+          <Link href="/dashboard">Dashboard</Link>
         </div>
         <div className="footer-col">
           <h4>WTSL</h4>

@@ -275,6 +275,26 @@ CREATE INDEX IF NOT EXISTS player_claims_user_idx ON player_claims(user_id);
 -- A player can only be verified to one account at a time.
 CREATE UNIQUE INDEX IF NOT EXISTS player_claims_one_owner_idx ON player_claims(wtsl_player_id, tour) WHERE status = 'approved';
 
+-- Identity verification: a member claims "this is my Challonge username" so the predictions
+-- leaderboard (keyed by Challonge usernames from bracket picks, e.g. "Squeaky94") can show their
+-- official WTSL forum identity/name instead of the raw Challonge handle. Same admin-approval
+-- pattern as player_claims — not tour-scoped since one Challonge account covers all tours.
+CREATE TABLE IF NOT EXISTS challonge_claims (
+  id BIGSERIAL PRIMARY KEY,
+  user_id BIGINT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+  challonge_username TEXT NOT NULL,
+  note TEXT NOT NULL DEFAULT '',
+  status TEXT NOT NULL DEFAULT 'pending',
+  reviewed_by BIGINT REFERENCES users(id) ON DELETE SET NULL,
+  reviewed_at TIMESTAMPTZ,
+  review_note TEXT,
+  created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+CREATE INDEX IF NOT EXISTS challonge_claims_status_idx ON challonge_claims(status);
+CREATE INDEX IF NOT EXISTS challonge_claims_user_idx ON challonge_claims(user_id);
+-- A Challonge username can only be verified to one account at a time (case-insensitive).
+CREATE UNIQUE INDEX IF NOT EXISTS challonge_claims_one_owner_idx ON challonge_claims(LOWER(challonge_username)) WHERE status = 'approved';
+
 DO $$ BEGIN
   ALTER TABLE users ADD COLUMN IF NOT EXISTS verified_player_id TEXT;
   ALTER TABLE users ADD COLUMN IF NOT EXISTS verified_player_tour TEXT;

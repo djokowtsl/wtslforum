@@ -1,4 +1,5 @@
 import { sql } from './db';
+import { notifyPlayerVerified } from './discord';
 
 export type PlayerClaim = {
   id: string;
@@ -64,6 +65,9 @@ export async function approveClaim(claimId: string, adminId: string) {
   // ...and any other player this same account was verified as on this same tour.
   await sql`UPDATE player_claims SET status='rejected', reviewed_by=${adminId}, reviewed_at=NOW(), review_note='Superseded by a newly approved claim' WHERE user_id=${claim.user_id} AND tour=${claim.tour} AND status='approved' AND id != ${claimId}`;
   await sql`UPDATE player_claims SET status='approved', reviewed_by=${adminId}, reviewed_at=NOW() WHERE id=${claimId}`;
+
+  const owner = await sql`SELECT discord_id FROM users WHERE id=${claim.user_id}`;
+  if (owner[0]?.discord_id) await notifyPlayerVerified(owner[0].discord_id, claim.player_name, claim.tour);
 }
 
 export async function rejectClaim(claimId: string, adminId: string, note: string) {

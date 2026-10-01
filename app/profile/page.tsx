@@ -4,9 +4,11 @@ import Link from 'next/link';
 import { getSession, discordAvatar } from '@/lib/auth';
 import { safe } from '@/lib/db';
 import { getClaimsForUser, type PlayerClaim } from '@/lib/player-claims';
+import { getLatestChallongeClaimForUser, type ChallongeClaim } from '@/lib/challonge-claims';
 import { TOURS } from '@/lib/wtsl';
 import PageHero from '@/components/PageHero';
 import PlayerClaimForm from '@/components/PlayerClaimForm';
+import ChallongeClaimForm from '@/components/ChallongeClaimForm';
 
 export const dynamic = 'force-dynamic';
 export const metadata: Metadata = { title: 'Your profile' };
@@ -16,6 +18,7 @@ export default async function Profile() {
   if (!u) redirect('/api/auth/discord');
   const claims = await safe(() => getClaimsForUser(u.id), [] as PlayerClaim[]);
   const claimByTour = new Map(claims.map((c) => [c.tour, c]));
+  const challongeClaim = await safe(() => getLatestChallongeClaimForUser(u.id), null as ChallongeClaim | null);
 
   return (
     <>
@@ -59,6 +62,26 @@ export default async function Profile() {
               </div>
             );
           })}
+        </div>
+
+        <div className="sidebar-card" style={{ padding: 28, marginTop: 20 }}>
+          <h3 className="display" style={{ fontSize: 22 }}>Challonge verification</h3>
+          <p>
+            Link your Challonge username so the predictions leaderboard shows your official WTSL
+            identity instead of a raw Challonge handle. An admin must approve this too.
+          </p>
+          {challongeClaim?.status === 'approved' ? (
+            <p>Verified as Challonge user <b>{challongeClaim.challonge_username}</b>.</p>
+          ) : challongeClaim?.status === 'pending' ? (
+            <p>Your claim for Challonge username <b>{challongeClaim.challonge_username}</b> is awaiting admin review.</p>
+          ) : (
+            <>
+              {challongeClaim?.status === 'rejected' && (
+                <p className="notice">Your previous claim was not approved{challongeClaim.review_note ? `: ${challongeClaim.review_note}` : '.'} You can submit a new one below.</p>
+              )}
+              <ChallongeClaimForm />
+            </>
+          )}
         </div>
       </main>
     </>

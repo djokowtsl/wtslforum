@@ -6,6 +6,7 @@ import { ThemeToggle } from './ThemeToggle';
 export const NAV = [
   { href: '/discussions', label: 'Discussions' },
   { href: '/matches', label: 'Matches' },
+  { href: '/betting', label: 'Betting' },
   { href: '/tournaments', label: 'Tournaments' },
   { href: '/players', label: 'Players' },
   { href: '/articles', label: 'Articles' },
@@ -14,6 +15,7 @@ export const NAV = [
   { href: '/stats', label: 'Statistics' },
   { href: '/leaderboard', label: 'Leaderboard' },
   { href: '/predictions', label: 'Predictions' },
+  { href: '/dashboard', label: 'Dashboard' },
   { href: '/about', label: 'About' },
 ];
 
