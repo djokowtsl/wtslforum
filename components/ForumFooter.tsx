@@ -44,7 +44,7 @@ export function ForumFooter() {
       </div>
       <div className="footer-base">
         <span>© {new Date().getFullYear()} WTSL Forum. WTSL and the WTSL logo belong to the World Tennis Simulation League.</span>
-        <span>Community-run companion site · Sign-in by Discord</span>
+        <span>Community-run companion site</span>
       </div>
     </footer>
   );
