@@ -17,7 +17,7 @@ export default async function Article({ params }: { params: Promise<{ slug: stri
       <article className="thread-head">
         <div className="eyebrow">WTSL Editorial</div>
         <h1 className="display">{a.title}</h1>
-        <div className="topic-meta"><span>By {a.author || 'WTSL Community'}</span><span>{fmtDate(a.created_at)}</span></div>
+        <div className="topic-meta"><span>By {a.author || 'WTSL Forum'}</span><span>{fmtDate(a.created_at)}</span></div>
       </article>
       <article className="article-long"><RichText text={a.body} /></article>
     </main>

@@ -21,12 +21,12 @@ export async function ForumHeader() {
   return (
     <header className="site-header">
       <div className="header-inner">
-        <Link href="/" className="brand" aria-label="WTSL Community home">
+        <Link href="/" className="brand" aria-label="WTSL Forum home">
           {/* Official WTSL logo */}
           <img className="brand-logo" src="/brand/wtsl-logo-200.png" alt="WTSL — World Tennis Simulation League" width={215} height={200} />
           <span className="brand-text">
-            <b>COMMUNITY</b>
-            <span>Forum &amp; Media Hub</span>
+            <b>FORUM</b>
+            <span>Community &amp; Media Hub</span>
           </span>
         </Link>
 

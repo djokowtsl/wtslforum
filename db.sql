@@ -35,6 +35,21 @@ INSERT INTO categories(name,slug,description,position) VALUES
 ('Announcements','announcements','Official community and forum announcements.',7)
 ON CONFLICT (slug) DO NOTHING;
 
+-- Seed discussion threads for the two WTSL-affiliated community events. Safe to re-run.
+INSERT INTO topics(category_id,title,slug,body,pinned)
+SELECT c.id,'🏆 Mystery Cup 2026','mystery-cup-2026',
+  E'The Mystery Cup is back for 2026!\n\n**Dates:** September 28 – October 11, 2026\n**Venue:** TBD\n\n[Visit the official Mystery Cup site ↗](https://www.wtslmysterycup.com)\n\nDiscuss predictions, format and anything else Mystery Cup here.',
+  TRUE
+FROM categories c WHERE c.slug='announcements'
+ON CONFLICT (slug) DO NOTHING;
+
+INSERT INTO topics(category_id,title,slug,body,pinned)
+SELECT c.id,'🌍 WTSL World Cup 2026','wtsl-world-cup-2026',
+  E'National pride. High-stakes competition. The WTSL World Cup returns in 2026 — represent your country and make your people proud.\n\n[Visit the official WTSL World Cup site ↗](https://www.wtslworldcup.fun)\n\nDiscuss squads, rivalries and predictions here.',
+  TRUE
+FROM categories c WHERE c.slug='announcements'
+ON CONFLICT (slug) DO NOTHING;
+
 -- Optional starter article. It remains unpublished until an admin creates/publishes content.
 
 CREATE TABLE IF NOT EXISTS wtsl_players (
@@ -225,6 +240,36 @@ DO $$ BEGIN
   ALTER TABLE player_stats_summary ADD COLUMN IF NOT EXISTS avg_return_won_pct NUMERIC(6,2) NOT NULL DEFAULT 0;
   ALTER TABLE player_stats_summary ADD COLUMN IF NOT EXISTS avg_rally_length NUMERIC(8,2) NOT NULL DEFAULT 0;
   ALTER TABLE player_stats_summary ADD COLUMN IF NOT EXISTS updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW();
+END $$;
+
+-- Identity verification: a member claims "I am this WTSL player" and an admin
+-- must approve it before the forum shows the account as the verified owner.
+-- This is the only way a Discord account gets tied to a WTSL player profile,
+-- so nobody can self-declare and impersonate another player.
+CREATE TABLE IF NOT EXISTS player_claims (
+  id BIGSERIAL PRIMARY KEY,
+  user_id BIGINT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+  wtsl_player_id TEXT NOT NULL,
+  tour TEXT NOT NULL DEFAULT 'TE4',
+  player_name TEXT NOT NULL,
+  note TEXT NOT NULL DEFAULT '',
+  status TEXT NOT NULL DEFAULT 'pending',
+  reviewed_by BIGINT REFERENCES users(id) ON DELETE SET NULL,
+  reviewed_at TIMESTAMPTZ,
+  review_note TEXT,
+  created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+CREATE INDEX IF NOT EXISTS player_claims_status_idx ON player_claims(status);
+CREATE INDEX IF NOT EXISTS player_claims_user_idx ON player_claims(user_id);
+-- A player can only be verified to one account at a time.
+CREATE UNIQUE INDEX IF NOT EXISTS player_claims_one_owner_idx ON player_claims(wtsl_player_id, tour) WHERE status = 'approved';
+
+DO $$ BEGIN
+  ALTER TABLE users ADD COLUMN IF NOT EXISTS verified_player_id TEXT;
+  ALTER TABLE users ADD COLUMN IF NOT EXISTS verified_player_tour TEXT;
+  ALTER TABLE users ADD COLUMN IF NOT EXISTS verified_player_name TEXT;
+  ALTER TABLE users ADD COLUMN IF NOT EXISTS verified_at TIMESTAMPTZ;
+  ALTER TABLE tournaments ADD COLUMN IF NOT EXISTS logo_url TEXT;
 END $$;
 
 -- Recent match results shown on a player's dashboard, refreshed (truncate + reinsert) each sync.

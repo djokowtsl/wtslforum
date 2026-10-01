@@ -1,5 +1,5 @@
 import {sql} from './db';
-import {fetchWTSLTournaments,fetchWTSLPlayer,fetchWTSLRankings,TOURS,DEFAULT_TOUR,type TourCode} from './wtsl';
+import {fetchWTSLTournaments,fetchWTSLPlayer,fetchWTSLRankings,fetchWTSLTournamentLogo,TOURS,DEFAULT_TOUR,type TourCode} from './wtsl';
 
 export {TOURS, DEFAULT_TOUR};
 export type {TourCode};
@@ -46,12 +46,13 @@ export async function syncTournaments(tour: TourCode = DEFAULT_TOUR) {
   let created = 0, updated = 0;
   for (const t of tournaments) {
     const championId = await ensureChampion(t.championUrl, tour);
-    const rows = await sql`SELECT id, discussion_topic_id FROM tournaments WHERE wtsl_tournament_key=${t.key} LIMIT 1`;
+    const rows = await sql`SELECT id, discussion_topic_id, logo_url FROM tournaments WHERE wtsl_tournament_key=${t.key} LIMIT 1`;
+    const logoUrl = rows[0]?.logo_url ?? await fetchWTSLTournamentLogo(t.officialUrl).catch(() => null);
     if (rows[0]) {
-      await sql`UPDATE tournaments SET name=${t.name},tour=${tour},location=${t.location},country=${t.country},category=${t.category},draw_size=${t.drawSize},surface=${t.surface},start_date=${t.startDate},status=${t.status},champion_player_id=${championId},official_url=${t.officialUrl},last_synced_at=NOW() WHERE id=${rows[0].id}`;
+      await sql`UPDATE tournaments SET name=${t.name},tour=${tour},location=${t.location},country=${t.country},category=${t.category},draw_size=${t.drawSize},surface=${t.surface},start_date=${t.startDate},status=${t.status},champion_player_id=${championId},official_url=${t.officialUrl},logo_url=COALESCE(${logoUrl},logo_url),last_synced_at=NOW() WHERE id=${rows[0].id}`;
       updated++;
     } else {
-      const inserted = await sql`INSERT INTO tournaments(wtsl_tournament_key,tour,name,location,country,category,draw_size,surface,start_date,status,champion_player_id,official_url) VALUES(${t.key},${tour},${t.name},${t.location},${t.country},${t.category},${t.drawSize},${t.surface},${t.startDate},${t.status},${championId},${t.officialUrl}) RETURNING id`;
+      const inserted = await sql`INSERT INTO tournaments(wtsl_tournament_key,tour,name,location,country,category,draw_size,surface,start_date,status,champion_player_id,official_url,logo_url) VALUES(${t.key},${tour},${t.name},${t.location},${t.country},${t.category},${t.drawSize},${t.surface},${t.startDate},${t.status},${championId},${t.officialUrl},${logoUrl}) RETURNING id`;
       const cat = (await sql`SELECT id FROM categories WHERE slug='tournaments' LIMIT 1`)[0];
       const topic = await sql`INSERT INTO topics(category_id,title,slug,body,pinned) VALUES(${cat?.id ?? null},${`🏆 ${t.name} — Tournament Discussion`},${`tournament-${t.key}`},${`Official community discussion for ${t.name}.\n\n${t.location}, ${t.country} · ${t.category} · ${t.surface}\n\n**Status:** ${t.status}\n\n[View the official WTSL tournament page](${t.officialUrl})`},${t.status==='ongoing'}) RETURNING id`;
       await sql`UPDATE tournaments SET discussion_topic_id=${topic[0].id} WHERE id=${inserted[0].id}`;

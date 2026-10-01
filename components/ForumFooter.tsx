@@ -5,7 +5,7 @@ export function ForumFooter() {
     <footer className="site-footer">
       <div className="footer-inner">
         <div className="footer-brand">
-          <img src="/brand/wtsl-logo-200.png" alt="WTSL — World Tennis Simulation League" width={215} height={200} />
+          <img className="footer-logo" src="/brand/wtsl-logo-200.png" alt="WTSL — World Tennis Simulation League" width={215} height={200} />
           <p>The community home of the World Tennis Simulation League — where the people behind the tour talk matches, tournaments and stories.</p>
           <div className="footer-social">
             <a href="https://discord.com/invite/YkPAtGMUrj" target="_blank" rel="noreferrer" aria-label="WTSL Discord">
@@ -42,7 +42,7 @@ export function ForumFooter() {
         </div>
       </div>
       <div className="footer-base">
-        <span>© {new Date().getFullYear()} WTSL Community. WTSL and the WTSL logo belong to the World Tennis Simulation League.</span>
+        <span>© {new Date().getFullYear()} WTSL Forum. WTSL and the WTSL logo belong to the World Tennis Simulation League.</span>
         <span>Community-run companion site · Sign-in by Discord</span>
       </div>
     </footer>

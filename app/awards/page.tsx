@@ -25,7 +25,7 @@ export default async function Awards() {
 
   return (
     <>
-      <PageHero eyebrow="WTSL Community Awards" title="Awards">A hall of fame for the players, matches and people who made each WTSL season.</PageHero>
+      <PageHero eyebrow="WTSL Forum Awards" title="Awards">A hall of fame for the players, matches and people who made each WTSL season.</PageHero>
       <main className="container">
         <section style={{ marginBottom: 44 }}>
           <div className="section-heading"><h2>{cycle?.season ?? 'This season'}&apos;s awards</h2><span>{cycle?.voting_open ? 'Voting open' : 'Voting closed'}</span></div>

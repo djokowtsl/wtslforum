@@ -12,9 +12,9 @@ const siteUrl = process.env.NEXT_PUBLIC_SITE_URL || 'https://wtslforum.vercel.ap
 
 export const metadata: Metadata = {
   metadataBase: new URL(siteUrl),
-  title: { default: 'WTSL Community — World Tennis Simulation League', template: '%s · WTSL Community' },
+  title: { default: 'WTSL Forum — World Tennis Simulation League', template: '%s · WTSL Forum' },
   description: 'The community home of the World Tennis Simulation League: discussions, match talk, tournaments, players, articles and awards.',
-  openGraph: { siteName: 'WTSL Community', type: 'website' },
+  openGraph: { siteName: 'WTSL Forum', type: 'website' },
 };
 
 export const viewport: Viewport = { themeColor: '#030a18' };
