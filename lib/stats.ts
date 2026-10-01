@@ -38,7 +38,31 @@ export async function leaderboard(tour='TE4', metric='wins'){
         ELSE COALESCE(s.wins,0)
       END DESC NULLS LAST,
       p.name ASC
-    LIMIT 100
+  `;
+}
+
+// Every player for the tour, A-Z, with no limit — the Statistics page lists the full roster
+// (scrollable) rather than a top-N cut, which is reserved for the stat-ranked /leaderboard page.
+export async function allPlayerStats(tour='TE4'){
+  return sql`
+    SELECT p.*,
+      COALESCE(s.matches,0) matches,
+      COALESCE(s.wins,0) wins,
+      COALESCE(s.losses,0) losses,
+      COALESCE(s.aces,0) aces,
+      COALESCE(s.winners,0) winners,
+      COALESCE(s.break_points_won,0) break_points_won,
+      COALESCE(s.first_serve_pct,0) first_serve_pct,
+      CASE WHEN COALESCE(s.matches,0)>0
+        THEN ROUND(100.0*s.wins/s.matches,1)
+        ELSE 0
+      END win_pct
+    FROM wtsl_players p
+    LEFT JOIN player_stats_summary s
+      ON s.player_id=p.wtsl_player_id
+      AND s.tour=${tour}
+    WHERE p.tour=${tour}
+    ORDER BY p.name ASC
   `;
 }
 
@@ -74,7 +98,7 @@ export async function recentMatches(limit=20, tour='TE4'){
     FROM match_stats m
     LEFT JOIN wtsl_players p1 ON p1.wtsl_player_id=m.player_one_id AND p1.tour=m.tour
     LEFT JOIN wtsl_players p2 ON p2.wtsl_player_id=m.player_two_id AND p2.tour=m.tour
-    WHERE m.tour=${tour}
+    WHERE m.tour=${tour} AND m.played_at IS NOT NULL
     ORDER BY m.played_at DESC
     LIMIT ${limit}
   `;

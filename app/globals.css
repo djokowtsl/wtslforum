@@ -342,6 +342,8 @@ h1, h2, h3 { margin: 0; }
 .panel-head span { color: var(--muted); font-size: 12px; text-transform: uppercase; letter-spacing: 0.14em; }
 .panel h2 { font-size: 28px; }
 .panel table { width: 100%; border-collapse: collapse; margin-top: 12px; }
+.table-scroll { max-height: 640px; overflow-y: auto; }
+.table-scroll table thead th { position: sticky; top: 0; background: var(--panel); z-index: 1; }
 .panel th, .panel td { text-align: left; padding: 12px 8px; border-bottom: 1px solid var(--line); font-size: 13.5px; }
 .panel th { color: var(--muted); font-size: 11px; letter-spacing: 0.12em; text-transform: uppercase; }
 .player-line { display: flex; align-items: center; gap: 10px; }

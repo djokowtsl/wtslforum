@@ -137,7 +137,7 @@ CREATE TABLE IF NOT EXISTS player_stats_summary (
  PRIMARY KEY(player_id,tour)
 );
 CREATE TABLE IF NOT EXISTS match_stats (
- id BIGSERIAL PRIMARY KEY, source_id TEXT UNIQUE, tour TEXT NOT NULL DEFAULT 'TE4', tournament_key TEXT, round_name TEXT,
+ id BIGSERIAL PRIMARY KEY, source_id TEXT UNIQUE, tour TEXT NOT NULL DEFAULT 'TE4', tournament_key TEXT, tournament_name TEXT, round_name TEXT,
  player_one_id TEXT NOT NULL, player_two_id TEXT NOT NULL, score TEXT, winner_id TEXT, played_at TIMESTAMPTZ,
  stats JSONB NOT NULL DEFAULT '{}'::jsonb, source_message_id TEXT, created_at TIMESTAMPTZ NOT NULL DEFAULT now()
 );
@@ -246,6 +246,11 @@ DO $$ BEGIN
   ALTER TABLE player_stats_summary ALTER COLUMN aces TYPE NUMERIC(8,2);
   ALTER TABLE player_stats_summary ALTER COLUMN winners TYPE NUMERIC(8,2);
   ALTER TABLE player_stats_summary ALTER COLUMN break_points_won TYPE NUMERIC(6,2);
+  -- Recent-results matches recorded the tournament's raw ID, not a name, so "Recent matches"
+  -- had no human-readable tournament to show. Store the scraped tournament name directly
+  -- alongside each match instead of relying on a join against `tournaments` (whose keys are a
+  -- different generated format and don't match these raw IDs).
+  ALTER TABLE match_stats ADD COLUMN IF NOT EXISTS tournament_name TEXT;
 END $$;
 
 -- Identity verification: a member claims "I am this WTSL player" and an admin
