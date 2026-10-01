@@ -34,7 +34,7 @@ export default async function TournamentPage({ params }: { params: Promise<{ slu
         )}
         <div className="hero-actions">
           {topic && <Link className="btn btn-primary" href={`/discussions/${topic.id}`}>💬 Tournament discussion</Link>}
-          <a className="btn" href={t.official_url} target="_blank" rel="noreferrer">Official WTSL page ↗</a>
+          <a className="btn" href={t.official_url} target="_blank" rel="noreferrer">WTSL page ↗</a>
         </div>
       </div>
       {mine.length > 0 && (

@@ -447,9 +447,20 @@ h1, h2, h3 { margin: 0; }
 .award-card .num { position: absolute; right: 18px; top: 6px; font-family: var(--font-display); font-style: italic; font-weight: 800; font-size: 78px; line-height: 1; color: rgba(176, 244, 59, 0.09); }
 .award-card h3 { font-size: 30px; line-height: 1; margin-bottom: 10px; position: relative; }
 .award-card p { color: var(--muted); font-size: 14.5px; line-height: 1.7; margin: 0 0 16px; position: relative; }
-.award-winner { display: flex; justify-content: space-between; align-items: baseline; gap: 12px; padding: 12px 0; border-top: 1px solid var(--line); position: relative; }
-.award-winner b { font-size: 16px; }
+.award-winner { display: flex; align-items: center; gap: 10px; padding: 12px 0; border-top: 1px solid var(--line); position: relative; }
+.award-winner img, .award-winner .ph { width: 32px; height: 32px; border-radius: 50%; object-fit: cover; border: 1px solid var(--line-2); background: var(--panel-2); flex: none; }
+.award-winner .ph { display: grid; place-items: center; font-size: 13px; font-weight: 700; color: var(--lime); }
+.award-winner b { font-size: 16px; flex: 1; }
 .award-winner span { color: var(--muted); font-size: 12.5px; }
+.award-match { padding-top: 12px; border-top: 1px solid var(--line); position: relative; }
+.award-match-players { display: flex; align-items: center; justify-content: space-between; gap: 12px; }
+.award-match-player { display: flex; flex-direction: column; align-items: center; gap: 6px; flex: 1; min-width: 0; text-align: center; }
+.award-match-player img, .award-match-player .ph { width: 40px; height: 40px; border-radius: 50%; object-fit: cover; border: 1px solid var(--line-2); background: var(--panel-2); }
+.award-match-player .ph { display: grid; place-items: center; font-size: 15px; font-weight: 700; color: var(--lime); }
+.award-match-player .nm { font-weight: 600; font-size: 13.5px; max-width: 100%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.award-match-score { font-family: var(--font-display); font-weight: 800; font-style: italic; font-size: 14px; color: var(--lime); flex: none; padding: 0 8px; }
+.award-match-link { display: block; margin-top: 12px; padding-top: 12px; border-top: 1px solid var(--line); font-size: 12.5px; font-weight: 700; color: var(--cyan); text-align: center; }
+.award-match-link:hover { color: var(--lime); }
 
 /* ---------- About / prose ---------- */
 .prose { color: var(--soft); font-size: 16.5px; line-height: 1.85; }

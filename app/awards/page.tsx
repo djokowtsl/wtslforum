@@ -6,9 +6,36 @@ import { getActiveCycle, getCategories, getNomineesForCategories, getUserVotes }
 import PageHero from '@/components/PageHero';
 import AwardVoteForm from '@/components/AwardVoteForm';
 import YearTabs from '@/components/YearTabs';
+import { initial } from '@/lib/format';
 
 export const dynamic = 'force-dynamic';
 export const metadata: Metadata = { title: 'Awards' };
+
+/** Per-category emoji shown instead of the old generic star decoration. */
+const CATEGORY_EMOJI: Record<string, string> = {
+  'Player of the Year': '👑',
+  'Fans Favourite Award': '❤️',
+  'Stefan Edberg Sportsmanship Award': '🤝',
+  'Most Improved Player': '📈',
+  'Newcomer of the Year': '🌱',
+  'Arthur Ashe Humanitarian Award': '🕊️',
+  'Farmer of the Year': '🌾',
+  'Comedian/Troll of the Year': '🤡',
+  'Trickiest Player': '🎩',
+  'Best Dressed Player': '👔',
+  'Coach of the Year': '🧠',
+  'Upset of the Year': '⚡',
+  'Match of the Year': '🎾',
+  'Worst Scheduler': '🗓️',
+  'Tournament of the Year': '🏆',
+};
+
+function Face({ src, name }: { src?: string | null; name?: string | null }) {
+  return src ? <img src={src} alt="" /> : <div className="ph">{initial(name)}</div>;
+}
+
+/** Match of the Year / Upset of the Year are a two-player matchup, not a single winner. */
+const MATCH_CATEGORIES = new Set(['Match of the Year', 'Upset of the Year']);
 
 export default async function Awards({ searchParams }: { searchParams: Promise<{ season?: string }> }) {
   const { season: seasonParam } = await searchParams;
@@ -58,11 +85,30 @@ export default async function Awards({ searchParams }: { searchParams: Promise<{
                 <div className="award-grid">
                   {awards.filter((a: any) => a.season === s).map((a: any) => (
                     <div className="award-card" key={a.id}>
-                      <span className="num">★</span>
+                      <span className="num">{CATEGORY_EMOJI[a.category] ?? '★'}</span>
                       <h3>{a.category}</h3>
                       {a.note && <p>{a.note}</p>}
-                      <div className="award-winner"><b>{a.winner}</b><span>Winner</span></div>
-                      {a.runner_up && <div className="award-winner"><b>{a.runner_up}</b><span>Runner-up</span></div>}
+                      {MATCH_CATEGORIES.has(a.category) ? (
+                        <div className="award-match">
+                          <div className="award-match-players">
+                            <div className="award-match-player">
+                              <Face src={a.winner_avatar} name={a.winner} />
+                              <span className="nm">{a.winner}</span>
+                            </div>
+                            <span className="award-match-score">{a.score ?? 'def'}</span>
+                            <div className="award-match-player">
+                              <Face src={a.player_two_avatar} name={a.player_two} />
+                              <span className="nm">{a.player_two}</span>
+                            </div>
+                          </div>
+                          {a.link_url && <a className="award-match-link" href={a.link_url} target="_blank" rel="noreferrer">Watch the match ↗</a>}
+                        </div>
+                      ) : (
+                        <>
+                          <div className="award-winner"><Face src={a.winner_avatar} name={a.winner} /><b>{a.winner}</b></div>
+                          {a.runner_up && <div className="award-winner"><Face src={a.runner_up_avatar} name={a.runner_up} /><b>{a.runner_up}</b><span>Runner-up</span></div>}
+                        </>
+                      )}
                     </div>
                   ))}
                 </div>

@@ -65,7 +65,7 @@ export async function syncTournaments(tour: TourCode = DEFAULT_TOUR, opts: { yea
       // for every historical event — only the live sync (current season) creates one.
       if (createDiscussion) {
         const cat = (await sql`SELECT id FROM categories WHERE slug='tournaments' LIMIT 1`)[0];
-        const topic = await sql`INSERT INTO topics(category_id,title,slug,body,pinned) VALUES(${cat?.id ?? null},${`🏆 ${t.name} — Tournament Discussion`},${`tournament-${t.key}`},${`Official community discussion for ${t.name}.\n\n${t.location}, ${t.country} · ${t.category} · ${t.surface}\n\n**Status:** ${t.status}\n\n[View the official WTSL tournament page](${t.officialUrl})`},${t.status==='ongoing'}) RETURNING id`;
+        const topic = await sql`INSERT INTO topics(category_id,title,slug,body,pinned) VALUES(${cat?.id ?? null},${`🏆 ${t.name} — Tournament Discussion`},${`tournament-${t.key}`},${`Community discussion for ${t.name}.\n\n${t.location}, ${t.country} · ${t.category} · ${t.surface}\n\n**Status:** ${t.status}\n\n[View the WTSL tournament page](${t.officialUrl})`},${t.status==='ongoing'}) RETURNING id`;
         await sql`UPDATE tournaments SET discussion_topic_id=${topic[0].id} WHERE id=${inserted[0].id}`;
       }
       created++;

@@ -37,7 +37,7 @@ export function ForumFooter() {
         </div>
         <div className="footer-col">
           <h4>WTSL</h4>
-          <a href="https://www.playwtsl.com/TE4" target="_blank" rel="noreferrer">Official WTSL site ↗</a>
+          <a href="https://www.playwtsl.com/TE4" target="_blank" rel="noreferrer">WTSL site ↗</a>
           <Link href="/about">About</Link>
           <Link href="/rules">Community rules</Link>
         </div>

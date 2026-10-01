@@ -42,7 +42,7 @@ export default async function Profile() {
         <div className="sidebar-card" style={{ padding: 28, marginTop: 20 }}>
           <h3 className="display" style={{ fontSize: 22 }}>WTSL player verification</h3>
           <p>
-            Link this Discord account to your official WTSL player profile, one tour at a time — verify
+            Link this Discord account to your WTSL player profile, one tour at a time — verify
             every tour you play (ATP, WTA, Doubles, Coop, Created) independently. An admin must approve
             each claim before it appears anywhere publicly.
           </p>
@@ -74,7 +74,7 @@ export default async function Profile() {
         <div className="sidebar-card" style={{ padding: 28, marginTop: 20 }}>
           <h3 className="display" style={{ fontSize: 22 }}>Challonge verification</h3>
           <p>
-            Link your Challonge username so the predictions leaderboard shows your official WTSL
+            Link your Challonge username so the predictions leaderboard shows your WTSL
             identity instead of a raw Challonge handle. An admin must approve this too.
           </p>
           {challongeClaim?.status === 'approved' ? (

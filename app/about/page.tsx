@@ -10,7 +10,7 @@ export default function About() {
       <PageHero eyebrow="About" title="The WTSL Forum">A clubhouse for the people behind the World Tennis Simulation League.</PageHero>
       <main className="container narrow">
         <div className="prose">
-          <p>The World Tennis Simulation League runs its tour, rankings and results on the official WTSL site. This community site sits alongside it — a place to talk about what happens on the tour, keep the stories and history of the league, and bring players and fans together in one spot.</p>
+          <p>The World Tennis Simulation League runs its tour, rankings and results on the WTSL site. This community site sits alongside it — a place to talk about what happens on the tour, keep the stories and history of the league, and bring players and fans together in one spot.</p>
           <div className="feature-grid">
             <div className="feature"><b>Discuss</b><span>Match talk, tournament threads, TE4 gameplay and league history, sorted into boards.</span></div>
             <div className="feature"><b>Follow</b><span>Tournaments, players, Tour Elo, results and fixtures, read from WTSL data rather than retyped by hand.</span></div>
@@ -29,7 +29,7 @@ export default function About() {
             <div className="feature">
               <b>2. Verify your player profile</b>
               <span>
-                If you compete on WTSL, link your Discord account to your official player profile from your{' '}
+                If you compete on WTSL, link your Discord account to your player profile from your{' '}
                 <Link href="/profile">profile page</Link>. Just search for your name, pick yourself from the results,
                 and an admin will review it.
               </span>
@@ -40,8 +40,8 @@ export default function About() {
             </div>
           </div>
 
-          <h2>Official, but independent</h2>
-          <p>This is a community-run companion site. The official WTSL site remains the home of the tour, draws and rankings — <a href="https://www.playwtsl.com/TE4" target="_blank" rel="noreferrer">visit it here</a>. WTSL and the WTSL logo belong to the World Tennis Simulation League.</p>
+          <h2>Independent, not official</h2>
+          <p>This is a community-run companion site. The WTSL site remains the home of the tour, draws and rankings — <a href="https://www.playwtsl.com/TE4" target="_blank" rel="noreferrer">visit it here</a>. WTSL and the WTSL logo belong to the World Tennis Simulation League.</p>
 
           <h2>Get involved</h2>
           <p>Log in with Discord, introduce yourself in a board, and read the <Link href="/rules">community rules</Link>. Want to write for the Articles section? Ask an admin on Discord.</p>

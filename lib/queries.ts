@@ -47,8 +47,18 @@ export async function getArticles(publishedOnly = true, limit = 60) {
     : sql`SELECT a.*,u.display_name author FROM articles a LEFT JOIN users u ON u.id=a.author_id ORDER BY a.created_at DESC LIMIT ${limit}`;
 }
 
+/** Winner/runner-up/player_two are plain text, so these correlated lookups match them against
+ * wtsl_players.name to show the same WTSL avatar used everywhere else on the site, instead of a
+ * separate "awards identity". Falls back to no avatar (initials placeholder) if no match. */
 export async function getAwards() {
-  return sql`SELECT * FROM awards ORDER BY season DESC, position ASC, id ASC`;
+  return sql`
+    SELECT a.*,
+      w.avatar_url winner_avatar, ru.avatar_url runner_up_avatar, p2.avatar_url player_two_avatar
+    FROM awards a
+    LEFT JOIN LATERAL (SELECT avatar_url FROM wtsl_players WHERE name = a.winner ORDER BY (tour='TE4') DESC, synced_at DESC LIMIT 1) w ON true
+    LEFT JOIN LATERAL (SELECT avatar_url FROM wtsl_players WHERE name = a.runner_up ORDER BY (tour='TE4') DESC, synced_at DESC LIMIT 1) ru ON true
+    LEFT JOIN LATERAL (SELECT avatar_url FROM wtsl_players WHERE name = a.player_two ORDER BY (tour='TE4') DESC, synced_at DESC LIMIT 1) p2 ON true
+    ORDER BY a.season DESC, a.position ASC, a.id ASC`;
 }
 
 /** Forum activity counts for one user's personal dashboard. */
