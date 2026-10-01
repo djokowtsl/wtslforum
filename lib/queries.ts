@@ -50,3 +50,24 @@ export async function getArticles(publishedOnly = true, limit = 60) {
 export async function getAwards() {
   return sql`SELECT * FROM awards ORDER BY season DESC, position ASC, id ASC`;
 }
+
+/** Forum activity counts for one user's personal dashboard. */
+export async function getContributionStats(userId: string) {
+  const [topics, replies, articles] = await Promise.all([
+    sql`SELECT COUNT(*)::int c FROM topics WHERE author_id=${userId}`,
+    sql`SELECT COUNT(*)::int c FROM replies WHERE author_id=${userId}`,
+    sql`SELECT COUNT(*)::int c FROM articles WHERE author_id=${userId}`,
+  ]);
+  return { topics: topics[0]?.c ?? 0, replies: replies[0]?.c ?? 0, articles: articles[0]?.c ?? 0 };
+}
+
+/** A user's most recently authored topics/replies, newest first, for a dashboard activity feed. */
+export async function getRecentActivity(userId: string, limit = 6) {
+  return sql`
+    (SELECT 'topic' AS kind, t.id, t.title AS title, t.slug, t.created_at FROM topics t WHERE t.author_id=${userId})
+    UNION ALL
+    (SELECT 'reply' AS kind, r.topic_id AS id, tp.title AS title, tp.slug, r.created_at FROM replies r JOIN topics tp ON tp.id=r.topic_id WHERE r.author_id=${userId})
+    ORDER BY created_at DESC
+    LIMIT ${limit}
+  `;
+}
