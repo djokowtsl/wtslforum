@@ -13,7 +13,7 @@ export const metadata: Metadata = { title: 'Awards' };
 
 /** Per-category emoji shown instead of the old generic star decoration. */
 const CATEGORY_EMOJI: Record<string, string> = {
-  'Player of the Year': '👑',
+  'Player of the Year (Year-End No. 1)': '👑',
   'Fans Favourite Award': '❤️',
   'Stefan Edberg Sportsmanship Award': '🤝',
   'Most Improved Player': '📈',
@@ -95,12 +95,13 @@ export default async function Awards({ searchParams }: { searchParams: Promise<{
                               <Face src={a.winner_avatar} name={a.winner} />
                               <span className="nm">{a.winner}</span>
                             </div>
-                            <span className="award-match-score">{a.score ?? 'def'}</span>
+                            <span className="award-match-vs">def</span>
                             <div className="award-match-player">
                               <Face src={a.player_two_avatar} name={a.player_two} />
                               <span className="nm">{a.player_two}</span>
                             </div>
                           </div>
+                          {a.score && <div className="match-score" style={{ textAlign: 'center' }}>{a.score}</div>}
                           {a.link_url && <a className="award-match-link" href={a.link_url} target="_blank" rel="noreferrer">Watch the match ↗</a>}
                         </div>
                       ) : (

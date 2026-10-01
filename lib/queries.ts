@@ -50,15 +50,40 @@ export async function getArticles(publishedOnly = true, limit = 60) {
 /** Winner/runner-up/player_two are plain text, so these correlated lookups match them against
  * wtsl_players.name to show the same WTSL avatar used everywhere else on the site, instead of a
  * separate "awards identity". Falls back to no avatar (initials placeholder) if no match. */
+/** Strips Discord emoji and an "aka <nickname>" suffix so a stored award name (plain text) can be
+ * matched against the live WTSL rankings name for that player (which keeps its emoji/nickname
+ * suffix as scraped, e.g. "Dani21 🛩 aka Halapeno"). */
+const EMOJI_RE = /[\u{1F000}-\u{1FFFF}\u{2190}-\u{2BFF}\u{2600}-\u{27BF}\uFE0F\u200D]/gu;
+function normalizePlayerName(name?: string | null) {
+  if (!name) return '';
+  return name.replace(/\s+aka\s+.*$/i, '').replace(EMOJI_RE, '').replace(/\s+/g, ' ').trim().toLowerCase();
+}
+
+/** Awards (hall of fame). Player avatars are matched in JS against the live rankings since award
+ * winners are stored as plain names while rankings names keep their emoji/nickname suffix.
+ * "Tournament of the Year" names a tournament, not a player, so its avatar comes from
+ * `tournaments.logo_url` instead. */
 export async function getAwards() {
-  return sql`
-    SELECT a.*,
-      w.avatar_url winner_avatar, ru.avatar_url runner_up_avatar, p2.avatar_url player_two_avatar
-    FROM awards a
-    LEFT JOIN LATERAL (SELECT avatar_url FROM wtsl_players WHERE name = a.winner ORDER BY (tour='TE4') DESC, synced_at DESC LIMIT 1) w ON true
-    LEFT JOIN LATERAL (SELECT avatar_url FROM wtsl_players WHERE name = a.runner_up ORDER BY (tour='TE4') DESC, synced_at DESC LIMIT 1) ru ON true
-    LEFT JOIN LATERAL (SELECT avatar_url FROM wtsl_players WHERE name = a.player_two ORDER BY (tour='TE4') DESC, synced_at DESC LIMIT 1) p2 ON true
-    ORDER BY a.season DESC, a.position ASC, a.id ASC`;
+  const [awards, players, tournamentsWithLogo] = await Promise.all([
+    sql`SELECT * FROM awards ORDER BY season DESC, position ASC, id ASC`,
+    sql`SELECT name, avatar_url FROM wtsl_players ORDER BY (tour='TE4') DESC, synced_at DESC`,
+    sql`SELECT name, logo_url FROM tournaments WHERE logo_url IS NOT NULL ORDER BY last_synced_at DESC`,
+  ]);
+  const playerAvatar = new Map<string, string>();
+  for (const p of players as any[]) {
+    const key = normalizePlayerName(p.name);
+    if (key && !playerAvatar.has(key)) playerAvatar.set(key, p.avatar_url);
+  }
+  const tourneyLogo = new Map<string, string>();
+  for (const t of tournamentsWithLogo as any[]) {
+    const key = (t.name || '').trim().toLowerCase();
+    if (key && !tourneyLogo.has(key)) tourneyLogo.set(key, t.logo_url);
+  }
+  return (awards as any[]).map((a) => {
+    const avatarFor = (n?: string | null) =>
+      a.category === 'Tournament of the Year' ? tourneyLogo.get((n || '').trim().toLowerCase()) : playerAvatar.get(normalizePlayerName(n));
+    return { ...a, winner_avatar: avatarFor(a.winner), runner_up_avatar: avatarFor(a.runner_up), player_two_avatar: avatarFor(a.player_two) };
+  });
 }
 
 /** Forum activity counts for one user's personal dashboard. */
