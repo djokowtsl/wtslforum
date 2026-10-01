@@ -52,7 +52,7 @@ export default async function Home({ searchParams }: { searchParams: Promise<{ e
         <div className="hero-inner">
           <div>
             <div className="eyebrow">World Tennis Simulation League</div>
-            <h1 className="display">WTSL<br /><em>Community</em></h1>
+            <h1 className="display">WTSL<br /><em>Forum</em></h1>
             <p className="tagline">The place for the people behind the tour.</p>
             <p className="lede">Talk matches, follow the tournaments, dig into the players and read the stories that make WTSL what it is — all in one clubhouse.</p>
             <div className="hero-actions">

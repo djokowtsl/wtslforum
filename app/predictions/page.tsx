@@ -56,7 +56,7 @@ export default async function Predictions() {
                   return (
                     <tr key={r.challonge_user_id}>
                       <td>{MEDALS[i] || i + 1}</td>
-                      <td>{predictorName(r)}{r.discord_user_id ? <small> · Discord-linked</small> : null}</td>
+                      <td>{predictorName(r)}</td>
                       <td><b>{r.total_score}</b></td>
                       <td>{correct}/{possible}{possible > 0 ? ` (${pct}%)` : ''}</td>
                       <td>{r.tournaments}</td>
