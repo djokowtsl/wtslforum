@@ -1,31 +1,113 @@
 import type { Metadata } from 'next';
 import { safe } from '@/lib/db';
-import { openFixtures } from '@/lib/betting';
+import { openFixtures, getBalance, getBets, poolOdds, hybridOdds } from '@/lib/betting';
 import { wtslCore } from '@/lib/wtsl-core';
+import { getSession } from '@/lib/auth';
 import PageHero from '@/components/PageHero';
 
 export const dynamic = 'force-dynamic';
 export const metadata: Metadata = { title: 'Betting fixtures' };
 
+const DISCORD_URL = 'https://discord.com/invite/YkPAtGMUrj';
+
+function money(v: unknown) {
+  const n = Number(v);
+  return Number.isFinite(n) ? n.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 }) : '0.00';
+}
+
+/** Returns the WTSL (official), house-adjusted live, and guaranteed-minimum odds for one side of a fixture. */
+function sideOdds(f: any, side: 'one' | 'two') {
+  const official = Number(side === 'one' ? f.odds_one : f.odds_two) || 0;
+  const total = Number(f.pool_total) || 0;
+  const selected = Number(side === 'one' ? f.pool_one : f.pool_two) || 0;
+  let live: number | null = null;
+  try {
+    if (total > 0 && selected > 0) live = poolOdds(total, selected);
+  } catch { /* pool not active yet */ }
+  let guaranteed = official;
+  try {
+    if (official > 0) guaranteed = hybridOdds(official, live);
+  } catch { /* official odds missing */ }
+  return { official, live: live ?? official, guaranteed };
+}
+
 export default async function Betting() {
-  const fx = await safe(() => openFixtures(), [] as any[]);
+  const user = await getSession();
+  const [fx, account, bets] = await Promise.all([
+    safe(() => openFixtures(), [] as any[]),
+    user ? safe(() => getBalance(user.discordId), null as any) : Promise.resolve(null),
+    user ? safe(() => getBets(user.discordId), [] as any[]) : Promise.resolve([] as any[]),
+  ]);
   const fixtures = Array.isArray(fx) ? fx : [];
+  const betList = Array.isArray(bets) ? bets : [];
+
   return (
     <>
-      <PageHero eyebrow="WTSL Forum" title="Betting fixtures">Virtual WTSL Dollars only. Follow fixtures, odds and community selections.</PageHero>
+      <PageHero eyebrow="WTSL Forum" title="Betting board">Follow live odds across the tour. Betting itself still happens in Discord — use the button to jump straight there.</PageHero>
       <main className="container">
-        <div className="notice" style={{ marginBottom: 22 }}>Placing bets on the site is temporarily disabled, keep betting in Discord for now.{!wtslCore.configured() && ' (The WTSL Core API is not configured on this deployment.)'}</div>
+        {!wtslCore.configured() && <div className="notice warn" style={{ marginBottom: 22 }}>The WTSL Core API is not configured on this deployment, so odds and account data can&apos;t load right now.</div>}
+
+        {user && (
+          <div className="kpi-grid">
+            <div><span>My W$ balance</span><b>{account ? `W$${money(account.balance)}` : '—'}</b></div>
+            <div><span>Total staked</span><b>{account ? `W$${money(account.total_staked)}` : '—'}</b></div>
+            <div><span>Total returned</span><b>{account ? `W$${money(account.total_returned)}` : '—'}</b></div>
+            <div><span>Net profit</span><b>{account ? `W$${money(account.total_profit)}` : '—'}</b></div>
+          </div>
+        )}
+
+        <div className="section-head">
+          <div>
+            <h2 className="display">Open fixtures</h2>
+            <p>WTSL odds, house-adjusted live odds and the guaranteed minimum you&apos;d lock in right now.</p>
+          </div>
+          <a className="btn btn-discord btn-sm" href={DISCORD_URL} target="_blank" rel="noreferrer">Place bets in Discord ↗</a>
+        </div>
         {fixtures.length === 0 ? <div className="forum-list"><div className="empty"><strong>No open fixtures</strong>New fixtures appear when the next round opens.</div></div> : (
           <div className="fixture-grid">
-            {fixtures.map((f: any) => (
-              <article className="fixture-card" key={f.key}>
-                <div className="fixture-top"><span>{f.tournament || 'WTSL'} · {(f.tour || 'TE4').toUpperCase()}</span><b>{String(f.status || 'open').toUpperCase()}</b></div>
-                <h2>{f.first_name} <small>vs</small> {f.second_name}</h2>
-                <div className="odds"><span>{f.first_name}<strong>{Number(f.odds_one).toFixed(2)}</strong></span><span>{f.second_name}<strong>{Number(f.odds_two).toFixed(2)}</strong></span></div>
-                <div className="topic-meta">Fixture {f.key}</div>
-              </article>
-            ))}
+            {fixtures.map((f: any) => {
+              const one = sideOdds(f, 'one');
+              const two = sideOdds(f, 'two');
+              return (
+                <article className="fixture-card" key={f.key}>
+                  <div className="fixture-top"><span>{f.tournament || 'WTSL'} · {(f.tour || 'TE4').toUpperCase()}</span><b>{String(f.status || 'open').toUpperCase()}</b></div>
+                  <h2>{f.first_name} <small>vs</small> {f.second_name}</h2>
+                  <div className="odds-compare">
+                    <div className="odds-head"><span /><span>WTSL</span><span>Live</span><span>Min</span></div>
+                    <div className="odds-side"><b>{f.first_name}</b><span>{one.official.toFixed(2)}</span><span>{one.live.toFixed(2)}</span><span>{one.guaranteed.toFixed(2)}</span></div>
+                    <div className="odds-side"><b>{f.second_name}</b><span>{two.official.toFixed(2)}</span><span>{two.live.toFixed(2)}</span><span>{two.guaranteed.toFixed(2)}</span></div>
+                  </div>
+                </article>
+              );
+            })}
           </div>
+        )}
+
+        {user && (
+          <>
+            <div className="section-head section-space">
+              <div>
+                <h2 className="display">My bet ledger</h2>
+                <p>Your recent bets placed in Discord.</p>
+              </div>
+            </div>
+            {betList.length === 0 ? <div className="forum-list"><div className="empty"><strong>No bets yet</strong>Place a bet in Discord and it&apos;ll show up here.</div></div> : (
+              <div className="forum-list">
+                {betList.slice(0, 20).map((b: any, i: number) => (
+                  <div className="bet-row" key={b.bet_id ?? i}>
+                    <div>
+                      <strong>{b.selection_name || b.selection_id}</strong>
+                      <div className="topic-meta">{b.fixture_key}{b.placed_at ? ` · ${new Date(b.placed_at).toLocaleDateString()}` : ''}</div>
+                    </div>
+                    <div className="topic-meta">
+                      Stake W${money(b.stake)} @ {Number(b.odds).toFixed(2)}
+                      <span className="pill cyan">{String(b.status || 'open').toUpperCase()}</span>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            )}
+          </>
         )}
       </main>
     </>
