@@ -191,3 +191,11 @@ BEGIN
     (cyc_id,'Match of the Year','match-of-the-year',12)
   ON CONFLICT (cycle_id,slug) DO NOTHING;
 END $$;
+
+-- Media/clips: members submit a link (YouTube/Twitch/Streamable/Discord) or upload a file to Vercel Blob.
+CREATE TABLE IF NOT EXISTS media_clips (
+  id BIGSERIAL PRIMARY KEY, submitted_by BIGINT REFERENCES users(id) ON DELETE SET NULL,
+  title TEXT NOT NULL, description TEXT NOT NULL DEFAULT '', url TEXT NOT NULL, tour TEXT,
+  created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+CREATE INDEX IF NOT EXISTS media_clips_created_idx ON media_clips(created_at DESC);
