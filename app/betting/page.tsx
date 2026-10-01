@@ -90,7 +90,7 @@ export default async function Betting() {
                 <article className="fixture-card" key={f.key}>
                   <div className="fixture-top"><span>{f.tournament || 'WTSL'} · {(f.tour || 'TE4').toUpperCase()}</span><b>{String(f.status || 'open').toUpperCase()}</b></div>
                   <h2>{f.first_id && f.tour ? <Link href={`/players/${f.first_id}?tour=${encodeURIComponent(f.tour)}`}>{f.first_name}</Link> : f.first_name} <small>vs</small> {f.second_id && f.tour ? <Link href={`/players/${f.second_id}?tour=${encodeURIComponent(f.tour)}`}>{f.second_name}</Link> : f.second_name}</h2>
-                  <div className="topic-meta">{f.scheduled_at ? `Scheduled: ${fmtDateTime(f.scheduled_at)}` : f.round_deadline ? `Deadline: ${fmtDateTime(f.round_deadline)}` : 'Not yet scheduled'}</div>
+                  <div className="topic-meta">{f.round_deadline ? `Deadline: ${fmtDateTime(f.round_deadline)}` : 'No deadline set'}</div>
                   <div className="odds-compare">
                     <div className="odds-head"><span /><span>WTSL</span><span>Live</span><span>Min</span></div>
                     <div className="odds-side"><b>{f.first_id && f.tour ? <Link href={`/players/${f.first_id}?tour=${encodeURIComponent(f.tour)}`}>{f.first_name}</Link> : f.first_name}</b><span>{one.official.toFixed(2)}</span><span>{one.live.toFixed(2)}</span><span>{one.guaranteed.toFixed(2)}</span></div>

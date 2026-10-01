@@ -63,9 +63,9 @@ export function FixtureCard({ f }: { f: any }) {
         <span className="nm"><PlayerLink id={f.second_id} tour={f.tour} name={f.second_name} /></span>
         <span className="val">{Number(f.odds_two).toFixed(2)}</span>
       </div>
-      {(f.scheduled_at || f.round_deadline) && (
+      {f.round_deadline && (
         <div className="match-score">
-          {f.scheduled_at ? `Scheduled: ${new Date(f.scheduled_at).toLocaleString('en-GB', { day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit' })}` : `Deadline: ${new Date(f.round_deadline).toLocaleString('en-GB', { day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit' })}`}
+          {`Deadline: ${new Date(f.round_deadline).toLocaleString('en-GB', { day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit' })}`}
         </div>
       )}
       <DiscussLink params={{ key: `fixture-${f.key}`, p1: f.first_name, p2: f.second_name, tournament: f.tournament }} />
