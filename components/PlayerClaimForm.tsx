@@ -77,7 +77,11 @@ export default function PlayerClaimForm({ tour }: { tour: TourCode }) {
 
   async function submit(e: React.FormEvent) {
     e.preventDefault();
-    if (!selected) return;
+    if (!selected) {
+      setState('error');
+      setMessage('Pick your name from the dropdown list first.');
+      return;
+    }
     setState('sending');
     setMessage('');
     try {
@@ -106,9 +110,9 @@ export default function PlayerClaimForm({ tour }: { tour: TourCode }) {
     <form onSubmit={submit} className="compose">
       <label>Find yourself in {tourLabel(tour)}
         {selected ? (
-          <div className="player-line" style={{ marginTop: '.4rem' }}>
+          <div className="player-line claim-selected-box" style={{ marginTop: '.4rem' }}>
             {selected.avatar_url && <img src={selected.avatar_url} alt="" />}
-            <span>{selected.name}</span>
+            <span>✓ {selected.name}</span>
             <button type="button" className="btn btn-sm btn-ghost" onClick={() => { setSelected(null); setQuery(''); }}>Change</button>
           </div>
         ) : (
@@ -152,7 +156,7 @@ export default function PlayerClaimForm({ tour }: { tour: TourCode }) {
         <textarea value={note} onChange={(e) => setNote(e.target.value)} rows={2} placeholder="Anything that helps us confirm it's you" />
       </label>
       {message && state === 'error' && <p className="notice" style={{ color: '#ff6b6b' }}>{message}</p>}
-      <button className="btn btn-sm" disabled={state === 'sending' || !selected}>{state === 'sending' ? 'Submitting…' : 'Submit for verification'}</button>
+      <button className="btn btn-sm" disabled={state === 'sending'}>{state === 'sending' ? 'Submitting…' : 'Submit for verification'}</button>
     </form>
   );
 }

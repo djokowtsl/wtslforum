@@ -294,6 +294,10 @@ h1, h2, h3 { margin: 0; }
 .claim-search-row:hover, .claim-search-row.active { background: rgba(176, 244, 59, 0.08); }
 .claim-search-row img { width: 26px; height: 26px; border-radius: 50%; object-fit: cover; }
 .claim-search-hint { padding: 10px 13px; font-size: 13px; color: var(--muted); }
+/* Shown after picking a player in PlayerClaimForm — styled like a filled-in input so it
+   reads as "your pick is saved here", not as the search box having vanished. */
+.claim-selected-box { background: var(--bg-2); border: 1px solid var(--lime); border-radius: 10px; padding: 11px 14px; }
+.claim-selected-box span { flex: 1; font-weight: 700; color: var(--lime); }
 .verify-tour-row { border-top: 1px solid var(--line-2); padding: 18px 0; }
 .verify-tour-row:first-of-type { border-top: none; padding-top: 14px; }
 
