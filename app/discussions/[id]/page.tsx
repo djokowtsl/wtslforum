@@ -2,11 +2,13 @@ import Link from 'next/link';
 import { notFound } from 'next/navigation';
 import type { Metadata } from 'next';
 import { safe } from '@/lib/db';
-import { getTopic } from '@/lib/queries';
+import { getTopic, getThreadReactions } from '@/lib/queries';
+import { resolveMentions } from '@/lib/messages';
 import { getSession, discordAvatar } from '@/lib/auth';
 import { fmtDateTime } from '@/lib/format';
 import ReplyForm from '@/components/ReplyForm';
 import RichText from '@/components/RichText';
+import ReactionBar from '@/components/ReactionBar';
 import { StatusDot } from '@/components/StatusDot';
 import AdminTopicControls from '@/components/AdminTopicControls';
 
@@ -19,6 +21,10 @@ export default async function Thread({ params }: { params: Promise<{ id: string 
   if (!data) notFound();
   const { topic, replies } = data;
   const u = await getSession();
+  const replyIds = replies.map((r: any) => Number(r.id));
+  const reactions = await safe(() => getThreadReactions(Number(topic.id), replyIds, u?.id ?? null), { topic: [], replies: {} as Record<number, any> });
+  const allUsernames = [topic.body, ...replies.map((r: any) => r.body)].flatMap((b: string) => [...(b || '').matchAll(/@(\w+)/g)].map((m) => m[1]));
+  const mentionables = await safe(() => resolveMentions(allUsernames), {});
 
   return (
     <main className="container thread">
@@ -43,7 +49,7 @@ export default async function Thread({ params }: { params: Promise<{ id: string 
             <Link href={`/messages/${topic.author_id}`} className="pill">Message</Link>
           )}
         </div>
-        <div className="post-content"><div className="post-date">{fmtDateTime(topic.created_at)}</div><RichText text={topic.body} /></div>
+        <div className="post-content"><div className="post-date">{fmtDateTime(topic.created_at)}</div><RichText text={topic.body} mentionables={mentionables} /><ReactionBar topicId={Number(topic.id)} initial={reactions.topic} signedIn={!!u} /></div>
       </article>
 
       {replies.map((r: any) => (
@@ -56,7 +62,7 @@ export default async function Thread({ params }: { params: Promise<{ id: string 
               <Link href={`/messages/${r.author_id}`} className="pill">Message</Link>
             )}
           </div>
-          <div className="post-content"><div className="post-date">{fmtDateTime(r.created_at)}</div><RichText text={r.body} /></div>
+          <div className="post-content"><div className="post-date">{fmtDateTime(r.created_at)}</div><RichText text={r.body} mentionables={mentionables} /><ReactionBar replyId={Number(r.id)} initial={reactions.replies[Number(r.id)] || []} signedIn={!!u} /></div>
         </article>
       ))}
 

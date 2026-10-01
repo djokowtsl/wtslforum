@@ -4,8 +4,8 @@ import path from 'node:path';
 import { dbConfigured, safe, sql } from '@/lib/db';
 import { getTopics, getArticles, getCategoriesWithCounts } from '@/lib/queries';
 import { getTournaments } from '@/lib/tournaments';
-import { recentMatches } from '@/lib/stats';
-import { openFixtures } from '@/lib/betting';
+import { recentMatches, recentlyCompletedPairs } from '@/lib/stats';
+import { openFixtures, excludeStaleFixtures } from '@/lib/betting';
 import { getSession } from '@/lib/auth';
 import { fmtDate, timeAgo } from '@/lib/format';
 import { discordAvatar } from '@/lib/auth';
@@ -25,7 +25,7 @@ const ERRORS: Record<string, string> = {
 
 export default async function Home({ searchParams }: { searchParams: Promise<{ error?: string }> }) {
   const { error } = await searchParams;
-  const [u, topics, categories, articles, tournaments, results, fixtures, topPlayers] = await Promise.all([
+  const [u, topics, categories, articles, tournaments, results, fixtures, topPlayers, completedAtp, completedWta] = await Promise.all([
     getSession(),
     safe(() => getTopics({ limit: 6 }), [] as any[]),
     safe(() => getCategoriesWithCounts(), [] as any[]),
@@ -34,6 +34,8 @@ export default async function Home({ searchParams }: { searchParams: Promise<{ e
     safe(() => recentMatches(3), [] as any[]),
     safe(() => openFixtures(), [] as any[]),
     safe(() => sql`SELECT name,avatar_url,flag_url,country,tour_elo,official_url FROM wtsl_players WHERE tour_elo IS NOT NULL ORDER BY tour_elo DESC LIMIT 1`, [] as any[]),
+    safe(() => recentlyCompletedPairs('TE4'), new Set<string>()),
+    safe(() => recentlyCompletedPairs('TE4_(F)'), new Set<string>()),
   ]);
   const heroPhoto = fs.existsSync(path.join(process.cwd(), 'public/brand/hero.jpg'));
   const featured = tournaments.find((t: any) => t.status === 'ongoing') || tournaments.find((t: any) => t.status === 'upcoming');
@@ -41,7 +43,8 @@ export default async function Home({ searchParams }: { searchParams: Promise<{ e
   const top = topPlayers[0];
   const live = tournaments.filter((t: any) => t.status === 'ongoing').concat(tournaments.filter((t: any) => t.status === 'upcoming')).slice(0, 4);
   const tournamentNames = Object.fromEntries(tournaments.map((t: any) => [t.wtsl_tournament_key, t.name]));
-  const fx = (Array.isArray(fixtures) ? fixtures : []).slice(0, 3);
+  const completedPairs = new Set<string>([...completedAtp, ...completedWta]);
+  const fx = excludeStaleFixtures(Array.isArray(fixtures) ? fixtures : [], completedPairs).slice(0, 3);
   const hasTour = results.length > 0 || fx.length > 0;
 
   return (

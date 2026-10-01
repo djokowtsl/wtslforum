@@ -278,6 +278,15 @@ h1, h2, h3 { margin: 0; }
 .post-user .role { display: inline-block; margin-top: 8px; }
 .post-content { padding: 22px 26px; color: var(--soft); line-height: 1.75; font-size: 15.5px; min-width: 0; overflow-wrap: anywhere; }
 .post-date { font-size: 11.5px; color: var(--muted); margin-bottom: 14px; letter-spacing: 0.04em; }
+.reaction-bar { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 16px; }
+.reaction-chip { display: inline-flex; align-items: center; gap: 6px; padding: 5px 11px; border-radius: 999px; border: 1px solid var(--line-2); background: var(--panel); color: var(--soft); font-size: 13px; font-weight: 700; cursor: pointer; }
+.reaction-chip:hover:not(:disabled) { border-color: var(--lime); }
+.reaction-chip.active { border-color: var(--lime); background: rgba(188, 255, 70, 0.12); color: var(--text); }
+.reaction-chip:disabled { cursor: default; opacity: 0.7; }
+.mention-pop { position: absolute; z-index: 20; background: var(--panel); border: 1px solid var(--line-2); border-radius: 10px; box-shadow: 0 12px 28px rgba(0,0,0,0.35); max-height: 220px; overflow-y: auto; min-width: 220px; }
+.mention-pop button { display: flex; align-items: center; gap: 8px; width: 100%; padding: 8px 12px; background: none; border: none; color: var(--text); text-align: left; font-size: 14px; cursor: pointer; }
+.mention-pop button:hover, .mention-pop button.active { background: var(--line); }
+.mention-pop img { width: 22px; height: 22px; border-radius: 50%; }
 .post-content p { margin: 0 0 14px; }
 .post-content p:last-child { margin-bottom: 0; }
 .post-content a { color: var(--lime); text-decoration: underline; text-underline-offset: 3px; }
@@ -527,6 +536,7 @@ h1, h2, h3 { margin: 0; }
   .bet-row { padding: 12px 14px; }
   .section-head { flex-direction: column; align-items: flex-start; }
   .section-head h2 { font-size: 32px; }
+  .section-head .tabs-scroll { width: 100%; }
   .topic { grid-template-columns: 40px minmax(0, 1fr) 56px; gap: 12px; padding: 14px 16px; }
   .topic .av { width: 40px; height: 40px; }
   .topic-last { display: none; }
@@ -554,7 +564,7 @@ h1, h2, h3 { margin: 0; }
 /* A row of many tabs (e.g. the leaderboard's metric switcher) can have more options than fit
    on one line and no good place to wrap inside a `.section-head`'s flex row — scroll it
    horizontally instead of letting it get clipped or overflow the page. */
-.tabs-scroll { display: flex; flex-wrap: nowrap; gap: 8px; overflow-x: auto; -webkit-overflow-scrolling: touch; max-width: 100%; margin: 0 0 20px; padding-bottom: 4px; }
+.tabs-scroll { display: flex; flex-wrap: nowrap; gap: 8px; overflow-x: auto; -webkit-overflow-scrolling: touch; max-width: 100%; min-width: 0; margin: 0 0 20px; padding-bottom: 4px; }
 .tabs-scroll .tour-tab { flex-shrink: 0; }
 
 /* ---------- Hero spotlight panel (replaces the big logo) ---------- */

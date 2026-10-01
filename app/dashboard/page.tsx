@@ -1,8 +1,8 @@
 import type { Metadata } from 'next';
 import Link from 'next/link';
 import { safe } from '@/lib/db';
-import { leaderboard, recentMatches, playerStats } from '@/lib/stats';
-import { openFixtures } from '@/lib/betting';
+import { leaderboard, recentMatches, playerStats, recentlyCompletedPairs } from '@/lib/stats';
+import { openFixtures, excludeStaleFixtures } from '@/lib/betting';
 import { getSession } from '@/lib/auth';
 import { getClaimsForUser } from '@/lib/player-claims';
 import { getContributionStats, getRecentActivity } from '@/lib/queries';
@@ -20,8 +20,15 @@ export default async function Dashboard() {
   const viewer = await safe(() => getSession(), null);
 
   if (!viewer) {
-    const [players, matches, fx] = await Promise.all([safe(() => leaderboard(), [] as any[]), safe(() => recentMatches(8), [] as any[]), safe(() => openFixtures(), [] as any[])]);
-    const fixtures = Array.isArray(fx) ? fx : [];
+    const [players, matches, fx, completedAtp, completedWta] = await Promise.all([
+      safe(() => leaderboard(), [] as any[]),
+      safe(() => recentMatches(8), [] as any[]),
+      safe(() => openFixtures(), [] as any[]),
+      safe(() => recentlyCompletedPairs('TE4'), new Set<string>()),
+      safe(() => recentlyCompletedPairs('TE4_(F)'), new Set<string>()),
+    ]);
+    const completedPairs = new Set<string>([...completedAtp, ...completedWta]);
+    const fixtures = excludeStaleFixtures(Array.isArray(fx) ? fx : [], completedPairs);
     return (
       <>
         <PageHero eyebrow="WTSL Forum" title="Dashboard">Log in with Discord to see your own stats, forum activity and coaching insights here. Until then, here's a snapshot of the tour.</PageHero>
