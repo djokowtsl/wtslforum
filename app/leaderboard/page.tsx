@@ -4,7 +4,7 @@ import { safe } from '@/lib/db';
 import { leaderboard, LEADERBOARD_MIN_MATCHES } from '@/lib/stats';
 import PageHero from '@/components/PageHero';
 import TourTabs from '@/components/TourTabs';
-import { DEFAULT_TOUR, isTourCode, tourLabel, type TourCode } from '@/lib/wtsl';
+import { DEFAULT_TOUR, isTourCode, type TourCode } from '@/lib/wtsl';
 
 export const dynamic = 'force-dynamic';
 export const metadata: Metadata = { title: 'Leaderboard' };
@@ -42,7 +42,7 @@ export default async function Leaderboard({ searchParams }: { searchParams: Prom
       <main className="container">
         <TourTabs basePath="/leaderboard" current={tour} extraParams={{ metric }} />
         <div className="section-head">
-          <div><h2 className="display">Ranked by {valueCol.label.toLowerCase()}</h2><span>{tourLabel(tour)} · {LEADERBOARD_MIN_MATCHES}+ matches played</span></div>
+          <div><h2 className="display">Ranked by {valueCol.label.toLowerCase()}</h2><span>{LEADERBOARD_MIN_MATCHES}+ matches played</span></div>
           <div className="tabs-scroll">
             {METRICS.map((m) => (
               <Link key={m.key} className={`tour-tab${m.key === metric ? ' active' : ''}`} href={`/leaderboard?tour=${encodeURIComponent(tour)}&metric=${encodeURIComponent(m.key)}`}>{m.label}</Link>

@@ -80,7 +80,7 @@ export default async function Stats({ searchParams }: { searchParams: Promise<{ 
         <TourTabs basePath="/stats" current={tour} />
         <div className="dashboard-grid">
           <section className="panel">
-            <div className="panel-head"><h2 className="display">Player Statistics</h2><span>{tourLabel(tour)} · click a column to sort</span></div>
+            <div className="panel-head"><h2 className="display">Player Statistics</h2></div>
             {rows.length === 0 ? <div className="empty"><strong>No stats yet</strong>Statistics fill in as matches are recorded.</div> : (
               <PlayerStatsTable rows={rows as any} tour={tour} />
             )}
