@@ -33,6 +33,8 @@ export async function syncPlayerStats(tour: TourCode = DEFAULT_TOUR) {
   const averagesById = new Map(averages.map((a) => [a.playerId, a]));
 
   let upserted = 0;
+  let failed = 0;
+  let lastError: string | undefined;
   await mapLimit(players, 8, async (row) => {
     const playerId = String(row.wtsl_player_id);
     const url = row.official_url || `https://www.playwtsl.com/TE4/pages/player_page.php?player=${playerId}`;
@@ -77,11 +79,15 @@ export async function syncPlayerStats(tour: TourCode = DEFAULT_TOUR) {
         await sql`INSERT INTO player_recent_results(player_id,tour,tournament_key,tournament_name,round_name,opponent_id,opponent_name,score,played_at,position) VALUES(${playerId},${tour},${r.tournamentKey},${r.tournamentName},${r.round},${r.opponentId},${r.opponentName},${r.score},${r.date},${i})`;
       }
       upserted++;
-    } catch {
-      // A single player's profile failing to load (rate limit, temporary 500, etc) shouldn't abort the whole sync.
+    } catch (e) {
+      // A single player's profile failing to load (rate limit, temporary 500, etc) shouldn't abort
+      // the whole sync — but the error is still worth surfacing (e.g. a missing DB column would
+      // fail every single player silently otherwise, looking identical to a full success).
+      failed++;
+      lastError = e instanceof Error ? e.message : String(e);
     }
   });
-  return { tour, seen: players.length, upserted };
+  return { tour, seen: players.length, upserted, failed, lastError };
 }
 
 export async function syncPlayerStatsAllTours() {

@@ -16,13 +16,22 @@ const CATEGORIES: { key: string; label: string }[] = [
   { key: 'playerStats', label: 'Player stats' },
 ];
 
-type TourResult = { tour?: string; error?: string; seen?: number; upserted?: number; created?: number; updated?: number };
+type TourResult = { tour?: string; error?: string; seen?: number; upserted?: number; created?: number; updated?: number; failed?: number; lastError?: string };
 
 function summarize(tourLabel: string, result: TourResult | undefined): string {
   if (!result) return `${tourLabel}: no result`;
   if (result.error) return `${tourLabel} failed (${result.error})`;
-  const count = (result.upserted ?? ((result.created ?? 0) + (result.updated ?? 0))) || result.seen || 0;
-  return `${tourLabel}: ${count}`;
+  // `upserted` is the real "how many actually wrote to the DB" count for player/stat syncs.
+  // Tournaments report `created`/`updated` instead. Checking `!== undefined` (not `??`/`||`)
+  // matters: a genuine 0 upserted (every row failed to write, e.g. a missing DB column) must
+  // stay 0 and not silently fall back to `seen`, which used to make a total failure look
+  // identical to a full success in this log.
+  const count = result.upserted !== undefined ? result.upserted : (result.created ?? 0) + (result.updated ?? 0) || result.seen || 0;
+  const seen = result.seen ?? 0;
+  const failed = result.failed ?? (seen && result.upserted !== undefined ? Math.max(seen - result.upserted, 0) : 0);
+  let line = `${tourLabel}: ${count}${seen ? ` / ${seen}` : ''}`;
+  if (failed > 0) line += ` (${failed} failed${result.lastError ? `: ${result.lastError}` : ''})`;
+  return line;
 }
 
 export default function AdminSyncButton() {
