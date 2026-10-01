@@ -1,5 +1,6 @@
 'use client';
 import { useState } from 'react';
+import MentionTextarea from './MentionTextarea';
 
 export default function ReplyForm({ topicId }: { topicId: number }) {
   const [error, setError] = useState('');
@@ -25,7 +26,7 @@ export default function ReplyForm({ topicId }: { topicId: number }) {
     <form className="form-card" onSubmit={submit}>
       <label>
         Your reply
-        <textarea name="body" rows={6} required maxLength={10000} placeholder="Join the discussion…" />
+        <MentionTextarea name="body" rows={6} required maxLength={10000} placeholder="Join the discussion…" />
       </label>
       {error && <p className="form-error">{error}</p>}
       <div><button className="btn btn-primary" type="submit" disabled={busy}>{busy ? 'Posting…' : 'Post reply'}</button></div>

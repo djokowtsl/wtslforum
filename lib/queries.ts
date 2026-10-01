@@ -1,5 +1,30 @@
 import { sql } from './db';
 
+/** Per-emoji counts for one post, plus whether the current viewer has reacted with each. */
+export type ReactionSummary = { emoji: string; count: number; reacted: boolean }[];
+
+/** Reaction totals for a topic's opening post and every reply on the same thread, in one query —
+ * grouped by (topic_id or reply_id, emoji) and checked against the signed-in viewer's own user id
+ * so the UI can show "you reacted" state without a second round trip per post. */
+export async function getThreadReactions(topicId: number, replyIds: number[], viewerId: string | number | null) {
+  const vid = viewerId ? Number(viewerId) : null;
+  const rows = await sql`
+    SELECT topic_id, reply_id, emoji, COUNT(*)::int count,
+      COALESCE(BOOL_OR(user_id = ${vid}::bigint), false) reacted
+    FROM reactions
+    WHERE topic_id = ${topicId} OR reply_id = ANY(${replyIds})
+    GROUP BY topic_id, reply_id, emoji
+  `;
+  const topic: ReactionSummary = [];
+  const replies: Record<number, ReactionSummary> = {};
+  for (const r of rows as any[]) {
+    const entry = { emoji: r.emoji, count: r.count, reacted: r.reacted };
+    if (r.reply_id) (replies[r.reply_id] ??= []).push(entry);
+    else topic.push(entry);
+  }
+  return { topic, replies };
+}
+
 export async function getTopics(opts: { category?: string | null; limit?: number } = {}) {
   const cat = opts.category || null;
   const limit = opts.limit ?? 100;

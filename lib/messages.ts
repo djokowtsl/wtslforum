@@ -94,6 +94,39 @@ export async function searchMembers(query: string, excludeUserId: string | numbe
   return rows as MemberResult[];
 }
 
+/** Resolves @usernames found in rendered post bodies to the verified player profile they should
+ * link to (used by `RichText`'s mention linkification). Unverified/unknown usernames are simply
+ * absent from the returned map, so they render as plain text instead of a dead link. */
+export async function resolveMentions(usernames: string[]): Promise<Record<string, { playerId: string; tour: string }>> {
+  const names = Array.from(new Set(usernames.map((n) => n.toLowerCase()))).filter(Boolean);
+  if (!names.length) return {};
+  const rows = await sql`
+    SELECT username, verified_player_id, verified_player_tour
+    FROM users
+    WHERE verified_player_id IS NOT NULL AND lower(username) = ANY(${names})`;
+  const out: Record<string, { playerId: string; tour: string }> = {};
+  for (const r of rows as any[]) out[String(r.username).toLowerCase()] = { playerId: r.verified_player_id, tour: r.verified_player_tour };
+  return out;
+}
+
+export type MentionableMember = { id: number; username: string; display_name: string; avatar_url: string | null };
+
+/** Backs the @mention autocomplete — only verified players (a linked, admin-approved WTSL player
+ * profile) can be tagged, matching the "tag other verified users" request rather than opening it
+ * up to any forum account. Matches on username or display name so either one works while typing. */
+export async function searchVerifiedMembers(query: string, excludeUserId: string | number, limit = 8): Promise<MentionableMember[]> {
+  const q = query.trim();
+  if (q.length < 1) return [];
+  const rows = await sql`
+    SELECT id, username, display_name, avatar_url
+    FROM users
+    WHERE verified_player_id IS NOT NULL AND id != ${Number(excludeUserId)}
+      AND (username ILIKE ${q + '%'} OR display_name ILIKE ${'%' + q + '%'})
+    ORDER BY display_name ASC
+    LIMIT ${limit}`;
+  return rows as MentionableMember[];
+}
+
 /** Members currently set to "online", for the inbox's quick-start panel — newest status change
  * first so recently-active members surface at the top. */
 export async function listOnlineMembers(excludeUserId: string | number, limit = 20): Promise<MemberResult[]> {

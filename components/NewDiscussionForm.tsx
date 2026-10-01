@@ -1,5 +1,6 @@
 'use client';
 import { useState } from 'react';
+import MentionTextarea from './MentionTextarea';
 
 type Props = {
   categories: any[];
@@ -51,7 +52,7 @@ export default function NewDiscussionForm({ categories, initialTitle, initialBod
           </select>
         </label>
       )}
-      <label>Post<textarea name="body" required rows={11} maxLength={20000} placeholder="Write your post…" defaultValue={initialBody || ''} /></label>
+      <label>Post<MentionTextarea name="body" required rows={11} maxLength={20000} placeholder="Write your post…" defaultValue={initialBody || ''} /></label>
       {error && <p className="form-error">{error}</p>}
       <div><button className="btn btn-primary" type="submit" disabled={busy}>{busy ? 'Publishing…' : 'Publish discussion'}</button></div>
     </form>
