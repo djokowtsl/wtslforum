@@ -30,8 +30,8 @@ export default function About() {
               <b>2. Verify your player profile</b>
               <span>
                 If you compete on WTSL, link your Discord account to your official player profile from your{' '}
-                <Link href="/profile">profile page</Link>. You don't need your player ID — just search for your name, pick
-                yourself from the results, and an admin will review it.
+                <Link href="/profile">profile page</Link>. Just search for your name, pick yourself from the results,
+                and an admin will review it.
               </span>
             </div>
             <div className="feature">
