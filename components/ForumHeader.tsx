@@ -12,6 +12,7 @@ export const NAV = [
   { href: '/media', label: 'Media' },
   { href: '/awards', label: 'Awards' },
   { href: '/stats', label: 'Statistics' },
+  { href: '/predictions', label: 'Predictions' },
   { href: '/about', label: 'About' },
 ];
 
