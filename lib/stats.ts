@@ -10,29 +10,42 @@ export async function leaderboard(tour='TE4', metric='wins'){
     ? metric
     : 'wins';
 
+  // `matches`/`wins`/`losses` are computed straight from `match_stats` (not `player_stats_summary`,
+  // which only ever holds the last ~10 results the official WTSL site exposes per player) so the
+  // deeper history fed in via the bot's spreadsheet import is actually reflected here.
   return sql`
+    WITH match_counts AS (
+      SELECT player_id, COUNT(*)::int matches, SUM(CASE WHEN winner_id=player_id THEN 1 ELSE 0 END)::int wins
+      FROM (
+        SELECT player_one_id player_id, winner_id FROM match_stats WHERE tour=${tour}
+        UNION ALL
+        SELECT player_two_id player_id, winner_id FROM match_stats WHERE tour=${tour}
+      ) sides
+      GROUP BY player_id
+    )
     SELECT p.*,
-      COALESCE(s.matches,0) matches,
-      COALESCE(s.wins,0) wins,
-      COALESCE(s.losses,0) losses,
+      COALESCE(mc.matches,0) matches,
+      COALESCE(mc.wins,0) wins,
+      GREATEST(COALESCE(mc.matches,0)-COALESCE(mc.wins,0),0) losses,
       COALESCE(s.aces,0) aces,
       COALESCE(s.winners,0) winners,
       COALESCE(s.break_points_won,0) break_points_won,
       COALESCE(s.first_serve_pct,0) first_serve_pct,
-      CASE WHEN COALESCE(s.matches,0)>0
-        THEN ROUND(100.0*s.wins/s.matches,1)
+      CASE WHEN COALESCE(mc.matches,0)>0
+        THEN ROUND(100.0*mc.wins/mc.matches,1)
         ELSE 0
       END win_pct
     FROM wtsl_players p
+    LEFT JOIN match_counts mc ON mc.player_id=p.wtsl_player_id
     LEFT JOIN player_stats_summary s
       ON s.player_id=p.wtsl_player_id
       AND s.tour=${tour}
-    WHERE p.tour=${tour} AND COALESCE(s.matches,0) >= ${LEADERBOARD_MIN_MATCHES}
+    WHERE p.tour=${tour} AND COALESCE(mc.matches,0) >= ${LEADERBOARD_MIN_MATCHES}
     ORDER BY
       CASE
         WHEN ${order} = 'win_pct' THEN
-          CASE WHEN COALESCE(s.matches,0)>0
-            THEN 100.0*s.wins/s.matches
+          CASE WHEN COALESCE(mc.matches,0)>0
+            THEN 100.0*mc.wins/mc.matches
             ELSE 0
           END
         WHEN ${order} = 'aces' THEN COALESCE(s.aces,0)
@@ -40,7 +53,7 @@ export async function leaderboard(tour='TE4', metric='wins'){
         WHEN ${order} = 'break_points' THEN COALESCE(s.break_points_won,0)
         WHEN ${order} = 'first_serve_pct' THEN COALESCE(s.first_serve_pct,0)
         WHEN ${order} = 'elo' THEN COALESCE(p.tour_elo,0)
-        ELSE COALESCE(s.wins,0)
+        ELSE COALESCE(mc.wins,0)
       END DESC NULLS LAST,
       p.name ASC
   `;
@@ -50,19 +63,29 @@ export async function leaderboard(tour='TE4', metric='wins'){
 // (scrollable) rather than a top-N cut, which is reserved for the stat-ranked /leaderboard page.
 export async function allPlayerStats(tour='TE4'){
   return sql`
+    WITH match_counts AS (
+      SELECT player_id, COUNT(*)::int matches, SUM(CASE WHEN winner_id=player_id THEN 1 ELSE 0 END)::int wins
+      FROM (
+        SELECT player_one_id player_id, winner_id FROM match_stats WHERE tour=${tour}
+        UNION ALL
+        SELECT player_two_id player_id, winner_id FROM match_stats WHERE tour=${tour}
+      ) sides
+      GROUP BY player_id
+    )
     SELECT p.*,
-      COALESCE(s.matches,0) matches,
-      COALESCE(s.wins,0) wins,
-      COALESCE(s.losses,0) losses,
+      COALESCE(mc.matches,0) matches,
+      COALESCE(mc.wins,0) wins,
+      GREATEST(COALESCE(mc.matches,0)-COALESCE(mc.wins,0),0) losses,
       COALESCE(s.aces,0) aces,
       COALESCE(s.winners,0) winners,
       COALESCE(s.break_points_won,0) break_points_won,
       COALESCE(s.first_serve_pct,0) first_serve_pct,
-      CASE WHEN COALESCE(s.matches,0)>0
-        THEN ROUND(100.0*s.wins/s.matches,1)
+      CASE WHEN COALESCE(mc.matches,0)>0
+        THEN ROUND(100.0*mc.wins/mc.matches,1)
         ELSE 0
       END win_pct
     FROM wtsl_players p
+    LEFT JOIN match_counts mc ON mc.player_id=p.wtsl_player_id
     LEFT JOIN player_stats_summary s
       ON s.player_id=p.wtsl_player_id
       AND s.tour=${tour}
