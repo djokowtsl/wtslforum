@@ -18,11 +18,50 @@ async function mapLimit<T>(items: T[], limit: number, worker: (item: T) => Promi
 }
 
 /**
+ * A recent-result score is only a completed match (not "Scheduled"/"Walkover"/etc) when it looks
+ * like a list of set scores, e.g. "6-2,6-2,6-2". Returns the parsed sets or null otherwise.
+ */
+function parseSets(score: string): [number, number][] | null {
+  const sets = score.split(',').map((s) => s.trim()).filter(Boolean);
+  if (!sets.length) return null;
+  const parsed: [number, number][] = [];
+  for (const set of sets) {
+    const m = set.match(/^(\d+)\s*-\s*(\d+)$/);
+    if (!m) return null;
+    parsed.push([Number(m[1]), Number(m[2])]);
+  }
+  return parsed;
+}
+
+/**
+ * Upserts one completed match into `match_stats` from a single player's "Recent Results" row.
+ * The same match appears on both players' profile pages, so a deterministic `source_id` (sorted
+ * player pair + tournament + round + date) de-duplicates it regardless of which profile is
+ * scraped first; a second insert attempt for the same match is a no-op.
+ */
+async function recordMatchResult(tour: TourCode, playerId: string, r: { tournamentKey: string | null; tournamentName: string; round: string; opponentId: string | null; opponentName: string; date: string | null; score: string }) {
+  if (!r.opponentId || !r.score) return;
+  const sets = parseSets(r.score);
+  if (!sets) return; // skip "Scheduled", "Walkover", retirements without a clean set score, etc.
+
+  const setsWon = sets.filter(([a, b]) => a > b).length;
+  const winnerId = setsWon * 2 > sets.length ? playerId : r.opponentId;
+  const pair = [playerId, r.opponentId].sort();
+  const sourceId = `recent:${tour}:${r.tournamentKey ?? 'x'}:${r.round}:${pair[0]}-${pair[1]}:${r.date ?? ''}`;
+
+  await sql`
+    INSERT INTO match_stats(source_id,tour,tournament_key,round_name,player_one_id,player_two_id,score,winner_id,played_at)
+    VALUES(${sourceId},${tour},${r.tournamentKey},${r.round},${playerId},${r.opponentId},${r.score},${winnerId},${r.date})
+    ON CONFLICT(source_id) DO NOTHING
+  `;
+}
+
+/**
  * Syncs real career stats for a single tour: the per-tour averages table (one request) plus
  * each player's profile page (fetched with limited concurrency, for win/loss record, titles,
  * prize money, form and recent results) — upserted into `player_stats_summary` /
- * `player_recent_results` so the existing leaderboard and a new player dashboard both show
- * accurate data.
+ * `player_recent_results` / `match_stats` so the existing leaderboard, the matches page and a
+ * new player dashboard all show accurate data.
  */
 export async function syncPlayerStats(tour: TourCode = DEFAULT_TOUR) {
   const players = await sql`SELECT wtsl_player_id, official_url FROM wtsl_players WHERE tour=${tour}`;
@@ -77,6 +116,7 @@ export async function syncPlayerStats(tour: TourCode = DEFAULT_TOUR) {
       for (let i = 0; i < recent.length; i++) {
         const r = recent[i];
         await sql`INSERT INTO player_recent_results(player_id,tour,tournament_key,tournament_name,round_name,opponent_id,opponent_name,score,played_at,position) VALUES(${playerId},${tour},${r.tournamentKey},${r.tournamentName},${r.round},${r.opponentId},${r.opponentName},${r.score},${r.date},${i})`;
+        await recordMatchResult(tour, playerId, r);
       }
       upserted++;
     } catch (e) {
