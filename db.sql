@@ -227,6 +227,35 @@ DO $$ BEGIN
   ALTER TABLE player_stats_summary ADD COLUMN IF NOT EXISTS updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW();
 END $$;
 
+-- Identity verification: a member claims "I am this WTSL player" and an admin
+-- must approve it before the forum shows the account as the verified owner.
+-- This is the only way a Discord account gets tied to a WTSL player profile,
+-- so nobody can self-declare and impersonate another player.
+CREATE TABLE IF NOT EXISTS player_claims (
+  id BIGSERIAL PRIMARY KEY,
+  user_id BIGINT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+  wtsl_player_id TEXT NOT NULL,
+  tour TEXT NOT NULL DEFAULT 'TE4',
+  player_name TEXT NOT NULL,
+  note TEXT NOT NULL DEFAULT '',
+  status TEXT NOT NULL DEFAULT 'pending',
+  reviewed_by BIGINT REFERENCES users(id) ON DELETE SET NULL,
+  reviewed_at TIMESTAMPTZ,
+  review_note TEXT,
+  created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+CREATE INDEX IF NOT EXISTS player_claims_status_idx ON player_claims(status);
+CREATE INDEX IF NOT EXISTS player_claims_user_idx ON player_claims(user_id);
+-- A player can only be verified to one account at a time.
+CREATE UNIQUE INDEX IF NOT EXISTS player_claims_one_owner_idx ON player_claims(wtsl_player_id, tour) WHERE status = 'approved';
+
+DO $$ BEGIN
+  ALTER TABLE users ADD COLUMN IF NOT EXISTS verified_player_id TEXT;
+  ALTER TABLE users ADD COLUMN IF NOT EXISTS verified_player_tour TEXT;
+  ALTER TABLE users ADD COLUMN IF NOT EXISTS verified_player_name TEXT;
+  ALTER TABLE users ADD COLUMN IF NOT EXISTS verified_at TIMESTAMPTZ;
+END $$;
+
 -- Recent match results shown on a player's dashboard, refreshed (truncate + reinsert) each sync.
 CREATE TABLE IF NOT EXISTS player_recent_results (
   id BIGSERIAL PRIMARY KEY, player_id TEXT NOT NULL, tour TEXT NOT NULL DEFAULT 'TE4',

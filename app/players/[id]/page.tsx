@@ -2,6 +2,8 @@ import type { Metadata } from 'next';
 import { notFound } from 'next/navigation';
 import { safe, sql } from '@/lib/db';
 import { playerStats } from '@/lib/stats';
+import { getVerifiedOwner } from '@/lib/player-claims';
+import { discordAvatar } from '@/lib/auth';
 import Link from 'next/link';
 import PageHero from '@/components/PageHero';
 import { DEFAULT_TOUR, isTourCode, tourLabel, type TourCode } from '@/lib/wtsl';
@@ -27,6 +29,7 @@ export default async function PlayerDashboard({ params, searchParams }: Props) {
   const p = rows.find((r: any) => r.tour === tour) ?? rows[0];
 
   const recent = await safe(() => sql`SELECT * FROM player_recent_results WHERE player_id=${id} AND tour=${tour} ORDER BY position ASC LIMIT 10`, [] as any[]);
+  const verifiedOwner = await safe(() => getVerifiedOwner(id, tour), null as any);
 
   const form: string = p.form ?? '';
   const statLines: { label: string; value: string | number }[] = [
@@ -69,6 +72,13 @@ export default async function PlayerDashboard({ params, searchParams }: Props) {
             <p>{p.flag_url && <img src={p.flag_url} alt="" style={{ height: 14, marginRight: 6 }} />}{p.country || 'WTSL Player'}</p>
             <p><b>{p.rank ? `#${p.rank}` : 'Unranked'}</b> · Tour Elo <b>{p.tour_elo ?? '—'}</b>{p.elo_label ? ` (${p.elo_label})` : ''}</p>
             {p.official_url && <a href={p.official_url} target="_blank" rel="noreferrer">View official WTSL profile ↗</a>}
+            {verifiedOwner && (
+              <p style={{ marginTop: 8 }}>
+                <span className="pill cyan">Verified account</span>{' '}
+                <img src={discordAvatar(verifiedOwner.avatar_url, verifiedOwner.display_name)} alt="" style={{ width: 20, height: 20, borderRadius: '50%', verticalAlign: 'middle', marginRight: 4 }} />
+                {verifiedOwner.display_name}
+              </p>
+            )}
           </div>
         </div>
         <div className="dashboard-grid">
