@@ -16,7 +16,7 @@ const CATEGORIES: { key: string; label: string }[] = [
   { key: 'playerStats', label: 'Player stats' },
 ];
 
-type TourResult = { tour?: string; error?: string; seen?: number; upserted?: number; created?: number; updated?: number; failed?: number; lastError?: string };
+type TourResult = { tour?: string; error?: string; seen?: number; upserted?: number; created?: number; updated?: number; failed?: number; matchesRecorded?: number; lastError?: string };
 
 function summarize(tourLabel: string, result: TourResult | undefined): string {
   if (!result) return `${tourLabel}: no result`;
@@ -31,12 +31,18 @@ function summarize(tourLabel: string, result: TourResult | undefined): string {
   const failed = result.failed ?? (seen && result.upserted !== undefined ? Math.max(seen - result.upserted, 0) : 0);
   let line = `${tourLabel}: ${count}${seen ? ` / ${seen}` : ''}`;
   if (failed > 0) line += ` (${failed} failed${result.lastError ? `: ${result.lastError}` : ''})`;
+  // Player stats syncs also populate match_stats as a side effect (one row per completed
+  // match found on a player's recent-results page) — surfacing it here is the only way to
+  // tell "matches are being synced" from "matches page is empty for some other reason".
+  if (result.matchesRecorded !== undefined) line += ` · ${result.matchesRecorded} new match${result.matchesRecorded === 1 ? '' : 'es'} recorded`;
   return line;
 }
 
 export default function AdminSyncButton() {
   const [state, setState] = useState<'idle' | 'running' | 'done' | 'error'>('idle');
   const [lines, setLines] = useState<string[]>([]);
+  const [step, setStep] = useState(0);
+  const total = CATEGORIES.length * TOURS.length;
 
   // Runs 15 small requests (5 tours x 3 categories) one at a time instead of one giant
   // request. Scraping every player's profile across every tour in a single serverless
@@ -47,7 +53,9 @@ export default function AdminSyncButton() {
   async function run() {
     setState('running');
     setLines([]);
+    setStep(0);
     let anyError = false;
+    let done = 0;
     for (const cat of CATEGORIES) {
       setLines((prev) => [...prev, `— ${cat.label} —`]);
       for (const t of TOURS) {
@@ -64,6 +72,8 @@ export default function AdminSyncButton() {
           anyError = true;
           setLines((prev) => [...prev, `${t.label} failed (request error — check your connection)`]);
         }
+        done++;
+        setStep(done);
       }
     }
     setState(anyError ? 'error' : 'done');
@@ -72,12 +82,27 @@ export default function AdminSyncButton() {
   return (
     <div>
       <button className="btn btn-sm" onClick={run} disabled={state === 'running'}>
-        {state === 'running' ? 'Syncing…' : 'Run sync now'}
+        {state === 'running' ? `Syncing… (${step} / ${total})` : 'Run sync now'}
       </button>
+      {state === 'running' && (
+        <div style={{ marginTop: 10, height: 6, borderRadius: 3, background: 'var(--line)', overflow: 'hidden' }}>
+          <div style={{ height: '100%', width: `${(step / total) * 100}%`, background: 'var(--lime)', transition: 'width 0.2s' }} />
+        </div>
+      )}
+      {(state === 'done' || state === 'error') && (
+        <div
+          className="notice"
+          style={{
+            marginTop: 10,
+            fontWeight: 700,
+            borderLeft: `4px solid ${state === 'error' ? '#e5533d' : 'var(--lime)'}`,
+          }}
+        >
+          {state === 'error' ? '⚠️ Sync finished with errors — see log below.' : '✅ Sync complete — all steps finished.'}
+        </div>
+      )}
       {lines.length > 0 && (
         <div className="notice" style={{ marginTop: 10 }}>
-          {state === 'error' && <p><strong>Sync finished with errors:</strong></p>}
-          {state === 'done' && <p><strong>Sync complete.</strong></p>}
           {lines.map((l, i) => <p key={i} style={{ margin: '4px 0' }}>{l}</p>)}
         </div>
       )}

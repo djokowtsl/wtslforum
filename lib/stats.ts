@@ -98,7 +98,7 @@ export async function recentMatches(limit=20, tour='TE4'){
     FROM match_stats m
     LEFT JOIN wtsl_players p1 ON p1.wtsl_player_id=m.player_one_id AND p1.tour=m.tour
     LEFT JOIN wtsl_players p2 ON p2.wtsl_player_id=m.player_two_id AND p2.tour=m.tour
-    WHERE m.tour=${tour}
+    WHERE m.tour=${tour} AND m.played_at IS NOT NULL
     ORDER BY m.played_at DESC
     LIMIT ${limit}
   `;

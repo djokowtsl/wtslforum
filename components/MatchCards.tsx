@@ -7,7 +7,10 @@ function Face({ src, name }: { src?: string | null; name?: string | null }) {
 export function ResultCard({ m, tournamentNames }: { m: any; tournamentNames?: Record<string, string> }) {
   const p1win = m.winner_id && String(m.winner_id) === String(m.player_one_id);
   const p2win = m.winner_id && String(m.winner_id) === String(m.player_two_id);
-  const t = (m.tournament_key && tournamentNames?.[m.tournament_key]) || prettyKey(m.tournament_key);
+  // `tournament_name` is scraped and stored directly on the match row at sync time — preferred
+  // over the `tournamentNames` lookup (keyed by the `tournaments` table's generated slug, which
+  // doesn't match the raw tournament ID these recent-results rows carry) or the raw key itself.
+  const t = m.tournament_name || (m.tournament_key && tournamentNames?.[m.tournament_key]) || prettyKey(m.tournament_key);
   return (
     <div className="match-card">
       <div className="match-top">

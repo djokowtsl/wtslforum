@@ -39,21 +39,28 @@ function parseSets(score: string): [number, number][] | null {
  * player pair + tournament + round + date) de-duplicates it regardless of which profile is
  * scraped first; a second insert attempt for the same match is a no-op.
  */
-async function recordMatchResult(tour: TourCode, playerId: string, r: { tournamentKey: string | null; tournamentName: string; round: string; opponentId: string | null; opponentName: string; date: string | null; score: string }) {
-  if (!r.opponentId || !r.score) return;
+async function recordMatchResult(tour: TourCode, playerId: string, r: { tournamentKey: string | null; tournamentName: string; round: string; opponentId: string | null; opponentName: string; date: string | null; score: string }): Promise<boolean> {
+  if (!r.opponentId || !r.score) return false;
   const sets = parseSets(r.score);
-  if (!sets) return; // skip "Scheduled", "Walkover", retirements without a clean set score, etc.
+  if (!sets) return false; // skip "Scheduled", "Walkover", retirements without a clean set score, etc.
 
   const setsWon = sets.filter(([a, b]) => a > b).length;
   const winnerId = setsWon * 2 > sets.length ? playerId : r.opponentId;
   const pair = [playerId, r.opponentId].sort();
   const sourceId = `recent:${tour}:${r.tournamentKey ?? 'x'}:${r.round}:${pair[0]}-${pair[1]}:${r.date ?? ''}`;
 
-  await sql`
-    INSERT INTO match_stats(source_id,tour,tournament_key,round_name,player_one_id,player_two_id,score,winner_id,played_at)
-    VALUES(${sourceId},${tour},${r.tournamentKey},${r.round},${playerId},${r.opponentId},${r.score},${winnerId},${r.date})
-    ON CONFLICT(source_id) DO NOTHING
+  // `DO UPDATE ... WHERE tournament_name IS NULL` (not `DO NOTHING`) lets an existing match row —
+  // recorded before `tournament_name` existed — get backfilled by a later sync, without
+  // disturbing anything else about it. `xmax = 0` is Postgres's standard way to tell an INSERT
+  // from an UPDATE in a single RETURNING clause, so `matchesRecorded` still only counts matches
+  // that are genuinely new, not ones that just got backfilled.
+  const inserted = await sql`
+    INSERT INTO match_stats(source_id,tour,tournament_key,tournament_name,round_name,player_one_id,player_two_id,score,winner_id,played_at)
+    VALUES(${sourceId},${tour},${r.tournamentKey},${r.tournamentName},${r.round},${playerId},${r.opponentId},${r.score},${winnerId},${r.date})
+    ON CONFLICT(source_id) DO UPDATE SET tournament_name=COALESCE(match_stats.tournament_name, EXCLUDED.tournament_name)
+    RETURNING (xmax = 0) AS inserted
   `;
+  return inserted[0]?.inserted === true;
 }
 
 /**
@@ -73,6 +80,7 @@ export async function syncPlayerStats(tour: TourCode = DEFAULT_TOUR) {
 
   let upserted = 0;
   let failed = 0;
+  let matchesRecorded = 0;
   let lastError: string | undefined;
   await mapLimit(players, 8, async (row) => {
     const playerId = String(row.wtsl_player_id);
@@ -116,7 +124,7 @@ export async function syncPlayerStats(tour: TourCode = DEFAULT_TOUR) {
       for (let i = 0; i < recent.length; i++) {
         const r = recent[i];
         await sql`INSERT INTO player_recent_results(player_id,tour,tournament_key,tournament_name,round_name,opponent_id,opponent_name,score,played_at,position) VALUES(${playerId},${tour},${r.tournamentKey},${r.tournamentName},${r.round},${r.opponentId},${r.opponentName},${r.score},${r.date},${i})`;
-        await recordMatchResult(tour, playerId, r);
+        if (await recordMatchResult(tour, playerId, r)) matchesRecorded++;
       }
       upserted++;
     } catch (e) {
@@ -127,7 +135,7 @@ export async function syncPlayerStats(tour: TourCode = DEFAULT_TOUR) {
       lastError = e instanceof Error ? e.message : String(e);
     }
   });
-  return { tour, seen: players.length, upserted, failed, lastError };
+  return { tour, seen: players.length, upserted, failed, matchesRecorded, lastError };
 }
 
 export async function syncPlayerStatsAllTours() {
