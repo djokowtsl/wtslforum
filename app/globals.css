@@ -86,7 +86,7 @@ h1, h2, h3 { margin: 0; }
 }
 .header-inner { max-width: 1240px; margin: 0 auto; height: 84px; padding: 0 24px; display: flex; align-items: center; gap: 22px; }
 .brand { display: flex; align-items: center; gap: 14px; flex: none; }
-.brand-logo { height: 64px; width: auto; display: block; filter: drop-shadow(0 4px 14px rgba(176, 244, 59, 0.18)); }
+.brand-logo { height: 64px; width: 64px; display: block; border-radius: 50%; background: #010c20; padding: 6px; border: 2px solid var(--lime); box-sizing: border-box; object-fit: contain; filter: drop-shadow(0 4px 14px rgba(176, 244, 59, 0.18)); }
 .brand-text { display: flex; flex-direction: column; line-height: 1; padding-left: 14px; border-left: 2px solid var(--lime); }
 .brand-text b { font-size: 27px; letter-spacing: 0.06em; }
 .brand-text span { font-size: 9.5px; letter-spacing: 0.22em; color: var(--muted); margin-top: 5px; text-transform: uppercase; }
@@ -411,7 +411,7 @@ h1, h2, h3 { margin: 0; }
 /* ---------- Footer ---------- */
 .site-footer { margin-top: 70px; border-top: 1px solid var(--line); background: linear-gradient(180deg, transparent, var(--footer-fade)); }
 .footer-inner { max-width: 1240px; margin: 0 auto; padding: 46px 24px 34px; display: grid; grid-template-columns: 1.4fr repeat(3, 1fr); gap: 34px; }
-.footer-brand img { height: 92px; width: auto; display: block; margin-bottom: 14px; }
+.footer-brand img { height: 92px; width: 92px; display: block; margin-bottom: 14px; border-radius: 50%; background: #010c20; padding: 8px; border: 2px solid var(--lime); box-sizing: border-box; object-fit: contain; }
 .footer-brand p { color: var(--muted); font-size: 13.5px; line-height: 1.7; margin: 0; max-width: 320px; }
 .footer-social { display: flex; gap: 10px; margin-top: 16px; }
 .footer-social a { display: grid; place-items: center; width: 40px; height: 40px; border-radius: 10px; border: 1px solid var(--line-2); background: var(--panel); color: var(--soft); }
@@ -480,5 +480,5 @@ h1, h2, h3 { margin: 0; }
 .spot small { font-size: 10.5px; letter-spacing: 0.18em; text-transform: uppercase; color: var(--lime); font-weight: 700; }
 .spot b { font-family: var(--font-display); font-style: italic; text-transform: uppercase; font-weight: 800; font-size: 26px; line-height: 1.05; }
 .spot span { color: var(--muted); font-size: 13.5px; }
-.footer-brand img { height: 56px; margin-bottom: 12px; }
+.footer-brand img { height: 56px; width: 56px; margin-bottom: 12px; border-radius: 50%; background: #010c20; padding: 6px; border: 2px solid var(--lime); box-sizing: border-box; object-fit: contain; }
 @media (max-width: 960px) { .hero-inner { padding-top: 44px; } }
