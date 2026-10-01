@@ -16,7 +16,11 @@ const CATEGORIES: { key: string; label: string }[] = [
   { key: 'playerStats', label: 'Player stats' },
 ];
 
-type TourResult = { tour?: string; error?: string; seen?: number; upserted?: number; created?: number; updated?: number; failed?: number; matchesRecorded?: number; lastError?: string };
+type TourResult = {
+  tour?: string; error?: string; seen?: number; upserted?: number; created?: number; updated?: number; failed?: number;
+  matchesRecorded?: number; lastError?: string; clutchUpdated?: number;
+  characterUsage?: { playersUpdated: number; charactersWritten: number; matchesCounted: number };
+};
 
 function summarize(tourLabel: string, result: TourResult | undefined): string {
   if (!result) return `${tourLabel}: no result`;
@@ -35,6 +39,10 @@ function summarize(tourLabel: string, result: TourResult | undefined): string {
   // match found on a player's recent-results page) — surfacing it here is the only way to
   // tell "matches are being synced" from "matches page is empty for some other reason".
   if (result.matchesRecorded !== undefined) line += ` · ${result.matchesRecorded} new match${result.matchesRecorded === 1 ? '' : 'es'} recorded`;
+  if (result.clutchUpdated !== undefined) line += ` · clutch stats updated for ${result.clutchUpdated}`;
+  // Character usage is scraped from a feed WTSL only publishes for ATP (TE4) — a separate pass
+  // bundled into the TE4 player-stats sync, so it only ever shows up on that one tour's line.
+  if (result.characterUsage) line += ` · ${result.characterUsage.playersUpdated} players' character usage (${result.characterUsage.matchesCounted} matches)`;
   return line;
 }
 

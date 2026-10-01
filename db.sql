@@ -329,6 +329,31 @@ DO $$ BEGIN
   ALTER TABLE users ADD COLUMN IF NOT EXISTS status_note TEXT NOT NULL DEFAULT '';
 END $$;
 
+-- Clutch stats (sets/tiebreaks/deciding sets won & played), computed from the match history
+-- already recorded in match_stats (covers every tour — no extra scraping needed), plus favourite-
+-- character tracking. Character data is only published by WTSL for TE4 (ATP) via
+-- all_results_fetch.php — the tour query parameter on that feed is ignored, so WTA/Doubles/Coop
+-- character usage is not available from any public WTSL page and these columns stay 0/NULL there.
+DO $$ BEGIN
+  ALTER TABLE player_stats_summary ADD COLUMN IF NOT EXISTS sets_won INT NOT NULL DEFAULT 0;
+  ALTER TABLE player_stats_summary ADD COLUMN IF NOT EXISTS sets_lost INT NOT NULL DEFAULT 0;
+  ALTER TABLE player_stats_summary ADD COLUMN IF NOT EXISTS tiebreaks_won INT NOT NULL DEFAULT 0;
+  ALTER TABLE player_stats_summary ADD COLUMN IF NOT EXISTS tiebreaks_played INT NOT NULL DEFAULT 0;
+  ALTER TABLE player_stats_summary ADD COLUMN IF NOT EXISTS deciding_sets_won INT NOT NULL DEFAULT 0;
+  ALTER TABLE player_stats_summary ADD COLUMN IF NOT EXISTS deciding_sets_played INT NOT NULL DEFAULT 0;
+  ALTER TABLE player_stats_summary ADD COLUMN IF NOT EXISTS favorite_character TEXT;
+  ALTER TABLE player_stats_summary ADD COLUMN IF NOT EXISTS favorite_character_picks INT NOT NULL DEFAULT 0;
+  ALTER TABLE player_stats_summary ADD COLUMN IF NOT EXISTS character_matches INT NOT NULL DEFAULT 0;
+END $$;
+
+-- Per-character pick counts backing `favorite_character` above — TE4 (ATP) only, see note above.
+CREATE TABLE IF NOT EXISTS player_character_usage (
+  player_id TEXT NOT NULL, tour TEXT NOT NULL DEFAULT 'TE4', character TEXT NOT NULL,
+  picks INT NOT NULL DEFAULT 0, updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+  PRIMARY KEY(player_id, tour, character)
+);
+CREATE INDEX IF NOT EXISTS player_character_usage_player_idx ON player_character_usage(player_id, tour);
+
 -- Direct messages between forum members. A lightweight inbox (list + thread view, polling-based
 -- refresh) rather than real-time chat infrastructure — conversation_key is the two user ids
 -- sorted and joined ("12:45") so both participants' messages land in the same thread regardless
