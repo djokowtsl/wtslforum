@@ -21,7 +21,7 @@ export default async function Articles() {
             {articles.map((a: any) => (
               <Link href={'/articles/' + a.slug} className="article" key={a.id}>
                 <div className="article-cover" style={a.cover_url ? { backgroundImage: `linear-gradient(0deg,rgba(3,10,24,.6),transparent),url(${a.cover_url})` } : undefined}></div>
-                <div className="article-body"><h3>{a.title}</h3>{a.excerpt && <p>{a.excerpt}</p>}<small>{a.author || 'WTSL Community'} · {fmtDate(a.created_at)}</small></div>
+                <div className="article-body"><h3>{a.title}</h3>{a.excerpt && <p>{a.excerpt}</p>}<small>{a.author || 'WTSL Forum'} · {fmtDate(a.created_at)}</small></div>
               </Link>
             ))}
           </div>

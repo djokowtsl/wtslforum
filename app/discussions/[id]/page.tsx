@@ -33,7 +33,7 @@ export default async function Thread({ params }: { params: Promise<{ id: string 
 
       <article className="post op">
         <div className="post-user">
-          <img className="avatar-img" src={topic.tournament_logo || (!topic.author ? '/brand/wtsl-logo-200.png' : discordAvatar(topic.avatar, topic.author || 'W'))} alt="" />
+          <img className={'avatar-img' + (!topic.author ? ' av-wtsl' : '')} src={topic.tournament_logo || (!topic.author ? '/brand/wtsl-logo-200.png' : discordAvatar(topic.avatar, topic.author || 'W'))} alt="" />
           <strong>{topic.author || 'Community'}</strong>
           <span className="pill role">Original poster</span>
         </div>
@@ -54,7 +54,7 @@ export default async function Thread({ params }: { params: Promise<{ id: string 
       {u ? (
         topic.locked && !u.isAdmin ? <div className="notice">This discussion has been locked by a moderator.</div> : <ReplyForm topicId={Number(topic.id)} />
       ) : (
-        <div className="compose">Sign in to join this conversation.<br /><a className="btn btn-discord" href="/api/auth/discord">Join with Discord</a></div>
+        <div className="compose">Sign in to join this conversation.<br /><a className="btn btn-discord" href="/api/auth/discord">Log in with Discord</a></div>
       )}
     </main>
   );

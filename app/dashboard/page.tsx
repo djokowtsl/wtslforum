@@ -12,7 +12,7 @@ export default async function Dashboard() {
   const fixtures = Array.isArray(fx) ? fx : [];
   return (
     <>
-      <PageHero eyebrow="WTSL Community" title="Dashboard">A snapshot of the tour: performance leaders, recent matches and open fixtures.</PageHero>
+      <PageHero eyebrow="WTSL Forum" title="Dashboard">A snapshot of the tour: performance leaders, recent matches and open fixtures.</PageHero>
       <main className="container">
         <div className="kpi-grid">
           <div><span>Open fixtures</span><b>{fixtures.length}</b></div><div><span>Tracked players</span><b>{players.length}</b></div><div><span>Recent matches</span><b>{matches.length}</b></div><div><span>Data source</span><b>WTSL TE4</b></div>

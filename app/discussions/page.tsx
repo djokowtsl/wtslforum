@@ -22,9 +22,9 @@ export default async function Discussions({ searchParams }: { searchParams: Prom
   return (
     <>
       <PageHero
-        eyebrow="WTSL Community Forum"
+        eyebrow="WTSL Forum"
         title={active ? active.name : 'Discussions'}
-        actions={u ? <Link className="btn btn-primary" href="/discussions/new">New discussion</Link> : <a className="btn btn-discord" href="/api/auth/discord">Join with Discord</a>}
+        actions={u ? <Link className="btn btn-primary" href="/discussions/new">New discussion</Link> : <a className="btn btn-discord" href="/api/auth/discord">Log in with Discord</a>}
       >
         {active?.description || 'Match talk, tournament threads, history and everything else happening around the league.'}
       </PageHero>
@@ -42,7 +42,7 @@ export default async function Discussions({ searchParams }: { searchParams: Prom
             <div className="empty"><strong>Nothing here yet</strong>Start the first conversation in this board.{u && <><br /><Link className="btn btn-primary btn-sm" href="/discussions/new">Start a discussion</Link></>}</div>
           ) : topics.map((t: any) => (
             <Link className="topic" href={'/discussions/' + t.id} key={t.id}>
-              <img className="av" src={t.tournament_logo || (!t.author ? '/brand/wtsl-logo-200.png' : discordAvatar(t.avatar, t.author || 'W'))} alt="" />
+              <img className={'av' + (!t.author ? ' av-wtsl' : '')} src={t.tournament_logo || (!t.author ? '/brand/wtsl-logo-200.png' : discordAvatar(t.avatar, t.author || 'W'))} alt="" />
               <div>
                 <div className="topic-title">{t.title}</div>
                 <div className="topic-meta">

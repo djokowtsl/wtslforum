@@ -33,7 +33,7 @@ export default async function Predictions() {
   const rows = await safeLeaderboard();
   return (
     <>
-      <PageHero eyebrow="WTSL Community" title="Predictions leaderboard">
+      <PageHero eyebrow="WTSL Forum" title="Predictions leaderboard">
         Bracket prediction standings from the WTSL Discord, synced from Challonge picks.
       </PageHero>
       <main className="container">

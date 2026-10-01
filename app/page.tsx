@@ -58,7 +58,7 @@ export default async function Home({ searchParams }: { searchParams: Promise<{ e
             <div className="hero-actions">
               <Link className="btn btn-primary" href="/discussions">Enter the forum</Link>
               <a className="btn" href="https://www.playwtsl.com/TE4" target="_blank" rel="noreferrer">Go to WTSL ↗</a>
-              {!u && <a className="btn btn-discord" href="/api/auth/discord">Join with Discord</a>}
+              {!u && <a className="btn btn-discord" href="/api/auth/discord">Log in with Discord</a>}
             </div>
           </div>
           <div className="hero-panel">
@@ -97,7 +97,7 @@ export default async function Home({ searchParams }: { searchParams: Promise<{ e
           <section className="forum-list">
             <div className="category-head">Recent topics</div>
             {topics.length === 0 ? (
-              <div className="empty"><strong>No discussions yet</strong>Be the first to start a conversation about the tour.{u ? <><br /><Link className="btn btn-primary btn-sm" href="/discussions/new">Start a discussion</Link></> : <><br /><a className="btn btn-discord btn-sm" href="/api/auth/discord">Join with Discord</a></>}</div>
+              <div className="empty"><strong>No discussions yet</strong>Be the first to start a conversation about the tour.{u ? <><br /><Link className="btn btn-primary btn-sm" href="/discussions/new">Start a discussion</Link></> : <><br /><a className="btn btn-discord btn-sm" href="/api/auth/discord">Log in with Discord</a></>}</div>
             ) : topics.map((t: any) => (
               <Link className="topic" href={'/discussions/' + t.id} key={t.id}>
                 <img className="av" src={discordAvatar(t.avatar, t.author || 'W')} alt="" />
@@ -111,7 +111,7 @@ export default async function Home({ searchParams }: { searchParams: Promise<{ e
             ))}
           </section>
           <aside className="stack">
-            {!u && <div className="sidebar-card"><h3 className="display">Join the clubhouse</h3><p>Sign in with Discord to post, reply and take part in every tournament thread.</p><a className="btn btn-discord" style={{ width: '100%' }} href="/api/auth/discord">Join with Discord</a></div>}
+            {!u && <div className="sidebar-card"><h3 className="display">Join the clubhouse</h3><p>Sign in with Discord to post, reply and take part in every tournament thread.</p><a className="btn btn-discord" style={{ width: '100%' }} href="/api/auth/discord">Log in with Discord</a></div>}
             {categories.length > 0 && <div className="sidebar-card"><h3 className="display">Boards</h3>{categories.map((c: any) => <Link className="cat-link" key={c.id} href={'/discussions?c=' + c.slug}>{c.name}<span>{c.topics}</span></Link>)}</div>}
             {live.length > 0 && <div className="sidebar-card"><h3 className="display">On the calendar</h3>{live.map((t: any) => <Link className="mini-t" key={t.id} href={'/tournaments/' + t.wtsl_tournament_key}><span className={`status-dot ${t.status}`} /><div><b>{t.name}</b><small>{t.status === 'ongoing' ? 'Ongoing now' : `Starts ${fmtDate(t.start_date)}`}</small></div></Link>)}</div>}
           </aside>
@@ -127,7 +127,7 @@ export default async function Home({ searchParams }: { searchParams: Promise<{ e
               {articles.map((a: any) => (
                 <Link href={'/articles/' + a.slug} className="article" key={a.id}>
                   <div className="article-cover" style={a.cover_url ? { backgroundImage: `linear-gradient(0deg,rgba(3,10,24,.6),transparent),url(${a.cover_url})` } : undefined}></div>
-                  <div className="article-body"><h3>{a.title}</h3>{a.excerpt && <p>{a.excerpt}</p>}<small>{a.author || 'WTSL Community'} · {fmtDate(a.created_at)}</small></div>
+                  <div className="article-body"><h3>{a.title}</h3>{a.excerpt && <p>{a.excerpt}</p>}<small>{a.author || 'WTSL Forum'} · {fmtDate(a.created_at)}</small></div>
                 </Link>
               ))}
             </div>

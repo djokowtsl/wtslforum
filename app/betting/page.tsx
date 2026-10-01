@@ -12,7 +12,7 @@ export default async function Betting() {
   const fixtures = Array.isArray(fx) ? fx : [];
   return (
     <>
-      <PageHero eyebrow="WTSL Community" title="Betting fixtures">Virtual WTSL Dollars only. Follow fixtures, odds and community selections.</PageHero>
+      <PageHero eyebrow="WTSL Forum" title="Betting fixtures">Virtual WTSL Dollars only. Follow fixtures, odds and community selections.</PageHero>
       <main className="container">
         <div className="notice" style={{ marginBottom: 22 }}>Placing bets on the site is temporarily disabled, keep betting in Discord for now.{!wtslCore.configured() && ' (The WTSL Core API is not configured on this deployment.)'}</div>
         {fixtures.length === 0 ? <div className="forum-list"><div className="empty"><strong>No open fixtures</strong>New fixtures appear when the next round opens.</div></div> : (
