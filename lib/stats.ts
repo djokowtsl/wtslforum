@@ -1,5 +1,10 @@
 import {sql} from './db';
 
+// Small-sample stats (e.g. a 3-0 player at #1 by win %) are misleading on a ranked leaderboard,
+// so anyone under this many recorded matches is excluded entirely rather than just ranked low.
+// Exported so the page can display the same number in its "why isn't X here" note.
+export const LEADERBOARD_MIN_MATCHES = 20;
+
 export async function leaderboard(tour='TE4', metric='wins'){
   const order = ['wins','win_pct','aces','winners','break_points','first_serve_pct','elo'].includes(metric)
     ? metric
@@ -22,7 +27,7 @@ export async function leaderboard(tour='TE4', metric='wins'){
     LEFT JOIN player_stats_summary s
       ON s.player_id=p.wtsl_player_id
       AND s.tour=${tour}
-    WHERE p.tour=${tour}
+    WHERE p.tour=${tour} AND COALESCE(s.matches,0) >= ${LEADERBOARD_MIN_MATCHES}
     ORDER BY
       CASE
         WHEN ${order} = 'win_pct' THEN

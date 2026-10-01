@@ -13,10 +13,9 @@ export const dynamic = 'force-dynamic';
 export const metadata: Metadata = { title: 'Matches' };
 
 // The WTSL betting bot only runs markets for singles (ATP/WTA) — Competitive Doubles, Coop
-// and Created Characters never get fixtures. Map our tour codes to the "atp"/"wta" tags the
-// betting Core API tags fixtures with, so switching tabs actually filters instead of always
-// showing every open fixture across every tour mixed together.
-const CORE_BETTING_TOUR: Partial<Record<TourCode, string>> = { TE4: 'atp', 'TE4_(F)': 'wta' };
+// and Created Characters never get fixtures. These are the only two tours it tags fixtures
+// with, so BETTING_TOURS is just used to show the right "why is this empty" message.
+const BETTING_TOURS: TourCode[] = ['TE4', 'TE4_(F)'];
 
 export default async function Matches({ searchParams }: { searchParams: Promise<{ tour?: string }> }) {
   const { tour: tourParam } = await searchParams;
@@ -27,8 +26,10 @@ export default async function Matches({ searchParams }: { searchParams: Promise<
     safe(() => getTournaments(tour), [] as any[]),
   ]);
   const names = Object.fromEntries(tournaments.map((t: any) => [t.wtsl_tournament_key, t.name]));
-  const betTour = CORE_BETTING_TOUR[tour];
-  const fx = Array.isArray(fixtures) ? fixtures.filter((f: any) => (betTour ? String(f.tour).toLowerCase() === betTour : false)) : [];
+  const supportsBetting = BETTING_TOURS.includes(tour);
+  // Fixtures come back tagged with the same raw tour codes used everywhere else on the
+  // forum ("TE4", "TE4_(F)") — not "atp"/"wta" — so compare directly against the selected tour.
+  const fx = Array.isArray(fixtures) ? fixtures.filter((f: any) => String(f.tour) === tour) : [];
 
   return (
     <>
@@ -36,7 +37,7 @@ export default async function Matches({ searchParams }: { searchParams: Promise<
       <main className="container">
         <TourTabs basePath="/matches" current={tour} />
         <div className="section-head"><div><h2 className="display">Open fixtures</h2><p>Upcoming matches with current odds.</p></div><Link className="btn btn-sm" href="/betting">Betting board</Link></div>
-        {fx.length === 0 ? <div className="forum-list"><div className="empty"><strong>No open fixtures right now</strong>{betTour ? 'New fixtures appear here as soon as the next round is set.' : 'The betting bot only runs markets for ATP and WTA singles — this tour has no fixtures.'}</div></div> : <div className="live-grid">{fx.map((f: any) => <FixtureCard key={f.key} f={f} />)}</div>}
+        {fx.length === 0 ? <div className="forum-list"><div className="empty"><strong>No open fixtures right now</strong>{supportsBetting ? 'New fixtures appear here as soon as the next round is set.' : 'The betting bot only runs markets for ATP and WTA singles — this tour has no fixtures.'}</div></div> : <div className="live-grid">{fx.map((f: any) => <FixtureCard key={f.key} f={f} />)}</div>}
 
         <div className="section-head section-space"><div><h2 className="display">Recent results</h2><p>The latest completed matches.</p></div></div>
         {results.length === 0 ? <div className="forum-list"><div className="empty"><strong>No results yet</strong>Completed matches will be listed here.</div></div> : <div className="live-grid">{results.map((m: any) => <ResultCard key={m.id} m={m} tournamentNames={names} />)}</div>}
