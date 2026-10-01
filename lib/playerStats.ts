@@ -22,8 +22,19 @@ async function mapLimit<T>(items: T[], limit: number, worker: (item: T) => Promi
  * like a list of set scores, e.g. "6-2,6-2,6-2" (optionally with a tiebreak point count in
  * parens, e.g. "7-6(4)", which is stripped before parsing). Returns the parsed sets or null.
  */
+export function normalizeMatchScore(score: string): string {
+  return score
+    .replace(/\b(?:ret(?:ired)?|walkover)\.?(?=\s|$)/gi, '')
+    .replace(/\//g, '-')
+    .replace(/[,;]+/g, ' ')
+    .replace(/\s+/g, ' ')
+    .trim();
+}
+
 export function parseSets(score: string): [number, number][] | null {
-  const sets = score.split(',').map((s) => s.trim()).filter(Boolean);
+  // The Discord spreadsheet uses spaces and `/` (for example `6/2 6/1`), while
+  // the public WTSL feed uses commas and `-`. Accept both representations.
+  const sets = normalizeMatchScore(score).split(' ').filter(Boolean);
   if (!sets.length) return null;
   const parsed: [number, number][] = [];
   for (const set of sets) {

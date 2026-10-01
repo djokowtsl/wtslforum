@@ -1,5 +1,5 @@
 import { sql } from './db';
-import { parseSets, computeClutchStats } from './playerStats';
+import { parseSets, computeClutchStats, normalizeMatchScore } from './playerStats';
 import { normalizePlayerName } from './queries';
 import { type TourCode } from './wtsl';
 
@@ -50,25 +50,33 @@ export async function importMatchHistory(tour: TourCode, rows: MatchHistoryRow[]
   let inserted = 0;
   let skippedNoScore = 0;
   const unmatched = new Set<string>();
+  const skippedScores: string[] = [];
+  const unmatchedRows: { player1: string; player2: string }[] = [];
 
   for (const r of rows) {
-    const sets = parseSets(r.score);
-    if (!sets) { skippedNoScore++; continue; }
+    const score = normalizeMatchScore(r.score);
+    const sets = parseSets(score);
+    if (!sets) {
+      skippedNoScore++;
+      if (skippedScores.length < 20) skippedScores.push(r.score);
+      continue;
+    }
     const p1 = resolvePlayerId(r.player1, byName);
     const p2 = resolvePlayerId(r.player2, byName);
     if (!p1 || !p2) {
       if (!p1) unmatched.add(r.player1);
       if (!p2) unmatched.add(r.player2);
+      if (unmatchedRows.length < 20) unmatchedRows.push({ player1: r.player1, player2: r.player2 });
       continue;
     }
     const setsWon = sets.filter(([a, b]) => a > b).length;
     const winnerId = setsWon * 2 > sets.length ? p1 : p2;
     const pair = [p1, p2].sort();
-    const sourceId = `import:${tour}:${r.tournamentName ?? 'x'}:${r.round ?? 'x'}:${pair[0]}-${pair[1]}:${r.date ?? ''}:${r.score}`;
+    const sourceId = `import:${tour}:${r.tournamentName ?? 'x'}:${r.round ?? 'x'}:${pair[0]}-${pair[1]}:${r.date ?? ''}:${score}`;
 
     const result = await sql`
       INSERT INTO match_stats(source_id,tour,tournament_key,tournament_name,round_name,player_one_id,player_two_id,score,winner_id,played_at)
-      VALUES(${sourceId},${tour},${null},${r.tournamentName ?? null},${r.round ?? null},${p1},${p2},${r.score},${winnerId},${r.date ?? null})
+      VALUES(${sourceId},${tour},${null},${r.tournamentName ?? null},${r.round ?? null},${p1},${p2},${score},${winnerId},${r.date ?? null})
       ON CONFLICT(source_id) DO UPDATE SET tournament_name=COALESCE(match_stats.tournament_name, EXCLUDED.tournament_name)
       RETURNING (xmax = 0) AS inserted
     `;
@@ -78,5 +86,5 @@ export async function importMatchHistory(tour: TourCode, rows: MatchHistoryRow[]
   let clutchUpdated: number | undefined;
   try { clutchUpdated = (await computeClutchStats(tour)).playersUpdated; } catch { /* best-effort recompute */ }
 
-  return { tour, seen: rows.length, inserted, skippedNoScore, unmatchedPlayers: Array.from(unmatched), clutchUpdated };
+  return { tour, seen: rows.length, inserted, skippedNoScore, skippedScores, unmatchedPlayers: Array.from(unmatched), unmatchedRows, clutchUpdated };
 }
