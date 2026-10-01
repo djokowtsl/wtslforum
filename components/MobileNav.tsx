@@ -3,6 +3,7 @@
 import Link from 'next/link';
 import { usePathname } from 'next/navigation';
 import { useEffect, useRef } from 'react';
+import { ThemeToggle } from './ThemeToggle';
 
 type NavItem = { href: string; label: string };
 
@@ -38,6 +39,7 @@ export function MobileNav({
           <Link key={n.href} href={n.href} onClick={close}>{n.label}</Link>
         ))}
         {isAdmin && <Link href="/admin" onClick={close}>Admin</Link>}
+        <div className="mobile-theme-row"><span>Theme</span><ThemeToggle /></div>
         {username ? (
           <Link href="/profile" className="btn btn-ghost" onClick={close}>{username}</Link>
         ) : (

@@ -1,6 +1,7 @@
 import Link from 'next/link';
 import { getSession, discordAvatar } from '@/lib/auth';
 import { MobileNav } from './MobileNav';
+import { ThemeToggle } from './ThemeToggle';
 
 export const NAV = [
   { href: '/discussions', label: 'Discussions' },
@@ -32,6 +33,7 @@ export async function ForumHeader() {
             <Link key={n.href} href={n.href}>{n.label}</Link>
           ))}
           {u?.isAdmin && <Link href="/admin">Admin</Link>}
+          <ThemeToggle />
           {u ? (
             <Link href="/profile" className="user-chip">
               <img src={discordAvatar(u.avatar, u.username)} alt="" />
