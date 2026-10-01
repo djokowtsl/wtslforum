@@ -354,6 +354,30 @@ CREATE TABLE IF NOT EXISTS player_character_usage (
 );
 CREATE INDEX IF NOT EXISTS player_character_usage_player_idx ON player_character_usage(player_id, tour);
 
+-- One-time cleanup: tournaments were previously de-duplicated by a key derived from
+-- name+start_date, which broke whenever a tournament's start date was rescheduled after signups
+-- opened (the key changed mid-event, orphaning the original row and creating a second one for the
+-- same tournament — e.g. Tokyo/Jinan/Hangzhou/Chengdu/Qian Daohu each showing twice). The key is
+-- now the site's own stable tournament ID (see lib/wtsl.ts), so re-running this is safe/idempotent
+-- going forward; this block only ever needs to remove the duplicates left behind by the old scheme.
+DO $$
+DECLARE dup RECORD;
+BEGIN
+  FOR dup IN
+    SELECT id, discussion_topic_id FROM (
+      SELECT id, discussion_topic_id,
+        ROW_NUMBER() OVER (PARTITION BY tour, name ORDER BY last_synced_at DESC, id DESC) AS rn
+      FROM tournaments
+    ) ranked
+    WHERE rn > 1
+  LOOP
+    IF dup.discussion_topic_id IS NOT NULL THEN
+      DELETE FROM topics WHERE id = dup.discussion_topic_id AND NOT EXISTS (SELECT 1 FROM replies WHERE topic_id = dup.discussion_topic_id);
+    END IF;
+    DELETE FROM tournaments WHERE id = dup.id;
+  END LOOP;
+END $$;
+
 -- Direct messages between forum members. A lightweight inbox (list + thread view, polling-based
 -- refresh) rather than real-time chat infrastructure — conversation_key is the two user ids
 -- sorted and joined ("12:45") so both participants' messages land in the same thread regardless

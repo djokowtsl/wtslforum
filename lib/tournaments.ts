@@ -46,7 +46,14 @@ export async function syncTournaments(tour: TourCode = DEFAULT_TOUR) {
   let created = 0, updated = 0;
   for (const t of tournaments) {
     const championId = await ensureChampion(t.championUrl, tour);
-    const rows = await sql`SELECT id, discussion_topic_id, logo_url FROM tournaments WHERE wtsl_tournament_key=${t.key} LIMIT 1`;
+    let rows = await sql`SELECT id, discussion_topic_id, logo_url FROM tournaments WHERE wtsl_tournament_key=${t.key} LIMIT 1`;
+    // First sync after the key scheme changed (name+date -> stable site ID): adopt the existing
+    // row for this tournament by name instead of inserting a second one for it. Picks the most
+    // recently synced match in case stale duplicates from the old scheme are still around.
+    if (!rows[0]) {
+      rows = await sql`SELECT id, discussion_topic_id, logo_url FROM tournaments WHERE tour=${tour} AND name=${t.name} ORDER BY last_synced_at DESC LIMIT 1`;
+      if (rows[0]) await sql`UPDATE tournaments SET wtsl_tournament_key=${t.key} WHERE id=${rows[0].id}`;
+    }
     const logoUrl = rows[0]?.logo_url ?? await fetchWTSLTournamentLogo(t.officialUrl).catch(() => null);
     if (rows[0]) {
       await sql`UPDATE tournaments SET name=${t.name},tour=${tour},location=${t.location},country=${t.country},category=${t.category},draw_size=${t.drawSize},surface=${t.surface},start_date=${t.startDate},status=${t.status},champion_player_id=${championId},official_url=${t.officialUrl},logo_url=COALESCE(${logoUrl},logo_url),last_synced_at=NOW() WHERE id=${rows[0].id}`;

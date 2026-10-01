@@ -8,6 +8,7 @@ import { fmtDateTime } from '@/lib/format';
 import ReplyForm from '@/components/ReplyForm';
 import RichText from '@/components/RichText';
 import { StatusDot } from '@/components/StatusDot';
+import AdminTopicControls from '@/components/AdminTopicControls';
 
 export const dynamic = 'force-dynamic';
 export const metadata: Metadata = { title: 'Discussion' };
@@ -30,6 +31,7 @@ export default async function Thread({ params }: { params: Promise<{ id: string 
         </div>
         <h1 className="display">{topic.title}</h1>
         <div className="topic-meta"><span>Started by {topic.author || 'Community'}</span><span>{fmtDateTime(topic.created_at)}</span><span>{replies.length} {replies.length === 1 ? 'reply' : 'replies'}</span><span>{topic.views} views</span></div>
+        {u?.isAdmin && <AdminTopicControls topicId={Number(topic.id)} locked={!!topic.locked} pinned={!!topic.pinned} />}
       </div>
 
       <article className="post op">

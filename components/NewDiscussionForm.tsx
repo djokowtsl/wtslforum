@@ -1,7 +1,15 @@
 'use client';
 import { useState } from 'react';
 
-export default function NewDiscussionForm({ categories }: { categories: any[] }) {
+type Props = {
+  categories: any[];
+  initialTitle?: string;
+  initialBody?: string;
+  matchKey?: string;
+  initialCategoryId?: string | number;
+};
+
+export default function NewDiscussionForm({ categories, initialTitle, initialBody, matchKey, initialCategoryId }: Props) {
   const [error, setError] = useState('');
   const [busy, setBusy] = useState(false);
 
@@ -10,8 +18,16 @@ export default function NewDiscussionForm({ categories }: { categories: any[] })
     setBusy(true);
     setError('');
     const f = new FormData(e.currentTarget);
+    const body = String(f.get('body') || '').trim();
+    // A match thread is only ever actually created once someone writes a real first post — an
+    // auto-filled starter post left untouched (or cleared out) must not spawn a stale thread.
+    if (matchKey && (!body || body === (initialBody || '').trim())) {
+      setError('Add your own thoughts to the post before publishing this match thread.');
+      setBusy(false);
+      return;
+    }
     try {
-      const r = await fetch('/api/topics', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ title: f.get('title'), categoryId: f.get('categoryId'), body: f.get('body') }) });
+      const r = await fetch('/api/topics', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ title: f.get('title'), categoryId: f.get('categoryId'), body: f.get('body'), matchKey }) });
       const x = await r.json().catch(() => ({}));
       if (r.ok) location.href = '/discussions/' + x.id;
       else setError(x.error || 'Unable to publish your discussion.');
@@ -23,14 +39,19 @@ export default function NewDiscussionForm({ categories }: { categories: any[] })
 
   return (
     <form className="form-card" onSubmit={submit}>
-      <label>Title<input name="title" required maxLength={140} placeholder="e.g. US Open final — that second set" /></label>
-      <label>
-        Category
-        <select name="categoryId" required>
-          {categories.map((c) => <option value={c.id} key={c.id}>{c.name}</option>)}
-        </select>
-      </label>
-      <label>Post<textarea name="body" required rows={11} maxLength={20000} placeholder="Write your post…" /></label>
+      {matchKey && <p className="notice">This will create the Match Talk thread for this match — write something below to publish it.</p>}
+      <label>Title<input name="title" required maxLength={140} placeholder="e.g. US Open final — that second set" defaultValue={initialTitle || ''} readOnly={!!matchKey} /></label>
+      {matchKey && initialCategoryId !== undefined ? (
+        <input type="hidden" name="categoryId" value={String(initialCategoryId)} />
+      ) : (
+        <label>
+          Category
+          <select name="categoryId" required defaultValue={initialCategoryId !== undefined ? String(initialCategoryId) : undefined}>
+            {categories.map((c) => <option value={c.id} key={c.id}>{c.name}</option>)}
+          </select>
+        </label>
+      )}
+      <label>Post<textarea name="body" required rows={11} maxLength={20000} placeholder="Write your post…" defaultValue={initialBody || ''} /></label>
       {error && <p className="form-error">{error}</p>}
       <div><button className="btn btn-primary" type="submit" disabled={busy}>{busy ? 'Publishing…' : 'Publish discussion'}</button></div>
     </form>
