@@ -22,7 +22,7 @@ export default async function TournamentsPage({ searchParams }: { searchParams: 
       <main className="page-shell" style={{ paddingTop: 10 }}>
         <TourTabs basePath="/tournaments" current={tour} />
         {all.length === 0 && (
-          <div className="forum-list"><div className="empty"><strong>{dbConfigured() ? 'No tournaments synced yet' : 'Database not connected'}</strong>{dbConfigured() ? 'The calendar syncs from the official WTSL site every hour. Trigger /api/sync/wtsl once to load it straight away.' : 'Set DATABASE_URL on the deployment to load the tournament calendar.'}</div></div>
+          <div className="forum-list"><div className="empty"><strong>{dbConfigured() ? 'No tournaments synced yet' : 'Database not connected'}</strong>{dbConfigured() ? 'The calendar syncs from the official WTSL site every hour.' : 'Set DATABASE_URL on the deployment to load the tournament calendar.'}</div></div>
         )}
         {GROUPS.map(([status, label]) => {
           const items = all.filter((x: any) => x.status === status);
