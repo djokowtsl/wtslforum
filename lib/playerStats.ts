@@ -1,5 +1,5 @@
 import { sql } from './db';
-import { fetchWTSLPlayer, fetchWTSLPlayerStatsTable, TOURS, DEFAULT_TOUR, type TourCode } from './wtsl';
+import { fetchWTSLPlayer, fetchWTSLPlayerStatsTable, fetchWTSLAllResults, TOURS, DEFAULT_TOUR, type TourCode } from './wtsl';
 
 /**
  * Runs `worker` across `items` with at most `limit` in flight at once — a single player's
@@ -135,7 +135,18 @@ export async function syncPlayerStats(tour: TourCode = DEFAULT_TOUR) {
       lastError = e instanceof Error ? e.message : String(e);
     }
   });
-  return { tour, seen: players.length, upserted, failed, matchesRecorded, lastError };
+
+  let clutchUpdated: number | undefined;
+  try { clutchUpdated = (await computeClutchStats(tour)).playersUpdated; }
+  catch (e) { lastError = lastError ?? (e instanceof Error ? e.message : String(e)); }
+
+  let characterUsage: Awaited<ReturnType<typeof syncCharacterUsage>> | undefined;
+  if (tour === 'TE4') {
+    try { characterUsage = await syncCharacterUsage(); }
+    catch (e) { lastError = lastError ?? (e instanceof Error ? e.message : String(e)); }
+  }
+
+  return { tour, seen: players.length, upserted, failed, matchesRecorded, lastError, clutchUpdated, characterUsage };
 }
 
 export async function syncPlayerStatsAllTours() {
@@ -145,4 +156,105 @@ export async function syncPlayerStatsAllTours() {
     catch (e) { results.push({ tour: t.code, error: e instanceof Error ? e.message : 'Sync failed' }); }
   }
   return results;
+}
+
+/**
+ * Replicates the Discord bot's clutch-stats math (sets, tiebreaks and deciding sets won/played)
+ * entirely from matches already stored in `match_stats` — no extra scraping needed, and it
+ * covers every tour since `match_stats` is fed from every player's recent-results page regardless
+ * of tour. `player_one_id`'s side of `score` is always the side that was scraped first (see
+ * `recordMatchResult`), so each row's sets are reliably oriented for both players.
+ */
+export async function computeClutchStats(tour: TourCode) {
+  const rows = await sql`SELECT player_one_id, player_two_id, score FROM match_stats WHERE tour=${tour}`;
+  type Agg = { setsWon: number; setsLost: number; tiebreaksWon: number; tiebreaksPlayed: number; decidingSetsWon: number; decidingSetsPlayed: number };
+  const agg = new Map<string, Agg>();
+  const bump = (id: string) => {
+    if (!agg.has(id)) agg.set(id, { setsWon: 0, setsLost: 0, tiebreaksWon: 0, tiebreaksPlayed: 0, decidingSetsWon: 0, decidingSetsPlayed: 0 });
+    return agg.get(id)!;
+  };
+  for (const row of rows as { player_one_id: string; player_two_id: string; score: string }[]) {
+    const sets = parseSets(String(row.score ?? ''));
+    if (!sets || sets.length < 2) continue;
+    const a1 = bump(String(row.player_one_id));
+    const a2 = bump(String(row.player_two_id));
+    let priorP1 = 0, priorP2 = 0;
+    sets.forEach(([first, second], idx) => {
+      const isLast = idx === sets.length - 1;
+      if (first > second) { a1.setsWon++; a2.setsLost++; }
+      else if (second > first) { a2.setsWon++; a1.setsLost++; }
+      // Tiebreak set: tennis scores a tiebreak set 7-6 (or 6-7) for the shortcut-scored game total.
+      if ((first === 6 && second === 7) || (first === 7 && second === 6)) {
+        a1.tiebreaksPlayed++; a2.tiebreaksPlayed++;
+        if (first > second) a1.tiebreaksWon++; else a2.tiebreaksWon++;
+      }
+      // Deciding set: the match's final set, in a best-of that went the distance (3+ sets played)
+      // with the prior sets tied — i.e. it was the set that actually decided the match.
+      if (isLast && sets.length >= 3 && priorP1 === priorP2 && first !== second) {
+        a1.decidingSetsPlayed++; a2.decidingSetsPlayed++;
+        if (first > second) a1.decidingSetsWon++; else a2.decidingSetsWon++;
+      }
+      if (first > second) priorP1++; else if (second > first) priorP2++;
+    });
+  }
+  let playersUpdated = 0;
+  for (const [playerId, a] of agg) {
+    await sql`
+      UPDATE player_stats_summary SET
+        sets_won=${a.setsWon}, sets_lost=${a.setsLost},
+        tiebreaks_won=${a.tiebreaksWon}, tiebreaks_played=${a.tiebreaksPlayed},
+        deciding_sets_won=${a.decidingSetsWon}, deciding_sets_played=${a.decidingSetsPlayed}
+      WHERE player_id=${playerId} AND tour=${tour}
+    `;
+    playersUpdated++;
+  }
+  return { tour, matchesSeen: rows.length, playersUpdated };
+}
+
+/**
+ * Favourite-character tracking, scraped from `all_results_fetch.php` — the only public WTSL page
+ * that records which character each player used per match. That feed only ever contains ATP (TE4)
+ * rows (see `fetchWTSLAllResults`), so this only ever touches tour='TE4' data; WTA/Doubles/Coop/
+ * Created players keep favorite_character=NULL since there's no public source for that data.
+ */
+export async function syncCharacterUsage() {
+  const rows = await fetchWTSLAllResults();
+  const picks = new Map<string, Map<string, number>>(); // playerId -> character -> count
+  const bump = (playerId: string, character: string) => {
+    if (!picks.has(playerId)) picks.set(playerId, new Map());
+    const m = picks.get(playerId)!;
+    m.set(character, (m.get(character) ?? 0) + 1);
+  };
+  let matchesCounted = 0;
+  for (const r of rows) {
+    if (!parseSets(r.score)) continue; // only count completed matches, not Walkover/Coin Toss/Scheduled/etc
+    matchesCounted++;
+    if (r.player1Character) bump(r.player1Id, r.player1Character);
+    if (r.player2Character) bump(r.player2Id, r.player2Character);
+  }
+
+  let charactersWritten = 0;
+  let playersUpdated = 0;
+  for (const [playerId, characters] of picks) {
+    let topCharacter = '';
+    let topPicks = 0;
+    let total = 0;
+    for (const [character, count] of characters) {
+      total += count;
+      if (count > topPicks) { topPicks = count; topCharacter = character; }
+      await sql`
+        INSERT INTO player_character_usage(player_id,tour,character,picks,updated_at)
+        VALUES (${playerId},'TE4',${character},${count},NOW())
+        ON CONFLICT (player_id,tour,character) DO UPDATE SET picks=EXCLUDED.picks, updated_at=NOW()
+      `;
+      charactersWritten++;
+    }
+    await sql`
+      UPDATE player_stats_summary
+      SET favorite_character=${topCharacter}, favorite_character_picks=${topPicks}, character_matches=${total}
+      WHERE player_id=${playerId} AND tour='TE4'
+    `;
+    playersUpdated++;
+  }
+  return { tour: 'TE4' as const, rowsSeen: rows.length, matchesCounted, charactersWritten, playersUpdated };
 }

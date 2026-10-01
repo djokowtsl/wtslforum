@@ -112,6 +112,16 @@ export default async function Dashboard() {
                     <div>{form.split('').map((c, i) => <span key={i} className={c === 'W' ? 'form-win' : 'form-loss'}>{c}</span>)}</div>
                   </div>
                 )}
+                {((p.tiebreaks_played ?? 0) > 0 || (p.deciding_sets_played ?? 0) > 0) && (
+                  <div className="player-record-grid">
+                    <div><strong>{p.sets_won ?? 0}-{p.sets_lost ?? 0}</strong><small>Sets</small></div>
+                    <div><strong>{p.tiebreaks_won ?? 0}-{(p.tiebreaks_played ?? 0) - (p.tiebreaks_won ?? 0)}</strong><small>Tiebreaks</small></div>
+                    <div><strong>{p.deciding_sets_won ?? 0}-{(p.deciding_sets_played ?? 0) - (p.deciding_sets_won ?? 0)}</strong><small>Deciding sets</small></div>
+                    {card.tour === 'TE4' && p.favorite_character && (
+                      <div><strong>{p.favorite_character}</strong><small>Favourite character ({p.favorite_character_picks}/{p.character_matches})</small></div>
+                    )}
+                  </div>
+                )}
                 {card.insights.qualifies ? (
                   <div className="insight-grid">
                     {card.insights.strongest && (

@@ -329,6 +329,55 @@ DO $$ BEGIN
   ALTER TABLE users ADD COLUMN IF NOT EXISTS status_note TEXT NOT NULL DEFAULT '';
 END $$;
 
+-- Clutch stats (sets/tiebreaks/deciding sets won & played), computed from the match history
+-- already recorded in match_stats (covers every tour — no extra scraping needed), plus favourite-
+-- character tracking. Character data is only published by WTSL for TE4 (ATP) via
+-- all_results_fetch.php — the tour query parameter on that feed is ignored, so WTA/Doubles/Coop
+-- character usage is not available from any public WTSL page and these columns stay 0/NULL there.
+DO $$ BEGIN
+  ALTER TABLE player_stats_summary ADD COLUMN IF NOT EXISTS sets_won INT NOT NULL DEFAULT 0;
+  ALTER TABLE player_stats_summary ADD COLUMN IF NOT EXISTS sets_lost INT NOT NULL DEFAULT 0;
+  ALTER TABLE player_stats_summary ADD COLUMN IF NOT EXISTS tiebreaks_won INT NOT NULL DEFAULT 0;
+  ALTER TABLE player_stats_summary ADD COLUMN IF NOT EXISTS tiebreaks_played INT NOT NULL DEFAULT 0;
+  ALTER TABLE player_stats_summary ADD COLUMN IF NOT EXISTS deciding_sets_won INT NOT NULL DEFAULT 0;
+  ALTER TABLE player_stats_summary ADD COLUMN IF NOT EXISTS deciding_sets_played INT NOT NULL DEFAULT 0;
+  ALTER TABLE player_stats_summary ADD COLUMN IF NOT EXISTS favorite_character TEXT;
+  ALTER TABLE player_stats_summary ADD COLUMN IF NOT EXISTS favorite_character_picks INT NOT NULL DEFAULT 0;
+  ALTER TABLE player_stats_summary ADD COLUMN IF NOT EXISTS character_matches INT NOT NULL DEFAULT 0;
+END $$;
+
+-- Per-character pick counts backing `favorite_character` above — TE4 (ATP) only, see note above.
+CREATE TABLE IF NOT EXISTS player_character_usage (
+  player_id TEXT NOT NULL, tour TEXT NOT NULL DEFAULT 'TE4', character TEXT NOT NULL,
+  picks INT NOT NULL DEFAULT 0, updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+  PRIMARY KEY(player_id, tour, character)
+);
+CREATE INDEX IF NOT EXISTS player_character_usage_player_idx ON player_character_usage(player_id, tour);
+
+-- One-time cleanup: tournaments were previously de-duplicated by a key derived from
+-- name+start_date, which broke whenever a tournament's start date was rescheduled after signups
+-- opened (the key changed mid-event, orphaning the original row and creating a second one for the
+-- same tournament — e.g. Tokyo/Jinan/Hangzhou/Chengdu/Qian Daohu each showing twice). The key is
+-- now the site's own stable tournament ID (see lib/wtsl.ts), so re-running this is safe/idempotent
+-- going forward; this block only ever needs to remove the duplicates left behind by the old scheme.
+DO $$
+DECLARE dup RECORD;
+BEGIN
+  FOR dup IN
+    SELECT id, discussion_topic_id FROM (
+      SELECT id, discussion_topic_id,
+        ROW_NUMBER() OVER (PARTITION BY tour, name ORDER BY last_synced_at DESC, id DESC) AS rn
+      FROM tournaments
+    ) ranked
+    WHERE rn > 1
+  LOOP
+    IF dup.discussion_topic_id IS NOT NULL THEN
+      DELETE FROM topics WHERE id = dup.discussion_topic_id AND NOT EXISTS (SELECT 1 FROM replies WHERE topic_id = dup.discussion_topic_id);
+    END IF;
+    DELETE FROM tournaments WHERE id = dup.id;
+  END LOOP;
+END $$;
+
 -- Direct messages between forum members. A lightweight inbox (list + thread view, polling-based
 -- refresh) rather than real-time chat infrastructure — conversation_key is the two user ids
 -- sorted and joined ("12:45") so both participants' messages land in the same thread regardless

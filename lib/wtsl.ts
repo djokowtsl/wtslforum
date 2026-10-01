@@ -77,7 +77,16 @@ export async function fetchWTSLTournaments(tour: TourCode = DEFAULT_TOUR): Promi
     const champion = cleanHtml(championLink?.[2] ?? championCell).replace(/^N\/A$/i,'') || null;
     const championHref = championLink?.[1] ?? null;
     const championUrl = championHref ? abs(championHref, url) : null;
-    const key = `${tour.toLowerCase().replace(/[^a-z0-9]+/g,'-')}-${name.toLowerCase().replace(/[^a-z0-9]+/g,'-')}-${startDate ?? 'unknown'}`;
+    // The site's own `tournament=` query param (e.g. "Jinan_2026_TE4") is a stable WTSL-assigned
+    // ID for this exact event. The old key derived from name+startDate broke whenever a
+    // tournament's start date was rescheduled after signups opened — the key changed mid-event,
+    // orphaning the original DB row and inserting a second one for the same tournament (hence
+    // cities like Tokyo/Jinan/Hangzhou showing up twice). Falls back to the old scheme only if
+    // the site ever omits that query param.
+    const idMatch = (nameLink?.[1] ?? '').match(/tournament=([^&"']+)/i);
+    const key = idMatch
+      ? `${tour.toLowerCase().replace(/[^a-z0-9]+/g,'-')}-${decodeURIComponent(idMatch[1]).toLowerCase().replace(/[^a-z0-9]+/g,'-')}`
+      : `${tour.toLowerCase().replace(/[^a-z0-9]+/g,'-')}-${name.toLowerCase().replace(/[^a-z0-9]+/g,'-')}-${startDate ?? 'unknown'}`;
     out.push({key,name,location,country,category,drawSize:Number.isFinite(drawSize)?drawSize:null,surface,startDate,status,champion,championUrl,officialUrl,tour});
   }
   return out;
@@ -274,6 +283,63 @@ export async function fetchWTSLRankings(tour: TourCode = DEFAULT_TOUR): Promise<
   const players = parseRankings(await res.text(), url, tour);
   if (!players.length) throw new Error('Rankings page returned no parsable players (run the sync with ?debug=1)');
   return players;
+}
+
+/*
+ * ---------- All-results feed (character usage) ----------
+ * This is the same public page the Discord bot scrapes to track which Tennis Elbow 4 character
+ * each player picked for every match. It only ever returns "ATP Characters" rows — appending
+ * ?tour=TE4_(F) (or any other tour code) to the URL is silently ignored and returns identical
+ * content — so WTSL does not publish per-match character data for WTA/Doubles/Coop/Created
+ * anywhere public. Character tracking below is therefore ATP (TE4) only.
+ */
+const ALL_RESULTS_URL = `${WTSL_BASE}/all_results_fetch.php`;
+
+export type WTSLAllResultRow = {
+  tournamentName: string; round: string;
+  player1Id: string; player1Name: string; player1Character: string | null;
+  player2Id: string; player2Name: string; player2Character: string | null;
+  date: string | null; score: string;
+};
+
+/** Parses a "Name (Character)" cell, where Character is empty `()` when nothing was recorded. */
+function parseNameCharacterCell(cell: string): { id: string | null; name: string; character: string | null } {
+  const link = cell.match(/<a[^>]+href=["']([^"']+)["'][^>]*>([\s\S]*?)<\/a>/i);
+  let id: string | null = null;
+  if (link) { try { id = new URL(abs(link[1].replace(/&amp;/g, '&'), ALL_RESULTS_URL)).searchParams.get('player'); } catch { /* ignore */ } }
+  const name = cleanHtml(link?.[2] ?? '');
+  const rest = cleanHtml(cell.replace(link?.[0] ?? '', ''));
+  const character = rest.match(/\(([^)]+)\)/)?.[1]?.trim() || null;
+  return { id, name, character };
+}
+
+export function parseAllResults(html: string): WTSLAllResultRow[] {
+  const body = html.match(/<tbody[^>]*>([\s\S]*?)<\/tbody>/i)?.[1] ?? '';
+  const rows = body.match(/<tr>[\s\S]*?<\/tr>/gi) ?? [];
+  const out: WTSLAllResultRow[] = [];
+  for (const row of rows) {
+    const cells = row.match(/<td[\s\S]*?<\/td>/gi) ?? [];
+    if (cells.length < 8) continue;
+    const tournamentLink = cells[1].match(/<a[^>]+href=["']([^"']+)["'][^>]*>([\s\S]*?)<\/a>/i);
+    const p1 = parseNameCharacterCell(cells[3]);
+    const p2 = parseNameCharacterCell(cells[4]);
+    if (!p1.id || !p2.id) continue;
+    const rawDate = cleanHtml(cells[5]);
+    const m = rawDate.match(/(\d{2})\.(\d{2})\.(\d{4})/);
+    out.push({
+      tournamentName: cleanHtml(tournamentLink?.[2] ?? cells[1]), round: cleanHtml(cells[2]),
+      player1Id: p1.id, player1Name: p1.name, player1Character: p1.character,
+      player2Id: p2.id, player2Name: p2.name, player2Character: p2.character,
+      date: m ? `${m[3]}-${m[2]}-${m[1]}` : null, score: cleanHtml(cells[7]),
+    });
+  }
+  return out;
+}
+
+export async function fetchWTSLAllResults(): Promise<WTSLAllResultRow[]> {
+  const res = await fetch(ALL_RESULTS_URL, { cache: 'no-store', headers: { 'user-agent': 'WTSL-Community-Bridge/1.0' } });
+  if (!res.ok) throw new Error(`WTSL all-results request failed: ${res.status}`);
+  return parseAllResults(await res.text());
 }
 
 /** Diagnostic used by /api/sync/wtsl?debug=1 — shows what was fetched and what the parser made of it. */

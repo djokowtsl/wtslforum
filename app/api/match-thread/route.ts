@@ -1,11 +1,15 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { getOrCreateMatchThread } from '@/lib/matchThreads';
+import { findMatchThread } from '@/lib/matchThreads';
 
 export const dynamic = 'force-dynamic';
 
-/** Clicking "Discuss" on any match/fixture card lands here, which finds (or creates on first
- * click) the Match Talk thread for that exact match and redirects straight into it — so nobody
- * has to go find or start the thread themselves. */
+/**
+ * Clicking "Discuss" on any match/fixture card lands here. If that match already has a thread
+ * (someone else wrote the first post), jump straight into it. Otherwise send the user to the
+ * compose form pre-filled with a title/starter post for that match — nothing is created in the
+ * database until they actually submit it, so clicking "Discuss" and not writing anything never
+ * leaves a stale, empty thread behind.
+ */
 export async function GET(req: NextRequest) {
   const { searchParams } = new URL(req.url);
   const matchKey = searchParams.get('key');
@@ -16,15 +20,21 @@ export async function GET(req: NextRequest) {
   const score = searchParams.get('score') || '';
   if (!matchKey) return NextResponse.redirect(new URL('/matches', req.url));
 
+  try {
+    const existing = await findMatchThread(matchKey);
+    if (existing) return NextResponse.redirect(new URL(`/discussions/${existing}`, req.url));
+  } catch {
+    return NextResponse.redirect(new URL('/discussions?c=match-talk', req.url));
+  }
+
   const title = `${p1} vs ${p2}${tournament ? ` — ${tournament}` : ''}${round ? ` (${round})` : ''}`.slice(0, 180);
   const body = score
     ? `Discussion thread for **${p1}** vs **${p2}**${tournament ? ` at ${tournament}` : ''}. Final score: ${score}.`
     : `Discussion thread for the upcoming match between **${p1}** and **${p2}**${tournament ? ` at ${tournament}` : ''}.`;
 
-  try {
-    const topicId = await getOrCreateMatchThread(matchKey, title, body);
-    return NextResponse.redirect(new URL(`/discussions/${topicId}`, req.url));
-  } catch {
-    return NextResponse.redirect(new URL('/discussions?c=match-talk', req.url));
-  }
+  const compose = new URL('/discussions/new', req.url);
+  compose.searchParams.set('matchKey', matchKey);
+  compose.searchParams.set('title', title);
+  compose.searchParams.set('body', body);
+  return NextResponse.redirect(compose);
 }
