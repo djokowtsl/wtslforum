@@ -2,19 +2,24 @@ import type { Metadata } from 'next';
 import { safe } from '@/lib/db';
 import { leaderboard, recentMatches } from '@/lib/stats';
 import PageHero from '@/components/PageHero';
+import TourTabs from '@/components/TourTabs';
+import { DEFAULT_TOUR, isTourCode, tourLabel, type TourCode } from '@/lib/wtsl';
 
 export const dynamic = 'force-dynamic';
 export const metadata: Metadata = { title: 'Statistics' };
 
-export default async function Stats() {
-  const [rows, matches] = await Promise.all([safe(() => leaderboard(), [] as any[]), safe(() => recentMatches(12), [] as any[])]);
+export default async function Stats({ searchParams }: { searchParams: Promise<{ tour?: string }> }) {
+  const { tour: tourParam } = await searchParams;
+  const tour: TourCode = isTourCode(tourParam) ? tourParam : DEFAULT_TOUR;
+  const [rows, matches] = await Promise.all([safe(() => leaderboard(tour), [] as any[]), safe(() => recentMatches(12, tour), [] as any[])]);
   return (
     <>
       <PageHero eyebrow="WTSL TE4" title="Statistics">Match statistics, player performance and the WTSL leaderboard.</PageHero>
       <main className="container">
+        <TourTabs basePath="/stats" current={tour} />
         <div className="dashboard-grid">
           <section className="panel">
-            <div className="panel-head"><h2 className="display">Player leaderboard</h2><span>TE4</span></div>
+            <div className="panel-head"><h2 className="display">Player leaderboard</h2><span>{tourLabel(tour)}</span></div>
             {rows.length === 0 ? <div className="empty"><strong>No stats yet</strong>The leaderboard fills in as matches are recorded.</div> : (
               <table>
                 <thead><tr><th>Player</th><th>Matches</th><th>W</th><th>L</th><th>Win %</th><th>Tour Elo</th></tr></thead>

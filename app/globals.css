@@ -451,6 +451,11 @@ h1, h2, h3 { margin: 0; }
   .article-long { padding: 22px 18px; }
 }
 
+.tour-tabs { display: flex; flex-wrap: wrap; gap: 8px; margin: 0 0 20px; }
+.tour-tab { padding: 8px 16px; border-radius: 999px; border: 1px solid var(--line-2); background: var(--panel); color: var(--soft); font-weight: 700; font-size: 14px; }
+.tour-tab:hover { border-color: var(--lime); color: var(--text); }
+.tour-tab.active { background: var(--lime); color: #0b0f14; border-color: var(--lime); }
+
 /* ---------- Hero spotlight panel (replaces the big logo) ---------- */
 .hero.has-photo { background-size: cover; background-position: center; }
 .hero-panel { display: grid; gap: 10px; align-self: center; }

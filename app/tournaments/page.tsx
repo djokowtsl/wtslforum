@@ -4,18 +4,23 @@ import { dbConfigured, safe } from '@/lib/db';
 import { getTournaments } from '@/lib/tournaments';
 import { fmtDate } from '@/lib/format';
 import PageHero from '@/components/PageHero';
+import TourTabs from '@/components/TourTabs';
+import { DEFAULT_TOUR, isTourCode, type TourCode } from '@/lib/wtsl';
 
 export const dynamic = 'force-dynamic';
 export const metadata: Metadata = { title: 'Tournaments' };
 
 const GROUPS: [string, string][] = [['ongoing', 'Ongoing'], ['upcoming', 'Upcoming'], ['completed', 'Completed']];
 
-export default async function TournamentsPage() {
-  const all = await safe(() => getTournaments(), [] as any[]);
+export default async function TournamentsPage({ searchParams }: { searchParams: Promise<{ tour?: string }> }) {
+  const { tour: tourParam } = await searchParams;
+  const tour: TourCode = isTourCode(tourParam) ? tourParam : DEFAULT_TOUR;
+  const all = await safe(() => getTournaments(tour), [] as any[]);
   return (
     <>
       <PageHero eyebrow="WTSL Tour · Calendar" title="Tournaments">Follow the WTSL calendar, open the community discussion for each event and jump to the official tournament page.</PageHero>
       <main className="page-shell" style={{ paddingTop: 10 }}>
+        <TourTabs basePath="/tournaments" current={tour} />
         {all.length === 0 && (
           <div className="forum-list"><div className="empty"><strong>{dbConfigured() ? 'No tournaments synced yet' : 'Database not connected'}</strong>{dbConfigured() ? 'The calendar syncs from the official WTSL site every hour. Trigger /api/sync/wtsl once to load it straight away.' : 'Set DATABASE_URL on the deployment to load the tournament calendar.'}</div></div>
         )}

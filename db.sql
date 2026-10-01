@@ -39,7 +39,8 @@ ON CONFLICT (slug) DO NOTHING;
 
 CREATE TABLE IF NOT EXISTS wtsl_players (
  id BIGSERIAL PRIMARY KEY,
- wtsl_player_id TEXT UNIQUE NOT NULL,
+ wtsl_player_id TEXT NOT NULL,
+ tour TEXT NOT NULL DEFAULT 'TE4',
  name TEXT NOT NULL,
  avatar_url TEXT,
  flag_url TEXT,
@@ -48,12 +49,14 @@ CREATE TABLE IF NOT EXISTS wtsl_players (
  tour_elo INT,
  elo_label TEXT,
  official_url TEXT NOT NULL,
- synced_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+ synced_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+ UNIQUE(wtsl_player_id,tour)
 );
 
 CREATE TABLE IF NOT EXISTS tournaments (
  id BIGSERIAL PRIMARY KEY,
  wtsl_tournament_key TEXT UNIQUE NOT NULL,
+ tour TEXT NOT NULL DEFAULT 'TE4',
  name TEXT NOT NULL,
  location TEXT,
  country TEXT,
@@ -70,7 +73,22 @@ CREATE TABLE IF NOT EXISTS tournaments (
 
 CREATE INDEX IF NOT EXISTS tournaments_status_idx ON tournaments(status);
 CREATE INDEX IF NOT EXISTS tournaments_start_date_idx ON tournaments(start_date);
+CREATE INDEX IF NOT EXISTS tournaments_tour_idx ON tournaments(tour);
 CREATE INDEX IF NOT EXISTS wtsl_players_name_idx ON wtsl_players(name);
+CREATE INDEX IF NOT EXISTS wtsl_players_tour_idx ON wtsl_players(tour);
+
+-- Migration for existing databases created before multi-tour support was added
+-- (ATP / WTA / Competitive Doubles / Coop / Created Characters). Safe to re-run.
+DO $$ BEGIN
+  ALTER TABLE wtsl_players ADD COLUMN IF NOT EXISTS tour TEXT NOT NULL DEFAULT 'TE4';
+  ALTER TABLE tournaments ADD COLUMN IF NOT EXISTS tour TEXT NOT NULL DEFAULT 'TE4';
+  IF EXISTS (SELECT 1 FROM pg_constraint WHERE conname = 'wtsl_players_wtsl_player_id_key') THEN
+    ALTER TABLE wtsl_players DROP CONSTRAINT wtsl_players_wtsl_player_id_key;
+  END IF;
+  IF NOT EXISTS (SELECT 1 FROM pg_constraint WHERE conname = 'wtsl_players_wtsl_player_id_tour_key') THEN
+    ALTER TABLE wtsl_players ADD CONSTRAINT wtsl_players_wtsl_player_id_tour_key UNIQUE(wtsl_player_id,tour);
+  END IF;
+END $$;
 
 -- WTSL betting / stats / dashboard layer, adapted from the WTSL Discord bot.
 CREATE TABLE IF NOT EXISTS betting_accounts (

@@ -1,5 +1,27 @@
 const WTSL_BASE = 'https://www.playwtsl.com/TE4/pages';
-export const TOURNAMENTS_URL = `${WTSL_BASE}/tournaments.php?tour=TE4`;
+
+export type TourCode = 'TE4' | 'TE4_(F)' | 'TE4_CD' | 'TE4_Coop' | 'TE4_P';
+export const DEFAULT_TOUR: TourCode = 'TE4';
+export const TOURS: { code: TourCode; label: string; short: string }[] = [
+  { code: 'TE4', label: 'ATP Characters', short: 'ATP' },
+  { code: 'TE4_(F)', label: 'WTA Characters', short: 'WTA' },
+  { code: 'TE4_CD', label: 'Competitive Doubles', short: 'Doubles' },
+  { code: 'TE4_Coop', label: 'Cooperative Doubles League', short: 'Coop' },
+  { code: 'TE4_P', label: 'Created Characters', short: 'Created' },
+];
+export function isTourCode(value: string | undefined | null): value is TourCode {
+  return !!value && TOURS.some((t) => t.code === value);
+}
+export function tourLabel(tour: string) {
+  return TOURS.find((t) => t.code === tour)?.short ?? tour;
+}
+function tournamentsUrl(tour: TourCode) {
+  return `${WTSL_BASE}/tournaments.php?tour=${encodeURIComponent(tour)}`;
+}
+function rankingsUrl(tour: TourCode) {
+  return `${WTSL_BASE}/rankings.php?tour=${encodeURIComponent(tour)}`;
+}
+export const TOURNAMENTS_URL = tournamentsUrl(DEFAULT_TOUR);
 
 function cleanHtml(value: string) {
   return value
@@ -20,11 +42,12 @@ function attr(tag: string, name: string) {
 export type WTSLTournament = {
   key:string; name:string; location:string; country:string; category:string; drawSize:number|null;
   surface:string; startDate:string|null; status:'ongoing'|'upcoming'|'completed'|'cancelled'; champion:string|null; championUrl:string|null;
-  officialUrl:string;
+  officialUrl:string; tour:TourCode;
 };
 
-export async function fetchWTSLTournaments(): Promise<WTSLTournament[]> {
-  const res = await fetch(TOURNAMENTS_URL, { cache:'no-store', headers:{'user-agent':'WTSL-Community-Bridge/1.0'} });
+export async function fetchWTSLTournaments(tour: TourCode = DEFAULT_TOUR): Promise<WTSLTournament[]> {
+  const url = tournamentsUrl(tour);
+  const res = await fetch(url, { cache:'no-store', headers:{'user-agent':'WTSL-Community-Bridge/1.0'} });
   if (!res.ok) throw new Error(`WTSL tournaments request failed: ${res.status}`);
   const html = await res.text();
   const rows = html.match(/<tr[\s\S]*?<\/tr>/gi) ?? [];
@@ -36,7 +59,7 @@ export async function fetchWTSLTournaments(): Promise<WTSLTournament[]> {
     const nameLink = links.find(x => !/SignUp|Finished|Ongoing|Cancelled/i.test(cleanHtml(x[2])));
     const name = cleanHtml(nameLink?.[2] ?? cells[0] ?? '');
     if (!name || /Tournament/i.test(name)) continue;
-    const officialUrl = abs(nameLink?.[1] ?? '#');
+    const officialUrl = abs(nameLink?.[1] ?? '#', url);
     const locationText = cleanHtml(cells[1]).replace(/^.*?\s(?=[A-Za-zÀ-ÿ' -]+\s*,)/, '');
     const parts = locationText.split(',').map(s=>s.trim()).filter(Boolean);
     const country = parts.at(-1) ?? '';
@@ -53,9 +76,9 @@ export async function fetchWTSLTournaments(): Promise<WTSLTournament[]> {
     const championLink = [...championCell.matchAll(/<a[^>]+href=[\"']([^\"']+)[\"'][^>]*>([\s\S]*?)<\/a>/gi)][0];
     const champion = cleanHtml(championLink?.[2] ?? championCell).replace(/^N\/A$/i,'') || null;
     const championHref = championLink?.[1] ?? null;
-    const championUrl = championHref ? abs(championHref) : null;
-    const key = `${name.toLowerCase().replace(/[^a-z0-9]+/g,'-')}-${startDate ?? 'unknown'}`;
-    out.push({key,name,location,country,category,drawSize:Number.isFinite(drawSize)?drawSize:null,surface,startDate,status,champion,championUrl,officialUrl});
+    const championUrl = championHref ? abs(championHref, url) : null;
+    const key = `${tour.toLowerCase().replace(/[^a-z0-9]+/g,'-')}-${name.toLowerCase().replace(/[^a-z0-9]+/g,'-')}-${startDate ?? 'unknown'}`;
+    out.push({key,name,location,country,category,drawSize:Number.isFinite(drawSize)?drawSize:null,surface,startDate,status,champion,championUrl,officialUrl,tour});
   }
   return out;
 }
@@ -78,18 +101,18 @@ export async function fetchWTSLPlayer(playerUrl: string) {
 }
 
 /* ---------- Rankings (full player list) ---------- */
-export const RANKINGS_URL = `${WTSL_BASE}/rankings.php?tour=TE4`;
+export const RANKINGS_URL = rankingsUrl(DEFAULT_TOUR);
 
 export type WTSLRankedPlayer = {
   id: string; name: string; rank: number | null; tourElo: number | null; eloLabel: string | null;
-  country: string | null; avatarUrl: string | null; flagUrl: string | null; officialUrl: string;
+  country: string | null; avatarUrl: string | null; flagUrl: string | null; officialUrl: string; tour: TourCode;
 };
 
 /**
  * Defensive parser: finds every table row that links to a player page (?player=ID), reads the
  * Rank / Elo / Country columns by their <th> header text, and falls back to sensible guesses.
  */
-export function parseRankings(html: string, base = RANKINGS_URL): WTSLRankedPlayer[] {
+export function parseRankings(html: string, base = RANKINGS_URL, tour: TourCode = DEFAULT_TOUR): WTSLRankedPlayer[] {
   const rows = html.match(/<tr[\s\S]*?<\/tr>/gi) ?? [];
   const cols: { rank?: number; elo?: number; country?: number } = {};
   const out: WTSLRankedPlayer[] = [];
@@ -130,24 +153,26 @@ export function parseRankings(html: string, base = RANKINGS_URL): WTSLRankedPlay
     const country = (cols.country !== undefined ? cells[cols.country] : '') || (flag?.alt ?? '').replace(/flag/i, '').trim() || null;
 
     seen.add(id);
-    out.push({ id, name, rank, tourElo, eloLabel, country, avatarUrl: avatar?.src ? abs(avatar.src, base) : null, flagUrl: flag?.src ? abs(flag.src, base) : null, officialUrl });
+    out.push({ id, name, rank, tourElo, eloLabel, country, avatarUrl: avatar?.src ? abs(avatar.src, base) : null, flagUrl: flag?.src ? abs(flag.src, base) : null, officialUrl, tour });
   }
   return out;
 }
 
-export async function fetchWTSLRankings(): Promise<WTSLRankedPlayer[]> {
-  const res = await fetch(RANKINGS_URL, { cache: 'no-store', headers: { 'user-agent': 'WTSL-Community-Bridge/1.0' } });
+export async function fetchWTSLRankings(tour: TourCode = DEFAULT_TOUR): Promise<WTSLRankedPlayer[]> {
+  const url = rankingsUrl(tour);
+  const res = await fetch(url, { cache: 'no-store', headers: { 'user-agent': 'WTSL-Community-Bridge/1.0' } });
   if (!res.ok) throw new Error(`WTSL rankings request failed: ${res.status}`);
-  const players = parseRankings(await res.text());
+  const players = parseRankings(await res.text(), url, tour);
   if (!players.length) throw new Error('Rankings page returned no parsable players (run the sync with ?debug=1)');
   return players;
 }
 
 /** Diagnostic used by /api/sync/wtsl?debug=1 — shows what was fetched and what the parser made of it. */
-export async function inspectWTSLRankings() {
-  const res = await fetch(RANKINGS_URL, { cache: 'no-store', headers: { 'user-agent': 'WTSL-Community-Bridge/1.0' } });
+export async function inspectWTSLRankings(tour: TourCode = DEFAULT_TOUR) {
+  const url = rankingsUrl(tour);
+  const res = await fetch(url, { cache: 'no-store', headers: { 'user-agent': 'WTSL-Community-Bridge/1.0' } });
   const html = await res.text();
-  const players = parseRankings(html);
+  const players = parseRankings(html, url, tour);
   return {
     status: res.status, htmlLength: html.length, tableRows: (html.match(/<tr/gi) ?? []).length, parsed: players.length,
     sample: players.slice(0, 5),
