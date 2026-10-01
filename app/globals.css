@@ -419,6 +419,10 @@ h1, h2, h3 { margin: 0; }
 .fixture-top b { color: var(--cyan); font-size: 11px; letter-spacing: 0.12em; }
 .fixture-card h2 { font-size: 28px; margin: 18px 0; font-family: var(--font-display); font-style: italic; text-transform: uppercase; font-weight: 800; }
 .fixture-card h2 small { color: var(--muted); font-size: 14px; }
+.fixture-matchup { display: flex; align-items: center; flex-wrap: wrap; gap: 10px; }
+.fixture-matchup small { text-transform: none; font-style: normal; }
+.fixture-matchup .winner { color: var(--lime); }
+.winner-check { display: inline-flex; align-items: center; justify-content: center; width: 18px; height: 18px; margin-left: 6px; border-radius: 50%; background: rgba(60, 200, 110, 0.18); color: #3cc86e; font-size: 11px; font-style: normal; font-weight: 700; vertical-align: middle; }
 .odds { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; margin-bottom: 14px; }
 .odds span { border: 1px solid var(--line-2); padding: 14px; border-radius: 10px; display: flex; justify-content: space-between; gap: 10px; }
 .odds strong { color: var(--lime); }

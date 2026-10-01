@@ -74,6 +74,11 @@ export default async function Dashboard() {
     <>
       <PageHero eyebrow="Your dashboard" title={`Welcome back, ${viewer.username}`}>Your tour stats, forum activity and coaching insights, in one place.</PageHero>
       <main className="container">
+        <div className="notice warn" style={{ marginBottom: 20, display: 'flex', gap: 10, alignItems: 'flex-start', fontWeight: 600 }}>
+          <span>🚧</span>
+          <span>These stats are still under construction and may not be fully accurate yet. For the most reliable numbers, use <code>/mystats</code> in Discord.</span>
+        </div>
+
         <div className="kpi-grid">
           <div><span>Verified tours</span><b>{approved.length}</b></div>
           <div><span>Topics started</span><b>{contributions.topics}</b></div>
