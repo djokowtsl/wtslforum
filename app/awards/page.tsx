@@ -1,26 +1,51 @@
 import type { Metadata } from 'next';
 import { safe } from '@/lib/db';
 import { getAwards } from '@/lib/queries';
+import { getSession } from '@/lib/auth';
+import { getActiveCycle, getCategories, getNomineesForCategories, getUserVotes } from '@/lib/awards';
 import PageHero from '@/components/PageHero';
+import AwardVoteForm from '@/components/AwardVoteForm';
 
 export const dynamic = 'force-dynamic';
 export const metadata: Metadata = { title: 'Awards' };
 
-const CATEGORIES = [
-  ['Player of the Year', 'The player who defined the season — on the court and in the community.'],
-  ['Match of the Year', 'The one everybody is still talking about. Nominated and voted by the community.'],
-  ['Rivalry of the Year', 'Two players, one storyline. The rivalry that gave the tour its edge.'],
-  ['Community Contributor', 'For the writers, organisers, designers and helpers who keep WTSL running.'],
-];
-
 export default async function Awards() {
-  const awards = await safe(() => getAwards(), [] as any[]);
+  const [awards, cycle, user] = await Promise.all([
+    safe(() => getAwards(), [] as any[]),
+    safe(() => getActiveCycle(), null as any),
+    getSession(),
+  ]);
   const seasons = [...new Set(awards.map((a: any) => a.season))] as string[];
+
+  const categories = cycle ? await safe(() => getCategories(cycle.id), [] as any[]) : [];
+  const nominees = categories.length ? await safe(() => getNomineesForCategories(categories.map((c: any) => c.id)), [] as any[]) : [];
+  const categoriesWithNominees = categories.map((c: any) => ({ ...c, nominees: nominees.filter((n: any) => n.category_id === c.id) }));
+  const userVotes = cycle && user ? await safe(() => getUserVotes(cycle.id, user.discordId), [] as any[]) : [];
+  const initialVotes = Object.fromEntries(userVotes.map((v: any) => [v.category_id, { nomineeId: v.nominee_id, writeIn: v.write_in }]));
 
   return (
     <>
       <PageHero eyebrow="WTSL Community Awards" title="Awards">A hall of fame for the players, matches and people who made each WTSL season.</PageHero>
       <main className="container">
+        <section style={{ marginBottom: 44 }}>
+          <div className="section-heading"><h2>{cycle?.season ?? 'This season'}&apos;s awards</h2><span>{cycle?.voting_open ? 'Voting open' : 'Voting closed'}</span></div>
+          {!cycle || categories.length === 0 ? (
+            <div className="notice">Nominations haven&apos;t been set up yet — check back once an admin adds this season&apos;s categories.</div>
+          ) : !cycle.voting_open ? (
+            <div className="notice">Voting isn&apos;t open yet. These are this season&apos;s categories — nominees and the vote will open soon.
+              <div className="award-grid" style={{ marginTop: 16 }}>
+                {categoriesWithNominees.map((c: any) => (
+                  <div className="award-card" key={c.id}><h3>{c.name}</h3>{c.nominees.length > 0 && <p>{c.nominees.map((n: any) => n.name).join(', ')}</p>}</div>
+                ))}
+              </div>
+            </div>
+          ) : !user ? (
+            <div className="notice">You need to <a className="btn btn-sm btn-discord" href="/api/auth/discord" style={{ marginLeft: 8 }}>log in with Discord</a> to vote.</div>
+          ) : (
+            <AwardVoteForm categories={categoriesWithNominees} initialVotes={initialVotes} />
+          )}
+        </section>
+
         {seasons.length > 0 && seasons.map((s) => (
           <section key={s} style={{ marginBottom: 44 }}>
             <div className="section-heading"><h2>{s}</h2><span>Winners</span></div>
@@ -37,17 +62,6 @@ export default async function Awards() {
             </div>
           </section>
         ))}
-
-        <div className="section-heading"><h2>{seasons.length ? 'The categories' : 'Award categories'}</h2></div>
-        <div className="award-grid">
-          {CATEGORIES.map(([name, text], i) => (
-            <div className="award-card" key={name}>
-              <span className="num">{String(i + 1).padStart(2, '0')}</span>
-              <h3>{name}</h3>
-              <p>{text}</p>
-            </div>
-          ))}
-        </div>
         {seasons.length === 0 && <div className="notice" style={{ marginTop: 22 }}>No winners have been crowned yet. Nominations and voting are announced in the Announcements board and on Discord.</div>}
       </main>
     </>

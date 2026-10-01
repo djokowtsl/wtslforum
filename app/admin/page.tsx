@@ -19,6 +19,7 @@ export default async function Admin() {
         <div className="admin-grid">
           <div className="admin-card"><h3>Create article</h3><AdminArticleForm /></div>
           <div className="admin-card"><h3>Forum overview</h3><div className="stat"><span>Discussions</span><b>{topics.length}</b></div><div className="stat"><span>Articles</span><b>{articles.length}</b></div><p className="notice" style={{ marginTop: 14 }}>Additional moderation controls can be added here as the community grows.</p></div>
+          <div className="admin-card"><h3>Awards</h3><p className="notice">Manage this season&apos;s award nominees, open or close voting, and import Google Form responses.</p><a className="btn btn-sm" href="/admin/awards" style={{ marginTop: 12, display: 'inline-block' }}>Manage awards</a></div>
         </div>
       </main>
     </>

@@ -141,3 +141,53 @@ CREATE TABLE IF NOT EXISTS awards (
   id BIGSERIAL PRIMARY KEY, season TEXT NOT NULL, category TEXT NOT NULL, winner TEXT NOT NULL,
   runner_up TEXT, note TEXT, position INT NOT NULL DEFAULT 0, created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );
+
+-- Awards nomination/voting system (admin gated: nominees must be added and voting opened before members can vote).
+CREATE TABLE IF NOT EXISTS award_cycles (
+  id BIGSERIAL PRIMARY KEY, season TEXT NOT NULL UNIQUE, voting_open BOOLEAN NOT NULL DEFAULT FALSE,
+  created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+CREATE TABLE IF NOT EXISTS award_categories (
+  id BIGSERIAL PRIMARY KEY, cycle_id BIGINT NOT NULL REFERENCES award_cycles(id) ON DELETE CASCADE,
+  name TEXT NOT NULL, slug TEXT NOT NULL, description TEXT NOT NULL DEFAULT '',
+  allow_write_in BOOLEAN NOT NULL DEFAULT TRUE, position INT NOT NULL DEFAULT 0,
+  UNIQUE(cycle_id,slug)
+);
+CREATE TABLE IF NOT EXISTS award_nominees (
+  id BIGSERIAL PRIMARY KEY, category_id BIGINT NOT NULL REFERENCES award_categories(id) ON DELETE CASCADE,
+  name TEXT NOT NULL, note TEXT NOT NULL DEFAULT '', position INT NOT NULL DEFAULT 0,
+  created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+-- voter_key is the Discord id for on-site votes, or the imported identifier (handle/email) for Google Form rows;
+-- the unique constraint stops a single voter from casting more than one vote per category per source.
+CREATE TABLE IF NOT EXISTS award_votes (
+  id BIGSERIAL PRIMARY KEY, category_id BIGINT NOT NULL REFERENCES award_categories(id) ON DELETE CASCADE,
+  source TEXT NOT NULL DEFAULT 'site', voter_key TEXT NOT NULL,
+  nominee_id BIGINT REFERENCES award_nominees(id) ON DELETE SET NULL, write_in TEXT,
+  created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+  UNIQUE(category_id,source,voter_key)
+);
+CREATE INDEX IF NOT EXISTS award_categories_cycle_idx ON award_categories(cycle_id);
+CREATE INDEX IF NOT EXISTS award_votes_category_idx ON award_votes(category_id);
+
+-- Seed this season's award categories (voting stays closed until an admin opens it).
+DO $$
+DECLARE cyc_id BIGINT;
+BEGIN
+  INSERT INTO award_cycles(season,voting_open) VALUES ('2026', FALSE) ON CONFLICT(season) DO NOTHING;
+  SELECT id INTO cyc_id FROM award_cycles WHERE season='2026';
+  INSERT INTO award_categories(cycle_id,name,slug,position) VALUES
+    (cyc_id,'Fans Favourite Award','fans-favourite',1),
+    (cyc_id,'Stefan Edberg Sportsmanship Award','stefan-edberg-sportsmanship',2),
+    (cyc_id,'Most Improved Player','most-improved-player',3),
+    (cyc_id,'Newcomer of the Year','newcomer-of-the-year',4),
+    (cyc_id,'Arthur Ashe Humanitarian Award','arthur-ashe-humanitarian',5),
+    (cyc_id,'🦑 Farmer of the Year','farmer-of-the-year',6),
+    (cyc_id,'Comedian/Troll of the Year','comedian-troll-of-the-year',7),
+    (cyc_id,'Trickiest Player','trickiest-player',8),
+    (cyc_id,'Best Dressed Player','best-dressed-player',9),
+    (cyc_id,'Coach of the Year','coach-of-the-year',10),
+    (cyc_id,'Upset of the Year','upset-of-the-year',11),
+    (cyc_id,'Match of the Year','match-of-the-year',12)
+  ON CONFLICT (cycle_id,slug) DO NOTHING;
+END $$;
