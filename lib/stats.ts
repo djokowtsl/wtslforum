@@ -91,6 +91,20 @@ export async function playersByNames(tour: string, names: string[]) {
   `;
 }
 
+// Powers the player-search autocomplete on the verification form — nobody can be expected to
+// know their own numeric WTSL player ID, so they find themselves by name instead.
+export async function searchPlayers(tour: string, query: string, limit = 8) {
+  const q = query.trim();
+  if (q.length < 2) return [];
+  return sql`
+    SELECT wtsl_player_id, name, avatar_url, country
+    FROM wtsl_players
+    WHERE tour=${tour} AND name ILIKE ${'%' + q + '%'}
+    ORDER BY name ASC
+    LIMIT ${limit}
+  `;
+}
+
 export async function recentMatches(limit=20, tour='TE4'){
   return sql`
     SELECT m.*,

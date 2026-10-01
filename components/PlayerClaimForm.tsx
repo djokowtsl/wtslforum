@@ -1,24 +1,50 @@
 'use client';
-import { useState } from 'react';
-import { TOURS, type TourCode } from '@/lib/wtsl';
+import { useEffect, useRef, useState } from 'react';
+import { tourLabel, type TourCode } from '@/lib/wtsl';
 
-export default function PlayerClaimForm() {
-  const [wtslPlayerId, setWtslPlayerId] = useState('');
-  const [tour, setTour] = useState<TourCode>(TOURS[0].code);
-  const [playerName, setPlayerName] = useState('');
+type PlayerHit = { wtsl_player_id: string; name: string; avatar_url: string | null; country: string | null };
+
+export default function PlayerClaimForm({ tour }: { tour: TourCode }) {
+  const [query, setQuery] = useState('');
+  const [results, setResults] = useState<PlayerHit[]>([]);
+  const [selected, setSelected] = useState<PlayerHit | null>(null);
+  const [searching, setSearching] = useState(false);
   const [note, setNote] = useState('');
   const [state, setState] = useState<'idle' | 'sending' | 'sent' | 'error'>('idle');
   const [message, setMessage] = useState('');
+  const debounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  useEffect(() => {
+    if (selected || query.trim().length < 2) {
+      setResults([]);
+      return;
+    }
+    setSearching(true);
+    if (debounceRef.current) clearTimeout(debounceRef.current);
+    debounceRef.current = setTimeout(async () => {
+      try {
+        const r = await fetch(`/api/players/search?tour=${encodeURIComponent(tour)}&q=${encodeURIComponent(query.trim())}`);
+        const data = await r.json();
+        setResults(data.ok ? data.results : []);
+      } catch {
+        setResults([]);
+      } finally {
+        setSearching(false);
+      }
+    }, 250);
+    return () => { if (debounceRef.current) clearTimeout(debounceRef.current); };
+  }, [query, selected, tour]);
 
   async function submit(e: React.FormEvent) {
     e.preventDefault();
+    if (!selected) return;
     setState('sending');
     setMessage('');
     try {
       const r = await fetch('/api/profile/claim', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ wtsl_player_id: wtslPlayerId, tour, player_name: playerName, note }),
+        body: JSON.stringify({ wtsl_player_id: selected.wtsl_player_id, tour, player_name: selected.name, note }),
       });
       const data = await r.json();
       if (!r.ok || !data.ok) {
@@ -38,25 +64,41 @@ export default function PlayerClaimForm() {
 
   return (
     <form onSubmit={submit} className="compose">
-      <p className="notice">
-        Found your ID on your official WTSL player page URL, e.g. <code>player_page.php?player=1105</code> → ID is <code>1105</code>.
-      </p>
-      <label>Tour
-        <select value={tour} onChange={(e) => setTour(e.target.value as TourCode)}>
-          {TOURS.map((t) => <option key={t.code} value={t.code}>{t.label}</option>)}
-        </select>
-      </label>
-      <label>Your WTSL player ID
-        <input value={wtslPlayerId} onChange={(e) => setWtslPlayerId(e.target.value)} placeholder="1105" required />
-      </label>
-      <label>Player name (as shown on WTSL)
-        <input value={playerName} onChange={(e) => setPlayerName(e.target.value)} placeholder="e.g. Novak Djokovic" required />
+      <label>Find yourself in {tourLabel(tour)}
+        {selected ? (
+          <div className="player-line" style={{ marginTop: '.4rem' }}>
+            {selected.avatar_url && <img src={selected.avatar_url} alt="" />}
+            <span>{selected.name}</span>
+            <button type="button" className="btn btn-sm btn-ghost" onClick={() => { setSelected(null); setQuery(''); }}>Change</button>
+          </div>
+        ) : (
+          <>
+            <input
+              value={query}
+              onChange={(e) => setQuery(e.target.value)}
+              placeholder="Start typing your player name…"
+              autoComplete="off"
+            />
+            {query.trim().length >= 2 && (
+              <div className="claim-search-results">
+                {searching && <div className="claim-search-hint">Searching…</div>}
+                {!searching && results.length === 0 && <div className="claim-search-hint">No matching players on this tour.</div>}
+                {results.map((p) => (
+                  <button type="button" key={p.wtsl_player_id} className="claim-search-row" onClick={() => { setSelected(p); setResults([]); }}>
+                    {p.avatar_url && <img src={p.avatar_url} alt="" />}
+                    <span>{p.name}{p.country ? ` · ${p.country}` : ''}</span>
+                  </button>
+                ))}
+              </div>
+            )}
+          </>
+        )}
       </label>
       <label>Note for the admin (optional)
         <textarea value={note} onChange={(e) => setNote(e.target.value)} rows={2} placeholder="Anything that helps us confirm it's you" />
       </label>
       {message && state === 'error' && <p className="notice" style={{ color: '#ff6b6b' }}>{message}</p>}
-      <button className="btn btn-sm" disabled={state === 'sending'}>{state === 'sending' ? 'Submitting…' : 'Submit for verification'}</button>
+      <button className="btn btn-sm" disabled={state === 'sending' || !selected}>{state === 'sending' ? 'Submitting…' : 'Submit for verification'}</button>
     </form>
   );
 }
