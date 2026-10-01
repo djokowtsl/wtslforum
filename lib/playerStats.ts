@@ -19,14 +19,15 @@ async function mapLimit<T>(items: T[], limit: number, worker: (item: T) => Promi
 
 /**
  * A recent-result score is only a completed match (not "Scheduled"/"Walkover"/etc) when it looks
- * like a list of set scores, e.g. "6-2,6-2,6-2". Returns the parsed sets or null otherwise.
+ * like a list of set scores, e.g. "6-2,6-2,6-2" (optionally with a tiebreak point count in
+ * parens, e.g. "7-6(4)", which is stripped before parsing). Returns the parsed sets or null.
  */
-function parseSets(score: string): [number, number][] | null {
+export function parseSets(score: string): [number, number][] | null {
   const sets = score.split(',').map((s) => s.trim()).filter(Boolean);
   if (!sets.length) return null;
   const parsed: [number, number][] = [];
   for (const set of sets) {
-    const m = set.match(/^(\d+)\s*-\s*(\d+)$/);
+    const m = set.replace(/\([^)]*\)/g, '').trim().match(/^(\d+)\s*-\s*(\d+)$/);
     if (!m) return null;
     parsed.push([Number(m[1]), Number(m[2])]);
   }

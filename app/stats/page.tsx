@@ -67,7 +67,8 @@ function MatchRatingTable({ tour, label, rows }: { tour: TourCode; label: string
 
 export default async function Stats({ searchParams }: { searchParams: Promise<{ tour?: string }> }) {
   const { tour: tourParam } = await searchParams;
-  const tour: TourCode = isTourCode(tourParam) ? tourParam : DEFAULT_TOUR;
+  // Coop has no individual player stats on the official site, so it's not a valid selection here.
+  const tour: TourCode = isTourCode(tourParam) && tourParam !== 'TE4_Coop' ? tourParam : DEFAULT_TOUR;
   const [rows, matches, matchTables] = await Promise.all([
     safe(() => allPlayerStats(tour), [] as any[]),
     safe(() => recentMatches(12, tour), [] as any[]),
@@ -81,7 +82,7 @@ export default async function Stats({ searchParams }: { searchParams: Promise<{ 
           <span>🚧</span>
           <span>These statistics are still under construction and may not reflect every match in the WTSL database yet. For the most complete and accurate numbers, use <code>/wtslstats</code> in Discord.</span>
         </div>
-        <TourTabs basePath="/stats" current={tour} />
+        <TourTabs basePath="/stats" current={tour} exclude={['TE4_Coop']} />
         <div className="dashboard-grid">
           <section className="panel">
             <div className="panel-head"><h2 className="display">Player Statistics</h2></div>

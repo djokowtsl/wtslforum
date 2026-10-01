@@ -79,7 +79,7 @@ export async function getArticles(publishedOnly = true, limit = 60) {
  * matched against the live WTSL rankings name for that player (which keeps its emoji/nickname
  * suffix as scraped, e.g. "Dani21 🛩 aka Halapeno"). */
 const EMOJI_RE = /[\u{1F000}-\u{1FFFF}\u{2190}-\u{2BFF}\u{2600}-\u{27BF}\uFE0F\u200D]/gu;
-function normalizePlayerName(name?: string | null) {
+export function normalizePlayerName(name?: string | null) {
   if (!name) return '';
   return name.replace(/\s+aka\s+.*$/i, '').replace(EMOJI_RE, '').replace(/\s+/g, ' ').trim().toLowerCase();
 }
