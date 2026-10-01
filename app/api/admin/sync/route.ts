@@ -5,7 +5,7 @@ import { syncPlayerStats } from '@/lib/playerStats';
 import type { TourCode } from '@/lib/wtsl';
 
 export const dynamic = 'force-dynamic';
-export const maxDuration = 60;
+export const maxDuration = 300;
 
 const msg = (e: unknown) => (e instanceof Error ? e.message : 'Sync failed');
 const VALID_TOURS = new Set(TOURS.map((t) => t.code));
