@@ -57,7 +57,7 @@ export default async function Home({ searchParams }: { searchParams: Promise<{ e
             <p className="lede">Talk matches, follow the tournaments, dig into the players and read the stories that make WTSL what it is — all in one clubhouse.</p>
             <div className="hero-actions">
               <Link className="btn btn-primary" href="/discussions">Enter the forum</Link>
-              <a className="btn" href="https://www.playwtsl.com/TE4" target="_blank" rel="noreferrer">Official WTSL ↗</a>
+              <a className="btn" href="https://www.playwtsl.com/TE4" target="_blank" rel="noreferrer">Go to WTSL ↗</a>
               {!u && <a className="btn btn-discord" href="/api/auth/discord">Join with Discord</a>}
             </div>
           </div>

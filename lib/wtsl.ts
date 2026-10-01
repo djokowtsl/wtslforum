@@ -83,6 +83,15 @@ export async function fetchWTSLTournaments(tour: TourCode = DEFAULT_TOUR): Promi
   return out;
 }
 
+/** Scrapes the dedicated tournament event logo ("Logo" row) from a tournament's official page. */
+export async function fetchWTSLTournamentLogo(officialUrl: string): Promise<string | null> {
+  const res = await fetch(officialUrl, { cache: 'no-store', headers: { 'user-agent': 'WTSL-Community-Bridge/1.0' } });
+  if (!res.ok) return null;
+  const html = await res.text();
+  const src = html.match(/<th>\s*Logo\s*<\/th>\s*<td>\s*<img\s+src=['"]([^'"]+)['"]/i)?.[1];
+  return src ? abs(src, officialUrl) : null;
+}
+
 export async function fetchWTSLPlayer(playerUrl: string) {
   const res = await fetch(playerUrl,{cache:'no-store',headers:{'user-agent':'WTSL-Community-Bridge/1.0'}});
   if (!res.ok) throw new Error(`Player request failed: ${res.status}`);

@@ -35,6 +35,21 @@ INSERT INTO categories(name,slug,description,position) VALUES
 ('Announcements','announcements','Official community and forum announcements.',7)
 ON CONFLICT (slug) DO NOTHING;
 
+-- Seed discussion threads for the two WTSL-affiliated community events. Safe to re-run.
+INSERT INTO topics(category_id,title,slug,body,pinned)
+SELECT c.id,'🏆 Mystery Cup 2026','mystery-cup-2026',
+  E'The Mystery Cup is back for 2026!\n\n**Dates:** September 28 – October 11, 2026\n**Venue:** TBD\n\n[Visit the official Mystery Cup site ↗](https://www.wtslmysterycup.com)\n\nDiscuss predictions, format and anything else Mystery Cup here.',
+  TRUE
+FROM categories c WHERE c.slug='announcements'
+ON CONFLICT (slug) DO NOTHING;
+
+INSERT INTO topics(category_id,title,slug,body,pinned)
+SELECT c.id,'🌍 WTSL World Cup 2026','wtsl-world-cup-2026',
+  E'National pride. High-stakes competition. The WTSL World Cup returns in 2026 — represent your country and make your people proud.\n\n[Visit the official WTSL World Cup site ↗](https://www.wtslworldcup.fun)\n\nDiscuss squads, rivalries and predictions here.',
+  TRUE
+FROM categories c WHERE c.slug='announcements'
+ON CONFLICT (slug) DO NOTHING;
+
 -- Optional starter article. It remains unpublished until an admin creates/publishes content.
 
 CREATE TABLE IF NOT EXISTS wtsl_players (
@@ -254,6 +269,7 @@ DO $$ BEGIN
   ALTER TABLE users ADD COLUMN IF NOT EXISTS verified_player_tour TEXT;
   ALTER TABLE users ADD COLUMN IF NOT EXISTS verified_player_name TEXT;
   ALTER TABLE users ADD COLUMN IF NOT EXISTS verified_at TIMESTAMPTZ;
+  ALTER TABLE tournaments ADD COLUMN IF NOT EXISTS logo_url TEXT;
 END $$;
 
 -- Recent match results shown on a player's dashboard, refreshed (truncate + reinsert) each sync.

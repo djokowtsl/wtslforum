@@ -33,7 +33,7 @@ export default async function Thread({ params }: { params: Promise<{ id: string 
 
       <article className="post op">
         <div className="post-user">
-          <img className="avatar-img" src={discordAvatar(topic.avatar, topic.author || 'W')} alt="" />
+          <img className="avatar-img" src={topic.tournament_logo || (!topic.author ? '/brand/wtsl-logo-200.png' : discordAvatar(topic.avatar, topic.author || 'W'))} alt="" />
           <strong>{topic.author || 'Community'}</strong>
           <span className="pill role">Original poster</span>
         </div>

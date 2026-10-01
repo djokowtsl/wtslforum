@@ -7,12 +7,14 @@ export async function getTopics(opts: { category?: string | null; limit?: number
     SELECT t.id,t.title,t.slug,t.pinned,t.locked,t.views,t.created_at,t.updated_at,
       c.name category,c.slug category_slug,
       u.display_name author,u.avatar_url avatar,
+      tn.logo_url tournament_logo,
       (SELECT COUNT(*) FROM replies r WHERE r.topic_id=t.id)::int replies,
       (SELECT u2.display_name FROM replies r2 LEFT JOIN users u2 ON u2.id=r2.author_id WHERE r2.topic_id=t.id ORDER BY r2.created_at DESC LIMIT 1) last_author,
       (SELECT MAX(r3.created_at) FROM replies r3 WHERE r3.topic_id=t.id) last_reply_at
     FROM topics t
     LEFT JOIN categories c ON c.id=t.category_id
     LEFT JOIN users u ON u.id=t.author_id
+    LEFT JOIN tournaments tn ON tn.discussion_topic_id=t.id
     WHERE (${cat}::text IS NULL OR c.slug=${cat})
     ORDER BY t.pinned DESC, COALESCE((SELECT MAX(r4.created_at) FROM replies r4 WHERE r4.topic_id=t.id), t.created_at) DESC
     LIMIT ${limit}`;
@@ -22,8 +24,8 @@ export async function getTopics(opts: { category?: string | null; limit?: number
 export async function getTopic(ref: string | number) {
   const isId = /^\d+$/.test(String(ref));
   const rows = isId
-    ? await sql`SELECT t.*,c.name category,c.slug category_slug,u.display_name author,u.avatar_url avatar FROM topics t LEFT JOIN categories c ON c.id=t.category_id LEFT JOIN users u ON u.id=t.author_id WHERE t.id=${Number(ref)} LIMIT 1`
-    : await sql`SELECT t.*,c.name category,c.slug category_slug,u.display_name author,u.avatar_url avatar FROM topics t LEFT JOIN categories c ON c.id=t.category_id LEFT JOIN users u ON u.id=t.author_id WHERE t.slug=${String(ref)} LIMIT 1`;
+    ? await sql`SELECT t.*,c.name category,c.slug category_slug,u.display_name author,u.avatar_url avatar,tn.logo_url tournament_logo FROM topics t LEFT JOIN categories c ON c.id=t.category_id LEFT JOIN users u ON u.id=t.author_id LEFT JOIN tournaments tn ON tn.discussion_topic_id=t.id WHERE t.id=${Number(ref)} LIMIT 1`
+    : await sql`SELECT t.*,c.name category,c.slug category_slug,u.display_name author,u.avatar_url avatar,tn.logo_url tournament_logo FROM topics t LEFT JOIN categories c ON c.id=t.category_id LEFT JOIN users u ON u.id=t.author_id LEFT JOIN tournaments tn ON tn.discussion_topic_id=t.id WHERE t.slug=${String(ref)} LIMIT 1`;
   const topic = rows[0];
   if (!topic) return null;
   await sql`UPDATE topics SET views=views+1 WHERE id=${topic.id}`;

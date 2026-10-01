@@ -42,7 +42,7 @@ export default async function Discussions({ searchParams }: { searchParams: Prom
             <div className="empty"><strong>Nothing here yet</strong>Start the first conversation in this board.{u && <><br /><Link className="btn btn-primary btn-sm" href="/discussions/new">Start a discussion</Link></>}</div>
           ) : topics.map((t: any) => (
             <Link className="topic" href={'/discussions/' + t.id} key={t.id}>
-              <img className="av" src={discordAvatar(t.avatar, t.author || 'W')} alt="" />
+              <img className="av" src={t.tournament_logo || (!t.author ? '/brand/wtsl-logo-200.png' : discordAvatar(t.avatar, t.author || 'W'))} alt="" />
               <div>
                 <div className="topic-title">{t.title}</div>
                 <div className="topic-meta">
