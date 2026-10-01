@@ -172,55 +172,61 @@ DO $$ BEGIN
     DROP INDEX awards_season_category_winner_idx;
   END IF;
 END $$;
+-- Earlier reruns (back when the unique key included `winner`) could have left more than one row
+-- per season+category with different winner text. Collapse those down to the newest row per
+-- season+category first, or creating the season+category-only unique index below fails.
+DELETE FROM awards a USING (
+  SELECT id, ROW_NUMBER() OVER (PARTITION BY season, category ORDER BY id DESC) AS rn FROM awards
+) dup WHERE a.id = dup.id AND dup.rn > 1;
 CREATE UNIQUE INDEX IF NOT EXISTS awards_season_category_idx ON awards(season, category);
 
--- Backfilled past WTSL (TE4 ATP) award seasons, 2022-2025. Winner/opponent names are normalized
--- to match the player's current official name on the live WTSL rankings page where a match could
--- be confirmed (e.g. "FILIPO" -> "Filipo", "Nacho" -> "ventriloquist", "im retired... for good
--- (KINGBARBOZA)" -> "KINGBARBOZA"); names with no current rankings match are left as recorded.
+-- Backfilled past WTSL (TE4 ATP) award seasons, 2022-2025. Names are stripped of Discord emoji
+-- and "aka ..." nicknames so they match the plain handle on the live WTSL rankings page (e.g.
+-- "Dani21 🛩 aka Halapeno" -> "Dani21", "im retired... for good (KINGBARBOZA)" -> "KINGBARBOZA",
+-- "Nacho" -> "Ventriloquist").
 INSERT INTO awards(season,category,winner,runner_up,note,player_two,score,link_url,position) VALUES
-  ('2025','Player of the Year (Year-End No. 1)','Debuffy 🦈',NULL,NULL,NULL,NULL,NULL,0),
-  ('2025','Fans Favourite Award','Debuffy 🦈',NULL,NULL,NULL,NULL,NULL,1),
+  ('2025','Player of the Year (Year-End No. 1)','Debuffy',NULL,NULL,NULL,NULL,NULL,0),
+  ('2025','Fans Favourite Award','Debuffy',NULL,NULL,NULL,NULL,NULL,1),
   ('2025','Stefan Edberg Sportsmanship Award','fakefederer',NULL,NULL,NULL,NULL,NULL,2),
-  ('2025','Most Improved Player','gifu🐦‍🔥',NULL,NULL,NULL,NULL,NULL,3),
+  ('2025','Most Improved Player','gifu',NULL,NULL,NULL,NULL,NULL,3),
   ('2025','Newcomer of the Year','Madferit',NULL,NULL,NULL,NULL,NULL,4),
-  ('2025','Arthur Ashe Humanitarian Award','Squeaky 🦑',NULL,NULL,NULL,NULL,NULL,5),
+  ('2025','Arthur Ashe Humanitarian Award','Squeaky',NULL,NULL,NULL,NULL,NULL,5),
   ('2025','Farmer of the Year','Unicah',NULL,NULL,NULL,NULL,NULL,6),
   ('2025','Comedian/Troll of the Year','jsilv1',NULL,NULL,NULL,NULL,NULL,7),
-  ('2025','Trickiest Player','Dani21 🛩 aka Halapeno',NULL,NULL,NULL,NULL,NULL,8),
+  ('2025','Trickiest Player','Dani21',NULL,NULL,NULL,NULL,NULL,8),
   ('2025','Best Dressed Player','Franky Franchicha',NULL,NULL,NULL,NULL,NULL,9),
-  ('2025','Coach of the Year','ventriloquist',NULL,'Formerly Nacho',NULL,NULL,NULL,10),
-  ('2025','Upset of the Year','Squeaky 🦑',NULL,NULL,'KINGBARBOZA','6-3 6-4 1-6 6-3','https://www.youtube.com/watch?v=SEraP0OYHr0',11),
-  ('2025','Match of the Year','Debuffy 🦈',NULL,'US Open Final','Dani21 🛩 aka Halapeno','3-6 7-5 4-6 6-4 6-4','https://www.youtube.com/watch?v=9WTg1nihlbY',12),
+  ('2025','Coach of the Year','Ventriloquist',NULL,NULL,NULL,NULL,NULL,10),
+  ('2025','Upset of the Year','Squeaky',NULL,NULL,'KINGBARBOZA','6-3 6-4 1-6 6-3','https://www.youtube.com/watch?v=SEraP0OYHr0',11),
+  ('2025','Match of the Year','Debuffy',NULL,'US Open Final','Dani21','3-6 7-5 4-6 6-4 6-4','https://www.youtube.com/watch?v=9WTg1nihlbY',12),
 
-  ('2024','Player of the Year (Year-End No. 1)','Debuffy 🦈',NULL,NULL,NULL,NULL,NULL,0),
-  ('2024','Fans Favourite Award','Mystery 🦒',NULL,NULL,NULL,NULL,NULL,1),
+  ('2024','Player of the Year (Year-End No. 1)','Debuffy',NULL,NULL,NULL,NULL,NULL,0),
+  ('2024','Fans Favourite Award','Mystery',NULL,NULL,NULL,NULL,NULL,1),
   ('2024','Stefan Edberg Sportsmanship Award','The_End',NULL,NULL,NULL,NULL,NULL,2),
-  ('2024','Most Improved Player','qoodL 🍆',NULL,NULL,NULL,NULL,NULL,3),
-  ('2024','Newcomer of the Year','JiJo 🌚',NULL,NULL,NULL,NULL,NULL,4),
-  ('2024','Arthur Ashe Humanitarian Award','Squeaky 🦑',NULL,NULL,NULL,NULL,NULL,5),
-  ('2024','Farmer of the Year','Poland 🥛',NULL,NULL,NULL,NULL,NULL,6),
+  ('2024','Most Improved Player','qoodL',NULL,NULL,NULL,NULL,NULL,3),
+  ('2024','Newcomer of the Year','JiJo',NULL,NULL,NULL,NULL,NULL,4),
+  ('2024','Arthur Ashe Humanitarian Award','Squeaky',NULL,NULL,NULL,NULL,NULL,5),
+  ('2024','Farmer of the Year','Poland',NULL,NULL,NULL,NULL,NULL,6),
   ('2024','Comedian/Troll of the Year','Unicah',NULL,NULL,NULL,NULL,NULL,7),
-  ('2024','Trickiest Player','KINGBARBOZA','Dani21 🛩 aka Halapeno','Tie',NULL,NULL,NULL,8),
-  ('2024','Match of the Year','Mystery 🦒',NULL,'Australian Open Final','Fractals🌈⃤','6-3 3-6 6-3 6-4',NULL,9),
-  ('2024','Upset of the Year','Dani21 🛩 aka Halapeno',NULL,'Roland Garros SF','Fractals🌈⃤','4-6 7-5 6-2 7-5',NULL,10),
+  ('2024','Trickiest Player','KINGBARBOZA','Dani21','Tie',NULL,NULL,NULL,8),
+  ('2024','Match of the Year','Mystery',NULL,'Australian Open Final','Fractals','6-3 3-6 6-3 6-4',NULL,9),
+  ('2024','Upset of the Year','Dani21',NULL,'Roland Garros SF','Fractals','4-6 7-5 6-2 7-5',NULL,10),
 
-  ('2023','Fans Favourite Award','Mystery 🦒',NULL,NULL,NULL,NULL,NULL,1),
+  ('2023','Fans Favourite Award','Mystery',NULL,NULL,NULL,NULL,NULL,1),
   ('2023','Stefan Edberg Sportsmanship Award','The_End',NULL,NULL,NULL,NULL,NULL,2),
-  ('2023','Most Improved Player','Dani21 🛩 aka Halapeno',NULL,NULL,NULL,NULL,NULL,3),
+  ('2023','Most Improved Player','Dani21',NULL,NULL,NULL,NULL,NULL,3),
   ('2023','Newcomer of the Year','Katy',NULL,NULL,NULL,NULL,NULL,4),
-  ('2023','Arthur Ashe Humanitarian Award','Squeaky 🦑',NULL,NULL,NULL,NULL,NULL,5),
+  ('2023','Arthur Ashe Humanitarian Award','Squeaky',NULL,NULL,NULL,NULL,NULL,5),
   ('2023','Farmer of the Year','Mohd',NULL,NULL,NULL,NULL,NULL,6),
   ('2023','Comedian/Troll of the Year','KINGBARBOZA',NULL,NULL,NULL,NULL,NULL,7),
   ('2023','Trickiest Player','KINGBARBOZA',NULL,NULL,NULL,NULL,NULL,8),
-  ('2023','Match of the Year','Fractals🌈⃤',NULL,'US Open Final','Debuffy 🦈','7-5 4-6 2-6 6-4 6-2',NULL,9),
-  ('2023','Upset of the Year','Dani21 🛩 aka Halapeno',NULL,'Shanghai SF','Fractals🌈⃤','6-3 6-4',NULL,10),
+  ('2023','Match of the Year','Fractals',NULL,'US Open Final','Debuffy','7-5 4-6 2-6 6-4 6-2',NULL,9),
+  ('2023','Upset of the Year','Dani21',NULL,'Shanghai SF','Fractals','6-3 6-4',NULL,10),
 
-  ('2022','Fans Favourite Award','Mystery 🦒',NULL,NULL,NULL,NULL,NULL,1),
+  ('2022','Fans Favourite Award','Mystery',NULL,NULL,NULL,NULL,NULL,1),
   ('2022','Stefan Edberg Sportsmanship Award','IsCotillion','Ptacek','Tie',NULL,NULL,NULL,2),
-  ('2022','Most Improved Player','Fractals🌈⃤',NULL,NULL,NULL,NULL,NULL,3),
-  ('2022','Newcomer of the Year','Debuffy 🦈',NULL,NULL,NULL,NULL,NULL,4),
-  ('2022','Arthur Ashe Humanitarian Award','Squeaky 🦑',NULL,NULL,NULL,NULL,NULL,5),
+  ('2022','Most Improved Player','Fractals',NULL,NULL,NULL,NULL,NULL,3),
+  ('2022','Newcomer of the Year','Debuffy',NULL,NULL,NULL,NULL,NULL,4),
+  ('2022','Arthur Ashe Humanitarian Award','Squeaky',NULL,NULL,NULL,NULL,NULL,5),
   ('2022','Farmer of the Year','MaxiReturns',NULL,NULL,NULL,NULL,NULL,6),
   ('2022','Comedian/Troll of the Year','KINGBARBOZA',NULL,NULL,NULL,NULL,NULL,7),
   ('2022','Trickiest Player','KINGBARBOZA',NULL,NULL,NULL,NULL,NULL,8),
@@ -229,6 +235,7 @@ INSERT INTO awards(season,category,winner,runner_up,note,player_two,score,link_u
 ON CONFLICT (season,category) DO UPDATE SET
   winner=EXCLUDED.winner, runner_up=EXCLUDED.runner_up, note=EXCLUDED.note,
   player_two=EXCLUDED.player_two, score=EXCLUDED.score, link_url=EXCLUDED.link_url, position=EXCLUDED.position;
+
 
 -- Awards nomination/voting system (admin gated: nominees must be added and voting opened before members can vote).
 CREATE TABLE IF NOT EXISTS award_cycles (

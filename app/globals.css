@@ -444,7 +444,7 @@ h1, h2, h3 { margin: 0; }
 /* ---------- Awards ---------- */
 .award-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 16px; }
 .award-card { position: relative; background: radial-gradient(400px 160px at 100% 0, rgba(176, 244, 59, 0.1), transparent 70%), var(--panel); border: 1px solid var(--line); border-radius: var(--radius); padding: 26px; overflow: hidden; }
-.award-card .num { position: absolute; right: 18px; top: 6px; font-family: var(--font-display); font-style: italic; font-weight: 800; font-size: 78px; line-height: 1; color: rgba(176, 244, 59, 0.09); }
+.award-card .num { position: absolute; right: 16px; top: 10px; font-size: 46px; line-height: 1; opacity: 0.4; }
 .award-card h3 { font-size: 30px; line-height: 1; margin-bottom: 10px; position: relative; }
 .award-card p { color: var(--muted); font-size: 14.5px; line-height: 1.7; margin: 0 0 16px; position: relative; }
 .award-winner { display: flex; align-items: center; gap: 10px; padding: 12px 0; border-top: 1px solid var(--line); position: relative; }
@@ -459,6 +459,7 @@ h1, h2, h3 { margin: 0; }
 .award-match-player .ph { display: grid; place-items: center; font-size: 15px; font-weight: 700; color: var(--lime); }
 .award-match-player .nm { font-weight: 600; font-size: 13.5px; max-width: 100%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .award-match-score { font-family: var(--font-display); font-weight: 800; font-style: italic; font-size: 14px; color: var(--lime); flex: none; padding: 0 8px; }
+.award-match-vs { font-weight: 700; font-style: italic; font-size: 13px; color: var(--muted); flex: none; padding: 0 8px; text-transform: lowercase; }
 .award-match-link { display: block; margin-top: 12px; padding-top: 12px; border-top: 1px solid var(--line); font-size: 12.5px; font-weight: 700; color: var(--cyan); text-align: center; }
 .award-match-link:hover { color: var(--lime); }
 
