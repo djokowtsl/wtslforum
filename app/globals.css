@@ -230,6 +230,7 @@ h1, h2, h3 { margin: 0; }
 .pill { display: inline-block; padding: 2px 9px; border-radius: 999px; font-size: 10px; font-weight: 700; letter-spacing: 0.12em; text-transform: uppercase; border: 1px solid rgba(176, 244, 59, 0.4); color: var(--lime); }
 .pill.cyan { border-color: rgba(34, 194, 218, 0.45); color: var(--cyan); }
 .pill.pin { border-color: rgba(242, 184, 75, 0.5); color: var(--amber); }
+.pill.green { border-color: rgba(60, 200, 110, 0.5); color: #3cc86e; }
 .topic-stat { text-align: center; font-weight: 700; font-size: 17px; }
 .topic-stat span { display: block; color: var(--muted); font-size: 10.5px; letter-spacing: 0.12em; text-transform: uppercase; font-weight: 600; margin-top: 2px; }
 .topic-last { font-size: 12.5px; color: var(--muted); text-align: right; line-height: 1.5; }

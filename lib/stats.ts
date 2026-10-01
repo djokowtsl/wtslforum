@@ -122,3 +122,19 @@ export async function recentMatches(limit=20, tour='TE4'){
     LIMIT ${limit}
   `;
 }
+
+/**
+ * The betting bot's "open fixtures" list can go stale — a fixture stays marked open there even
+ * after the match has actually been played, because closing it depends on the bot's own
+ * settlement job rather than anything the forum controls. We already have the real, synced
+ * results in `match_stats`, so cross-check: any pairing that has a completed match recorded in
+ * the last few weeks is treated as already played and filtered out of "open fixtures" here.
+ */
+export async function recentlyCompletedPairs(tour: string, days = 21): Promise<Set<string>> {
+  const rows = await sql`
+    SELECT player_one_id, player_two_id
+    FROM match_stats
+    WHERE tour=${tour} AND played_at IS NOT NULL AND played_at >= NOW() - (${days} || ' days')::interval
+  `;
+  return new Set(rows.map((r: any) => [String(r.player_one_id), String(r.player_two_id)].sort().join('|')));
+}
