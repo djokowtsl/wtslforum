@@ -476,8 +476,8 @@ h1, h2, h3 { margin: 0; }
 .hero.has-photo { background-size: cover; background-position: center; }
 .hero-panel { display: grid; gap: 10px; align-self: center; }
 .panel-label { font-size: 11px; letter-spacing: 0.24em; text-transform: uppercase; color: var(--muted); font-weight: 700; margin-bottom: 2px; }
-.spot { display: grid; gap: 3px; padding: 16px 20px; border: 1px solid var(--line-2); border-left: 3px solid var(--lime); border-radius: 12px; background: rgba(8, 19, 40, 0.82); backdrop-filter: blur(8px); transition: 0.15s; }
-.spot:hover { transform: translateX(4px); border-color: rgba(176, 244, 59, 0.6); background: rgba(12, 26, 53, 0.92); }
+.spot { display: grid; gap: 3px; padding: 16px 20px; border: 1px solid var(--line-2); border-left: 3px solid var(--lime); border-radius: 12px; background: var(--panel-2); backdrop-filter: blur(8px); transition: 0.15s; }
+.spot:hover { transform: translateX(4px); border-color: rgba(176, 244, 59, 0.6); background: var(--panel-3); }
 .spot small { font-size: 10.5px; letter-spacing: 0.18em; text-transform: uppercase; color: var(--lime); font-weight: 700; }
 .spot b { font-family: var(--font-display); font-style: italic; text-transform: uppercase; font-weight: 800; font-size: 26px; line-height: 1.05; }
 .spot span { color: var(--muted); font-size: 13.5px; }

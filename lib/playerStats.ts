@@ -1,15 +1,28 @@
 import { sql } from './db';
 import { fetchWTSLPlayer, fetchWTSLPlayerStatsTable, TOURS, DEFAULT_TOUR, type TourCode } from './wtsl';
 
-function sleep(ms: number) {
-  return new Promise((resolve) => setTimeout(resolve, ms));
+/**
+ * Runs `worker` across `items` with at most `limit` in flight at once — a single player's
+ * profile page failing or being slow doesn't block the rest, and parallelizing keeps a whole
+ * tour's worth of profile scraping comfortably inside Vercel's per-request time limit.
+ */
+async function mapLimit<T>(items: T[], limit: number, worker: (item: T) => Promise<void>) {
+  let next = 0;
+  async function runner() {
+    while (next < items.length) {
+      const item = items[next++];
+      await worker(item);
+    }
+  }
+  await Promise.all(Array.from({ length: Math.min(limit, items.length) }, runner));
 }
 
 /**
  * Syncs real career stats for a single tour: the per-tour averages table (one request) plus
- * each player's profile page (one request per player, for win/loss record, titles, prize money,
- * form and recent results) — upserted into `player_stats_summary` / `player_recent_results` so
- * the existing leaderboard and a new player dashboard both show accurate data.
+ * each player's profile page (fetched with limited concurrency, for win/loss record, titles,
+ * prize money, form and recent results) — upserted into `player_stats_summary` /
+ * `player_recent_results` so the existing leaderboard and a new player dashboard both show
+ * accurate data.
  */
 export async function syncPlayerStats(tour: TourCode = DEFAULT_TOUR) {
   const players = await sql`SELECT wtsl_player_id, official_url FROM wtsl_players WHERE tour=${tour}`;
@@ -20,7 +33,7 @@ export async function syncPlayerStats(tour: TourCode = DEFAULT_TOUR) {
   const averagesById = new Map(averages.map((a) => [a.playerId, a]));
 
   let upserted = 0;
-  for (const row of players) {
+  await mapLimit(players, 8, async (row) => {
     const playerId = String(row.wtsl_player_id);
     const url = row.official_url || `https://www.playwtsl.com/TE4/pages/player_page.php?player=${playerId}`;
     try {
@@ -67,8 +80,7 @@ export async function syncPlayerStats(tour: TourCode = DEFAULT_TOUR) {
     } catch {
       // A single player's profile failing to load (rate limit, temporary 500, etc) shouldn't abort the whole sync.
     }
-    await sleep(150);
-  }
+  });
   return { tour, seen: players.length, upserted };
 }
 
