@@ -1,0 +1,72 @@
+import type { Metadata } from 'next';
+import Link from 'next/link';
+import { safe } from '@/lib/db';
+import { leaderboard } from '@/lib/stats';
+import PageHero from '@/components/PageHero';
+import TourTabs from '@/components/TourTabs';
+import { DEFAULT_TOUR, isTourCode, tourLabel, type TourCode } from '@/lib/wtsl';
+
+export const dynamic = 'force-dynamic';
+export const metadata: Metadata = { title: 'Leaderboard' };
+
+const METRICS: { key: string; label: string }[] = [
+  { key: 'wins', label: 'Wins' },
+  { key: 'win_pct', label: 'Win %' },
+  { key: 'elo', label: 'Tour Elo' },
+  { key: 'aces', label: 'Aces' },
+  { key: 'winners', label: 'Winners' },
+  { key: 'break_points', label: 'Break points won' },
+  { key: 'first_serve_pct', label: '1st serve %' },
+];
+
+const VALUE_COLUMN: Record<string, { label: string; render: (p: any) => string | number }> = {
+  wins: { label: 'Wins', render: (p) => p.wins },
+  win_pct: { label: 'Win %', render: (p) => `${p.win_pct}%` },
+  elo: { label: 'Tour Elo', render: (p) => p.tour_elo ?? '—' },
+  aces: { label: 'Aces', render: (p) => p.aces },
+  winners: { label: 'Winners', render: (p) => p.winners },
+  break_points: { label: 'Break points won', render: (p) => p.break_points_won },
+  first_serve_pct: { label: '1st serve %', render: (p) => `${p.first_serve_pct}%` },
+};
+
+export default async function Leaderboard({ searchParams }: { searchParams: Promise<{ tour?: string; metric?: string }> }) {
+  const { tour: tourParam, metric: metricParam } = await searchParams;
+  const tour: TourCode = isTourCode(tourParam) ? tourParam : DEFAULT_TOUR;
+  const metric = METRICS.some((m) => m.key === metricParam) ? metricParam! : 'wins';
+  const rows = await safe(() => leaderboard(tour, metric), [] as any[]);
+  const valueCol = VALUE_COLUMN[metric];
+
+  return (
+    <>
+      <PageHero eyebrow="WTSL TE4" title="Leaderboard">Players ranked by stat, highest first. Looking for the full A–Z breakdown instead? Head to <Link href="/stats" style={{ color: 'var(--lime)' }}>Statistics</Link>.</PageHero>
+      <main className="container">
+        <TourTabs basePath="/leaderboard" current={tour} extraParams={{ metric }} />
+        <div className="section-head">
+          <div><h2 className="display">Ranked by {valueCol.label.toLowerCase()}</h2><span>{tourLabel(tour)}</span></div>
+          <div className="tour-tabs">
+            {METRICS.map((m) => (
+              <Link key={m.key} className={`tour-tab${m.key === metric ? ' active' : ''}`} href={`/leaderboard?tour=${encodeURIComponent(tour)}&metric=${encodeURIComponent(m.key)}`}>{m.label}</Link>
+            ))}
+          </div>
+        </div>
+        <section className="panel">
+          {rows.length === 0 ? <div className="empty"><strong>No stats yet</strong>The leaderboard fills in as matches are recorded.</div> : (
+            <div className="table-scroll">
+              <table>
+                <thead><tr><th>#</th><th>Player</th><th>Matches</th><th>{valueCol.label}</th></tr></thead>
+                <tbody>{rows.map((p: any, i: number) => (
+                  <tr key={p.wtsl_player_id}>
+                    <td>{i + 1}</td>
+                    <td><a className="player-line" href={`/players/${p.wtsl_player_id}?tour=${encodeURIComponent(tour)}`}>{p.avatar_url && <img src={p.avatar_url} alt="" />}<span>{p.name}<small>{p.country || ''}</small></span></a></td>
+                    <td>{p.matches}</td>
+                    <td>{valueCol.render(p)}</td>
+                  </tr>
+                ))}</tbody>
+              </table>
+            </div>
+          )}
+        </section>
+      </main>
+    </>
+  );
+}
