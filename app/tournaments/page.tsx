@@ -21,12 +21,12 @@ export default async function TournamentsPage({ searchParams }: { searchParams: 
   const all = year ? unfiltered.filter((t: any) => t.start_date && String(new Date(t.start_date).getFullYear()) === year) : unfiltered;
   return (
     <>
-      <PageHero eyebrow="WTSL Tour · Calendar" title="Tournaments">Follow the WTSL calendar, open the community discussion for each event and jump to the official tournament page.</PageHero>
+      <PageHero eyebrow="WTSL Tour · Calendar" title="Tournaments">Follow the WTSL calendar, open the community discussion for each event and jump to the tournament page.</PageHero>
       <main className="page-shell" style={{ paddingTop: 10 }}>
         <TourTabs basePath="/tournaments" current={tour} extraParams={year ? { year } : undefined} />
         {years.length > 0 && <YearTabs basePath="/tournaments" years={years} current={year} extraParams={{ tour }} />}
         {all.length === 0 && (
-          <div className="forum-list"><div className="empty"><strong>{dbConfigured() ? 'No tournaments synced yet' : 'Database not connected'}</strong>{dbConfigured() ? 'The calendar syncs from the official WTSL site every hour.' : 'Set DATABASE_URL on the deployment to load the tournament calendar.'}</div></div>
+          <div className="forum-list"><div className="empty"><strong>{dbConfigured() ? 'No tournaments synced yet' : 'Database not connected'}</strong>{dbConfigured() ? 'The calendar syncs from the WTSL site every hour.' : 'Set DATABASE_URL on the deployment to load the tournament calendar.'}</div></div>
         )}
         {GROUPS.map(([status, label]) => {
           const items = all.filter((x: any) => x.status === status);

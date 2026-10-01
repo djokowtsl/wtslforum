@@ -24,6 +24,6 @@ export async function notifyPlayerVerified(discordUserId:string,playerName:strin
 }
 
 export async function notifyChallongeVerified(discordUserId:string,username:string){
-  await sendDM(discordUserId,`✅ **You're verified!** Your WTSL Forum account is now linked to Challonge username **${username}** — the predictions leaderboard will now show your official name.`);
+  await sendDM(discordUserId,`✅ **You're verified!** Your WTSL Forum account is now linked to Challonge username **${username}** — the predictions leaderboard will now show your name.`);
 }
 

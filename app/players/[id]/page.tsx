@@ -73,7 +73,7 @@ export default async function PlayerDashboard({ params, searchParams }: Props) {
             <h2 className="display">{p.name}</h2>
             <p>{p.flag_url && <img src={p.flag_url} alt="" style={{ height: 14, marginRight: 6 }} />}{p.country || 'WTSL Player'}</p>
             <p><b>{p.rank ? `#${p.rank}` : 'Unranked'}</b> · Tour Elo <b>{p.tour_elo ?? '—'}</b>{p.elo_label ? ` (${p.elo_label})` : ''}</p>
-            {p.official_url && <a href={p.official_url} target="_blank" rel="noreferrer">View official WTSL profile ↗</a>}
+            {p.official_url && <a href={p.official_url} target="_blank" rel="noreferrer">View WTSL profile ↗</a>}
             {verifiedOwner && (
               <p style={{ marginTop: 8 }}>
                 <span className="pill cyan">Verified account</span>{' '}
