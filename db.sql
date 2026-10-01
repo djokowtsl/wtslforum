@@ -133,7 +133,7 @@ CREATE TABLE IF NOT EXISTS betting_parlay_legs (
 );
 CREATE TABLE IF NOT EXISTS player_stats_summary (
  player_id TEXT NOT NULL, tour TEXT NOT NULL DEFAULT 'TE4', matches INT NOT NULL DEFAULT 0, wins INT NOT NULL DEFAULT 0, losses INT NOT NULL DEFAULT 0,
- aces INT NOT NULL DEFAULT 0, winners INT NOT NULL DEFAULT 0, break_points_won INT NOT NULL DEFAULT 0, first_serve_pct NUMERIC(6,2) NOT NULL DEFAULT 0,
+ aces NUMERIC(8,2) NOT NULL DEFAULT 0, winners NUMERIC(8,2) NOT NULL DEFAULT 0, break_points_won NUMERIC(6,2) NOT NULL DEFAULT 0, first_serve_pct NUMERIC(6,2) NOT NULL DEFAULT 0,
  PRIMARY KEY(player_id,tour)
 );
 CREATE TABLE IF NOT EXISTS match_stats (
@@ -240,6 +240,12 @@ DO $$ BEGIN
   ALTER TABLE player_stats_summary ADD COLUMN IF NOT EXISTS avg_return_won_pct NUMERIC(6,2) NOT NULL DEFAULT 0;
   ALTER TABLE player_stats_summary ADD COLUMN IF NOT EXISTS avg_rally_length NUMERIC(8,2) NOT NULL DEFAULT 0;
   ALTER TABLE player_stats_summary ADD COLUMN IF NOT EXISTS updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW();
+  -- These are per-match averages scraped from the stats table (e.g. "2.8" aces/match), not whole
+  -- counts, so they must be decimal, not INT, or every sync fails to write with "invalid input
+  -- syntax for type integer".
+  ALTER TABLE player_stats_summary ALTER COLUMN aces TYPE NUMERIC(8,2);
+  ALTER TABLE player_stats_summary ALTER COLUMN winners TYPE NUMERIC(8,2);
+  ALTER TABLE player_stats_summary ALTER COLUMN break_points_won TYPE NUMERIC(6,2);
 END $$;
 
 -- Identity verification: a member claims "I am this WTSL player" and an admin
