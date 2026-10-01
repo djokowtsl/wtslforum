@@ -23,7 +23,7 @@ export function ResultCard({ m, tournamentNames }: { m: any; tournamentNames?: R
     <div className="match-card">
       <div className="match-top">
         <span>{t}{m.round_name ? ` · ${m.round_name}` : ''}</span>
-        <b>FT</b>
+        <b title="Completed">✓</b>
       </div>
       <div className={`match-row-p ${p1win ? 'win' : ''}`}>
         <Face src={m.player_one_avatar} name={m.player_one_name} />
