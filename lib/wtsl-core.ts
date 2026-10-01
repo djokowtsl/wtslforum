@@ -57,7 +57,6 @@ export type CorePredictionRow = {
   challonge_user_id: string;
   challonge_username: string | null;
   prediction_name: string | null;
-  display_name: string | null;
   discord_user_id: number | null;
   tournaments: number;
   tournaments_won: number;

@@ -16,6 +16,19 @@ async function safeLeaderboard(): Promise<CorePredictionRow[]> {
 
 const MEDALS = ['🥇', '🥈', '🥉'];
 
+// Small cosmetic aliasing for a couple of usernames, kept in sync with
+// PREDICTION_DISPLAY_NAME_ALIASES in the bot's main.py Discord embed.
+const DISPLAY_NAME_ALIASES: Record<string, string> = {
+  squeaky94: 'Squeaky',
+};
+
+function predictorName(r: CorePredictionRow): string {
+  const username = (r.challonge_username || '').trim();
+  const alias = username ? DISPLAY_NAME_ALIASES[username.toLowerCase()] : undefined;
+  if (alias) return `${alias} (${username})`;
+  return username || r.prediction_name || 'Unknown';
+}
+
 export default async function Predictions() {
   const rows = await safeLeaderboard();
   return (
@@ -43,7 +56,7 @@ export default async function Predictions() {
                   return (
                     <tr key={r.challonge_user_id}>
                       <td>{MEDALS[i] || i + 1}</td>
-                      <td>{r.display_name || r.challonge_username || r.prediction_name || 'Unknown'}{r.challonge_username && (r.display_name || r.challonge_username) !== r.challonge_username ? <small> ({r.challonge_username})</small> : null}{r.discord_user_id ? <small> · Discord-linked</small> : null}</td>
+                      <td>{predictorName(r)}{r.discord_user_id ? <small> · Discord-linked</small> : null}</td>
                       <td><b>{r.total_score}</b></td>
                       <td>{correct}/{possible}{possible > 0 ? ` (${pct}%)` : ''}</td>
                       <td>{r.tournaments}</td>
