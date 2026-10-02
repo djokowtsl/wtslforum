@@ -490,3 +490,31 @@ CREATE TABLE IF NOT EXISTS direct_messages (
 CREATE INDEX IF NOT EXISTS direct_messages_conversation_idx ON direct_messages(conversation_key, created_at);
 CREATE INDEX IF NOT EXISTS direct_messages_recipient_unread_idx ON direct_messages(recipient_id) WHERE read_at IS NULL;
 
+-- Versioned screenshot workbook rows. A complete snapshot is switched into view atomically.
+CREATE TABLE IF NOT EXISTS screenshot_record_sync_state (
+  tour TEXT PRIMARY KEY,
+  active_sync_id TEXT NOT NULL,
+  record_count INTEGER NOT NULL,
+  updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+CREATE TABLE IF NOT EXISTS screenshot_match_records (
+  tour TEXT NOT NULL,
+  sync_id TEXT NOT NULL,
+  record_id TEXT NOT NULL,
+  source_row INTEGER NOT NULL,
+  player_name TEXT NOT NULL,
+  opponent_name TEXT NOT NULL,
+  tournament_name TEXT NOT NULL DEFAULT '',
+  date_label TEXT NOT NULL DEFAULT '',
+  played_on DATE,
+  score TEXT NOT NULL,
+  review_status TEXT NOT NULL DEFAULT '',
+  record_data JSONB NOT NULL DEFAULT '{}'::jsonb,
+  updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+  PRIMARY KEY (tour, sync_id, record_id)
+);
+CREATE INDEX IF NOT EXISTS screenshot_records_player_idx ON screenshot_match_records(tour, sync_id, LOWER(player_name));
+CREATE INDEX IF NOT EXISTS screenshot_records_opponent_idx ON screenshot_match_records(tour, sync_id, LOWER(opponent_name));
+CREATE INDEX IF NOT EXISTS screenshot_records_date_idx ON screenshot_match_records(tour, sync_id, played_on DESC);
+CREATE INDEX IF NOT EXISTS screenshot_records_tournament_idx ON screenshot_match_records(tour, sync_id, tournament_name);
+
