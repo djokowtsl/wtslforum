@@ -1,7 +1,7 @@
 'use client';
 import { useState } from 'react';
 
-const ALLOWED_EMOJI = ['👍', '🔥', '😂', '🎾'];
+const ALLOWED_EMOJI = ['👍', '🔥', '😂', '🎾', '❤️'];
 
 type Props = {
   topicId?: number;
