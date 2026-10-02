@@ -2,6 +2,7 @@ import type { Metadata } from 'next';
 import { safe } from '@/lib/db';
 import { leaderboard, LEADERBOARD_MIN_MATCHES } from '@/lib/stats';
 import PageHero from '@/components/PageHero';
+import MetricSampleEvidence from '@/components/MetricSampleEvidence';
 import RatingEvidence from '@/components/RatingEvidence';
 import RatingMethodNote from '@/components/RatingMethodNote';
 import LeaderboardMetricPicker from '@/components/LeaderboardMetricPicker';
@@ -37,21 +38,34 @@ const FORUM_METRICS: { key: ForumMetric; label: string }[] = [
   ...BOT_METRICS.map((metric) => ({ key: metric.key, label: metric.label })),
 ];
 
+function percentagePoints(value: number): number {
+  return value >= 0 && value <= 1 ? value * 100 : value;
+}
+
+function formatPercentage(value: unknown): string {
+  if (value === null || value === undefined || (typeof value === 'string' && !value.trim())) return '—';
+  const number = Number(value);
+  if (!Number.isFinite(number)) return '—';
+  const formatted = new Intl.NumberFormat('en-GB', { maximumFractionDigits: 1 })
+    .format(percentagePoints(number));
+  return `${formatted}%`;
+}
+
 function formatBotMetric(value: number, format: string): string {
   const number = Number(value);
   if (!Number.isFinite(number)) return '—';
   if (format === 'rating') return number.toFixed(1);
-  const formatted = new Intl.NumberFormat('en-GB', { maximumFractionDigits: 1 }).format(number);
-  return format === 'percent' ? `${formatted}%` : formatted;
+  if (format === 'percent') return formatPercentage(number);
+  return new Intl.NumberFormat('en-GB', { maximumFractionDigits: 1 }).format(number);
 }
 
 function formatResultMetric(metric: ResultMetric, player: any): string | number {
   if (metric === 'wins') return player.wins;
-  if (metric === 'win_pct') return `${player.win_pct}%`;
+  if (metric === 'win_pct') return formatPercentage(player.win_pct);
   if (metric === 'aces') return player.aces;
   if (metric === 'winners') return player.winners;
   if (metric === 'break_points') return player.break_points_won;
-  if (metric === 'first_serve_pct') return `${player.first_serve_pct}%`;
+  if (metric === 'first_serve_pct') return formatPercentage(player.first_serve_pct);
   return player.tour_elo ?? '—';
 }
 
@@ -122,17 +136,11 @@ export default async function Leaderboard({ searchParams }: { searchParams: Prom
                       <td>{player.matches}</td>
                       <td>
                         {value}
-                        {screenshotMetric && !isRating
-                          && Number.isInteger(player.metricSampleCount)
-                          && player.metricSampleCount > 0 && (
-                          <span
-                            className="metric-sample-info"
-                            title={`${player.metricSampleCount} screenshots contain a ${valueLabel} value`}
-                            aria-label={`${player.metricSampleCount} screenshots contain a ${valueLabel} value`}
-                            tabIndex={0}
-                          >i</span>
-                        )}
-                        {isRating && <RatingEvidence metric={metric as BotRating} counts={player.ratingComponentCounts} />}
+                        {screenshotMetric
+                          ? isRating
+                            ? <RatingEvidence metric={metric as BotRating} counts={player.ratingComponentCounts} />
+                            : <MetricSampleEvidence metricLabel={valueLabel} sampleCount={player.metricSampleCount} />
+                          : <MetricSampleEvidence metricLabel={valueLabel} sampleCount={player.matches} />}
                       </td>
                     </tr>
                   );
