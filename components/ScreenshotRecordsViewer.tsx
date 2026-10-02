@@ -33,9 +33,16 @@ type PageResult = {
   total: number;
   page: number;
   pageSize: number;
+  rankingListAvailable: boolean;
 };
 
-const EMPTY_RESULT: PageResult = { records: [], total: 0, page: 1, pageSize: 50 };
+const EMPTY_RESULT: PageResult = {
+  records: [],
+  total: 0,
+  page: 1,
+  pageSize: 50,
+  rankingListAvailable: true,
+};
 
 function initialFilters(tour: ScreenshotStatsTour): Filters {
   return {
@@ -85,6 +92,7 @@ export default function ScreenshotRecordsViewer({
       metric: applied.metric,
       min: applied.min,
       max: applied.max,
+      rankedOnly: 'true',
     });
 
     async function load() {
@@ -137,7 +145,7 @@ export default function ScreenshotRecordsViewer({
         <div>
           <span className="screenshot-explorer-kicker">Workbook data</span>
           <h2 id="screenshot-records-title">Individual screenshot rows</h2>
-          <p>Search match records from the ATP and WTA workbook. Choose a player to see rows where they are listed as Player.</p>
+          <p>Search match records from the ATP and WTA workbook. Only rows whose Player appears on the matching WTSL rankings are shown.</p>
         </div>
         <div className="screenshot-records-count" aria-live="polite">
           <strong>{error ? '—' : result.total.toLocaleString()}</strong>
@@ -218,7 +226,9 @@ export default function ScreenshotRecordsViewer({
             ? 'Screenshot rows are temporarily unavailable'
             : result.total
             ? `Showing ${firstRow.toLocaleString()}–${lastRow.toLocaleString()} of ${result.total.toLocaleString()} rows`
-            : 'No rows match these filters'}
+            : result.rankingListAvailable
+              ? 'No ranked-player rows match these filters'
+              : 'Current WTSL rankings are unavailable; screenshot rows are hidden'}
       </div>
       {error ? <p className="screenshot-records-error" role="alert">{error}</p> : null}
 
