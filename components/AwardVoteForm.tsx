@@ -31,7 +31,14 @@ export default function AwardVoteForm({ categories, initialVotes }: { categories
     <div style={{ display: 'grid', gap: 18 }}>
       {categories.map((c) => (
         <div className="forum-list" key={c.id} style={{ padding: 16 }}>
-          <strong>{c.name}</strong>
+          {c.name === 'Farmer of the Year' ? (
+            <strong className="award-vote-farmer-pill">
+              <span>{c.name}</span>
+              <span className="award-farmer-corn" role="img" aria-label="Corn">🌽</span>
+            </strong>
+          ) : (
+            <strong>{c.name}</strong>
+          )}
           {c.description && <p style={{ margin: '4px 0 10px', color: 'var(--muted)', fontSize: 13.5 }}>{c.description}</p>}
           <div style={{ display: 'grid', gap: 6, margin: '10px 0' }}>
             {c.nominees.map((n) => (

@@ -1,7 +1,7 @@
 import Link from 'next/link';
 import { TOURS, type TourCode } from '@/lib/wtsl';
 
-/** Pill tab bar for switching between WTSL tours (ATP, WTA, Doubles, Coop, Created Characters).
+/** Pill tab bar for switching between WTSL tours (ATP, WTA, Competitive Doubles, Cooperative Doubles, Created Characters).
  * `exclude` lets a page hide tours that don't make sense for it — e.g. Statistics has no
  * individual per-player stats for the Coop tour, so that tab would just be a dead end there. */
 export default function TourTabs({ basePath, current, extraParams, exclude }: { basePath: string; current: TourCode; extraParams?: Record<string, string>; exclude?: TourCode[] }) {

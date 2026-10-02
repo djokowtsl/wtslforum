@@ -6,9 +6,13 @@ import { getSession } from '@/lib/auth';
 import { getClaimsForUser } from '@/lib/player-claims';
 import { getContributionStats, getRecentActivity } from '@/lib/queries';
 import { buildPlayerInsights, type PlayerInsightReport } from '@/lib/playerInsights';
+import { buildPlayerSeasonHighlights, type PlayerSeasonHighlights } from '@/lib/playerSeasonHighlights';
+import PlayerSeasonHighlightsPanel from '@/components/PlayerSeasonHighlights';
+import { wtslCore } from '@/lib/wtsl-core';
 import { tourLabel } from '@/lib/wtsl';
 import { timeAgo } from '@/lib/format';
 import PageHero from '@/components/PageHero';
+import RatingMethodNote from '@/components/RatingMethodNote';
 import RatingEvidence from '@/components/RatingEvidence';
 import {
   BOT_RATING_METRICS,
@@ -25,6 +29,7 @@ type VerifiedPlayerCard = {
   stats: any;
   insights: PlayerInsightReport;
   ratings: BotRatingStatsRow | null;
+  season: PlayerSeasonHighlights;
 };
 
 export default async function Dashboard() {
@@ -52,6 +57,10 @@ export default async function Dashboard() {
   ]);
   const approved = claims.filter((c: any) => c.status === 'approved');
   const pending = claims.filter((c: any) => c.status === 'pending');
+  const seasonYear = new Date().getUTCFullYear();
+  const seasonResults = approved.length
+    ? await safe(() => wtslCore.results(), [] as unknown[])
+    : [];
 
   const playerCards: VerifiedPlayerCard[] = await Promise.all(
     approved.map(async (c: any) => {
@@ -67,7 +76,14 @@ export default async function Dashboard() {
         weakest: null,
         trainingFocus: null,
       } as PlayerInsightReport);
-      return { tour: c.tour, playerName: c.player_name, stats, insights, ratings: ratingRows[0] ?? null };
+      return {
+        tour: c.tour,
+        playerName: c.player_name,
+        stats,
+        insights,
+        ratings: ratingRows[0] ?? null,
+        season: buildPlayerSeasonHighlights(seasonResults, c.player_name, c.tour, seasonYear),
+      };
     })
   );
 
@@ -79,6 +95,7 @@ export default async function Dashboard() {
           <span>🚧</span>
           <span>These stats are still under construction and may not be fully accurate yet. For the most reliable numbers, use <code>/mystats</code> in Discord.</span>
         </div>
+        <RatingMethodNote />
 
         <div className="kpi-grid">
           <div><span>Verified tours</span><b>{approved.length}</b></div>
@@ -131,6 +148,7 @@ export default async function Dashboard() {
                     <div><strong>{p.favorite_character}</strong><small>Most used character ({p.favorite_character_picks ?? 0}/{p.character_matches ?? 0} matches)</small></div>
                   </div>
                 )}
+                <PlayerSeasonHighlightsPanel highlights={card.season} />
                 <div className="player-record-grid">
                   {card.ratings ? BOT_RATING_METRICS.map((metric) => {
                     const value = card.ratings?.ratings[metric.key] ?? null;

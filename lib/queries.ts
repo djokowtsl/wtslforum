@@ -84,6 +84,11 @@ export function normalizePlayerName(name?: string | null) {
   return name.replace(/\s+aka\s+.*$/i, '').replace(EMOJI_RE, '').replace(/\s+/g, ' ').trim().toLowerCase();
 }
 
+function displayAwardName(name?: string | null) {
+  if (!name) return name ?? null;
+  return name.replace(EMOJI_RE, '').replace(/\s+/g, ' ').trim();
+}
+
 /** Awards (hall of fame). Player avatars are matched in JS against the live rankings since award
  * winners are stored as plain names while rankings names keep their emoji/nickname suffix.
  * "Tournament of the Year" names a tournament, not a player, so its avatar comes from
@@ -107,7 +112,15 @@ export async function getAwards() {
   return (awards as any[]).map((a) => {
     const avatarFor = (n?: string | null) =>
       a.category === 'Tournament of the Year' ? tourneyLogo.get((n || '').trim().toLowerCase()) : playerAvatar.get(normalizePlayerName(n));
-    return { ...a, winner_avatar: avatarFor(a.winner), runner_up_avatar: avatarFor(a.runner_up), player_two_avatar: avatarFor(a.player_two) };
+    return {
+      ...a,
+      winner: displayAwardName(a.winner) ?? a.winner,
+      runner_up: displayAwardName(a.runner_up),
+      player_two: displayAwardName(a.player_two),
+      winner_avatar: avatarFor(a.winner),
+      runner_up_avatar: avatarFor(a.runner_up),
+      player_two_avatar: avatarFor(a.player_two),
+    };
   });
 }
 

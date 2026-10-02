@@ -6,8 +6,8 @@ import { useState } from 'react';
 const TOURS: { code: string; label: string }[] = [
   { code: 'TE4', label: 'ATP' },
   { code: 'TE4_(F)', label: 'WTA' },
-  { code: 'TE4_CD', label: 'Doubles' },
-  { code: 'TE4_Coop', label: 'Coop' },
+  { code: 'TE4_CD', label: 'Competitive Doubles' },
+  { code: 'TE4_Coop', label: 'Cooperative Doubles' },
   { code: 'TE4_P', label: 'Created' },
 ];
 const CATEGORIES: { key: string; label: string }[] = [

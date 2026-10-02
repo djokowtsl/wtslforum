@@ -1,9 +1,10 @@
 import type { Metadata } from 'next';
-import Link from 'next/link';
 import { safe } from '@/lib/db';
 import { leaderboard, LEADERBOARD_MIN_MATCHES } from '@/lib/stats';
 import PageHero from '@/components/PageHero';
 import RatingEvidence from '@/components/RatingEvidence';
+import RatingMethodNote from '@/components/RatingMethodNote';
+import LeaderboardMetricPicker from '@/components/LeaderboardMetricPicker';
 import TourTabs from '@/components/TourTabs';
 import { DEFAULT_TOUR, isTourCode, type TourCode } from '@/lib/wtsl';
 import {
@@ -86,16 +87,13 @@ export default async function Leaderboard({ searchParams }: { searchParams: Prom
       </PageHero>
       <main className="container">
         <TourTabs basePath="/leaderboard" current={tour} extraParams={{ metric }} />
+        {isRating && <RatingMethodNote />}
         <div className="section-head">
           <div>
             <h2 className="display">{isRating ? 'Player ratings' : screenshotMetric ? 'Screenshot statistics' : 'Player statistics'}</h2>
             <span>{eligibilityLabel}</span>
           </div>
-          <div className="tabs-scroll">
-            {FORUM_METRICS.map((item) => (
-              <Link key={item.key} className={`tour-tab${item.key === metric ? ' active' : ''}`} href={`/leaderboard?tour=${encodeURIComponent(tour)}&metric=${encodeURIComponent(item.key)}`}>{item.label}</Link>
-            ))}
-          </div>
+          <LeaderboardMetricPicker current={metric} tour={tour} metrics={FORUM_METRICS} />
         </div>
         <section className="panel">
           {rows.length === 0 ? <div className="empty"><strong>No stats yet</strong>The leaderboard fills in as more match data is recorded.</div> : (
@@ -124,11 +122,13 @@ export default async function Leaderboard({ searchParams }: { searchParams: Prom
                       <td>{player.matches}</td>
                       <td>
                         {value}
-                        {screenshotMetric && (
+                        {screenshotMetric && !isRating
+                          && Number.isInteger(player.metricSampleCount)
+                          && player.metricSampleCount > 0 && (
                           <span
                             className="metric-sample-info"
-                            title={`${player.matches} screenshot match records. Individual metric values may be missing from some screenshots.`}
-                            aria-label={`${player.matches} screenshot match records`}
+                            title={`${player.metricSampleCount} screenshots contain a ${valueLabel} value`}
+                            aria-label={`${player.metricSampleCount} screenshots contain a ${valueLabel} value`}
                             tabIndex={0}
                           >i</span>
                         )}
