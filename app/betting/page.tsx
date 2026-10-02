@@ -11,7 +11,7 @@ import { timeAgo, fmtDateTime } from '@/lib/format';
 export const dynamic = 'force-dynamic';
 export const metadata: Metadata = { title: 'Betting fixtures' };
 
-const DISCORD_URL = 'https://discord.com/invite/YkPAtGMUrj';
+const DISCORD_URL = 'https://discord.com/channels/786583939028090881/1550152646638174308';
 function money(v: unknown) {
   const n = Number(v);
   return Number.isFinite(n) ? n.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 }) : '0.00';

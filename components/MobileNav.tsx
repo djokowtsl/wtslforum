@@ -3,7 +3,6 @@
 import Link from 'next/link';
 import { usePathname } from 'next/navigation';
 import { useEffect, useRef } from 'react';
-import { SearchBar } from './SearchBar';
 
 type NavItem = { href: string; label: string };
 
@@ -37,7 +36,6 @@ export function MobileNav({
     <details className="mobile-menu" ref={detailsRef}>
       <summary aria-label="Open menu"><span className="burger" /></summary>
       <div className="mobile-panel">
-        <SearchBar className="mobile-search" onNavigate={close} />
         {items.map((n) => (
           <Link key={n.href} href={n.href} onClick={close}>{n.label}</Link>
         ))}

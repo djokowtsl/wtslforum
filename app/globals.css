@@ -413,6 +413,15 @@ h1, h2, h3 { margin: 0; }
 .stats-recent-list { max-height: 25rem; overflow-y: auto; padding-right: 5px; overscroll-behavior: contain; }
 .metric-sample-info { display: inline-grid; place-items: center; width: 16px; height: 16px; margin-left: 6px; border: 1px solid var(--muted); border-radius: 50%; color: var(--muted); font: 700 10px/1 sans-serif; cursor: help; vertical-align: 2px; }
 .metric-sample-info:focus-visible { outline: 2px solid var(--lime); outline-offset: 2px; }
+.metric-sample-evidence { position: relative; display: inline-block; margin-left: 6px; vertical-align: middle; }
+.metric-sample-evidence > summary { display: inline-flex; align-items: center; justify-content: center; width: 16px; height: 16px; border: 1px solid var(--line-2); border-radius: 50%; color: var(--muted); font-size: 10px; font-weight: 700; line-height: 1; cursor: pointer; list-style: none; }
+.metric-sample-evidence > summary::-webkit-details-marker { display: none; }
+.metric-sample-evidence > summary::marker { content: ''; }
+.metric-sample-evidence > summary:hover, .metric-sample-evidence[open] > summary { border-color: var(--lime); color: var(--lime); }
+.metric-sample-evidence > summary:focus-visible { outline: 2px solid var(--lime); outline-offset: 2px; }
+.metric-sample-evidence__details { position: absolute; z-index: 10; top: calc(100% + 6px); right: 0; padding: 8px 10px; width: min(280px, calc(100vw - 32px)); border: 1px solid var(--line-2); border-radius: 8px; background: var(--panel); box-shadow: 0 8px 24px rgba(0, 0, 0, 0.22); color: var(--soft); font-size: 11px; font-weight: 400; line-height: 1.4; white-space: normal; }
+.metric-sample-evidence__details > strong { display: block; margin-bottom: 4px; color: var(--text-strong); }
+.metric-sample-evidence__details p { margin: 0; }
 .player-stats-mobile-sort { display: none; }
 .player-stats-table { min-width: 920px; }
 .player-stats-table .player-stats-value { white-space: nowrap; }
@@ -573,7 +582,6 @@ h1, h2, h3 { margin: 0; }
 /* ---------- Responsive ---------- */
 @media (max-width: 1100px) {
   .nav { display: none; }
-  .header-search { display: none; }
   .header-theme-toggle { display: flex; margin-left: auto; }
   .mobile-menu { display: block; margin-left: 0; }
   .header-inner { height: 70px; }
@@ -591,15 +599,16 @@ h1, h2, h3 { margin: 0; }
   .hero h1 { font-size: 52px; }
   .hero .tagline { font-size: 22px; }
   .container, .page-shell { padding: 30px 16px 50px; }
-  .header-inner { padding: 0 16px; height: 60px; gap: 12px; }
-  .brand { gap: 8px; }
-  .brand-logo { height: 40px; width: 40px; padding: 3px; }
-  .brand-text { padding-left: 8px; }
+  .header-inner { padding: 0 16px; height: 60px; gap: 8px; }
+  .brand { gap: 6px; }
+  .brand-logo { height: 38px; width: 38px; padding: 3px; }
+  .brand-text { padding-left: 6px; }
   .brand-text span { display: none; }
-  .brand-text b { font-size: 18px; }
+  .brand-text b { font-size: 16px; }
   .mobile-panel { top: 60px; max-height: calc(100vh - 60px); }
-  .mobile-search { width: 100%; min-width: 0; }
-  .mobile-search input { font-size: 16px; }
+  .search-toggle { width: 36px; height: 36px; }
+  .mobile-menu summary { width: 42px; height: 42px; }
+  .theme-toggle { min-height: 38px; padding: 0 10px; gap: 6px; font-size: 11px; }
   .live-inner { padding: 22px 16px; }
   .live-grid, .article-grid, .player-grid, .tournament-grid, .award-grid, .fixture-grid, .kpi-grid, .admin-grid, .feature-grid { grid-template-columns: 1fr; }
   .odds-head, .odds-side { grid-template-columns: minmax(0, 1fr) 46px 46px 46px; padding: 9px 10px; font-size: 13px; }
@@ -679,11 +688,14 @@ h1, h2, h3 { margin: 0; }
 .search-bar button { background: var(--panel-2); border: 1px solid var(--line-2); border-radius: 50%; width: 30px; height: 30px; display: grid; place-items: center; cursor: pointer; flex: none; font-size: 13px; }
 .search-bar button:hover { border-color: var(--lime); }
 .header-search { flex: none; }
-.mobile-search { margin-bottom: 8px; }
 .search-wrap { position: relative; display: flex; }
 .search-toggle { width: 38px; height: 38px; border-radius: 50%; border: 1px solid var(--line-2); background: var(--panel); color: var(--soft); font-size: 14px; cursor: pointer; display: grid; place-items: center; }
 .search-toggle:hover { border-color: var(--lime); color: var(--text-strong); }
 .search-bar-compact { position: absolute; top: calc(100% + 10px); right: 0; width: 280px; z-index: 50; box-shadow: 0 18px 40px rgba(0, 0, 0, 0.35); }
+@media (max-width: 1100px) {
+  .search-wrap.header-search { position: static; }
+  .header-search .search-bar-compact { top: calc(100% + 10px); right: 16px; width: min(320px, calc(100vw - 32px)); }
+}
 .search-row { display: block; padding: 14px 20px; border-bottom: 1px solid var(--line); color: var(--soft); }
 .search-row:last-child { border-bottom: 0; }
 .search-row:hover { background: var(--panel-2); }
