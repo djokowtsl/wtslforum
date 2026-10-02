@@ -15,11 +15,17 @@ import AdminTopicControls from '@/components/AdminTopicControls';
 export const dynamic = 'force-dynamic';
 export const metadata: Metadata = { title: 'Discussion' };
 
+function officialAuthorHref(identity: { official_player_id?: string | null; official_tour?: string | null }) {
+  if (!identity.official_player_id || !identity.official_tour) return null;
+  return `/players/${encodeURIComponent(String(identity.official_player_id))}?tour=${encodeURIComponent(String(identity.official_tour))}`;
+}
+
 export default async function Thread({ params }: { params: Promise<{ id: string }> }) {
   const { id } = await params;
   const data = await safe(() => getTopic(decodeURIComponent(id)), null as any);
   if (!data) notFound();
   const { topic, replies } = data;
+  const topicAuthorHref = officialAuthorHref(topic);
   const u = await getSession();
   const replyIds = replies.map((r: any) => Number(r.id));
   const reactions = await safe(() => getThreadReactions(Number(topic.id), replyIds, u?.id ?? null), { topic: [], replies: {} as Record<number, any> });
@@ -38,14 +44,14 @@ export default async function Thread({ params }: { params: Promise<{ id: string 
         <div className="thread-title-row">
           <h1 className="display">{topic.title}</h1>
         </div>
-        <div className="topic-meta"><span>Started by {topic.author || 'Community'}</span><span>{fmtDateTime(topic.created_at)}</span><span>{replies.length} {replies.length === 1 ? 'reply' : 'replies'}</span><span>{topic.views} views</span></div>
+        <div className="topic-meta"><span>Started by {topicAuthorHref ? <Link className="post-author-link" href={topicAuthorHref}>{topic.author}</Link> : topic.author || 'Community'}</span><span>{fmtDateTime(topic.created_at)}</span><span>{replies.length} {replies.length === 1 ? 'reply' : 'replies'}</span><span>{topic.views} views</span></div>
         {u?.isAdmin && <AdminTopicControls topicId={Number(topic.id)} locked={!!topic.locked} pinned={!!topic.pinned} />}
       </div>
 
       <article className="post op">
         <div className="post-user">
           <img className={'avatar-img' + (!topic.author ? ' av-wtsl' : '')} src={topic.tournament_logo || (!topic.author ? '/brand/wtsl-logo-200.png' : discordAvatar(topic.avatar, topic.author || 'W'))} alt="" />
-          <strong>{topic.author && <StatusDot status={topic.author_status} />} {topic.author || 'Community'}</strong>
+          <strong>{topic.author && <StatusDot status={topic.author_status} />} {topicAuthorHref ? <Link className="post-author-link" href={topicAuthorHref}>{topic.author}</Link> : topic.author || 'Community'}</strong>
           <span className="pill role">Original poster</span>
           {u && topic.author_id && Number(topic.author_id) !== Number(u.id) && (
             <Link href={`/messages/${topic.author_id}`} className="pill">Message</Link>
@@ -54,19 +60,22 @@ export default async function Thread({ params }: { params: Promise<{ id: string 
         <div className="post-content"><div className="post-date">{fmtDateTime(topic.created_at)}</div><RichText text={topic.body} mentionables={mentionables} /><ReactionBar topicId={Number(topic.id)} initial={reactions.topic} signedIn={!!u} /></div>
       </article>
 
-      {replies.map((r: any) => (
-        <article className="post" key={r.id}>
-          <div className="post-user">
-            <img className="avatar-img" src={discordAvatar(r.avatar, r.author || 'W')} alt="" />
-            <strong><StatusDot status={r.author_status} /> {r.author || 'Community'}</strong>
-            {r.is_admin && <span className="pill cyan role">Admin</span>}
-            {u && r.author_id && Number(r.author_id) !== Number(u.id) && (
-              <Link href={`/messages/${r.author_id}`} className="pill">Message</Link>
-            )}
-          </div>
-          <div className="post-content"><div className="post-date">{fmtDateTime(r.created_at)}</div><RichText text={r.body} mentionables={mentionables} /><ReactionBar replyId={Number(r.id)} initial={reactions.replies[Number(r.id)] || []} signedIn={!!u} /></div>
-        </article>
-      ))}
+      {replies.map((r: any) => {
+        const replyAuthorHref = officialAuthorHref(r);
+        return (
+          <article className='post' key={r.id}>
+            <div className='post-user'>
+              <img className='avatar-img' src={discordAvatar(r.avatar, r.author || 'W')} alt='' />
+              <strong><StatusDot status={r.author_status} /> {replyAuthorHref ? <Link className='post-author-link' href={replyAuthorHref}>{r.author}</Link> : r.author || 'Community'}</strong>
+              {r.is_admin && <span className='pill cyan role'>Admin</span>}
+              {u && r.author_id && Number(r.author_id) !== Number(u.id) && (
+                <Link href={`/messages/${r.author_id}`} className='pill'>Message</Link>
+              )}
+            </div>
+            <div className='post-content'><div className='post-date'>{fmtDateTime(r.created_at)}</div><RichText text={r.body} mentionables={mentionables} /><ReactionBar replyId={Number(r.id)} initial={reactions.replies[Number(r.id)] || []} signedIn={!!u} /></div>
+          </article>
+        );
+      })}
 
       {u ? (
         topic.locked && !u.isAdmin ? <div className="notice">This discussion has been locked by a moderator.</div> : <ReplyForm topicId={Number(topic.id)} />

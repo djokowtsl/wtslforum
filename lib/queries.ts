@@ -49,12 +49,72 @@ export async function getTopics(opts: { category?: string | null; limit?: number
 export async function getTopic(ref: string | number) {
   const isId = /^\d+$/.test(String(ref));
   const rows = isId
-    ? await sql`SELECT t.*,c.name category,c.slug category_slug,u.id author_id,u.display_name author,u.avatar_url avatar,u.status author_status,tn.logo_url tournament_logo FROM topics t LEFT JOIN categories c ON c.id=t.category_id LEFT JOIN users u ON u.id=t.author_id LEFT JOIN tournaments tn ON tn.discussion_topic_id=t.id WHERE t.id=${Number(ref)} LIMIT 1`
-    : await sql`SELECT t.*,c.name category,c.slug category_slug,u.id author_id,u.display_name author,u.avatar_url avatar,u.status author_status,tn.logo_url tournament_logo FROM topics t LEFT JOIN categories c ON c.id=t.category_id LEFT JOIN users u ON u.id=t.author_id LEFT JOIN tournaments tn ON tn.discussion_topic_id=t.id WHERE t.slug=${String(ref)} LIMIT 1`;
+    ? await sql`
+        SELECT t.*, c.name AS category, c.slug AS category_slug, u.id AS author_id,
+          COALESCE(topic_identity.player_name, u.display_name) AS author,
+          u.avatar_url AS avatar, u.status AS author_status, tn.logo_url AS tournament_logo,
+          tn.tour AS tournament_tour, topic_identity.wtsl_player_id AS official_player_id,
+          topic_identity.tour AS official_tour
+        FROM topics t
+        LEFT JOIN categories c ON c.id = t.category_id
+        LEFT JOIN users u ON u.id = t.author_id
+        LEFT JOIN tournaments tn ON tn.discussion_topic_id = t.id
+        LEFT JOIN LATERAL (
+          SELECT COALESCE(wp.name, pc.player_name) AS player_name, pc.wtsl_player_id, pc.tour
+          FROM player_claims pc
+          LEFT JOIN wtsl_players wp ON wp.wtsl_player_id = pc.wtsl_player_id AND wp.tour = pc.tour
+          WHERE pc.user_id = t.author_id AND pc.status = 'approved'
+          ORDER BY CASE WHEN pc.tour = tn.tour THEN 0 ELSE 1 END,
+            CASE WHEN pc.id = u.default_player_claim_id THEN 0 ELSE 1 END, pc.created_at ASC, pc.id ASC
+          LIMIT 1
+        ) topic_identity ON TRUE
+        WHERE t.id = ${Number(ref)}
+        LIMIT 1
+      `
+    : await sql`
+        SELECT t.*, c.name AS category, c.slug AS category_slug, u.id AS author_id,
+          COALESCE(topic_identity.player_name, u.display_name) AS author,
+          u.avatar_url AS avatar, u.status AS author_status, tn.logo_url AS tournament_logo,
+          tn.tour AS tournament_tour, topic_identity.wtsl_player_id AS official_player_id,
+          topic_identity.tour AS official_tour
+        FROM topics t
+        LEFT JOIN categories c ON c.id = t.category_id
+        LEFT JOIN users u ON u.id = t.author_id
+        LEFT JOIN tournaments tn ON tn.discussion_topic_id = t.id
+        LEFT JOIN LATERAL (
+          SELECT COALESCE(wp.name, pc.player_name) AS player_name, pc.wtsl_player_id, pc.tour
+          FROM player_claims pc
+          LEFT JOIN wtsl_players wp ON wp.wtsl_player_id = pc.wtsl_player_id AND wp.tour = pc.tour
+          WHERE pc.user_id = t.author_id AND pc.status = 'approved'
+          ORDER BY CASE WHEN pc.tour = tn.tour THEN 0 ELSE 1 END,
+            CASE WHEN pc.id = u.default_player_claim_id THEN 0 ELSE 1 END, pc.created_at ASC, pc.id ASC
+          LIMIT 1
+        ) topic_identity ON TRUE
+        WHERE t.slug = ${String(ref)}
+        LIMIT 1
+      `;
   const topic = rows[0];
   if (!topic) return null;
-  await sql`UPDATE topics SET views=views+1 WHERE id=${topic.id}`;
-  const replies = await sql`SELECT r.id,r.body,r.created_at,u.id author_id,u.display_name author,u.avatar_url avatar,u.is_admin,u.status author_status FROM replies r LEFT JOIN users u ON u.id=r.author_id WHERE r.topic_id=${topic.id} ORDER BY r.created_at ASC`;
+  await sql`UPDATE topics SET views = views + 1 WHERE id = ${topic.id}`;
+  const replies = await sql`
+    SELECT r.id, r.body, r.created_at, u.id AS author_id,
+      COALESCE(reply_identity.player_name, u.display_name) AS author,
+      u.avatar_url AS avatar, u.is_admin, u.status AS author_status,
+      reply_identity.wtsl_player_id AS official_player_id, reply_identity.tour AS official_tour
+    FROM replies r
+    LEFT JOIN users u ON u.id = r.author_id
+    LEFT JOIN LATERAL (
+      SELECT COALESCE(wp.name, pc.player_name) AS player_name, pc.wtsl_player_id, pc.tour
+      FROM player_claims pc
+      LEFT JOIN wtsl_players wp ON wp.wtsl_player_id = pc.wtsl_player_id AND wp.tour = pc.tour
+      WHERE pc.user_id = r.author_id AND pc.status = 'approved'
+      ORDER BY CASE WHEN pc.tour = ${topic.tournament_tour ?? null} THEN 0 ELSE 1 END,
+        CASE WHEN pc.id = u.default_player_claim_id THEN 0 ELSE 1 END, pc.created_at ASC, pc.id ASC
+      LIMIT 1
+    ) reply_identity ON TRUE
+    WHERE r.topic_id = ${topic.id}
+    ORDER BY r.created_at ASC
+  `;
   return { topic, replies };
 }
 

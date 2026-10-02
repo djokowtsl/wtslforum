@@ -1,7 +1,7 @@
 # Deployment
 
 ## 1. Database
-Create a Neon PostgreSQL database and run `db.sql` once. Copy its connection string into `DATABASE_URL`.
+Create a Neon PostgreSQL database and run `db.sql` once. Copy its connection string into `DATABASE_URL`. For an existing database, run `migrations/2026-10-02-default-player-claim.sql` before deploying this feature.
 
 ## 2. Discord OAuth
 Create a Discord Developer Application. Add the Vercel callback URL:

@@ -31,6 +31,45 @@ export async function getClaimsForUser(userId: string): Promise<PlayerClaim[]> {
   return rows as PlayerClaim[];
 }
 
+export type ApprovedPlayerIdentity = {
+  id: string;
+  wtsl_player_id: string;
+  tour: string;
+  player_name: string;
+};
+
+/** Approved WTSL identities with current official names, for the profile's discussion-name picker. */
+export async function getApprovedPlayerIdentities(userId: string): Promise<ApprovedPlayerIdentity[]> {
+  const rows = await sql`
+    SELECT c.id::text AS id, c.wtsl_player_id, c.tour, COALESCE(p.name, c.player_name) AS player_name
+    FROM player_claims c
+    LEFT JOIN wtsl_players p ON p.wtsl_player_id = c.wtsl_player_id AND p.tour = c.tour
+    WHERE c.user_id = ${userId} AND c.status = 'approved'
+    ORDER BY c.created_at ASC, c.id ASC
+  `;
+  return rows as ApprovedPlayerIdentity[];
+}
+
+export async function getDefaultPlayerClaimId(userId: string): Promise<string | null> {
+  const rows = await sql`SELECT default_player_claim_id::text AS id FROM users WHERE id = ${userId} LIMIT 1`;
+  return rows[0]?.id ?? null;
+}
+
+/** Only approved claims owned by this account can become its default forum identity. */
+export async function setDefaultPlayerClaim(userId: string, claimId: string): Promise<boolean> {
+  const rows = await sql`
+    UPDATE users u
+    SET default_player_claim_id = ${claimId}
+    WHERE u.id = ${userId}
+      AND EXISTS (
+        SELECT 1 FROM player_claims c
+        WHERE c.id = ${claimId} AND c.user_id = u.id AND c.status = 'approved'
+      )
+    RETURNING u.id
+  `;
+  return rows.length > 0;
+}
+
 /**
  * Submit (or resubmit) a claim that this Discord account is a given WTSL player.
  * This never verifies anything by itself — it only queues the request for an
@@ -65,6 +104,17 @@ export async function approveClaim(claimId: string, adminId: string) {
   // ...and any other player this same account was verified as on this same tour.
   await sql`UPDATE player_claims SET status='rejected', reviewed_by=${adminId}, reviewed_at=NOW(), review_note='Superseded by a newly approved claim' WHERE user_id=${claim.user_id} AND tour=${claim.tour} AND status='approved' AND id != ${claimId}`;
   await sql`UPDATE player_claims SET status='approved', reviewed_by=${adminId}, reviewed_at=NOW() WHERE id=${claimId}`;
+  // The first verified identity becomes the default; preserve a valid user-selected default later.
+  await sql`
+    UPDATE users u
+    SET default_player_claim_id = ${claim.id}
+    WHERE u.id = ${claim.user_id}
+      AND NOT EXISTS (
+        SELECT 1 FROM player_claims current_claim
+        WHERE current_claim.id = u.default_player_claim_id
+          AND current_claim.user_id = u.id AND current_claim.status = 'approved'
+      )
+  `;
 
   const owner = await sql`SELECT discord_id FROM users WHERE id=${claim.user_id}`;
   if (owner[0]?.discord_id) await notifyPlayerVerified(owner[0].discord_id, claim.player_name, claim.tour);

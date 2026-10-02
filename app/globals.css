@@ -282,6 +282,8 @@ h1, h2, h3 { margin: 0; }
 .av-wtsl, .avatar-img.av-wtsl { background: #010c20; border-color: var(--lime); object-fit: contain; padding: 5px; }
 .post-user .avatar-img { margin: 0 auto 10px; display: block; }
 .post-user strong { display: block; font-size: 14px; }
+.post-author-link { color: inherit; text-decoration: underline; text-decoration-style: dotted; text-underline-offset: 3px; }
+.post-author-link:hover, .post-author-link:focus-visible { color: var(--lime); text-decoration-style: solid; }
 .post-user .role { display: inline-block; margin-top: 8px; }
 .post-content { padding: 22px 26px; color: var(--soft); line-height: 1.75; font-size: 15.5px; min-width: 0; overflow-wrap: anywhere; }
 .post-date { font-size: 11.5px; color: var(--muted); margin-bottom: 14px; letter-spacing: 0.04em; }
@@ -715,6 +717,10 @@ h1, h2, h3 { margin: 0; }
 .user-chip .presence-dot { margin-left: 2px; }
 .status-row { display: flex; align-items: center; justify-content: center; gap: 10px; margin: 4px 0 18px; font-size: 13px; color: var(--muted); }
 .status-picker { background: var(--panel-2); border: 1px solid var(--line-2); border-radius: 8px; padding: 6px 10px; color: var(--text); font-size: 13px; font-family: inherit; }
+.default-identity-control { margin-top: 10px; }
+.default-identity-control label { display: block; margin-bottom: 6px; color: var(--soft); font-size: 13px; }
+.default-identity-picker { width: 100%; max-width: 420px; }
+.default-identity-control .notice { margin-top: 8px; }
 .pill.red { border-color: rgba(255, 93, 108, 0.5); color: var(--red); }
 .nav-messages { position: relative; }
 .nav-badge { margin-left: 6px; }
