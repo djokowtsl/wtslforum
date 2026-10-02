@@ -111,6 +111,22 @@ function percentileOf(value: number, all: number[], lowerIsBetter?: boolean): nu
   return Math.round(((below + equal / 2) / all.length) * 100);
 }
 
+function ordinal(value: number): string {
+  const integer = Math.trunc(value);
+  const absolute = Math.abs(integer);
+  const lastTwo = absolute % 100;
+  const suffix = lastTwo >= 11 && lastTwo <= 13
+    ? 'th'
+    : absolute % 10 === 1
+      ? 'st'
+      : absolute % 10 === 2
+        ? 'nd'
+        : absolute % 10 === 3
+          ? 'rd'
+          : 'th';
+  return `${integer}${suffix}`;
+}
+
 function fieldStandingText(percentile: number, sampleSize: number): string {
   let level: string;
   if (percentile >= 85) level = 'among the strongest';
@@ -119,7 +135,7 @@ function fieldStandingText(percentile: number, sampleSize: number): string {
   else if (percentile <= 40) level = 'below average';
   else level = 'around the field average';
   const sample = sampleSize > 0 ? ` across ${sampleSize} comparable players` : '';
-  return `${level} (${percentile}th percentile${sample})`;
+  return `${level} (${ordinal(percentile)} percentile${sample})`;
 }
 
 export type MetricInsight = {
