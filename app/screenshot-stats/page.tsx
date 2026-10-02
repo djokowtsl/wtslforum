@@ -60,7 +60,7 @@ export default async function ScreenshotStatsPage({
           metrics={metrics}
         />
         <p className="screenshot-stats-source">
-          The player summaries and question answers use reconciled screenshot statistics. The row viewer shows individual workbook records with their source status labels. This snapshot currently covers ATP and WTA singles; doubles are not included.
+          Question answers use reconciled screenshot statistics. The row viewer shows individual workbook records with their source status labels. This snapshot currently covers ATP and WTA singles; doubles are not included.
         </p>
       </main>
     </>
