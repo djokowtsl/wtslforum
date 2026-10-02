@@ -10,7 +10,10 @@
 import { sql } from './db';
 import { LEADERBOARD_MIN_MATCHES } from './stats';
 import { normalizePlayerName } from './queries';
-import { botRatingComparisonPopulation } from './botRatingLeaderboards';
+import {
+  botRatingComparisonPopulation,
+  botRatingEligibleComparisonPopulation,
+} from './botRatingLeaderboards';
 
 type MetricDef = {
   key: string; // column on player_stats_summary
@@ -158,35 +161,45 @@ export async function buildPlayerInsights(playerId: string, tour: string): Promi
     numericValue(row[metric.key] ?? row[metric.label]);
 
   const screenshotRows = await botRatingComparisonPopulation(tour);
+  const linkedPlayers = await sql`
+    SELECT name
+    FROM wtsl_players
+    WHERE wtsl_player_id=${playerId} AND tour=${tour}
+    LIMIT 2
+  `;
+  const targetName = normalizePlayerName(String(linkedPlayers[0]?.name ?? ''));
+  const fullMatches = screenshotRows.filter(
+    (row) => normalizePlayerName(row.playerName) === targetName,
+  );
   let field: Record<string, unknown>[];
   let me: Record<string, unknown> | undefined;
-  if (screenshotRows.length > 0) {
-    const linkedPlayers = await sql`
-      SELECT name
-      FROM wtsl_players
-      WHERE wtsl_player_id=${playerId} AND tour=${tour}
-      LIMIT 2
-    `;
-    const targetName = normalizePlayerName(String(linkedPlayers[0]?.name ?? ''));
-    const matches = screenshotRows.filter(
+  const hasCoachMetric = (row: Record<string, unknown>) =>
+    METRICS.some((metric) => metricValue(row, metric) !== null);
+  if (targetName && fullMatches.length === 1 && hasCoachMetric(fullMatches[0].metrics)) {
+    field = screenshotRows.map((row) => row.metrics);
+    me = fullMatches[0].metrics;
+  } else {
+    // Use the previous screenshot snapshot until the full verified population is synced,
+    // or if the full import does not contain one unambiguous target row.
+    const eligibleRows = await botRatingEligibleComparisonPopulation(tour);
+    const eligibleMatches = eligibleRows.filter(
       (row) => normalizePlayerName(row.playerName) === targetName,
     );
-    // The verified WTSL ID maps to the imported player name. Never guess between
-    // multiple screenshot profiles that normalize to the same name.
-    if (!targetName || matches.length !== 1) return empty();
-    field = screenshotRows.map((row) => row.metrics);
-    me = matches[0].metrics;
-  } else {
-    const rows = await sql`
-      SELECT player_id, matches, aces, winners, break_points_won, first_serve_pct,
-        avg_double_faults, avg_net_points_pct, avg_forced_errors, avg_unforced_errors,
-        avg_short_rally_pct, avg_medium_rally_pct, avg_long_rally_pct,
-        avg_first_serve_won_pct, avg_second_serve_won_pct, avg_return_won_pct
-      FROM player_stats_summary
-      WHERE tour=${tour} AND matches >= ${LEADERBOARD_MIN_MATCHES}
-    `;
-    field = rows as Record<string, unknown>[];
-    me = field.find((row) => String(row.player_id) === String(playerId));
+    if (targetName && eligibleMatches.length === 1 && hasCoachMetric(eligibleMatches[0].metrics)) {
+      field = eligibleRows.map((row) => row.metrics);
+      me = eligibleMatches[0].metrics;
+    } else {
+      const rows = await sql`
+        SELECT player_id, matches, aces, winners, break_points_won, first_serve_pct,
+          avg_double_faults, avg_net_points_pct, avg_forced_errors, avg_unforced_errors,
+          avg_short_rally_pct, avg_medium_rally_pct, avg_long_rally_pct,
+          avg_first_serve_won_pct, avg_second_serve_won_pct, avg_return_won_pct
+        FROM player_stats_summary
+        WHERE tour=${tour} AND matches >= ${LEADERBOARD_MIN_MATCHES}
+      `;
+      field = rows as Record<string, unknown>[];
+      me = field.find((row) => String(row.player_id) === String(playerId));
+    }
   }
   if (!me) return empty();
 
