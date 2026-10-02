@@ -7,7 +7,7 @@ import { discordAvatar, getSession } from '@/lib/auth';
 import Link from 'next/link';
 import PageHero from '@/components/PageHero';
 import { StatusDot } from '@/components/StatusDot';
-import { DEFAULT_TOUR, isTourCode, tourLabel, type TourCode } from '@/lib/wtsl';
+import { DEFAULT_TOUR, getTourEloDesignation, isTourCode, tourLabel, type TourCode } from '@/lib/wtsl';
 
 export const dynamic = 'force-dynamic';
 
@@ -28,6 +28,7 @@ export default async function PlayerDashboard({ params, searchParams }: Props) {
   const tours = rows.map((r: any) => r.tour).filter(Boolean);
   const tour: TourCode = isTourCode(tourParam) && tours.includes(tourParam) ? tourParam : (isTourCode(tours[0]) ? tours[0] : DEFAULT_TOUR);
   const p = rows.find((r: any) => r.tour === tour) ?? rows[0];
+  const eloLabel = p.tour_elo == null ? p.elo_label : getTourEloDesignation(p.tour_elo);
 
   const recent = await safe(() => sql`SELECT * FROM player_recent_results WHERE player_id=${id} AND tour=${tour} ORDER BY position ASC LIMIT 10`, [] as any[]);
   const verifiedOwner = await safe(() => getVerifiedOwner(id, tour), null as any);
@@ -72,7 +73,7 @@ export default async function PlayerDashboard({ params, searchParams }: Props) {
           <div>
             <h2 className="display">{p.name}</h2>
             {p.country && <p>{p.flag_url && <img src={p.flag_url} alt="" style={{ height: 14, marginRight: 6 }} />}{p.country}</p>}
-            <p>Tour Rank <b>{p.rank ? `#${p.rank}` : 'Unranked'}</b> | Tour Elo <b>{p.tour_elo ?? '—'}</b>{p.elo_label ? ` (${p.elo_label})` : ''}</p>
+            <p>Tour Rank <b>{p.rank ? `#${p.rank}` : 'Unranked'}</b> | Tour Elo <b>{p.tour_elo ?? '—'}</b>{eloLabel ? ` (${eloLabel})` : ''}</p>
             {p.official_url && <a href={p.official_url} target="_blank" rel="noreferrer">View WTSL profile ↗</a>}
             {verifiedOwner && (
               <p style={{ marginTop: 8 }}>
