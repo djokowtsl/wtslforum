@@ -9,12 +9,13 @@ const display = Barlow_Condensed({ subsets: ['latin'], weight: ['700', '800'], s
 const body = Inter({ subsets: ['latin'], variable: '--font-body-loaded', display: 'swap' });
 
 const siteUrl = process.env.NEXT_PUBLIC_SITE_URL || 'https://wtslforum.vercel.app';
+const siteDescription = 'The community home of the World Tennis Simulation League';
 
 export const metadata: Metadata = {
   metadataBase: new URL(siteUrl),
   title: { default: 'WTSL Forum — World Tennis Simulation League', template: '%s · WTSL Forum' },
-  description: 'The community home of the World Tennis Simulation League: discussions, match talk, tournaments, players, articles and awards.',
-  openGraph: { siteName: 'WTSL Forum', type: 'website' },
+  description: siteDescription,
+  openGraph: { siteName: 'WTSL Forum', type: 'website', description: siteDescription },
 };
 
 export const viewport: Viewport = { themeColor: '#030a18' };
