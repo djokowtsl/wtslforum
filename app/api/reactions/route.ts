@@ -4,7 +4,7 @@ import { sql } from '@/lib/db';
 
 // A handful of fixed emoji so the UI can render a small, predictable reaction bar instead of a
 // full emoji picker — matches the "like/upvote" style reactions requested, not freeform emoji.
-const ALLOWED_EMOJI = new Set(['👍', '🔥', '😂', '🎾']);
+const ALLOWED_EMOJI = new Set(['👍', '🔥', '😂', '🎾', '❤️']);
 
 /** Toggles one (user, post, emoji) reaction: if it already exists this removes it, otherwise it's
  * added — the `reactions` table's UNIQUE(user_id,topic_id,reply_id,emoji) constraint is what makes
