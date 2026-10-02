@@ -115,7 +115,7 @@ export default async function PlayersPage({ searchParams }: { searchParams: Prom
             {players.map((p: any) => (
               <a className="player-card" href={`/players/${p.wtsl_player_id}?tour=${encodeURIComponent(tour)}`} key={p.wtsl_player_id}>
                 {p.avatar_url ? <img src={p.avatar_url} alt={p.name} /> : <div className="player-placeholder">{(p.name || 'W')[0]}</div>}
-                <div><strong>{p.name}</strong>{p.country && <small>{p.flag_url && <img src={p.flag_url} alt="" />}{p.country}</small>}<b>{p.rank ? `#${p.rank} · ` : ''}Tour Elo {p.tour_elo ?? '—'}</b></div>
+                <div><strong>{p.name}</strong>{p.country && <small>{p.flag_url && <img src={p.flag_url} alt="" />}{p.country}</small>}<b>Tour Rank {p.rank ? `#${p.rank}` : 'Unranked'} | Tour Elo {p.tour_elo ?? '—'}</b></div>
                 <span>↗</span>
               </a>
             ))}
