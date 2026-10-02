@@ -409,15 +409,15 @@ h1, h2, h3 { margin: 0; }
 .player-stat-grid small { display: block; color: var(--muted); font-size: 11px; text-transform: uppercase; letter-spacing: 0.06em; }
 .player-stat-grid strong { display: block; font-size: 18px; margin-top: 4px; }
 .empty-cta { text-align: center; padding: 28px; margin-bottom: 20px; }
-.insight-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(240px, 1fr)); gap: 14px; margin-top: 18px; }
-.insight-card { background: var(--bg); border: 1px solid var(--line); border-radius: var(--radius); padding: 14px 16px; }
+.insight-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(100%, 240px), 1fr)); gap: 14px; margin-top: 18px; }
+.insight-card { min-width: 0; background: var(--bg); border: 1px solid var(--line); border-radius: var(--radius); padding: 14px 16px; }
 .insight-card > small { display: block; color: var(--muted); font-size: 10.5px; text-transform: uppercase; letter-spacing: 0.1em; font-weight: 700; margin-bottom: 8px; }
 .insight-strength > small { color: var(--lime); }
 .insight-development > small { color: var(--amber); }
 .insight-card p { margin: 6px 0; font-size: 13.5px; line-height: 1.5; }
 .insight-standing { color: var(--muted); font-size: 12px !important; }
 .insight-tactic { color: var(--cyan); }
-.insight-training { grid-column: 1 / -1; background: color-mix(in srgb, var(--cyan) 8%, transparent); border: 1px solid rgba(34, 194, 218, 0.25); border-radius: var(--radius); padding: 14px 16px; }
+.insight-training { min-width: 0; background: color-mix(in srgb, var(--cyan) 8%, transparent); border: 1px solid rgba(34, 194, 218, 0.25); border-radius: var(--radius); padding: 14px 16px; }
 .insight-training > small { display: block; color: var(--cyan); font-size: 10.5px; text-transform: uppercase; letter-spacing: 0.1em; font-weight: 700; margin-bottom: 8px; }
 .insight-training p { margin: 0; font-size: 13.5px; line-height: 1.5; }
 .leader-row > b { color: var(--muted); }
