@@ -72,6 +72,7 @@ export async function GET(req: NextRequest) {
     metric: metricValue as ScreenshotRecordFilters['metric'],
     min,
     max,
+    rankedOnly: params.get('rankedOnly') === 'true',
   };
 
   try {
