@@ -1,4 +1,5 @@
 import {sql} from './db';
+import { normalizePlayerName } from './queries';
 
 // Small-sample stats (e.g. a 3-0 player at #1 by win %) are misleading on a ranked leaderboard,
 // so anyone under this many recorded matches is excluded entirely rather than just ranked low.
@@ -155,9 +156,18 @@ export async function recentMatches(limit=20, tour='TE4'){
  */
 export async function recentlyCompletedPairs(tour: string, days = 21): Promise<Set<string>> {
   const rows = await sql`
-    SELECT player_one_id, player_two_id
-    FROM match_stats
-    WHERE tour=${tour} AND played_at IS NOT NULL AND played_at >= NOW() - (${days} || ' days')::interval
+    SELECT m.player_one_id, m.player_two_id, p1.name AS player_one_name, p2.name AS player_two_name
+    FROM match_stats m
+    LEFT JOIN wtsl_players p1 ON p1.wtsl_player_id=m.player_one_id AND p1.tour=m.tour
+    LEFT JOIN wtsl_players p2 ON p2.wtsl_player_id=m.player_two_id AND p2.tour=m.tour
+    WHERE m.tour=${tour} AND m.played_at IS NOT NULL AND m.played_at >= NOW() - (${days} || ' days')::interval
   `;
-  return new Set(rows.map((r: any) => [String(r.player_one_id), String(r.player_two_id)].sort().join('|')));
+  const pairs = new Set<string>();
+  for (const row of rows as any[]) {
+    pairs.add([String(row.player_one_id), String(row.player_two_id)].sort().join('|'));
+    if (row.player_one_name && row.player_two_name) {
+      pairs.add([normalizePlayerName(row.player_one_name), normalizePlayerName(row.player_two_name)].sort().join('|'));
+    }
+  }
+  return pairs;
 }

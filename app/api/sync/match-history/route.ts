@@ -29,9 +29,14 @@ export async function POST(req: NextRequest) {
   if (!isTourCode(tour)) return NextResponse.json({ error: 'Invalid or missing "tour"' }, { status: 400 });
   if (!Array.isArray(matches) || !matches.length) return NextResponse.json({ error: '"matches" must be a non-empty array' }, { status: 400 });
 
+  const statKeys = ['firstServePct', 'firstServeWonPct', 'secondServeWonPct', 'aces', 'doubleFaults', 'firstServeReturnWonPct', 'secondServeReturnWonPct', 'returnPointsWonPct', 'breakPointsWonPct', 'breakPointsSavedPct', 'tieBreaksWonPct', 'decidingSetsWonPct', 'setPointsSaved', 'matchPointsSaved'] as const;
   const rows: MatchHistoryRow[] = [];
   for (const m of matches) {
     if (!m?.player1 || !m?.player2 || !m?.score) continue;
+    const stats = Object.fromEntries(statKeys.flatMap((key) => {
+      const value = Number(m[key]);
+      return Number.isFinite(value) ? [[key, value]] : [];
+    }));
     rows.push({
       player1: String(m.player1),
       player2: String(m.player2),
@@ -39,6 +44,7 @@ export async function POST(req: NextRequest) {
       date: m.date ? String(m.date) : null,
       tournamentName: m.tournamentName ? String(m.tournamentName) : null,
       round: m.round ? String(m.round) : null,
+      stats,
     });
   }
   if (!rows.length) return NextResponse.json({ error: 'No valid rows (each needs player1, player2, score)' }, { status: 400 });
