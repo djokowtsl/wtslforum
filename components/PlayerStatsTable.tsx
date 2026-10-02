@@ -1,5 +1,6 @@
 'use client';
 import { useMemo, useState } from 'react';
+import RatingEvidence from '@/components/RatingEvidence';
 
 type Row = {
   wtsl_player_id: string;
@@ -11,6 +12,10 @@ type Row = {
   losses: number;
   win_pct: number;
   tour_elo: number | null;
+  serve_rating?: number | null;
+  return_rating?: number | null;
+  pressure_rating?: number | null;
+  rating_component_counts?: Record<string, number>;
 };
 
 const COLUMNS: { key: keyof Row; label: string; numeric?: boolean }[] = [
@@ -20,6 +25,9 @@ const COLUMNS: { key: keyof Row; label: string; numeric?: boolean }[] = [
   { key: 'losses', label: 'L', numeric: true },
   { key: 'win_pct', label: 'Win %', numeric: true },
   { key: 'tour_elo', label: 'Tour Elo', numeric: true },
+  { key: 'serve_rating', label: 'Serve rating', numeric: true },
+  { key: 'return_rating', label: 'Return rating', numeric: true },
+  { key: 'pressure_rating', label: 'Under Pressure rating', numeric: true },
 ];
 
 export default function PlayerStatsTable({ rows, tour }: { rows: Row[]; tour: string }) {
@@ -71,6 +79,9 @@ export default function PlayerStatsTable({ rows, tour }: { rows: Row[]; tour: st
             <tr key={p.wtsl_player_id}>
               <td><a className="player-line" href={`/players/${p.wtsl_player_id}?tour=${encodeURIComponent(tour)}`}>{p.avatar_url && <img src={p.avatar_url} alt="" />}<span>{p.name}<small>{p.country || ''}</small></span></a></td>
               <td>{p.matches}</td><td>{p.wins}</td><td>{p.losses}</td><td>{p.win_pct}%</td><td>{p.tour_elo ?? '—'}</td>
+              <td>{p.serve_rating == null ? '—' : p.serve_rating.toFixed(1)}{p.serve_rating != null && <RatingEvidence metric="serve" counts={p.rating_component_counts} />}</td>
+              <td>{p.return_rating == null ? '—' : p.return_rating.toFixed(1)}{p.return_rating != null && <RatingEvidence metric="return" counts={p.rating_component_counts} />}</td>
+              <td>{p.pressure_rating == null ? '—' : p.pressure_rating.toFixed(1)}{p.pressure_rating != null && <RatingEvidence metric="pressure" counts={p.rating_component_counts} />}</td>
             </tr>
           ))}
         </tbody>

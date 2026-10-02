@@ -1,5 +1,18 @@
 import { sql } from './db';
 import { fetchWTSLPlayer, fetchWTSLPlayerStatsTable, fetchWTSLAllResults, TOURS, DEFAULT_TOUR, type TourCode } from './wtsl';
+import { computeOfficialClutchAggregates, parseSets } from './clutchStats';
+export { parseSets, normalizeMatchScore } from './clutchStats';
+
+let clutchStatsSchemaEnsured = false;
+
+async function ensureClutchStatsSourceColumn() {
+  if (clutchStatsSchemaEnsured) return;
+  await sql`
+    ALTER TABLE player_stats_summary
+      ADD COLUMN IF NOT EXISTS clutch_stats_source TEXT NOT NULL DEFAULT 'legacy'
+  `;
+  clutchStatsSchemaEnsured = true;
+}
 
 /**
  * Runs `worker` across `items` with at most `limit` in flight at once — a single player's
@@ -15,34 +28,6 @@ async function mapLimit<T>(items: T[], limit: number, worker: (item: T) => Promi
     }
   }
   await Promise.all(Array.from({ length: Math.min(limit, items.length) }, runner));
-}
-
-/**
- * A recent-result score is only a completed match (not "Scheduled"/"Walkover"/etc) when it looks
- * like a list of set scores, e.g. "6-2,6-2,6-2" (optionally with a tiebreak point count in
- * parens, e.g. "7-6(4)", which is stripped before parsing). Returns the parsed sets or null.
- */
-export function normalizeMatchScore(score: string): string {
-  return score
-    .replace(/\b(?:ret(?:ired)?|walkover)\.?(?=\s|$)/gi, '')
-    .replace(/\//g, '-')
-    .replace(/[,;]+/g, ' ')
-    .replace(/\s+/g, ' ')
-    .trim();
-}
-
-export function parseSets(score: string): [number, number][] | null {
-  // The Discord spreadsheet uses spaces and `/` (for example `6/2 6/1`), while
-  // the public WTSL feed uses commas and `-`. Accept both representations.
-  const sets = normalizeMatchScore(score).split(' ').filter(Boolean);
-  if (!sets.length) return null;
-  const parsed: [number, number][] = [];
-  for (const set of sets) {
-    const m = set.replace(/\([^)]*\)/g, '').trim().match(/^(\d+)\s*-\s*(\d+)$/);
-    if (!m) return null;
-    parsed.push([Number(m[1]), Number(m[2])]);
-  }
-  return parsed;
 }
 
 /**
@@ -171,56 +156,60 @@ export async function syncPlayerStatsAllTours() {
 }
 
 /**
- * Replicates the Discord bot's clutch-stats math (sets, tiebreaks and deciding sets won/played)
- * entirely from matches already stored in `match_stats` — no extra scraping needed, and it
- * covers every tour since `match_stats` is fed from every player's recent-results page regardless
- * of tour. `player_one_id`'s side of `score` is always the side that was scraped first (see
- * `recordMatchResult`), so each row's sets are reliably oriented for both players.
+ * Rebuilds set/tiebreak/deciding-set records only from the winner-oriented official all-results
+ * feed. Recent profile scores do not identify which player is on the left, and imported history
+ * can duplicate those rows. The all-results source currently covers TE4 only; other tours are
+ * marked unavailable rather than showing an unsupported aggregate.
  */
 export async function computeClutchStats(tour: TourCode) {
-  const rows = await sql`SELECT player_one_id, player_two_id, score FROM match_stats WHERE tour=${tour}`;
-  type Agg = { setsWon: number; setsLost: number; tiebreaksWon: number; tiebreaksPlayed: number; decidingSetsWon: number; decidingSetsPlayed: number };
-  const agg = new Map<string, Agg>();
-  const bump = (id: string) => {
-    if (!agg.has(id)) agg.set(id, { setsWon: 0, setsLost: 0, tiebreaksWon: 0, tiebreaksPlayed: 0, decidingSetsWon: 0, decidingSetsPlayed: 0 });
-    return agg.get(id)!;
-  };
-  for (const row of rows as { player_one_id: string; player_two_id: string; score: string }[]) {
-    const sets = parseSets(String(row.score ?? ''));
-    if (!sets || sets.length < 2) continue;
-    const a1 = bump(String(row.player_one_id));
-    const a2 = bump(String(row.player_two_id));
-    let priorP1 = 0, priorP2 = 0;
-    sets.forEach(([first, second], idx) => {
-      const isLast = idx === sets.length - 1;
-      if (first > second) { a1.setsWon++; a2.setsLost++; }
-      else if (second > first) { a2.setsWon++; a1.setsLost++; }
-      // Tiebreak set: tennis scores a tiebreak set 7-6 (or 6-7) for the shortcut-scored game total.
-      if ((first === 6 && second === 7) || (first === 7 && second === 6)) {
-        a1.tiebreaksPlayed++; a2.tiebreaksPlayed++;
-        if (first > second) a1.tiebreaksWon++; else a2.tiebreaksWon++;
-      }
-      // Deciding set: the match's final set, in a best-of that went the distance (3+ sets played)
-      // with the prior sets tied — i.e. it was the set that actually decided the match.
-      if (isLast && sets.length >= 3 && priorP1 === priorP2 && first !== second) {
-        a1.decidingSetsPlayed++; a2.decidingSetsPlayed++;
-        if (first > second) a1.decidingSetsWon++; else a2.decidingSetsWon++;
-      }
-      if (first > second) priorP1++; else if (second > first) priorP2++;
-    });
+  await ensureClutchStatsSourceColumn();
+  if (tour !== 'TE4') {
+    await sql`
+      UPDATE player_stats_summary SET
+        sets_won=0, sets_lost=0, tiebreaks_won=0, tiebreaks_played=0,
+        deciding_sets_won=0, deciding_sets_played=0,
+        clutch_stats_source='unavailable'
+      WHERE tour=${tour}
+    `;
+    return { tour, matchesSeen: 0, matchesCounted: 0, playersUpdated: 0, source: 'unavailable' };
   }
+
+  const officialResults = await fetchWTSLAllResults();
+  if (!officialResults.length) {
+    throw new Error('WTSL all-results feed returned no parsed rows; refusing to clear set records');
+  }
+  const aggregate = computeOfficialClutchAggregates(officialResults);
+  if (!aggregate.matchesCounted || !aggregate.byPlayer.size) {
+    throw new Error('WTSL all-results feed contained no completed set scores; refusing to clear set records');
+  }
+  await sql`
+    UPDATE player_stats_summary SET
+      sets_won=0, sets_lost=0, tiebreaks_won=0, tiebreaks_played=0,
+      deciding_sets_won=0, deciding_sets_played=0,
+      clutch_stats_source='wtsl_all_results'
+    WHERE tour=${tour}
+  `;
   let playersUpdated = 0;
-  for (const [playerId, a] of agg) {
+  for (const [playerId, a] of aggregate.byPlayer) {
     await sql`
       UPDATE player_stats_summary SET
         sets_won=${a.setsWon}, sets_lost=${a.setsLost},
         tiebreaks_won=${a.tiebreaksWon}, tiebreaks_played=${a.tiebreaksPlayed},
-        deciding_sets_won=${a.decidingSetsWon}, deciding_sets_played=${a.decidingSetsPlayed}
+        deciding_sets_won=${a.decidingSetsWon}, deciding_sets_played=${a.decidingSetsPlayed},
+        clutch_stats_source='wtsl_all_results'
       WHERE player_id=${playerId} AND tour=${tour}
     `;
     playersUpdated++;
   }
-  return { tour, matchesSeen: rows.length, playersUpdated };
+  return {
+    tour,
+    matchesSeen: aggregate.matchesSeen,
+    matchesCounted: aggregate.matchesCounted,
+    duplicatesIgnored: aggregate.duplicatesIgnored,
+    conflictsIgnored: aggregate.conflictsIgnored,
+    playersUpdated,
+    source: 'wtsl_all_results',
+  };
 }
 
 /**

@@ -1,10 +1,13 @@
 import { sql } from './db';
+import { LEADERBOARD_MIN_MATCHES } from './stats';
+import { BOT_RATING_METRICS } from './botRatingMetrics';
+import type { BotRating } from './botRatingMetrics';
+export { BOT_RATING_METRICS } from './botRatingMetrics';
+export type { BotRating } from './botRatingMetrics';
 
-export const BOT_RATING_METRICS = [
-  { key: 'serve', label: 'Serve', sourceLabel: 'Serve (Overall)', valueFormat: 'rating', direction: 'desc' },
-  { key: 'return', label: 'Return', sourceLabel: 'Return (Overall)', valueFormat: 'rating', direction: 'desc' },
-  { key: 'pressure', label: 'Under Pressure', sourceLabel: 'Under Pressure', valueFormat: 'rating', direction: 'desc' },
-] as const;
+const BOT_RATING_COMPONENT_LABELS = new Set<string>(
+  BOT_RATING_METRICS.flatMap((metric) => [...metric.components]),
+);
 
 export const BOT_AGGREGATE_METRICS = [
   { key: 'bot_1st_serve_pct', label: '1st Serve %', sourceLabel: '1st Serve %', valueFormat: 'percent', direction: 'desc' },
@@ -38,7 +41,6 @@ export const BOT_AGGREGATE_METRICS = [
 ] as const;
 
 export const BOT_METRICS = [...BOT_RATING_METRICS, ...BOT_AGGREGATE_METRICS] as const;
-export type BotRating = typeof BOT_RATING_METRICS[number]['key'];
 export type BotAggregateMetric = typeof BOT_AGGREGATE_METRICS[number]['key'];
 export type BotMetric = BotRating | BotAggregateMetric;
 
@@ -71,6 +73,7 @@ async function ensureTable() {
       serve NUMERIC,
       return_rating NUMERIC,
       pressure NUMERIC,
+      rating_component_counts JSONB NOT NULL DEFAULT '{}'::jsonb,
       metrics JSONB NOT NULL DEFAULT '{}'::jsonb,
       favorite_character TEXT,
       favorite_character_count INT,
@@ -82,6 +85,7 @@ async function ensureTable() {
   await sql`
     ALTER TABLE bot_rating_leaderboards
       ADD COLUMN IF NOT EXISTS metrics JSONB NOT NULL DEFAULT '{}'::jsonb,
+      ADD COLUMN IF NOT EXISTS rating_component_counts JSONB NOT NULL DEFAULT '{}'::jsonb,
       ADD COLUMN IF NOT EXISTS favorite_character TEXT,
       ADD COLUMN IF NOT EXISTS favorite_character_count INT,
       ADD COLUMN IF NOT EXISTS favorite_character_percentage NUMERIC
@@ -156,6 +160,7 @@ type SyncRow = {
   player?: unknown;
   matches?: unknown;
   ratings?: Record<string, unknown> | null;
+  rating_component_counts?: Record<string, unknown> | null;
   metrics?: Record<string, unknown> | null;
   favorite_character?: {
     character?: unknown;
@@ -175,6 +180,21 @@ function finiteNumber(value: unknown): number | null {
   if (typeof value === 'string' && value.trim() === '') return null;
   const number = Number(value);
   return Number.isFinite(number) ? number : null;
+}
+
+function componentCountsFromDb(value: unknown): Record<string, number> {
+  let parsed = value;
+  if (typeof parsed === 'string') {
+    try { parsed = JSON.parse(parsed); } catch { return {}; }
+  }
+  if (!parsed || typeof parsed !== 'object' || Array.isArray(parsed)) return {};
+  const counts: Record<string, number> = {};
+  for (const [label, raw] of Object.entries(parsed)) {
+    if (!BOT_RATING_COMPONENT_LABELS.has(label)) continue;
+    const count = finiteNumber(raw);
+    if (count !== null && Number.isInteger(count) && count > 0) counts[label] = count;
+  }
+  return counts;
 }
 
 export async function replaceBotRatingComparisonPopulation(
@@ -246,6 +266,14 @@ export async function replaceBotRatingLeaderboard(tour: string, rows: SyncRow[])
       const value = finiteNumber(row.metrics?.[metric.sourceLabel]);
       if (value !== null) metrics[metric.sourceLabel] = value;
     }
+    const ratingComponentCounts: Record<string, number> = {};
+    for (const [label, rawValue] of Object.entries(row.rating_component_counts ?? {})) {
+      if (!BOT_RATING_COMPONENT_LABELS.has(label)) continue;
+      const value = finiteNumber(rawValue);
+      if (value !== null && Number.isInteger(value) && value > 0) {
+        ratingComponentCounts[label] = value;
+      }
+    }
 
     const favorite = row.favorite_character;
     const favoriteCharacter = typeof favorite?.character === 'string' ? favorite.character.trim() || null : null;
@@ -265,12 +293,13 @@ export async function replaceBotRatingLeaderboard(tour: string, rows: SyncRow[])
     await sql`
       INSERT INTO bot_rating_leaderboards(
         tour, player_name, screenshots, serve, return_rating, pressure,
-        metrics, favorite_character, favorite_character_count,
+        rating_component_counts, metrics, favorite_character, favorite_character_count,
         favorite_character_percentage, updated_at
       )
       VALUES(
         ${tour}, ${name}, ${screenshots},
         ${ratingValue('serve')}, ${ratingValue('return')}, ${ratingValue('pressure')},
+        ${JSON.stringify(ratingComponentCounts)}::jsonb,
         ${JSON.stringify(metrics)}::jsonb, ${favoriteCharacter},
         ${favoriteCharacterCount}, ${favoriteCharacterPercentage}, NOW()
       )
@@ -326,6 +355,97 @@ export async function botLeaderboard(tour: string, metric: BotMetric): Promise<B
     });
 }
 
-export async function botRatingLeaderboard(tour: string, metric: BotRating): Promise<BotLeaderboardRow[]> {
-  return botLeaderboard(tour, metric);
+export type BotRatingStatsRow = {
+  playerId: string;
+  player: string;
+  matches: number;
+  ratings: Record<BotRating, number | null>;
+  ratingComponentCounts: Record<string, number>;
+};
+
+export type BotRatingLeaderboardRow = {
+  wtsl_player_id: string;
+  name: string;
+  avatar_url: string | null;
+  country: string | null;
+  matches: number;
+  value: number;
+  ratingComponentCounts: Record<string, number>;
+};
+
+export async function botRatingStats(
+  tour: string,
+  playerId?: string,
+): Promise<BotRatingStatsRow[]> {
+  await ensureTable();
+  const rows = await sql`
+    SELECT
+      p.wtsl_player_id AS "playerId",
+      p.name AS player,
+      b.screenshots AS matches,
+      b.serve AS "serveRating",
+      b.return_rating AS "returnRating",
+      b.pressure AS "pressureRating",
+      b.rating_component_counts AS "ratingComponentCounts"
+    FROM bot_rating_leaderboards b
+    JOIN wtsl_players p ON p.tour=b.tour AND lower(p.name)=lower(b.player_name)
+    WHERE b.tour=${tour} AND b.screenshots >= ${LEADERBOARD_MIN_MATCHES}
+      AND (b.serve IS NOT NULL OR b.return_rating IS NOT NULL OR b.pressure IS NOT NULL)
+  `;
+  return (rows as any[])
+    .map((row) => ({
+      playerId: String(row.playerId),
+      player: String(row.player),
+      matches: Number(row.matches),
+      ratings: {
+        serve: finiteNumber(row.serveRating),
+        return: finiteNumber(row.returnRating),
+        pressure: finiteNumber(row.pressureRating),
+      },
+      ratingComponentCounts: componentCountsFromDb(row.ratingComponentCounts),
+    }))
+    .filter((row) => !playerId || row.playerId === playerId);
+}
+
+export async function botRatingLeaderboard(
+  tour: string,
+  metric: BotRating,
+): Promise<BotRatingLeaderboardRow[]> {
+  await ensureTable();
+  const definition = BOT_RATING_METRICS.find((entry) => entry.key === metric)!;
+  const rows = await sql`
+    SELECT
+      p.wtsl_player_id,
+      p.name,
+      p.avatar_url,
+      p.country,
+      b.screenshots AS matches,
+      CASE
+        WHEN ${metric} = 'serve' THEN b.serve
+        WHEN ${metric} = 'return' THEN b.return_rating
+        WHEN ${metric} = 'pressure' THEN b.pressure
+        ELSE NULL
+      END AS value,
+      b.rating_component_counts AS "ratingComponentCounts"
+    FROM bot_rating_leaderboards b
+    JOIN wtsl_players p ON p.tour=b.tour AND lower(p.name)=lower(b.player_name)
+    WHERE b.tour=${tour}
+      AND b.screenshots >= ${LEADERBOARD_MIN_MATCHES}
+      AND CASE
+        WHEN ${metric} = 'serve' THEN b.serve
+        WHEN ${metric} = 'return' THEN b.return_rating
+        WHEN ${metric} = 'pressure' THEN b.pressure
+        ELSE NULL
+      END IS NOT NULL
+    ORDER BY value DESC NULLS LAST, p.name ASC
+  `;
+  return (rows as any[]).map((row) => ({
+    wtsl_player_id: String(row.wtsl_player_id),
+    name: String(row.name),
+    avatar_url: row.avatar_url ? String(row.avatar_url) : null,
+    country: row.country ? String(row.country) : null,
+    matches: Number(row.matches),
+    value: Number(row.value),
+    ratingComponentCounts: componentCountsFromDb(row.ratingComponentCounts),
+  }));
 }

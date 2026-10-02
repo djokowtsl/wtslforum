@@ -1,7 +1,7 @@
 import type { Metadata } from 'next';
 import Link from 'next/link';
 import { safe } from '@/lib/db';
-import { leaderboard, recentMatches, playerStats, recentlyCompletedPairs } from '@/lib/stats';
+import { leaderboard, recentMatches, playerStats, recentlyCompletedPairs, LEADERBOARD_MIN_MATCHES } from '@/lib/stats';
 import { openFixtures, excludeStaleFixtures } from '@/lib/betting';
 import { getSession } from '@/lib/auth';
 import { getClaimsForUser } from '@/lib/player-claims';
@@ -10,11 +10,23 @@ import { buildPlayerInsights, type PlayerInsightReport } from '@/lib/playerInsig
 import { tourLabel } from '@/lib/wtsl';
 import { timeAgo } from '@/lib/format';
 import PageHero from '@/components/PageHero';
+import RatingEvidence from '@/components/RatingEvidence';
+import {
+  BOT_RATING_METRICS,
+  botRatingStats,
+  type BotRatingStatsRow,
+} from '@/lib/botRatingLeaderboards';
 
 export const dynamic = 'force-dynamic';
 export const metadata: Metadata = { title: 'Dashboard' };
 
-type VerifiedPlayerCard = { tour: string; playerName: string; stats: any; insights: PlayerInsightReport };
+type VerifiedPlayerCard = {
+  tour: string;
+  playerName: string;
+  stats: any;
+  insights: PlayerInsightReport;
+  ratings: BotRatingStatsRow | null;
+};
 
 export default async function Dashboard() {
   const viewer = await safe(() => getSession(), null);
@@ -64,7 +76,10 @@ export default async function Dashboard() {
 
   const playerCards: VerifiedPlayerCard[] = await Promise.all(
     approved.map(async (c: any) => {
-      const rows = await safe(() => playerStats(c.wtsl_player_id), [] as any[]);
+      const [rows, ratingRows] = await Promise.all([
+        safe(() => playerStats(c.wtsl_player_id), [] as any[]),
+        safe(() => botRatingStats(c.tour, c.wtsl_player_id), [] as BotRatingStatsRow[]),
+      ]);
       const stats = rows.find((r: any) => r.tour === c.tour) ?? rows[0] ?? {};
       const insights = await safe(() => buildPlayerInsights(c.wtsl_player_id, c.tour), {
         qualifies: false,
@@ -73,7 +88,7 @@ export default async function Dashboard() {
         weakest: null,
         trainingFocus: null,
       } as PlayerInsightReport);
-      return { tour: c.tour, playerName: c.player_name, stats, insights };
+      return { tour: c.tour, playerName: c.player_name, stats, insights, ratings: ratingRows[0] ?? null };
     })
   );
 
@@ -124,9 +139,10 @@ export default async function Dashboard() {
                     <div>{form.split('').map((c, i) => <span key={i} className={c === 'W' ? 'form-win' : 'form-loss'}>{c}</span>)}</div>
                   </div>
                 )}
-                {((p.tiebreaks_played ?? 0) > 0 || (p.deciding_sets_played ?? 0) > 0) && (
+                {p.clutch_stats_source === 'wtsl_all_results'
+                  && ((p.sets_won ?? 0) > 0 || (p.sets_lost ?? 0) > 0 || (p.tiebreaks_played ?? 0) > 0 || (p.deciding_sets_played ?? 0) > 0) && (
                   <div className="player-record-grid">
-                    <div><strong>{p.sets_won ?? 0}-{p.sets_lost ?? 0}</strong><small>Sets</small></div>
+                    <div><strong>{p.sets_won ?? 0}-{p.sets_lost ?? 0}</strong><small>Sets · official WTSL results</small></div>
                     <div><strong>{p.tiebreaks_won ?? 0}-{(p.tiebreaks_played ?? 0) - (p.tiebreaks_won ?? 0)}</strong><small>Tiebreaks</small></div>
                     <div><strong>{p.deciding_sets_won ?? 0}-{(p.deciding_sets_played ?? 0) - (p.deciding_sets_won ?? 0)}</strong><small>Deciding sets</small></div>
                     {card.tour === 'TE4' && p.favorite_character && (
@@ -134,6 +150,20 @@ export default async function Dashboard() {
                     )}
                   </div>
                 )}
+                <div className="player-record-grid">
+                  {card.ratings ? BOT_RATING_METRICS.map((metric) => {
+                    const value = card.ratings?.ratings[metric.key] ?? null;
+                    return (
+                      <div key={metric.key}>
+                        <strong>{value == null ? '—' : value.toFixed(1)}</strong>
+                        <small>{metric.label} rating</small>
+                        {value != null && <RatingEvidence metric={metric.key} counts={card.ratings?.ratingComponentCounts} />}
+                      </div>
+                    );
+                  }) : (
+                    <div className="empty">Serve, Return and Under Pressure ratings appear after at least {LEADERBOARD_MIN_MATCHES} eligible screenshot matches are available.</div>
+                  )}
+                </div>
                 {card.insights.qualifies ? (
                   <div className="insight-grid">
                     {card.insights.strongest && (
