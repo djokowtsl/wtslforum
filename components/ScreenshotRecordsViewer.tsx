@@ -19,7 +19,6 @@ type Filters = {
 
 type ScreenshotRecord = {
   recordId: string;
-  sourceRow: number;
   playerName: string;
   opponentName: string;
   tournamentName: string;
@@ -284,7 +283,7 @@ export default function ScreenshotRecordsViewer({
         </button>
       </div>
       <p className="screenshot-records-note">
-        Rows and status labels come from the workbook. Internal notes, review reasons, image names, and workbook identity fields are not published.
+        Rows and status labels come from the workbook. Internal notes, review reasons, screenshot image names, and player-link IDs are not published.
       </p>
     </section>
   );

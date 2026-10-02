@@ -1,5 +1,8 @@
 import { sql } from '@/lib/db';
-import { SCREENSHOT_METRIC_FIELDS } from '@/lib/screenshotRecordFields';
+import {
+  SCREENSHOT_METRIC_FIELDS,
+  SCREENSHOT_RECORD_FIELDS,
+} from '@/lib/screenshotRecordFields';
 
 export type ScreenshotTour = 'TE4' | 'TE4_(F)';
 export type ScreenshotStatusFilter = 'any' | 'unflagged' | 'FOR REVIEW' | 'DAVIS CUP' | 'DUPLICATE';
@@ -32,6 +35,20 @@ export type ScreenshotRecordFilters = {
 };
 
 let tablesReady = false;
+
+function publicRecordData(value: unknown): Record<string, string | number> {
+  if (!value || typeof value !== 'object' || Array.isArray(value)) return {};
+  const source = value as Record<string, unknown>;
+  return Object.fromEntries(
+    SCREENSHOT_RECORD_FIELDS.flatMap((field) => {
+      const item = source[field];
+      if (typeof item === 'string' || (typeof item === 'number' && Number.isFinite(item))) {
+        return [[field, item]];
+      }
+      return [];
+    }),
+  );
+}
 
 async function ensureScreenshotRecordTables() {
   if (tablesReady) return;
@@ -222,14 +239,13 @@ export async function getScreenshotRecordPage(filters: ScreenshotRecordFilters) 
   return {
     records: records.map((row: any) => ({
       recordId: String(row.record_id),
-      sourceRow: Number(row.source_row),
       playerName: String(row.player_name),
       opponentName: String(row.opponent_name),
       tournamentName: String(row.tournament_name ?? ''),
       date: String(row.date_label ?? ''),
       score: String(row.score),
       reviewStatus: String(row.review_status ?? ''),
-      data: row.record_data && typeof row.record_data === 'object' ? row.record_data : {},
+      data: publicRecordData(row.record_data),
     })),
     total: Number(counts[0]?.total ?? 0),
     page: filters.page,
