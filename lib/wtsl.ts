@@ -226,6 +226,28 @@ export async function fetchWTSLPlayerStatsTable(tour: TourCode = DEFAULT_TOUR): 
 /* ---------- Rankings (full player list) ---------- */
 export const RANKINGS_URL = rankingsUrl(DEFAULT_TOUR);
 
+const TOUR_ELO_DESIGNATION_TIERS = [
+  { minimum: 1000, label: 'Club' },
+  { minimum: 1500, label: 'Junior' },
+  { minimum: 1600, label: 'Pro' },
+  { minimum: 1800, label: 'Expert' },
+  { minimum: 1900, label: 'Master' },
+  { minimum: 2300, label: 'Grandmaster' },
+] as const;
+
+export function getTourEloDesignation(elo: number | string | null | undefined): string | null {
+  if (elo === null || elo === undefined || elo === '') return null;
+  const numericElo = Number(elo);
+  if (!Number.isFinite(numericElo)) return null;
+
+  let designation: string | null = null;
+  for (const tier of TOUR_ELO_DESIGNATION_TIERS) {
+    if (numericElo < tier.minimum) break;
+    designation = tier.label;
+  }
+  return designation;
+}
+
 export type WTSLRankedPlayer = {
   id: string; name: string; rank: number | null; tourElo: number | null; eloLabel: string | null;
   country: string | null; avatarUrl: string | null; flagUrl: string | null; officialUrl: string; tour: TourCode;
@@ -272,7 +294,7 @@ export function parseRankings(html: string, base = RANKINGS_URL, tour: TourCode 
     const rowText = cleanHtml(row);
     const eloText = cols.elo !== undefined ? cells[cols.elo] ?? '' : (rowText.match(/Elo\s*(\d+(?:\s*\([^)]*\))?)/i)?.[1] ?? '');
     const tourElo = eloText.match(/\d+/)?.[0] ? Number(eloText.match(/\d+/)![0]) : null;
-    const eloLabel = eloText.match(/\(([^)]+)\)/)?.[1] ?? null;
+    const eloLabel = eloText.match(/\(([^)]+)\)/)?.[1] ?? getTourEloDesignation(tourElo);
     const country = (cols.country !== undefined ? cells[cols.country] : '') || (flag?.alt ?? '').replace(/flag/i, '').trim() || null;
 
     seen.add(id);
