@@ -52,7 +52,6 @@ export async function ForumHeader() {
               Messages{unread > 0 && <span className="pill red nav-badge">{unread}</span>}
             </Link>
           )}
-          <ThemeToggle />
           {u ? (
             <Link href="/profile" className="user-chip">
               <img src={discordAvatar(u.avatar, u.username)} alt="" />
@@ -64,6 +63,7 @@ export async function ForumHeader() {
           )}
         </nav>
 
+        <div className="header-theme-toggle"><ThemeToggle /></div>
         <MobileNav
           items={NAV}
           isAdmin={!!u?.isAdmin}

@@ -3,7 +3,6 @@
 import Link from 'next/link';
 import { usePathname } from 'next/navigation';
 import { useEffect, useRef } from 'react';
-import { ThemeToggle } from './ThemeToggle';
 import { SearchBar } from './SearchBar';
 
 type NavItem = { href: string; label: string };
@@ -48,7 +47,6 @@ export function MobileNav({
             Messages{unreadMessages > 0 && <span className="pill red nav-badge">{unreadMessages}</span>}
           </Link>
         )}
-        <div className="mobile-theme-row"><span>Theme</span><ThemeToggle /></div>
         {username ? (
           <Link href="/profile" className="btn btn-ghost" onClick={close}>{username}</Link>
         ) : (

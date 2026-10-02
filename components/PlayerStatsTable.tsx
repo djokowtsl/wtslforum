@@ -46,6 +46,11 @@ export default function PlayerStatsTable({ rows, tour }: { rows: Row[]; tour: st
     }
   }
 
+  function chooseSortKey(key: keyof Row) {
+    setSortKey(key);
+    setSortDir(key === 'name' ? 'asc' : 'desc');
+  }
+
   const sorted = useMemo(() => {
     const copy = [...rows];
     copy.sort((a, b) => {
@@ -63,8 +68,29 @@ export default function PlayerStatsTable({ rows, tour }: { rows: Row[]; tour: st
   }, [rows, sortKey, sortDir]);
 
   return (
-    <div className="table-scroll">
-      <table>
+    <>
+      <div className="player-stats-mobile-sort">
+        <label htmlFor="player-stats-sort">Sort by</label>
+        <select
+          id="player-stats-sort"
+          value={sortKey}
+          onChange={(event) => chooseSortKey(event.target.value as keyof Row)}
+        >
+          {COLUMNS.map((column) => (
+            <option key={column.key} value={column.key}>{column.label}</option>
+          ))}
+        </select>
+        <button
+          type="button"
+          onClick={() => setSortDir((direction) => (direction === 'asc' ? 'desc' : 'asc'))}
+          aria-label={`Sort ${sortDir === 'asc' ? 'descending' : 'ascending'}`}
+          title={`Currently sorted ${sortDir === 'asc' ? 'ascending' : 'descending'}`}
+        >
+          {sortDir === 'asc' ? '↑' : '↓'}
+        </button>
+      </div>
+      <div className="table-scroll player-stats-table-scroll">
+      <table className="player-stats-table">
         <thead>
           <tr>
             {COLUMNS.map((c) => (
@@ -77,15 +103,29 @@ export default function PlayerStatsTable({ rows, tour }: { rows: Row[]; tour: st
         <tbody>
           {sorted.map((p) => (
             <tr key={p.wtsl_player_id}>
-              <td><a className="player-line" href={`/players/${p.wtsl_player_id}?tour=${encodeURIComponent(tour)}`}>{p.avatar_url && <img src={p.avatar_url} alt="" />}<span>{p.name}<small>{p.country || ''}</small></span></a></td>
-              <td>{p.matches}</td><td>{p.wins}</td><td>{p.losses}</td><td>{p.win_pct}%</td><td>{p.tour_elo ?? '—'}</td>
-              <td>{p.serve_rating == null ? '—' : p.serve_rating.toFixed(1)}{p.serve_rating != null && <RatingEvidence metric="serve" counts={p.rating_component_counts} />}</td>
-              <td>{p.return_rating == null ? '—' : p.return_rating.toFixed(1)}{p.return_rating != null && <RatingEvidence metric="return" counts={p.rating_component_counts} />}</td>
-              <td>{p.pressure_rating == null ? '—' : p.pressure_rating.toFixed(1)}{p.pressure_rating != null && <RatingEvidence metric="pressure" counts={p.rating_component_counts} />}</td>
+              <td data-label="Player"><a className="player-line" href={`/players/${p.wtsl_player_id}?tour=${encodeURIComponent(tour)}`}>{p.avatar_url && <img src={p.avatar_url} alt="" />}<span>{p.name}<small>{p.country || ''}</small></span></a></td>
+              <td data-label="Screenshots"><span className="player-stats-value">{p.matches}</span></td>
+              <td data-label="Wins"><span className="player-stats-value">{p.wins}</span></td>
+              <td data-label="Losses"><span className="player-stats-value">{p.losses}</span></td>
+              <td data-label="Win %"><span className="player-stats-value">{p.win_pct}%</span></td>
+              <td data-label="Tour Elo"><span className="player-stats-value">{p.tour_elo ?? '—'}</span></td>
+              <td data-label="Serve">
+                <span className="player-stats-value">{p.serve_rating == null ? '—' : p.serve_rating.toFixed(1)}</span>
+                {p.serve_rating != null && <RatingEvidence metric="serve" counts={p.rating_component_counts} />}
+              </td>
+              <td data-label="Return">
+                <span className="player-stats-value">{p.return_rating == null ? '—' : p.return_rating.toFixed(1)}</span>
+                {p.return_rating != null && <RatingEvidence metric="return" counts={p.rating_component_counts} />}
+              </td>
+              <td data-label="Under pressure">
+                <span className="player-stats-value">{p.pressure_rating == null ? '—' : p.pressure_rating.toFixed(1)}</span>
+                {p.pressure_rating != null && <RatingEvidence metric="pressure" counts={p.rating_component_counts} />}
+              </td>
             </tr>
           ))}
         </tbody>
       </table>
-    </div>
+      </div>
+    </>
   );
 }

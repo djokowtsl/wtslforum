@@ -52,6 +52,7 @@ export type BotLeaderboardRow = {
   country: string | null;
   matches: number;
   value: number;
+  metricSampleCount: number | null;
   favoriteCharacter: string | null;
   favoriteCharacterCount: number | null;
   favoriteCharacterPercentage: number | null;
@@ -78,6 +79,7 @@ async function ensureTable() {
       pressure NUMERIC,
       rating_component_counts JSONB NOT NULL DEFAULT '{}'::jsonb,
       metrics JSONB NOT NULL DEFAULT '{}'::jsonb,
+      metric_sample_counts JSONB NOT NULL DEFAULT '{}'::jsonb,
       favorite_character TEXT,
       favorite_character_count INT,
       favorite_character_percentage NUMERIC,
@@ -89,6 +91,7 @@ async function ensureTable() {
     ALTER TABLE bot_rating_leaderboards
       ADD COLUMN IF NOT EXISTS metrics JSONB NOT NULL DEFAULT '{}'::jsonb,
       ADD COLUMN IF NOT EXISTS rating_component_counts JSONB NOT NULL DEFAULT '{}'::jsonb,
+      ADD COLUMN IF NOT EXISTS metric_sample_counts JSONB NOT NULL DEFAULT '{}'::jsonb,
       ADD COLUMN IF NOT EXISTS favorite_character TEXT,
       ADD COLUMN IF NOT EXISTS favorite_character_count INT,
       ADD COLUMN IF NOT EXISTS favorite_character_percentage NUMERIC
@@ -165,6 +168,7 @@ type SyncRow = {
   ratings?: Record<string, unknown> | null;
   rating_component_counts?: Record<string, unknown> | null;
   metrics?: Record<string, unknown> | null;
+  metric_sample_counts?: Record<string, unknown> | null;
   favorite_character?: {
     character?: unknown;
     count?: unknown;
@@ -265,9 +269,14 @@ export async function replaceBotRatingLeaderboard(tour: string, rows: SyncRow[])
       return finiteNumber(row.ratings?.[metric.sourceLabel]);
     };
     const metrics: Record<string, number> = {};
+    const metricSampleCounts: Record<string, number> = {};
     for (const metric of BOT_AGGREGATE_METRICS) {
       const value = finiteNumber(row.metrics?.[metric.sourceLabel]);
       if (value !== null) metrics[metric.sourceLabel] = value;
+      const count = finiteNumber(row.metric_sample_counts?.[metric.sourceLabel]);
+      if (count !== null && Number.isInteger(count) && count > 0) {
+        metricSampleCounts[metric.sourceLabel] = count;
+      }
     }
     const ratingComponentCounts: Record<string, number> = {};
     for (const [label, rawValue] of Object.entries(row.rating_component_counts ?? {})) {
@@ -296,14 +305,17 @@ export async function replaceBotRatingLeaderboard(tour: string, rows: SyncRow[])
     await sql`
       INSERT INTO bot_rating_leaderboards(
         tour, player_name, screenshots, serve, return_rating, pressure,
-        rating_component_counts, metrics, favorite_character, favorite_character_count,
+        rating_component_counts, metrics, metric_sample_counts,
+        favorite_character, favorite_character_count,
         favorite_character_percentage, updated_at
       )
       VALUES(
         ${tour}, ${name}, ${screenshots},
         ${ratingValue('serve')}, ${ratingValue('return')}, ${ratingValue('pressure')},
         ${JSON.stringify(ratingComponentCounts)}::jsonb,
-        ${JSON.stringify(metrics)}::jsonb, ${favoriteCharacter},
+        ${JSON.stringify(metrics)}::jsonb,
+        ${JSON.stringify(metricSampleCounts)}::jsonb,
+        ${favoriteCharacter},
         ${favoriteCharacterCount}, ${favoriteCharacterPercentage}, NOW()
       )
     `;
@@ -331,6 +343,7 @@ export async function botLeaderboard(tour: string, metric: BotMetric): Promise<B
         WHEN NOT ${isRating} THEN (b.metrics ->> ${definition.sourceLabel})::numeric
         ELSE NULL
       END AS value,
+      b.metric_sample_counts ->> ${definition.sourceLabel} AS "metricSampleCount",
       b.favorite_character AS "favoriteCharacter",
       b.favorite_character_count AS "favoriteCharacterCount",
       b.favorite_character_percentage AS "favoriteCharacterPercentage"
@@ -355,6 +368,9 @@ export async function botLeaderboard(tour: string, metric: BotMetric): Promise<B
       country: row.country ? String(row.country) : null,
       matches: Number(row.matches),
       value: Number(row.value),
+      metricSampleCount: row.metricSampleCount === null || row.metricSampleCount === undefined
+        ? null
+        : Number(row.metricSampleCount),
       favoriteCharacter: row.favoriteCharacter ? String(row.favoriteCharacter) : null,
       favoriteCharacterCount: row.favoriteCharacterCount === null ? null : Number(row.favoriteCharacterCount),
       favoriteCharacterPercentage: row.favoriteCharacterPercentage === null ? null : Number(row.favoriteCharacterPercentage),

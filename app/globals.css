@@ -52,6 +52,7 @@
 html { scroll-behavior: smooth; }
 html, body { margin: 0; }
 
+
 /* Themed scrollbars — plain OS scrollbars clash with the panel/dark-navy design, especially
    the thin horizontal ones on .tabs-scroll/.table-scroll. Uses the same CSS variables as the
    rest of the UI so it follows the light/dark toggle automatically. Firefox via `scrollbar-color`,
@@ -121,9 +122,10 @@ h1, h2, h3 { margin: 0; }
 .btn-sm { padding: 9px 14px; font-size: 13px; }
 .nav .user-chip { display: inline-flex; align-items: center; gap: 9px; padding: 6px 12px 6px 6px; border: 1px solid var(--line-2); border-radius: 999px; background: var(--panel); color: var(--text-strong); margin-left: 10px; }
 .user-chip img { width: 28px; height: 28px; border-radius: 50%; object-fit: cover; }
-.theme-toggle { display: grid; place-items: center; width: 38px; height: 38px; border-radius: 10px; border: 1px solid var(--line-2); background: var(--panel); color: var(--soft); cursor: pointer; margin-left: 8px; }
-.theme-toggle:hover { color: var(--lime); border-color: var(--lime); }
-.mobile-theme-row { display: flex; align-items: center; justify-content: space-between; padding: 10px 12px; color: var(--soft); font-weight: 600; font-size: 14px; }
+.header-theme-toggle { flex: none; margin-left: 12px; }
+.theme-toggle { display: inline-flex; align-items: center; justify-content: center; gap: 8px; min-height: 42px; padding: 0 14px; border: 1px solid var(--lime); border-radius: 999px; background: var(--lime); color: #0b0f14; cursor: pointer; font-family: inherit; font-size: 12px; font-weight: 800; line-height: 1; white-space: nowrap; }
+.theme-toggle:hover { background: #c7ff63; border-color: #c7ff63; }
+.theme-toggle svg { flex: none; }
 
 /* Mobile menu (no JS — <details>) */
 .mobile-menu { display: none; margin-left: auto; position: relative; }
@@ -184,6 +186,9 @@ h1, h2, h3 { margin: 0; }
 .banner div { display: flex; gap: 12px; align-items: flex-start; padding: 14px 16px; border-radius: 12px; border: 1px solid rgba(255, 93, 108, 0.4); background: rgba(255, 93, 108, 0.08); color: #ffd3d8; font-size: 14px; }
 .notice { padding: 14px 16px; border: 1px solid var(--line-2); background: var(--panel); border-radius: 12px; color: var(--soft); font-size: 14px; line-height: 1.6; }
 .notice.warn { border-color: rgba(242, 184, 75, 0.45); background: rgba(242, 184, 75, 0.07); color: #ffe2a8; }
+.rating-method-note { margin: 14px 0 20px; padding: 12px 16px; border-left: 2px solid var(--lime); background: rgba(12, 26, 53, 0.45); color: var(--muted); font-size: 13px; line-height: 1.6; }
+.rating-method-note strong { display: block; margin-bottom: 4px; color: var(--text); font-size: 11px; letter-spacing: 0.12em; text-transform: uppercase; }
+.rating-method-note p { margin: 0; }
 .empty { padding: 44px 24px; text-align: center; color: var(--muted); }
 .empty strong { display: block; color: var(--text); font-size: 17px; margin-bottom: 6px; }
 .empty .btn { margin-top: 16px; }
@@ -396,8 +401,10 @@ h1, h2, h3 { margin: 0; }
 .coop-team-match-win { text-align: right; }
 .coop-team-match-win strong { display: block; margin-top: 2px; color: var(--lime); font-size: 19px; }
 .coop-team-players { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 8px; margin: 16px 0; }
-.coop-team-player { display: flex; align-items: center; gap: 8px; min-width: 0; padding: 9px 10px; border: 1px solid var(--line); border-radius: 9px; background: var(--panel); font-size: 12px; font-weight: 700; overflow-wrap: anywhere; }
-.coop-team-player i { display: grid; place-items: center; width: 22px; height: 22px; border-radius: 50%; background: var(--panel-2); color: var(--lime); font-size: 10px; font-style: normal; flex: none; }
+.coop-team-player { display: flex; align-items: center; gap: 8px; min-width: 0; padding: 8px 10px; border: 1px solid var(--line); border-radius: 9px; background: var(--panel); font-size: 12px; font-weight: 700; overflow-wrap: anywhere; }
+.coop-team-player-avatar, .coop-team-player-avatar-fallback { width: 30px; height: 30px; border: 1px solid var(--line-2); border-radius: 50%; object-fit: cover; flex: none; }
+.coop-team-player-avatar-fallback { display: inline-grid; place-items: center; background: var(--panel-2); color: var(--lime); font-size: 12px; font-weight: 700; }
+.coop-team-player-name { min-width: 0; overflow-wrap: anywhere; }
 .coop-team-stat-grid { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 8px; padding-top: 12px; border-top: 1px solid var(--line); }
 .coop-team-stat-grid > div { display: flex; flex-direction: column; gap: 3px; min-width: 0; }
 .coop-team-stat-grid small { color: var(--muted); font-size: 9px; text-transform: uppercase; letter-spacing: 0.06em; }
@@ -406,6 +413,18 @@ h1, h2, h3 { margin: 0; }
 .stats-recent-list { max-height: 25rem; overflow-y: auto; padding-right: 5px; overscroll-behavior: contain; }
 .metric-sample-info { display: inline-grid; place-items: center; width: 16px; height: 16px; margin-left: 6px; border: 1px solid var(--muted); border-radius: 50%; color: var(--muted); font: 700 10px/1 sans-serif; cursor: help; vertical-align: 2px; }
 .metric-sample-info:focus-visible { outline: 2px solid var(--lime); outline-offset: 2px; }
+.player-stats-mobile-sort { display: none; }
+.player-stats-table { min-width: 920px; }
+.player-stats-table .player-stats-value { white-space: nowrap; }
+.player-stats-table .rating-evidence { display: inline-block; margin-left: 5px; text-align: left; vertical-align: middle; }
+.player-stats-table .rating-evidence > summary { display: inline-flex; align-items: center; justify-content: center; width: 16px; height: 16px; border: 1px solid var(--line-2); border-radius: 50%; color: var(--muted); font-size: 10px; font-weight: 700; line-height: 1; cursor: pointer; list-style: none; }
+.player-stats-table .rating-evidence > summary::-webkit-details-marker { display: none; }
+.player-stats-table .rating-evidence > summary::marker { content: ''; }
+.player-stats-table .rating-evidence > summary:hover, .player-stats-table .rating-evidence[open] > summary { border-color: var(--lime); color: var(--lime); }
+.player-stats-table .rating-evidence > summary:focus-visible { outline: 2px solid var(--lime); outline-offset: 2px; }
+.player-stats-table .rating-evidence__details { position: absolute; z-index: 10; margin-top: 6px; padding: 8px 10px; width: min(280px, calc(100vw - 32px)); max-width: calc(100vw - 32px); border: 1px solid var(--line-2); border-radius: 8px; background: var(--panel); box-shadow: 0 8px 24px rgba(0, 0, 0, 0.22); color: var(--soft); font-size: 11px; font-weight: 400; line-height: 1.4; white-space: normal; }
+.player-stats-table .rating-evidence__details > strong { display: block; margin-bottom: 4px; color: var(--text-strong); }
+.player-stats-table .rating-evidence__details ul { margin: 0; padding-left: 16px; }
 .prediction-player { display: flex; align-items: center; gap: 9px; }
 .prediction-player img, .prediction-avatar-placeholder { width: 30px; height: 30px; border-radius: 50%; object-fit: cover; border: 1px solid var(--line-2); flex: none; }
 .prediction-avatar-placeholder { display: inline-grid; place-items: center; background: var(--panel-2); color: var(--lime); font-size: 12px; font-weight: 700; }
@@ -485,6 +504,11 @@ h1, h2, h3 { margin: 0; }
 .award-card { position: relative; background: radial-gradient(400px 160px at 100% 0, rgba(176, 244, 59, 0.1), transparent 70%), var(--panel); border: 1px solid var(--line); border-radius: var(--radius); padding: 26px; overflow: hidden; }
 .award-card .num { position: absolute; right: 16px; top: 10px; font-size: 46px; line-height: 1; opacity: 0.4; }
 .award-card h3 { font-size: 30px; line-height: 1; margin-bottom: 10px; position: relative; }
+.award-card .award-farmer-pill,
+.award-vote-farmer-pill { display: flex; align-items: center; justify-content: space-between; gap: 12px; width: min(100%, 340px); min-height: 42px; padding: 6px 12px; border: 1px solid var(--line-2); border-radius: 999px; background: var(--panel-2); color: var(--text-strong); font-size: 16px; line-height: 1.2; }
+.award-farmer-corn { display: grid; place-items: center; flex: none; width: 28px; height: 28px; border-radius: 50%; background: rgba(176, 244, 59, 0.12); font-size: 18px; }
+.award-card .award-farmer-pill { margin: 0 0 16px; }
+.award-vote-farmer-pill { box-sizing: border-box; }
 .award-card p { color: var(--muted); font-size: 14.5px; line-height: 1.7; margin: 0 0 16px; position: relative; }
 .award-winner { display: flex; align-items: center; gap: 10px; padding: 12px 0; border-top: 1px solid var(--line); position: relative; }
 .award-winner img, .award-winner .ph { width: 32px; height: 32px; border-radius: 50%; object-fit: cover; border: 1px solid var(--line-2); background: var(--panel-2); flex: none; }
@@ -501,6 +525,23 @@ h1, h2, h3 { margin: 0; }
 .award-match-vs { font-weight: 700; font-style: italic; font-size: 13px; color: var(--muted); flex: none; padding: 0 8px; text-transform: lowercase; }
 .award-match-link { display: block; margin-top: 12px; padding-top: 12px; border-top: 1px solid var(--line); font-size: 12.5px; font-weight: 700; color: var(--cyan); text-align: center; }
 .award-match-link:hover { color: var(--lime); }
+
+.season-highlights { margin-top: 20px; padding: 16px; border: 1px solid var(--line); border-radius: var(--radius); background: var(--bg-2); }
+.season-highlights-head { display: flex; align-items: baseline; justify-content: space-between; gap: 12px; margin-bottom: 12px; }
+.season-highlights-head h3 { margin: 0; color: var(--text-strong); font-size: 18px; }
+.season-highlights-head span, .season-highlight-stats small { color: var(--muted); font-size: 12px; }
+.season-highlight-stats { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 10px; }
+.season-highlight-stats > div { display: flex; flex-direction: column; gap: 3px; padding: 11px; border: 1px solid var(--line); border-radius: 10px; background: var(--panel); }
+.season-highlight-stats strong { color: var(--text-strong); font-size: 20px; }
+.season-highlight-lists { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 12px; margin-top: 14px; }
+.season-highlight-lists h4 { margin: 0 0 6px; color: var(--soft); font-size: 12px; text-transform: uppercase; letter-spacing: .04em; }
+.season-highlight-lists ul { display: grid; gap: 5px; margin: 0; padding: 0; list-style: none; }
+.season-highlight-lists li { display: flex; align-items: baseline; justify-content: space-between; gap: 8px; color: var(--text); font-size: 13px; }
+.season-run-round { flex: none; color: var(--muted); }
+.season-highlights-empty { margin: 0; color: var(--muted); font-size: 13px; }
+@media (max-width: 760px) {
+  .season-highlight-lists { grid-template-columns: 1fr; }
+}
 
 /* ---------- About / prose ---------- */
 .prose { color: var(--soft); font-size: 16.5px; line-height: 1.85; }
@@ -533,7 +574,8 @@ h1, h2, h3 { margin: 0; }
 @media (max-width: 1100px) {
   .nav { display: none; }
   .header-search { display: none; }
-  .mobile-menu { display: block; }
+  .header-theme-toggle { display: flex; margin-left: auto; }
+  .mobile-menu { display: block; margin-left: 0; }
   .header-inner { height: 70px; }
   .brand-logo { height: 52px; width: 52px; }
 }
@@ -556,6 +598,8 @@ h1, h2, h3 { margin: 0; }
   .brand-text span { display: none; }
   .brand-text b { font-size: 18px; }
   .mobile-panel { top: 60px; max-height: calc(100vh - 60px); }
+  .mobile-search { width: 100%; min-width: 0; }
+  .mobile-search input { font-size: 16px; }
   .live-inner { padding: 22px 16px; }
   .live-grid, .article-grid, .player-grid, .tournament-grid, .award-grid, .fixture-grid, .kpi-grid, .admin-grid, .feature-grid { grid-template-columns: 1fr; }
   .odds-head, .odds-side { grid-template-columns: minmax(0, 1fr) 46px 46px 46px; padding: 9px 10px; font-size: 13px; }
@@ -563,6 +607,8 @@ h1, h2, h3 { margin: 0; }
   .section-head { flex-direction: column; align-items: flex-start; }
   .section-head h2 { font-size: 32px; }
   .section-head .tabs-scroll { width: 100%; }
+  .leaderboard-metric-picker { width: 100%; min-width: 0; }
+  .leaderboard-metric-picker select { flex: 1; }
   .topic { grid-template-columns: 40px minmax(0, 1fr) 56px; gap: 12px; padding: 14px 16px; }
   .topic .av { width: 40px; height: 40px; }
   .topic-last { display: none; }
@@ -579,6 +625,22 @@ h1, h2, h3 { margin: 0; }
   .page-hero .mark { display: none; }
   .panel { overflow-x: auto; }
   .panel table { min-width: 640px; }
+  .panel:has(.player-stats-table) { overflow: visible; }
+  .player-stats-mobile-sort { display: flex; align-items: center; gap: 8px; margin-bottom: 12px; }
+  .player-stats-mobile-sort label { color: var(--muted); font-size: 12px; font-weight: 700; }
+  .player-stats-mobile-sort select { flex: 1; min-width: 0; padding: 9px 10px; border: 1px solid var(--line-2); border-radius: 8px; background: var(--panel); color: var(--text-strong); font: inherit; }
+  .player-stats-mobile-sort button { width: 38px; height: 38px; border: 1px solid var(--line-2); border-radius: 8px; background: var(--panel); color: var(--text-strong); font-size: 19px; }
+  .player-stats-table-scroll { max-height: none; overflow: visible; }
+  .panel .player-stats-table { display: block; width: 100%; min-width: 0; margin: 0; }
+  .player-stats-table thead { position: absolute; width: 1px; height: 1px; padding: 0; margin: -1px; overflow: hidden; clip: rect(0, 0, 0, 0); white-space: nowrap; border: 0; }
+  .player-stats-table tbody { display: grid; gap: 12px; }
+  .player-stats-table tbody tr { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); min-width: 0; overflow: visible; border: 1px solid var(--line); border-radius: 12px; background: var(--bg); }
+  .player-stats-table tbody td { display: flex; flex-direction: column; justify-content: center; gap: 4px; position: relative; min-width: 0; padding: 10px 12px; border-bottom: 1px solid var(--line); font-size: 13px; }
+  .player-stats-table tbody td::before { content: attr(data-label); color: var(--muted); font-size: 9px; font-weight: 700; letter-spacing: 0.08em; text-transform: uppercase; }
+  .player-stats-table tbody td[data-label="Player"] { grid-column: 1 / -1; flex-direction: row; justify-content: flex-start; padding: 12px; }
+  .player-stats-table tbody td[data-label="Player"]::before { content: none; }
+  .player-stats-table .player-line img { width: 38px; height: 38px; }
+  .player-stats-table tbody td:nth-last-child(-n + 2) { border-bottom: 0; }
   .footer-inner { grid-template-columns: 1fr; padding: 34px 16px 20px; }
   .footer-base { padding: 16px; }
   .article-long { padding: 22px 18px; }
@@ -594,6 +656,9 @@ h1, h2, h3 { margin: 0; }
    horizontally instead of letting it get clipped or overflow the page. */
 .tabs-scroll { display: flex; flex-wrap: nowrap; gap: 8px; overflow-x: auto; -webkit-overflow-scrolling: touch; max-width: 100%; min-width: 0; margin: 0 0 20px; padding-bottom: 4px; }
 .tabs-scroll .tour-tab { flex-shrink: 0; }
+.leaderboard-metric-picker { display: flex; align-items: center; gap: 10px; min-width: min(100%, 360px); margin-bottom: 20px; }
+.leaderboard-metric-picker label { flex: none; color: var(--muted); font-size: 12px; font-weight: 700; }
+.leaderboard-metric-picker select { min-width: 0; width: 100%; padding: 10px 36px 10px 12px; border: 1px solid var(--line-2); border-radius: 10px; background: var(--panel); color: var(--text-strong); font: inherit; }
 
 /* ---------- Hero spotlight panel (replaces the big logo) ---------- */
 .hero.has-photo { background-size: cover; background-position: center; }
@@ -609,7 +674,7 @@ h1, h2, h3 { margin: 0; }
 
 /* ---------- Search bar ---------- */
 .search-bar { display: flex; align-items: center; gap: 6px; background: var(--panel); border: 1px solid var(--line-2); border-radius: 999px; padding: 4px 6px 4px 14px; }
-.search-bar input { background: none; border: 0; outline: none; color: var(--text); font-size: 13.5px; width: 100%; font-family: inherit; }
+.search-bar input { min-width: 0; flex: 1; background: none; border: 0; outline: none; color: var(--text); font-size: 13.5px; width: auto; font-family: inherit; }
 .search-bar input::placeholder { color: var(--muted); }
 .search-bar button { background: var(--panel-2); border: 1px solid var(--line-2); border-radius: 50%; width: 30px; height: 30px; display: grid; place-items: center; cursor: pointer; flex: none; font-size: 13px; }
 .search-bar button:hover { border-color: var(--lime); }

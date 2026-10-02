@@ -2,6 +2,7 @@ import type { Metadata } from 'next';
 import { safe, sql } from '@/lib/db';
 import PageHero from '@/components/PageHero';
 import TourTabs from '@/components/TourTabs';
+import { normalizePlayerName } from '@/lib/queries';
 import { DEFAULT_TOUR, isTourCode, tourLabel, type TourCode } from '@/lib/wtsl';
 import { COOP_STANDINGS_URL, fetchCoopStandings } from '@/lib/coopStandings';
 
@@ -13,12 +14,36 @@ export default async function PlayersPage({ searchParams }: { searchParams: Prom
   const tour: TourCode = isTourCode(tourParam) ? tourParam : DEFAULT_TOUR;
   let players: any[] = [];
   let coopTeams: Awaited<ReturnType<typeof fetchCoopStandings>> = [];
+  let coopPlayerAvatars = new Map<string, string>();
   let coopUnavailable = false;
   if (tour === 'TE4_Coop') {
     try {
       coopTeams = await fetchCoopStandings();
     } catch {
       coopUnavailable = true;
+    }
+    if (coopTeams.length > 0) {
+      const coopPlayerKeys = new Set(
+        coopTeams.flatMap((team) => team.players.map(normalizePlayerName)).filter(Boolean),
+      );
+      const avatarRows = await safe(
+        () => sql`
+          SELECT name, avatar_url
+          FROM wtsl_players
+          WHERE tour IN ('TE4', 'TE4_(F)')
+            AND avatar_url IS NOT NULL
+            AND avatar_url <> ''
+          ORDER BY CASE WHEN tour='TE4' THEN 0 ELSE 1 END, synced_at DESC
+        `,
+        [] as any[],
+      );
+      for (const row of avatarRows) {
+        const name = normalizePlayerName(String(row.name ?? ''));
+        const avatarUrl = String(row.avatar_url ?? '').trim();
+        if (coopPlayerKeys.has(name) && avatarUrl && !coopPlayerAvatars.has(name)) {
+          coopPlayerAvatars.set(name, avatarUrl);
+        }
+      }
     }
   } else {
     players = await safe(() => sql`SELECT * FROM wtsl_players WHERE tour=${tour} ORDER BY rank ASC NULLS LAST,tour_elo DESC NULLS LAST,name LIMIT 200`, [] as any[]);
@@ -36,7 +61,7 @@ export default async function PlayersPage({ searchParams }: { searchParams: Prom
         {tour === 'TE4_Coop' ? (
           <section className="panel coop-standings-panel">
             <div className="panel-head">
-              <h2 className="display">Cooperative Doubles standings</h2>
+              <h2 className="display">Teams</h2>
               <a className="btn btn-primary btn-sm" href={COOP_STANDINGS_URL} target="_blank" rel="noreferrer">
                 Official standings ↗
               </a>
@@ -61,11 +86,17 @@ export default async function PlayersPage({ searchParams }: { searchParams: Prom
                       </div>
                     </div>
                     <div className="coop-team-players" aria-label={`${team.teamName} players`}>
-                      {team.players.length > 0 ? team.players.map((player, index) => (
-                        <span className="coop-team-player" key={`${player}-${index}`}>
-                          <i>{index + 1}</i>{player}
-                        </span>
-                      )) : <span className="coop-team-player">Players not listed</span>}
+                      {team.players.length > 0 ? team.players.map((player, index) => {
+                        const avatarUrl = coopPlayerAvatars.get(normalizePlayerName(player));
+                        return (
+                          <span className="coop-team-player" key={`${player}-${index}`}>
+                            {avatarUrl
+                              ? <img className="coop-team-player-avatar" src={avatarUrl} alt="" loading="lazy" />
+                              : <span className="coop-team-player-avatar-fallback" aria-hidden="true">{player.trim().charAt(0).toUpperCase() || '?'}</span>}
+                            <span className="coop-team-player-name">{player}</span>
+                          </span>
+                        );
+                      }) : <span className="coop-team-player">Players not listed</span>}
                     </div>
                     <div className="coop-team-stat-grid">
                       <div><small>Match record</small><strong>{team.matchRecord || '—'}</strong></div>

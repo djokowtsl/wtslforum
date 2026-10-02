@@ -5,8 +5,8 @@ export const DEFAULT_TOUR: TourCode = 'TE4';
 export const TOURS: { code: TourCode; label: string; short: string }[] = [
   { code: 'TE4', label: 'ATP Characters', short: 'ATP' },
   { code: 'TE4_(F)', label: 'WTA Characters', short: 'WTA' },
-  { code: 'TE4_CD', label: 'Competitive Doubles', short: 'Doubles' },
-  { code: 'TE4_Coop', label: 'Cooperative Doubles League', short: 'Coop' },
+  { code: 'TE4_CD', label: 'Competitive Doubles', short: 'Competitive Doubles' },
+  { code: 'TE4_Coop', label: 'Cooperative Doubles', short: 'Cooperative Doubles' },
   { code: 'TE4_P', label: 'Created Characters', short: 'Created' },
 ];
 export function isTourCode(value: string | undefined | null): value is TourCode {

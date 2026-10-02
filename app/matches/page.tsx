@@ -35,7 +35,7 @@ export default async function Matches({ searchParams }: { searchParams: Promise<
 
   return (
     <>
-      <PageHero eyebrow="WTSL Tour" title="Matches">Results and upcoming fixtures from across the tour, straight from the WTSL data. Want to talk about one? Take it to the <Link href="/discussions?c=match-talk" style={{ color: 'var(--lime)' }}>Match Talk</Link> board.</PageHero>
+      <PageHero eyebrow="WTSL Tour" title="Matches">Results and upcoming fixtures. Want to talk about one? Take it to the <Link href="/discussions?c=match-talk" style={{ color: 'var(--lime)' }}>Match Talk</Link> board.</PageHero>
       <main className="container">
         <TourTabs basePath="/matches" current={tour} exclude={['TE4_Coop']} />
         <div className="section-head"><div><h2 className="display">Open fixtures</h2><p>Upcoming matches with current odds.</p></div><Link className="btn btn-primary btn-sm" href="/betting">🎲 Betting board</Link></div>
