@@ -1,8 +1,7 @@
 import type { Metadata } from 'next';
 import Link from 'next/link';
 import { safe } from '@/lib/db';
-import { leaderboard, recentMatches, playerStats, LEADERBOARD_MIN_MATCHES } from '@/lib/stats';
-import { openFixtures } from '@/lib/betting';
+import { playerStats, LEADERBOARD_MIN_MATCHES } from '@/lib/stats';
 import { getSession } from '@/lib/auth';
 import { getClaimsForUser } from '@/lib/player-claims';
 import { getContributionStats, getRecentActivity } from '@/lib/queries';
@@ -32,31 +31,14 @@ export default async function Dashboard() {
   const viewer = await safe(() => getSession(), null);
 
   if (!viewer) {
-    const [players, matches, fx] = await Promise.all([
-      safe(() => leaderboard(), [] as any[]),
-      safe(() => recentMatches(8), [] as any[]),
-      safe(() => openFixtures(), [] as any[]),
-    ]);
-    const fixtures = Array.isArray(fx) ? fx : [];
     return (
       <>
-        <PageHero eyebrow="WTSL Forum" title="Dashboard">Log in with Discord to see your own stats, forum activity and coaching insights here. Until then, here's a snapshot of the tour.</PageHero>
+        <PageHero eyebrow="WTSL Forum" title="Your dashboard">
+          Log in with Discord to view your personalised dashboard.
+        </PageHero>
         <main className="container">
-          <div className="empty-cta panel"><a className="btn btn-discord" href="/api/auth/discord">Log in with Discord</a></div>
-          <div className="kpi-grid">
-            <div><span>Open fixtures</span><b>{fixtures.length}</b></div><div><span>Tracked players</span><b>{players.length}</b></div><div><span>Recent matches</span><b>{matches.length}</b></div><div><span>Data source</span><b>WTSL TE4</b></div>
-          </div>
-          <div className="dashboard-grid">
-            <section className="panel"><div className="panel-head"><h2 className="display">Performance leaders</h2></div>
-              {players.length === 0 ? <div className="empty">No player data yet.</div> : players.slice(0, 8).map((p: any, i: number) => (
-                <div className="leader-row" key={p.wtsl_player_id}><b>#{i + 1}</b><div className="player-line">{p.avatar_url && <img src={p.avatar_url} alt="" />}<span>{p.name}<small>Tour Elo {p.tour_elo ?? '—'} · {p.wins} wins</small></span></div><strong>{p.win_pct}%</strong></div>
-              ))}
-            </section>
-            <section className="panel"><div className="panel-head"><h2 className="display">Open fixtures</h2></div>
-              {fixtures.length === 0 ? <div className="empty">No open fixtures.</div> : fixtures.slice(0, 8).map((f: any) => (
-                <div className="match-row" key={f.key}><div><b>{f.first_name}</b> vs <b>{f.second_name}</b><small>{f.tournament || 'WTSL'}</small></div><span>{Number(f.odds_one).toFixed(2)} / {Number(f.odds_two).toFixed(2)}</span></div>
-              ))}
-            </section>
+          <div className="empty-cta panel">
+            <a className="btn btn-discord" href="/api/auth/discord">Log in with Discord</a>
           </div>
         </main>
       </>
@@ -142,9 +124,11 @@ export default async function Dashboard() {
                     <div><strong>{p.sets_won ?? 0}-{p.sets_lost ?? 0}</strong><small>Sets · official WTSL results</small></div>
                     <div><strong>{p.tiebreaks_won ?? 0}-{(p.tiebreaks_played ?? 0) - (p.tiebreaks_won ?? 0)}</strong><small>Tiebreaks</small></div>
                     <div><strong>{p.deciding_sets_won ?? 0}-{(p.deciding_sets_played ?? 0) - (p.deciding_sets_won ?? 0)}</strong><small>Deciding sets</small></div>
-                    {card.tour === 'TE4' && p.favorite_character && (
-                      <div><strong>{p.favorite_character}</strong><small>Favourite character ({p.favorite_character_picks}/{p.character_matches})</small></div>
-                    )}
+                  </div>
+                )}
+                {card.tour === 'TE4' && p.favorite_character && (
+                  <div className="player-record-grid">
+                    <div><strong>{p.favorite_character}</strong><small>Most used character ({p.favorite_character_picks ?? 0}/{p.character_matches ?? 0} matches)</small></div>
                   </div>
                 )}
                 <div className="player-record-grid">
