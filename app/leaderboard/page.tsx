@@ -74,12 +74,6 @@ export default async function Leaderboard({ searchParams }: { searchParams: Prom
             ))}
           </div>
         </div>
-        <div className="section-head">
-          <div>
-            <h2 className="display">Ranked by {valueLabel.toLowerCase()}</h2>
-            <span>Highest first</span>
-          </div>
-        </div>
         <section className="panel">
           {rows.length === 0 ? <div className="empty"><strong>No stats yet</strong>The leaderboard fills in as more match data is recorded.</div> : (
             <div className="table-scroll">
