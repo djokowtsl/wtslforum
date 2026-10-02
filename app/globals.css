@@ -641,3 +641,75 @@ h1, h2, h3 { margin: 0; }
 .online-chip { display: inline-flex; align-items: center; gap: 8px; padding: 6px 14px 6px 6px; border: 1px solid var(--line-2); border-radius: 999px; background: var(--panel); color: var(--soft); font-size: 13.5px; font-weight: 600; }
 .online-chip:hover { border-color: var(--lime); color: var(--text-strong); }
 .online-chip .avatar-img { width: 26px; height: 26px; }
+
+
+/* Keep rating sample counts available on demand without expanding every table row. */
+.rating-evidence {
+  display: inline-block;
+  margin-left: 5px;
+  text-align: left;
+  vertical-align: middle;
+}
+
+.rating-evidence > summary {
+  align-items: center;
+  border: 1px solid var(--line-2);
+  border-radius: 50%;
+  color: var(--muted);
+  cursor: pointer;
+  display: inline-flex;
+  font-size: 10px;
+  font-weight: 700;
+  height: 16px;
+  justify-content: center;
+  line-height: 1;
+  list-style: none;
+  width: 16px;
+}
+
+.rating-evidence > summary::-webkit-details-marker {
+  display: none;
+}
+
+.rating-evidence > summary::marker {
+  content: '';
+}
+
+.rating-evidence > summary:hover,
+.rating-evidence[open] > summary {
+  border-color: var(--lime);
+  color: var(--lime);
+}
+
+.rating-evidence > summary:focus-visible {
+  outline: 2px solid var(--lime);
+  outline-offset: 2px;
+}
+
+.rating-evidence__details {
+  background: var(--panel);
+  border: 1px solid var(--line-2);
+  border-radius: 8px;
+  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.22);
+  box-sizing: border-box;
+  color: var(--soft);
+  font-size: 11px;
+  font-weight: 400;
+  line-height: 1.4;
+  margin-top: 6px;
+  max-width: calc(100vw - 32px);
+  padding: 8px 10px;
+  white-space: normal;
+  width: min(280px, 78vw);
+}
+
+.rating-evidence__details > strong {
+  color: var(--text-strong);
+  display: block;
+  margin-bottom: 4px;
+}
+
+.rating-evidence__details ul {
+  margin: 0;
+  padding-left: 16px;
+}
