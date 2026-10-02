@@ -9,6 +9,8 @@
  */
 import { sql } from './db';
 import { LEADERBOARD_MIN_MATCHES } from './stats';
+import { normalizePlayerName } from './queries';
+import { botRatingComparisonPopulation } from './botRatingLeaderboards';
 
 type MetricDef = {
   key: string; // column on player_stats_summary
@@ -122,10 +124,11 @@ export type MetricInsight = {
   group: 'serve' | 'return' | 'rally';
   value: number;
   percentile: number;
+  players: number;
 };
 
 export type PlayerInsightReport = {
-  qualifies: boolean; // enough matches on this tour for the field comparison to be meaningful
+  qualifies: boolean; // at least one metric has comparable observations on this tour
   groupPercentiles: Record<'serve' | 'return' | 'rally', number | null>;
   strongest: (MetricInsight & { commentary: string; tactic: string; standing: string }) | null;
   weakest: (MetricInsight & { commentary: string; tactic: string; standing: string }) | null;
@@ -133,28 +136,77 @@ export type PlayerInsightReport = {
 };
 
 /**
- * Builds the strength/development commentary for one player relative to every other
- * qualifying (>= LEADERBOARD_MIN_MATCHES) player on the same tour.
+ * Uses the bot's full screenshot-stat population when available. Each metric is compared
+ * only with players who have an observation for that metric; the website's match-count
+ * threshold is retained only for the legacy WTSL-stat fallback.
  */
 export async function buildPlayerInsights(playerId: string, tour: string): Promise<PlayerInsightReport> {
-  const rows = await sql`
-    SELECT player_id, matches, aces, winners, break_points_won, first_serve_pct,
-      avg_double_faults, avg_net_points_pct, avg_forced_errors, avg_unforced_errors,
-      avg_short_rally_pct, avg_medium_rally_pct, avg_long_rally_pct,
-      avg_first_serve_won_pct, avg_second_serve_won_pct, avg_return_won_pct
-    FROM player_stats_summary
-    WHERE tour=${tour} AND matches >= ${LEADERBOARD_MIN_MATCHES}
-  `;
-  const field = rows as any[];
-  const me = field.find((r) => String(r.player_id) === String(playerId));
-  const empty: PlayerInsightReport = { qualifies: false, groupPercentiles: { serve: null, return: null, rally: null }, strongest: null, weakest: null, trainingFocus: null };
-  if (!me) return empty;
-
-  const metricInsights: MetricInsight[] = METRICS.map((m) => {
-    const value = Number(me[m.key] ?? 0);
-    const all = field.map((r) => Number(r[m.key] ?? 0));
-    return { label: m.label, group: m.group, value, percentile: percentileOf(value, all, m.lowerIsBetter) };
+  const empty = (): PlayerInsightReport => ({
+    qualifies: false,
+    groupPercentiles: { serve: null, return: null, rally: null },
+    strongest: null,
+    weakest: null,
+    trainingFocus: null,
   });
+  const numericValue = (value: unknown): number | null => {
+    if (typeof value !== 'number' && typeof value !== 'string') return null;
+    if (typeof value === 'string' && value.trim() === '') return null;
+    const number = Number(value);
+    return Number.isFinite(number) ? number : null;
+  };
+  const metricValue = (row: Record<string, unknown>, metric: MetricDef) =>
+    numericValue(row[metric.key] ?? row[metric.label]);
+
+  const screenshotRows = await botRatingComparisonPopulation(tour);
+  let field: Record<string, unknown>[];
+  let me: Record<string, unknown> | undefined;
+  if (screenshotRows.length > 0) {
+    const linkedPlayers = await sql`
+      SELECT name
+      FROM wtsl_players
+      WHERE wtsl_player_id=${playerId} AND tour=${tour}
+      LIMIT 2
+    `;
+    const targetName = normalizePlayerName(String(linkedPlayers[0]?.name ?? ''));
+    const matches = screenshotRows.filter(
+      (row) => normalizePlayerName(row.playerName) === targetName,
+    );
+    // The verified WTSL ID maps to the imported player name. Never guess between
+    // multiple screenshot profiles that normalize to the same name.
+    if (!targetName || matches.length !== 1) return empty();
+    field = screenshotRows.map((row) => row.metrics);
+    me = matches[0].metrics;
+  } else {
+    const rows = await sql`
+      SELECT player_id, matches, aces, winners, break_points_won, first_serve_pct,
+        avg_double_faults, avg_net_points_pct, avg_forced_errors, avg_unforced_errors,
+        avg_short_rally_pct, avg_medium_rally_pct, avg_long_rally_pct,
+        avg_first_serve_won_pct, avg_second_serve_won_pct, avg_return_won_pct
+      FROM player_stats_summary
+      WHERE tour=${tour} AND matches >= ${LEADERBOARD_MIN_MATCHES}
+    `;
+    field = rows as Record<string, unknown>[];
+    me = field.find((row) => String(row.player_id) === String(playerId));
+  }
+  if (!me) return empty();
+
+  const metricInsights: MetricInsight[] = [];
+  for (const metric of METRICS) {
+    const value = metricValue(me, metric);
+    if (value === null) continue;
+    const all = field
+      .map((row) => metricValue(row, metric))
+      .filter((candidate): candidate is number => candidate !== null);
+    if (all.length < 2) continue;
+    metricInsights.push({
+      label: metric.label,
+      group: metric.group,
+      value,
+      percentile: percentileOf(value, all, metric.lowerIsBetter),
+      players: all.length,
+    });
+  }
+  if (metricInsights.length === 0) return empty();
 
   const groupPercentiles: Record<'serve' | 'return' | 'rally', number | null> = { serve: null, return: null, rally: null };
   (['serve', 'return', 'rally'] as const).forEach((g) => {
@@ -165,13 +217,11 @@ export async function buildPlayerInsights(playerId: string, tour: string): Promi
   const sorted = [...metricInsights].sort((a, b) => b.percentile - a.percentile);
   const strongestMetric = sorted[0] ?? null;
   const weakestMetric = sorted[sorted.length - 1] ?? null;
-  const sampleSize = field.length;
-
   const strongest = strongestMetric
-    ? { ...strongestMetric, commentary: STRENGTH_CONTEXT[strongestMetric.label] ?? 'You should keep building this part of your current performance profile.', tactic: TACTICAL_STRENGTH[strongestMetric.label] ?? 'Play to the larger target, protect the neutral ball, and attack only after earning the opening.', standing: fieldStandingText(strongestMetric.percentile, sampleSize) }
+    ? { ...strongestMetric, commentary: STRENGTH_CONTEXT[strongestMetric.label] ?? 'You should keep building this part of your current performance profile.', tactic: TACTICAL_STRENGTH[strongestMetric.label] ?? 'Play to the larger target, protect the neutral ball, and attack only after earning the opening.', standing: fieldStandingText(strongestMetric.percentile, strongestMetric.players) }
     : null;
   const weakest = weakestMetric
-    ? { ...weakestMetric, commentary: DEVELOPMENT_CONTEXT[weakestMetric.label] ?? 'Prioritise this part of your current performance profile in training.', tactic: TACTICAL_DEVELOPMENT[weakestMetric.label] ?? 'Play to the larger target, protect the neutral ball, and attack only after earning the opening.', standing: fieldStandingText(weakestMetric.percentile, sampleSize) }
+    ? { ...weakestMetric, commentary: DEVELOPMENT_CONTEXT[weakestMetric.label] ?? 'Prioritise this part of your current performance profile in training.', tactic: TACTICAL_DEVELOPMENT[weakestMetric.label] ?? 'Play to the larger target, protect the neutral ball, and attack only after earning the opening.', standing: fieldStandingText(weakestMetric.percentile, weakestMetric.players) }
     : null;
 
   const trainingFocus = weakest ? TRAINING_FOCUS[weakest.group] : null;

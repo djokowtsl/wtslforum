@@ -155,7 +155,7 @@ export default async function Dashboard() {
                     {card.insights.trainingFocus && <div className="insight-training"><small>Training focus</small><p>{card.insights.trainingFocus}</p></div>}
                   </div>
                 ) : (
-                  <div className="empty">Play {20}+ matches on {tourLabel(card.tour)} to unlock coaching insights compared against the rest of the field.</div>
+                  <div className="empty">No screenshot-based stat samples are available for this player yet. Field comparisons appear when the bot has at least one valid stat sample for this tour.</div>
                 )}
               </section>
             );
