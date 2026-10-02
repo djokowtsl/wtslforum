@@ -37,14 +37,20 @@ function Face({ src, name }: { src?: string | null; name?: string | null }) {
 /** Match of the Year / Upset of the Year are a two-player matchup, not a single winner. */
 const MATCH_CATEGORIES = new Set(['Match of the Year', 'Upset of the Year']);
 
-const LEGACY_FARMER_CATEGORY = '🦑 Farmer of the Year';
+/** Normalize old Farmer category labels for display without changing stored award rows. */
+function canonicalAwardCategory(value: unknown): string {
+  const category = String(value ?? '').trim();
+  const withoutLegacyEmoji = category
+    .replace(/^(?:(?:🦑|🐙|🌽)\uFE0F?\s*)+/u, '')
+    .trim();
+  return withoutLegacyEmoji === 'Farmer of the Year' ? withoutLegacyEmoji : category;
+}
 
-/** Collapse legacy Farmer of the Year aliases in the display without deleting stored rows. */
 function uniqueSeasonAwards(rows: any[]) {
   const byCategory = new Map<string, { award: any; canonical: boolean }>();
   for (const award of rows) {
-    const category = award.category === LEGACY_FARMER_CATEGORY ? 'Farmer of the Year' : award.category;
-    const canonical = award.category === category;
+    const category = canonicalAwardCategory(award.category);
+    const canonical = String(award.category ?? '').trim() === category;
     const previous = byCategory.get(category);
     const previousId = Number(previous?.award.id);
     const awardId = Number(award.id);
@@ -68,7 +74,11 @@ export default async function Awards({ searchParams }: { searchParams: Promise<{
 
   const categories = cycle ? await safe(() => getCategories(cycle.id), [] as any[]) : [];
   const nominees = categories.length ? await safe(() => getNomineesForCategories(categories.map((c: any) => c.id)), [] as any[]) : [];
-  const categoriesWithNominees = categories.map((c: any) => ({ ...c, nominees: nominees.filter((n: any) => n.category_id === c.id) }));
+  const categoriesWithNominees = categories.map((c: any) => ({
+    ...c,
+    name: canonicalAwardCategory(c.name),
+    nominees: nominees.filter((n: any) => n.category_id === c.id),
+  }));
   const userVotes = cycle && user ? await safe(() => getUserVotes(cycle.id, user.discordId), [] as any[]) : [];
   const initialVotes = Object.fromEntries(userVotes.map((v: any) => [v.category_id, { nomineeId: v.nominee_id, writeIn: v.write_in }]));
 
@@ -85,12 +95,8 @@ export default async function Awards({ searchParams }: { searchParams: Promise<{
               <div className="award-grid" style={{ marginTop: 16 }}>
                 {categoriesWithNominees.map((c: any) => (
                   <div className="award-card" key={c.id}>
-                    {c.name === 'Farmer of the Year' ? (
-                      <h3 className="award-farmer-pill">
-                        <span>{c.name}</span>
-                        <span className="award-farmer-corn" role="img" aria-label="Corn">🌽</span>
-                      </h3>
-                    ) : <h3>{c.name}</h3>}
+                    {c.name === 'Farmer of the Year' && <span className="num">{CATEGORY_EMOJI[c.name]}</span>}
+                    <h3>{c.name}</h3>
                     {c.nominees.length > 0 && <p>{c.nominees.map((n: any) => n.name).join(', ')}</p>}
                   </div>
                 ))}
@@ -112,17 +118,8 @@ export default async function Awards({ searchParams }: { searchParams: Promise<{
                 <div className="award-grid">
                   {uniqueSeasonAwards(awards.filter((a: any) => a.season === s)).map((a: any) => (
                     <div className="award-card" key={a.id}>
-                      {a.category === 'Farmer of the Year' ? (
-                        <h3 className="award-farmer-pill">
-                          <span>{a.category}</span>
-                          <span className="award-farmer-corn" aria-label="Corn">🌽</span>
-                        </h3>
-                      ) : (
-                        <>
-                          <span className="num">{CATEGORY_EMOJI[a.category] ?? '★'}</span>
-                          <h3>{a.category}</h3>
-                        </>
-                      )}
+                      <span className="num">{CATEGORY_EMOJI[a.category] ?? '★'}</span>
+                      <h3>{a.category}</h3>
                       {a.note && <p>{a.note}</p>}
                       {MATCH_CATEGORIES.has(a.category) ? (
                         <div className="award-match">

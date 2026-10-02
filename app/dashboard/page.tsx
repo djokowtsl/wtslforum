@@ -82,7 +82,7 @@ export default async function Dashboard() {
         stats,
         insights,
         ratings: ratingRows[0] ?? null,
-        season: buildPlayerSeasonHighlights(seasonResults, c.player_name, c.tour, seasonYear),
+        season: buildPlayerSeasonHighlights(seasonResults, c.player_name, c.tour, seasonYear, c.wtsl_player_id),
       };
     })
   );
