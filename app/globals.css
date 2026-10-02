@@ -570,6 +570,9 @@ h1, h2, h3 { margin: 0; }
 .footer-inner { max-width: 1240px; margin: 0 auto; padding: 46px 24px 34px; display: grid; grid-template-columns: 1.4fr repeat(3, 1fr); gap: 34px; }
 .footer-brand img { height: 92px; width: 92px; display: block; margin-bottom: 14px; border-radius: 50%; background: #010c20; padding: 8px; border: 2px solid var(--lime); box-sizing: border-box; object-fit: contain; }
 .footer-brand p { color: var(--muted); font-size: 13.5px; line-height: 1.7; margin: 0; max-width: 320px; }
+.footer-site-link { color: var(--soft); text-decoration: underline; text-decoration-color: var(--line-2); text-underline-offset: 3px; }
+.footer-site-link:hover { color: var(--lime); text-decoration-color: currentColor; }
+.footer-site-link:focus-visible { outline: 2px solid var(--lime); outline-offset: 3px; border-radius: 2px; }
 .footer-social { display: flex; gap: 10px; margin-top: 16px; }
 .footer-social a { display: grid; place-items: center; width: 40px; height: 40px; border-radius: 10px; border: 1px solid var(--line-2); background: var(--panel); color: var(--soft); }
 .footer-social a:hover { color: var(--lime); border-color: var(--lime); }
