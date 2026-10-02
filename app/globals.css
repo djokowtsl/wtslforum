@@ -396,15 +396,15 @@ h1, h2, h3 { margin: 0; }
 .coop-team-head { display: grid; grid-template-columns: 42px minmax(0, 1fr) auto; align-items: center; gap: 12px; }
 .coop-team-place { display: grid; place-items: center; width: 42px; height: 42px; border-radius: 12px; background: var(--panel-2); color: var(--lime); font-family: var(--font-display); font-size: 17px; font-weight: 800; }
 .coop-team-title { min-width: 0; }
-.coop-team-title h3 { margin: 0; font-size: 18px; line-height: 1.15; overflow-wrap: anywhere; }
+.coop-team-title h3 { margin: 0; font-size: 18px; line-height: 1.15; overflow-wrap: break-word; word-break: normal; }
 .coop-team-title > span, .coop-team-match-win small { display: block; margin-top: 4px; color: var(--muted); font-size: 10px; text-transform: uppercase; letter-spacing: 0.08em; }
 .coop-team-match-win { text-align: right; }
 .coop-team-match-win strong { display: block; margin-top: 2px; color: var(--lime); font-size: 19px; }
 .coop-team-players { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 8px; margin: 16px 0; }
-.coop-team-player { display: flex; align-items: center; gap: 8px; min-width: 0; padding: 8px 10px; border: 1px solid var(--line); border-radius: 9px; background: var(--panel); font-size: 12px; font-weight: 700; overflow-wrap: anywhere; }
+.coop-team-player { display: flex; align-items: center; gap: 8px; min-width: 0; padding: 8px 10px; border: 1px solid var(--line); border-radius: 9px; background: var(--panel); font-size: 12px; font-weight: 700; }
 .coop-team-player-avatar, .coop-team-player-avatar-fallback { width: 30px; height: 30px; border: 1px solid var(--line-2); border-radius: 50%; object-fit: cover; flex: none; }
 .coop-team-player-avatar-fallback { display: inline-grid; place-items: center; background: var(--panel-2); color: var(--lime); font-size: 12px; font-weight: 700; }
-.coop-team-player-name { min-width: 0; overflow-wrap: anywhere; }
+.coop-team-player-name { min-width: 0; overflow-wrap: break-word; word-break: normal; }
 .coop-team-stat-grid { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 8px; padding-top: 12px; border-top: 1px solid var(--line); }
 .coop-team-stat-grid > div { display: flex; flex-direction: column; gap: 3px; min-width: 0; }
 .coop-team-stat-grid small { color: var(--muted); font-size: 9px; text-transform: uppercase; letter-spacing: 0.06em; }
@@ -630,8 +630,15 @@ h1, h2, h3 { margin: 0; }
   .thread-title-row { flex-direction: column; align-items: flex-start; gap: 8px; }
   .thread-title-row .share-thread-button { width: 100%; }
   .hero-actions .btn { width: 100%; }
-  .page-hero-inner { padding: 34px 16px 28px; }
+  .page-hero-inner { padding: 34px 16px 28px; flex-direction: column; align-items: stretch; gap: 16px; }
+  .page-hero-inner > * { width: 100%; min-width: 0; }
+  .page-hero-inner .btn { box-sizing: border-box; width: 100%; max-width: 100%; justify-content: center; }
   .page-hero .mark { display: none; }
+  .coop-team-head { grid-template-columns: 42px minmax(0, 1fr); align-items: start; }
+  .coop-team-match-win { grid-column: 2; justify-self: start; display: flex; align-items: baseline; gap: 8px; text-align: left; }
+  .coop-team-match-win small, .coop-team-match-win strong { margin-top: 0; }
+  .coop-team-players { grid-template-columns: 1fr; }
+  .coop-team-player { gap: 10px; padding: 10px 12px; font-size: 14px; }
   .panel { overflow-x: auto; }
   .panel table { min-width: 640px; }
   .panel:has(.player-stats-table) { overflow: visible; }

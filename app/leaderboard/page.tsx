@@ -136,11 +136,13 @@ export default async function Leaderboard({ searchParams }: { searchParams: Prom
                       <td>{player.matches}</td>
                       <td>
                         {value}
-                        {screenshotMetric
-                          ? isRating
-                            ? <RatingEvidence metric={metric as BotRating} counts={player.ratingComponentCounts} />
-                            : <MetricSampleEvidence metricLabel={valueLabel} sampleCount={player.metricSampleCount} />
-                          : <MetricSampleEvidence metricLabel={valueLabel} sampleCount={player.matches} />}
+                        {metric === 'wins' || metric === 'win_pct' || metric === 'elo'
+                          ? null
+                          : screenshotMetric
+                            ? isRating
+                              ? <RatingEvidence metric={metric as BotRating} counts={player.ratingComponentCounts} />
+                              : <MetricSampleEvidence metricLabel={valueLabel} sampleCount={player.metricSampleCount} />
+                            : <MetricSampleEvidence metricLabel={valueLabel} sampleCount={player.matches} />}
                       </td>
                     </tr>
                   );
