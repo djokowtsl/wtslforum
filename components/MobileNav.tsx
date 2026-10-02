@@ -42,7 +42,7 @@ export function MobileNav({
         {isAdmin && <Link href="/admin" onClick={close}>Admin</Link>}
         {username && (
           <Link href="/messages" onClick={close}>
-            Messages{unreadMessages > 0 && <span className="pill red nav-badge">{unreadMessages}</span>}
+            Chat{unreadMessages > 0 && <span className="pill red nav-badge">{unreadMessages}</span>}
           </Link>
         )}
         {username ? (

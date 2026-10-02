@@ -49,7 +49,7 @@ export async function ForumHeader() {
           {u?.isAdmin && <Link href="/admin">Admin</Link>}
           {u && (
             <Link href="/messages" className="nav-messages">
-              Messages{unread > 0 && <span className="pill red nav-badge">{unread}</span>}
+              Chat{unread > 0 && <span className="pill red nav-badge">{unread}</span>}
             </Link>
           )}
           {u ? (
