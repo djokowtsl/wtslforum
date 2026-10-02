@@ -109,17 +109,8 @@ export type BotRatingComparisonRow = {
   metrics: Record<string, number>;
 };
 
-/** Returns every imported screenshot player with the metrics that have observations. */
-export async function botRatingComparisonPopulation(
-  tour: string,
-): Promise<BotRatingComparisonRow[]> {
-  await ensureComparisonTable();
-  const rows = await sql`
-    SELECT player_name AS "playerName", metrics
-    FROM bot_rating_comparison_population
-    WHERE tour=${tour}
-  `;
-  return (rows as any[]).flatMap((row) => {
+function comparisonRowsFromDb(rows: any[]): BotRatingComparisonRow[] {
+  return rows.flatMap((row) => {
     const rawMetrics = typeof row.metrics === 'string'
       ? JSON.parse(row.metrics)
       : row.metrics;
@@ -133,6 +124,32 @@ export async function botRatingComparisonPopulation(
     }
     return [{ playerName: String(row.playerName ?? ''), metrics }];
   });
+}
+
+/** Returns every imported screenshot player with the metrics that have observations. */
+export async function botRatingComparisonPopulation(
+  tour: string,
+): Promise<BotRatingComparisonRow[]> {
+  await ensureComparisonTable();
+  const rows = await sql`
+    SELECT player_name AS "playerName", metrics
+    FROM bot_rating_comparison_population
+    WHERE tour=${tour}
+  `;
+  return comparisonRowsFromDb(rows as any[]);
+}
+
+/** Existing ranked screenshot snapshot, retained as a fallback until the full sync lands. */
+export async function botRatingEligibleComparisonPopulation(
+  tour: string,
+): Promise<BotRatingComparisonRow[]> {
+  await ensureTable();
+  const rows = await sql`
+    SELECT player_name AS "playerName", metrics
+    FROM bot_rating_leaderboards
+    WHERE tour=${tour}
+  `;
+  return comparisonRowsFromDb(rows as any[]);
 }
 
 type SyncRow = {
