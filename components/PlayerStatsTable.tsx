@@ -15,7 +15,7 @@ type Row = {
 
 const COLUMNS: { key: keyof Row; label: string; numeric?: boolean }[] = [
   { key: 'name', label: 'Player' },
-  { key: 'matches', label: 'Matches', numeric: true },
+  { key: 'matches', label: 'Screenshots', numeric: true },
   { key: 'wins', label: 'W', numeric: true },
   { key: 'losses', label: 'L', numeric: true },
   { key: 'win_pct', label: 'Win %', numeric: true },

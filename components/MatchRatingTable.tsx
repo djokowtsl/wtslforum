@@ -30,7 +30,7 @@ export default function MatchRatingTable({ tour, label, rows }: { tour: string; 
   return <section className="panel">
     <div className="panel-head"><h2 className="display">{label}</h2></div>
     <div className="table-scroll"><table>
-      <thead><tr>{heading('Player', 'player')}{heading('Matches', 'matches')}{heading('Rating', 'value')}</tr></thead>
+      <thead><tr>{heading('Player', 'player')}{heading('Screenshots', 'matches')}{heading('Rating', 'value')}</tr></thead>
       <tbody>{sorted.map((row) => <tr key={row.playerId}>
         <td><a className="player-line" href={`/players/${row.playerId}?tour=${encodeURIComponent(tour)}`}><span>{row.player}</span></a></td>
         <td>{row.matches}</td><td>{Math.round(row.value)}</td>
