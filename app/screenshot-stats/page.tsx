@@ -1,6 +1,7 @@
 import type { Metadata } from 'next';
 import PageHero from '@/components/PageHero';
 import ScreenshotStatsExplorer from '@/components/ScreenshotStatsExplorer';
+import ScreenshotRecordsViewer from '@/components/ScreenshotRecordsViewer';
 import {
   BOT_AGGREGATE_METRICS,
   botRatingComparisonPopulation,
@@ -43,8 +44,8 @@ export default async function ScreenshotStatsPage({
 
   return (
     <>
-      <PageHero eyebrow="WTSL · VERIFIED SCREENSHOT DATA" title="Screenshot Statistics">
-        Explore reconciled ATP and WTA player statistics, filter the snapshot, or ask a question answered directly from the published data.
+      <PageHero eyebrow="WTSL · SCREENSHOT MATCH DATA" title="Screenshot Statistics">
+        Browse individual workbook rows, inspect their screenshot statistics, or ask a question answered from the reconciled player snapshot.
       </PageHero>
       <main className="container screenshot-stats-page">
         {hasLoadFailure ? (
@@ -52,13 +53,14 @@ export default async function ScreenshotStatsPage({
             Screenshot statistics could not be loaded. Please try again shortly.
           </div>
         ) : null}
+        <ScreenshotRecordsViewer initialTour={initialTour} />
         <ScreenshotStatsExplorer
           initialTour={initialTour}
           populations={populations}
           metrics={metrics}
         />
         <p className="screenshot-stats-source">
-          Values come from reconciled screenshot statistics after evidence that did not match official results is excluded. This snapshot currently covers ATP and WTA singles; doubles are not included.
+          The player summaries and question answers use reconciled screenshot statistics. The row viewer shows individual workbook records with their source status labels. This snapshot currently covers ATP and WTA singles; doubles are not included.
         </p>
       </main>
     </>
