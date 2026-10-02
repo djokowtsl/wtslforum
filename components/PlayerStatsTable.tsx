@@ -25,9 +25,9 @@ const COLUMNS: { key: keyof Row; label: string; numeric?: boolean }[] = [
   { key: 'losses', label: 'L', numeric: true },
   { key: 'win_pct', label: 'Win %', numeric: true },
   { key: 'tour_elo', label: 'Tour Elo', numeric: true },
-  { key: 'serve_rating', label: 'Serve rating', numeric: true },
-  { key: 'return_rating', label: 'Return rating', numeric: true },
-  { key: 'pressure_rating', label: 'Under Pressure rating', numeric: true },
+  { key: 'serve_rating', label: 'Serve', numeric: true },
+  { key: 'return_rating', label: 'Return', numeric: true },
+  { key: 'pressure_rating', label: 'Under pressure', numeric: true },
 ];
 
 export default function PlayerStatsTable({ rows, tour }: { rows: Row[]; tour: string }) {

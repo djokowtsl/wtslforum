@@ -9,27 +9,28 @@ export default function RatingEvidence({
 }) {
   const definition = BOT_RATING_METRICS.find((item) => item.key === metric);
   if (!definition) return null;
-  const evidence = definition.components
-    .map((component) => `${component}: ${counts?.[component] ?? '—'}`)
-    .join(' · ');
-  const allCountsAvailable = definition.components.every(
-    (component) => Number.isInteger(counts?.[component]) && (counts?.[component] ?? 0) > 0,
-  );
 
   return (
-    <small
-      title={`Observation count for each ${definition.label} rating component`}
-      style={{
-        display: 'block',
-        maxWidth: '28rem',
-        marginTop: 3,
-        opacity: 0.75,
-        whiteSpace: 'normal',
-        lineHeight: 1.3,
-      }}
-    >
-      {allCountsAvailable ? 'Component matches: ' : 'Component matches (some unavailable): '}
-      {evidence}
-    </small>
+    <details className="rating-evidence">
+      <summary
+        aria-label={`Show match sample counts for ${definition.label} rating`}
+        title={`Show match sample counts for ${definition.label} rating`}
+      >
+        i
+      </summary>
+      <div className="rating-evidence__details">
+        <strong>Match samples by component</strong>
+        <ul>
+          {definition.components.map((component) => {
+            const count = counts?.[component];
+            return (
+              <li key={component}>
+                {component}: {Number.isInteger(count) ? count : 'unavailable'}
+              </li>
+            );
+          })}
+        </ul>
+      </div>
+    </details>
   );
 }

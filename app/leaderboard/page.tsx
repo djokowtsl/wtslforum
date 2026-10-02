@@ -24,7 +24,7 @@ const FORUM_METRICS: { key: ForumMetric; label: string }[] = [
   { key: 'winners', label: 'Winners' },
   { key: 'break_points', label: 'Break points won' },
   { key: 'first_serve_pct', label: '1st serve %' },
-  ...BOT_RATING_METRICS.map((metric) => ({ key: metric.key, label: `${metric.label} rating` })),
+  ...BOT_RATING_METRICS.map((metric) => ({ key: metric.key, label: metric.key === 'pressure' ? 'Under pressure' : metric.label })),
 ];
 
 const VALUE_COLUMN: Record<ForumMetric, { label: string; render: (p: any) => string | number }> = {
@@ -35,9 +35,9 @@ const VALUE_COLUMN: Record<ForumMetric, { label: string; render: (p: any) => str
   winners: { label: 'Winners', render: (p) => p.winners },
   break_points: { label: 'Break points won', render: (p) => p.break_points_won },
   first_serve_pct: { label: '1st serve %', render: (p) => `${p.first_serve_pct}%` },
-  serve: { label: 'Serve rating', render: (p) => Number(p.value).toFixed(1) },
-  return: { label: 'Return rating', render: (p) => Number(p.value).toFixed(1) },
-  pressure: { label: 'Under Pressure rating', render: (p) => Number(p.value).toFixed(1) },
+  serve: { label: 'Serve', render: (p) => Number(p.value).toFixed(1) },
+  return: { label: 'Return', render: (p) => Number(p.value).toFixed(1) },
+  pressure: { label: 'Under pressure', render: (p) => Number(p.value).toFixed(1) },
 };
 
 export default async function Leaderboard({ searchParams }: { searchParams: Promise<{ tour?: string; metric?: string }> }) {
