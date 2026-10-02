@@ -26,14 +26,14 @@ export async function leaderboard(tour='TE4', metric='wins'){
     )
     SELECT p.*,
       COALESCE(mc.matches,0) matches,
-      COALESCE(mc.wins,0) wins,
-      GREATEST(COALESCE(mc.matches,0)-COALESCE(mc.wins,0),0) losses,
+      COALESCE(s.wins,0) wins,
+      COALESCE(s.losses,0) losses,
       COALESCE(s.aces,0) aces,
       COALESCE(s.winners,0) winners,
       COALESCE(s.break_points_won,0) break_points_won,
       COALESCE(s.first_serve_pct,0) first_serve_pct,
-      CASE WHEN COALESCE(mc.matches,0)>0
-        THEN ROUND(100.0*mc.wins/mc.matches,1)
+      CASE WHEN COALESCE(s.matches,0)>0
+        THEN ROUND(100.0*s.wins/s.matches,1)
         ELSE 0
       END win_pct
     FROM wtsl_players p
@@ -45,8 +45,8 @@ export async function leaderboard(tour='TE4', metric='wins'){
     ORDER BY
       CASE
         WHEN ${order} = 'win_pct' THEN
-          CASE WHEN COALESCE(mc.matches,0)>0
-            THEN 100.0*mc.wins/mc.matches
+          CASE WHEN COALESCE(s.matches,0)>0
+            THEN 100.0*s.wins/s.matches
             ELSE 0
           END
         WHEN ${order} = 'aces' THEN COALESCE(s.aces,0)
@@ -54,7 +54,7 @@ export async function leaderboard(tour='TE4', metric='wins'){
         WHEN ${order} = 'break_points' THEN COALESCE(s.break_points_won,0)
         WHEN ${order} = 'first_serve_pct' THEN COALESCE(s.first_serve_pct,0)
         WHEN ${order} = 'elo' THEN COALESCE(p.tour_elo,0)
-        ELSE COALESCE(mc.wins,0)
+        ELSE COALESCE(s.wins,0)
       END DESC NULLS LAST,
       p.name ASC
   `;
@@ -75,14 +75,14 @@ export async function allPlayerStats(tour='TE4'){
     )
     SELECT p.*,
       COALESCE(mc.matches,0) matches,
-      COALESCE(mc.wins,0) wins,
-      GREATEST(COALESCE(mc.matches,0)-COALESCE(mc.wins,0),0) losses,
+      COALESCE(s.wins,0) wins,
+      COALESCE(s.losses,0) losses,
       COALESCE(s.aces,0) aces,
       COALESCE(s.winners,0) winners,
       COALESCE(s.break_points_won,0) break_points_won,
       COALESCE(s.first_serve_pct,0) first_serve_pct,
-      CASE WHEN COALESCE(mc.matches,0)>0
-        THEN ROUND(100.0*mc.wins/mc.matches,1)
+      CASE WHEN COALESCE(s.matches,0)>0
+        THEN ROUND(100.0*s.wins/s.matches,1)
         ELSE 0
       END win_pct
     FROM wtsl_players p
