@@ -55,20 +55,17 @@ export default async function Leaderboard({ searchParams }: { searchParams: Prom
       : leaderboard(tour, metric),
     [] as any[],
   );
-  const eligibilityLabel = isRating
-    ? `${LEADERBOARD_MIN_MATCHES}+ eligible screenshot matches`
-    : `${LEADERBOARD_MIN_MATCHES}+ recorded matches`;
+  const eligibilityLabel = `${LEADERBOARD_MIN_MATCHES}+ matches with available data`;
 
   return (
     <>
       <PageHero eyebrow="WTSL TE4" title="Leaderboard">
-        Players are ranked by recorded Forum statistics. Each board requires at least {LEADERBOARD_MIN_MATCHES} matches.
+        Compare players across the tour by the selected metric.
       </PageHero>
       <main className="container">
         <TourTabs basePath="/leaderboard" current={tour} extraParams={{ metric }} />
         <div className="section-head">
           <div>
-            <h2 className="display">{isRating ? 'Screenshot ratings' : 'Forum statistics'}</h2>
             <span>{eligibilityLabel}</span>
           </div>
           <div className="tabs-scroll">
@@ -80,11 +77,11 @@ export default async function Leaderboard({ searchParams }: { searchParams: Prom
         <div className="section-head">
           <div>
             <h2 className="display">Ranked by {valueLabel.toLowerCase()}</h2>
-            <span>{eligibilityLabel} · highest first · {isRating ? 'verified screenshot ratings' : 'Forum statistics'}</span>
+            <span>Highest first</span>
           </div>
         </div>
         <section className="panel">
-          {rows.length === 0 ? <div className="empty"><strong>No stats yet</strong>The leaderboard fills in as Forum statistics are recorded.</div> : (
+          {rows.length === 0 ? <div className="empty"><strong>No stats yet</strong>The leaderboard fills in as more match data is recorded.</div> : (
             <div className="table-scroll">
               <table>
                 <thead><tr><th>#</th><th>Player</th><th>{isRating ? 'Screenshots' : 'Matches'}</th><th>{valueLabel}</th></tr></thead>
