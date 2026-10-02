@@ -5,6 +5,7 @@ import { fixturesBoard, getBalance, getBets, poolOdds, hybridOdds } from '@/lib/
 import { wtslCore } from '@/lib/wtsl-core';
 import { getSession } from '@/lib/auth';
 import PageHero from '@/components/PageHero';
+import BettingAutoRefresh from '@/components/BettingAutoRefresh';
 import { timeAgo, fmtDateTime } from '@/lib/format';
 
 export const dynamic = 'force-dynamic';
@@ -45,6 +46,7 @@ export default async function Betting() {
 
   return (
     <>
+      <BettingAutoRefresh />
       <PageHero eyebrow="WTSL Forum" title="Betting board">Follow live odds across the tour. Betting itself still happens in Discord — use the button to jump straight there.</PageHero>
       <main className="container">
         {!wtslCore.configured() && <div className="notice warn" style={{ marginBottom: 22 }}>The WTSL Core API is not configured on this deployment, so odds and account data can&apos;t load right now.</div>}
