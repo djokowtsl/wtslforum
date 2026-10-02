@@ -3,6 +3,7 @@ import {
   SCREENSHOT_METRIC_FIELDS,
   SCREENSHOT_RECORD_FIELDS,
 } from '@/lib/screenshotRecordFields';
+import { normalizePlayerName } from '@/lib/queries';
 
 export type ScreenshotTour = 'TE4' | 'TE4_(F)';
 export type ScreenshotStatusFilter = 'any' | 'unflagged' | 'FOR REVIEW' | 'DAVIS CUP' | 'DUPLICATE';
@@ -32,6 +33,7 @@ export type ScreenshotRecordFilters = {
   metric: (typeof SCREENSHOT_METRIC_FIELDS)[number] | '';
   min: number | null;
   max: number | null;
+  rankedOnly: boolean;
 };
 
 let tablesReady = false;
@@ -183,12 +185,33 @@ export async function getScreenshotRecordPage(filters: ScreenshotRecordFilters) 
   await ensureScreenshotRecordTables();
   const pageSize = 50;
   const offset = (filters.page - 1) * pageSize;
+  const rankingRows = filters.rankedOnly
+    ? await sql`SELECT name FROM wtsl_players WHERE tour = ${filters.tour}`
+    : [];
+  const rankedPlayerNames = [...new Set((rankingRows as any[]).flatMap(({ name }) => {
+    const fullName = String(name ?? '').trim();
+    const alias = fullName.match(/\s+aka\s+(.+)$/i)?.[1]?.trim() ?? '';
+    const primaryName = fullName.replace(/\s+aka\s+.*$/i, '').trim();
+    return [fullName, primaryName, alias, normalizePlayerName(fullName), normalizePlayerName(primaryName), normalizePlayerName(alias)]
+      .map((value) => value.trim().toLowerCase())
+      .filter(Boolean);
+  }))];
+  if (filters.rankedOnly && rankedPlayerNames.length === 0) {
+    return {
+      records: [],
+      total: 0,
+      page: filters.page,
+      pageSize,
+      rankingListAvailable: false,
+    };
+  }
   const counts = await sql`
     SELECT COUNT(*)::int AS total
     FROM screenshot_match_records AS r
     JOIN screenshot_record_sync_state AS active
       ON active.tour = r.tour AND active.active_sync_id = r.sync_id
     WHERE r.tour = ${filters.tour}
+      AND (NOT ${filters.rankedOnly} OR LOWER(BTRIM(r.player_name)) = ANY(${rankedPlayerNames}))
       AND (${filters.player} = '' OR LOWER(r.player_name) = LOWER(${filters.player}))
       AND (${filters.opponent} = '' OR LOWER(r.opponent_name) = LOWER(${filters.opponent}))
       AND (${filters.tournament} = '' OR r.tournament_name ILIKE '%' || ${filters.tournament} || '%')
@@ -215,6 +238,7 @@ export async function getScreenshotRecordPage(filters: ScreenshotRecordFilters) 
     JOIN screenshot_record_sync_state AS active
       ON active.tour = r.tour AND active.active_sync_id = r.sync_id
     WHERE r.tour = ${filters.tour}
+      AND (NOT ${filters.rankedOnly} OR LOWER(BTRIM(r.player_name)) = ANY(${rankedPlayerNames}))
       AND (${filters.player} = '' OR LOWER(r.player_name) = LOWER(${filters.player}))
       AND (${filters.opponent} = '' OR LOWER(r.opponent_name) = LOWER(${filters.opponent}))
       AND (${filters.tournament} = '' OR r.tournament_name ILIKE '%' || ${filters.tournament} || '%')
@@ -250,5 +274,6 @@ export async function getScreenshotRecordPage(filters: ScreenshotRecordFilters) 
     total: Number(counts[0]?.total ?? 0),
     page: filters.page,
     pageSize,
+    rankingListAvailable: true,
   };
 }
