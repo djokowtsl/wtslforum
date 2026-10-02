@@ -59,6 +59,7 @@ export function isBotMetric(metric: string): metric is BotMetric {
 }
 
 let tableEnsured = false;
+let comparisonTableEnsured = false;
 
 async function ensureTable() {
   if (tableEnsured) return;
@@ -88,6 +89,52 @@ async function ensureTable() {
   tableEnsured = true;
 }
 
+async function ensureComparisonTable() {
+  if (comparisonTableEnsured) return;
+  await sql`
+    CREATE TABLE IF NOT EXISTS bot_rating_comparison_population (
+      tour TEXT NOT NULL,
+      player_name TEXT NOT NULL,
+      screenshots INT NOT NULL,
+      metrics JSONB NOT NULL DEFAULT '{}'::jsonb,
+      updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+      PRIMARY KEY (tour, player_name)
+    )
+  `;
+  comparisonTableEnsured = true;
+}
+
+export type BotRatingComparisonRow = {
+  playerName: string;
+  metrics: Record<string, number>;
+};
+
+/** Returns every imported screenshot player with the metrics that have observations. */
+export async function botRatingComparisonPopulation(
+  tour: string,
+): Promise<BotRatingComparisonRow[]> {
+  await ensureComparisonTable();
+  const rows = await sql`
+    SELECT player_name AS "playerName", metrics
+    FROM bot_rating_comparison_population
+    WHERE tour=${tour}
+  `;
+  return (rows as any[]).flatMap((row) => {
+    const rawMetrics = typeof row.metrics === 'string'
+      ? JSON.parse(row.metrics)
+      : row.metrics;
+    if (!rawMetrics || typeof rawMetrics !== 'object' || Array.isArray(rawMetrics)) {
+      return [];
+    }
+    const metrics: Record<string, number> = {};
+    for (const [label, value] of Object.entries(rawMetrics)) {
+      const number = finiteNumber(value);
+      if (number !== null) metrics[label] = number;
+    }
+    return [{ playerName: String(row.playerName ?? ''), metrics }];
+  });
+}
+
 type SyncRow = {
   player?: unknown;
   matches?: unknown;
@@ -100,11 +147,68 @@ type SyncRow = {
   } | null;
 };
 
+type ComparisonSyncRow = {
+  player?: unknown;
+  matches?: unknown;
+  metrics?: Record<string, unknown> | null;
+};
+
 function finiteNumber(value: unknown): number | null {
   if (typeof value !== 'number' && typeof value !== 'string') return null;
   if (typeof value === 'string' && value.trim() === '') return null;
   const number = Number(value);
   return Number.isFinite(number) ? number : null;
+}
+
+export async function replaceBotRatingComparisonPopulation(
+  tour: string,
+  rows: ComparisonSyncRow[],
+) {
+  if (!['TE4', 'TE4_(F)'].includes(tour)) {
+    throw new Error('Unsupported comparison population tour');
+  }
+  const prepared = rows.map((row) => {
+    const playerName = String(row.player ?? '').trim();
+    const screenshots = finiteNumber(row.matches);
+    if (
+      !playerName
+      || screenshots === null
+      || !Number.isInteger(screenshots)
+      || screenshots < 0
+    ) {
+      throw new Error('Invalid player row in comparison population snapshot');
+    }
+
+    const metrics: Record<string, number> = {};
+    for (const metric of BOT_AGGREGATE_METRICS) {
+      const value = finiteNumber(row.metrics?.[metric.sourceLabel]);
+      if (value !== null) metrics[metric.sourceLabel] = value;
+    }
+    return { player_name: playerName, screenshots, metrics };
+  });
+
+  if (!prepared.length) {
+    throw new Error('Refusing to replace a comparison population with no rows');
+  }
+  if (new Set(prepared.map((row) => row.player_name)).size !== prepared.length) {
+    throw new Error('Duplicate player names in comparison population snapshot');
+  }
+  if (!prepared.some((row) => Object.keys(row.metrics).length > 0)) {
+    throw new Error('Refusing to replace a comparison population with no metric evidence');
+  }
+
+  await ensureComparisonTable();
+  await sql`DELETE FROM bot_rating_comparison_population WHERE tour=${tour}`;
+  await sql`
+    INSERT INTO bot_rating_comparison_population(
+      tour, player_name, screenshots, metrics, updated_at
+    )
+    SELECT
+      ${tour}, player_name, screenshots, metrics, NOW()
+    FROM jsonb_to_recordset(${JSON.stringify(prepared)}::jsonb)
+      AS snapshot(player_name TEXT, screenshots INT, metrics JSONB)
+  `;
+  return { stored: prepared.length };
 }
 
 export async function replaceBotRatingLeaderboard(tour: string, rows: SyncRow[]) {
