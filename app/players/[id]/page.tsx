@@ -116,7 +116,7 @@ export default async function PlayerDashboard({ params, searchParams }: Props) {
           </aside>
         </div>
         <section className="panel">
-          <div className="panel-head"><h2 className="display">Match averages</h2></div>
+          <div className="panel-head"><h2 className="display">Match Statistics</h2></div>
           <div className="player-stat-grid">
             {statLines.map((s) => (
               <div key={s.label}><small>{s.label}</small><strong>{s.value}</strong></div>

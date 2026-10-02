@@ -10,7 +10,7 @@ import { StatusDot } from '@/components/StatusDot';
 import { NewMessageBox } from '@/components/NewMessageBox';
 
 export const dynamic = 'force-dynamic';
-export const metadata: Metadata = { title: 'Messages' };
+export const metadata: Metadata = { title: 'Chat' };
 
 export default async function MessagesPage() {
   const u = await getSession();
@@ -22,7 +22,7 @@ export default async function MessagesPage() {
 
   return (
     <>
-      <PageHero eyebrow="Your inbox" title="Messages">Direct messages between forum members.</PageHero>
+      <PageHero eyebrow="Your inbox" title="Chat">Direct chats between forum members.</PageHero>
       <main className="container narrow">
         <NewMessageBox />
 
@@ -42,7 +42,7 @@ export default async function MessagesPage() {
         )}
 
         {conversations.length === 0 ? (
-          <div className="forum-list"><div className="empty"><strong>No messages yet</strong>Search for a member above, or start a conversation from someone's post or player profile.</div></div>
+          <div className="forum-list"><div className="empty"><strong>No chats yet</strong>Search for a member above, or start a conversation from someone's post or player profile.</div></div>
         ) : (
           <div className="forum-list">
             {conversations.map((c) => (
