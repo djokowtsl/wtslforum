@@ -1,8 +1,7 @@
 import type { Metadata } from 'next';
 import Link from 'next/link';
 import { safe } from '@/lib/db';
-import { fixturesBoard, getBalance, getBets, poolOdds, hybridOdds, excludeStaleFixtures } from '@/lib/betting';
-import { recentlyCompletedPairs } from '@/lib/stats';
+import { fixturesBoard, getBalance, getBets, poolOdds, hybridOdds } from '@/lib/betting';
 import { wtslCore } from '@/lib/wtsl-core';
 import { getSession } from '@/lib/auth';
 import PageHero from '@/components/PageHero';
@@ -12,10 +11,6 @@ export const dynamic = 'force-dynamic';
 export const metadata: Metadata = { title: 'Betting fixtures' };
 
 const DISCORD_URL = 'https://discord.com/invite/YkPAtGMUrj';
-// The betting bot only ever runs markets for ATP/WTA singles — used below to cross-check
-// against already-completed matches so a fixture the bot hasn't closed out yet doesn't show as open.
-const BETTING_TOURS = ['TE4', 'TE4_(F)'] as const;
-
 function money(v: unknown) {
   const n = Number(v);
   return Number.isFinite(n) ? n.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 }) : '0.00';
@@ -39,21 +34,12 @@ function sideOdds(f: any, side: 'one' | 'two') {
 
 export default async function Betting() {
   const user = await getSession();
-  const [board, account, bets, completedPairsByTour] = await Promise.all([
+  const [board, account, bets] = await Promise.all([
     safe(() => fixturesBoard(), { open: [] as any[], recent_settled: [] as any[] }),
     user ? safe(() => getBalance(user.discordId), null as any) : Promise.resolve(null),
     user ? safe(() => getBets(user.discordId), [] as any[]) : Promise.resolve([] as any[]),
-    Promise.all(BETTING_TOURS.map((t) => safe(() => recentlyCompletedPairs(t), new Set<string>()))),
   ]);
-  const completedByTour = new Map(BETTING_TOURS.map((t, i) => [t, completedPairsByTour[i]]));
-  // The bot's "open fixtures" list can lag behind reality — a match that's already been played
-  // and synced into our own results still shows as open there until its settlement job runs.
-  // (The bot's own settlement job can miss matches entirely too, so this is a best-effort check,
-  // not a guarantee every stale fixture gets caught.)
-  const fixtures = (Array.isArray(board?.open) ? board.open : []).filter((f: any) => {
-    const pairs = completedByTour.get(f.tour);
-    return !pairs || excludeStaleFixtures([f], pairs).length > 0;
-  });
+  const fixtures = Array.isArray(board?.open) ? board.open : [];
   const settled = Array.isArray(board?.recent_settled) ? board.recent_settled : [];
   const betList = Array.isArray(bets) ? bets : [];
 
