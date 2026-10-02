@@ -29,9 +29,23 @@ export async function POST(req: NextRequest) {
   if (!isTourCode(tour)) return NextResponse.json({ error: 'Invalid or missing "tour"' }, { status: 400 });
   if (!Array.isArray(matches) || !matches.length) return NextResponse.json({ error: '"matches" must be a non-empty array' }, { status: 400 });
 
+  const statKeys = ['firstServePct', 'firstServeWonPct', 'secondServeWonPct', 'aces', 'doubleFaults', 'firstServeReturnWonPct', 'secondServeReturnWonPct', 'returnPointsWonPct', 'breakPointsWonPct', 'breakPointsSavedPct', 'tieBreaksWonPct', 'decidingSetsWonPct', 'setPointsSaved', 'matchPointsSaved'] as const;
   const rows: MatchHistoryRow[] = [];
+  const receivedFields = { serve: 0, return: 0, pressure: 0 };
+  const serveKeys = new Set(['firstServePct', 'firstServeWonPct', 'secondServeWonPct', 'aces', 'doubleFaults']);
+  const returnKeys = new Set(['firstServeReturnWonPct', 'secondServeReturnWonPct', 'returnPointsWonPct', 'breakPointsWonPct']);
+  const pressureKeys = new Set(['breakPointsWonPct', 'breakPointsSavedPct', 'tieBreaksWonPct', 'decidingSetsWonPct', 'setPointsSaved', 'matchPointsSaved']);
   for (const m of matches) {
     if (!m?.player1 || !m?.player2 || !m?.score) continue;
+    const stats = Object.fromEntries(statKeys.flatMap((key) => {
+      const value = Number(m[key]);
+      return Number.isFinite(value) ? [[key, value]] : [];
+    }));
+    for (const key of Object.keys(stats)) {
+      if (serveKeys.has(key)) receivedFields.serve++;
+      if (returnKeys.has(key)) receivedFields.return++;
+      if (pressureKeys.has(key)) receivedFields.pressure++;
+    }
     rows.push({
       player1: String(m.player1),
       player2: String(m.player2),
@@ -39,13 +53,14 @@ export async function POST(req: NextRequest) {
       date: m.date ? String(m.date) : null,
       tournamentName: m.tournamentName ? String(m.tournamentName) : null,
       round: m.round ? String(m.round) : null,
+      stats,
     });
   }
   if (!rows.length) return NextResponse.json({ error: 'No valid rows (each needs player1, player2, score)' }, { status: 400 });
 
   try {
     const result = await importMatchHistory(tour, rows);
-    return NextResponse.json({ ok: true, ...result });
+    return NextResponse.json({ ok: true, receivedFields, ...result });
   } catch (e) {
     return NextResponse.json({ error: e instanceof Error ? e.message : 'Import failed' }, { status: 500 });
   }

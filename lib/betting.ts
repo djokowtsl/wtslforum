@@ -1,4 +1,5 @@
 import { wtslCore } from './wtsl-core';
+import { normalizePlayerName } from './queries';
 
 /** Display-only odds helpers retained from the original bot semantics. */
 export const POOL_TAKEOUT = 0.05;
@@ -18,14 +19,18 @@ export async function fixturesBoard(){ return wtslCore.fixturesBoard(); }
 /** Drops any fixture whose player pairing is already in a completed-pairs set (see
  * `recentlyCompletedPairs` in lib/stats.ts) — i.e. a fixture the bot hasn't closed out yet
  * even though the match has actually been played and synced. */
-export function excludeStaleFixtures<T extends { first_id?: string | number; second_id?: string | number }>(
+export function excludeStaleFixtures<T extends { first_id?: string | number; second_id?: string | number; first_name?: string; second_name?: string }>(
   fixtures: T[],
   completedPairs: Set<string>,
 ): T[] {
   return fixtures.filter((f) => {
-    if (!f.first_id || !f.second_id) return true;
-    const key = [String(f.first_id), String(f.second_id)].sort().join('|');
-    return !completedPairs.has(key);
+    const idKey = f.first_id && f.second_id
+      ? [String(f.first_id), String(f.second_id)].sort().join('|')
+      : null;
+    const nameKey = f.first_name && f.second_name
+      ? [normalizePlayerName(f.first_name), normalizePlayerName(f.second_name)].sort().join('|')
+      : null;
+    return !(idKey && completedPairs.has(idKey)) && !(nameKey && completedPairs.has(nameKey));
   });
 }
 export async function getBalance(discordId:string){ return wtslCore.balance(discordId); }

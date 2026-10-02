@@ -1,4 +1,5 @@
 import {sql} from './db';
+import { normalizePlayerName } from './queries';
 
 // Small-sample stats (e.g. a 3-0 player at #1 by win %) are misleading on a ranked leaderboard,
 // so anyone under this many recorded matches is excluded entirely rather than just ranked low.
@@ -25,14 +26,14 @@ export async function leaderboard(tour='TE4', metric='wins'){
     )
     SELECT p.*,
       COALESCE(mc.matches,0) matches,
-      COALESCE(mc.wins,0) wins,
-      GREATEST(COALESCE(mc.matches,0)-COALESCE(mc.wins,0),0) losses,
+      COALESCE(s.wins,0) wins,
+      COALESCE(s.losses,0) losses,
       COALESCE(s.aces,0) aces,
       COALESCE(s.winners,0) winners,
       COALESCE(s.break_points_won,0) break_points_won,
       COALESCE(s.first_serve_pct,0) first_serve_pct,
-      CASE WHEN COALESCE(mc.matches,0)>0
-        THEN ROUND(100.0*mc.wins/mc.matches,1)
+      CASE WHEN COALESCE(s.matches,0)>0
+        THEN ROUND(100.0*s.wins/s.matches,1)
         ELSE 0
       END win_pct
     FROM wtsl_players p
@@ -44,8 +45,8 @@ export async function leaderboard(tour='TE4', metric='wins'){
     ORDER BY
       CASE
         WHEN ${order} = 'win_pct' THEN
-          CASE WHEN COALESCE(mc.matches,0)>0
-            THEN 100.0*mc.wins/mc.matches
+          CASE WHEN COALESCE(s.matches,0)>0
+            THEN 100.0*s.wins/s.matches
             ELSE 0
           END
         WHEN ${order} = 'aces' THEN COALESCE(s.aces,0)
@@ -53,7 +54,7 @@ export async function leaderboard(tour='TE4', metric='wins'){
         WHEN ${order} = 'break_points' THEN COALESCE(s.break_points_won,0)
         WHEN ${order} = 'first_serve_pct' THEN COALESCE(s.first_serve_pct,0)
         WHEN ${order} = 'elo' THEN COALESCE(p.tour_elo,0)
-        ELSE COALESCE(mc.wins,0)
+        ELSE COALESCE(s.wins,0)
       END DESC NULLS LAST,
       p.name ASC
   `;
@@ -74,14 +75,14 @@ export async function allPlayerStats(tour='TE4'){
     )
     SELECT p.*,
       COALESCE(mc.matches,0) matches,
-      COALESCE(mc.wins,0) wins,
-      GREATEST(COALESCE(mc.matches,0)-COALESCE(mc.wins,0),0) losses,
+      COALESCE(s.wins,0) wins,
+      COALESCE(s.losses,0) losses,
       COALESCE(s.aces,0) aces,
       COALESCE(s.winners,0) winners,
       COALESCE(s.break_points_won,0) break_points_won,
       COALESCE(s.first_serve_pct,0) first_serve_pct,
-      CASE WHEN COALESCE(mc.matches,0)>0
-        THEN ROUND(100.0*mc.wins/mc.matches,1)
+      CASE WHEN COALESCE(s.matches,0)>0
+        THEN ROUND(100.0*s.wins/s.matches,1)
         ELSE 0
       END win_pct
     FROM wtsl_players p
@@ -155,9 +156,18 @@ export async function recentMatches(limit=20, tour='TE4'){
  */
 export async function recentlyCompletedPairs(tour: string, days = 21): Promise<Set<string>> {
   const rows = await sql`
-    SELECT player_one_id, player_two_id
-    FROM match_stats
-    WHERE tour=${tour} AND played_at IS NOT NULL AND played_at >= NOW() - (${days} || ' days')::interval
+    SELECT m.player_one_id, m.player_two_id, p1.name AS player_one_name, p2.name AS player_two_name
+    FROM match_stats m
+    LEFT JOIN wtsl_players p1 ON p1.wtsl_player_id=m.player_one_id AND p1.tour=m.tour
+    LEFT JOIN wtsl_players p2 ON p2.wtsl_player_id=m.player_two_id AND p2.tour=m.tour
+    WHERE m.tour=${tour} AND m.played_at IS NOT NULL AND m.played_at >= NOW() - (${days} || ' days')::interval
   `;
-  return new Set(rows.map((r: any) => [String(r.player_one_id), String(r.player_two_id)].sort().join('|')));
+  const pairs = new Set<string>();
+  for (const row of rows as any[]) {
+    pairs.add([String(row.player_one_id), String(row.player_two_id)].sort().join('|'));
+    if (row.player_one_name && row.player_two_name) {
+      pairs.add([normalizePlayerName(row.player_one_name), normalizePlayerName(row.player_two_name)].sort().join('|'));
+    }
+  }
+  return pairs;
 }

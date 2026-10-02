@@ -1,7 +1,7 @@
 import type { Metadata } from 'next';
 import Link from 'next/link';
 import { safe } from '@/lib/db';
-import { fixturesBoard, getBalance, getBets, poolOdds, hybridOdds } from '@/lib/betting';
+import { fixturesBoard, getBalance, getBets, poolOdds, hybridOdds, excludeStaleFixtures } from '@/lib/betting';
 import { recentlyCompletedPairs } from '@/lib/stats';
 import { wtslCore } from '@/lib/wtsl-core';
 import { getSession } from '@/lib/auth';
@@ -51,10 +51,8 @@ export default async function Betting() {
   // (The bot's own settlement job can miss matches entirely too, so this is a best-effort check,
   // not a guarantee every stale fixture gets caught.)
   const fixtures = (Array.isArray(board?.open) ? board.open : []).filter((f: any) => {
-    if (!f.first_id || !f.second_id) return true;
     const pairs = completedByTour.get(f.tour);
-    if (!pairs) return true;
-    return !pairs.has([String(f.first_id), String(f.second_id)].sort().join('|'));
+    return !pairs || excludeStaleFixtures([f], pairs).length > 0;
   });
   const settled = Array.isArray(board?.recent_settled) ? board.recent_settled : [];
   const betList = Array.isArray(bets) ? bets : [];
