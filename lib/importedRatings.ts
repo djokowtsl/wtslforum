@@ -3,7 +3,7 @@ import { sql } from './db';
 export type ImportedRating = {
   player: string;
   playerId: string;
-  /** Total imported matches — the same denominator used by Player Statistics. */
+  /** Total imported screenshots — the same count shown in Player Statistics. */
   matches: number;
   value: number;
 };
@@ -26,64 +26,96 @@ type RatingSourceRow = {
 };
 
 /**
- * Uses the Discord bot's component sums, aggregated from both sides of every imported
- * match. A missing historical component contributes no value rather than dropping an
- * otherwise eligible player from the table.
+ * Match each rating to the Discord bot's `calculate_partial_overall_ratings`:
+ * average each available player-side spreadsheet field, then sum only the
+ * available components. A workbook row belongs to its `Player` / `player1`
+ * side, so player2 is intentionally not treated as an empty duplicate.
  */
 export async function importedMatchRatings(tour: string, metric: 'serve' | 'return' | 'pressure'): Promise<ImportedRating[]> {
   const rows = await sql`
-    WITH sides AS (
-      SELECT player_one_id AS player_id, stats->'player1' AS stat_line
-      FROM match_stats
-      WHERE tour=${tour}
-      UNION ALL
-      SELECT player_two_id AS player_id, stats->'player2' AS stat_line
-      FROM match_stats
-      WHERE tour=${tour}
-    ), aggregated AS (
-      SELECT
-        player_id,
-        COUNT(*)::int AS matches,
-        AVG((stat_line->>'firstServePct')::numeric)::float AS first_serve_pct,
-        AVG((stat_line->>'firstServeWonPct')::numeric)::float AS first_serve_won_pct,
-        AVG((stat_line->>'secondServeWonPct')::numeric)::float AS second_serve_won_pct,
-        AVG((stat_line->>'aces')::numeric)::float AS aces,
-        AVG((stat_line->>'doubleFaults')::numeric)::float AS double_faults,
-        AVG((stat_line->>'firstServeReturnWonPct')::numeric)::float AS first_serve_return_won_pct,
-        AVG((stat_line->>'secondServeReturnWonPct')::numeric)::float AS second_serve_return_won_pct,
-        AVG((stat_line->>'breakPointsWonPct')::numeric)::float AS break_points_won_pct,
-        AVG((stat_line->>'breakPointsSavedPct')::numeric)::float AS break_points_saved_pct,
-        AVG((stat_line->>'tieBreaksWonPct')::numeric)::float AS tie_breaks_won_pct,
-        AVG((stat_line->>'decidingSetsWonPct')::numeric)::float AS deciding_sets_won_pct
-      FROM sides
+    WITH total_screenshots AS (
+      SELECT player_id, COUNT(*)::int AS matches
+      FROM (
+        SELECT player_one_id AS player_id FROM match_stats WHERE tour=${tour}
+        UNION ALL
+        SELECT player_two_id AS player_id FROM match_stats WHERE tour=${tour}
+      ) all_sides
       GROUP BY player_id
+    ), player_screenshots AS (
+      SELECT
+        player_one_id AS player_id,
+        AVG((stats->'player1'->>'firstServePct')::numeric)::float AS first_serve_pct,
+        AVG((stats->'player1'->>'firstServeWonPct')::numeric)::float AS first_serve_won_pct,
+        AVG((stats->'player1'->>'secondServeWonPct')::numeric)::float AS second_serve_won_pct,
+        AVG((stats->'player1'->>'aces')::numeric)::float AS aces,
+        AVG((stats->'player1'->>'doubleFaults')::numeric)::float AS double_faults,
+        AVG((stats->'player1'->>'firstServeReturnWonPct')::numeric)::float AS first_serve_return_won_pct,
+        AVG((stats->'player1'->>'secondServeReturnWonPct')::numeric)::float AS second_serve_return_won_pct,
+        AVG((stats->'player1'->>'breakPointsWonPct')::numeric)::float AS break_points_won_pct,
+        AVG((stats->'player1'->>'breakPointsSavedPct')::numeric)::float AS break_points_saved_pct,
+        AVG((stats->'player1'->>'tieBreaksWonPct')::numeric)::float AS tie_breaks_won_pct,
+        AVG((stats->'player1'->>'decidingSetsWonPct')::numeric)::float AS deciding_sets_won_pct
+      FROM match_stats
+      WHERE tour=${tour} AND jsonb_typeof(stats->'player1') = 'object'
+      GROUP BY player_one_id
     )
     SELECT
       p.name AS player,
       p.wtsl_player_id AS "playerId",
-      a.matches,
-      a.first_serve_pct AS "firstServePct",
-      a.first_serve_won_pct AS "firstServeWonPct",
-      a.second_serve_won_pct AS "secondServeWonPct",
-      a.aces,
-      a.double_faults AS "doubleFaults",
-      a.first_serve_return_won_pct AS "firstServeReturnWonPct",
-      a.second_serve_return_won_pct AS "secondServeReturnWonPct",
-      a.break_points_won_pct AS "breakPointsWonPct",
-      a.break_points_saved_pct AS "breakPointsSavedPct",
-      a.tie_breaks_won_pct AS "tieBreaksWonPct",
-      a.deciding_sets_won_pct AS "decidingSetsWonPct"
-    FROM aggregated a
-    JOIN wtsl_players p ON p.wtsl_player_id = a.player_id AND p.tour=${tour}
+      totals.matches,
+      stats.first_serve_pct AS "firstServePct",
+      stats.first_serve_won_pct AS "firstServeWonPct",
+      stats.second_serve_won_pct AS "secondServeWonPct",
+      stats.aces,
+      stats.double_faults AS "doubleFaults",
+      stats.first_serve_return_won_pct AS "firstServeReturnWonPct",
+      stats.second_serve_return_won_pct AS "secondServeReturnWonPct",
+      stats.break_points_won_pct AS "breakPointsWonPct",
+      stats.break_points_saved_pct AS "breakPointsSavedPct",
+      stats.tie_breaks_won_pct AS "tieBreaksWonPct",
+      stats.deciding_sets_won_pct AS "decidingSetsWonPct"
+    FROM total_screenshots totals
+    JOIN player_screenshots stats ON stats.player_id = totals.player_id
+    JOIN wtsl_players p ON p.wtsl_player_id = totals.player_id AND p.tour=${tour}
   ` as RatingSourceRow[];
 
-  const value = (row: RatingSourceRow) => metric === 'serve'
-    ? ((row.firstServePct ?? 0) + (row.firstServeWonPct ?? 0) + (row.secondServeWonPct ?? 0)) * 100 + (row.aces ?? 0) - (row.doubleFaults ?? 0)
+  const numeric = (value: number | null) => Number.isFinite(value) ? value : null;
+  const percentage = (value: number | null) => {
+    const number = numeric(value);
+    return number === null ? null : number * 100;
+  };
+  const total = (...values: Array<number | null>) => {
+    const available = values.filter((value): value is number => value !== null);
+    return available.length ? available.reduce((sum, value) => sum + value, 0) : null;
+  };
+  const rating = (row: RatingSourceRow) => metric === 'serve'
+    ? total(
+      percentage(row.firstServePct),
+      percentage(row.firstServeWonPct),
+      percentage(row.secondServeWonPct),
+      numeric(row.aces),
+      (() => {
+        const doubleFaults = numeric(row.doubleFaults);
+        return doubleFaults === null ? null : -doubleFaults;
+      })(),
+    )
     : metric === 'return'
-      ? ((row.firstServeReturnWonPct ?? 0) + (row.secondServeReturnWonPct ?? 0) + (row.breakPointsWonPct ?? 0)) * 100
-      : ((row.breakPointsWonPct ?? 0) + (row.breakPointsSavedPct ?? 0) + (row.tieBreaksWonPct ?? 0) + (row.decidingSetsWonPct ?? 0)) * 100;
+      ? total(
+        percentage(row.firstServeReturnWonPct),
+        percentage(row.secondServeReturnWonPct),
+        percentage(row.breakPointsWonPct),
+      )
+      : total(
+        percentage(row.breakPointsWonPct),
+        percentage(row.breakPointsSavedPct),
+        percentage(row.tieBreaksWonPct),
+        percentage(row.decidingSetsWonPct),
+      );
 
   return rows
-    .map((row) => ({ player: row.player, playerId: row.playerId, matches: row.matches, value: value(row) }))
+    .flatMap((row) => {
+      const value = rating(row);
+      return value === null ? [] : [{ player: row.player, playerId: row.playerId, matches: row.matches, value }];
+    })
     .sort((a, b) => b.value - a.value || a.player.localeCompare(b.player));
 }
