@@ -11,6 +11,7 @@ import RichText from '@/components/RichText';
 import ReactionBar from '@/components/ReactionBar';
 import { StatusDot } from '@/components/StatusDot';
 import AdminTopicControls from '@/components/AdminTopicControls';
+import ShareThreadButton from '@/components/ShareThreadButton';
 
 export const dynamic = 'force-dynamic';
 export const metadata: Metadata = { title: 'Discussion' };
@@ -35,7 +36,10 @@ export default async function Thread({ params }: { params: Promise<{ id: string 
           {topic.locked && <span className="pill cyan">Locked</span>}
           {topic.category && <Link href={'/discussions?c=' + topic.category_slug} className="pill">{topic.category}</Link>}
         </div>
-        <h1 className="display">{topic.title}</h1>
+        <div className="thread-title-row">
+          <h1 className="display">{topic.title}</h1>
+          <ShareThreadButton />
+        </div>
         <div className="topic-meta"><span>Started by {topic.author || 'Community'}</span><span>{fmtDateTime(topic.created_at)}</span><span>{replies.length} {replies.length === 1 ? 'reply' : 'replies'}</span><span>{topic.views} views</span></div>
         {u?.isAdmin && <AdminTopicControls topicId={Number(topic.id)} locked={!!topic.locked} pinned={!!topic.pinned} />}
       </div>

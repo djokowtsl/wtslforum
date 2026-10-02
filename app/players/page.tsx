@@ -3,6 +3,7 @@ import { safe, sql } from '@/lib/db';
 import PageHero from '@/components/PageHero';
 import TourTabs from '@/components/TourTabs';
 import { DEFAULT_TOUR, isTourCode, tourLabel, type TourCode } from '@/lib/wtsl';
+import { COOP_STANDINGS_URL, fetchCoopStandings } from '@/lib/coopStandings';
 
 export const dynamic = 'force-dynamic';
 export const metadata: Metadata = { title: 'Players' };
@@ -10,13 +11,73 @@ export const metadata: Metadata = { title: 'Players' };
 export default async function PlayersPage({ searchParams }: { searchParams: Promise<{ tour?: string }> }) {
   const { tour: tourParam } = await searchParams;
   const tour: TourCode = isTourCode(tourParam) ? tourParam : DEFAULT_TOUR;
-  const players = await safe(() => sql`SELECT * FROM wtsl_players WHERE tour=${tour} ORDER BY rank ASC NULLS LAST,tour_elo DESC NULLS LAST,name LIMIT 200`, [] as any[]);
+  let players: any[] = [];
+  let coopTeams: Awaited<ReturnType<typeof fetchCoopStandings>> = [];
+  let coopUnavailable = false;
+  if (tour === 'TE4_Coop') {
+    try {
+      coopTeams = await fetchCoopStandings();
+    } catch {
+      coopUnavailable = true;
+    }
+  } else {
+    players = await safe(() => sql`SELECT * FROM wtsl_players WHERE tour=${tour} ORDER BY rank ASC NULLS LAST,tour_elo DESC NULLS LAST,name LIMIT 200`, [] as any[]);
+  }
+
+  const formatPercent = (value: number | null) => value === null
+    ? '—'
+    : `${new Intl.NumberFormat('en-GB', { maximumFractionDigits: 2 }).format(value)}%`;
+
   return (
     <>
       <PageHero eyebrow="Players" title="Players" />
       <main className="page-shell" style={{ paddingTop: 10 }}>
         <TourTabs basePath="/players" current={tour} />
-        {players.length === 0 ? (
+        {tour === 'TE4_Coop' ? (
+          <section className="panel coop-standings-panel">
+            <div className="panel-head">
+              <h2 className="display">Cooperative Doubles standings</h2>
+              <a className="btn btn-primary btn-sm" href={COOP_STANDINGS_URL} target="_blank" rel="noreferrer">
+                Official standings ↗
+              </a>
+            </div>
+            {coopUnavailable ? (
+              <div className="notice">The official COOP standings are temporarily unavailable. You can still view them on the WTSL site.</div>
+            ) : coopTeams.length === 0 ? (
+              <div className="empty">No COOP teams are listed in the current standings.</div>
+            ) : (
+              <div className="coop-team-grid">
+                {coopTeams.map((team) => (
+                  <article className="coop-team-card" key={`${team.position}-${team.teamName}`}>
+                    <div className="coop-team-head">
+                      <span className="coop-team-place">#{team.position}</span>
+                      <div className="coop-team-title">
+                        <h3>{team.teamName}</h3>
+                        <span>{team.matchesPlayed} matches played</span>
+                      </div>
+                      <div className="coop-team-match-win">
+                        <small>Match win</small>
+                        <strong>{formatPercent(team.matchWinPercent)}</strong>
+                      </div>
+                    </div>
+                    <div className="coop-team-players" aria-label={`${team.teamName} players`}>
+                      {team.players.length > 0 ? team.players.map((player, index) => (
+                        <span className="coop-team-player" key={`${player}-${index}`}>
+                          <i>{index + 1}</i>{player}
+                        </span>
+                      )) : <span className="coop-team-player">Players not listed</span>}
+                    </div>
+                    <div className="coop-team-stat-grid">
+                      <div><small>Match record</small><strong>{team.matchRecord || '—'}</strong></div>
+                      <div><small>Sets W–L</small><strong>{team.setsRecord || '—'}</strong><span>{formatPercent(team.setsWinPercent)}</span></div>
+                      <div><small>Games W–L</small><strong>{team.gamesRecord || '—'}</strong><span>{formatPercent(team.gamesWinPercent)}</span></div>
+                    </div>
+                  </article>
+                ))}
+              </div>
+            )}
+          </section>
+        ) : players.length === 0 ? (
           <div className="forum-list"><div className="empty"><strong>No players synced yet</strong>Players appear here once the WTSL {tourLabel(tour)} rankings sync has run.</div></div>
         ) : (
           <div className="player-grid">

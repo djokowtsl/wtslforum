@@ -47,6 +47,9 @@ export type BotMetric = BotRating | BotAggregateMetric;
 export type BotLeaderboardRow = {
   player: string;
   playerId: string;
+  wtslPlayerId: string | null;
+  avatarUrl: string | null;
+  country: string | null;
   matches: number;
   value: number;
   favoriteCharacter: string | null;
@@ -317,6 +320,9 @@ export async function botLeaderboard(tour: string, metric: BotMetric): Promise<B
     SELECT
       b.player_name AS player,
       COALESCE(p.wtsl_player_id, b.player_name) AS "playerId",
+      p.wtsl_player_id AS "wtslPlayerId",
+      p.avatar_url AS "avatarUrl",
+      p.country,
       b.screenshots AS matches,
       CASE
         WHEN ${metric} = 'serve' THEN b.serve
@@ -331,6 +337,7 @@ export async function botLeaderboard(tour: string, metric: BotMetric): Promise<B
     FROM bot_rating_leaderboards b
     LEFT JOIN wtsl_players p ON p.tour=b.tour AND lower(p.name)=lower(b.player_name)
     WHERE b.tour=${tour}
+      AND b.screenshots >= ${LEADERBOARD_MIN_MATCHES}
       AND CASE
         WHEN ${metric} = 'serve' THEN b.serve
         WHEN ${metric} = 'return' THEN b.return_rating
@@ -343,6 +350,9 @@ export async function botLeaderboard(tour: string, metric: BotMetric): Promise<B
     .map((row: any) => ({
       player: row.player,
       playerId: String(row.playerId),
+      wtslPlayerId: row.wtslPlayerId === null ? null : String(row.wtslPlayerId),
+      avatarUrl: row.avatarUrl ? String(row.avatarUrl) : null,
+      country: row.country ? String(row.country) : null,
       matches: Number(row.matches),
       value: Number(row.value),
       favoriteCharacter: row.favoriteCharacter ? String(row.favoriteCharacter) : null,

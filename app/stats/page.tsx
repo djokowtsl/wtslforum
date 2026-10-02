@@ -17,7 +17,7 @@ export default async function Stats({ searchParams }: { searchParams: Promise<{ 
   const tour: TourCode = isTourCode(tourParam) && tourParam !== 'TE4_Coop' ? tourParam : DEFAULT_TOUR;
   const [allRows, matches, ratingRows] = await Promise.all([
     safe(() => allPlayerStats(tour), [] as any[]),
-    safe(() => recentMatches(12, tour), [] as any[]),
+    safe(() => recentMatches(8, tour), [] as any[]),
     safe(() => botRatingStats(tour), [] as any[]),
   ]);
   const ratingByPlayer = new Map<string, any>(
@@ -51,11 +51,15 @@ export default async function Stats({ searchParams }: { searchParams: Promise<{ 
               <PlayerStatsTable rows={rows as any} tour={tour} />
             )}
           </section>
-          <aside className="panel">
+          <aside className="panel stats-recent-panel">
             <div className="panel-head"><h2 className="display">Recent matches</h2></div>
-            {matches.length === 0 ? <div className="empty">No matches recorded yet.</div> : matches.map((m: any) => (
-              <div className="match-row" key={m.id}><div>{m.player_one_name}<br /><b>{m.score || '—'}</b><br />{m.player_two_name}</div><span>{m.tournament_name || m.tournament_key || ''}{m.round_name ? ` · ${m.round_name}` : ''}</span></div>
-            ))}
+            {matches.length === 0 ? <div className="empty">No matches recorded yet.</div> : (
+              <div className="stats-recent-list">
+                {matches.map((m: any) => (
+                  <div className="match-row" key={m.id}><div>{m.player_one_name}<br /><b>{m.score || '—'}</b><br />{m.player_two_name}</div><span>{m.tournament_name || m.tournament_key || ''}{m.round_name ? ` · ${m.round_name}` : ''}</span></div>
+                ))}
+              </div>
+            )}
           </aside>
         </div>
         <p className="empty" style={{ marginTop: 20 }}>Only players with at least {LEADERBOARD_MIN_MATCHES} recorded matches are shown. Select any table header to sort it.</p>

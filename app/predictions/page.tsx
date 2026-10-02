@@ -42,7 +42,7 @@ export default async function Predictions() {
   return (
     <>
       <PageHero eyebrow="WTSL Forum" title="Predictions leaderboard">
-        Bracket prediction standings from the WTSL Discord, synced from Challonge picks.
+        Challonge prediction standings.
       </PageHero>
       <main className="container">
         {!wtslCore.configured() ? (
@@ -66,11 +66,16 @@ export default async function Predictions() {
                     <tr key={r.challonge_user_id}>
                       <td>{MEDALS[i] || i + 1}</td>
                       <td>
-                        {verified?.wtslPlayerId && verified.tour ? (
-                          <Link href={`/players/${verified.wtslPlayerId}?tour=${encodeURIComponent(verified.tour)}`}>{predictorName(r, verified)}</Link>
-                        ) : (
-                          predictorName(r, verified)
-                        )}
+                        <div className="prediction-player">
+                          {verified && (verified.avatarUrl
+                            ? <img src={verified.avatarUrl} alt="" loading="lazy" />
+                            : <span className="prediction-avatar-placeholder" aria-hidden="true">{predictorName(r, verified).trim().slice(0, 1).toUpperCase() || '?'}</span>)}
+                          {verified?.wtslPlayerId && verified.tour ? (
+                            <Link href={`/players/${verified.wtslPlayerId}?tour=${encodeURIComponent(verified.tour)}`}>{predictorName(r, verified)}</Link>
+                          ) : (
+                            predictorName(r, verified)
+                          )}
+                        </div>
                       </td>
                       <td><b>{r.total_score}</b></td>
                       <td>{correct}/{possible}{possible > 0 ? ` (${pct}%)` : ''}</td>

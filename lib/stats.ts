@@ -142,6 +142,23 @@ export async function recentMatches(limit=20, tour='TE4'){
     LEFT JOIN wtsl_players p1 ON p1.wtsl_player_id=m.player_one_id AND p1.tour=m.tour
     LEFT JOIN wtsl_players p2 ON p2.wtsl_player_id=m.player_two_id AND p2.tour=m.tour
     WHERE m.tour=${tour} AND m.played_at IS NOT NULL
+      AND (
+        m.source_id NOT LIKE 'import:%'
+        OR NOT EXISTS (
+          SELECT 1
+          FROM match_stats official
+          WHERE official.tour=m.tour
+            AND official.source_id LIKE 'recent:%'
+            AND official.played_at IS NOT NULL
+            AND LEAST(official.player_one_id, official.player_two_id)
+                = LEAST(m.player_one_id, m.player_two_id)
+            AND GREATEST(official.player_one_id, official.player_two_id)
+                = GREATEST(m.player_one_id, m.player_two_id)
+            AND official.played_at::date = m.played_at::date
+            AND regexp_replace(COALESCE(official.score, ''), '[^0-9]', '', 'g')
+                = regexp_replace(COALESCE(m.score, ''), '[^0-9]', '', 'g')
+        )
+      )
     ORDER BY m.played_at DESC
     LIMIT ${limit}
   `;

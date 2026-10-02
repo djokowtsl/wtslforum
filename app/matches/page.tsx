@@ -19,7 +19,7 @@ const BETTING_TOURS: TourCode[] = ['TE4', 'TE4_(F)'];
 
 export default async function Matches({ searchParams }: { searchParams: Promise<{ tour?: string }> }) {
   const { tour: tourParam } = await searchParams;
-  const tour: TourCode = isTourCode(tourParam) ? tourParam : DEFAULT_TOUR;
+  const tour: TourCode = isTourCode(tourParam) && tourParam !== 'TE4_Coop' ? tourParam : DEFAULT_TOUR;
   const [results, fixtures, tournaments] = await Promise.all([
     safe(() => recentMatches(30, tour), [] as any[]),
     safe(() => openFixtures(), [] as any[]),
@@ -37,7 +37,7 @@ export default async function Matches({ searchParams }: { searchParams: Promise<
     <>
       <PageHero eyebrow="WTSL Tour" title="Matches">Results and upcoming fixtures from across the tour, straight from the WTSL data. Want to talk about one? Take it to the <Link href="/discussions?c=match-talk" style={{ color: 'var(--lime)' }}>Match Talk</Link> board.</PageHero>
       <main className="container">
-        <TourTabs basePath="/matches" current={tour} />
+        <TourTabs basePath="/matches" current={tour} exclude={['TE4_Coop']} />
         <div className="section-head"><div><h2 className="display">Open fixtures</h2><p>Upcoming matches with current odds.</p></div><Link className="btn btn-primary btn-sm" href="/betting">🎲 Betting board</Link></div>
         {fx.length === 0 ? <div className="forum-list"><div className="empty"><strong>No open fixtures right now</strong>{supportsBetting ? 'New fixtures appear here as soon as the next round is set.' : 'The betting bot only runs markets for ATP and WTA singles — this tour has no fixtures.'}</div></div> : <div className="live-grid">{fx.map((f: any) => <FixtureCard key={f.key} f={f} />)}</div>}
 
