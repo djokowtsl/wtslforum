@@ -1,8 +1,8 @@
 import Link from 'next/link';
 import type { Metadata } from 'next';
 import { safe } from '@/lib/db';
-import { recentMatches, recentlyCompletedPairs } from '@/lib/stats';
-import { openFixtures, excludeStaleFixtures } from '@/lib/betting';
+import { recentMatches } from '@/lib/stats';
+import { openFixtures } from '@/lib/betting';
 import { getTournaments } from '@/lib/tournaments';
 import { FixtureCard, ResultCard } from '@/components/MatchCards';
 import PageHero from '@/components/PageHero';
@@ -20,20 +20,18 @@ const BETTING_TOURS: TourCode[] = ['TE4', 'TE4_(F)'];
 export default async function Matches({ searchParams }: { searchParams: Promise<{ tour?: string }> }) {
   const { tour: tourParam } = await searchParams;
   const tour: TourCode = isTourCode(tourParam) ? tourParam : DEFAULT_TOUR;
-  const [results, fixtures, tournaments, completedPairs] = await Promise.all([
+  const [results, fixtures, tournaments] = await Promise.all([
     safe(() => recentMatches(30, tour), [] as any[]),
     safe(() => openFixtures(), [] as any[]),
     safe(() => getTournaments(tour), [] as any[]),
-    safe(() => recentlyCompletedPairs(tour), new Set<string>()),
   ]);
   const names = Object.fromEntries(tournaments.map((t: any) => [t.wtsl_tournament_key, t.name]));
   const supportsBetting = BETTING_TOURS.includes(tour);
   // Fixtures come back tagged with the same raw tour codes used everywhere else on the
   // forum ("TE4", "TE4_(F)") — not "atp"/"wta" — so compare directly against the selected tour.
-  const fx = excludeStaleFixtures(
-    Array.isArray(fixtures) ? fixtures.filter((f: any) => String(f.tour) === tour) : [],
-    completedPairs,
-  );
+  const fx = Array.isArray(fixtures)
+    ? fixtures.filter((f: any) => String(f.tour) === tour)
+    : [];
 
   return (
     <>
