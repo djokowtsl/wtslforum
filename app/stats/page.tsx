@@ -6,6 +6,7 @@ import PageHero from '@/components/PageHero';
 import TourTabs from '@/components/TourTabs';
 import PlayerStatsTable from '@/components/PlayerStatsTable';
 import { DEFAULT_TOUR, isTourCode, type TourCode } from '@/lib/wtsl';
+import { botRatingStats } from '@/lib/botRatingLeaderboards';
 
 export const dynamic = 'force-dynamic';
 export const metadata: Metadata = { title: 'Statistics' };
@@ -14,11 +15,26 @@ export default async function Stats({ searchParams }: { searchParams: Promise<{ 
   const { tour: tourParam } = await searchParams;
   // Coop has no individual player stats on the official site, so it's not a valid selection here.
   const tour: TourCode = isTourCode(tourParam) && tourParam !== 'TE4_Coop' ? tourParam : DEFAULT_TOUR;
-  const [allRows, matches] = await Promise.all([
+  const [allRows, matches, ratingRows] = await Promise.all([
     safe(() => allPlayerStats(tour), [] as any[]),
     safe(() => recentMatches(12, tour), [] as any[]),
+    safe(() => botRatingStats(tour), [] as any[]),
   ]);
-  const rows = allRows.filter((row: any) => row.matches >= LEADERBOARD_MIN_MATCHES);
+  const ratingByPlayer = new Map<string, any>(
+    ratingRows.map((row: any) => [String(row.playerId), row]),
+  );
+  const rows = allRows
+    .filter((row: any) => row.matches >= LEADERBOARD_MIN_MATCHES)
+    .map((row: any) => {
+      const rating = ratingByPlayer.get(String(row.wtsl_player_id));
+      return {
+        ...row,
+        serve_rating: rating?.ratings.serve ?? null,
+        return_rating: rating?.ratings.return ?? null,
+        pressure_rating: rating?.ratings.pressure ?? null,
+        rating_component_counts: rating?.ratingComponentCounts ?? {},
+      };
+    });
   return (
     <>
       <PageHero eyebrow="WTSL TE4" title="Statistics">Match statistics and player performance, A–Z. Want players ranked by a stat instead? Check the <Link href="/leaderboard" style={{ color: 'var(--lime)' }}>Leaderboard</Link>.</PageHero>
