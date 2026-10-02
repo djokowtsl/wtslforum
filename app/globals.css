@@ -266,6 +266,9 @@ h1, h2, h3 { margin: 0; }
 .back-link:hover { color: var(--lime); }
 .thread-head { padding: 28px 30px; margin-bottom: 16px; background: radial-gradient(500px 200px at 100% 0, rgba(176, 244, 59, 0.08), transparent 70%), var(--panel); }
 .thread-head h1 { font-size: clamp(34px, 5vw, 54px); line-height: 0.98; margin: 12px 0 12px; }
+.thread-title-row { display: flex; align-items: center; justify-content: space-between; gap: 18px; }
+.thread-title-row h1 { flex: 1; min-width: 0; }
+.share-thread-button { flex: none; white-space: nowrap; }
 .thread-head .topic-meta { margin-top: 0; }
 .admin-topic-controls { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 14px; }
 .post { display: grid; grid-template-columns: 170px minmax(0, 1fr); margin-bottom: 14px; overflow: hidden; }
@@ -383,6 +386,29 @@ h1, h2, h3 { margin: 0; }
 .panel h2 { font-size: 28px; }
 .panel table { width: 100%; border-collapse: collapse; margin-top: 12px; }
 .table-scroll { max-height: 640px; overflow-y: auto; }
+.coop-team-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(100%, 350px), 1fr)); gap: 14px; }
+.coop-team-card { min-width: 0; padding: 18px; border: 1px solid var(--line); border-radius: var(--radius); background: var(--bg); }
+.coop-team-head { display: grid; grid-template-columns: 42px minmax(0, 1fr) auto; align-items: center; gap: 12px; }
+.coop-team-place { display: grid; place-items: center; width: 42px; height: 42px; border-radius: 12px; background: var(--panel-2); color: var(--lime); font-family: var(--font-display); font-size: 17px; font-weight: 800; }
+.coop-team-title { min-width: 0; }
+.coop-team-title h3 { margin: 0; font-size: 18px; line-height: 1.15; overflow-wrap: anywhere; }
+.coop-team-title > span, .coop-team-match-win small { display: block; margin-top: 4px; color: var(--muted); font-size: 10px; text-transform: uppercase; letter-spacing: 0.08em; }
+.coop-team-match-win { text-align: right; }
+.coop-team-match-win strong { display: block; margin-top: 2px; color: var(--lime); font-size: 19px; }
+.coop-team-players { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 8px; margin: 16px 0; }
+.coop-team-player { display: flex; align-items: center; gap: 8px; min-width: 0; padding: 9px 10px; border: 1px solid var(--line); border-radius: 9px; background: var(--panel); font-size: 12px; font-weight: 700; overflow-wrap: anywhere; }
+.coop-team-player i { display: grid; place-items: center; width: 22px; height: 22px; border-radius: 50%; background: var(--panel-2); color: var(--lime); font-size: 10px; font-style: normal; flex: none; }
+.coop-team-stat-grid { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 8px; padding-top: 12px; border-top: 1px solid var(--line); }
+.coop-team-stat-grid > div { display: flex; flex-direction: column; gap: 3px; min-width: 0; }
+.coop-team-stat-grid small { color: var(--muted); font-size: 9px; text-transform: uppercase; letter-spacing: 0.06em; }
+.coop-team-stat-grid strong { font-size: 13px; }
+.coop-team-stat-grid span { color: var(--lime); font-size: 11px; }
+.stats-recent-list { max-height: 25rem; overflow-y: auto; padding-right: 5px; overscroll-behavior: contain; }
+.metric-sample-info { display: inline-grid; place-items: center; width: 16px; height: 16px; margin-left: 6px; border: 1px solid var(--muted); border-radius: 50%; color: var(--muted); font: 700 10px/1 sans-serif; cursor: help; vertical-align: 2px; }
+.metric-sample-info:focus-visible { outline: 2px solid var(--lime); outline-offset: 2px; }
+.prediction-player { display: flex; align-items: center; gap: 9px; }
+.prediction-player img, .prediction-avatar-placeholder { width: 30px; height: 30px; border-radius: 50%; object-fit: cover; border: 1px solid var(--line-2); flex: none; }
+.prediction-avatar-placeholder { display: inline-grid; place-items: center; background: var(--panel-2); color: var(--lime); font-size: 12px; font-weight: 700; }
 .table-scroll table thead th { position: sticky; top: 0; background: var(--panel); z-index: 1; }
 .panel th, .panel td { text-align: left; padding: 12px 8px; border-bottom: 1px solid var(--line); font-size: 13.5px; }
 .panel th { color: var(--muted); font-size: 11px; letter-spacing: 0.12em; text-transform: uppercase; }
@@ -546,6 +572,8 @@ h1, h2, h3 { margin: 0; }
   .post-user .role { margin: 0 0 0 auto; }
   .post-content { padding: 18px 16px; }
   .thread-head, .tournament-hero { padding: 22px 18px; }
+  .thread-title-row { flex-direction: column; align-items: flex-start; gap: 8px; }
+  .thread-title-row .share-thread-button { width: 100%; }
   .hero-actions .btn { width: 100%; }
   .page-hero-inner { padding: 34px 16px 28px; }
   .page-hero .mark { display: none; }

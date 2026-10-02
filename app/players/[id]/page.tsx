@@ -56,7 +56,7 @@ export default async function PlayerDashboard({ params, searchParams }: Props) {
 
   return (
     <>
-      <PageHero eyebrow="Player" title={p.name}>{tourLabel(tour)} · {p.country || 'WTSL Player'}</PageHero>
+      <PageHero eyebrow="Player" title={p.name}>{tourLabel(tour)}{p.country ? ` · ${p.country}` : ''}</PageHero>
       <main className="page-shell" style={{ paddingTop: 10 }}>
         {tours.length > 1 && (
           <div className="tour-tabs" role="tablist" aria-label="Tour">
@@ -71,7 +71,7 @@ export default async function PlayerDashboard({ params, searchParams }: Props) {
           {p.avatar_url ? <img src={p.avatar_url} alt={p.name} className="player-dash-avatar" /> : <div className="player-placeholder">{(p.name || 'W')[0]}</div>}
           <div>
             <h2 className="display">{p.name}</h2>
-            <p>{p.flag_url && <img src={p.flag_url} alt="" style={{ height: 14, marginRight: 6 }} />}{p.country || 'WTSL Player'}</p>
+            {p.country && <p>{p.flag_url && <img src={p.flag_url} alt="" style={{ height: 14, marginRight: 6 }} />}{p.country}</p>}
             <p><b>{p.rank ? `#${p.rank}` : 'Unranked'}</b> · Tour Elo <b>{p.tour_elo ?? '—'}</b>{p.elo_label ? ` (${p.elo_label})` : ''}</p>
             {p.official_url && <a href={p.official_url} target="_blank" rel="noreferrer">View WTSL profile ↗</a>}
             {verifiedOwner && (
