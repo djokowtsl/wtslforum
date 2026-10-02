@@ -2,7 +2,7 @@ import type { Metadata } from 'next';
 import Link from 'next/link';
 import { safe } from '@/lib/db';
 import { allPlayerStats, LEADERBOARD_MIN_MATCHES, recentMatches } from '@/lib/stats';
-import { importedMatchRatings } from '@/lib/importedRatings';
+import { botRatingLeaderboard } from '@/lib/botRatingLeaderboards';
 import PageHero from '@/components/PageHero';
 import TourTabs from '@/components/TourTabs';
 import PlayerStatsTable from '@/components/PlayerStatsTable';
@@ -21,7 +21,7 @@ const MATCH_RATINGS = [
 async function matchLeaderboards(tour: TourCode) {
   const tables = await Promise.all(MATCH_RATINGS.map(async ({ key, label }) => ({
     label,
-    rows: await importedMatchRatings(tour, key),
+    rows: await botRatingLeaderboard(tour, key),
   })));
   const eligible = tables.map((table) => ({
     ...table,
