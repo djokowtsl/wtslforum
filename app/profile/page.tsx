@@ -3,14 +3,15 @@ import type { Metadata } from 'next';
 import Link from 'next/link';
 import { getSession, discordAvatar } from '@/lib/auth';
 import { safe } from '@/lib/db';
-import { getClaimsForUser, type PlayerClaim } from '@/lib/player-claims';
+import { getApprovedPlayerIdentities, getClaimsForUser, getDefaultPlayerClaimId, type ApprovedPlayerIdentity, type PlayerClaim } from '@/lib/player-claims';
 import { getLatestChallongeClaimForUser, type ChallongeClaim } from '@/lib/challonge-claims';
 import { getUserStatus } from '@/lib/presence';
-import { TOURS } from '@/lib/wtsl';
+import { TOURS, tourLabel } from '@/lib/wtsl';
 import PageHero from '@/components/PageHero';
 import PlayerClaimForm from '@/components/PlayerClaimForm';
 import ChallongeClaimForm from '@/components/ChallongeClaimForm';
 import StatusPicker from '@/components/StatusPicker';
+import DefaultPlayerIdentityPicker from '@/components/DefaultPlayerIdentityPicker';
 
 export const dynamic = 'force-dynamic';
 export const metadata: Metadata = { title: 'Your profile' };
@@ -18,10 +19,17 @@ export const metadata: Metadata = { title: 'Your profile' };
 export default async function Profile() {
   const u = await getSession();
   if (!u) redirect('/api/auth/discord');
-  const claims = await safe(() => getClaimsForUser(u.id), [] as PlayerClaim[]);
+  const [claims, approvedIdentities, defaultPlayerClaimId, challongeClaim, status] = await Promise.all([
+    safe(() => getClaimsForUser(u.id), [] as PlayerClaim[]),
+    safe(() => getApprovedPlayerIdentities(u.id), [] as ApprovedPlayerIdentity[]),
+    safe(() => getDefaultPlayerClaimId(u.id), null as string | null),
+    safe(() => getLatestChallongeClaimForUser(u.id), null as ChallongeClaim | null),
+    safe(() => getUserStatus(u.id), 'online' as const),
+  ]);
   const claimByTour = new Map(claims.map((c) => [c.tour, c]));
-  const challongeClaim = await safe(() => getLatestChallongeClaimForUser(u.id), null as ChallongeClaim | null);
-  const status = await safe(() => getUserStatus(u.id), 'online' as const);
+  const selectedDefaultClaimId = approvedIdentities.some((c) => c.id === defaultPlayerClaimId)
+    ? defaultPlayerClaimId!
+    : approvedIdentities[0]?.id ?? '';
 
   return (
     <>
@@ -46,6 +54,20 @@ export default async function Profile() {
             every tour you play (ATP, WTA, Doubles, Coop, Created) independently. An admin must approve
             each claim before it appears anywhere publicly.
           </p>
+          {approvedIdentities.length > 0 && (
+            <div className='verify-tour-row'>
+              <h4 className='display' style={{ fontSize: 17, marginBottom: 6 }}>Discussion identity</h4>
+              <p>Tour-specific discussions use your verified identity for that tour when available. Other discussions use your default name below. Your displayed WTSL name links to your player profile.</p>
+              {approvedIdentities.length > 1 ? (
+                <DefaultPlayerIdentityPicker
+                  options={approvedIdentities.map((identity) => ({ id: identity.id, label: `${identity.player_name} · ${tourLabel(identity.tour)}` }))}
+                  initialId={selectedDefaultClaimId}
+                />
+              ) : (
+                <p>Default name: <b>{approvedIdentities[0].player_name}</b> · {tourLabel(approvedIdentities[0].tour)}</p>
+              )}
+            </div>
+          )}
           {TOURS.map((t) => {
             const claim = claimByTour.get(t.code);
             return (
