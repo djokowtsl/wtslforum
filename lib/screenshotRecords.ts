@@ -56,10 +56,10 @@ export async function getScreenshotRecordFilterOptions(tour: ScreenshotTour) {
     return { players: [], opponents: [], tournaments: [], years: [], rankingListAvailable: false };
   }
   const [playerRows, opponentRows, tournamentRows, yearRows] = await Promise.all([
-    sql`SELECT DISTINCT BTRIM(r.player_name) AS value FROM screenshot_match_records AS r JOIN screenshot_record_sync_state AS active ON active.tour = r.tour AND active.active_sync_id = r.sync_id WHERE r.tour = ${tour} AND LOWER(BTRIM(r.player_name)) = ANY(${rankedPlayerNames}) ORDER BY value`,
-    sql`SELECT DISTINCT BTRIM(r.opponent_name) AS value FROM screenshot_match_records AS r JOIN screenshot_record_sync_state AS active ON active.tour = r.tour AND active.active_sync_id = r.sync_id WHERE r.tour = ${tour} AND LOWER(BTRIM(r.player_name)) = ANY(${rankedPlayerNames}) AND BTRIM(r.opponent_name) <> '' ORDER BY value`,
-    sql`SELECT DISTINCT BTRIM(r.tournament_name) AS value FROM screenshot_match_records AS r JOIN screenshot_record_sync_state AS active ON active.tour = r.tour AND active.active_sync_id = r.sync_id WHERE r.tour = ${tour} AND LOWER(BTRIM(r.player_name)) = ANY(${rankedPlayerNames}) AND BTRIM(r.tournament_name) <> '' ORDER BY value`,
-    sql`SELECT DISTINCT EXTRACT(YEAR FROM r.played_on)::int AS value FROM screenshot_match_records AS r JOIN screenshot_record_sync_state AS active ON active.tour = r.tour AND active.active_sync_id = r.sync_id WHERE r.tour = ${tour} AND LOWER(BTRIM(r.player_name)) = ANY(${rankedPlayerNames}) AND r.played_on IS NOT NULL ORDER BY value DESC`,
+    sql`SELECT DISTINCT BTRIM(r.player_name) AS value FROM screenshot_match_records AS r JOIN screenshot_record_sync_state AS active ON active.tour = r.tour AND active.active_sync_id = r.sync_id WHERE r.tour = ${tour} AND LOWER(BTRIM(r.player_name)) = ANY(${rankedPlayerNames}) AND LOWER(BTRIM(r.opponent_name)) = ANY(${rankedPlayerNames}) ORDER BY value`,
+    sql`SELECT DISTINCT BTRIM(r.opponent_name) AS value FROM screenshot_match_records AS r JOIN screenshot_record_sync_state AS active ON active.tour = r.tour AND active.active_sync_id = r.sync_id WHERE r.tour = ${tour} AND LOWER(BTRIM(r.player_name)) = ANY(${rankedPlayerNames}) AND LOWER(BTRIM(r.opponent_name)) = ANY(${rankedPlayerNames}) AND BTRIM(r.opponent_name) <> '' ORDER BY value`,
+    sql`SELECT DISTINCT BTRIM(r.tournament_name) AS value FROM screenshot_match_records AS r JOIN screenshot_record_sync_state AS active ON active.tour = r.tour AND active.active_sync_id = r.sync_id WHERE r.tour = ${tour} AND LOWER(BTRIM(r.player_name)) = ANY(${rankedPlayerNames}) AND LOWER(BTRIM(r.opponent_name)) = ANY(${rankedPlayerNames}) AND BTRIM(r.tournament_name) <> '' ORDER BY value`,
+    sql`SELECT DISTINCT EXTRACT(YEAR FROM r.played_on)::int AS value FROM screenshot_match_records AS r JOIN screenshot_record_sync_state AS active ON active.tour = r.tour AND active.active_sync_id = r.sync_id WHERE r.tour = ${tour} AND LOWER(BTRIM(r.player_name)) = ANY(${rankedPlayerNames}) AND LOWER(BTRIM(r.opponent_name)) = ANY(${rankedPlayerNames}) AND r.played_on IS NOT NULL ORDER BY value DESC`,
   ]);
   const values = (rows: unknown[]) => (rows as any[]).map((row) => String(row.value ?? '').trim()).filter(Boolean);
   return {
@@ -237,6 +237,7 @@ export async function getScreenshotRecordPage(filters: ScreenshotRecordFilters) 
       ON active.tour = r.tour AND active.active_sync_id = r.sync_id
     WHERE r.tour = ${filters.tour}
       AND (NOT ${filters.rankedOnly} OR LOWER(BTRIM(r.player_name)) = ANY(${rankedPlayerNames}))
+      AND (NOT ${filters.rankedOnly} OR LOWER(BTRIM(r.opponent_name)) = ANY(${rankedPlayerNames}))
       AND (${filters.player} = '' OR LOWER(r.player_name) = LOWER(${filters.player}))
       AND (${filters.opponent} = '' OR LOWER(r.opponent_name) = LOWER(${filters.opponent}))
       AND (${filters.tournament} = '' OR r.tournament_name ILIKE '%' || ${filters.tournament} || '%')
@@ -264,6 +265,7 @@ export async function getScreenshotRecordPage(filters: ScreenshotRecordFilters) 
       ON active.tour = r.tour AND active.active_sync_id = r.sync_id
     WHERE r.tour = ${filters.tour}
       AND (NOT ${filters.rankedOnly} OR LOWER(BTRIM(r.player_name)) = ANY(${rankedPlayerNames}))
+      AND (NOT ${filters.rankedOnly} OR LOWER(BTRIM(r.opponent_name)) = ANY(${rankedPlayerNames}))
       AND (${filters.player} = '' OR LOWER(r.player_name) = LOWER(${filters.player}))
       AND (${filters.opponent} = '' OR LOWER(r.opponent_name) = LOWER(${filters.opponent}))
       AND (${filters.tournament} = '' OR r.tournament_name ILIKE '%' || ${filters.tournament} || '%')
