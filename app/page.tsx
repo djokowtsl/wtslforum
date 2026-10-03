@@ -10,6 +10,7 @@ import { getSession } from '@/lib/auth';
 import { fmtDate, timeAgo } from '@/lib/format';
 import { discordAvatar } from '@/lib/auth';
 import { FixtureCard, ResultCard } from '@/components/MatchCards';
+import ForumAvatar from '@/components/ForumAvatar';
 
 export const dynamic = 'force-dynamic';
 
@@ -100,7 +101,13 @@ export default async function Home({ searchParams }: { searchParams: Promise<{ e
               <div className="empty"><strong>No discussions yet</strong>Be the first to start a conversation about the tour.{u ? <><br /><Link className="btn btn-primary btn-sm" href="/discussions/new">Start a discussion</Link></> : <><br /><a className="btn btn-discord btn-sm" href="/api/auth/discord">Log in with Discord</a></>}</div>
             ) : topics.map((t: any) => (
               <Link className="topic" href={'/discussions/' + t.id} key={t.id}>
-                <img className="av" src={discordAvatar(t.avatar, t.author || 'W')} alt="" />
+                <ForumAvatar
+  size="topic"
+  src={t.tournament_logo || (!t.author ? '/brand/wtsl-logo-200.png' : discordAvatar(t.avatar, t.author || 'W'))}
+  hasTournamentLogo={!!t.tournament_logo}
+  tournamentName={t.title}
+  isCommunity={!t.author}
+/>
                 <div>
                   <div className="topic-title">{t.title}</div>
                   <div className="topic-meta">{t.category && <span className="pill">{t.category}</span>}<span>{t.author || 'WTSL'}</span><span>{timeAgo(t.created_at)}</span></div>
