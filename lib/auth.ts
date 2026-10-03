@@ -48,6 +48,8 @@ export async function upsertDiscordUser(u: { id: string; username: string; globa
   return { id: String(r.id), discordId: r.discord_id, username: r.display_name || r.username, avatar: r.avatar_url, isAdmin: Boolean(r.is_admin) } as SessionUser;
 }
 
+export { canModerateComments } from './commentPermissions';
+
 export function discordAvatar(url: string | null | undefined, name: string) {
   return url || `https://ui-avatars.com/api/?name=${encodeURIComponent(name)}&background=0c1a35&color=b0f43b&bold=true`;
 }
