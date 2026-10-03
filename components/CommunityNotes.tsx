@@ -133,7 +133,6 @@ export default function CommunityNotes({
   }
 
   function renderNote(note: CommunityNote, inPrivateReview: boolean) {
-    const isAuthor = viewerId !== null && String(note.author_id) === viewerId;
     return (
       <article className={note.has_consensus ? 'community-note' : 'community-note community-note-proposed'} key={note.id}>
         <div className="community-note-heading">
@@ -141,8 +140,7 @@ export default function CommunityNotes({
           <span>{note.helpful_count}/{note.rating_count} helpful</span>
         </div>
         <div className="community-note-body"><RichText text={note.body} /></div>
-        <p className="community-note-author">Submitted by {note.author || 'Member'}</p>
-        {inPrivateReview && viewerId && !isAuthor && (
+        {inPrivateReview && viewerId && !note.viewer_is_author && (
           <div className="community-note-actions">
             <button type="button" className="btn btn-sm btn-ghost" disabled={busyId === note.id} aria-pressed={note.viewer_vote === true} onClick={() => rate(note.id, true)}>Helpful</button>
             <button type="button" className="btn btn-sm btn-ghost" disabled={busyId === note.id} aria-pressed={note.viewer_vote === false} onClick={() => rate(note.id, false)}>Not helpful</button>
