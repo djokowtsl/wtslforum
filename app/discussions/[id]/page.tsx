@@ -4,9 +4,10 @@ import type { Metadata } from 'next';
 import { safe } from '@/lib/db';
 import { getTopic, getThreadReactions } from '@/lib/queries';
 import { resolveMentions } from '@/lib/messages';
-import { getSession, discordAvatar } from '@/lib/auth';
+import { getSession, discordAvatar, canModerateComments } from '@/lib/auth';
 import { fmtDateTime } from '@/lib/format';
 import ReplyForm from '@/components/ReplyForm';
+import EditableReply from '@/components/EditableReply';
 import RichText from '@/components/RichText';
 import ReactionBar from '@/components/ReactionBar';
 import { StatusDot } from '@/components/StatusDot';
@@ -28,6 +29,7 @@ export default async function Thread({ params }: { params: Promise<{ id: string 
   const { topic, replies } = data;
   const topicAuthorHref = officialAuthorHref(topic);
   const u = await getSession();
+  const canModerateReplies = canModerateComments(u);
   const replyIds = replies.map((r: any) => Number(r.id));
   const reactions = await safe(() => getThreadReactions(Number(topic.id), replyIds, u?.id ?? null), { topic: [], replies: {} as Record<number, any> });
   const allUsernames = [topic.body, ...replies.map((r: any) => r.body)].flatMap((b: string) => [...(b || '').matchAll(/@(\w+)/g)].map((m) => m[1]));
@@ -69,6 +71,7 @@ export default async function Thread({ params }: { params: Promise<{ id: string 
 
       {replies.map((r: any) => {
         const replyAuthorHref = officialAuthorHref(r);
+        const ownsReply = !!u && String(r.author_id) === String(u.id);
         return (
           <article className='post' key={r.id}>
             <div className='post-user'>
@@ -79,7 +82,19 @@ export default async function Thread({ params }: { params: Promise<{ id: string 
                 <Link href={`/messages/${r.author_id}`} className='pill'>Message</Link>
               )}
             </div>
-            <div className='post-content'><div className='post-date'>{fmtDateTime(r.created_at)}</div><RichText text={r.body} mentionables={mentionables} /><ReactionBar replyId={Number(r.id)} initial={reactions.replies[Number(r.id)] || []} signedIn={!!u} /></div>
+            <EditableReply
+              replyId={Number(r.id)}
+              body={r.body}
+              canEdit={ownsReply}
+              canDelete={ownsReply || canModerateReplies}
+              createdAt={r.created_at}
+              updatedAt={r.updated_at || r.created_at}
+            >
+              <>
+                <RichText text={r.body} mentionables={mentionables} />
+                <ReactionBar replyId={Number(r.id)} initial={reactions.replies[Number(r.id)] || []} signedIn={!!u} />
+              </>
+            </EditableReply>
           </article>
         );
       })}
