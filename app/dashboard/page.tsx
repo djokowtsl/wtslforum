@@ -10,6 +10,7 @@ import { buildPlayerSeasonHighlights, type PlayerSeasonHighlights } from '@/lib/
 import PlayerSeasonHighlightsPanel from '@/components/PlayerSeasonHighlights';
 import { wtslCore } from '@/lib/wtsl-core';
 import { tourLabel } from '@/lib/wtsl';
+import { fetchWTSLWtaMatchResults } from '@/lib/wtslSeasonResults';
 import { timeAgo } from '@/lib/format';
 import PageHero from '@/components/PageHero';
 import RatingMethodNote from '@/components/RatingMethodNote';
@@ -30,6 +31,7 @@ type VerifiedPlayerCard = {
   insights: PlayerInsightReport;
   ratings: BotRatingStatsRow | null;
   season: PlayerSeasonHighlights;
+  seasonUnavailable: boolean;
 };
 
 export default async function Dashboard() {
@@ -58,9 +60,21 @@ export default async function Dashboard() {
   const approved = claims.filter((c: any) => c.status === 'approved');
   const pending = claims.filter((c: any) => c.status === 'pending');
   const seasonYear = new Date().getUTCFullYear();
-  const seasonResults = approved.length
-    ? await safe(() => wtslCore.results(), [] as unknown[])
-    : [];
+  const hasWtaClaims = approved.some((c: any) => c.tour === 'TE4_(F)');
+  const [coreSeasonResults, wtaSeasonResult] = await Promise.all([
+    approved.length
+      ? safe(() => wtslCore.results(), [] as unknown[])
+      : Promise.resolve([] as unknown[]),
+    hasWtaClaims
+      ? fetchWTSLWtaMatchResults()
+          .then((rows) => ({ rows: rows as unknown[], unavailable: false }))
+          .catch((error: unknown) => {
+            console.error('WTSL WTA season results unavailable:', error);
+            return { rows: [] as unknown[], unavailable: true };
+          })
+      : Promise.resolve({ rows: [] as unknown[], unavailable: false }),
+  ]);
+  const seasonResults = [...coreSeasonResults, ...wtaSeasonResult.rows];
 
   const playerCards: VerifiedPlayerCard[] = await Promise.all(
     approved.map(async (c: any) => {
@@ -83,6 +97,7 @@ export default async function Dashboard() {
         insights,
         ratings: ratingRows[0] ?? null,
         season: buildPlayerSeasonHighlights(seasonResults, c.player_name, c.tour, seasonYear, c.wtsl_player_id),
+        seasonUnavailable: c.tour === 'TE4_(F)' && wtaSeasonResult.unavailable,
       };
     })
   );
@@ -148,7 +163,7 @@ export default async function Dashboard() {
                     <div><strong>{p.favorite_character}</strong><small>Most used character ({p.favorite_character_picks ?? 0}/{p.character_matches ?? 0} matches)</small></div>
                   </div>
                 )}
-                <PlayerSeasonHighlightsPanel highlights={card.season} />
+                <PlayerSeasonHighlightsPanel highlights={card.season} unavailable={card.seasonUnavailable} />
                 <div className="player-record-grid">
                   {card.ratings ? BOT_RATING_METRICS.map((metric) => {
                     const value = card.ratings?.ratings[metric.key] ?? null;
