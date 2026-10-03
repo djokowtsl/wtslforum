@@ -32,11 +32,6 @@ export default function ScreenshotStatsExplorer({
   return (
     <section className="screenshot-explorer" aria-label="Screenshot statistics explorer">
       <header className="screenshot-explorer-heading">
-        <div>
-          <span className="screenshot-explorer-kicker">PLAYER DATA / MATCH ANALYSIS</span>
-          <h2>About this snapshot</h2>
-          <p>Ask a question about the published player values. Answers use the reconciled ATP and WTA singles snapshot.</p>
-        </div>
         <div className="screenshot-explorer-stamp" aria-label="Published snapshot">
           <span className="screenshot-explorer-stamp-mark" aria-hidden="true">W</span>
           <span><b>Published</b><small>reconciled snapshot</small></span>
@@ -47,7 +42,7 @@ export default function ScreenshotStatsExplorer({
         <div className="screenshot-question-intro">
           <span className="screenshot-section-index">01 / ASK</span>
           <div>
-            <h3 id="screenshot-question-title">Ask the snapshot</h3>
+            <h3 id="screenshot-question-title">Ask a Question</h3>
             <p>Answers are calculated from the published player values. Name ATP or WTA in your question to choose a tour.</p>
           </div>
         </div>

@@ -2,6 +2,7 @@
 
 import { useEffect, useState, type FormEvent } from 'react';
 import { SCREENSHOT_METRIC_FIELDS, SCREENSHOT_RECORD_FIELDS } from '@/lib/screenshotRecordFields';
+import SearchableDropdown from '@/components/SearchableDropdown';
 import type { ScreenshotStatsTour } from '@/lib/screenshotStatsQuestions';
 
 type Filters = {
@@ -34,6 +35,20 @@ type PageResult = {
   page: number;
   pageSize: number;
   rankingListAvailable: boolean;
+};
+
+type FilterOptions = {
+  players: string[];
+  opponents: string[];
+  tournaments: string[];
+  years: string[];
+};
+
+const EMPTY_FILTER_OPTIONS: FilterOptions = {
+  players: [],
+  opponents: [],
+  tournaments: [],
+  years: [],
 };
 
 const EMPTY_RESULT: PageResult = {
@@ -75,8 +90,45 @@ export default function ScreenshotRecordsViewer({
   const [applied, setApplied] = useState<Filters>(() => initialFilters(initialTour));
   const [page, setPage] = useState(1);
   const [result, setResult] = useState<PageResult>(EMPTY_RESULT);
+  const [filterOptions, setFilterOptions] = useState<FilterOptions>(EMPTY_FILTER_OPTIONS);
+  const [optionsLoading, setOptionsLoading] = useState(true);
+  const [optionsError, setOptionsError] = useState('');
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
+
+  useEffect(() => {
+    const controller = new AbortController();
+
+    async function loadFilterOptions() {
+      setOptionsLoading(true);
+      setOptionsError('');
+      try {
+        const response = await fetch('/api/screenshot-records/options?tour=' + encodeURIComponent(draft.tour), {
+          cache: 'no-store',
+          signal: controller.signal,
+        });
+        if (!response.ok) throw new Error('Request failed');
+        const options = await response.json() as FilterOptions;
+        if (
+          !Array.isArray(options.players)
+          || !Array.isArray(options.opponents)
+          || !Array.isArray(options.tournaments)
+          || !Array.isArray(options.years)
+        ) throw new Error('Invalid filter options');
+        setFilterOptions(options);
+      } catch {
+        if (!controller.signal.aborted) {
+          setFilterOptions(EMPTY_FILTER_OPTIONS);
+          setOptionsError('Search suggestions could not be loaded. You can still type a value.');
+        }
+      } finally {
+        if (!controller.signal.aborted) setOptionsLoading(false);
+      }
+    }
+
+    void loadFilterOptions();
+    return () => controller.abort();
+  }, [draft.tour]);
 
   useEffect(() => {
     const controller = new AbortController();
@@ -143,9 +195,9 @@ export default function ScreenshotRecordsViewer({
     <section className="screenshot-records" aria-labelledby="screenshot-records-title">
       <div className="screenshot-records-heading">
         <div>
-          <span className="screenshot-explorer-kicker">Workbook data</span>
+          <span className="screenshot-explorer-kicker">WTSL Data Store</span>
           <h2 id="screenshot-records-title">Individual screenshot rows</h2>
-          <p>Search match records from the ATP and WTA workbook. Only rows whose Player appears on the matching WTSL rankings are shown.</p>
+          <p>Search match records from the ATP and WTA screenshots database. Only rows where the player matches an official name from the WTSL rankings are displayed.</p>
         </div>
         <div className="screenshot-records-count" aria-live="polite">
           <strong>{error ? '—' : result.total.toLocaleString()}</strong>
@@ -161,29 +213,50 @@ export default function ScreenshotRecordsViewer({
             <option value="TE4_(F)">WTA</option>
           </select>
         </label>
-        <label className="screenshot-record-filter">
-          <span>Player (exact)</span>
-          <input value={draft.player} onChange={(event) => change('player', event.target.value)} placeholder="Exact player name" />
-        </label>
-        <label className="screenshot-record-filter">
-          <span>Opponent (exact)</span>
-          <input value={draft.opponent} onChange={(event) => change('opponent', event.target.value)} placeholder="Exact opponent name" />
-        </label>
-        <label className="screenshot-record-filter">
-          <span>Tournament</span>
-          <input value={draft.tournament} onChange={(event) => change('tournament', event.target.value)} placeholder="Tournament name" />
-        </label>
-        <label className="screenshot-record-filter screenshot-record-filter--short">
-          <span>Year</span>
-          <input
-            inputMode="numeric"
-            maxLength={4}
-            pattern="[0-9]{4}"
-            value={draft.year}
-            onChange={(event) => change('year', event.target.value.replace(/\D/g, '').slice(0, 4))}
-            placeholder="Any"
+        <div className="screenshot-record-filter">
+          <label htmlFor="screenshot-player-filter">Player (exact)</label>
+          <SearchableDropdown
+            id="screenshot-player-filter"
+            options={filterOptions.players}
+            value={draft.player}
+            onChange={(value) => change('player', value)}
+            placeholder={optionsLoading ? 'Loading players…' : 'Search player names'}
+            loading={optionsLoading}
           />
-        </label>
+        </div>
+        <div className="screenshot-record-filter">
+          <label htmlFor="screenshot-opponent-filter">Opponent (exact)</label>
+          <SearchableDropdown
+            id="screenshot-opponent-filter"
+            options={filterOptions.opponents}
+            value={draft.opponent}
+            onChange={(value) => change('opponent', value)}
+            placeholder={optionsLoading ? 'Loading opponents…' : 'Search opponent names'}
+            loading={optionsLoading}
+          />
+        </div>
+        <div className="screenshot-record-filter">
+          <label htmlFor="screenshot-tournament-filter">Tournament</label>
+          <SearchableDropdown
+            id="screenshot-tournament-filter"
+            options={filterOptions.tournaments}
+            value={draft.tournament}
+            onChange={(value) => change('tournament', value)}
+            placeholder={optionsLoading ? 'Loading tournaments…' : 'Search tournaments'}
+            loading={optionsLoading}
+          />
+        </div>
+        <div className="screenshot-record-filter screenshot-record-filter--short">
+          <label htmlFor="screenshot-year-filter">Year</label>
+          <SearchableDropdown
+            id="screenshot-year-filter"
+            options={filterOptions.years}
+            value={draft.year}
+            onChange={(value) => change('year', value.replace(/\D/g, '').slice(0, 4))}
+            placeholder={optionsLoading ? 'Loading years…' : 'Search years'}
+            loading={optionsLoading}
+          />
+        </div>
         <label className="screenshot-record-filter">
           <span>Workbook status</span>
           <select value={draft.status} onChange={(event) => change('status', event.target.value)}>
@@ -218,6 +291,7 @@ export default function ScreenshotRecordsViewer({
           <button className="screenshot-record-reset" type="button" onClick={resetFilters}>Reset</button>
         </div>
       </form>
+      {optionsError ? <p className="screenshot-records-options-error" role="status">{optionsError}</p> : null}
 
       <div className="screenshot-records-summary" aria-live="polite">
         {loading
@@ -292,9 +366,6 @@ export default function ScreenshotRecordsViewer({
           Next
         </button>
       </div>
-      <p className="screenshot-records-note">
-        Rows and status labels come from the workbook. Internal notes, review reasons, screenshot image names, and player-link IDs are not published.
-      </p>
     </section>
   );
 }
