@@ -1,26 +1,38 @@
 import { sql } from './db';
+import {
+  ONLINE_PRESENCE_WINDOW_MINUTES,
+  PRESENCE_WRITE_INTERVAL_SECONDS,
+  resolveEffectiveUserStatus,
+  type UserStatus,
+} from './presencePolicy';
 
-/** Member-set presence — there's no automatic online/offline detection, members just pick one. */
-export const STATUSES = ['online', 'away', 'busy', 'offline'] as const;
-export type UserStatus = (typeof STATUSES)[number];
-
-export const STATUS_LABELS: Record<UserStatus, string> = {
-  online: 'Online',
-  away: 'Away',
-  busy: 'Busy',
-  offline: 'Offline',
-};
-
-export function isUserStatus(v: unknown): v is UserStatus {
-  return typeof v === 'string' && (STATUSES as readonly string[]).includes(v);
-}
+export { isUserStatus, STATUSES, STATUS_LABELS } from './presencePolicy';
+export type { UserStatus } from './presencePolicy';
 
 export async function setUserStatus(userId: string | number, status: UserStatus) {
-  await sql`UPDATE users SET status=${status}, updated_at=NOW() WHERE id=${Number(userId)}`;
+  await sql`
+    UPDATE users
+    SET status=${status},
+      last_active_at=CASE WHEN ${status}='online' THEN NOW() ELSE last_active_at END,
+      updated_at=NOW()
+    WHERE id=${Number(userId)}`;
+}
+
+/** Refresh activity for online members; rate-limit writes across tabs. */
+export async function recordPresenceActivity(userId: string | number) {
+  await sql`
+    UPDATE users
+    SET last_active_at=NOW()
+    WHERE id=${Number(userId)} AND status='online'
+      AND (last_active_at IS NULL OR last_active_at < NOW() - ${PRESENCE_WRITE_INTERVAL_SECONDS} * INTERVAL '1 second')`;
 }
 
 export async function getUserStatus(userId: string | number): Promise<UserStatus> {
-  const rows = await sql`SELECT status FROM users WHERE id=${Number(userId)} LIMIT 1`;
-  const s = rows[0]?.status;
-  return isUserStatus(s) ? s : 'online';
+  const rows = await sql`
+    SELECT status,
+      last_active_at >= NOW() - ${ONLINE_PRESENCE_WINDOW_MINUTES} * INTERVAL '1 minute' AS recently_active
+    FROM users
+    WHERE id=${Number(userId)}
+    LIMIT 1`;
+  return resolveEffectiveUserStatus(rows[0]?.status, Boolean(rows[0]?.recently_active));
 }
