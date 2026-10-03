@@ -1,13 +1,15 @@
 import type { PlayerSeasonHighlights as Highlights } from '@/lib/playerSeasonHighlights';
 
-export default function PlayerSeasonHighlights({ highlights }: { highlights: Highlights }) {
+export default function PlayerSeasonHighlights({ highlights, unavailable = false }: { highlights: Highlights; unavailable?: boolean }) {
   return (
     <section className="season-highlights" aria-label={`${highlights.year} season highlights`}>
       <div className="season-highlights-head">
         <h3>Season highlights</h3>
         <span>{highlights.year} · official WTSL results</span>
       </div>
-      {highlights.matches === 0 ? (
+      {unavailable ? (
+        <p className="season-highlights-empty">Official WTA match results are unavailable right now. Please try again later.</p>
+      ) : highlights.matches === 0 ? (
         <p className="season-highlights-empty">No completed year-to-date matches are available for this player.</p>
       ) : (
         <>
