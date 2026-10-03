@@ -104,7 +104,7 @@ export default async function Leaderboard({ searchParams }: { searchParams: Prom
         {isRating && <RatingMethodNote />}
         <div className="section-head">
           <div>
-            <h2 className="display">{isRating ? 'Player ratings' : screenshotMetric ? 'Screenshot statistics' : 'Player statistics'}</h2>
+            <h2 className="display">Player Statistics</h2>
             <span>{eligibilityLabel}</span>
           </div>
           <LeaderboardMetricPicker current={metric} tour={tour} metrics={FORUM_METRICS} />
