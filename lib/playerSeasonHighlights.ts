@@ -138,6 +138,10 @@ function roundDepth(value: unknown): number {
   if (/\b(?:round of )?32\b|\br32\b/.test(round)) return 3;
   if (/\b(?:round of )?64\b|\br64\b/.test(round)) return 2;
   if (/\b(?:round of )?128\b|\br128\b/.test(round)) return 1;
+  if (/\b(?:first|1st) round\b/.test(round)) return 1;
+  if (/\b(?:second|2nd) round\b/.test(round)) return 2;
+  if (/\b(?:third|3rd) round\b/.test(round)) return 3;
+  if (/\b(?:fourth|4th) round\b/.test(round)) return 4;
   if (/\bfinal\b|\bfinals\b|\bf\b/.test(round)) return 7;
   return 0;
 }
@@ -145,7 +149,7 @@ function roundDepth(value: unknown): number {
 function tournamentLabel(value: unknown): string {
   return String(value ?? 'Unnamed tournament')
     .trim()
-    .replace(/^Tennis Elbow 4\s*\([^)]*\)\s*-\s*/i, '')
+    .replace(/^Tennis Elbow 4\s*\([^)]*\)\s*(?:-\s*)?/i, '')
     .replace(/\s+\d{4}$/, '')
     .trim() || 'Unnamed tournament';
 }
@@ -229,6 +233,8 @@ export function buildPlayerSeasonHighlights(
     const playerWon = winnerSide === playerSide;
     if (playerWon) wins += 1;
     else losses += 1;
+
+    if (/losers|consolation/i.test(String(row.round ?? ''))) continue;
 
     const label = tournamentLabel(eventName);
     const key = eventName.trim().toLowerCase() || label.toLowerCase();
