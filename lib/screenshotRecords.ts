@@ -36,6 +36,41 @@ export type ScreenshotRecordFilters = {
   rankedOnly: boolean;
 };
 
+async function getRankedPlayerNames(tour: ScreenshotTour): Promise<string[]> {
+  const rankingRows = await sql`SELECT name FROM wtsl_players WHERE tour = ${tour}`;
+  const rankedPlayerNames = [...new Set((rankingRows as any[]).flatMap(({ name }) => {
+    const fullName = String(name ?? '').trim();
+    const alias = fullName.match(/\s+aka\s+(.+)$/i)?.[1]?.trim() ?? '';
+    const primaryName = fullName.replace(/\s+aka\s+.*$/i, '').trim();
+    return [fullName, primaryName, alias, normalizePlayerName(fullName), normalizePlayerName(primaryName), normalizePlayerName(alias)]
+      .map((value) => value.trim().toLowerCase())
+      .filter(Boolean);
+  }))];
+  return rankedPlayerNames;
+}
+
+export async function getScreenshotRecordFilterOptions(tour: ScreenshotTour) {
+  await ensureScreenshotRecordTables();
+  const rankedPlayerNames = await getRankedPlayerNames(tour);
+  if (rankedPlayerNames.length === 0) {
+    return { players: [], opponents: [], tournaments: [], years: [], rankingListAvailable: false };
+  }
+  const [playerRows, opponentRows, tournamentRows, yearRows] = await Promise.all([
+    sql`SELECT DISTINCT BTRIM(r.player_name) AS value FROM screenshot_match_records AS r JOIN screenshot_record_sync_state AS active ON active.tour = r.tour AND active.active_sync_id = r.sync_id WHERE r.tour = ${tour} AND LOWER(BTRIM(r.player_name)) = ANY(${rankedPlayerNames}) ORDER BY value`,
+    sql`SELECT DISTINCT BTRIM(r.opponent_name) AS value FROM screenshot_match_records AS r JOIN screenshot_record_sync_state AS active ON active.tour = r.tour AND active.active_sync_id = r.sync_id WHERE r.tour = ${tour} AND LOWER(BTRIM(r.player_name)) = ANY(${rankedPlayerNames}) AND BTRIM(r.opponent_name) <> '' ORDER BY value`,
+    sql`SELECT DISTINCT BTRIM(r.tournament_name) AS value FROM screenshot_match_records AS r JOIN screenshot_record_sync_state AS active ON active.tour = r.tour AND active.active_sync_id = r.sync_id WHERE r.tour = ${tour} AND LOWER(BTRIM(r.player_name)) = ANY(${rankedPlayerNames}) AND BTRIM(r.tournament_name) <> '' ORDER BY value`,
+    sql`SELECT DISTINCT EXTRACT(YEAR FROM r.played_on)::int AS value FROM screenshot_match_records AS r JOIN screenshot_record_sync_state AS active ON active.tour = r.tour AND active.active_sync_id = r.sync_id WHERE r.tour = ${tour} AND LOWER(BTRIM(r.player_name)) = ANY(${rankedPlayerNames}) AND r.played_on IS NOT NULL ORDER BY value DESC`,
+  ]);
+  const values = (rows: unknown[]) => (rows as any[]).map((row) => String(row.value ?? '').trim()).filter(Boolean);
+  return {
+    players: values(playerRows),
+    opponents: values(opponentRows),
+    tournaments: values(tournamentRows),
+    years: values(yearRows),
+    rankingListAvailable: true,
+  };
+}
+
 let tablesReady = false;
 
 function publicRecordData(value: unknown): Record<string, string | number> {
@@ -185,17 +220,7 @@ export async function getScreenshotRecordPage(filters: ScreenshotRecordFilters) 
   await ensureScreenshotRecordTables();
   const pageSize = 50;
   const offset = (filters.page - 1) * pageSize;
-  const rankingRows = filters.rankedOnly
-    ? await sql`SELECT name FROM wtsl_players WHERE tour = ${filters.tour}`
-    : [];
-  const rankedPlayerNames = [...new Set((rankingRows as any[]).flatMap(({ name }) => {
-    const fullName = String(name ?? '').trim();
-    const alias = fullName.match(/\s+aka\s+(.+)$/i)?.[1]?.trim() ?? '';
-    const primaryName = fullName.replace(/\s+aka\s+.*$/i, '').trim();
-    return [fullName, primaryName, alias, normalizePlayerName(fullName), normalizePlayerName(primaryName), normalizePlayerName(alias)]
-      .map((value) => value.trim().toLowerCase())
-      .filter(Boolean);
-  }))];
+  const rankedPlayerNames = filters.rankedOnly ? await getRankedPlayerNames(filters.tour) : [];
   if (filters.rankedOnly && rankedPlayerNames.length === 0) {
     return {
       records: [],
