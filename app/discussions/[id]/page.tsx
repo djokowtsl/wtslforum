@@ -10,9 +10,12 @@ import ReplyForm from '@/components/ReplyForm';
 import EditableReply from '@/components/EditableReply';
 import RichText from '@/components/RichText';
 import ReactionBar from '@/components/ReactionBar';
+import CommunityNotes from '@/components/CommunityNotes';
+import SpoilerCorrection from '@/components/SpoilerCorrection';
 import { StatusDot } from '@/components/StatusDot';
 import AdminTopicControls from '@/components/AdminTopicControls';
 import ForumAvatar from '@/components/ForumAvatar';
+import { getThreadCommunityNotes, type CommunityNote } from '@/lib/communityNotes';
 
 export const dynamic = 'force-dynamic';
 export const metadata: Metadata = { title: 'Discussion' };
@@ -32,6 +35,10 @@ export default async function Thread({ params }: { params: Promise<{ id: string 
   const canModerateReplies = canModerateComments(u);
   const replyIds = replies.map((r: any) => Number(r.id));
   const reactions = await safe(() => getThreadReactions(Number(topic.id), replyIds, u?.id ?? null), { topic: [], replies: {} as Record<number, any> });
+  const notesByTarget = await safe(
+    () => getThreadCommunityNotes(Number(topic.id), replyIds, u?.id ?? null),
+    new Map<string, CommunityNote[]>(),
+  );
   const allUsernames = [topic.body, ...replies.map((r: any) => r.body)].flatMap((b: string) => [...(b || '').matchAll(/@(\w+)/g)].map((m) => m[1]));
   const mentionables = await safe(() => resolveMentions(allUsernames), {});
 
@@ -61,12 +68,20 @@ export default async function Thread({ params }: { params: Promise<{ id: string 
             isCommunity={!topic.author}
           />
           <strong>{topic.author && <StatusDot status={topic.author_status} />} {topicAuthorHref ? <Link className="post-author-link" href={topicAuthorHref}>{topic.author}</Link> : topic.author || 'Community'}</strong>
+          {topic.author_is_admin && <span className="pill cyan role">Admin</span>}
+          {!topic.author_is_admin && topic.author_is_moderator && <span className="pill cyan role">Moderator</span>}
           <span className="pill role">Original poster</span>
           {u && topic.author_id && Number(topic.author_id) !== Number(u.id) && (
             <Link href={`/messages/${topic.author_id}`} className="pill">Message</Link>
           )}
         </div>
-        <div className="post-content"><div className="post-date">{fmtDateTime(topic.created_at)}</div><RichText text={topic.body} mentionables={mentionables} /><ReactionBar topicId={Number(topic.id)} initial={reactions.topic} signedIn={!!u} /></div>
+        <div className="post-content">
+          <div className="post-date">{fmtDateTime(topic.created_at)}</div>
+          <RichText text={topic.body} mentionables={mentionables} />
+          <ReactionBar topicId={Number(topic.id)} initial={reactions.topic} signedIn={!!u} />
+          {canModerateReplies && <SpoilerCorrection kind="topic" id={Number(topic.id)} body={topic.body} />}
+          <CommunityNotes targetType="topic" targetId={Number(topic.id)} notes={notesByTarget.get(`topic:${topic.id}`) || []} viewerId={u?.id ?? null} canModerate={canModerateReplies} />
+        </div>
       </article>
 
       {replies.map((r: any) => {
@@ -78,6 +93,7 @@ export default async function Thread({ params }: { params: Promise<{ id: string 
               <img className='avatar-img' src={discordAvatar(r.avatar, r.author || 'W')} alt='' />
               <strong><StatusDot status={r.author_status} /> {replyAuthorHref ? <Link className='post-author-link' href={replyAuthorHref}>{r.author}</Link> : r.author || 'Community'}</strong>
               {r.is_admin && <span className='pill cyan role'>Admin</span>}
+              {!r.is_admin && r.is_moderator && <span className='pill cyan role'>Moderator</span>}
               {u && r.author_id && Number(r.author_id) !== Number(u.id) && (
                 <Link href={`/messages/${r.author_id}`} className='pill'>Message</Link>
               )}
@@ -93,6 +109,8 @@ export default async function Thread({ params }: { params: Promise<{ id: string 
               <>
                 <RichText text={r.body} mentionables={mentionables} />
                 <ReactionBar replyId={Number(r.id)} initial={reactions.replies[Number(r.id)] || []} signedIn={!!u} />
+                {canModerateReplies && <SpoilerCorrection kind="reply" id={Number(r.id)} body={r.body} />}
+                <CommunityNotes targetType="reply" targetId={Number(r.id)} notes={notesByTarget.get(`reply:${r.id}`) || []} viewerId={u?.id ?? null} canModerate={canModerateReplies} />
               </>
             </EditableReply>
           </article>

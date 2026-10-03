@@ -1,5 +1,5 @@
 import Link from 'next/link';
-import { getSession, discordAvatar } from '@/lib/auth';
+import { canModerateComments, getSession, discordAvatar } from '@/lib/auth';
 import { safe } from '@/lib/db';
 import { getUserStatus } from '@/lib/presence';
 import { unreadMessageCount } from '@/lib/messages';
@@ -27,6 +27,7 @@ export const NAV = [
 
 export async function ForumHeader() {
   const u = await getSession();
+  const canModerate = canModerateComments(u);
   const status = u ? await safe(() => getUserStatus(u.id), 'online' as const) : null;
   const unread = u ? await safe(() => unreadMessageCount(u.id), 0) : 0;
   return (
@@ -48,6 +49,7 @@ export async function ForumHeader() {
             <Link key={n.href} href={n.href}>{n.label}</Link>
           ))}
           {u?.isAdmin && <Link href="/admin">Admin</Link>}
+          {canModerate && <Link href="/admin/moderation">Moderation</Link>}
           {u && (
             <Link href="/messages" className="nav-messages">
               Chat{unread > 0 && <span className="pill red nav-badge">{unread}</span>}
@@ -68,6 +70,7 @@ export async function ForumHeader() {
         <MobileNav
           items={NAV}
           isAdmin={!!u?.isAdmin}
+          canModerate={canModerate}
           username={u?.username}
           discordJoinHref="/api/auth/discord"
           unreadMessages={unread}

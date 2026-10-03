@@ -17,9 +17,16 @@ export async function POST(req: Request) {
   const emoji = String(b?.emoji ?? '');
   const topicId = b?.topicId ? Number(b.topicId) : null;
   const replyId = b?.replyId ? Number(b.replyId) : null;
-  if (!ALLOWED_EMOJI.has(emoji) || (!topicId && !replyId)) {
+  if (!ALLOWED_EMOJI.has(emoji) || Boolean(topicId) === Boolean(replyId) ||
+      (topicId !== null && (!Number.isSafeInteger(topicId) || topicId < 1)) ||
+      (replyId !== null && (!Number.isSafeInteger(replyId) || replyId < 1))) {
     return NextResponse.json({ error: 'Invalid reaction' }, { status: 400 });
   }
+
+  const target = topicId
+    ? await sql`SELECT id FROM topics WHERE id=${topicId} AND moderation_status='approved' LIMIT 1`
+    : await sql`SELECT r.id FROM replies r JOIN topics t ON t.id=r.topic_id WHERE r.id=${replyId} AND r.moderation_status='approved' AND t.moderation_status='approved' LIMIT 1`;
+  if (!target[0]) return NextResponse.json({ error: 'Discussion or reply not found.' }, { status: 404 });
 
   const existing = await sql`
     SELECT id FROM reactions

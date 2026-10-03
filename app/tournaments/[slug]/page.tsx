@@ -13,7 +13,7 @@ export default async function TournamentPage({ params }: { params: Promise<{ slu
   if (!t) notFound();
   const [champion, topic, matches] = await Promise.all([
     t.champion_player_id ? safe(async () => (await sql`SELECT * FROM wtsl_players WHERE wtsl_player_id=${t.champion_player_id} LIMIT 1`)[0], null as any) : null,
-    t.discussion_topic_id ? safe(async () => (await sql`SELECT id FROM topics WHERE id=${t.discussion_topic_id}`)[0], null as any) : null,
+    t.discussion_topic_id ? safe(async () => (await sql`SELECT id FROM topics WHERE id=${t.discussion_topic_id} AND moderation_status='approved'`)[0], null as any) : null,
     safe(() => recentMatches(200), [] as any[]),
   ]);
   const mine = matches.filter((m: any) => m.tournament_key === t.wtsl_tournament_key).slice(0, 12);

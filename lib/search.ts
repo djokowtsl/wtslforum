@@ -15,7 +15,7 @@ export async function searchSite(qRaw: string): Promise<SearchResults> {
   const like = `%${q}%`;
 
   const [discussions, articles, players, tournaments] = await Promise.all([
-    sql`SELECT id, title, slug, LEFT(body, 160) snippet FROM topics WHERE title ILIKE ${like} OR body ILIKE ${like} ORDER BY created_at DESC LIMIT 10`,
+    sql`SELECT id, title, slug, LEFT(body, 160) snippet FROM topics WHERE moderation_status='approved' AND (title ILIKE ${like} OR body ILIKE ${like}) ORDER BY created_at DESC LIMIT 10`,
     sql`SELECT title, slug, excerpt FROM articles WHERE published=true AND (title ILIKE ${like} OR excerpt ILIKE ${like}) ORDER BY created_at DESC LIMIT 10`,
     sql`SELECT DISTINCT ON (wtsl_player_id, tour) wtsl_player_id id, tour, name, avatar_url FROM wtsl_players WHERE name ILIKE ${like} ORDER BY wtsl_player_id, tour, synced_at DESC LIMIT 10`,
     sql`SELECT wtsl_tournament_key slug, name, tour, status FROM tournaments WHERE name ILIKE ${like} ORDER BY start_date DESC NULLS LAST LIMIT 10`,

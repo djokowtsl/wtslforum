@@ -9,12 +9,14 @@ type NavItem = { href: string; label: string };
 export function MobileNav({
   items,
   isAdmin,
+  canModerate,
   username,
   discordJoinHref,
   unreadMessages = 0,
 }: {
   items: NavItem[];
   isAdmin: boolean;
+  canModerate: boolean;
   username?: string;
   discordJoinHref: string;
   unreadMessages?: number;
@@ -40,6 +42,7 @@ export function MobileNav({
           <Link key={n.href} href={n.href} onClick={close}>{n.label}</Link>
         ))}
         {isAdmin && <Link href="/admin" onClick={close}>Admin</Link>}
+        {canModerate && <Link href="/admin/moderation" onClick={close}>Moderation</Link>}
         {username && (
           <Link href="/messages" onClick={close}>
             Chat{unreadMessages > 0 && <span className="pill red nav-badge">{unreadMessages}</span>}

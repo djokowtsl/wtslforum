@@ -14,6 +14,7 @@ export default function MediaSubmitForm() {
   const [busy, setBusy] = useState(false);
   const [err, setErr] = useState('');
   const [ok, setOk] = useState(false);
+  const [message, setMessage] = useState('');
 
   async function submit() {
     if (!title.trim() || (!url.trim() && !file)) {
@@ -22,26 +23,32 @@ export default function MediaSubmitForm() {
     }
     setBusy(true);
     setErr('');
+    setOk(false);
+    setMessage('');
     try {
-      let finalUrl = url.trim();
+      const finalUrl = url.trim();
+      let res: Response;
       if (file) {
-        const fd = new FormData();
-        fd.append('file', file);
-        const up = await fetch('/api/media/upload', { method: 'POST', body: fd });
-        const upData = await up.json();
-        if (!up.ok) throw new Error(upData.error || 'Upload failed');
-        finalUrl = upData.url;
+        const form = new FormData();
+        form.append('title', title);
+        form.append('description', description);
+        form.append('tour', tour);
+        form.append('file', file);
+        res = await fetch('/api/media', { method: 'POST', body: form });
+      } else {
+        res = await fetch('/api/media', {
+          method: 'POST',
+          headers: { 'content-type': 'application/json' },
+          body: JSON.stringify({ title, description, url: finalUrl, tour: tour || undefined }),
+        });
       }
-      const res = await fetch('/api/media', {
-        method: 'POST',
-        headers: { 'content-type': 'application/json' },
-        body: JSON.stringify({ title, description, url: finalUrl, tour: tour || undefined }),
-      });
       const data = await res.json();
       if (!res.ok) throw new Error(data.error || 'Submission failed');
       setTitle(''); setDescription(''); setUrl(''); setFile(null); setTour(''); setOk(true);
+      setMessage(data.pending ? data.message || 'Your submission is waiting for moderator review.' : 'Clip submitted ✓');
       router.refresh();
     } catch (e) {
+      setOk(false);
       setErr(e instanceof Error ? e.message : 'Submission failed');
     } finally {
       setBusy(false);
@@ -51,9 +58,9 @@ export default function MediaSubmitForm() {
   return (
     <div className="admin-card">
       <h3>Submit a clip</h3>
-      <p className="notice" style={{ marginBottom: 14 }}>Paste a YouTube/Discord/Streamable/Twitch link (preferred for full matches), or upload a short clip directly (20MB max).</p>
+      <p className="notice" style={{ marginBottom: 14 }}>Paste a YouTube/Discord/Streamable/Twitch link, or upload a short clip directly (20MB max). Uploaded videos and external clips wait for moderator review because their video content cannot be screened automatically.</p>
       {err && <div className="notice" style={{ borderColor: '#ffb3bb', marginBottom: 14 }}>{err}</div>}
-      {ok && <div className="notice" style={{ marginBottom: 14 }}>Clip submitted ✓</div>}
+      {ok && <div className="notice" style={{ marginBottom: 14 }}>{message}</div>}
       <div style={{ display: 'grid', gap: 10 }}>
         <input placeholder="Title" value={title} onChange={(e) => setTitle(e.target.value)} style={inputStyle} />
         <input placeholder="Description (optional)" value={description} onChange={(e) => setDescription(e.target.value)} style={inputStyle} />

@@ -1,8 +1,9 @@
 import React from 'react';
+import SpoilerReveal from './SpoilerReveal';
 
 // Tiny, safe renderer: paragraphs, **bold**, [label](https://…), bare URLs and @mentions. No raw
 // HTML is ever injected.
-const TOKEN = /(\*\*[^*]+\*\*)|(\[[^\]]+\]\(https?:\/\/[^)\s]+\))|(https?:\/\/[^\s<]+)|(@\w+)/g;
+const TOKEN = /(\|\|[^|\n]+?\|\|)|(\*\*[^*]+\*\*)|(\[[^\]]+\]\(https?:\/\/[^)\s]+\))|(https?:\/\/[^\s<]+)|(@\w+)/g;
 
 export type Mentionable = { playerId: number | string; tour: string };
 
@@ -15,7 +16,8 @@ function inline(line: string, keyBase: string, mentionables?: Record<string, Men
     if (idx > last) out.push(line.slice(last, idx));
     const tok = m[0];
     const key = `${keyBase}-${i++}`;
-    if (tok.startsWith('**')) out.push(<strong key={key}>{tok.slice(2, -2)}</strong>);
+    if (tok.startsWith('||')) out.push(<SpoilerReveal key={key} text={tok.slice(2, -2)} />);
+    else if (tok.startsWith('**')) out.push(<strong key={key}>{tok.slice(2, -2)}</strong>);
     else if (tok.startsWith('[')) {
       const [, label, url] = /^\[([^\]]+)\]\((.+)\)$/.exec(tok) ?? [];
       out.push(<a key={key} href={url} target="_blank" rel="noopener noreferrer nofollow ugc">{label}</a>);
