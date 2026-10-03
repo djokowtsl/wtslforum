@@ -7,7 +7,7 @@ export const metadata: Metadata = { title: 'About' };
 export default function About() {
   return (
     <>
-      <PageHero eyebrow="About" title="The WTSL Forum">A clubhouse for the people behind the World Tennis Simulation League.</PageHero>
+      <PageHero eyebrow="About" title="The WTSL Forum">A clubhouse for players, moderators and fans affiliated with the World Tennis Simulation League</PageHero>
       <main className="container narrow">
         <div className="prose">
           <p>The World Tennis Simulation League runs its tour, rankings and results on the WTSL site. This community site sits alongside it — a place to talk about what happens on the tour, keep the stories and history of the league, and bring players and fans together in one spot.</p>
