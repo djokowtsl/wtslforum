@@ -127,6 +127,8 @@ function scoreWinnerSide(row: ResultRow): 'first' | 'second' | null {
     else if (right > left) secondSets += 1;
   }
   if (firstSets === secondSets) return null;
+  // A lone set without a retirement marker is an incomplete result, not a completed match.
+  if (firstSets + secondSets < 2 && !/\bret(?:ired|irement)?\.?/i.test(score)) return null;
   return firstSets > secondSets ? 'first' : 'second';
 }
 
