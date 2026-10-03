@@ -41,7 +41,7 @@ export function ResultCard({ m, tournamentNames }: { m: any; tournamentNames?: R
         <span className={`nm ${p1win ? 'lost' : ''}`}><PlayerLink id={m.player_two_id} tour={m.tour} name={m.player_two_name} /></span>
       </div>
       <div className="match-score">{m.score || '—'}{m.played_at ? ` · ${timeAgo(m.played_at)}` : ''}</div>
-      <DiscussLink params={{ key: `match-${m.id}`, p1: m.player_one_name, p2: m.player_two_name, tournament: t, round: m.round_name, score: m.score }} />
+      <DiscussLink params={{ key: `match-${m.id}`, p1: m.player_one_name, p2: m.player_two_name, tournament: t, round: m.round_name, score: m.score, tour: m.tour }} />
     </div>
   );
 }
@@ -68,7 +68,7 @@ export function FixtureCard({ f }: { f: any }) {
           {`Deadline: ${new Date(f.round_deadline).toLocaleString('en-GB', { day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit' })}`}
         </div>
       )}
-      <DiscussLink params={{ key: `fixture-${f.key}`, p1: f.first_name, p2: f.second_name, tournament: f.tournament }} />
+      <DiscussLink params={{ key: `fixture-${f.key}`, p1: f.first_name, p2: f.second_name, tournament: f.tournament, tour: f.tour }} />
     </div>
   );
 }

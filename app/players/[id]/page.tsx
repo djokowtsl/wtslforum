@@ -3,6 +3,7 @@ import { notFound } from 'next/navigation';
 import { safe, sql } from '@/lib/db';
 import { playerStats } from '@/lib/stats';
 import { getVerifiedOwner } from '@/lib/player-claims';
+import { getContributionStats } from '@/lib/queries';
 import { discordAvatar, getSession } from '@/lib/auth';
 import Link from 'next/link';
 import PageHero from '@/components/PageHero';
@@ -12,6 +13,25 @@ import { DEFAULT_TOUR, getTourEloDesignation, isTourCode, tourLabel, type TourCo
 export const dynamic = 'force-dynamic';
 
 type Props = { params: Promise<{ id: string }>; searchParams: Promise<{ tour?: string }> };
+
+function membershipDuration(createdAt: string | Date): string {
+  const joined = new Date(createdAt);
+  if (!Number.isFinite(joined.getTime())) return '—';
+  const now = new Date();
+  let months = (now.getFullYear() - joined.getFullYear()) * 12 + now.getMonth() - joined.getMonth();
+  if (now.getDate() < joined.getDate()) months -= 1;
+  months = Math.max(0, months);
+  if (months === 0) {
+    const days = Math.max(0, Math.floor((now.getTime() - joined.getTime()) / 86_400_000));
+    return days < 1 ? 'less than a day' : `${days} ${days === 1 ? 'day' : 'days'}`;
+  }
+  const years = Math.floor(months / 12);
+  const remainingMonths = months % 12;
+  return [
+    years ? `${years} ${years === 1 ? 'year' : 'years'}` : '',
+    remainingMonths ? `${remainingMonths} ${remainingMonths === 1 ? 'month' : 'months'}` : '',
+  ].filter(Boolean).join(' ');
+}
 
 export async function generateMetadata({ params }: Props): Promise<Metadata> {
   const { id } = await params;
@@ -33,6 +53,12 @@ export default async function PlayerDashboard({ params, searchParams }: Props) {
   const recent = await safe(() => sql`SELECT * FROM player_recent_results WHERE player_id=${id} AND tour=${tour} ORDER BY position ASC LIMIT 10`, [] as any[]);
   const verifiedOwner = await safe(() => getVerifiedOwner(id, tour), null as any);
   const viewer = await safe(() => getSession(), null);
+  const forumContributions = verifiedOwner
+    ? await safe(() => getContributionStats(String(verifiedOwner.id)), { topics: 0, replies: 0, articles: 0 })
+    : null;
+  const forumPostCount = forumContributions
+    ? Number(forumContributions.topics) + Number(forumContributions.replies)
+    : 0;
 
   const form: string = p.form ?? '';
   const statLines: { label: string; value: string | number }[] = [
@@ -84,6 +110,12 @@ export default async function PlayerDashboard({ params, searchParams }: Props) {
                   <> · <Link href={`/messages/${verifiedOwner.id}`}>Message</Link></>
                 )}
               </p>
+            )}
+            {verifiedOwner && forumContributions && (
+              <div aria-label="Forum account activity" style={{ display: 'flex', flexWrap: 'wrap', gap: '6px 16px', marginTop: 8, color: 'var(--muted)', fontSize: 13 }}>
+                <span title="Discussion starters and replies authored"><b>{forumPostCount.toLocaleString()}</b> forum posts</span>
+                <span>Member for <b>{membershipDuration(verifiedOwner.created_at)}</b></span>
+              </div>
             )}
           </div>
         </div>

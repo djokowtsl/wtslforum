@@ -25,6 +25,7 @@ export default async function NewDiscussion({ searchParams }: { searchParams: Pr
             initialTitle={sp.title}
             initialBody={sp.body}
             matchKey={sp.matchKey}
+            tour={sp.tour}
             initialCategoryId={sp.matchKey ? matchTalkCat?.id : undefined}
           />
         )}
