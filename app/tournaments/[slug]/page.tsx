@@ -2,6 +2,7 @@ import Link from 'next/link';
 import { notFound } from 'next/navigation';
 import { safe, sql } from '@/lib/db';
 import { getTournament } from '@/lib/tournaments';
+import { ensureTournamentDiscussion } from '@/lib/tournamentDiscussions';
 import { recentMatches } from '@/lib/stats';
 import { ResultCard } from '@/components/MatchCards';
 
@@ -11,9 +12,10 @@ export default async function TournamentPage({ params }: { params: Promise<{ slu
   const { slug } = await params;
   const t: any = await safe(() => getTournament(slug), null as any);
   if (!t) notFound();
+  const discussionTopicId = await safe(() => ensureTournamentDiscussion(t), null as number | null);
   const [champion, topic, matches] = await Promise.all([
     t.champion_player_id ? safe(async () => (await sql`SELECT * FROM wtsl_players WHERE wtsl_player_id=${t.champion_player_id} LIMIT 1`)[0], null as any) : null,
-    t.discussion_topic_id ? safe(async () => (await sql`SELECT id FROM topics WHERE id=${t.discussion_topic_id} AND moderation_status='approved'`)[0], null as any) : null,
+    discussionTopicId ? safe(async () => (await sql`SELECT id FROM topics WHERE id=${discussionTopicId} AND moderation_status='approved'`)[0], null as any) : null,
     safe(() => recentMatches(200), [] as any[]),
   ]);
   const mine = matches.filter((m: any) => m.tournament_key === t.wtsl_tournament_key).slice(0, 12);
