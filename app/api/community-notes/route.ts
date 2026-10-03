@@ -1,8 +1,34 @@
 import { NextResponse } from 'next/server';
 import { getSession } from '@/lib/auth';
 import { sql } from '@/lib/db';
+import { getPrivateCommunityNoteProposals } from '@/lib/communityNotes';
 import { moderateTextAndImages, ModerationUnavailableError } from '@/lib/moderation';
 import { spoilerMarkupError } from '@/lib/spoilers';
+
+export const dynamic = 'force-dynamic';
+
+export async function GET(req: Request) {
+  const user = await getSession();
+  if (!user) return NextResponse.json({ error: 'Sign in to review community notes.' }, { status: 401 });
+
+  const params = new URL(req.url).searchParams;
+  const targetType = params.get('targetType');
+  const targetId = Number(params.get('targetId'));
+  if ((targetType !== 'topic' && targetType !== 'reply') || !Number.isSafeInteger(targetId) || targetId < 1) {
+    return NextResponse.json({ error: 'Choose a valid discussion or reply.' }, { status: 400 });
+  }
+
+  const target = targetType === 'topic'
+    ? await sql`SELECT id FROM topics WHERE id=${targetId} AND moderation_status='approved' LIMIT 1`
+    : await sql`SELECT id FROM replies WHERE id=${targetId} AND moderation_status='approved' LIMIT 1`;
+  if (!target[0]) return NextResponse.json({ error: 'That discussion or reply is no longer available.' }, { status: 404 });
+
+  const notes = await getPrivateCommunityNoteProposals(targetType, targetId, user.id);
+  return NextResponse.json(
+    { notes },
+    { headers: { 'Cache-Control': 'private, no-store' } },
+  );
+}
 
 export async function POST(req: Request) {
   const user = await getSession();
@@ -49,6 +75,6 @@ export async function POST(req: Request) {
   return NextResponse.json({
     ok: true,
     pending: decision.status === 'pending',
-    message: decision.status === 'pending' ? 'Your note is waiting for moderator review.' : 'Your note is ready for community ratings.',
+    message: decision.status === 'pending' ? 'Your note is waiting for moderator review.' : 'Your note was sent privately for community review.',
   }, { status: 201 });
 }

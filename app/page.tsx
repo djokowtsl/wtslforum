@@ -103,7 +103,7 @@ export default async function Home({ searchParams }: { searchParams: Promise<{ e
                 <img className="av" src={discordAvatar(t.avatar, t.author || 'W')} alt="" />
                 <div>
                   <div className="topic-title">{t.title}</div>
-                  <div className="topic-meta">{t.category && <span className="pill">{t.category}</span>}<span>{t.author || 'Community'}</span><span>{timeAgo(t.created_at)}</span></div>
+                  <div className="topic-meta">{t.category && <span className="pill">{t.category}</span>}<span>{t.author || 'WTSL'}</span><span>{timeAgo(t.created_at)}</span></div>
                 </div>
                 <div className="topic-stat">{t.replies}<span>replies</span></div>
                 <div className="topic-last">{t.last_author ? <><b>{t.last_author}</b>{timeAgo(t.last_reply_at)}</> : <span>No replies yet</span>}</div>
