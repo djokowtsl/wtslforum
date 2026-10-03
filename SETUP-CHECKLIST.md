@@ -16,7 +16,8 @@ Add `AUTH_SECRET` (any long random string, e.g. `openssl rand -base64 32`). In p
 3. Copy **Client ID** and **Client Secret** into Vercel as `DISCORD_CLIENT_ID` and `DISCORD_CLIENT_SECRET`.
 4. Add `DISCORD_REDIRECT_URI` with the same redirect URL as step 2 (must match character for character — no trailing slash).
 5. Add `ADMIN_DISCORD_IDS` with your Discord user ID (Discord → Settings → Advanced → Developer Mode, then right-click yourself → Copy User ID). Sign out and back in to become admin.
-6. Redeploy. If sign-in fails, the homepage now shows which step went wrong.
+6. Optional: add `MODERATOR_DISCORD_IDS` as a comma-separated list of Discord user IDs. These accounts can delete comments only; they cannot edit other members' comments, manage topics, or use admin tools. Remove an ID and redeploy to revoke access.
+7. Redeploy. If sign-in fails, the homepage now shows which step went wrong.
 
 ## 4. Tournaments and players
 Add `CRON_SECRET` (Vercel calls `/api/sync/wtsl` hourly with it). The sync now does two things: loads **every player** from the WTSL rankings page (rank, Tour Elo, flag, avatar — refreshed each run), then the tournament calendar (champions included). Each new tournament gets its own discussion thread.
