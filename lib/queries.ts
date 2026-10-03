@@ -34,15 +34,15 @@ export async function getTopics(opts: { category?: string | null; limit?: number
       c.name category,c.slug category_slug,
       u.display_name author,u.avatar_url avatar,
       tn.logo_url tournament_logo,
-      (SELECT COUNT(*) FROM replies r WHERE r.topic_id=t.id)::int replies,
-      (SELECT u2.display_name FROM replies r2 LEFT JOIN users u2 ON u2.id=r2.author_id WHERE r2.topic_id=t.id ORDER BY r2.created_at DESC LIMIT 1) last_author,
-      (SELECT MAX(r3.created_at) FROM replies r3 WHERE r3.topic_id=t.id) last_reply_at
+      (SELECT COUNT(*) FROM replies r WHERE r.topic_id=t.id AND r.moderation_status='approved')::int replies,
+      (SELECT u2.display_name FROM replies r2 LEFT JOIN users u2 ON u2.id=r2.author_id WHERE r2.topic_id=t.id AND r2.moderation_status='approved' ORDER BY r2.created_at DESC LIMIT 1) last_author,
+      (SELECT MAX(r3.created_at) FROM replies r3 WHERE r3.topic_id=t.id AND r3.moderation_status='approved') last_reply_at
     FROM topics t
     LEFT JOIN categories c ON c.id=t.category_id
     LEFT JOIN users u ON u.id=t.author_id
     LEFT JOIN tournaments tn ON tn.discussion_topic_id=t.id
-    WHERE (${cat}::text IS NULL OR c.slug=${cat})
-    ORDER BY t.pinned DESC, COALESCE((SELECT MAX(r4.created_at) FROM replies r4 WHERE r4.topic_id=t.id), t.created_at) DESC
+    WHERE t.moderation_status='approved' AND (${cat}::text IS NULL OR c.slug=${cat})
+    ORDER BY t.pinned DESC, COALESCE((SELECT MAX(r4.created_at) FROM replies r4 WHERE r4.topic_id=t.id AND r4.moderation_status='approved'), t.created_at) DESC
     LIMIT ${limit}`;
 }
 
@@ -54,7 +54,7 @@ export async function getTopic(ref: string | number) {
     ? await sql`
         SELECT t.*, c.name AS category, c.slug AS category_slug, u.id AS author_id,
           COALESCE(topic_identity.player_name, u.display_name) AS author,
-          u.avatar_url AS avatar, u.status AS author_status, tn.logo_url AS tournament_logo,
+          u.avatar_url AS avatar, u.status AS author_status, u.is_admin AS author_is_admin, u.is_moderator AS author_is_moderator, tn.logo_url AS tournament_logo,
           thread_context.tour AS tournament_tour, topic_identity.wtsl_player_id AS official_player_id,
           topic_identity.tour AS official_tour
         FROM topics t
@@ -110,13 +110,13 @@ export async function getTopic(ref: string | number) {
             CASE WHEN pc.id = u.default_player_claim_id THEN 0 ELSE 1 END, pc.created_at ASC, pc.id ASC
           LIMIT 1
         ) topic_identity ON TRUE
-        WHERE t.id = ${Number(ref)}
+        WHERE t.id = ${Number(ref)} AND t.moderation_status='approved'
         LIMIT 1
       `
     : await sql`
         SELECT t.*, c.name AS category, c.slug AS category_slug, u.id AS author_id,
           COALESCE(topic_identity.player_name, u.display_name) AS author,
-          u.avatar_url AS avatar, u.status AS author_status, tn.logo_url AS tournament_logo,
+          u.avatar_url AS avatar, u.status AS author_status, u.is_admin AS author_is_admin, u.is_moderator AS author_is_moderator, tn.logo_url AS tournament_logo,
           thread_context.tour AS tournament_tour, topic_identity.wtsl_player_id AS official_player_id,
           topic_identity.tour AS official_tour
         FROM topics t
@@ -172,7 +172,7 @@ export async function getTopic(ref: string | number) {
             CASE WHEN pc.id = u.default_player_claim_id THEN 0 ELSE 1 END, pc.created_at ASC, pc.id ASC
           LIMIT 1
         ) topic_identity ON TRUE
-        WHERE t.slug = ${String(ref)}
+        WHERE t.slug = ${String(ref)} AND t.moderation_status='approved'
         LIMIT 1
       `;
   const topic = rows[0];
@@ -181,7 +181,7 @@ export async function getTopic(ref: string | number) {
   const replies = await sql`
     SELECT r.id, r.body, r.created_at, r.updated_at, u.id AS author_id,
       COALESCE(reply_identity.player_name, u.display_name) AS author,
-      u.avatar_url AS avatar, u.is_admin, u.status AS author_status,
+      u.avatar_url AS avatar, u.is_admin, u.is_moderator, u.status AS author_status,
       reply_identity.wtsl_player_id AS official_player_id, reply_identity.tour AS official_tour
     FROM replies r
     LEFT JOIN users u ON u.id = r.author_id
@@ -195,7 +195,7 @@ export async function getTopic(ref: string | number) {
         CASE WHEN pc.id = u.default_player_claim_id THEN 0 ELSE 1 END, pc.created_at ASC, pc.id ASC
       LIMIT 1
     ) reply_identity ON TRUE
-    WHERE r.topic_id = ${topic.id}
+    WHERE r.topic_id = ${topic.id} AND r.moderation_status='approved'
     ORDER BY r.created_at ASC
   `;
   return { topic, replies };
@@ -206,7 +206,7 @@ export async function getCategories() {
 }
 
 export async function getCategoriesWithCounts() {
-  return sql`SELECT c.id,c.name,c.slug,c.description,c.position,(SELECT COUNT(*) FROM topics t WHERE t.category_id=c.id)::int topics FROM categories c ORDER BY c.position`;
+  return sql`SELECT c.id,c.name,c.slug,c.description,c.position,(SELECT COUNT(*) FROM topics t WHERE t.category_id=c.id AND t.moderation_status='approved')::int topics FROM categories c ORDER BY c.position`;
 }
 
 export async function getArticles(publishedOnly = true, limit = 60) {
@@ -270,8 +270,8 @@ export async function getAwards() {
 /** Forum activity counts for one user's personal dashboard. */
 export async function getContributionStats(userId: string) {
   const [topics, replies, articles] = await Promise.all([
-    sql`SELECT COUNT(*)::int c FROM topics WHERE author_id=${userId}`,
-    sql`SELECT COUNT(*)::int c FROM replies WHERE author_id=${userId}`,
+    sql`SELECT COUNT(*)::int c FROM topics WHERE author_id=${userId} AND moderation_status='approved'`,
+    sql`SELECT COUNT(*)::int c FROM replies WHERE author_id=${userId} AND moderation_status='approved'`,
     sql`SELECT COUNT(*)::int c FROM articles WHERE author_id=${userId}`,
   ]);
   return { topics: topics[0]?.c ?? 0, replies: replies[0]?.c ?? 0, articles: articles[0]?.c ?? 0 };
@@ -280,9 +280,9 @@ export async function getContributionStats(userId: string) {
 /** A user's most recently authored topics/replies, newest first, for a dashboard activity feed. */
 export async function getRecentActivity(userId: string, limit = 6) {
   return sql`
-    (SELECT 'topic' AS kind, t.id, t.title AS title, t.slug, t.created_at FROM topics t WHERE t.author_id=${userId})
+    (SELECT 'topic' AS kind, t.id, t.title AS title, t.slug, t.created_at FROM topics t WHERE t.author_id=${userId} AND t.moderation_status='approved')
     UNION ALL
-    (SELECT 'reply' AS kind, r.topic_id AS id, tp.title AS title, tp.slug, r.created_at FROM replies r JOIN topics tp ON tp.id=r.topic_id WHERE r.author_id=${userId})
+    (SELECT 'reply' AS kind, r.topic_id AS id, tp.title AS title, tp.slug, r.created_at FROM replies r JOIN topics tp ON tp.id=r.topic_id WHERE r.author_id=${userId} AND r.moderation_status='approved' AND tp.moderation_status='approved')
     ORDER BY created_at DESC
     LIMIT ${limit}
   `;

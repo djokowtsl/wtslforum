@@ -10,17 +10,19 @@ type Props = {
   maxLength?: number;
   placeholder?: string;
   defaultValue?: string;
+  enableSpoilers?: boolean;
 };
 
 /** A plain <textarea> (so forms still submit it via FormData under `name` exactly like before)
  * that additionally watches for "@word" being typed and pops up a small list of verified members
  * to tag — picking one inserts "@username" so `RichText` can later linkify it. Only verified
  * players are offered here (see /api/mentions/search), matching "tag other verified users". */
-export default function MentionTextarea({ name, rows = 6, required, maxLength, placeholder, defaultValue = '' }: Props) {
+export default function MentionTextarea({ name, rows = 6, required, maxLength, placeholder, defaultValue = '', enableSpoilers = false }: Props) {
   const [value, setValue] = useState(defaultValue);
   const [query, setQuery] = useState<string | null>(null);
   const [results, setResults] = useState<Member[]>([]);
   const [active, setActive] = useState(0);
+  const [spoilerError, setSpoilerError] = useState('');
   const taRef = useRef<HTMLTextAreaElement>(null);
   const triggerStart = useRef<number | null>(null);
 
@@ -72,6 +74,27 @@ export default function MentionTextarea({ name, rows = 6, required, maxLength, p
     });
   }
 
+  function markSpoiler() {
+    const textarea = taRef.current;
+    if (!textarea) return;
+    const start = textarea.selectionStart ?? value.length;
+    const end = textarea.selectionEnd ?? start;
+    const selected = value.slice(start, end);
+    if (selected.includes('\n')) {
+      setSpoilerError('Select text on one line at a time.');
+      return;
+    }
+    setSpoilerError('');
+    const marker = selected ? `||${selected}||` : '||||';
+    const next = value.slice(0, start) + marker + value.slice(end);
+    setValue(next);
+    requestAnimationFrame(() => {
+      const caret = selected ? start + marker.length : start + 2;
+      textarea.focus();
+      textarea.setSelectionRange(caret, caret);
+    });
+  }
+
   function onKeyDown(e: React.KeyboardEvent<HTMLTextAreaElement>) {
     if (query === null || !results.length) return;
     if (e.key === 'ArrowDown') { e.preventDefault(); setActive((i) => (i + 1) % results.length); }
@@ -94,6 +117,13 @@ export default function MentionTextarea({ name, rows = 6, required, maxLength, p
         onKeyDown={onKeyDown}
         onBlur={() => setTimeout(() => setQuery(null), 150)}
       />
+      {enableSpoilers && (
+        <div className="spoiler-toolbar">
+          <button className="btn btn-sm btn-ghost" type="button" onClick={markSpoiler}>Mark selected text as spoiler</button>
+          <small>Readers reveal marked passages.</small>
+          {spoilerError && <small className="spoiler-error" role="alert">{spoilerError}</small>}
+        </div>
+      )}
       {query !== null && results.length > 0 && (
         <div className="mention-pop" style={{ bottom: '100%', left: 0 }}>
           {results.map((m, i) => (

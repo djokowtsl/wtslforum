@@ -1,6 +1,6 @@
 'use client';
 
-import { useState } from 'react';
+import { useRef, useState } from 'react';
 import { useRouter } from 'next/navigation';
 import type { ReactNode } from 'react';
 
@@ -21,6 +21,7 @@ export default function EditableReply({
   const [editing, setEditing] = useState(false);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState('');
+  const textareaRef = useRef<HTMLTextAreaElement>(null);
   const wasEdited = Date.parse(updatedAt) > Date.parse(createdAt);
 
   async function save(event: React.FormEvent<HTMLFormElement>) {
@@ -39,6 +40,12 @@ export default function EditableReply({
       });
       const result = await response.json().catch(() => ({}));
       if (!response.ok) { setError(result.error || 'Unable to save your comment.'); return; }
+      if (result.pending) {
+        setError(result.message || 'Your edited reply is waiting for moderator review.');
+        setEditing(false);
+        router.refresh();
+        return;
+      }
       setBody(nextBody);
       setEditing(false);
       router.refresh();
@@ -47,6 +54,23 @@ export default function EditableReply({
     } finally {
       setBusy(false);
     }
+  }
+
+  function markSpoiler() {
+    const textarea = textareaRef.current;
+    if (!textarea) return;
+    const start = textarea.selectionStart ?? draft.length;
+    const end = textarea.selectionEnd ?? start;
+    const selected = draft.slice(start, end);
+    if (selected.includes('\n')) { setError('Select text on one line at a time.'); return; }
+    setError('');
+    const marker = selected ? `||${selected}||` : '||||';
+    setDraft(draft.slice(0, start) + marker + draft.slice(end));
+    requestAnimationFrame(() => {
+      const caret = selected ? start + marker.length : start + 2;
+      textarea.focus();
+      textarea.setSelectionRange(caret, caret);
+    });
   }
 
   async function remove() {
@@ -72,7 +96,8 @@ export default function EditableReply({
       </div>
       {editing ? (
         <form className="reply-edit-form" onSubmit={save}>
-          <textarea value={draft} onChange={(event) => setDraft(event.target.value)} maxLength={10000} rows={6} required aria-label="Edit your comment" />
+          <textarea ref={textareaRef} value={draft} onChange={(event) => setDraft(event.target.value)} maxLength={10000} rows={6} required aria-label="Edit your comment" />
+          <button className="btn btn-sm btn-ghost" type="button" onClick={markSpoiler}>Mark selected text as spoiler</button>
           {error && <p className="form-error" role="alert">{error}</p>}
           <div className="reply-edit-actions">
             <button className="btn btn-sm btn-primary" type="submit" disabled={busy}>{busy ? 'Saving…' : 'Save changes'}</button>

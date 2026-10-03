@@ -1,6 +1,6 @@
 CREATE TABLE IF NOT EXISTS users (
  id BIGSERIAL PRIMARY KEY, discord_id TEXT UNIQUE NOT NULL, username TEXT NOT NULL, display_name TEXT NOT NULL,
- avatar_url TEXT, bio TEXT DEFAULT '', wtsl_player_url TEXT, is_admin BOOLEAN NOT NULL DEFAULT FALSE,
+ avatar_url TEXT, bio TEXT DEFAULT '', wtsl_player_url TEXT, is_admin BOOLEAN NOT NULL DEFAULT FALSE, is_moderator BOOLEAN NOT NULL DEFAULT FALSE,
  created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(), updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );
 CREATE TABLE IF NOT EXISTS categories (
@@ -9,13 +9,18 @@ CREATE TABLE IF NOT EXISTS categories (
 CREATE TABLE IF NOT EXISTS topics (
  id BIGSERIAL PRIMARY KEY, category_id BIGINT REFERENCES categories(id) ON DELETE SET NULL, author_id BIGINT REFERENCES users(id) ON DELETE SET NULL,
  title TEXT NOT NULL, slug TEXT NOT NULL, body TEXT NOT NULL, pinned BOOLEAN DEFAULT FALSE, locked BOOLEAN DEFAULT FALSE,
+ moderation_status TEXT NOT NULL DEFAULT 'approved', moderation_reason TEXT, moderated_by BIGINT REFERENCES users(id) ON DELETE SET NULL, moderated_at TIMESTAMPTZ,
  views INT NOT NULL DEFAULT 0, created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(), updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );
 CREATE UNIQUE INDEX IF NOT EXISTS topics_slug_idx ON topics(slug);
+CREATE INDEX IF NOT EXISTS topics_moderation_status_idx ON topics(moderation_status,created_at);
 CREATE TABLE IF NOT EXISTS replies (
  id BIGSERIAL PRIMARY KEY, topic_id BIGINT NOT NULL REFERENCES topics(id) ON DELETE CASCADE, author_id BIGINT REFERENCES users(id) ON DELETE SET NULL,
- body TEXT NOT NULL, created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(), updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+ body TEXT NOT NULL, moderation_status TEXT NOT NULL DEFAULT 'approved', moderation_reason TEXT,
+ moderated_by BIGINT REFERENCES users(id) ON DELETE SET NULL, moderated_at TIMESTAMPTZ,
+ created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(), updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );
+CREATE INDEX IF NOT EXISTS replies_moderation_status_idx ON replies(moderation_status,created_at);
 CREATE TABLE IF NOT EXISTS articles (
  id BIGSERIAL PRIMARY KEY, author_id BIGINT REFERENCES users(id) ON DELETE SET NULL, title TEXT NOT NULL, slug TEXT UNIQUE NOT NULL,
  excerpt TEXT DEFAULT '', body TEXT NOT NULL, cover_url TEXT, published BOOLEAN NOT NULL DEFAULT FALSE,
@@ -291,9 +296,40 @@ END $$;
 CREATE TABLE IF NOT EXISTS media_clips (
   id BIGSERIAL PRIMARY KEY, submitted_by BIGINT REFERENCES users(id) ON DELETE SET NULL,
   title TEXT NOT NULL, description TEXT NOT NULL DEFAULT '', url TEXT NOT NULL, tour TEXT,
+  moderation_status TEXT NOT NULL DEFAULT 'approved', moderation_reason TEXT,
+  private_blob_pathname TEXT, private_blob_content_type TEXT,
+  moderated_by BIGINT REFERENCES users(id) ON DELETE SET NULL, moderated_at TIMESTAMPTZ,
   created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );
 CREATE INDEX IF NOT EXISTS media_clips_created_idx ON media_clips(created_at DESC);
+CREATE INDEX IF NOT EXISTS media_clips_moderation_status_idx ON media_clips(moderation_status,created_at);
+
+CREATE TABLE IF NOT EXISTS community_notes (
+  id BIGSERIAL PRIMARY KEY,
+  topic_id BIGINT REFERENCES topics(id) ON DELETE CASCADE,
+  reply_id BIGINT REFERENCES replies(id) ON DELETE CASCADE,
+  author_id BIGINT REFERENCES users(id) ON DELETE SET NULL,
+  body TEXT NOT NULL,
+  moderation_status TEXT NOT NULL DEFAULT 'approved',
+  moderation_reason TEXT,
+  moderated_by BIGINT REFERENCES users(id) ON DELETE SET NULL,
+  moderated_at TIMESTAMPTZ,
+  created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+  CONSTRAINT community_notes_one_target CHECK ((topic_id IS NOT NULL AND reply_id IS NULL) OR (topic_id IS NULL AND reply_id IS NOT NULL))
+);
+CREATE UNIQUE INDEX IF NOT EXISTS community_notes_topic_author_idx ON community_notes(topic_id,author_id) WHERE topic_id IS NOT NULL;
+CREATE UNIQUE INDEX IF NOT EXISTS community_notes_reply_author_idx ON community_notes(reply_id,author_id) WHERE reply_id IS NOT NULL;
+CREATE INDEX IF NOT EXISTS community_notes_pending_idx ON community_notes(moderation_status,created_at);
+
+CREATE TABLE IF NOT EXISTS community_note_ratings (
+  id BIGSERIAL PRIMARY KEY,
+  note_id BIGINT NOT NULL REFERENCES community_notes(id) ON DELETE CASCADE,
+  user_id BIGINT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+  helpful BOOLEAN NOT NULL,
+  created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+  updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+  UNIQUE(note_id,user_id)
+);
 
 -- Migration: real career/YTD win-loss, titles, prize money, form and serve/rally averages,
 -- scraped from the player's official WTSL profile + player statistics table. Safe to re-run.
