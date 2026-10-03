@@ -55,6 +55,7 @@ export default async function Thread({ params }: { params: Promise<{ id: string 
             size="post"
             src={topic.tournament_logo || (!topic.author ? '/brand/wtsl-logo-200.png' : discordAvatar(topic.avatar, topic.author || 'W'))}
             hasTournamentLogo={!!topic.tournament_logo}
+            tournamentName={topic.title}
             isCommunity={!topic.author}
           />
           <strong>{topic.author && <StatusDot status={topic.author_status} />} {topicAuthorHref ? <Link className="post-author-link" href={topicAuthorHref}>{topic.author}</Link> : topic.author || 'Community'}</strong>

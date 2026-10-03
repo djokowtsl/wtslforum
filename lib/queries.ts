@@ -66,14 +66,38 @@ export async function getTopic(ref: string | number) {
         LEFT JOIN betting_fixtures linked_fixture ON mt.match_key = 'fixture-' || linked_fixture.fixture_key
         LEFT JOIN LATERAL (
           SELECT COALESCE(
-            mt.tour,
-            match_result.tour,
+            CASE LOWER(mt.tour)
+              WHEN 'wta' THEN 'TE4_(F)'
+              WHEN 'atp' THEN 'TE4'
+              WHEN 'te4_(f)' THEN 'TE4_(F)'
+              WHEN 'te4' THEN 'TE4'
+              ELSE mt.tour
+            END,
+            CASE LOWER(match_result.tour)
+              WHEN 'wta' THEN 'TE4_(F)'
+              WHEN 'atp' THEN 'TE4'
+              WHEN 'te4_(f)' THEN 'TE4_(F)'
+              WHEN 'te4' THEN 'TE4'
+              ELSE match_result.tour
+            END,
             CASE LOWER(linked_fixture.tour)
               WHEN 'wta' THEN 'TE4_(F)'
               WHEN 'atp' THEN 'TE4'
+              WHEN 'te4_(f)' THEN 'TE4_(F)'
+              WHEN 'te4' THEN 'TE4'
               ELSE linked_fixture.tour
             END,
-            tn.tour
+            CASE
+              WHEN mt.match_key LIKE 'fixture-%' AND split_part(mt.match_key, '|', 2) = 'TE4_(F)' THEN 'TE4_(F)'
+              WHEN mt.match_key LIKE 'fixture-%' AND split_part(mt.match_key, '|', 2) = 'TE4' THEN 'TE4'
+            END,
+            CASE LOWER(tn.tour)
+              WHEN 'wta' THEN 'TE4_(F)'
+              WHEN 'atp' THEN 'TE4'
+              WHEN 'te4_(f)' THEN 'TE4_(F)'
+              WHEN 'te4' THEN 'TE4'
+              ELSE tn.tour
+            END
           ) AS tour
         ) thread_context ON TRUE
         LEFT JOIN LATERAL (
@@ -82,6 +106,7 @@ export async function getTopic(ref: string | number) {
           LEFT JOIN wtsl_players wp ON wp.wtsl_player_id = pc.wtsl_player_id AND wp.tour = pc.tour
           WHERE pc.user_id = t.author_id AND pc.status = 'approved'
           ORDER BY CASE WHEN pc.tour = thread_context.tour THEN 0 ELSE 1 END,
+            CASE WHEN pc.tour = 'TE4' THEN 0 ELSE 1 END,
             CASE WHEN pc.id = u.default_player_claim_id THEN 0 ELSE 1 END, pc.created_at ASC, pc.id ASC
           LIMIT 1
         ) topic_identity ON TRUE
@@ -103,14 +128,38 @@ export async function getTopic(ref: string | number) {
         LEFT JOIN betting_fixtures linked_fixture ON mt.match_key = 'fixture-' || linked_fixture.fixture_key
         LEFT JOIN LATERAL (
           SELECT COALESCE(
-            mt.tour,
-            match_result.tour,
+            CASE LOWER(mt.tour)
+              WHEN 'wta' THEN 'TE4_(F)'
+              WHEN 'atp' THEN 'TE4'
+              WHEN 'te4_(f)' THEN 'TE4_(F)'
+              WHEN 'te4' THEN 'TE4'
+              ELSE mt.tour
+            END,
+            CASE LOWER(match_result.tour)
+              WHEN 'wta' THEN 'TE4_(F)'
+              WHEN 'atp' THEN 'TE4'
+              WHEN 'te4_(f)' THEN 'TE4_(F)'
+              WHEN 'te4' THEN 'TE4'
+              ELSE match_result.tour
+            END,
             CASE LOWER(linked_fixture.tour)
               WHEN 'wta' THEN 'TE4_(F)'
               WHEN 'atp' THEN 'TE4'
+              WHEN 'te4_(f)' THEN 'TE4_(F)'
+              WHEN 'te4' THEN 'TE4'
               ELSE linked_fixture.tour
             END,
-            tn.tour
+            CASE
+              WHEN mt.match_key LIKE 'fixture-%' AND split_part(mt.match_key, '|', 2) = 'TE4_(F)' THEN 'TE4_(F)'
+              WHEN mt.match_key LIKE 'fixture-%' AND split_part(mt.match_key, '|', 2) = 'TE4' THEN 'TE4'
+            END,
+            CASE LOWER(tn.tour)
+              WHEN 'wta' THEN 'TE4_(F)'
+              WHEN 'atp' THEN 'TE4'
+              WHEN 'te4_(f)' THEN 'TE4_(F)'
+              WHEN 'te4' THEN 'TE4'
+              ELSE tn.tour
+            END
           ) AS tour
         ) thread_context ON TRUE
         LEFT JOIN LATERAL (
@@ -119,6 +168,7 @@ export async function getTopic(ref: string | number) {
           LEFT JOIN wtsl_players wp ON wp.wtsl_player_id = pc.wtsl_player_id AND wp.tour = pc.tour
           WHERE pc.user_id = t.author_id AND pc.status = 'approved'
           ORDER BY CASE WHEN pc.tour = thread_context.tour THEN 0 ELSE 1 END,
+            CASE WHEN pc.tour = 'TE4' THEN 0 ELSE 1 END,
             CASE WHEN pc.id = u.default_player_claim_id THEN 0 ELSE 1 END, pc.created_at ASC, pc.id ASC
           LIMIT 1
         ) topic_identity ON TRUE
@@ -141,6 +191,7 @@ export async function getTopic(ref: string | number) {
       LEFT JOIN wtsl_players wp ON wp.wtsl_player_id = pc.wtsl_player_id AND wp.tour = pc.tour
       WHERE pc.user_id = r.author_id AND pc.status = 'approved'
       ORDER BY CASE WHEN pc.tour = ${topic.tournament_tour ?? null} THEN 0 ELSE 1 END,
+        CASE WHEN pc.tour = 'TE4' THEN 0 ELSE 1 END,
         CASE WHEN pc.id = u.default_player_claim_id THEN 0 ELSE 1 END, pc.created_at ASC, pc.id ASC
       LIMIT 1
     ) reply_identity ON TRUE

@@ -239,6 +239,9 @@ h1, h2, h3 { margin: 0; }
 :root[data-theme='light'] .forum-avatar.av-tournament { background: #010c20; border-color: var(--lime); }
 :root[data-theme='light'] .forum-avatar.av-tournament > .forum-avatar-source { display: none; }
 :root[data-theme='light'] .forum-avatar.av-tournament > .forum-avatar-light-logo { display: block; object-fit: contain; padding: 5px; }
+:root[data-theme='light'] .forum-avatar.av-tournament.av-tournament-readable { background: #fff; border-color: var(--line-2); }
+:root[data-theme='light'] .forum-avatar.av-tournament.av-tournament-readable > .forum-avatar-source { display: block; object-fit: contain; padding: 3px; }
+:root[data-theme='light'] .forum-avatar.av-tournament.av-tournament-readable > .forum-avatar-light-logo { display: none; }
 .topic-title { font-weight: 700; font-size: 16px; line-height: 1.3; }
 .topic:hover .topic-title { color: var(--lime); }
 .topic-meta { font-size: 12.5px; color: var(--muted); margin-top: 4px; display: flex; flex-wrap: wrap; gap: 4px 10px; align-items: center; }
