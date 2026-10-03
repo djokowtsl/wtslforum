@@ -551,9 +551,10 @@ h1, h2, h3 { margin: 0; }
 .season-highlights-head { display: flex; align-items: baseline; justify-content: space-between; gap: 12px; margin-bottom: 12px; }
 .season-highlights-head h3 { margin: 0; color: var(--text-strong); font-size: 18px; }
 .season-highlights-head span, .season-highlight-stats small { color: var(--muted); font-size: 12px; }
-.season-highlight-stats { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 10px; }
-.season-highlight-stats > div { display: flex; flex-direction: column; gap: 3px; padding: 11px; border: 1px solid var(--line); border-radius: 10px; background: var(--panel); }
-.season-highlight-stats strong { color: var(--text-strong); font-size: 20px; }
+.season-highlight-stats { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(100%, 160px), 1fr)); gap: 10px; min-width: 0; }
+.season-highlight-stats > div { display: flex; flex-direction: column; gap: 3px; min-width: 0; padding: 11px; border: 1px solid var(--line); border-radius: 10px; background: var(--panel); }
+.season-highlight-stats strong { min-width: 0; color: var(--text-strong); font-size: 20px; overflow-wrap: anywhere; }
+.season-highlight-stats small { min-width: 0; overflow-wrap: anywhere; }
 .season-highlight-lists { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 12px; margin-top: 14px; min-width: 0; }
 .season-highlight-lists > div, .season-highlight-lists ul { min-width: 0; }
 .season-highlight-lists h4 { margin: 0 0 6px; color: var(--soft); font-size: 12px; text-transform: uppercase; letter-spacing: .04em; }
