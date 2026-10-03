@@ -145,7 +145,7 @@ export default function ScreenshotRecordsViewer({
         <div>
           <span className="screenshot-explorer-kicker">Workbook data</span>
           <h2 id="screenshot-records-title">Individual screenshot rows</h2>
-          <p>Search match records from the ATP and WTA screenshots database. Only rows whose Player appears on the matching WTSL rankings are shown.</p>
+          <p>Search match records from the ATP and WTA screenshots database. Only rows where the player matches an official name from the WTSL rankings are displayed.</p>
         </div>
         <div className="screenshot-records-count" aria-live="polite">
           <strong>{error ? '—' : result.total.toLocaleString()}</strong>
