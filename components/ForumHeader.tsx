@@ -7,6 +7,7 @@ import { MobileNav } from './MobileNav';
 import { ThemeToggle } from './ThemeToggle';
 import { StatusDot } from './StatusDot';
 import { SearchBar } from './SearchBar';
+import PresenceHeartbeat from './PresenceHeartbeat';
 
 export const NAV = [
   { href: '/discussions', label: 'Discussions' },
@@ -28,7 +29,7 @@ export const NAV = [
 export async function ForumHeader() {
   const u = await getSession();
   const canModerate = canModerateComments(u);
-  const status = u ? await safe(() => getUserStatus(u.id), 'online' as const) : null;
+  const status = u ? await safe(() => getUserStatus(u.id), 'offline' as const) : null;
   const unread = u ? await safe(() => unreadMessageCount(u.id), 0) : 0;
   return (
     <header className="site-header">
@@ -76,6 +77,7 @@ export async function ForumHeader() {
           unreadMessages={unread}
         />
       </div>
+      {u && <PresenceHeartbeat />}
     </header>
   );
 }

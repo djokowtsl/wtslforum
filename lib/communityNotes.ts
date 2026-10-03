@@ -18,9 +18,13 @@ export type CommunityNote = {
 export async function getThreadCommunityNotes(topicId: number, replyIds: number[], viewerId: string | null) {
   const rows = await sql`
     SELECT n.id,n.topic_id,n.reply_id,n.author_id,u.display_name AS author,n.body,n.created_at,
-      COUNT(r.id)::int AS rating_count,
-      COUNT(r.id) FILTER (WHERE r.helpful)::int AS helpful_count,
-      MAX(CASE WHEN r.user_id=${viewerId ? Number(viewerId) : 0} THEN CASE WHEN r.helpful THEN 1 ELSE 0 END END) AS viewer_vote
+      (COUNT(r.id) FILTER (WHERE n.author_id IS NULL OR r.user_id <> n.author_id))::int AS rating_count,
+      (COUNT(r.id) FILTER (WHERE r.helpful AND (n.author_id IS NULL OR r.user_id <> n.author_id)))::int AS helpful_count,
+      MAX(CASE
+        WHEN r.user_id=${viewerId ? Number(viewerId) : 0}
+          AND (n.author_id IS NULL OR r.user_id <> n.author_id)
+        THEN CASE WHEN r.helpful THEN 1 ELSE 0 END
+      END) AS viewer_vote
     FROM community_notes n
     LEFT JOIN users u ON u.id=n.author_id
     LEFT JOIN community_note_ratings r ON r.note_id=n.id

@@ -1,4 +1,5 @@
 import { sql } from './db';
+import { ONLINE_PRESENCE_WINDOW_MINUTES } from './presencePolicy';
 
 function conversationKey(a: string | number, b: string | number) {
   const [x, y] = [Number(a), Number(b)].sort((m, n) => m - n);
@@ -62,7 +63,10 @@ export async function listConversations(userId: string | number): Promise<Conver
     SELECT * FROM (
       SELECT DISTINCT ON (dm.conversation_key)
         dm.conversation_key, dm.body last_body, dm.created_at last_at, dm.sender_id last_sender_id,
-        other.id other_id, other.display_name other_name, other.avatar_url other_avatar, other.status other_status,
+        other.id other_id, other.display_name other_name, other.avatar_url other_avatar,
+        CASE WHEN other.status='online' AND (
+          other.last_active_at IS NULL OR other.last_active_at < NOW() - ${ONLINE_PRESENCE_WINDOW_MINUTES} * INTERVAL '1 minute'
+        ) THEN 'offline' ELSE other.status END other_status,
         (SELECT COUNT(*)::int FROM direct_messages u2 WHERE u2.conversation_key = dm.conversation_key AND u2.recipient_id = ${Number(userId)} AND u2.read_at IS NULL) unread
       FROM direct_messages dm
       JOIN users other ON other.id = (CASE WHEN dm.sender_id = ${Number(userId)} THEN dm.recipient_id ELSE dm.sender_id END)
@@ -86,7 +90,10 @@ export async function searchMembers(query: string, excludeUserId: string | numbe
   const q = query.trim();
   if (q.length < 2) return [];
   const rows = await sql`
-    SELECT id, display_name, avatar_url, status
+    SELECT id, display_name, avatar_url,
+      CASE WHEN status='online' AND (
+        last_active_at IS NULL OR last_active_at < NOW() - ${ONLINE_PRESENCE_WINDOW_MINUTES} * INTERVAL '1 minute'
+      ) THEN 'offline' ELSE status END AS status
     FROM users
     WHERE display_name ILIKE ${'%' + q + '%'} AND id != ${Number(excludeUserId)}
     ORDER BY display_name ASC
@@ -127,14 +134,14 @@ export async function searchVerifiedMembers(query: string, excludeUserId: string
   return rows as MentionableMember[];
 }
 
-/** Members currently set to "online", for the inbox's quick-start panel — newest status change
- * first so recently-active members surface at the top. */
+/** Members with a recent online heartbeat, newest activity first. */
 export async function listOnlineMembers(excludeUserId: string | number, limit = 20): Promise<MemberResult[]> {
   const rows = await sql`
     SELECT id, display_name, avatar_url, status
     FROM users
-    WHERE status = 'online' AND id != ${Number(excludeUserId)}
-    ORDER BY display_name ASC
+    WHERE status = 'online' AND last_active_at >= NOW() - ${ONLINE_PRESENCE_WINDOW_MINUTES} * INTERVAL '1 minute'
+      AND id != ${Number(excludeUserId)}
+    ORDER BY last_active_at DESC
     LIMIT ${limit}`;
   return rows as MemberResult[];
 }

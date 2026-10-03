@@ -3,6 +3,7 @@
 import { useState } from 'react';
 import { useRouter } from 'next/navigation';
 import type { CommunityNote } from '@/lib/communityNotes';
+import { partitionCommunityNotes } from '@/lib/communityNotePolicy';
 import RichText from './RichText';
 import MentionTextarea from './MentionTextarea';
 
@@ -24,6 +25,7 @@ export default function CommunityNotes({
   const [submitting, setSubmitting] = useState(false);
   const [formVersion, setFormVersion] = useState(0);
   const [message, setMessage] = useState('');
+  const { consensus, proposed } = partitionCommunityNotes(notes, viewerId !== null);
 
   async function rate(noteId: number, helpful: boolean) {
     setBusyId(noteId);
@@ -90,41 +92,60 @@ export default function CommunityNotes({
     }
   }
 
+  if (!viewerId && consensus.length === 0) return null;
+
+  const renderNote = (note: CommunityNote) => {
+    const isAuthor = viewerId !== null && String(note.author_id) === viewerId;
+    return (
+      <article className={note.has_consensus ? 'community-note' : 'community-note community-note-proposed'} key={note.id}>
+        <div className="community-note-heading">
+          <strong>{note.has_consensus ? 'Community note' : 'Proposed note · collecting member ratings'}</strong>
+          <span>{note.helpful_count}/{note.rating_count} helpful</span>
+        </div>
+        <div className="community-note-body"><RichText text={note.body} /></div>
+        <p className="community-note-author">Submitted by {note.author || 'Member'}</p>
+        {viewerId && !isAuthor && (
+          <div className="community-note-actions">
+            <button type="button" className="btn btn-sm btn-ghost" disabled={busyId === note.id} aria-pressed={note.viewer_vote === true} onClick={() => rate(note.id, true)}>Helpful</button>
+            <button type="button" className="btn btn-sm btn-ghost" disabled={busyId === note.id} aria-pressed={note.viewer_vote === false} onClick={() => rate(note.id, false)}>Not helpful</button>
+          </div>
+        )}
+        {canModerate && <button type="button" className="btn btn-sm btn-ghost community-note-remove" disabled={busyId === note.id} onClick={() => remove(note.id)}>Remove note</button>}
+        {!note.has_consensus && <small>Shown to signed-in reviewers only; it appears publicly after five ratings and at least 80% helpful votes.</small>}
+      </article>
+    );
+  };
+
   return (
     <section className="community-notes" aria-label="Community notes">
-      <h3>Community notes</h3>
-      {notes.length ? notes.map((note) => {
-        const isAuthor = viewerId !== null && String(note.author_id) === viewerId;
-        return (
-          <article className={note.has_consensus ? 'community-note' : 'community-note community-note-proposed'} key={note.id}>
-            <div className="community-note-heading">
-              <strong>{note.has_consensus ? 'Community note' : 'Proposed note · collecting member ratings'}</strong>
-              <span>{note.helpful_count}/{note.rating_count} helpful</span>
-            </div>
-            <div className="community-note-body"><RichText text={note.body} /></div>
-            <p className="community-note-author">Submitted by {note.author || 'Member'}</p>
-            {viewerId && !isAuthor && (
-              <div className="community-note-actions">
-                <button type="button" className="btn btn-sm btn-ghost" disabled={busyId === note.id} aria-pressed={note.viewer_vote === true} onClick={() => rate(note.id, true)}>Helpful</button>
-                <button type="button" className="btn btn-sm btn-ghost" disabled={busyId === note.id} aria-pressed={note.viewer_vote === false} onClick={() => rate(note.id, false)}>Not helpful</button>
-              </div>
-            )}
-            {canModerate && <button type="button" className="btn btn-sm btn-ghost community-note-remove" disabled={busyId === note.id} onClick={() => remove(note.id)}>Remove note</button>}
-            {!note.has_consensus && <small>This note is shown to signed-in members so they can rate it; it appears publicly after five ratings and at least 80% helpful votes.</small>}
-          </article>
-        );
-      }) : <p className="community-notes-empty">No community notes have reached consensus yet.</p>}
+      {consensus.length > 0 && (
+        <>
+          <h3>Community notes</h3>
+          {consensus.map(renderNote)}
+        </>
+      )}
 
-      {viewerId ? (
-        <form className="community-note-form" onSubmit={submit}>
-          <label>
-            Add a community note
-            <MentionTextarea key={formVersion} name="body" rows={3} maxLength={3000} placeholder="Add factual context for this discussion or reply…" enableSpoilers />
-          </label>
-          <button className="btn btn-sm" type="submit" disabled={submitting}>{submitting ? 'Submitting…' : 'Submit note'}</button>
-        </form>
-      ) : (
-        <p className="community-notes-empty"><a href="/api/auth/discord">Sign in</a> to submit or rate a community note.</p>
+      {viewerId && (
+        <details className="community-note-reply">
+          <summary>Reply with a community note</summary>
+          <div className="community-note-reply-content">
+            {proposed.length > 0 ? (
+              <>
+                <h4>Proposed notes to review</h4>
+                {proposed.map(renderNote)}
+              </>
+            ) : (
+              <p className="community-notes-empty">No proposed notes to rate yet.</p>
+            )}
+            <form className="community-note-form" onSubmit={submit}>
+              <label>
+                Add a community note
+                <MentionTextarea key={formVersion} name="body" rows={3} maxLength={3000} placeholder="Add factual context for this discussion or reply…" enableSpoilers />
+              </label>
+              <button className="btn btn-sm" type="submit" disabled={submitting}>{submitting ? 'Submitting…' : 'Submit note'}</button>
+            </form>
+          </div>
+        </details>
       )}
       {message && <p className="notice" role="status">{message}</p>}
     </section>

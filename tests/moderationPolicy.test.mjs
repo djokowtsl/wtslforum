@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
 import { extractImageUrls, moderateContent, moderateTextAndImages, ModerationUnavailableError } from '../lib/moderation.ts';
-import { hasCommunityNoteConsensus } from '../lib/communityNotePolicy.ts';
+import { hasCommunityNoteConsensus, partitionCommunityNotes } from '../lib/communityNotePolicy.ts';
 import { spoilerMarkupError } from '../lib/spoilers.ts';
 
 const originalFetch = globalThis.fetch;
@@ -51,6 +51,21 @@ test('community note consensus requires five ratings and at least 80% helpful vo
   assert.equal(hasCommunityNoteConsensus(5, 4), true);
   assert.equal(hasCommunityNoteConsensus(5, 3), false);
   assert.equal(hasCommunityNoteConsensus(10, 8), true);
+});
+
+test('public readers only receive consensus notes; signed-in readers can review proposed notes', () => {
+  const notes = [
+    { id: 1, has_consensus: true },
+    { id: 2, has_consensus: false },
+  ];
+  assert.deepEqual(partitionCommunityNotes(notes, false), {
+    consensus: [notes[0]],
+    proposed: [],
+  });
+  assert.deepEqual(partitionCommunityNotes(notes, true), {
+    consensus: [notes[0]],
+    proposed: [notes[1]],
+  });
 });
 
 test('spoiler markup is paired, nonempty, and confined to one line', () => {

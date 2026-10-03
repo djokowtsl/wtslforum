@@ -765,6 +765,10 @@ h1, h2, h3 { margin: 0; }
 .community-note-remove { margin: 10px 0 0 8px; color: var(--red); }
 .community-note-form { display: grid; gap: 10px; }
 .community-notes-empty { margin: 0; color: var(--muted); font-size: 13px; }
+.community-note-reply { display: grid; gap: 12px; }
+.community-note-reply > summary { width: fit-content; cursor: pointer; color: var(--lime); font-weight: 700; }
+.community-note-reply-content { display: grid; gap: 12px; padding-top: 4px; }
+.community-note-reply-content h4 { margin: 0; color: var(--text-strong); font-size: 15px; }
 .moderation-queue { display: grid; gap: 14px; padding-bottom: 48px; }
 .moderation-item { padding: 20px; border: 1px solid var(--line-2); border-radius: 14px; background: var(--panel); }
 .moderation-item-meta { display: flex; align-items: center; flex-wrap: wrap; gap: 10px; color: var(--muted); font-size: 12px; }
