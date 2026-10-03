@@ -3,6 +3,7 @@ import test from 'node:test';
 import { CATEGORY_ICONS } from '../lib/awardIcons.ts';
 
 const seasonCategories = [
+  'Player of the Year (Year-End No. 1)',
   'Fans Favourite Award',
   'Stefan Edberg Sportsmanship Award',
   'Most Improved Player',
