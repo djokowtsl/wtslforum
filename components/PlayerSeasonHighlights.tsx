@@ -5,7 +5,7 @@ export default function PlayerSeasonHighlights({ highlights, unavailable = false
     <section className="season-highlights" aria-label={`${highlights.year} season highlights`}>
       <div className="season-highlights-head">
         <h3>Season highlights</h3>
-        <span>{highlights.year} · official WTSL results</span>
+        <span>{highlights.year}</span>
       </div>
       {unavailable ? (
         <p className="season-highlights-empty">Official WTA match results are unavailable right now. Please try again later.</p>
