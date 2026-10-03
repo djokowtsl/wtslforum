@@ -5,6 +5,7 @@ import { getTopics, getCategoriesWithCounts } from '@/lib/queries';
 import { getSession, discordAvatar } from '@/lib/auth';
 import { timeAgo } from '@/lib/format';
 import PageHero from '@/components/PageHero';
+import ForumAvatar from '@/components/ForumAvatar';
 
 export const dynamic = 'force-dynamic';
 export const metadata: Metadata = { title: 'Discussions' };
@@ -42,7 +43,12 @@ export default async function Discussions({ searchParams }: { searchParams: Prom
             <div className="empty"><strong>Nothing here yet</strong>Start the first conversation in this board.{u && <><br /><Link className="btn btn-primary btn-sm" href="/discussions/new">Start a discussion</Link></>}</div>
           ) : topics.map((t: any) => (
             <Link className="topic" href={'/discussions/' + t.id} key={t.id}>
-              <img className={'av' + (!t.author ? ' av-wtsl' : '')} src={t.tournament_logo || (!t.author ? '/brand/wtsl-logo-200.png' : discordAvatar(t.avatar, t.author || 'W'))} alt="" />
+              <ForumAvatar
+                size="topic"
+                src={t.tournament_logo || (!t.author ? '/brand/wtsl-logo-200.png' : discordAvatar(t.avatar, t.author || 'W'))}
+                hasTournamentLogo={!!t.tournament_logo}
+                isCommunity={!t.author}
+              />
               <div>
                 <div className="topic-title">{t.title}</div>
                 <div className="topic-meta">

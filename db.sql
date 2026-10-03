@@ -414,8 +414,11 @@ CREATE INDEX IF NOT EXISTS player_recent_results_player_idx ON player_recent_res
 -- "fixture-<fixture_key>" for open/upcoming fixtures from the betting Core API.
 CREATE TABLE IF NOT EXISTS match_threads (
   id BIGSERIAL PRIMARY KEY, match_key TEXT UNIQUE NOT NULL, topic_id BIGINT NOT NULL REFERENCES topics(id) ON DELETE CASCADE,
-  created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+  tour TEXT, created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );
+DO $$ BEGIN
+  ALTER TABLE match_threads ADD COLUMN IF NOT EXISTS tour TEXT;
+END $$;
 
 -- Member-set presence ("online"/"away"/"busy"/"offline") shown next to a user's name/avatar
 -- anywhere they appear on the forum. There is no automatic detection — this is a manual toggle

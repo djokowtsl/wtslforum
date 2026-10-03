@@ -7,10 +7,11 @@ type Props = {
   initialTitle?: string;
   initialBody?: string;
   matchKey?: string;
+  tour?: string;
   initialCategoryId?: string | number;
 };
 
-export default function NewDiscussionForm({ categories, initialTitle, initialBody, matchKey, initialCategoryId }: Props) {
+export default function NewDiscussionForm({ categories, initialTitle, initialBody, matchKey, tour, initialCategoryId }: Props) {
   const [error, setError] = useState('');
   const [busy, setBusy] = useState(false);
 
@@ -28,7 +29,7 @@ export default function NewDiscussionForm({ categories, initialTitle, initialBod
       return;
     }
     try {
-      const r = await fetch('/api/topics', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ title: f.get('title'), categoryId: f.get('categoryId'), body: f.get('body'), matchKey }) });
+      const r = await fetch('/api/topics', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ title: f.get('title'), categoryId: f.get('categoryId'), body: f.get('body'), matchKey, tour }) });
       const x = await r.json().catch(() => ({}));
       if (r.ok) location.href = '/discussions/' + x.id;
       else setError(x.error || 'Unable to publish your discussion.');

@@ -11,6 +11,7 @@ import RichText from '@/components/RichText';
 import ReactionBar from '@/components/ReactionBar';
 import { StatusDot } from '@/components/StatusDot';
 import AdminTopicControls from '@/components/AdminTopicControls';
+import ForumAvatar from '@/components/ForumAvatar';
 
 export const dynamic = 'force-dynamic';
 export const metadata: Metadata = { title: 'Discussion' };
@@ -50,7 +51,12 @@ export default async function Thread({ params }: { params: Promise<{ id: string 
 
       <article className="post op">
         <div className="post-user">
-          <img className={'avatar-img' + (!topic.author ? ' av-wtsl' : '')} src={topic.tournament_logo || (!topic.author ? '/brand/wtsl-logo-200.png' : discordAvatar(topic.avatar, topic.author || 'W'))} alt="" />
+          <ForumAvatar
+            size="post"
+            src={topic.tournament_logo || (!topic.author ? '/brand/wtsl-logo-200.png' : discordAvatar(topic.avatar, topic.author || 'W'))}
+            hasTournamentLogo={!!topic.tournament_logo}
+            isCommunity={!topic.author}
+          />
           <strong>{topic.author && <StatusDot status={topic.author_status} />} {topicAuthorHref ? <Link className="post-author-link" href={topicAuthorHref}>{topic.author}</Link> : topic.author || 'Community'}</strong>
           <span className="pill role">Original poster</span>
           {u && topic.author_id && Number(topic.author_id) !== Number(u.id) && (

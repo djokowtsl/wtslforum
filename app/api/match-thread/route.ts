@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { findMatchThread } from '@/lib/matchThreads';
+import { isTourCode } from '@/lib/wtsl';
 
 export const dynamic = 'force-dynamic';
 
@@ -18,10 +19,12 @@ export async function GET(req: NextRequest) {
   const tournament = searchParams.get('tournament') || '';
   const round = searchParams.get('round') || '';
   const score = searchParams.get('score') || '';
+  const tourParam = searchParams.get('tour');
+  const tour = isTourCode(tourParam) ? tourParam : null;
   if (!matchKey) return NextResponse.redirect(new URL('/matches', req.url));
 
   try {
-    const existing = await findMatchThread(matchKey);
+    const existing = await findMatchThread(matchKey, tour);
     if (existing) return NextResponse.redirect(new URL(`/discussions/${existing}`, req.url));
   } catch {
     return NextResponse.redirect(new URL('/discussions?c=match-talk', req.url));
@@ -36,5 +39,6 @@ export async function GET(req: NextRequest) {
   compose.searchParams.set('matchKey', matchKey);
   compose.searchParams.set('title', title);
   compose.searchParams.set('body', body);
+  if (tour) compose.searchParams.set('tour', tour);
   return NextResponse.redirect(compose);
 }
