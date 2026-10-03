@@ -47,6 +47,7 @@ export default async function Discussions({ searchParams }: { searchParams: Prom
                 size="topic"
                 src={t.tournament_logo || (!t.author ? '/brand/wtsl-logo-200.png' : discordAvatar(t.avatar, t.author || 'W'))}
                 hasTournamentLogo={!!t.tournament_logo}
+                tournamentName={t.title}
                 isCommunity={!t.author}
               />
               <div>
