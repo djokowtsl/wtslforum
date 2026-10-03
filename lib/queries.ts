@@ -179,7 +179,7 @@ export async function getTopic(ref: string | number) {
   if (!topic) return null;
   await sql`UPDATE topics SET views = views + 1 WHERE id = ${topic.id}`;
   const replies = await sql`
-    SELECT r.id, r.body, r.created_at, u.id AS author_id,
+    SELECT r.id, r.body, r.created_at, r.updated_at, u.id AS author_id,
       COALESCE(reply_identity.player_name, u.display_name) AS author,
       u.avatar_url AS avatar, u.is_admin, u.status AS author_status,
       reply_identity.wtsl_player_id AS official_player_id, reply_identity.tour AS official_tour
