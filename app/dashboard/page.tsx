@@ -153,7 +153,7 @@ export default async function Dashboard() {
                 {p.clutch_stats_source === 'wtsl_all_results'
                   && ((p.sets_won ?? 0) > 0 || (p.sets_lost ?? 0) > 0 || (p.tiebreaks_played ?? 0) > 0 || (p.deciding_sets_played ?? 0) > 0) && (
                   <div className="player-record-grid">
-                    <div><strong>{p.sets_won ?? 0}-{p.sets_lost ?? 0}</strong><small>Sets · official WTSL results</small></div>
+                    <div><strong>{p.sets_won ?? 0}-{p.sets_lost ?? 0}</strong><small>Sets</small></div>
                     <div><strong>{p.tiebreaks_won ?? 0}-{(p.tiebreaks_played ?? 0) - (p.tiebreaks_won ?? 0)}</strong><small>Tiebreaks</small></div>
                     <div><strong>{p.deciding_sets_won ?? 0}-{(p.deciding_sets_played ?? 0) - (p.deciding_sets_won ?? 0)}</strong><small>Deciding sets</small></div>
                   </div>
