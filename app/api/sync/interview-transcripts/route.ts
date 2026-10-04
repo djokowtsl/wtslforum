@@ -172,9 +172,12 @@ function published(req: NextRequest, topicId: number, matchKey: string, postType
   return NextResponse.json({ status: 'published', url, matchKey, postType });
 }
 
-function pending(message: string) {
-  return NextResponse.json({ status: 'pending', message }, { status: 202 });
-}
+function pending(message: string, reason?: string) {
+    return NextResponse.json(
+      { status: 'pending', message, ...(reason ? { reason } : {}) },
+      { status: 202 },
+    );
+    }
 
 async function findSourcePosts(sourceKey: string) {
   const topics = await sql`
@@ -330,8 +333,14 @@ export async function POST(req: NextRequest) {
     match = await resolveMatch(result);
   } catch (error) {
     if (error instanceof MatchResolutionError) {
-      return NextResponse.json({ error: error.message }, { status: error.status });
-    }
+        if (error.status === 404) {
+          return pending(
+            'No exact official WTSL match is available for this result yet. The transcript remains unpublished and will be retried.',
+            'official_match_not_found',
+          );
+        }
+        return NextResponse.json({ error: error.message }, { status: error.status });
+      }
     console.error('[interview-transcripts] match resolution failed', error);
     return NextResponse.json({ error: 'Match resolution failed.' }, { status: 500 });
   }
