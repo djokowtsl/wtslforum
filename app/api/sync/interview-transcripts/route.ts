@@ -203,6 +203,50 @@ async function removeOrphanSourceTopic(topicId: number, sourceKey: string) {
   return Boolean(removed[0]);
 }
 
+function normalizeTopicTitle(value: string) {
+  return value.trim().replace(/\s+/g, ' ').toLowerCase();
+}
+
+/** Reuse a clearly identified older Match Talk topic that predates match-key linking. */
+async function findLegacyMatchDiscussion(match: MatchRow, result: ResultContext) {
+  const playerOne = String(match.player_one_name || '').trim();
+  const playerTwo = String(match.player_two_name || '').trim();
+  if (!playerOne || !playerTwo || !result.tournament || !result.round) return [];
+
+  // Match-card discussions use this title shape. Restrict candidates to the match date
+  // window and exclude topics already associated with another match; uncertain matches
+  // are handled as conflicts rather than silently creating a duplicate discussion.
+  const forwardTitle = normalizeTopicTitle((playerOne + ' vs ' + playerTwo + ' — ' + result.tournament + ' (' + result.round + ')').slice(0, 180));
+  const reverseTitle = normalizeTopicTitle((playerTwo + ' vs ' + playerOne + ' — ' + result.tournament + ' (' + result.round + ')').slice(0, 180));
+  return sql`
+    SELECT t.id::text AS id, t.locked, t.moderation_status
+    FROM topics t
+    JOIN categories c ON c.id=t.category_id
+    WHERE c.slug='match-talk'
+      AND (lower(trim(t.title))=${forwardTitle} OR lower(trim(t.title))=${reverseTitle})
+      AND t.created_at >= (${result.createdAt}::timestamptz - interval '45 days')
+      AND t.created_at <= (${result.createdAt}::timestamptz + interval '45 days')
+      AND NOT EXISTS (SELECT 1 FROM match_threads mt WHERE mt.topic_id=t.id)
+    ORDER BY t.created_at DESC
+    LIMIT 3
+  ` as { id: string; locked: boolean; moderation_status: string }[];
+}
+
+async function findOrClaimMatchDiscussion(
+  matchKey: string,
+  match: MatchRow,
+  result: ResultContext,
+): Promise<{ topicId: number | null; ambiguous: boolean }> {
+  const linked = await findMatchThread(matchKey, match.tour);
+  if (linked) return { topicId: linked, ambiguous: false };
+  const legacy = await findLegacyMatchDiscussion(match, result);
+  if (legacy.length > 1) return { topicId: null, ambiguous: true };
+  if (!legacy.length) return { topicId: null, ambiguous: false };
+  return {
+    topicId: await claimMatchThread(matchKey, Number(legacy[0].id), match.tour),
+    ambiguous: false,
+  };
+}
 async function insertInterviewReply(
   topicId: number,
   sourceKey: string,
@@ -326,7 +370,12 @@ export async function POST(req: NextRequest) {
     if (existing.topic.moderation_status === 'rejected') {
       return NextResponse.json({ error: 'The interview transcript was rejected by moderation.' }, { status: 422 });
     }
-    const linkedTopicId = await claimMatchThread(matchKey, Number(existing.topic.id), match.tour);
+    const matchDiscussion = await findOrClaimMatchDiscussion(matchKey, match, result);
+    if (matchDiscussion.ambiguous) {
+      return NextResponse.json({ error: 'More than one older Match Talk discussion could match this result.' }, { status: 409 });
+    }
+    const linkedTopicId = matchDiscussion.topicId
+      ?? await claimMatchThread(matchKey, Number(existing.topic.id), match.tour);
     if (linkedTopicId === Number(existing.topic.id)) {
       return published(req, linkedTopicId, matchKey, 'topic');
     }
@@ -359,7 +408,11 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ error: 'The interview transcript was rejected by moderation.' }, { status: 422 });
   }
 
-  let linkedTopicId = await findMatchThread(matchKey, match.tour);
+  const matchDiscussion = await findOrClaimMatchDiscussion(matchKey, match, result);
+  if (matchDiscussion.ambiguous) {
+    return NextResponse.json({ error: 'More than one older Match Talk discussion could match this result.' }, { status: 409 });
+  }
+  let linkedTopicId = matchDiscussion.topicId;
   if (linkedTopicId) {
     const destination = await sql`
       SELECT id, locked, moderation_status FROM topics WHERE id=${linkedTopicId} LIMIT 1
