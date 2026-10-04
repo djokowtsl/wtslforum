@@ -218,7 +218,7 @@ async function findLegacyMatchDiscussion(match: MatchRow, result: ResultContext)
   // are handled as conflicts rather than silently creating a duplicate discussion.
   const forwardTitle = normalizeTopicTitle((playerOne + ' vs ' + playerTwo + ' — ' + result.tournament + ' (' + result.round + ')').slice(0, 180));
   const reverseTitle = normalizeTopicTitle((playerTwo + ' vs ' + playerOne + ' — ' + result.tournament + ' (' + result.round + ')').slice(0, 180));
-  return sql`
+  return await sql`
     SELECT t.id::text AS id, t.locked, t.moderation_status
     FROM topics t
     JOIN categories c ON c.id=t.category_id
@@ -229,7 +229,7 @@ async function findLegacyMatchDiscussion(match: MatchRow, result: ResultContext)
       AND NOT EXISTS (SELECT 1 FROM match_threads mt WHERE mt.topic_id=t.id)
     ORDER BY t.created_at DESC
     LIMIT 3
-  ` as { id: string; locked: boolean; moderation_status: string }[];
+  `;
 }
 
 async function findOrClaimMatchDiscussion(
