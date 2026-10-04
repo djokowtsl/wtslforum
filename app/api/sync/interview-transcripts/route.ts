@@ -1,4 +1,4 @@
-import { NextRequest, NextResponse } from 'next/server';
+import { NextResponse, type NextRequest } from 'next/server';
 import { sql } from '@/lib/db';
 import { claimMatchThread, findMatchThread } from '@/lib/matchThreads';
 import { moderateTextAndImages, ModerationUnavailableError } from '@/lib/moderation';
