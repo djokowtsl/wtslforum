@@ -163,7 +163,7 @@ export async function searchPlayers(tour: string, query: string, limit = 8) {
     SELECT wtsl_player_id, name, avatar_url, country
     FROM wtsl_players
     WHERE tour=${tour} AND name ILIKE ${'%' + q + '%'}
-    ORDER BY name ASC
+    ORDER BY CASE WHEN lower(name) = lower(${q}) THEN 0 ELSE 1 END, name ASC
     LIMIT ${limit}
   `;
 }
