@@ -1,12 +1,14 @@
 'use client';
 import { useMemo, useState } from 'react';
 import RatingEvidence from '@/components/RatingEvidence';
+import PlayerAvatar from '@/components/PlayerAvatar';
 
 type Row = {
   wtsl_player_id: string;
   name: string;
   country?: string | null;
   avatar_url?: string | null;
+  flag_url?: string | null;
   matches: number;
   wins: number;
   losses: number;
@@ -103,7 +105,7 @@ export default function PlayerStatsTable({ rows, tour }: { rows: Row[]; tour: st
         <tbody>
           {sorted.map((p) => (
             <tr key={p.wtsl_player_id}>
-              <td data-label="Player"><a className="player-line" href={`/players/${p.wtsl_player_id}?tour=${encodeURIComponent(tour)}`}>{p.avatar_url && <img src={p.avatar_url} alt="" />}<span>{p.name}<small>{p.country || ''}</small></span></a></td>
+              <td data-label="Player"><a className="player-line" href={`/players/${p.wtsl_player_id}?tour=${encodeURIComponent(tour)}`}><PlayerAvatar src={p.avatar_url} flagSrc={p.flag_url} flagLabel={p.country} name={p.name} size={34} /><span>{p.name}<small>{p.country || ''}</small></span></a></td>
               <td data-label="Screenshots"><span className="player-stats-value">{p.matches}</span></td>
               <td data-label="Wins"><span className="player-stats-value">{p.wins}</span></td>
               <td data-label="Losses"><span className="player-stats-value">{p.losses}</span></td>
