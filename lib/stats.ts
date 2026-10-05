@@ -160,7 +160,7 @@ export async function searchPlayers(tour: string, query: string, limit = 8) {
   const q = query.trim();
   if (q.length < 2) return [];
   return sql`
-    SELECT wtsl_player_id, name, avatar_url, country
+    SELECT wtsl_player_id, name, avatar_url, flag_url, country
     FROM wtsl_players
     WHERE tour=${tour} AND name ILIKE ${'%' + q + '%'}
     ORDER BY CASE WHEN lower(name) = lower(${q}) THEN 0 ELSE 1 END, name ASC
@@ -175,9 +175,11 @@ export async function recentMatches(limit=20, tour='TE4'){
       p1.name player_one_name,
       p1.avatar_url player_one_avatar,
       p1.flag_url player_one_flag,
+      p1.country player_one_country,
       p2.name player_two_name,
       p2.avatar_url player_two_avatar,
-      p2.flag_url player_two_flag
+      p2.flag_url player_two_flag,
+      p2.country player_two_country
     FROM match_stats m
     LEFT JOIN wtsl_players p1 ON p1.wtsl_player_id=m.player_one_id AND p1.tour=m.tour
     LEFT JOIN wtsl_players p2 ON p2.wtsl_player_id=m.player_two_id AND p2.tour=m.tour
