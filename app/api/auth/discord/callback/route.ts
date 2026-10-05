@@ -35,12 +35,15 @@ export async function GET(req: Request) {
     try {
       const synced = await syncBotApprovedIdentitiesForUser(user.id, user.discordId);
       if (synced.length) {
-        console.info(`[wtsl] synced ${synced.length} approved player identity(ies) for Discord ${user.discordId}`);
+        console.info(`[wtsl] synced ${synced.length} approved player identity(ies) after Discord login`);
       }
     } catch (syncError) {
       // Identity sync is best-effort for sign-in. The approved bot record remains durable,
       // so the next Discord login can retry without blocking the user's forum session.
-      console.error('[wtsl] approved player identity sync after Discord login failed', syncError instanceof Error ? syncError.message : syncError);
+      console.error(
+        '[wtsl] approved player identity sync after Discord login failed',
+        syncError instanceof Error ? syncError.message : syncError,
+      );
     }
   } catch (e) {
     console.error('[wtsl] Discord callback failed', e instanceof Error ? e.message : e);
