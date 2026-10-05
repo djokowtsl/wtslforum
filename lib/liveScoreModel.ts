@@ -143,6 +143,12 @@ export function adjustOfficialH2HPercent(percent: number, bestOf: 1 | 3 | 5): nu
   return capPercent(bestOfFive);
 }
 
+/** Uses the pair's historical win share; an empty 0–0 record is neutral at 50%. */
+export function h2hRecordWinPercent(record: { firstWins: number; secondWins: number }): number {
+  const total = record.firstWins + record.secondWins;
+  return total > 0 ? (record.firstWins / total) * 100 : 50;
+}
+
 export function readOfficialH2HPercent(html: string): number | null {
   const element = html.match(/<div\b(?=[^>]*\bclass\s*=\s*["'][^"']*\bh2h-winfill\b[^"']*["'])[^>]*>/i);
   if (!element) return null;
