@@ -19,6 +19,7 @@ type LiveMatch = {
   bestOf: 1 | 3 | 5;
   tour: string | null;
   probability: number | null;
+  probabilitySource: 'official' | 'all-results' | 'no-history' | null;
   players: { first: LivePlayer; second: LivePlayer } | null;
 };
 
@@ -98,7 +99,13 @@ export default function LiveScores() {
               <div className="live-score-center">
                 <span>{match.score || 'Score unavailable'}</span>
                 {match.probability !== null
-                  ? <small>WTSL win probability</small>
+                  ? <small>
+                    {match.probabilitySource === 'all-results'
+                      ? 'Historical H2H estimate'
+                      : match.probabilitySource === 'no-history'
+                        ? 'No H2H · neutral estimate'
+                        : 'WTSL win probability'}
+                  </small>
                   : <small>Probability unavailable</small>}
               </div>
               <div className="live-score-player">
