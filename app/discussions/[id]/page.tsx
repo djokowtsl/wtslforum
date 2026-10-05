@@ -16,6 +16,7 @@ import { StatusDot } from '@/components/StatusDot';
 import AdminTopicControls from '@/components/AdminTopicControls';
 import ForumAvatar from '@/components/ForumAvatar';
 import { getThreadCommunityNotes, type CommunityNote } from '@/lib/communityNotes';
+import DiscussionVideo from '@/components/DiscussionVideo';
 
 export const dynamic = 'force-dynamic';
 export const metadata: Metadata = { title: 'Discussion' };
@@ -29,7 +30,7 @@ export default async function Thread({ params }: { params: Promise<{ id: string 
   const { id } = await params;
   const data = await safe(() => getTopic(decodeURIComponent(id)), null as any);
   if (!data) notFound();
-  const { topic, replies } = data;
+  const { topic, replies, video } = data;
   const topicAuthorHref = officialAuthorHref(topic);
   const u = await getSession();
   const canModerateReplies = canModerateComments(u);
@@ -78,6 +79,7 @@ export default async function Thread({ params }: { params: Promise<{ id: string 
         <div className="post-content">
           <div className="post-date">{fmtDateTime(topic.created_at)}</div>
           <RichText text={topic.body} mentionables={mentionables} />
+          {video && <DiscussionVideo video={video} />}
           <ReactionBar topicId={Number(topic.id)} initial={reactions.topic} signedIn={!!u} />
           {canModerateReplies && <SpoilerCorrection kind="topic" id={Number(topic.id)} body={topic.body} />}
           <CommunityNotes targetType="topic" targetId={Number(topic.id)} notes={notesByTarget.get(`topic:${topic.id}`) || []} viewerId={u?.id ?? null} canModerate={canModerateReplies} />
