@@ -1,6 +1,12 @@
 import { NextResponse, type NextRequest } from 'next/server';
 import { sql } from '@/lib/db';
-import { MatchResolutionError, parseInterviewResult, resolveInterviewMatch, type MatchRow, type ResultContext } from '@/lib/interviewMatchResolution';
+import {
+  MatchResolutionError,
+  parseInterviewResult,
+  resolveInterviewMatch,
+  type MatchRow,
+  type ResultContext,
+} from '@/lib/interviewMatchResolution';
 import { claimMatchThread, findMatchThread } from '@/lib/matchThreads';
 import { moderateTextAndImages, ModerationUnavailableError } from '@/lib/moderation';
 import { spoilerMarkupError } from '@/lib/spoilers';
