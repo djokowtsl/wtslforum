@@ -2,11 +2,9 @@
  * Server-side adapter for the existing WTSL Replit bot/Core API.
  *
  * The Forum never receives Replit database credentials. The existing bot
- * remains authoritative for betting balances, fixtures, settlements and
- * canonical WTSL data.
- *
- * Current Core API is read-only. Betting writes remain disabled here until
- * an explicit write endpoint is added to the Replit API.
+ * remains authoritative for its domain data. Forum claim approvals use the
+ * narrowly scoped matchlog identity-sync endpoint; betting writes remain
+ * disabled here.
  */
 const base = (process.env.WTSL_CORE_API_URL || '').replace(/\/$/, '');
 const token = process.env.WTSL_CORE_API_KEY || '';
@@ -88,6 +86,25 @@ export type CoreMatchlogLeaderboardRow = {
   metrics: Record<string, number>;
 };
 
+export type CoreMatchlogIdentity = {
+  discord_user_id: string | number;
+  tour: string;
+  player_name: string;
+  wtsl_player_id: string | null;
+};
+
+export type CoreMatchlogIdentitySyncInput = {
+  discord_user_id: string;
+  tour: 'atp' | 'wta';
+  player_name: string;
+  wtsl_player_id: string;
+};
+
+export type CoreMatchlogIdentitySyncResult = {
+  status: 'synced' | 'already_synced' | 'conflict';
+  reason?: string;
+};
+
 export const wtslCore = {
   configured: () => Boolean(base && token),
 
@@ -153,6 +170,31 @@ export const wtslCore = {
     }>(
       `/api/core/matchlog/leaderboard?tour=${encodeURIComponent(tour)}&min_matches=${encodeURIComponent(String(minMatches))}`,
     ),
+
+  matchlogIdentities: (discordId: string) =>
+    core<{ identities: CoreMatchlogIdentity[] }>(
+      `/api/core/matchlog/identities?discord_user_id=${encodeURIComponent(discordId)}`,
+      { signal: AbortSignal.timeout(5000) },
+    ),
+
+  /** The bot accepts only identity links approved on the Forum or WTSL server. */
+  syncMatchlogIdentity: async (identity: CoreMatchlogIdentitySyncInput) => {
+    const response = await core<{ ok: boolean; results: CoreMatchlogIdentitySyncResult[] }>(
+      '/api/core/matchlog/identities/sync',
+      {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({ identities: [identity] }),
+        signal: AbortSignal.timeout(5000),
+      },
+    );
+    const result = response.results?.[0];
+    if (!result) throw new Error('WTSL Core API returned no identity sync result.');
+    if (!response.ok || result.status === 'conflict') {
+      throw new Error(result.reason || 'WTSL Core API rejected the approved identity.');
+    }
+    return result;
+  },
 
   results: () => core<unknown[]>('/api/core/results'),
 

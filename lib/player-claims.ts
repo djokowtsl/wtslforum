@@ -1,5 +1,13 @@
 import { sql } from './db';
 import { notifyPlayerVerified } from './discord';
+import { wtslCore } from './wtsl-core';
+
+export class PlayerIdentityConflictError extends Error {
+  constructor(message: string) {
+    super(message);
+    this.name = 'PlayerIdentityConflictError';
+  }
+}
 
 export type PlayerClaim = {
   id: string;
@@ -69,6 +77,87 @@ export async function setDefaultPlayerClaim(userId: string, claimId: string): Pr
   `;
   return rows.length > 0;
 }
+/** Apply an identity already approved by the WTSL Discord server to a forum account. */
+export async function applyServerApprovedPlayerIdentity(
+  userId: string,
+  identity: { wtsl_player_id: string; tour: string; player_name: string },
+): Promise<{ status: 'synced' | 'already_synced'; claimId: string }> {
+  const wtslPlayerId = String(identity.wtsl_player_id || '').trim();
+  const tour = String(identity.tour || '').trim();
+  const playerName = String(identity.player_name || '').trim();
+  if (!wtslPlayerId || !playerName || !['TE4', 'TE4_(F)'].includes(tour)) {
+    throw new Error('The server-approved player identity is incomplete or unsupported.');
+  }
+
+  const existing = await sql`
+    SELECT id::text AS id FROM player_claims
+    WHERE user_id = ${userId} AND wtsl_player_id = ${wtslPlayerId}
+      AND tour = ${tour} AND status = 'approved' LIMIT 1
+  `;
+  let claimId = existing[0]?.id as string | undefined;
+  let status: 'synced' | 'already_synced' = claimId ? 'already_synced' : 'synced';
+
+  if (!claimId) {
+    const conflicts = await sql`
+      SELECT CASE
+        WHEN c.wtsl_player_id = ${wtslPlayerId}
+          THEN 'This WTSL player is already verified to another forum account.'
+        ELSE 'This forum account already has a different approved player for this tour.'
+      END AS reason
+      FROM player_claims c
+      WHERE c.tour = ${tour} AND c.status = 'approved'
+        AND ((c.wtsl_player_id = ${wtslPlayerId} AND c.user_id <> ${userId})
+          OR (c.user_id = ${userId} AND c.wtsl_player_id <> ${wtslPlayerId}))
+      LIMIT 1
+    `;
+    if (conflicts.length) throw new PlayerIdentityConflictError(String(conflicts[0].reason));
+
+    const pending = await sql`
+      SELECT id::text AS id FROM player_claims
+      WHERE user_id = ${userId} AND wtsl_player_id = ${wtslPlayerId}
+        AND tour = ${tour} AND status = 'pending'
+      ORDER BY created_at DESC LIMIT 1
+    `;
+    let rows: any[];
+    try {
+      rows = pending.length
+        ? await sql`
+            UPDATE player_claims
+            SET player_name = ${playerName}, status = 'approved', reviewed_by = NULL,
+                reviewed_at = NOW(), review_note = 'Approved via WTSL Discord server'
+            WHERE id = ${pending[0].id} AND status = 'pending'
+            RETURNING id::text AS id
+          `
+        : await sql`
+            INSERT INTO player_claims
+              (user_id, wtsl_player_id, tour, player_name, note, status, reviewed_at, review_note)
+            VALUES
+              (${userId}, ${wtslPlayerId}, ${tour}, ${playerName}, '', 'approved', NOW(),
+               'Approved via WTSL Discord server')
+            RETURNING id::text AS id
+          `;
+    } catch (error) {
+      if ((error as { code?: string })?.code === '23505') {
+        throw new PlayerIdentityConflictError('This WTSL player is already verified to another forum account.');
+      }
+      throw error;
+    }
+    if (!rows[0]?.id) throw new Error('The approved forum player identity could not be saved.');
+    claimId = String(rows[0].id);
+  }
+
+  await sql`
+    UPDATE users u
+    SET default_player_claim_id = ${claimId}
+    WHERE u.id = ${userId}
+      AND NOT EXISTS (
+        SELECT 1 FROM player_claims current_claim
+        WHERE current_claim.id = u.default_player_claim_id
+          AND current_claim.user_id = u.id AND current_claim.status = 'approved'
+      )
+  `;
+  return { status, claimId };
+}
 
 /**
  * Submit (or resubmit) a claim that this Discord account is a given WTSL player.
@@ -94,10 +183,26 @@ export async function listClaims(status?: string): Promise<(PlayerClaim & { user
 
 /** Approve a claim: links the Discord account to the player and revokes any other approved claim for that player or tour. */
 export async function approveClaim(claimId: string, adminId: string) {
-  const rows = await sql`SELECT * FROM player_claims WHERE id=${claimId}`;
+  const rows = await sql`
+    SELECT c.*, u.discord_id
+    FROM player_claims c JOIN users u ON u.id = c.user_id
+    WHERE c.id = ${claimId}
+  `;
   const claim = rows[0];
   if (!claim) throw new Error('Claim not found');
   if (claim.status !== 'pending') throw new Error('Claim has already been reviewed');
+
+  // Only the bot's ATP/WTA MatchLog identity store is mirrored. Other forum
+  // tours keep their existing forum-only approval behavior.
+  const coreTour = claim.tour === 'TE4' ? 'atp' : claim.tour === 'TE4_(F)' ? 'wta' : null;
+  if (coreTour) {
+    await wtslCore.syncMatchlogIdentity({
+      discord_user_id: String(claim.discord_id),
+      tour: coreTour,
+      player_name: String(claim.player_name),
+      wtsl_player_id: String(claim.wtsl_player_id),
+    });
+  }
 
   // Supersede any other account already verified as this player on this tour...
   await sql`UPDATE player_claims SET status='rejected', reviewed_by=${adminId}, reviewed_at=NOW(), review_note='Superseded by a newly approved claim' WHERE wtsl_player_id=${claim.wtsl_player_id} AND tour=${claim.tour} AND status='approved'`;
