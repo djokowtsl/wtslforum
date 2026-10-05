@@ -1,8 +1,9 @@
 import { sql } from './db';
 import { ensureMatchThreadTourSchema } from './matchThreads';
+import { ensureTopicVideoSchema } from './media';
 
-/** Per-emoji counts for one post, plus whether the current viewer has reacted with each. */
-export type ReactionSummary = { emoji: string; count: number; reacted: boolean }[];
+/** Per-emoji counts, viewer state, and the public display names of people who reacted. */
+export type ReactionSummary = { emoji: string; count: number; reacted: boolean; reactors: string[] }[];
 
 /** Reaction totals for a topic's opening post and every reply on the same thread, in one query —
  * grouped by (topic_id or reply_id, emoji) and checked against the signed-in viewer's own user id
@@ -10,16 +11,19 @@ export type ReactionSummary = { emoji: string; count: number; reacted: boolean }
 export async function getThreadReactions(topicId: number, replyIds: number[], viewerId: string | number | null) {
   const vid = viewerId ? Number(viewerId) : null;
   const rows = await sql`
-    SELECT topic_id, reply_id, emoji, COUNT(*)::int count,
-      COALESCE(BOOL_OR(user_id = ${vid}::bigint), false) reacted
-    FROM reactions
-    WHERE topic_id = ${topicId} OR reply_id = ANY(${replyIds})
-    GROUP BY topic_id, reply_id, emoji
+    SELECT r.topic_id, r.reply_id, r.emoji, COUNT(*)::int count,
+      COALESCE(BOOL_OR(r.user_id = ${vid}::bigint), false) reacted,
+      COALESCE(ARRAY_AGG(u.display_name ORDER BY u.display_name)
+        FILTER (WHERE u.display_name IS NOT NULL), ARRAY[]::text[]) reactors
+    FROM reactions r
+    LEFT JOIN users u ON u.id = r.user_id
+    WHERE r.topic_id = ${topicId} OR r.reply_id = ANY(${replyIds})
+    GROUP BY r.topic_id, r.reply_id, r.emoji
   `;
   const topic: ReactionSummary = [];
   const replies: Record<number, ReactionSummary> = {};
   for (const r of rows as any[]) {
-    const entry = { emoji: r.emoji, count: r.count, reacted: r.reacted };
+    const entry = { emoji: r.emoji, count: r.count, reacted: r.reacted, reactors: r.reactors ?? [] };
     if (r.reply_id) (replies[r.reply_id] ??= []).push(entry);
     else topic.push(entry);
   }
@@ -49,6 +53,7 @@ export async function getTopics(opts: { category?: string | null; limit?: number
 /** Accepts a numeric id or a slug (tournament threads link by slug). */
 export async function getTopic(ref: string | number) {
   await ensureMatchThreadTourSchema();
+  await ensureTopicVideoSchema();
   const isId = /^\d+$/.test(String(ref));
   const rows = isId
     ? await sql`
@@ -198,7 +203,16 @@ export async function getTopic(ref: string | number) {
     WHERE r.topic_id = ${topic.id} AND r.moderation_status='approved'
     ORDER BY r.created_at ASC
   `;
-  return { topic, replies };
+  const clips = topic.video_clip_id
+    ? await sql`
+        SELECT id, title, description, url, private_blob_content_type AS content_type
+        FROM media_clips
+        WHERE id=${topic.video_clip_id} AND moderation_status='approved'
+        LIMIT 1
+      `
+    : [];
+  const { video_clip_id: _privateAttachmentId, ...publicTopic } = topic;
+  return { topic: publicTopic, replies, video: clips[0] ?? null };
 }
 
 export async function getCategories() {
@@ -239,13 +253,19 @@ function displayAwardName(name?: string | null) {
 export async function getAwards() {
   const [awards, players, tournamentsWithLogo] = await Promise.all([
     sql`SELECT * FROM awards ORDER BY season DESC, position ASC, id ASC`,
-    sql`SELECT name, avatar_url FROM wtsl_players ORDER BY (tour='TE4') DESC, synced_at DESC`,
+    sql`SELECT name, avatar_url, flag_url, country FROM wtsl_players ORDER BY (tour='TE4') DESC, synced_at DESC`,
     sql`SELECT name, logo_url FROM tournaments WHERE logo_url IS NOT NULL ORDER BY last_synced_at DESC`,
   ]);
-  const playerAvatar = new Map<string, string>();
+  const playerAvatar = new Map<string, { avatar: string | null; flag: string | null; country: string | null }>();
   for (const p of players as any[]) {
     const key = normalizePlayerName(p.name);
-    if (key && !playerAvatar.has(key)) playerAvatar.set(key, p.avatar_url);
+    if (key && !playerAvatar.has(key)) {
+      playerAvatar.set(key, {
+        avatar: p.avatar_url ?? null,
+        flag: p.flag_url ?? null,
+        country: p.country ?? null,
+      });
+    }
   }
   const tourneyLogo = new Map<string, string>();
   for (const t of tournamentsWithLogo as any[]) {
@@ -253,16 +273,25 @@ export async function getAwards() {
     if (key && !tourneyLogo.has(key)) tourneyLogo.set(key, t.logo_url);
   }
   return (awards as any[]).map((a) => {
+    const playerMediaFor = (n?: string | null) => playerAvatar.get(normalizePlayerName(n));
     const avatarFor = (n?: string | null) =>
-      a.category === 'Tournament of the Year' ? tourneyLogo.get((n || '').trim().toLowerCase()) : playerAvatar.get(normalizePlayerName(n));
+      a.category === 'Tournament of the Year' ? tourneyLogo.get((n || '').trim().toLowerCase()) : playerMediaFor(n)?.avatar;
+    const flagFor = (n?: string | null) => playerMediaFor(n)?.flag;
+    const countryFor = (n?: string | null) => playerMediaFor(n)?.country;
     return {
       ...a,
       winner: displayAwardName(a.winner) ?? a.winner,
       runner_up: displayAwardName(a.runner_up),
       player_two: displayAwardName(a.player_two),
       winner_avatar: avatarFor(a.winner),
+      winner_flag: flagFor(a.winner),
+      winner_country: countryFor(a.winner),
       runner_up_avatar: avatarFor(a.runner_up),
+      runner_up_flag: flagFor(a.runner_up),
+      runner_up_country: countryFor(a.runner_up),
       player_two_avatar: avatarFor(a.player_two),
+      player_two_flag: flagFor(a.player_two),
+      player_two_country: countryFor(a.player_two),
     };
   });
 }
