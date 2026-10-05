@@ -19,12 +19,6 @@ function forumTourForCore(tour: string): ForumTour | null {
   return null;
 }
 
-function coreTourForForum(tour: string): CoreTour | null {
-  if (tour === 'TE4') return 'atp';
-  if (tour === 'TE4_(F)') return 'wta';
-  return null;
-}
-
 async function findOfficialPlayer(
   tour: ForumTour,
   playerName: string,
@@ -66,7 +60,12 @@ export async function syncDiscordApprovedIdentity(
   playerName: string,
 ) {
   const tour = forumTourForCore(coreTour);
-  if (!tour) throw new WtslPlayerLookupError('Only ATP and WTA identities can sync to MatchLog.', 409);
+  if (!tour) {
+    throw new WtslPlayerLookupError(
+      'Only ATP and WTA identities can sync to MatchLog.',
+      409,
+    );
+  }
   const player = await findOfficialPlayer(tour, playerName);
   const otherOwner = await sql`
     SELECT c.id FROM player_claims c JOIN users u ON u.id = c.user_id
@@ -74,7 +73,9 @@ export async function syncDiscordApprovedIdentity(
       AND c.status = 'approved' AND u.discord_id <> ${discordId} LIMIT 1
   `;
   if (otherOwner.length) {
-    throw new PlayerIdentityConflictError('This WTSL player is already verified to another forum account.');
+    throw new PlayerIdentityConflictError(
+      'This WTSL player is already verified to another forum account.',
+    );
   }
   const users = await sql`SELECT id::text AS id FROM users WHERE discord_id = ${discordId} LIMIT 1`;
   if (!users[0]) {
@@ -94,7 +95,9 @@ export async function syncBotApprovedIdentitiesForUser(
   discordId: string,
 ) {
   const response = await wtslCore.matchlogIdentities(discordId);
-  const identities: CoreMatchlogIdentity[] = Array.isArray(response.identities) ? response.identities : [];
+  const identities: CoreMatchlogIdentity[] = Array.isArray(response.identities)
+    ? response.identities
+    : [];
   const failures: string[] = [];
   const applied: Array<{ tour: ForumTour; player_name: string; status: string }> = [];
 
@@ -103,7 +106,11 @@ export async function syncBotApprovedIdentitiesForUser(
     const tour = forumTourForCore(String(identity.tour));
     if (!tour) continue;
     try {
-      const player = await findOfficialPlayer(tour, String(identity.player_name || ''), identity.wtsl_player_id);
+      const player = await findOfficialPlayer(
+        tour,
+        String(identity.player_name || ''),
+        identity.wtsl_player_id,
+      );
       await wtslCore.syncMatchlogIdentity({
         discord_user_id: discordId,
         tour: String(identity.tour) as CoreTour,
