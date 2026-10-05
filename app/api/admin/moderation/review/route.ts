@@ -80,7 +80,8 @@ export async function POST(req: Request) {
       UPDATE media_clips
       SET moderation_status=${nextStatus},moderation_reason=NULL,moderated_by=${Number(user!.id)},moderated_at=NOW(),
           url=${action === 'approve' ? approvedUrl : rows[0].url},
-          private_blob_pathname=NULL,private_blob_content_type=NULL
+          private_blob_pathname=NULL,
+          private_blob_content_type=${action === 'approve' ? rows[0].private_blob_content_type : null}
       WHERE id=${id} AND moderation_status='pending'
       RETURNING id
     `;
