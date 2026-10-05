@@ -1,8 +1,9 @@
 import Link from 'next/link';
-import { initial, prettyKey, timeAgo } from '@/lib/format';
+import { prettyKey, timeAgo } from '@/lib/format';
+import PlayerAvatar from '@/components/PlayerAvatar';
 
-function Face({ src, name }: { src?: string | null; name?: string | null }) {
-  return src ? <img src={src} alt="" /> : <div className="ph">{initial(name)}</div>;
+function Face({ src, flagSrc, flagLabel, name }: { src?: string | null; flagSrc?: string | null; flagLabel?: string | null; name?: string | null }) {
+  return <PlayerAvatar src={src} flagSrc={flagSrc} flagLabel={flagLabel} name={name} size={28} />;
 }
 
 /** Links straight into (or creates) the Match Talk thread for this exact match, so you don't
@@ -33,11 +34,11 @@ export function ResultCard({ m, tournamentNames }: { m: any; tournamentNames?: R
         <b title="Completed">✓</b>
       </div>
       <div className={`match-row-p ${p1win ? 'win' : ''}`}>
-        <Face src={m.player_one_avatar} name={m.player_one_name} />
+        <Face src={m.player_one_avatar} flagSrc={m.player_one_flag} flagLabel={m.player_one_country} name={m.player_one_name} />
         <span className={`nm ${p2win ? 'lost' : ''}`}><PlayerLink id={m.player_one_id} tour={m.tour} name={m.player_one_name} /></span>
       </div>
       <div className={`match-row-p ${p2win ? 'win' : ''}`}>
-        <Face src={m.player_two_avatar} name={m.player_two_name} />
+        <Face src={m.player_two_avatar} flagSrc={m.player_two_flag} flagLabel={m.player_two_country} name={m.player_two_name} />
         <span className={`nm ${p1win ? 'lost' : ''}`}><PlayerLink id={m.player_two_id} tour={m.tour} name={m.player_two_name} /></span>
       </div>
       <div className="match-score">{m.score || '—'}{m.played_at ? ` · ${timeAgo(m.played_at)}` : ''}</div>
@@ -54,12 +55,12 @@ export function FixtureCard({ f }: { f: any }) {
         <b className="open">{String(f.status || 'open').toUpperCase()}</b>
       </div>
       <div className="match-row-p">
-        <Face src={f.first_avatar} name={f.first_name} />
+        <Face src={f.first_avatar} flagSrc={f.first_flag} flagLabel={f.first_country} name={f.first_name} />
         <span className="nm"><PlayerLink id={f.first_id} tour={f.tour} name={f.first_name} /></span>
         <span className="val">{Number(f.odds_one).toFixed(2)}</span>
       </div>
       <div className="match-row-p">
-        <Face src={f.second_avatar} name={f.second_name} />
+        <Face src={f.second_avatar} flagSrc={f.second_flag} flagLabel={f.second_country} name={f.second_name} />
         <span className="nm"><PlayerLink id={f.second_id} tour={f.tour} name={f.second_name} /></span>
         <span className="val">{Number(f.odds_two).toFixed(2)}</span>
       </div>
