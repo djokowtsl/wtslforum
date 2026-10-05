@@ -11,6 +11,7 @@ import { fmtDate, timeAgo } from '@/lib/format';
 import { discordAvatar } from '@/lib/auth';
 import { FixtureCard, ResultCard } from '@/components/MatchCards';
 import ForumAvatar from '@/components/ForumAvatar';
+import LiveScores from '@/components/LiveScores';
 
 export const dynamic = 'force-dynamic';
 
@@ -76,13 +77,14 @@ export default async function Home({ searchParams }: { searchParams: Promise<{ e
       <section className="live">
         <div className="live-inner">
           <div className="live-head"><span className="live-dot" /><h2 className="display">Happening now</h2><Link href="/matches">All matches →</Link></div>
+          <LiveScores />
           {hasTour ? (
             <>
               {results.length > 0 && (<><div className="live-sub" style={{ marginTop: 0 }}>Latest results</div><div className="live-grid">{results.map((m: any) => <ResultCard key={m.id} m={m} tournamentNames={tournamentNames} />)}</div></>)}
               {fx.length > 0 && (<><div className="live-sub">Open fixtures</div><div className="live-grid">{fx.map((f: any) => <FixtureCard key={f.key} f={f} />)}</div></>)}
             </>
           ) : (
-            <div className="notice">Fixtures and results from the WTSL tour will appear here as soon as the data connection is live. In the meantime, the <Link href="/tournaments" style={{ color: 'var(--lime)' }}>tournament calendar</Link> has everything that is on.</div>
+            <div className="notice">No recent WTSL results or open fixtures are available right now. See the <Link href="/tournaments" style={{ color: 'var(--lime)' }}>tournament calendar</Link> for scheduled events.</div>
           )}
         </div>
       </section>
