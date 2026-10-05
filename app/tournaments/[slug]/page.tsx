@@ -5,6 +5,7 @@ import { getTournament } from '@/lib/tournaments';
 import { ensureTournamentDiscussion } from '@/lib/tournamentDiscussions';
 import { recentMatches } from '@/lib/stats';
 import { ResultCard } from '@/components/MatchCards';
+import PlayerAvatar from '@/components/PlayerAvatar';
 
 export const dynamic = 'force-dynamic';
 
@@ -30,7 +31,7 @@ export default async function TournamentPage({ params }: { params: Promise<{ slu
         <p className="hero-meta">{t.location}{t.country ? `, ${t.country}` : ''} · {t.surface} · {t.draw_size ?? '—'}-player draw</p>
         {champion && (
           <div className="champion-player">
-            {champion.avatar_url && <img src={champion.avatar_url} alt={champion.name} />}
+            <PlayerAvatar src={champion.avatar_url} flagSrc={champion.flag_url} flagLabel={champion.country} name={champion.name} size={64} />
             <div><span>Champion</span><strong>{champion.name}</strong><small>{champion.flag_url && <img src={champion.flag_url} alt="" />}{champion.country} · Tour Elo {champion.tour_elo ?? '—'}</small></div>
           </div>
         )}

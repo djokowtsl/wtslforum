@@ -40,9 +40,13 @@ export type CoreFixture = {
   first_id?: string | number;
   first_name?: string;
   first_avatar?: string | null;
+  first_flag?: string | null;
+  first_country?: string | null;
   second_id?: string | number;
   second_name?: string;
   second_avatar?: string | null;
+  second_flag?: string | null;
+  second_country?: string | null;
   odds_one?: number | string;
   odds_two?: number | string;
   scheduled_at?: string | null;

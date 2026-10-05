@@ -2,8 +2,9 @@
 import { useEffect, useRef, useState } from 'react';
 import { tourLabel, type TourCode } from '@/lib/wtsl';
 import { exactPlayerNameMatches } from '@/lib/playerClaimSearch';
+import PlayerAvatar from '@/components/PlayerAvatar';
 
-type PlayerHit = { wtsl_player_id: string; name: string; avatar_url: string | null; country: string | null };
+type PlayerHit = { wtsl_player_id: string; name: string; avatar_url: string | null; flag_url: string | null; country: string | null };
 
 export default function PlayerClaimForm({ tour }: { tour: TourCode }) {
   const [query, setQuery] = useState('');
@@ -140,7 +141,7 @@ export default function PlayerClaimForm({ tour }: { tour: TourCode }) {
       <label>Find yourself in {tourLabel(tour)}
         {selected ? (
           <div className="player-line claim-selected-box" style={{ marginTop: '.4rem' }}>
-            {selected.avatar_url && <img src={selected.avatar_url} alt="" />}
+            <PlayerAvatar src={selected.avatar_url} flagSrc={selected.flag_url} flagLabel={selected.country} name={selected.name} size={34} />
             <span>✓ {selected.name}</span>
             <button type="button" className="btn btn-sm btn-ghost" onClick={() => { setSelected(null); setQuery(''); }}>Change</button>
           </div>
@@ -177,7 +178,7 @@ export default function PlayerClaimForm({ tour }: { tour: TourCode }) {
                     onMouseEnter={() => setActiveIndex(i)}
                     onClick={() => pick(p)}
                   >
-                    {p.avatar_url && <img src={p.avatar_url} alt="" />}
+                    <PlayerAvatar src={p.avatar_url} flagSrc={p.flag_url} flagLabel={p.country} name={p.name} size={26} />
                     <span>{p.name}{p.country ? ` · ${p.country}` : ''}</span>
                   </button>
                 ))}

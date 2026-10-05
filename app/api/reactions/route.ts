@@ -40,10 +40,14 @@ export async function POST(req: Request) {
   }
 
   const counts = await sql`
-    SELECT emoji, COUNT(*)::int count
-    FROM reactions
-    WHERE topic_id IS NOT DISTINCT FROM ${topicId} AND reply_id IS NOT DISTINCT FROM ${replyId}
-    GROUP BY emoji
+    SELECT r.emoji, COUNT(*)::int count,
+      COALESCE(BOOL_OR(r.user_id=${Number(u.id)}::bigint), false) reacted,
+      COALESCE(ARRAY_AGG(users.display_name ORDER BY users.display_name)
+        FILTER (WHERE users.display_name IS NOT NULL), ARRAY[]::text[]) reactors
+    FROM reactions r
+    LEFT JOIN users ON users.id=r.user_id
+    WHERE r.topic_id IS NOT DISTINCT FROM ${topicId} AND r.reply_id IS NOT DISTINCT FROM ${replyId}
+    GROUP BY r.emoji
   `;
   return NextResponse.json({ ok: true, reacted: !existing.length, counts });
 }

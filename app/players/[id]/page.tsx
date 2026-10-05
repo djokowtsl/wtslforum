@@ -9,6 +9,7 @@ import Link from 'next/link';
 import PageHero from '@/components/PageHero';
 import { StatusDot } from '@/components/StatusDot';
 import { DEFAULT_TOUR, getTourEloDesignation, isTourCode, tourLabel, type TourCode } from '@/lib/wtsl';
+import PlayerAvatar from '@/components/PlayerAvatar';
 
 export const dynamic = 'force-dynamic';
 
@@ -113,7 +114,7 @@ export default async function PlayerDashboard({ params, searchParams }: Props) {
           </div>
         )}
         <div className="player-dash-head panel">
-          {p.avatar_url ? <img src={p.avatar_url} alt={p.name} className="player-dash-avatar" /> : <div className="player-placeholder">{(p.name || 'W')[0]}</div>}
+          <PlayerAvatar className="player-dash-avatar" src={p.avatar_url} flagSrc={p.flag_url} flagLabel={p.country} name={p.name} size={86} />
           <div>
             <h2 className="display">{p.name}</h2>
             {p.country && <p>{p.flag_url && <img src={p.flag_url} alt="" style={{ height: 14, marginRight: 6 }} />}{p.country}</p>}
