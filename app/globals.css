@@ -222,7 +222,7 @@ h1, h2, h3 { margin: 0; }
 .discuss-link { display: block; margin-top: 10px; padding-top: 10px; border-top: 1px solid var(--line); font-size: 12.5px; font-weight: 700; color: var(--cyan); text-align: center; }
 .discuss-link:hover { color: var(--lime); }
 .live-sub { font-size: 11px; letter-spacing: 0.2em; color: var(--muted); text-transform: uppercase; font-weight: 700; margin: 18px 0 10px; }
-.live-score-empty { padding: 13px 16px; border: 1px solid var(--line); border-radius: 10px; background: var(--panel); color: var(--muted); font-size: 13px; }
+.live-score-empty { padding: 13px 16px; margin-bottom: 14px; border: 1px solid var(--line); border-radius: 10px; background: var(--panel); color: var(--muted); font-size: 13px; }
 .live-score-empty small { display: block; margin-top: 5px; font-size: 11px; }
 .live-score-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(100%, 300px), 1fr)); gap: 12px; }
 .live-score-card { min-width: 0; padding: 15px 16px; border: 1px solid var(--line); border-radius: var(--radius); background: var(--panel); }
