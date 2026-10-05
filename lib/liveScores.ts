@@ -1,16 +1,24 @@
 import { sql } from './db';
 import { normalizePlayerName } from './queries';
+import { computeOfficialHeadToHeadRecord } from './clutchStats';
 import {
   adjustOfficialH2HPercent,
+  h2hRecordWinPercent,
   parseLiveWtslMatches,
   readOfficialH2HPercent,
   type ParsedLiveMatch,
 } from './liveScoreModel';
+import { fetchWTSLAllResults, type WTSLAllResultRow } from './wtsl';
 
 const SERVER_LIST_URL = 'https://www.managames.com/tennis/online/TE4_ServerList.php?Poll=1';
 const H2H_PAGE_URL = 'https://www.playwtsl.com/TE4/pages/h2h.php';
 const H2H_CACHE_MS = 45_000;
-const h2hCache = new Map<string, { at: number; percent: number | null }>();
+const ALL_RESULTS_TIMEOUT_MS = 12_000;
+type ProbabilitySource = 'official' | 'all-results' | 'no-history';
+type H2HProbability = { percent: number | null; source: ProbabilitySource | null };
+const h2hCache = new Map<string, { at: number; result: H2HProbability }>();
+let allResultsCache: { at: number; rows: WTSLAllResultRow[] } | null = null;
+let allResultsRequest: Promise<WTSLAllResultRow[]> | null = null;
 
 type PlayerRow = {
   wtsl_player_id: string | number;
@@ -40,24 +48,79 @@ function findPlayers(match: ParsedLiveMatch, playersByTour: Map<string, Map<stri
   return candidates.length === 1 ? candidates[0] : null;
 }
 
-async function officialH2HPercent(tour: string, firstId: string | number, secondId: string | number) {
-  const cacheKey = `${tour}:${firstId}:${secondId}`;
+async function getAllResults() {
+  if (allResultsCache && Date.now() - allResultsCache.at < H2H_CACHE_MS) {
+    return allResultsCache.rows;
+  }
+  if (allResultsRequest) return allResultsRequest;
+
+  const request = fetchWTSLAllResults(ALL_RESULTS_TIMEOUT_MS).then((rows) => {
+    allResultsCache = { at: Date.now(), rows };
+    return rows;
+  });
+  allResultsRequest = request;
+  try {
+    return await request;
+  } finally {
+    if (allResultsRequest === request) allResultsRequest = null;
+  }
+}
+
+async function h2hBasePercent(
+  tour: string,
+  mode: string,
+  firstId: string | number,
+  secondId: string | number,
+): Promise<H2HProbability> {
+  const cacheKey = `${tour}:${mode}:${firstId}:${secondId}`;
   const cached = h2hCache.get(cacheKey);
-  if (cached && Date.now() - cached.at < H2H_CACHE_MS) return cached.percent;
+  if (cached && Date.now() - cached.at < H2H_CACHE_MS) return cached.result;
 
   const url = new URL(H2H_PAGE_URL);
   url.searchParams.set('tour', tour);
   url.searchParams.set('pl_one', String(firstId));
   url.searchParams.set('pl_two', String(secondId));
-  const response = await fetch(url, {
-    headers: { 'user-agent': 'WTSL Forum live scoreboard' },
-    cache: 'no-store',
-    signal: AbortSignal.timeout(8_000),
-  });
-  if (!response.ok) throw new Error(`Official H2H page returned ${response.status}`);
-  const percent = readOfficialH2HPercent(await response.text());
-  h2hCache.set(cacheKey, { at: Date.now(), percent });
-  return percent;
+  let officialResponseSucceeded = false;
+  try {
+    const response = await fetch(url, {
+      headers: { 'user-agent': 'WTSL Forum live scoreboard' },
+      cache: 'no-store',
+      signal: AbortSignal.timeout(8_000),
+    });
+    if (!response.ok) throw new Error(`Official H2H page returned ${response.status}`);
+    officialResponseSucceeded = true;
+    const percent = readOfficialH2HPercent(await response.text());
+    if (percent !== null) {
+      const result = { percent, source: 'official' as const };
+      h2hCache.set(cacheKey, { at: Date.now(), result });
+      return result;
+    }
+  } catch (error) {
+    console.warn('[live-scores] official H2H lookup failed', error instanceof Error ? error.message : 'Unknown error');
+  }
+
+  if (tour === 'TE4' && mode === 'Singles') {
+    try {
+      const rows = await getAllResults();
+      const record = computeOfficialHeadToHeadRecord(rows, firstId, secondId);
+      const result: H2HProbability = {
+        percent: h2hRecordWinPercent(record),
+        source: record.matches > 0 ? 'all-results' : 'no-history',
+      };
+      h2hCache.set(cacheKey, { at: Date.now(), result });
+      return result;
+    } catch (error) {
+      console.warn('[live-scores] all-results H2H lookup failed', error instanceof Error ? error.message : 'Unknown error');
+    }
+  }
+
+  // A successful official page with no H2H bar means there is no recorded history.
+  // Do not infer that from a failed page request, especially for non-ATP sources.
+  const result: H2HProbability = officialResponseSucceeded
+    ? { percent: 50, source: 'no-history' }
+    : { percent: null, source: null };
+  if (officialResponseSucceeded) h2hCache.set(cacheKey, { at: Date.now(), result });
+  return result;
 }
 
 async function enrichMatch(
@@ -66,19 +129,24 @@ async function enrichMatch(
 ) {
   const entry = findPlayers(match, playersByTour);
   if (!entry) {
-    return { ...match, tour: match.tourHint, players: null, probability: null };
+    return { ...match, tour: match.tourHint, players: null, probability: null, probabilitySource: null };
   }
 
   let probability: number | null = null;
+  let probabilitySource: ProbabilitySource | null = null;
   try {
-    const basePercent = await officialH2HPercent(
+    const h2h = await h2hBasePercent(
       entry.tour,
+      match.mode,
       entry.first.wtsl_player_id,
       entry.second.wtsl_player_id,
     );
-    if (basePercent !== null) probability = adjustOfficialH2HPercent(basePercent, match.bestOf);
+    if (h2h.percent !== null) {
+      probability = adjustOfficialH2HPercent(h2h.percent, match.bestOf);
+      if (probability !== null) probabilitySource = h2h.source;
+    }
   } catch (error) {
-    console.warn('[live-scores] official H2H lookup failed', error instanceof Error ? error.message : 'Unknown error');
+    console.warn('[live-scores] probability lookup failed', error instanceof Error ? error.message : 'Unknown error');
   }
 
   return {
@@ -101,6 +169,7 @@ async function enrichMatch(
       },
     },
     probability,
+    probabilitySource,
   };
 }
 
