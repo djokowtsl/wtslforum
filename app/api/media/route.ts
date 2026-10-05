@@ -90,9 +90,9 @@ export async function POST(req: NextRequest) {
       privateContentType,
     });
     if (status === 'pending') {
-      return NextResponse.json({ ok: true, pending: true, message: 'Your submission is waiting for moderator review.' }, { status: 202 });
+      return NextResponse.json({ ok: true, id: clip.id, pending: true, message: 'Your submission is waiting for moderator review.' }, { status: 202 });
     }
-    return NextResponse.json({ ok: true, clip }, { status: 201 });
+    return NextResponse.json({ ok: true, id: clip.id, pending: false }, { status: 201 });
   } catch (error) {
     if (privatePathname) {
       await del(privatePathname, { storeId: process.env.MODERATION_BLOB_STORE_ID }).catch(() => {});
