@@ -170,6 +170,7 @@ export const wtslCore = {
   matchlogIdentities: (discordId: string) =>
     core<{ identities: CoreMatchlogIdentity[] }>(
       `/api/core/matchlog/identities?discord_user_id=${encodeURIComponent(discordId)}`,
+      { signal: AbortSignal.timeout(5000) },
     ),
 
   /** The bot accepts only identity links approved on the Forum or WTSL server. */
@@ -180,6 +181,7 @@ export const wtslCore = {
         method: 'POST',
         headers: { 'content-type': 'application/json' },
         body: JSON.stringify({ identities: [identity] }),
+        signal: AbortSignal.timeout(5000),
       },
     );
     const result = response.results?.[0];
