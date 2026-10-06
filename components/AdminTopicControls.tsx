@@ -20,7 +20,7 @@ export default function AdminTopicControls({ topicId, locked, pinned }: { topicI
   }
 
   async function remove() {
-    if (!confirm('Delete this thread and all its replies? This cannot be undone.')) return;
+    if (!confirm('Delete this thread and all its replies? If it is a tournament discussion, it can be recreated by opening the tournament page; its replies cannot be restored.')) return;
     setBusy('delete');
     try {
       await fetch(`/api/topics/${topicId}`, { method: 'DELETE' });

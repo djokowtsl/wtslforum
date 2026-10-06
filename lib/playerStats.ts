@@ -1,6 +1,7 @@
 import { sql } from './db';
 import { fetchWTSLPlayer, fetchWTSLPlayerStatsTable, fetchWTSLAllResults, TOURS, DEFAULT_TOUR, type TourCode } from './wtsl';
 import { computeOfficialClutchAggregates, parseSets } from './clutchStats';
+import { officialWtaEventByTournamentKey, officialWtaScheduleForYear } from './wtaSchedule';
 export { parseSets, normalizeMatchScore } from './clutchStats';
 
 let clutchStatsSchemaEnsured = false;
@@ -54,7 +55,9 @@ async function recordMatchResult(tour: TourCode, playerId: string, r: { tourname
   const inserted = await sql`
     INSERT INTO match_stats(source_id,tour,tournament_key,tournament_name,round_name,player_one_id,player_two_id,score,winner_id,played_at)
     VALUES(${sourceId},${tour},${r.tournamentKey},${r.tournamentName},${r.round},${playerId},${r.opponentId},${r.score},${winnerId},${r.date})
-    ON CONFLICT(source_id) DO UPDATE SET tournament_name=COALESCE(match_stats.tournament_name, EXCLUDED.tournament_name)
+     ON CONFLICT(source_id) DO UPDATE SET
+       tournament_key=COALESCE(EXCLUDED.tournament_key,match_stats.tournament_key),
+       tournament_name=COALESCE(match_stats.tournament_name, EXCLUDED.tournament_name)
     RETURNING (xmax = 0) AS inserted
   `;
   return inserted[0]?.inserted === true;
@@ -116,8 +119,36 @@ export async function syncPlayerStats(tour: TourCode = DEFAULT_TOUR) {
           avg_rally_length=EXCLUDED.avg_rally_length,updated_at=NOW()
       `;
 
+      let recent = profile.recentResults.slice(0, 10);
+      if (tour === 'TE4_(F)') {
+        const schedules = new Map<number, Promise<Awaited<ReturnType<typeof officialWtaScheduleForYear>>>>();
+        const verifiedRecent = [];
+        for (const result of recent) {
+          const date = result.date?.trim() ?? '';
+          const year = Number(/^(\d{4})/.exec(date)?.[1]);
+          if (!result.tournamentKey || !Number.isInteger(year)) continue;
+          let schedule = schedules.get(year);
+          if (!schedule) {
+            schedule = officialWtaScheduleForYear(year);
+            schedules.set(year, schedule);
+          }
+          const event = officialWtaEventByTournamentKey(
+            result.tournamentKey,
+            date,
+            await schedule,
+          );
+          if (event) {
+            verifiedRecent.push({
+              ...result,
+              tournamentKey: event.key,
+              tournamentName: event.name,
+            });
+          }
+        }
+        recent = verifiedRecent;
+      }
+
       await sql`DELETE FROM player_recent_results WHERE player_id=${playerId} AND tour=${tour}`;
-      const recent = profile.recentResults.slice(0, 10);
       for (let i = 0; i < recent.length; i++) {
         const r = recent[i];
         await sql`INSERT INTO player_recent_results(player_id,tour,tournament_key,tournament_name,round_name,opponent_id,opponent_name,score,played_at,position) VALUES(${playerId},${tour},${r.tournamentKey},${r.tournamentName},${r.round},${r.opponentId},${r.opponentName},${r.score},${r.date},${i})`;

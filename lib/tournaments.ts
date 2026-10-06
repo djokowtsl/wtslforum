@@ -57,10 +57,10 @@ export async function syncTournaments(tour: TourCode = DEFAULT_TOUR, opts: { yea
     }
     const logoUrl = rows[0]?.logo_url ?? await fetchWTSLTournamentLogo(t.officialUrl).catch(() => null);
     if (rows[0]) {
-      await sql`UPDATE tournaments SET name=${t.name},tour=${tour},location=${t.location},country=${t.country},category=${t.category},draw_size=${t.drawSize},surface=${t.surface},start_date=${t.startDate},status=${t.status},champion_player_id=${championId},official_url=${t.officialUrl},logo_url=COALESCE(${logoUrl},logo_url),last_synced_at=NOW() WHERE id=${rows[0].id}`;
+      await sql`UPDATE tournaments SET name=${t.name},tour=${tour},location=${t.location},country=${t.country},category=${t.category},draw_size=${t.drawSize},surface=${t.surface},start_date=${t.startDate},status=${t.status},champion_player_id=${championId},official_url=${t.officialUrl},logo_url=COALESCE(${logoUrl},logo_url),discussion_enabled=discussion_enabled OR ${createDiscussion},last_synced_at=NOW() WHERE id=${rows[0].id}`;
       updated++;
     } else {
-      const inserted = await sql`INSERT INTO tournaments(wtsl_tournament_key,tour,name,location,country,category,draw_size,surface,start_date,status,champion_player_id,official_url,logo_url) VALUES(${t.key},${tour},${t.name},${t.location},${t.country},${t.category},${t.drawSize},${t.surface},${t.startDate},${t.status},${championId},${t.officialUrl},${logoUrl}) RETURNING id`;
+      const inserted = await sql`INSERT INTO tournaments(wtsl_tournament_key,tour,name,location,country,category,draw_size,surface,start_date,status,champion_player_id,official_url,logo_url,discussion_enabled) VALUES(${t.key},${tour},${t.name},${t.location},${t.country},${t.category},${t.drawSize},${t.surface},${t.startDate},${t.status},${championId},${t.officialUrl},${logoUrl},${createDiscussion}) RETURNING id`;
       // Backfilling past seasons shouldn't spam the forum with a "Tournament Discussion" thread
       // for every historical event — only the live sync (current season) creates one.
       if (createDiscussion) {

@@ -33,12 +33,25 @@ type RatingSourceRow = {
  */
 export async function importedMatchRatings(tour: string, metric: 'serve' | 'return' | 'pressure'): Promise<ImportedRating[]> {
   const rows = await sql`
-    WITH total_screenshots AS (
+    WITH verified_matches AS (
+      SELECT m.*
+      FROM match_stats m
+      WHERE m.tour=${tour} AND (
+        m.tour <> 'TE4_(F)' OR EXISTS (
+          SELECT 1 FROM tournaments t
+          WHERE t.tour='TE4_(F)'
+            AND (
+              t.wtsl_tournament_key=m.tournament_key
+              OR (regexp_match(t.official_url, '[?&]tournament=([^&]+)'))[1]=m.tournament_key
+            )
+        )
+      )
+    ), total_screenshots AS (
       SELECT player_id, COUNT(*)::int AS matches
       FROM (
-        SELECT player_one_id AS player_id FROM match_stats WHERE tour=${tour}
+        SELECT player_one_id AS player_id FROM verified_matches
         UNION ALL
-        SELECT player_two_id AS player_id FROM match_stats WHERE tour=${tour}
+        SELECT player_two_id AS player_id FROM verified_matches
       ) all_sides
       GROUP BY player_id
     ), player_screenshots AS (
@@ -55,8 +68,8 @@ export async function importedMatchRatings(tour: string, metric: 'serve' | 'retu
         AVG((stats->'player1'->>'breakPointsSavedPct')::numeric)::float AS break_points_saved_pct,
         AVG((stats->'player1'->>'tieBreaksWonPct')::numeric)::float AS tie_breaks_won_pct,
         AVG((stats->'player1'->>'decidingSetsWonPct')::numeric)::float AS deciding_sets_won_pct
-      FROM match_stats
-      WHERE tour=${tour} AND jsonb_typeof(stats->'player1') = 'object'
+      FROM verified_matches
+      WHERE jsonb_typeof(stats->'player1') = 'object'
       GROUP BY player_one_id
     )
     SELECT

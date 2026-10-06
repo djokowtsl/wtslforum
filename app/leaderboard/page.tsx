@@ -7,6 +7,7 @@ import RatingEvidence from '@/components/RatingEvidence';
 import RatingMethodNote from '@/components/RatingMethodNote';
 import LeaderboardMetricPicker from '@/components/LeaderboardMetricPicker';
 import TourTabs from '@/components/TourTabs';
+import PlayerAvatar from '@/components/PlayerAvatar';
 import { DEFAULT_TOUR, isTourCode, type TourCode } from '@/lib/wtsl';
 import {
   BOT_METRICS,
@@ -104,7 +105,7 @@ export default async function Leaderboard({ searchParams }: { searchParams: Prom
         {isRating && <RatingMethodNote />}
         <div className="section-head">
           <div>
-            <h2 className="display">{isRating ? 'Player ratings' : screenshotMetric ? 'Screenshot statistics' : 'Player statistics'}</h2>
+            <h2 className="display">Player Statistics</h2>
             <span>{eligibilityLabel}</span>
           </div>
           <LeaderboardMetricPicker current={metric} tour={tour} metrics={FORUM_METRICS} />
@@ -118,6 +119,7 @@ export default async function Leaderboard({ searchParams }: { searchParams: Prom
                   const name = screenshotMetric && !isRating ? player.player : player.name;
                   const playerId = screenshotMetric && !isRating ? player.wtslPlayerId : player.wtsl_player_id;
                   const avatar = screenshotMetric && !isRating ? player.avatarUrl : player.avatar_url;
+                  const flag = screenshotMetric && !isRating ? player.flagUrl : player.flag_url;
                   const country = player.country;
                   const value = screenshotMetric
                     ? formatBotMetric(player.value, botMetric?.valueFormat ?? 'number')
@@ -128,7 +130,7 @@ export default async function Leaderboard({ searchParams }: { searchParams: Prom
                       <td>
                         {playerId ? (
                           <a className="player-line" href={`/players/${encodeURIComponent(playerId)}?tour=${encodeURIComponent(tour)}`}>
-                            {avatar && <img src={avatar} alt="" />}
+                            <PlayerAvatar src={avatar} flagSrc={flag} flagLabel={country} name={name} size={34} />
                             <span>{name}<small>{country || ''}</small></span>
                           </a>
                         ) : <span className="player-line"><span>{name}<small>Unlinked player</small></span></span>}

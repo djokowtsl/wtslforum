@@ -2,8 +2,10 @@ import Link from 'next/link';
 import { notFound } from 'next/navigation';
 import { safe, sql } from '@/lib/db';
 import { getTournament } from '@/lib/tournaments';
+import { ensureTournamentDiscussion } from '@/lib/tournamentDiscussions';
 import { recentMatches } from '@/lib/stats';
 import { ResultCard } from '@/components/MatchCards';
+import PlayerAvatar from '@/components/PlayerAvatar';
 
 export const dynamic = 'force-dynamic';
 
@@ -11,9 +13,10 @@ export default async function TournamentPage({ params }: { params: Promise<{ slu
   const { slug } = await params;
   const t: any = await safe(() => getTournament(slug), null as any);
   if (!t) notFound();
+  const discussionTopicId = await safe(() => ensureTournamentDiscussion(t), null as number | null);
   const [champion, topic, matches] = await Promise.all([
     t.champion_player_id ? safe(async () => (await sql`SELECT * FROM wtsl_players WHERE wtsl_player_id=${t.champion_player_id} LIMIT 1`)[0], null as any) : null,
-    t.discussion_topic_id ? safe(async () => (await sql`SELECT id FROM topics WHERE id=${t.discussion_topic_id}`)[0], null as any) : null,
+    discussionTopicId ? safe(async () => (await sql`SELECT id FROM topics WHERE id=${discussionTopicId} AND moderation_status='approved'`)[0], null as any) : null,
     safe(() => recentMatches(200), [] as any[]),
   ]);
   const mine = matches.filter((m: any) => m.tournament_key === t.wtsl_tournament_key).slice(0, 12);
@@ -28,7 +31,7 @@ export default async function TournamentPage({ params }: { params: Promise<{ slu
         <p className="hero-meta">{t.location}{t.country ? `, ${t.country}` : ''} · {t.surface} · {t.draw_size ?? '—'}-player draw</p>
         {champion && (
           <div className="champion-player">
-            {champion.avatar_url && <img src={champion.avatar_url} alt={champion.name} />}
+            <PlayerAvatar src={champion.avatar_url} flagSrc={champion.flag_url} flagLabel={champion.country} name={champion.name} size={64} />
             <div><span>Champion</span><strong>{champion.name}</strong><small>{champion.flag_url && <img src={champion.flag_url} alt="" />}{champion.country} · Tour Elo {champion.tour_elo ?? '—'}</small></div>
           </div>
         )}

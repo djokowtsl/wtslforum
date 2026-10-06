@@ -17,9 +17,16 @@ export async function POST(req: Request) {
   const emoji = String(b?.emoji ?? '');
   const topicId = b?.topicId ? Number(b.topicId) : null;
   const replyId = b?.replyId ? Number(b.replyId) : null;
-  if (!ALLOWED_EMOJI.has(emoji) || (!topicId && !replyId)) {
+  if (!ALLOWED_EMOJI.has(emoji) || Boolean(topicId) === Boolean(replyId) ||
+      (topicId !== null && (!Number.isSafeInteger(topicId) || topicId < 1)) ||
+      (replyId !== null && (!Number.isSafeInteger(replyId) || replyId < 1))) {
     return NextResponse.json({ error: 'Invalid reaction' }, { status: 400 });
   }
+
+  const target = topicId
+    ? await sql`SELECT id FROM topics WHERE id=${topicId} AND moderation_status='approved' LIMIT 1`
+    : await sql`SELECT r.id FROM replies r JOIN topics t ON t.id=r.topic_id WHERE r.id=${replyId} AND r.moderation_status='approved' AND t.moderation_status='approved' LIMIT 1`;
+  if (!target[0]) return NextResponse.json({ error: 'Discussion or reply not found.' }, { status: 404 });
 
   const existing = await sql`
     SELECT id FROM reactions
@@ -33,10 +40,14 @@ export async function POST(req: Request) {
   }
 
   const counts = await sql`
-    SELECT emoji, COUNT(*)::int count
-    FROM reactions
-    WHERE topic_id IS NOT DISTINCT FROM ${topicId} AND reply_id IS NOT DISTINCT FROM ${replyId}
-    GROUP BY emoji
+    SELECT r.emoji, COUNT(*)::int count,
+      COALESCE(BOOL_OR(r.user_id=${Number(u.id)}::bigint), false) reacted,
+      COALESCE(ARRAY_AGG(users.display_name ORDER BY users.display_name)
+        FILTER (WHERE users.display_name IS NOT NULL), ARRAY[]::text[]) reactors
+    FROM reactions r
+    LEFT JOIN users ON users.id=r.user_id
+    WHERE r.topic_id IS NOT DISTINCT FROM ${topicId} AND r.reply_id IS NOT DISTINCT FROM ${replyId}
+    GROUP BY r.emoji
   `;
   return NextResponse.json({ ok: true, reacted: !existing.length, counts });
 }

@@ -1,8 +1,9 @@
 import { sql } from './db';
 import { ensureMatchThreadTourSchema } from './matchThreads';
+import { ensureTopicVideoSchema } from './media';
 
-/** Per-emoji counts for one post, plus whether the current viewer has reacted with each. */
-export type ReactionSummary = { emoji: string; count: number; reacted: boolean }[];
+/** Per-emoji counts, viewer state, and the public display names of people who reacted. */
+export type ReactionSummary = { emoji: string; count: number; reacted: boolean; reactors: string[] }[];
 
 /** Reaction totals for a topic's opening post and every reply on the same thread, in one query —
  * grouped by (topic_id or reply_id, emoji) and checked against the signed-in viewer's own user id
@@ -10,16 +11,19 @@ export type ReactionSummary = { emoji: string; count: number; reacted: boolean }
 export async function getThreadReactions(topicId: number, replyIds: number[], viewerId: string | number | null) {
   const vid = viewerId ? Number(viewerId) : null;
   const rows = await sql`
-    SELECT topic_id, reply_id, emoji, COUNT(*)::int count,
-      COALESCE(BOOL_OR(user_id = ${vid}::bigint), false) reacted
-    FROM reactions
-    WHERE topic_id = ${topicId} OR reply_id = ANY(${replyIds})
-    GROUP BY topic_id, reply_id, emoji
+    SELECT r.topic_id, r.reply_id, r.emoji, COUNT(*)::int count,
+      COALESCE(BOOL_OR(r.user_id = ${vid}::bigint), false) reacted,
+      COALESCE(ARRAY_AGG(u.display_name ORDER BY u.display_name)
+        FILTER (WHERE u.display_name IS NOT NULL), ARRAY[]::text[]) reactors
+    FROM reactions r
+    LEFT JOIN users u ON u.id = r.user_id
+    WHERE r.topic_id = ${topicId} OR r.reply_id = ANY(${replyIds})
+    GROUP BY r.topic_id, r.reply_id, r.emoji
   `;
   const topic: ReactionSummary = [];
   const replies: Record<number, ReactionSummary> = {};
   for (const r of rows as any[]) {
-    const entry = { emoji: r.emoji, count: r.count, reacted: r.reacted };
+    const entry = { emoji: r.emoji, count: r.count, reacted: r.reacted, reactors: r.reactors ?? [] };
     if (r.reply_id) (replies[r.reply_id] ??= []).push(entry);
     else topic.push(entry);
   }
@@ -34,27 +38,28 @@ export async function getTopics(opts: { category?: string | null; limit?: number
       c.name category,c.slug category_slug,
       u.display_name author,u.avatar_url avatar,
       tn.logo_url tournament_logo,
-      (SELECT COUNT(*) FROM replies r WHERE r.topic_id=t.id)::int replies,
-      (SELECT u2.display_name FROM replies r2 LEFT JOIN users u2 ON u2.id=r2.author_id WHERE r2.topic_id=t.id ORDER BY r2.created_at DESC LIMIT 1) last_author,
-      (SELECT MAX(r3.created_at) FROM replies r3 WHERE r3.topic_id=t.id) last_reply_at
+      (SELECT COUNT(*) FROM replies r WHERE r.topic_id=t.id AND r.moderation_status='approved')::int replies,
+      (SELECT u2.display_name FROM replies r2 LEFT JOIN users u2 ON u2.id=r2.author_id WHERE r2.topic_id=t.id AND r2.moderation_status='approved' ORDER BY r2.created_at DESC LIMIT 1) last_author,
+      (SELECT MAX(r3.created_at) FROM replies r3 WHERE r3.topic_id=t.id AND r3.moderation_status='approved') last_reply_at
     FROM topics t
     LEFT JOIN categories c ON c.id=t.category_id
     LEFT JOIN users u ON u.id=t.author_id
     LEFT JOIN tournaments tn ON tn.discussion_topic_id=t.id
-    WHERE (${cat}::text IS NULL OR c.slug=${cat})
-    ORDER BY t.pinned DESC, COALESCE((SELECT MAX(r4.created_at) FROM replies r4 WHERE r4.topic_id=t.id), t.created_at) DESC
+    WHERE t.moderation_status='approved' AND (${cat}::text IS NULL OR c.slug=${cat})
+    ORDER BY t.pinned DESC, COALESCE((SELECT MAX(r4.created_at) FROM replies r4 WHERE r4.topic_id=t.id AND r4.moderation_status='approved'), t.created_at) DESC
     LIMIT ${limit}`;
 }
 
 /** Accepts a numeric id or a slug (tournament threads link by slug). */
 export async function getTopic(ref: string | number) {
   await ensureMatchThreadTourSchema();
+  await ensureTopicVideoSchema();
   const isId = /^\d+$/.test(String(ref));
   const rows = isId
     ? await sql`
         SELECT t.*, c.name AS category, c.slug AS category_slug, u.id AS author_id,
           COALESCE(topic_identity.player_name, u.display_name) AS author,
-          u.avatar_url AS avatar, u.status AS author_status, tn.logo_url AS tournament_logo,
+          u.avatar_url AS avatar, u.status AS author_status, u.is_admin AS author_is_admin, u.is_moderator AS author_is_moderator, tn.logo_url AS tournament_logo,
           thread_context.tour AS tournament_tour, topic_identity.wtsl_player_id AS official_player_id,
           topic_identity.tour AS official_tour
         FROM topics t
@@ -110,13 +115,13 @@ export async function getTopic(ref: string | number) {
             CASE WHEN pc.id = u.default_player_claim_id THEN 0 ELSE 1 END, pc.created_at ASC, pc.id ASC
           LIMIT 1
         ) topic_identity ON TRUE
-        WHERE t.id = ${Number(ref)}
+        WHERE t.id = ${Number(ref)} AND t.moderation_status='approved'
         LIMIT 1
       `
     : await sql`
         SELECT t.*, c.name AS category, c.slug AS category_slug, u.id AS author_id,
           COALESCE(topic_identity.player_name, u.display_name) AS author,
-          u.avatar_url AS avatar, u.status AS author_status, tn.logo_url AS tournament_logo,
+          u.avatar_url AS avatar, u.status AS author_status, u.is_admin AS author_is_admin, u.is_moderator AS author_is_moderator, tn.logo_url AS tournament_logo,
           thread_context.tour AS tournament_tour, topic_identity.wtsl_player_id AS official_player_id,
           topic_identity.tour AS official_tour
         FROM topics t
@@ -172,7 +177,7 @@ export async function getTopic(ref: string | number) {
             CASE WHEN pc.id = u.default_player_claim_id THEN 0 ELSE 1 END, pc.created_at ASC, pc.id ASC
           LIMIT 1
         ) topic_identity ON TRUE
-        WHERE t.slug = ${String(ref)}
+        WHERE t.slug = ${String(ref)} AND t.moderation_status='approved'
         LIMIT 1
       `;
   const topic = rows[0];
@@ -181,7 +186,7 @@ export async function getTopic(ref: string | number) {
   const replies = await sql`
     SELECT r.id, r.body, r.created_at, r.updated_at, u.id AS author_id,
       COALESCE(reply_identity.player_name, u.display_name) AS author,
-      u.avatar_url AS avatar, u.is_admin, u.status AS author_status,
+      u.avatar_url AS avatar, u.is_admin, u.is_moderator, u.status AS author_status,
       reply_identity.wtsl_player_id AS official_player_id, reply_identity.tour AS official_tour
     FROM replies r
     LEFT JOIN users u ON u.id = r.author_id
@@ -195,10 +200,19 @@ export async function getTopic(ref: string | number) {
         CASE WHEN pc.id = u.default_player_claim_id THEN 0 ELSE 1 END, pc.created_at ASC, pc.id ASC
       LIMIT 1
     ) reply_identity ON TRUE
-    WHERE r.topic_id = ${topic.id}
+    WHERE r.topic_id = ${topic.id} AND r.moderation_status='approved'
     ORDER BY r.created_at ASC
   `;
-  return { topic, replies };
+  const clips = topic.video_clip_id
+    ? await sql`
+        SELECT id, title, description, url, private_blob_content_type AS content_type
+        FROM media_clips
+        WHERE id=${topic.video_clip_id} AND moderation_status='approved'
+        LIMIT 1
+      `
+    : [];
+  const { video_clip_id: _privateAttachmentId, ...publicTopic } = topic;
+  return { topic: publicTopic, replies, video: clips[0] ?? null };
 }
 
 export async function getCategories() {
@@ -206,7 +220,7 @@ export async function getCategories() {
 }
 
 export async function getCategoriesWithCounts() {
-  return sql`SELECT c.id,c.name,c.slug,c.description,c.position,(SELECT COUNT(*) FROM topics t WHERE t.category_id=c.id)::int topics FROM categories c ORDER BY c.position`;
+  return sql`SELECT c.id,c.name,c.slug,c.description,c.position,(SELECT COUNT(*) FROM topics t WHERE t.category_id=c.id AND t.moderation_status='approved')::int topics FROM categories c ORDER BY c.position`;
 }
 
 export async function getArticles(publishedOnly = true, limit = 60) {
@@ -239,13 +253,19 @@ function displayAwardName(name?: string | null) {
 export async function getAwards() {
   const [awards, players, tournamentsWithLogo] = await Promise.all([
     sql`SELECT * FROM awards ORDER BY season DESC, position ASC, id ASC`,
-    sql`SELECT name, avatar_url FROM wtsl_players ORDER BY (tour='TE4') DESC, synced_at DESC`,
+    sql`SELECT name, avatar_url, flag_url, country FROM wtsl_players ORDER BY (tour='TE4') DESC, synced_at DESC`,
     sql`SELECT name, logo_url FROM tournaments WHERE logo_url IS NOT NULL ORDER BY last_synced_at DESC`,
   ]);
-  const playerAvatar = new Map<string, string>();
+  const playerAvatar = new Map<string, { avatar: string | null; flag: string | null; country: string | null }>();
   for (const p of players as any[]) {
     const key = normalizePlayerName(p.name);
-    if (key && !playerAvatar.has(key)) playerAvatar.set(key, p.avatar_url);
+    if (key && !playerAvatar.has(key)) {
+      playerAvatar.set(key, {
+        avatar: p.avatar_url ?? null,
+        flag: p.flag_url ?? null,
+        country: p.country ?? null,
+      });
+    }
   }
   const tourneyLogo = new Map<string, string>();
   for (const t of tournamentsWithLogo as any[]) {
@@ -253,16 +273,25 @@ export async function getAwards() {
     if (key && !tourneyLogo.has(key)) tourneyLogo.set(key, t.logo_url);
   }
   return (awards as any[]).map((a) => {
+    const playerMediaFor = (n?: string | null) => playerAvatar.get(normalizePlayerName(n));
     const avatarFor = (n?: string | null) =>
-      a.category === 'Tournament of the Year' ? tourneyLogo.get((n || '').trim().toLowerCase()) : playerAvatar.get(normalizePlayerName(n));
+      a.category === 'Tournament of the Year' ? tourneyLogo.get((n || '').trim().toLowerCase()) : playerMediaFor(n)?.avatar;
+    const flagFor = (n?: string | null) => playerMediaFor(n)?.flag;
+    const countryFor = (n?: string | null) => playerMediaFor(n)?.country;
     return {
       ...a,
       winner: displayAwardName(a.winner) ?? a.winner,
       runner_up: displayAwardName(a.runner_up),
       player_two: displayAwardName(a.player_two),
       winner_avatar: avatarFor(a.winner),
+      winner_flag: flagFor(a.winner),
+      winner_country: countryFor(a.winner),
       runner_up_avatar: avatarFor(a.runner_up),
+      runner_up_flag: flagFor(a.runner_up),
+      runner_up_country: countryFor(a.runner_up),
       player_two_avatar: avatarFor(a.player_two),
+      player_two_flag: flagFor(a.player_two),
+      player_two_country: countryFor(a.player_two),
     };
   });
 }
@@ -270,8 +299,8 @@ export async function getAwards() {
 /** Forum activity counts for one user's personal dashboard. */
 export async function getContributionStats(userId: string) {
   const [topics, replies, articles] = await Promise.all([
-    sql`SELECT COUNT(*)::int c FROM topics WHERE author_id=${userId}`,
-    sql`SELECT COUNT(*)::int c FROM replies WHERE author_id=${userId}`,
+    sql`SELECT COUNT(*)::int c FROM topics WHERE author_id=${userId} AND moderation_status='approved'`,
+    sql`SELECT COUNT(*)::int c FROM replies WHERE author_id=${userId} AND moderation_status='approved'`,
     sql`SELECT COUNT(*)::int c FROM articles WHERE author_id=${userId}`,
   ]);
   return { topics: topics[0]?.c ?? 0, replies: replies[0]?.c ?? 0, articles: articles[0]?.c ?? 0 };
@@ -280,9 +309,9 @@ export async function getContributionStats(userId: string) {
 /** A user's most recently authored topics/replies, newest first, for a dashboard activity feed. */
 export async function getRecentActivity(userId: string, limit = 6) {
   return sql`
-    (SELECT 'topic' AS kind, t.id, t.title AS title, t.slug, t.created_at FROM topics t WHERE t.author_id=${userId})
+    (SELECT 'topic' AS kind, t.id, t.title AS title, t.slug, t.created_at FROM topics t WHERE t.author_id=${userId} AND t.moderation_status='approved')
     UNION ALL
-    (SELECT 'reply' AS kind, r.topic_id AS id, tp.title AS title, tp.slug, r.created_at FROM replies r JOIN topics tp ON tp.id=r.topic_id WHERE r.author_id=${userId})
+    (SELECT 'reply' AS kind, r.topic_id AS id, tp.title AS title, tp.slug, r.created_at FROM replies r JOIN topics tp ON tp.id=r.topic_id WHERE r.author_id=${userId} AND r.moderation_status='approved' AND tp.moderation_status='approved')
     ORDER BY created_at DESC
     LIMIT ${limit}
   `;

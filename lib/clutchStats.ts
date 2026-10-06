@@ -70,6 +70,64 @@ function matchIdentity(row: OfficialResult): string {
   return [tournament, round, date, players[0], players[1]].join('\u0000');
 }
 
+export type OfficialHeadToHeadRecord = {
+  firstWins: number;
+  secondWins: number;
+  matches: number;
+};
+
+/** Counts winner-oriented all-results rows for one player pair, ignoring duplicate and conflicting rows. */
+export function computeOfficialHeadToHeadRecord(
+  rows: OfficialResult[],
+  firstPlayerId: string | number,
+  secondPlayerId: string | number,
+): OfficialHeadToHeadRecord {
+  const firstId = String(firstPlayerId).trim();
+  const secondId = String(secondPlayerId).trim();
+  if (!firstId || !secondId || firstId === secondId) {
+    return { firstWins: 0, secondWins: 0, matches: 0 };
+  }
+
+  const unique = new Map<string, OfficialResult | null>();
+  for (const row of rows) {
+    const player1Id = row.player1Id.trim();
+    const player2Id = row.player2Id.trim();
+    if (
+      !player1Id
+      || !player2Id
+      || player1Id === player2Id
+      || !(
+        (player1Id === firstId && player2Id === secondId)
+        || (player1Id === secondId && player2Id === firstId)
+      )
+      || !row.score.trim()
+      || /\b(?:scheduled|pending|live|in progress)\b/i.test(row.score)
+    ) {
+      continue;
+    }
+
+    const normalizedRow = { ...row, player1Id, player2Id };
+    const key = matchIdentity(normalizedRow);
+    const existing = unique.get(key);
+    if (existing === undefined) {
+      unique.set(key, normalizedRow);
+      continue;
+    }
+    if (existing && normalizeMatchScore(existing.score) !== normalizeMatchScore(row.score)) {
+      unique.set(key, null);
+    }
+  }
+
+  let firstWins = 0;
+  let secondWins = 0;
+  for (const row of unique.values()) {
+    if (!row) continue;
+    if (row.player1Id === firstId && row.player2Id === secondId) firstWins += 1;
+    else if (row.player1Id === secondId && row.player2Id === firstId) secondWins += 1;
+  }
+  return { firstWins, secondWins, matches: firstWins + secondWins };
+}
+
 /**
  * The WTSL all-results feed is winner-oriented (player 1 is the match winner).
  * Unlike a player's profile recent-results table, this source identifies both sides

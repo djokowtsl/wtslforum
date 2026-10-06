@@ -11,7 +11,7 @@ const secret = rawSecret
     : null;
 
 const cookieName = 'wtsl_session';
-export type SessionUser = { id: string; discordId: string; username: string; avatar: string | null; isAdmin: boolean };
+export type SessionUser = { id: string; discordId: string; username: string; avatar: string | null; isAdmin: boolean; isModerator: boolean };
 
 export const authConfigured = () => Boolean(secret);
 
@@ -28,7 +28,27 @@ export async function getSession(): Promise<SessionUser | null> {
   if (!token) return null;
   try {
     const { payload } = await jwtVerify(token, secret);
-    return payload as unknown as SessionUser;
+    const session = payload as unknown as SessionUser;
+    if (!session.id || !session.discordId) return null;
+    const configuredAdmins = (process.env.ADMIN_DISCORD_IDS || '').split(',').map((x) => x.trim()).filter(Boolean);
+    const configuredModerators = (process.env.MODERATOR_DISCORD_IDS || '').split(',').map((x) => x.trim()).filter(Boolean);
+    try {
+      // Role changes must take effect without waiting for the 30-day session cookie to expire.
+      const rows = await sql`SELECT is_admin,is_moderator FROM users WHERE id=${Number(session.id)} AND discord_id=${session.discordId} LIMIT 1`;
+      if (!rows[0]) return null;
+      return {
+        ...session,
+        isAdmin: configuredAdmins.includes(session.discordId) || Boolean(rows[0].is_admin),
+        isModerator: configuredModerators.includes(session.discordId) || Boolean(rows[0].is_moderator),
+      };
+    } catch {
+      // A database outage must not preserve stale database-assigned privileges from a JWT.
+      return {
+        ...session,
+        isAdmin: configuredAdmins.includes(session.discordId),
+        isModerator: configuredModerators.includes(session.discordId),
+      };
+    }
   } catch {
     return null;
   }
@@ -40,12 +60,14 @@ export async function clearSession() {
 
 export async function upsertDiscordUser(u: { id: string; username: string; global_name?: string | null; avatar?: string | null }) {
   const adminIds = (process.env.ADMIN_DISCORD_IDS || '').split(',').map((x) => x.trim()).filter(Boolean);
+  const moderatorIds = (process.env.MODERATOR_DISCORD_IDS || '').split(',').map((x) => x.trim()).filter(Boolean);
   const isAdmin = adminIds.includes(u.id);
+  const isModerator = moderatorIds.includes(u.id);
   const name = u.global_name || u.username;
   const avatar = u.avatar ? `https://cdn.discordapp.com/avatars/${u.id}/${u.avatar}.png?size=128` : null;
-  const rows = await sql`INSERT INTO users (discord_id,username,display_name,avatar_url,is_admin) VALUES (${u.id},${u.username},${name},${avatar},${isAdmin}) ON CONFLICT (discord_id) DO UPDATE SET username=EXCLUDED.username,display_name=EXCLUDED.display_name,avatar_url=EXCLUDED.avatar_url,is_admin=EXCLUDED.is_admin,updated_at=NOW() RETURNING id,discord_id,username,display_name,avatar_url,is_admin`;
+  const rows = await sql`INSERT INTO users (discord_id,username,display_name,avatar_url,is_admin,is_moderator) VALUES (${u.id},${u.username},${name},${avatar},${isAdmin},${isModerator}) ON CONFLICT (discord_id) DO UPDATE SET username=EXCLUDED.username,display_name=EXCLUDED.display_name,avatar_url=EXCLUDED.avatar_url,is_admin=users.is_admin OR EXCLUDED.is_admin,is_moderator=users.is_moderator OR EXCLUDED.is_moderator,updated_at=NOW() RETURNING id,discord_id,username,display_name,avatar_url,is_admin,is_moderator`;
   const r = rows[0];
-  return { id: String(r.id), discordId: r.discord_id, username: r.display_name || r.username, avatar: r.avatar_url, isAdmin: Boolean(r.is_admin) } as SessionUser;
+  return { id: String(r.id), discordId: r.discord_id, username: r.display_name || r.username, avatar: r.avatar_url, isAdmin: Boolean(r.is_admin), isModerator: Boolean(r.is_moderator) } as SessionUser;
 }
 
 export { canModerateComments } from './commentPermissions';

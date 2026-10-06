@@ -363,8 +363,12 @@ export function parseAllResults(html: string): WTSLAllResultRow[] {
   return out;
 }
 
-export async function fetchWTSLAllResults(): Promise<WTSLAllResultRow[]> {
-  const res = await fetch(ALL_RESULTS_URL, { cache: 'no-store', headers: { 'user-agent': 'WTSL-Community-Bridge/1.0' } });
+export async function fetchWTSLAllResults(timeoutMs?: number): Promise<WTSLAllResultRow[]> {
+  const res = await fetch(ALL_RESULTS_URL, {
+    cache: 'no-store',
+    headers: { 'user-agent': 'WTSL-Community-Bridge/1.0' },
+    ...(timeoutMs ? { signal: AbortSignal.timeout(timeoutMs) } : {}),
+  });
   if (!res.ok) throw new Error(`WTSL all-results request failed: ${res.status}`);
   return parseAllResults(await res.text());
 }

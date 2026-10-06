@@ -49,6 +49,7 @@ export type BotLeaderboardRow = {
   playerId: string;
   wtslPlayerId: string | null;
   avatarUrl: string | null;
+  flagUrl: string | null;
   country: string | null;
   matches: number;
   value: number;
@@ -334,6 +335,7 @@ export async function botLeaderboard(tour: string, metric: BotMetric): Promise<B
       COALESCE(p.wtsl_player_id, b.player_name) AS "playerId",
       p.wtsl_player_id AS "wtslPlayerId",
       p.avatar_url AS "avatarUrl",
+      p.flag_url AS "flagUrl",
       p.country,
       b.screenshots AS matches,
       CASE
@@ -365,6 +367,7 @@ export async function botLeaderboard(tour: string, metric: BotMetric): Promise<B
       playerId: String(row.playerId),
       wtslPlayerId: row.wtslPlayerId === null ? null : String(row.wtslPlayerId),
       avatarUrl: row.avatarUrl ? String(row.avatarUrl) : null,
+      flagUrl: row.flagUrl ? String(row.flagUrl) : null,
       country: row.country ? String(row.country) : null,
       matches: Number(row.matches),
       value: Number(row.value),
@@ -393,6 +396,7 @@ export type BotRatingLeaderboardRow = {
   wtsl_player_id: string;
   name: string;
   avatar_url: string | null;
+  flag_url: string | null;
   country: string | null;
   matches: number;
   value: number;
@@ -444,6 +448,7 @@ export async function botRatingLeaderboard(
       p.wtsl_player_id,
       p.name,
       p.avatar_url,
+      p.flag_url,
       p.country,
       b.screenshots AS matches,
       CASE
@@ -469,6 +474,7 @@ export async function botRatingLeaderboard(
     wtsl_player_id: String(row.wtsl_player_id),
     name: String(row.name),
     avatar_url: row.avatar_url ? String(row.avatar_url) : null,
+    flag_url: row.flag_url ? String(row.flag_url) : null,
     country: row.country ? String(row.country) : null,
     matches: Number(row.matches),
     value: Number(row.value),

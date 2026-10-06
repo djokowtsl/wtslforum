@@ -17,9 +17,29 @@ export async function leaderboard(tour='TE4', metric='wins'){
     WITH match_counts AS (
       SELECT player_id, COUNT(*)::int matches, SUM(CASE WHEN winner_id=player_id THEN 1 ELSE 0 END)::int wins
       FROM (
-        SELECT player_one_id player_id, winner_id FROM match_stats WHERE tour=${tour}
+        SELECT m.player_one_id player_id, m.winner_id FROM match_stats m
+        WHERE m.tour=${tour} AND (
+          m.tour <> 'TE4_(F)' OR EXISTS (
+            SELECT 1 FROM tournaments t
+            WHERE t.tour='TE4_(F)'
+              AND (
+                t.wtsl_tournament_key=m.tournament_key
+                OR (regexp_match(t.official_url, '[?&]tournament=([^&]+)'))[1]=m.tournament_key
+              )
+          )
+        )
         UNION ALL
-        SELECT player_two_id player_id, winner_id FROM match_stats WHERE tour=${tour}
+        SELECT m.player_two_id player_id, m.winner_id FROM match_stats m
+        WHERE m.tour=${tour} AND (
+          m.tour <> 'TE4_(F)' OR EXISTS (
+            SELECT 1 FROM tournaments t
+            WHERE t.tour='TE4_(F)'
+              AND (
+                t.wtsl_tournament_key=m.tournament_key
+                OR (regexp_match(t.official_url, '[?&]tournament=([^&]+)'))[1]=m.tournament_key
+              )
+          )
+        )
       ) sides
       GROUP BY player_id
     )
@@ -66,9 +86,29 @@ export async function allPlayerStats(tour='TE4'){
     WITH match_counts AS (
       SELECT player_id, COUNT(*)::int matches, SUM(CASE WHEN winner_id=player_id THEN 1 ELSE 0 END)::int wins
       FROM (
-        SELECT player_one_id player_id, winner_id FROM match_stats WHERE tour=${tour}
+        SELECT m.player_one_id player_id, m.winner_id FROM match_stats m
+        WHERE m.tour=${tour} AND (
+          m.tour <> 'TE4_(F)' OR EXISTS (
+            SELECT 1 FROM tournaments t
+            WHERE t.tour='TE4_(F)'
+              AND (
+                t.wtsl_tournament_key=m.tournament_key
+                OR (regexp_match(t.official_url, '[?&]tournament=([^&]+)'))[1]=m.tournament_key
+              )
+          )
+        )
         UNION ALL
-        SELECT player_two_id player_id, winner_id FROM match_stats WHERE tour=${tour}
+        SELECT m.player_two_id player_id, m.winner_id FROM match_stats m
+        WHERE m.tour=${tour} AND (
+          m.tour <> 'TE4_(F)' OR EXISTS (
+            SELECT 1 FROM tournaments t
+            WHERE t.tour='TE4_(F)'
+              AND (
+                t.wtsl_tournament_key=m.tournament_key
+                OR (regexp_match(t.official_url, '[?&]tournament=([^&]+)'))[1]=m.tournament_key
+              )
+          )
+        )
       ) sides
       GROUP BY player_id
     )
@@ -120,10 +160,10 @@ export async function searchPlayers(tour: string, query: string, limit = 8) {
   const q = query.trim();
   if (q.length < 2) return [];
   return sql`
-    SELECT wtsl_player_id, name, avatar_url, country
+    SELECT wtsl_player_id, name, avatar_url, flag_url, country
     FROM wtsl_players
     WHERE tour=${tour} AND name ILIKE ${'%' + q + '%'}
-    ORDER BY name ASC
+    ORDER BY CASE WHEN lower(name) = lower(${q}) THEN 0 ELSE 1 END, name ASC
     LIMIT ${limit}
   `;
 }
@@ -135,13 +175,25 @@ export async function recentMatches(limit=20, tour='TE4'){
       p1.name player_one_name,
       p1.avatar_url player_one_avatar,
       p1.flag_url player_one_flag,
+      p1.country player_one_country,
       p2.name player_two_name,
       p2.avatar_url player_two_avatar,
-      p2.flag_url player_two_flag
+      p2.flag_url player_two_flag,
+      p2.country player_two_country
     FROM match_stats m
     LEFT JOIN wtsl_players p1 ON p1.wtsl_player_id=m.player_one_id AND p1.tour=m.tour
     LEFT JOIN wtsl_players p2 ON p2.wtsl_player_id=m.player_two_id AND p2.tour=m.tour
     WHERE m.tour=${tour} AND m.played_at IS NOT NULL
+      AND (
+        m.tour <> 'TE4_(F)' OR EXISTS (
+          SELECT 1 FROM tournaments t
+          WHERE t.tour='TE4_(F)'
+            AND (
+              t.wtsl_tournament_key=m.tournament_key
+              OR (regexp_match(t.official_url, '[?&]tournament=([^&]+)'))[1]=m.tournament_key
+            )
+        )
+      )
       AND (
         m.source_id NOT LIKE 'import:%'
         OR NOT EXISTS (

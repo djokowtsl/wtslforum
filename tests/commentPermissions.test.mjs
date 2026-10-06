@@ -6,6 +6,10 @@ test('admins can delete comments without being in the moderator list', () => {
   assert.equal(canModerateComments({ discordId: 'admin-1', isAdmin: true }, ''), true);
 });
 
+test('account-assigned moderators can moderate without an environment ID', () => {
+  assert.equal(canModerateComments({ discordId: 'mod-3', isAdmin: false, isModerator: true }, ''), true);
+});
+
 test('comma-separated moderator IDs are trimmed and grant deletion permission', () => {
   assert.equal(canModerateComments({ discordId: 'mod-2', isAdmin: false }, 'mod-1, mod-2 ,'), true);
 });
