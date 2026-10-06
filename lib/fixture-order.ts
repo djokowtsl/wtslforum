@@ -206,6 +206,23 @@ export function deduplicateRedundantRoundFixtures<T extends FixtureRef>(
   return fixtures.filter((_, index) => !remove.has(index));
 }
 
+/** Deduplicate the open and recently settled sections without matching on names alone. */
+export function deduplicateBettingBoardFixtures<T extends FixtureRef>(
+  board: { open?: T[] | null; recent_settled?: T[] | null },
+  tournaments: TournamentRecord[],
+) {
+  return {
+    open: deduplicateRedundantRoundFixtures(
+      Array.isArray(board.open) ? board.open : [],
+      tournaments,
+    ),
+    recent_settled: deduplicateRedundantRoundFixtures(
+      Array.isArray(board.recent_settled) ? board.recent_settled : [],
+      tournaments,
+    ),
+  };
+}
+
 function statusRank(value: unknown) {
   switch (String(value ?? '').trim().toLowerCase()) {
     case 'ongoing':
