@@ -1,0 +1,17 @@
+export const CATEGORY_ICONS: Readonly<Record<string, string>> = {
+  'Player of the Year (Year-End No. 1)': '👑',
+  'Fans Favourite Award': '❤️',
+  'Stefan Edberg Sportsmanship Award': '🤝',
+  'Most Improved Player': '📈',
+  'Newcomer of the Year': '🌱',
+  'Arthur Ashe Humanitarian Award': '🕊️',
+  'Farmer of the Year': '🌽',
+  'Comedian/Troll of the Year': '🤡',
+  'Trickiest Player': '🎩',
+  'Best Dressed Player': '👔',
+  'Coach of the Year': '🧠',
+  'Upset of the Year': '⚡',
+  'Match of the Year': '🎾',
+  'Worst Scheduler': '🗓️',
+  'Tournament of the Year': '🏆',
+};

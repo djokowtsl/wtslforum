@@ -560,8 +560,11 @@ h1, h2, h3 { margin: 0; }
 /* ---------- Awards ---------- */
 .award-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 16px; }
 .award-card { position: relative; background: radial-gradient(400px 160px at 100% 0, rgba(176, 244, 59, 0.1), transparent 70%), var(--panel); border: 1px solid var(--line); border-radius: var(--radius); padding: 26px; overflow: hidden; }
-.award-card .num { position: absolute; right: 16px; top: 10px; font-size: 46px; line-height: 1; opacity: 0.4; }
-.award-card h3 { font-size: 30px; line-height: 1; margin-bottom: 10px; position: relative; }
+.award-card h3 { font-size: 30px; line-height: 1.12; margin: 0; position: relative; }
+.award-category-title { display: flex; align-items: flex-start; gap: 12px; min-width: 0; margin-bottom: 10px; }
+.award-category-title h3, .award-category-title strong { min-width: 0; flex: 1; }
+.award-category-title strong { color: var(--text-strong); font-size: 18px; line-height: 1.2; }
+.award-category-icon { display: grid; place-items: center; flex: none; width: 36px; height: 36px; margin-top: 2px; border: 1px solid var(--line-2); border-radius: 50%; background: rgba(176, 244, 59, 0.12); font-size: 21px; line-height: 1; }
 .award-card .award-farmer-pill,
 .award-vote-farmer-pill { display: flex; align-items: center; justify-content: space-between; gap: 12px; width: min(100%, 340px); min-height: 42px; padding: 6px 12px; border: 1px solid var(--line-2); border-radius: 999px; background: var(--panel-2); color: var(--text-strong); font-size: 16px; line-height: 1.2; }
 .award-farmer-corn { display: grid; place-items: center; flex: none; width: 28px; height: 28px; border-radius: 50%; background: rgba(176, 244, 59, 0.12); font-size: 18px; }
@@ -668,6 +671,11 @@ h1, h2, h3 { margin: 0; }
   .theme-toggle { min-height: 38px; padding: 0 10px; gap: 6px; font-size: 11px; }
   .live-inner { padding: 22px 16px; }
   .live-grid, .article-grid, .player-grid, .tournament-grid, .award-grid, .fixture-grid, .kpi-grid, .admin-grid, .feature-grid { grid-template-columns: 1fr; }
+  .award-card { padding: 18px; }
+  .award-category-title { gap: 10px; }
+  .award-card h3 { font-size: clamp(20px, 6vw, 26px); line-height: 1.12; }
+  .award-category-title strong { font-size: 16px; }
+  .award-category-icon { width: 34px; height: 34px; font-size: 19px; }
   .odds-head, .odds-side { grid-template-columns: minmax(0, 1fr) 46px 46px 46px; padding: 9px 10px; font-size: 13px; }
   .bet-row { padding: 12px 14px; }
   .section-head { flex-direction: column; align-items: flex-start; }
