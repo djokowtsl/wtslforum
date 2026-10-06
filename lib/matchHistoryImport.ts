@@ -2,6 +2,7 @@ import { sql } from './db';
 import { parseSets, computeClutchStats, normalizeMatchScore } from './playerStats';
 import { normalizePlayerName } from './queries';
 import { type TourCode } from './wtsl';
+import { officialWtaEventByName, officialWtaScheduleForYear } from './wtaSchedule';
 
 export type MatchHistoryRow = {
   player1: string;
@@ -67,10 +68,13 @@ export async function importMatchHistory(tour: TourCode, rows: MatchHistoryRow[]
   let inserted = 0;
   let skippedNoScore = 0;
   let skippedUnmatched = 0;
+  let skippedUnverifiedTournament = 0;
   const unmatched = new Set<string>();
+  const unverifiedTournaments = new Set<string>();
   const skippedScores: string[] = [];
   const unmatchedRows: { player1: string; player2: string }[] = [];
   const failedRows: { player1: string; player2: string; error: string }[] = [];
+  const wtaSchedules = new Map<number, Promise<Awaited<ReturnType<typeof officialWtaScheduleForYear>>>>();
 
   for (const r of rows) {
     const score = normalizeMatchScore(r.score);
@@ -79,6 +83,39 @@ export async function importMatchHistory(tour: TourCode, rows: MatchHistoryRow[]
       skippedNoScore++;
       if (skippedScores.length < 20) skippedScores.push(r.score);
       continue;
+    }
+
+    const playedAt = validPlayedAt(r.date);
+    let tournamentKey: string | null = null;
+    let tournamentName = r.tournamentName ?? '';
+    if (tour === 'TE4_(F)') {
+      const year = playedAt ? Number(playedAt.slice(0, 4)) : NaN;
+      if (!playedAt || !Number.isInteger(year) || !r.tournamentName?.trim()) {
+        skippedUnverifiedTournament++;
+        if (unverifiedTournaments.size < 20) {
+          unverifiedTournaments.add(r.tournamentName?.trim() || '(missing name/date)');
+        }
+        continue;
+      }
+      let schedule = wtaSchedules.get(year);
+      if (!schedule) {
+        schedule = officialWtaScheduleForYear(year);
+        wtaSchedules.set(year, schedule);
+      }
+      const event = officialWtaEventByName(
+        r.tournamentName,
+        playedAt,
+        await schedule,
+      );
+      if (!event) {
+        skippedUnverifiedTournament++;
+        if (unverifiedTournaments.size < 20) {
+          unverifiedTournaments.add(r.tournamentName.trim());
+        }
+        continue;
+      }
+      tournamentKey = event.key;
+      tournamentName = event.name;
     }
 
     const matchedP1 = resolvePlayerId(r.player1, byName);
@@ -99,15 +136,15 @@ export async function importMatchHistory(tour: TourCode, rows: MatchHistoryRow[]
     const setsWon = sets.filter(([a, b]) => a > b).length;
     const winnerId = setsWon * 2 > sets.length ? p1 : p2;
     const pair = [p1, p2].sort();
-    const playedAt = validPlayedAt(r.date);
     const sourceId = `import:${tour}:${r.tournamentName ?? 'x'}:${r.round ?? 'x'}:${pair[0]}-${pair[1]}:${playedAt ?? ''}:${score}`;
     const stats = cleanStats(r.stats);
 
     try {
       const result = await sql`
         INSERT INTO match_stats(source_id,tour,tournament_key,tournament_name,round_name,player_one_id,player_two_id,score,winner_id,played_at,stats)
-        VALUES(${sourceId},${tour},${null},${r.tournamentName ?? null},${r.round ?? null},${p1},${p2},${score},${winnerId},${playedAt},${JSON.stringify({ player1: stats })}::jsonb)
+        VALUES(${sourceId},${tour},${tournamentKey},${tournamentName || null},${r.round ?? null},${p1},${p2},${score},${winnerId},${playedAt},${JSON.stringify({ player1: stats })}::jsonb)
         ON CONFLICT(source_id) DO UPDATE SET
+          tournament_key=COALESCE(EXCLUDED.tournament_key,match_stats.tournament_key),
           tournament_name=COALESCE(match_stats.tournament_name, EXCLUDED.tournament_name),
           stats=match_stats.stats || EXCLUDED.stats
         RETURNING (xmax = 0) AS inserted
@@ -131,6 +168,8 @@ export async function importMatchHistory(tour: TourCode, rows: MatchHistoryRow[]
     inserted,
     skippedNoScore,
     skippedUnmatched,
+    skippedUnverifiedTournament,
+    unverifiedTournaments: Array.from(unverifiedTournaments),
     skippedScores,
     unmatchedPlayers: Array.from(unmatched),
     unmatchedRows,

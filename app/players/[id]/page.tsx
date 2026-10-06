@@ -9,6 +9,7 @@ import Link from 'next/link';
 import PageHero from '@/components/PageHero';
 import { StatusDot } from '@/components/StatusDot';
 import { DEFAULT_TOUR, getTourEloDesignation, isTourCode, tourLabel, type TourCode } from '@/lib/wtsl';
+import PlayerAvatar from '@/components/PlayerAvatar';
 
 export const dynamic = 'force-dynamic';
 
@@ -50,7 +51,25 @@ export default async function PlayerDashboard({ params, searchParams }: Props) {
   const p = rows.find((r: any) => r.tour === tour) ?? rows[0];
   const eloLabel = p.tour_elo == null ? p.elo_label : getTourEloDesignation(p.tour_elo);
 
-  const recent = await safe(() => sql`SELECT * FROM player_recent_results WHERE player_id=${id} AND tour=${tour} ORDER BY position ASC LIMIT 10`, [] as any[]);
+  const recent = await safe(() => sql`
+    SELECT r.*
+    FROM player_recent_results r
+    WHERE r.player_id=${id} AND r.tour=${tour}
+      AND (
+        ${tour} <> 'TE4_(F)'
+        OR EXISTS (
+          SELECT 1
+          FROM tournaments t
+          WHERE t.tour='TE4_(F)'
+            AND (
+              t.wtsl_tournament_key=r.tournament_key
+              OR (regexp_match(t.official_url, '[?&]tournament=([^&]+)'))[1]=r.tournament_key
+            )
+        )
+      )
+    ORDER BY r.position ASC
+    LIMIT 10
+  `, [] as any[]);
   const verifiedOwner = await safe(() => getVerifiedOwner(id, tour), null as any);
   const viewer = await safe(() => getSession(), null);
   const forumContributions = verifiedOwner
@@ -95,7 +114,7 @@ export default async function PlayerDashboard({ params, searchParams }: Props) {
           </div>
         )}
         <div className="player-dash-head panel">
-          {p.avatar_url ? <img src={p.avatar_url} alt={p.name} className="player-dash-avatar" /> : <div className="player-placeholder">{(p.name || 'W')[0]}</div>}
+          <PlayerAvatar className="player-dash-avatar" src={p.avatar_url} flagSrc={p.flag_url} flagLabel={p.country} name={p.name} size={86} />
           <div>
             <h2 className="display">{p.name}</h2>
             {p.country && <p>{p.flag_url && <img src={p.flag_url} alt="" style={{ height: 14, marginRight: 6 }} />}{p.country}</p>}

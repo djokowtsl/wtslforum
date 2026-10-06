@@ -56,7 +56,7 @@ export default async function Discussions({ searchParams }: { searchParams: Prom
                   {t.pinned && <span className="pill pin">Pinned</span>}
                   {t.locked && <span className="pill cyan">Locked</span>}
                   {t.category && <span className="pill">{t.category}</span>}
-                  <span>{t.author || 'Community'}</span><span>{timeAgo(t.created_at)}</span>
+                  <span>{t.author || 'WTSL'}</span><span>{timeAgo(t.created_at)}</span>
                 </div>
               </div>
               <div className="topic-stat">{t.replies}<span>replies</span></div>

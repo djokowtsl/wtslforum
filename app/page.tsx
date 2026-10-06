@@ -10,6 +10,8 @@ import { getSession } from '@/lib/auth';
 import { fmtDate, timeAgo } from '@/lib/format';
 import { discordAvatar } from '@/lib/auth';
 import { FixtureCard, ResultCard } from '@/components/MatchCards';
+import ForumAvatar from '@/components/ForumAvatar';
+import LiveScores from '@/components/LiveScores';
 
 export const dynamic = 'force-dynamic';
 
@@ -75,13 +77,14 @@ export default async function Home({ searchParams }: { searchParams: Promise<{ e
       <section className="live">
         <div className="live-inner">
           <div className="live-head"><span className="live-dot" /><h2 className="display">Happening now</h2><Link href="/matches">All matches →</Link></div>
+          <LiveScores />
           {hasTour ? (
             <>
               {results.length > 0 && (<><div className="live-sub" style={{ marginTop: 0 }}>Latest results</div><div className="live-grid">{results.map((m: any) => <ResultCard key={m.id} m={m} tournamentNames={tournamentNames} />)}</div></>)}
               {fx.length > 0 && (<><div className="live-sub">Open fixtures</div><div className="live-grid">{fx.map((f: any) => <FixtureCard key={f.key} f={f} />)}</div></>)}
             </>
           ) : (
-            <div className="notice">Fixtures and results from the WTSL tour will appear here as soon as the data connection is live. In the meantime, the <Link href="/tournaments" style={{ color: 'var(--lime)' }}>tournament calendar</Link> has everything that is on.</div>
+            <div className="notice">No recent WTSL results or open fixtures are available right now. See the <Link href="/tournaments" style={{ color: 'var(--lime)' }}>tournament calendar</Link> for scheduled events.</div>
           )}
         </div>
       </section>
@@ -100,10 +103,16 @@ export default async function Home({ searchParams }: { searchParams: Promise<{ e
               <div className="empty"><strong>No discussions yet</strong>Be the first to start a conversation about the tour.{u ? <><br /><Link className="btn btn-primary btn-sm" href="/discussions/new">Start a discussion</Link></> : <><br /><a className="btn btn-discord btn-sm" href="/api/auth/discord">Log in with Discord</a></>}</div>
             ) : topics.map((t: any) => (
               <Link className="topic" href={'/discussions/' + t.id} key={t.id}>
-                <img className="av" src={discordAvatar(t.avatar, t.author || 'W')} alt="" />
+                <ForumAvatar
+  size="topic"
+  src={t.tournament_logo || (!t.author ? '/brand/wtsl-logo-200.png' : discordAvatar(t.avatar, t.author || 'W'))}
+  hasTournamentLogo={!!t.tournament_logo}
+  tournamentName={t.title}
+  isCommunity={!t.author}
+/>
                 <div>
                   <div className="topic-title">{t.title}</div>
-                  <div className="topic-meta">{t.category && <span className="pill">{t.category}</span>}<span>{t.author || 'Community'}</span><span>{timeAgo(t.created_at)}</span></div>
+                  <div className="topic-meta">{t.category && <span className="pill">{t.category}</span>}<span>{t.author || 'WTSL'}</span><span>{timeAgo(t.created_at)}</span></div>
                 </div>
                 <div className="topic-stat">{t.replies}<span>replies</span></div>
                 <div className="topic-last">{t.last_author ? <><b>{t.last_author}</b>{timeAgo(t.last_reply_at)}</> : <span>No replies yet</span>}</div>

@@ -5,6 +5,7 @@ import TourTabs from '@/components/TourTabs';
 import { normalizePlayerName } from '@/lib/queries';
 import { DEFAULT_TOUR, isTourCode, tourLabel, type TourCode } from '@/lib/wtsl';
 import { COOP_STANDINGS_URL, fetchCoopStandings } from '@/lib/coopStandings';
+import PlayerAvatar from '@/components/PlayerAvatar';
 
 export const dynamic = 'force-dynamic';
 export const metadata: Metadata = { title: 'Players' };
@@ -14,7 +15,7 @@ export default async function PlayersPage({ searchParams }: { searchParams: Prom
   const tour: TourCode = isTourCode(tourParam) ? tourParam : DEFAULT_TOUR;
   let players: any[] = [];
   let coopTeams: Awaited<ReturnType<typeof fetchCoopStandings>> = [];
-  let coopPlayerAvatars = new Map<string, string>();
+  let coopPlayerAvatars = new Map<string, { avatarUrl: string | null; flagUrl: string | null; country: string | null }>();
   let coopUnavailable = false;
   if (tour === 'TE4_Coop') {
     try {
@@ -28,11 +29,9 @@ export default async function PlayersPage({ searchParams }: { searchParams: Prom
       );
       const avatarRows = await safe(
         () => sql`
-          SELECT name, avatar_url
+          SELECT name, avatar_url, flag_url, country
           FROM wtsl_players
           WHERE tour IN ('TE4', 'TE4_(F)')
-            AND avatar_url IS NOT NULL
-            AND avatar_url <> ''
           ORDER BY CASE WHEN tour='TE4' THEN 0 ELSE 1 END, synced_at DESC
         `,
         [] as any[],
@@ -40,8 +39,13 @@ export default async function PlayersPage({ searchParams }: { searchParams: Prom
       for (const row of avatarRows) {
         const name = normalizePlayerName(String(row.name ?? ''));
         const avatarUrl = String(row.avatar_url ?? '').trim();
-        if (coopPlayerKeys.has(name) && avatarUrl && !coopPlayerAvatars.has(name)) {
-          coopPlayerAvatars.set(name, avatarUrl);
+        const flagUrl = String(row.flag_url ?? '').trim();
+        if (coopPlayerKeys.has(name) && (avatarUrl || flagUrl) && !coopPlayerAvatars.has(name)) {
+          coopPlayerAvatars.set(name, {
+            avatarUrl: avatarUrl || null,
+            flagUrl: flagUrl || null,
+            country: row.country ? String(row.country) : null,
+          });
         }
       }
     }
@@ -87,12 +91,17 @@ export default async function PlayersPage({ searchParams }: { searchParams: Prom
                     </div>
                     <div className="coop-team-players" aria-label={`${team.teamName} players`}>
                       {team.players.length > 0 ? team.players.map((player, index) => {
-                        const avatarUrl = coopPlayerAvatars.get(normalizePlayerName(player));
+                        const playerMedia = coopPlayerAvatars.get(normalizePlayerName(player));
                         return (
                           <span className="coop-team-player" key={`${player}-${index}`}>
-                            {avatarUrl
-                              ? <img className="coop-team-player-avatar" src={avatarUrl} alt="" loading="lazy" />
-                              : <span className="coop-team-player-avatar-fallback" aria-hidden="true">{player.trim().charAt(0).toUpperCase() || '?'}</span>}
+                            <PlayerAvatar
+                              className="coop-team-player-avatar"
+                              src={playerMedia?.avatarUrl}
+                              flagSrc={playerMedia?.flagUrl}
+                              flagLabel={playerMedia?.country}
+                              name={player}
+                              size={30}
+                            />
                             <span className="coop-team-player-name">{player}</span>
                           </span>
                         );
@@ -114,9 +123,9 @@ export default async function PlayersPage({ searchParams }: { searchParams: Prom
           <div className="player-grid">
             {players.map((p: any) => (
               <a className="player-card" href={`/players/${p.wtsl_player_id}?tour=${encodeURIComponent(tour)}`} key={p.wtsl_player_id}>
-                {p.avatar_url ? <img src={p.avatar_url} alt={p.name} /> : <div className="player-placeholder">{(p.name || 'W')[0]}</div>}
+                <PlayerAvatar className="player-card-avatar" src={p.avatar_url} flagSrc={p.flag_url} flagLabel={p.country} name={p.name} size={58} />
                 <div><strong>{p.name}</strong>{p.country && <small>{p.flag_url && <img src={p.flag_url} alt="" />}{p.country}</small>}<b>Tour Rank {p.rank ? `#${p.rank}` : 'Unranked'} | Tour Elo {p.tour_elo ?? '—'}</b></div>
-                <span>↗</span>
+                <span className="player-card-arrow">↗</span>
               </a>
             ))}
           </div>

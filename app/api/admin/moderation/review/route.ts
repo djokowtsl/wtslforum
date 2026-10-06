@@ -29,7 +29,7 @@ export async function POST(req: Request) {
     if (action === 'approve') {
       if (rows[0].author_id) {
         const author = await sql`SELECT display_name FROM users WHERE id=${rows[0].author_id} LIMIT 1`;
-        await announceTopic(rows[0].title, id, author[0]?.display_name || 'Community').catch(() => {});
+        await announceTopic(rows[0].title, id, author[0]?.display_name || 'WTSL').catch(() => {});
       }
     } else {
       await sql`DELETE FROM match_threads WHERE topic_id=${id}`;
@@ -80,7 +80,8 @@ export async function POST(req: Request) {
       UPDATE media_clips
       SET moderation_status=${nextStatus},moderation_reason=NULL,moderated_by=${Number(user!.id)},moderated_at=NOW(),
           url=${action === 'approve' ? approvedUrl : rows[0].url},
-          private_blob_pathname=NULL,private_blob_content_type=NULL
+          private_blob_pathname=NULL,
+          private_blob_content_type=${action === 'approve' ? rows[0].private_blob_content_type : null}
       WHERE id=${id} AND moderation_status='pending'
       RETURNING id
     `;

@@ -6,32 +6,14 @@ import { getActiveCycle, getCategories, getNomineesForCategories, getUserVotes }
 import PageHero from '@/components/PageHero';
 import AwardVoteForm from '@/components/AwardVoteForm';
 import YearTabs from '@/components/YearTabs';
-import { initial } from '@/lib/format';
+import PlayerAvatar from '@/components/PlayerAvatar';
+import { CATEGORY_ICONS } from '@/lib/awardIcons';
 
 export const dynamic = 'force-dynamic';
 export const metadata: Metadata = { title: 'Awards' };
 
-/** Per-category emoji shown instead of the old generic star decoration. */
-const CATEGORY_EMOJI: Record<string, string> = {
-  'Player of the Year (Year-End No. 1)': '👑',
-  'Fans Favourite Award': '❤️',
-  'Stefan Edberg Sportsmanship Award': '🤝',
-  'Most Improved Player': '📈',
-  'Newcomer of the Year': '🌱',
-  'Arthur Ashe Humanitarian Award': '🕊️',
-  'Farmer of the Year': '🌽',
-  'Comedian/Troll of the Year': '🤡',
-  'Trickiest Player': '🎩',
-  'Best Dressed Player': '👔',
-  'Coach of the Year': '🧠',
-  'Upset of the Year': '⚡',
-  'Match of the Year': '🎾',
-  'Worst Scheduler': '🗓️',
-  'Tournament of the Year': '🏆',
-};
-
-function Face({ src, name }: { src?: string | null; name?: string | null }) {
-  return src ? <img src={src} alt="" /> : <div className="ph">{initial(name)}</div>;
+function Face({ src, flagSrc, flagLabel, name, size = 32 }: { src?: string | null; flagSrc?: string | null; flagLabel?: string | null; name?: string | null; size?: number }) {
+  return <PlayerAvatar src={src} flagSrc={flagSrc} flagLabel={flagLabel} name={name} size={size} />;
 }
 
 /** Match of the Year / Upset of the Year are a two-player matchup, not a single winner. */
@@ -87,7 +69,7 @@ export default async function Awards({ searchParams }: { searchParams: Promise<{
       <PageHero eyebrow="WTSL Forum Awards" title="Awards">A hall of fame for the players, matches and people who made each WTSL season.</PageHero>
       <main className="container">
         <section style={{ marginBottom: 44 }}>
-          <div className="section-heading"><h2>{cycle?.season ?? 'This season'}&apos;s awards</h2><span>{cycle?.voting_open ? 'Voting open' : 'Voting closed'}</span></div>
+          <div className="section-heading"><h2>{cycle?.season ? String(cycle.season) + ' Awards' : 'Season Awards'}</h2><span>{cycle?.voting_open ? 'Voting open' : 'Voting closed'}</span></div>
           {!cycle || categories.length === 0 ? (
             <div className="notice">Nominations haven&apos;t been set up yet — check back once an admin adds this season&apos;s categories.</div>
           ) : !cycle.voting_open ? (
@@ -95,8 +77,10 @@ export default async function Awards({ searchParams }: { searchParams: Promise<{
               <div className="award-grid" style={{ marginTop: 16 }}>
                 {categoriesWithNominees.map((c: any) => (
                   <div className="award-card" key={c.id}>
-                    {c.name === 'Farmer of the Year' && <span className="num">{CATEGORY_EMOJI[c.name]}</span>}
-                    <h3>{c.name}</h3>
+                    <div className="award-category-title">
+                      <span className="award-category-icon" aria-hidden="true">{CATEGORY_ICONS[c.name] ?? '★'}</span>
+                      <h3>{c.name}</h3>
+                    </div>
                     {c.nominees.length > 0 && <p>{c.nominees.map((n: any) => n.name).join(', ')}</p>}
                   </div>
                 ))}
@@ -118,19 +102,21 @@ export default async function Awards({ searchParams }: { searchParams: Promise<{
                 <div className="award-grid">
                   {uniqueSeasonAwards(awards.filter((a: any) => a.season === s)).map((a: any) => (
                     <div className="award-card" key={a.id}>
-                      <span className="num">{CATEGORY_EMOJI[a.category] ?? '★'}</span>
-                      <h3>{a.category}</h3>
+                      <div className="award-category-title">
+                        <span className="award-category-icon" aria-hidden="true">{CATEGORY_ICONS[a.category] ?? '★'}</span>
+                        <h3>{a.category}</h3>
+                      </div>
                       {a.note && <p>{a.note}</p>}
                       {MATCH_CATEGORIES.has(a.category) ? (
                         <div className="award-match">
                           <div className="award-match-players">
                             <div className="award-match-player">
-                              <Face src={a.winner_avatar} name={a.winner} />
+                              <Face src={a.winner_avatar} flagSrc={a.winner_flag} flagLabel={a.winner_country} name={a.winner} size={40} />
                               <span className="nm">{a.winner}</span>
                             </div>
                             <span className="award-match-vs">def</span>
                             <div className="award-match-player">
-                              <Face src={a.player_two_avatar} name={a.player_two} />
+                              <Face src={a.player_two_avatar} flagSrc={a.player_two_flag} flagLabel={a.player_two_country} name={a.player_two} size={40} />
                               <span className="nm">{a.player_two}</span>
                             </div>
                           </div>
@@ -139,8 +125,8 @@ export default async function Awards({ searchParams }: { searchParams: Promise<{
                         </div>
                       ) : (
                         <>
-                          <div className="award-winner"><Face src={a.winner_avatar} name={a.winner} /><b>{a.winner}</b></div>
-                          {a.runner_up && <div className="award-winner"><Face src={a.runner_up_avatar} name={a.runner_up} /><b>{a.runner_up}</b><span>Runner-up</span></div>}
+                          <div className="award-winner"><Face src={a.winner_avatar} flagSrc={a.winner_flag} flagLabel={a.winner_country} name={a.winner} /><b>{a.winner}</b></div>
+                          {a.runner_up && <div className="award-winner"><Face src={a.runner_up_avatar} flagSrc={a.runner_up_flag} flagLabel={a.runner_up_country} name={a.runner_up} /><b>{a.runner_up}</b><span>Runner-up</span></div>}
                         </>
                       )}
                     </div>

@@ -3,10 +3,12 @@ import Link from 'next/link';
 import { safe } from '@/lib/db';
 import { fixturesBoard, getBalance, getBets, poolOdds, hybridOdds } from '@/lib/betting';
 import { wtslCore } from '@/lib/wtsl-core';
+import { getTournaments } from '@/lib/tournaments';
 import { getSession } from '@/lib/auth';
 import PageHero from '@/components/PageHero';
 import BettingAutoRefresh from '@/components/BettingAutoRefresh';
 import { timeAgo, fmtDateTime } from '@/lib/format';
+import { sortOpenFixturesByTournamentRecency } from '@/lib/fixture-order';
 
 export const dynamic = 'force-dynamic';
 export const metadata: Metadata = { title: 'Betting fixtures' };
@@ -35,12 +37,17 @@ function sideOdds(f: any, side: 'one' | 'two') {
 
 export default async function Betting() {
   const user = await getSession();
-  const [board, account, bets] = await Promise.all([
+  const [board, account, bets, atpTournaments, wtaTournaments] = await Promise.all([
     safe(() => fixturesBoard(), { open: [] as any[], recent_settled: [] as any[] }),
     user ? safe(() => getBalance(user.discordId), null as any) : Promise.resolve(null),
     user ? safe(() => getBets(user.discordId), [] as any[]) : Promise.resolve([] as any[]),
+    safe(() => getTournaments('TE4'), [] as any[]),
+    safe(() => getTournaments('TE4_(F)'), [] as any[]),
   ]);
-  const fixtures = Array.isArray(board?.open) ? board.open : [];
+  const fixtures = sortOpenFixturesByTournamentRecency(
+    Array.isArray(board?.open) ? board.open : [],
+    [...atpTournaments, ...wtaTournaments],
+  );
   const settled = Array.isArray(board?.recent_settled) ? board.recent_settled : [];
   const betList = Array.isArray(bets) ? bets : [];
 

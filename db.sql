@@ -89,6 +89,7 @@ CREATE TABLE IF NOT EXISTS tournaments (
  champion_player_id TEXT,
  official_url TEXT NOT NULL,
  discussion_topic_id BIGINT REFERENCES topics(id) ON DELETE SET NULL,
+ discussion_enabled BOOLEAN NOT NULL DEFAULT FALSE,
  last_synced_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );
 
@@ -304,6 +305,7 @@ CREATE TABLE IF NOT EXISTS media_clips (
 );
 CREATE INDEX IF NOT EXISTS media_clips_created_idx ON media_clips(created_at DESC);
 CREATE INDEX IF NOT EXISTS media_clips_moderation_status_idx ON media_clips(moderation_status,created_at);
+ALTER TABLE topics ADD COLUMN IF NOT EXISTS video_clip_id BIGINT REFERENCES media_clips(id) ON DELETE SET NULL;
 
 CREATE TABLE IF NOT EXISTS community_notes (
   id BIGSERIAL PRIMARY KEY,

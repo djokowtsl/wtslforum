@@ -1,6 +1,7 @@
 import { NextResponse } from 'next/server';
 import { cookies } from 'next/headers';
 import { upsertDiscordUser, createSession, authConfigured } from '@/lib/auth';
+import { syncBotApprovedIdentitiesForUser } from '@/lib/matchlog-identity-sync';
 
 export const dynamic = 'force-dynamic';
 
@@ -31,6 +32,19 @@ export async function GET(req: Request) {
     if (!me.ok) return go(url, 'discord_user');
     const user = await upsertDiscordUser(await me.json());
     await createSession(user);
+    try {
+      const synced = await syncBotApprovedIdentitiesForUser(user.id, user.discordId);
+      if (synced.length) {
+        console.info(`[wtsl] synced ${synced.length} approved player identity(ies) after Discord login`);
+      }
+    } catch (syncError) {
+      // Identity sync is best-effort for sign-in. The approved bot record remains durable,
+      // so the next Discord login can retry without blocking the user's forum session.
+      console.error(
+        '[wtsl] approved player identity sync after Discord login failed',
+        syncError instanceof Error ? syncError.message : syncError,
+      );
+    }
   } catch (e) {
     console.error('[wtsl] Discord callback failed', e instanceof Error ? e.message : e);
     return go(url, 'database');

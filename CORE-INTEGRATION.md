@@ -38,7 +38,9 @@ the existing bot.
 
 ## Current write status
 
-The Replit Core API is intentionally read-only. The Forum therefore does
+The Replit Core API is read-only for domain data such as betting and fixtures. The Forum uses one narrowly scoped authenticated write endpoint for admin-approved ATP/WTA identity synchronization.
+
+The Forum therefore does
 not write betting balances, singles or parlays to its own database.
 
 The Forum's betting placement routes currently return HTTP 501 until an

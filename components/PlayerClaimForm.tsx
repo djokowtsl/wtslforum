@@ -1,8 +1,10 @@
 'use client';
 import { useEffect, useRef, useState } from 'react';
 import { tourLabel, type TourCode } from '@/lib/wtsl';
+import { exactPlayerNameMatches } from '@/lib/playerClaimSearch';
+import PlayerAvatar from '@/components/PlayerAvatar';
 
-type PlayerHit = { wtsl_player_id: string; name: string; avatar_url: string | null; country: string | null };
+type PlayerHit = { wtsl_player_id: string; name: string; avatar_url: string | null; flag_url: string | null; country: string | null };
 
 export default function PlayerClaimForm({ tour }: { tour: TourCode }) {
   const [query, setQuery] = useState('');
@@ -77,18 +79,46 @@ export default function PlayerClaimForm({ tour }: { tour: TourCode }) {
 
   async function submit(e: React.FormEvent) {
     e.preventDefault();
-    if (!selected) {
-      setState('error');
-      setMessage('Pick your name from the dropdown list first.');
-      return;
-    }
     setState('sending');
     setMessage('');
     try {
+      let player = selected;
+      if (!player) {
+        const typedName = query.trim();
+        if (typedName.length < 2) {
+          setState('error');
+          setMessage('Type your full player name or choose a player from the suggestions.');
+          return;
+        }
+
+        const searchResponse = await fetch(
+          `/api/players/search?tour=${encodeURIComponent(tour)}&q=${encodeURIComponent(typedName)}`,
+        );
+        const searchData = await searchResponse.json();
+        if (!searchResponse.ok || !searchData.ok || !Array.isArray(searchData.results)) {
+          throw new Error('Could not search players. Please try again.');
+        }
+
+        const candidates = searchData.results as PlayerHit[];
+        const exactMatches = exactPlayerNameMatches(candidates, typedName);
+        if (exactMatches.length !== 1) {
+          setResults(candidates);
+          setOpen(candidates.length > 0);
+          setState('error');
+          setMessage(
+            exactMatches.length > 1
+              ? 'More than one player has that exact name. Choose your player from the suggestions.'
+              : 'No exact player-name match. Choose your player from the suggestions or check the spelling.',
+          );
+          return;
+        }
+        player = exactMatches[0];
+      }
+
       const r = await fetch('/api/profile/claim', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ wtsl_player_id: selected.wtsl_player_id, tour, player_name: selected.name, note }),
+        body: JSON.stringify({ wtsl_player_id: player.wtsl_player_id, tour, player_name: player.name, note }),
       });
       const data = await r.json();
       if (!r.ok || !data.ok) {
@@ -111,7 +141,7 @@ export default function PlayerClaimForm({ tour }: { tour: TourCode }) {
       <label>Find yourself in {tourLabel(tour)}
         {selected ? (
           <div className="player-line claim-selected-box" style={{ marginTop: '.4rem' }}>
-            {selected.avatar_url && <img src={selected.avatar_url} alt="" />}
+            <PlayerAvatar src={selected.avatar_url} flagSrc={selected.flag_url} flagLabel={selected.country} name={selected.name} size={34} />
             <span>✓ {selected.name}</span>
             <button type="button" className="btn btn-sm btn-ghost" onClick={() => { setSelected(null); setQuery(''); }}>Change</button>
           </div>
@@ -123,10 +153,15 @@ export default function PlayerClaimForm({ tour }: { tour: TourCode }) {
               aria-controls={`claim-search-list-${tour}`}
               aria-autocomplete="list"
               value={query}
-              onChange={(e) => setQuery(e.target.value)}
+              onChange={(e) => {
+                setQuery(e.target.value);
+                setState('idle');
+                setMessage('');
+              }}
               onFocus={() => { if (query.trim().length >= 2) setOpen(true); }}
               onKeyDown={onKeyDown}
-              placeholder="Start typing your player name…"
+              placeholder="Type your full name or choose a suggestion…"
+              disabled={state === 'sending'}
               autoComplete="off"
             />
             {open && query.trim().length >= 2 && (
@@ -143,7 +178,7 @@ export default function PlayerClaimForm({ tour }: { tour: TourCode }) {
                     onMouseEnter={() => setActiveIndex(i)}
                     onClick={() => pick(p)}
                   >
-                    {p.avatar_url && <img src={p.avatar_url} alt="" />}
+                    <PlayerAvatar src={p.avatar_url} flagSrc={p.flag_url} flagLabel={p.country} name={p.name} size={26} />
                     <span>{p.name}{p.country ? ` · ${p.country}` : ''}</span>
                   </button>
                 ))}
@@ -153,7 +188,7 @@ export default function PlayerClaimForm({ tour }: { tour: TourCode }) {
         )}
       </label>
       <label>Note for the admin (optional)
-        <textarea value={note} onChange={(e) => setNote(e.target.value)} rows={2} placeholder="Anything that helps us confirm it's you" />
+        <textarea value={note} onChange={(e) => setNote(e.target.value)} rows={2} placeholder="Anything that helps us confirm it's you" disabled={state === 'sending'} />
       </label>
       {message && state === 'error' && <p className="notice" style={{ color: '#ff6b6b' }}>{message}</p>}
       <button className="btn btn-sm" disabled={state === 'sending'}>{state === 'sending' ? 'Submitting…' : 'Submit for verification'}</button>

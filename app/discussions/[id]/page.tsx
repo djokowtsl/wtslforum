@@ -16,6 +16,7 @@ import { StatusDot } from '@/components/StatusDot';
 import AdminTopicControls from '@/components/AdminTopicControls';
 import ForumAvatar from '@/components/ForumAvatar';
 import { getThreadCommunityNotes, type CommunityNote } from '@/lib/communityNotes';
+import DiscussionVideo from '@/components/DiscussionVideo';
 
 export const dynamic = 'force-dynamic';
 export const metadata: Metadata = { title: 'Discussion' };
@@ -29,7 +30,7 @@ export default async function Thread({ params }: { params: Promise<{ id: string 
   const { id } = await params;
   const data = await safe(() => getTopic(decodeURIComponent(id)), null as any);
   if (!data) notFound();
-  const { topic, replies } = data;
+  const { topic, replies, video } = data;
   const topicAuthorHref = officialAuthorHref(topic);
   const u = await getSession();
   const canModerateReplies = canModerateComments(u);
@@ -54,7 +55,7 @@ export default async function Thread({ params }: { params: Promise<{ id: string 
         <div className="thread-title-row">
           <h1 className="display">{topic.title}</h1>
         </div>
-        <div className="topic-meta"><span>Started by {topicAuthorHref ? <Link className="post-author-link" href={topicAuthorHref}>{topic.author}</Link> : topic.author || 'Community'}</span><span>{fmtDateTime(topic.created_at)}</span><span>{replies.length} {replies.length === 1 ? 'reply' : 'replies'}</span><span>{topic.views} views</span></div>
+        <div className="topic-meta"><span>Started by {topicAuthorHref ? <Link className="post-author-link" href={topicAuthorHref}>{topic.author}</Link> : topic.author || 'WTSL'}</span><span>{fmtDateTime(topic.created_at)}</span><span>{replies.length} {replies.length === 1 ? 'reply' : 'replies'}</span><span>{topic.views} views</span></div>
         {u?.isAdmin && <AdminTopicControls topicId={Number(topic.id)} locked={!!topic.locked} pinned={!!topic.pinned} />}
       </div>
 
@@ -67,7 +68,7 @@ export default async function Thread({ params }: { params: Promise<{ id: string 
             tournamentName={topic.title}
             isCommunity={!topic.author}
           />
-          <strong>{topic.author && <StatusDot status={topic.author_status} />} {topicAuthorHref ? <Link className="post-author-link" href={topicAuthorHref}>{topic.author}</Link> : topic.author || 'Community'}</strong>
+          <strong>{topic.author && <StatusDot status={topic.author_status} />} {topicAuthorHref ? <Link className="post-author-link" href={topicAuthorHref}>{topic.author}</Link> : topic.author || 'WTSL'}</strong>
           {topic.author_is_admin && <span className="pill cyan role">Admin</span>}
           {!topic.author_is_admin && topic.author_is_moderator && <span className="pill cyan role">Moderator</span>}
           <span className="pill role">Original poster</span>
@@ -78,6 +79,7 @@ export default async function Thread({ params }: { params: Promise<{ id: string 
         <div className="post-content">
           <div className="post-date">{fmtDateTime(topic.created_at)}</div>
           <RichText text={topic.body} mentionables={mentionables} />
+          {video && <DiscussionVideo video={video} />}
           <ReactionBar topicId={Number(topic.id)} initial={reactions.topic} signedIn={!!u} />
           {canModerateReplies && <SpoilerCorrection kind="topic" id={Number(topic.id)} body={topic.body} />}
           <CommunityNotes targetType="topic" targetId={Number(topic.id)} notes={notesByTarget.get(`topic:${topic.id}`) || []} viewerId={u?.id ?? null} canModerate={canModerateReplies} />
@@ -91,7 +93,7 @@ export default async function Thread({ params }: { params: Promise<{ id: string 
           <article className='post' key={r.id}>
             <div className='post-user'>
               <img className='avatar-img' src={discordAvatar(r.avatar, r.author || 'W')} alt='' />
-              <strong><StatusDot status={r.author_status} /> {replyAuthorHref ? <Link className='post-author-link' href={replyAuthorHref}>{r.author}</Link> : r.author || 'Community'}</strong>
+              <strong><StatusDot status={r.author_status} /> {replyAuthorHref ? <Link className='post-author-link' href={replyAuthorHref}>{r.author}</Link> : r.author || 'WTSL'}</strong>
               {r.is_admin && <span className='pill cyan role'>Admin</span>}
               {!r.is_admin && r.is_moderator && <span className='pill cyan role'>Moderator</span>}
               {u && r.author_id && Number(r.author_id) !== Number(u.id) && (

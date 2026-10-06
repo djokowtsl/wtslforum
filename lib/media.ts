@@ -1,6 +1,21 @@
 import { sql } from './db';
 import type { TourCode } from './wtsl';
 
+let topicVideoSchemaReady: Promise<void> | null = null;
+
+export function ensureTopicVideoSchema() {
+  if (!topicVideoSchemaReady) {
+    topicVideoSchemaReady = sql`
+      ALTER TABLE topics
+      ADD COLUMN IF NOT EXISTS video_clip_id BIGINT REFERENCES media_clips(id) ON DELETE SET NULL
+    `.then(() => undefined).catch((error) => {
+      topicVideoSchemaReady = null;
+      throw error;
+    });
+  }
+  return topicVideoSchemaReady;
+}
+
 export async function getClips(tour?: TourCode, limit = 60) {
   return tour
     ? sql`SELECT c.*,u.display_name author,u.avatar_url avatar FROM media_clips c LEFT JOIN users u ON u.id=c.submitted_by WHERE c.moderation_status='approved' AND c.tour=${tour} ORDER BY c.created_at DESC LIMIT ${limit}`
