@@ -238,3 +238,23 @@ test('removes a short event alias only for the same official fixture', () => {
     ],
   );
 });
+
+test('deduplicates descriptive fixture names against a shorter official tournament name', () => {
+  const deadline = 'Wed, 07 Oct 2026 22:59:00 GMT';
+  const fixtures = [
+    { key: 'pastore-short', tour: 'TE4', tournament_id: 'Sapporo_2026_TE4', tournament: 'Sapporo (QF)', first_id: '4656', second_id: '1291', round_deadline: deadline },
+    { key: 'pastore-descriptive', tour: 'TE4', tournament_id: 'Sapporo_2026_TE4', tournament: 'Sapporo Futures · Outdoor Hard (QF)', first_id: '4656', second_id: '1291', round_deadline: deadline },
+    { key: 'ziggy-short', tour: 'TE4', tournament_id: 'Sapporo_2026_TE4', tournament: 'Sapporo (QF)', first_id: '4653', second_id: '4647', round_deadline: deadline },
+    { key: 'ziggy-descriptive', tour: 'TE4', tournament_id: 'Sapporo_2026_TE4', tournament: 'Sapporo Futures · Outdoor Hard (QF)', first_id: '4653', second_id: '4647', round_deadline: deadline },
+    { key: 'different-event-id', tour: 'TE4', tournament_id: 'Sapporo_2026_TE4_ALT', tournament: 'Sapporo Futures · Outdoor Hard (QF)', first_id: '4656', second_id: '1291', round_deadline: deadline },
+  ];
+  const tournaments = [
+    { tour: 'TE4', name: 'Sapporo', official_url: tournamentUrl('Sapporo_2026_TE4') },
+    { tour: 'TE4', name: 'Sapporo', official_url: tournamentUrl('Sapporo_2026_TE4_ALT') },
+  ];
+
+  assert.deepEqual(
+    deduplicateRedundantRoundFixtures(fixtures, tournaments).map((fixture) => fixture.key),
+    ['pastore-short', 'ziggy-short', 'different-event-id'],
+  );
+});
