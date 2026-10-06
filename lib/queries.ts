@@ -14,10 +14,23 @@ export async function getThreadReactions(topicId: number, replyIds: number[], vi
   const rows = await sql`
     SELECT r.topic_id, r.reply_id, r.emoji, COUNT(*)::int count,
       COALESCE(BOOL_OR(r.user_id = ${vid}::bigint), false) reacted,
-      COALESCE(ARRAY_AGG(u.display_name ORDER BY u.display_name)
-        FILTER (WHERE u.display_name IS NOT NULL), ARRAY[]::text[]) reactors
+      COALESCE(ARRAY_AGG(
+        COALESCE(reaction_identity.player_name, u.display_name)
+        ORDER BY COALESCE(reaction_identity.player_name, u.display_name)
+      ) FILTER (WHERE COALESCE(reaction_identity.player_name, u.display_name) IS NOT NULL),
+        ARRAY[]::text[]) reactors
     FROM reactions r
     LEFT JOIN users u ON u.id = r.user_id
+    LEFT JOIN LATERAL (
+      SELECT COALESCE(NULLIF(wp.name, ''), NULLIF(pc.player_name, '')) AS player_name
+      FROM player_claims pc
+      LEFT JOIN wtsl_players wp
+        ON wp.wtsl_player_id = pc.wtsl_player_id AND wp.tour = pc.tour
+      WHERE pc.user_id = u.id AND pc.status = 'approved'
+      ORDER BY CASE WHEN pc.id = u.default_player_claim_id THEN 0 ELSE 1 END,
+        CASE WHEN pc.tour = 'TE4' THEN 0 ELSE 1 END, pc.created_at ASC, pc.id ASC
+      LIMIT 1
+    ) reaction_identity ON TRUE
     WHERE r.topic_id = ${topicId} OR r.reply_id = ANY(${replyIds})
     GROUP BY r.topic_id, r.reply_id, r.emoji
   `;
