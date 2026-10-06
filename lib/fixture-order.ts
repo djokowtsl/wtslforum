@@ -1,7 +1,10 @@
 type FixtureRef = {
+  first_id?: string | number | null;
+  second_id?: string | number | null;
   tour?: string | null;
   tournament?: string | null;
   tournament_id?: string | number | null;
+  round_deadline?: string | Date | null;
 };
 
 type TournamentRecord = {
@@ -49,6 +52,109 @@ function officialTournamentId(value: unknown) {
   } catch {
     return null;
   }
+}
+
+function normalizeExactTournamentName(value: unknown) {
+  return String(value ?? '')
+    .trim()
+    .normalize('NFD')
+    .replace(/[\u0300-\u036f]/g, '')
+    .toLowerCase()
+    .replace(/[^a-z0-9]/g, '');
+}
+
+const ROUND_SUFFIX = /\s+\((?:R\d+|QF|SF|F)\)\s*$/i;
+
+function tournamentBaseAndRoundCount(value: unknown) {
+  let name = String(value ?? '').trim();
+  let roundCount = 0;
+  while (ROUND_SUFFIX.test(name)) {
+    name = name.replace(ROUND_SUFFIX, '').trim();
+    roundCount += 1;
+  }
+  return {
+    baseName: normalizeExactTournamentName(name),
+    roundCount,
+  };
+}
+
+function comparableDeadline(value: unknown) {
+  const raw = String(value ?? '').trim();
+  if (!raw) return null;
+  const parsed = Date.parse(raw);
+  return Number.isNaN(parsed) ? raw.toLowerCase() : String(parsed);
+}
+
+/**
+ * Hide stale copies created when an official event name already included a
+ * round and another round suffix was appended during schedule parsing.
+ *
+ * Only collapse rows with the same official event, player IDs, deadline and
+ * canonical event name. Keep the row with fewer appended round labels; other
+ * markets, including the same players in a different event or at a different
+ * deadline, remain visible.
+ */
+export function deduplicateRedundantRoundFixtures<T extends FixtureRef>(
+  fixtures: T[],
+  tournaments: TournamentRecord[],
+): T[] {
+  const eventNames = new Map<string, Set<string>>();
+  for (const tournament of tournaments) {
+    const id = officialTournamentId(tournament.official_url);
+    const tour = normalizeTour(tournament.tour);
+    const name = normalizeExactTournamentName(tournament.name);
+    if (!id || !tour || !name) continue;
+    const eventKey = `${tour}|${id}`;
+    const names = eventNames.get(eventKey) ?? new Set<string>();
+    names.add(name);
+    eventNames.set(eventKey, names);
+  }
+
+  const candidates = new Map<
+    string,
+    Array<{ index: number; roundCount: number }>
+  >();
+
+  fixtures.forEach((fixture, index) => {
+    const tour = normalizeTour(fixture.tour);
+    const tournamentId = String(fixture.tournament_id ?? '').trim();
+    const firstId = String(fixture.first_id ?? '').trim();
+    const secondId = String(fixture.second_id ?? '').trim();
+    const deadline = comparableDeadline(fixture.round_deadline);
+    if (!tour || !tournamentId || !firstId || !secondId || !deadline) return;
+
+    const { baseName, roundCount } = tournamentBaseAndRoundCount(
+      fixture.tournament,
+    );
+    if (roundCount < 1) return;
+    const canonicalNames = eventNames.get(`${tour}|${tournamentId}`);
+    if (!baseName || !canonicalNames?.has(baseName)) return;
+
+    const pair = [firstId, secondId].sort();
+    const groupKey = JSON.stringify([
+      tour,
+      tournamentId,
+      pair,
+      deadline,
+      baseName,
+    ]);
+    const group = candidates.get(groupKey) ?? [];
+    group.push({ index, roundCount });
+    candidates.set(groupKey, group);
+  });
+
+  const remove = new Set<number>();
+  for (const group of candidates.values()) {
+    if (group.length < 2) continue;
+    const fewestRoundLabels = Math.min(...group.map((item) => item.roundCount));
+    const mostRoundLabels = Math.max(...group.map((item) => item.roundCount));
+    if (fewestRoundLabels < 1 || mostRoundLabels === fewestRoundLabels) continue;
+    for (const item of group) {
+      if (item.roundCount > fewestRoundLabels) remove.add(item.index);
+    }
+  }
+
+  return fixtures.filter((_, index) => !remove.has(index));
 }
 
 function statusRank(value: unknown) {
