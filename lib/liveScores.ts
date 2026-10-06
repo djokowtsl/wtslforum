@@ -6,6 +6,7 @@ import {
   h2hRecordWinPercent,
   parseLiveWtslMatches,
   readOfficialH2HPercent,
+  resolveLivePlayer,
   type ParsedLiveMatch,
 } from './liveScoreModel';
 import { fetchWTSLAllResults, type WTSLAllResultRow } from './wtsl';
@@ -39,8 +40,8 @@ function findPlayers(match: ParsedLiveMatch, playersByTour: Map<string, Map<stri
     : ['TE4', 'TE4_(F)'];
   const candidates = tours.flatMap((tour) => {
     const players = playersByTour.get(tour);
-    const first = players?.get(names[0]);
-    const second = players?.get(names[1]);
+    const first = players ? resolveLivePlayer(names[0], players) : null;
+    const second = players ? resolveLivePlayer(names[1], players) : null;
     return first && second && String(first.wtsl_player_id) !== String(second.wtsl_player_id)
       ? [{ tour, first, second }]
       : [];
