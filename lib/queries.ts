@@ -1,5 +1,6 @@
 import { sql } from './db';
 import { ensureMatchThreadTourSchema } from './matchThreads';
+import { ONLINE_PRESENCE_WINDOW_MINUTES } from './presencePolicy';
 import { ensureTopicVideoSchema } from './media';
 
 /** Per-emoji counts, viewer state, and the public display names of people who reacted. */
@@ -59,7 +60,11 @@ export async function getTopic(ref: string | number) {
     ? await sql`
         SELECT t.*, c.name AS category, c.slug AS category_slug, u.id AS author_id,
           COALESCE(topic_identity.player_name, u.display_name) AS author,
-          u.avatar_url AS avatar, u.status AS author_status, u.is_admin AS author_is_admin, u.is_moderator AS author_is_moderator, tn.logo_url AS tournament_logo,
+          u.avatar_url AS avatar,
+          CASE WHEN u.status='online' AND (
+            u.last_active_at IS NULL OR u.last_active_at < NOW() - ${ONLINE_PRESENCE_WINDOW_MINUTES} * INTERVAL '1 minute'
+          ) THEN 'offline' ELSE COALESCE(u.status,'offline') END AS author_status,
+          u.is_admin AS author_is_admin, u.is_moderator AS author_is_moderator, tn.logo_url AS tournament_logo,
           thread_context.tour AS tournament_tour, topic_identity.wtsl_player_id AS official_player_id,
           topic_identity.tour AS official_tour
         FROM topics t
@@ -121,7 +126,11 @@ export async function getTopic(ref: string | number) {
     : await sql`
         SELECT t.*, c.name AS category, c.slug AS category_slug, u.id AS author_id,
           COALESCE(topic_identity.player_name, u.display_name) AS author,
-          u.avatar_url AS avatar, u.status AS author_status, u.is_admin AS author_is_admin, u.is_moderator AS author_is_moderator, tn.logo_url AS tournament_logo,
+          u.avatar_url AS avatar,
+          CASE WHEN u.status='online' AND (
+            u.last_active_at IS NULL OR u.last_active_at < NOW() - ${ONLINE_PRESENCE_WINDOW_MINUTES} * INTERVAL '1 minute'
+          ) THEN 'offline' ELSE COALESCE(u.status,'offline') END AS author_status,
+          u.is_admin AS author_is_admin, u.is_moderator AS author_is_moderator, tn.logo_url AS tournament_logo,
           thread_context.tour AS tournament_tour, topic_identity.wtsl_player_id AS official_player_id,
           topic_identity.tour AS official_tour
         FROM topics t
@@ -186,7 +195,10 @@ export async function getTopic(ref: string | number) {
   const replies = await sql`
     SELECT r.id, r.body, r.created_at, r.updated_at, u.id AS author_id,
       COALESCE(reply_identity.player_name, u.display_name) AS author,
-      u.avatar_url AS avatar, u.is_admin, u.is_moderator, u.status AS author_status,
+      u.avatar_url AS avatar, u.is_admin, u.is_moderator,
+      CASE WHEN u.status='online' AND (
+        u.last_active_at IS NULL OR u.last_active_at < NOW() - ${ONLINE_PRESENCE_WINDOW_MINUTES} * INTERVAL '1 minute'
+      ) THEN 'offline' ELSE COALESCE(u.status,'offline') END AS author_status,
       reply_identity.wtsl_player_id AS official_player_id, reply_identity.tour AS official_tour
     FROM replies r
     LEFT JOIN users u ON u.id = r.author_id

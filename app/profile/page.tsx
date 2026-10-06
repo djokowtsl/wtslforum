@@ -24,7 +24,7 @@ export default async function Profile() {
     safe(() => getApprovedPlayerIdentities(u.id), [] as ApprovedPlayerIdentity[]),
     safe(() => getDefaultPlayerClaimId(u.id), null as string | null),
     safe(() => getLatestChallongeClaimForUser(u.id), null as ChallongeClaim | null),
-    safe(() => getUserStatus(u.id), 'online' as const),
+    safe(() => getUserStatus(u.id), 'offline' as const),
   ]);
   const claimByTour = new Map(claims.map((c) => [c.tour, c]));
   const selectedDefaultClaimId = approvedIdentities.some((c) => c.id === defaultPlayerClaimId)
@@ -44,6 +44,7 @@ export default async function Profile() {
             <span>Your status:</span>
             <StatusPicker initial={status} />
           </div>
+          <p><small>Online updates while the forum tab is visible and clears after five minutes without a heartbeat. Away, Busy, and Offline remain manual choices.</small></p>
           <form action="/api/auth/logout" method="post"><button className="btn">Sign out</button></form>
         </div>
 

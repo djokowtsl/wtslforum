@@ -1,7 +1,8 @@
 CREATE TABLE IF NOT EXISTS users (
  id BIGSERIAL PRIMARY KEY, discord_id TEXT UNIQUE NOT NULL, username TEXT NOT NULL, display_name TEXT NOT NULL,
  avatar_url TEXT, bio TEXT DEFAULT '', wtsl_player_url TEXT, is_admin BOOLEAN NOT NULL DEFAULT FALSE, is_moderator BOOLEAN NOT NULL DEFAULT FALSE,
- created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(), updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+  created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(), updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+  last_active_at TIMESTAMPTZ
 );
 CREATE TABLE IF NOT EXISTS categories (
  id BIGSERIAL PRIMARY KEY, name TEXT UNIQUE NOT NULL, slug TEXT UNIQUE NOT NULL, description TEXT DEFAULT '', position INT NOT NULL DEFAULT 0
@@ -458,12 +459,12 @@ DO $$ BEGIN
   ALTER TABLE match_threads ADD COLUMN IF NOT EXISTS tour TEXT;
 END $$;
 
--- Member-set presence ("online"/"away"/"busy"/"offline") shown next to a user's name/avatar
--- anywhere they appear on the forum. There is no automatic detection — this is a manual toggle
--- the member sets for themselves, same idea as classic forum "away" statuses.
+-- Presence ("online"/"away"/"busy"/"offline") shown beside member names. Online expires without
+-- an activity heartbeat; away, busy, and offline remain manual choices.
 DO $$ BEGIN
   ALTER TABLE users ADD COLUMN IF NOT EXISTS status TEXT NOT NULL DEFAULT 'online';
   ALTER TABLE users ADD COLUMN IF NOT EXISTS status_note TEXT NOT NULL DEFAULT '';
+  ALTER TABLE users ADD COLUMN IF NOT EXISTS last_active_at TIMESTAMPTZ;
 END $$;
 
 -- Clutch stats (sets/tiebreaks/deciding sets won & played), computed from the match history
