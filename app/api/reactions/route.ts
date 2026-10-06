@@ -42,10 +42,23 @@ export async function POST(req: Request) {
   const counts = await sql`
     SELECT r.emoji, COUNT(*)::int count,
       COALESCE(BOOL_OR(r.user_id=${Number(u.id)}::bigint), false) reacted,
-      COALESCE(ARRAY_AGG(users.display_name ORDER BY users.display_name)
-        FILTER (WHERE users.display_name IS NOT NULL), ARRAY[]::text[]) reactors
+      COALESCE(ARRAY_AGG(
+        COALESCE(reaction_identity.player_name, users.display_name)
+        ORDER BY COALESCE(reaction_identity.player_name, users.display_name)
+      ) FILTER (WHERE COALESCE(reaction_identity.player_name, users.display_name) IS NOT NULL),
+        ARRAY[]::text[]) reactors
     FROM reactions r
     LEFT JOIN users ON users.id=r.user_id
+    LEFT JOIN LATERAL (
+      SELECT COALESCE(NULLIF(wp.name, ''), NULLIF(pc.player_name, '')) AS player_name
+      FROM player_claims pc
+      LEFT JOIN wtsl_players wp
+        ON wp.wtsl_player_id = pc.wtsl_player_id AND wp.tour = pc.tour
+      WHERE pc.user_id = users.id AND pc.status = 'approved'
+      ORDER BY CASE WHEN pc.id = users.default_player_claim_id THEN 0 ELSE 1 END,
+        CASE WHEN pc.tour = 'TE4' THEN 0 ELSE 1 END, pc.created_at ASC, pc.id ASC
+      LIMIT 1
+    ) reaction_identity ON TRUE
     WHERE r.topic_id IS NOT DISTINCT FROM ${topicId} AND r.reply_id IS NOT DISTINCT FROM ${replyId}
     GROUP BY r.emoji
   `;
