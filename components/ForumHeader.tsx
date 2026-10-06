@@ -12,7 +12,7 @@ import PresenceHeartbeat from './PresenceHeartbeat';
 export const NAV = [
   { href: '/discussions', label: 'Discussions' },
   { href: '/matches', label: 'Matches' },
-  { href: '/betting', label: 'Betting' },
+  { href: '/betting', label: 'Virtual Betting' },
   { href: '/tournaments', label: 'Tournaments' },
   { href: '/players', label: 'Players' },
   { href: '/articles', label: 'Articles' },
