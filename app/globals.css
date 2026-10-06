@@ -224,7 +224,17 @@ h1, h2, h3 { margin: 0; }
 .live-sub { font-size: 11px; letter-spacing: 0.2em; color: var(--muted); text-transform: uppercase; font-weight: 700; margin: 18px 0 10px; }
 .live-score-empty { padding: 13px 16px; margin-bottom: 14px; border: 1px solid var(--line); border-radius: 10px; background: var(--panel); color: var(--muted); font-size: 13px; }
 .live-score-empty small { display: block; margin-top: 5px; font-size: 11px; }
-.live-score-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(100%, 300px), 1fr)); gap: 12px; }
+.live-score-carousel-heading { display: flex; align-items: center; justify-content: space-between; gap: 12px; margin-bottom: 10px; }
+.live-score-carousel-heading .live-sub { margin: 0; }
+.live-score-carousel-controls { display: flex; align-items: center; gap: 7px; }
+.live-score-carousel-controls span { color: var(--muted); font-size: 10px; font-variant-numeric: tabular-nums; }
+.live-score-carousel-controls button { display: grid; width: 30px; height: 30px; place-items: center; padding: 0; border: 1px solid var(--line-2); border-radius: 8px; background: var(--panel); color: var(--text-strong); font: 700 20px/1 var(--font-display); cursor: pointer; }
+.live-score-carousel-controls button:hover:not(:disabled) { border-color: var(--cyan); color: var(--cyan); }
+.live-score-carousel-controls button:disabled { cursor: not-allowed; opacity: .4; }
+.live-score-track { display: flex; align-items: stretch; gap: 12px; overflow-x: auto; overscroll-behavior-x: contain; scroll-snap-type: x mandatory; scroll-behavior: smooth; padding: 1px 1px 7px; }
+.live-score-track:focus-visible { outline: 2px solid var(--cyan); outline-offset: 2px; }
+.live-score-track > .live-score-card { flex: 0 0 min(100%, 380px); scroll-snap-align: start; }
+@media (prefers-reduced-motion: reduce) { .live-score-track { scroll-behavior: auto; } }
 .live-score-card { min-width: 0; padding: 15px 16px; border: 1px solid var(--line); border-radius: var(--radius); background: var(--panel); }
 .live-score-card-head { display: flex; justify-content: space-between; align-items: center; margin-bottom: 11px; color: var(--muted); font-size: 10px; font-weight: 800; letter-spacing: .14em; text-transform: uppercase; }
 .live-score-card-head b { display: inline-flex; align-items: center; gap: 6px; color: var(--lime); }
