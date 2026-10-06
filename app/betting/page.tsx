@@ -8,10 +8,13 @@ import { getSession } from '@/lib/auth';
 import PageHero from '@/components/PageHero';
 import BettingAutoRefresh from '@/components/BettingAutoRefresh';
 import { timeAgo, fmtDateTime } from '@/lib/format';
-import { sortOpenFixturesByTournamentRecency } from '@/lib/fixture-order';
+import {
+  deduplicateBettingBoardFixtures,
+  sortOpenFixturesByTournamentRecency,
+} from '@/lib/fixture-order';
 
 export const dynamic = 'force-dynamic';
-export const metadata: Metadata = { title: 'Betting fixtures' };
+export const metadata: Metadata = { title: 'Virtual Betting fixtures' };
 
 const DISCORD_URL = 'https://discord.com/channels/786583939028090881/1550152646638174308';
 function money(v: unknown) {
@@ -44,17 +47,22 @@ export default async function Betting() {
     safe(() => getTournaments('TE4'), [] as any[]),
     safe(() => getTournaments('TE4_(F)'), [] as any[]),
   ]);
-  const fixtures = sortOpenFixturesByTournamentRecency(
-    Array.isArray(board?.open) ? board.open : [],
-    [...atpTournaments, ...wtaTournaments],
+  const tournaments = [...atpTournaments, ...wtaTournaments];
+  const bettingBoard = deduplicateBettingBoardFixtures(
+    {
+      open: Array.isArray(board?.open) ? board.open : [],
+      recent_settled: Array.isArray(board?.recent_settled) ? board.recent_settled : [],
+    },
+    tournaments,
   );
-  const settled = Array.isArray(board?.recent_settled) ? board.recent_settled : [];
+  const fixtures = sortOpenFixturesByTournamentRecency(bettingBoard.open, tournaments);
+  const settled = bettingBoard.recent_settled;
   const betList = Array.isArray(bets) ? bets : [];
 
   return (
     <>
       <BettingAutoRefresh />
-      <PageHero eyebrow="WTSL Forum" title="Betting board">Follow live odds across the tour. Betting itself still happens in Discord — use the button to jump straight there.</PageHero>
+      <PageHero eyebrow="WTSL Forum" title="Virtual Betting">Follow live odds across the tour. Virtual bets are placed in Discord — use the button to jump straight there.</PageHero>
       <main className="container">
         {!wtslCore.configured() && <div className="notice warn" style={{ marginBottom: 22 }}>The WTSL Core API is not configured on this deployment, so odds and account data can&apos;t load right now.</div>}
 
@@ -72,7 +80,7 @@ export default async function Betting() {
             <h2 className="display">Open fixtures</h2>
             <p>WTSL odds, house-adjusted live odds and the guaranteed minimum you&apos;d lock in right now.</p>
           </div>
-          <a className="btn btn-discord btn-sm" href={DISCORD_URL} target="_blank" rel="noreferrer">Place bets in Discord ↗</a>
+          <a className="btn btn-discord btn-sm" href={DISCORD_URL} target="_blank" rel="noreferrer">Place virtual bets in Discord ↗</a>
         </div>
         {fixtures.length === 0 ? <div className="forum-list"><div className="empty"><strong>No open fixtures</strong>New fixtures appear when the next round opens.</div></div> : (
           <div className="fixture-grid">
