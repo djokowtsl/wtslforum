@@ -155,3 +155,86 @@ test('keeps same-event fixtures with equally specific round labels', () => {
     ['round-of-64', 'round-of-32'],
   );
 });
+
+test('removes a short event alias only for the same official fixture', () => {
+  const deadline = 'Wed, 07 Oct 2026 22:59:00 GMT';
+  const fixtures = [
+    {
+      key: 'short-alias',
+      tour: 'TE4',
+      tournament_id: 'Sapporo_2026_TE4',
+      tournament: 'Sapporo (QF)',
+      first_id: 'player-a',
+      second_id: 'player-b',
+      round_deadline: deadline,
+    },
+    {
+      key: 'canonical',
+      tour: 'TE4',
+      tournament_id: 'Sapporo_2026_TE4',
+      tournament: 'Sapporo Futures · Outdoor Hard (QF)',
+      first_id: 'player-a',
+      second_id: 'player-b',
+      round_deadline: deadline,
+    },
+    {
+      key: 'different-event-id',
+      tour: 'TE4',
+      tournament_id: 'Sapporo_2026_TE4_ALT',
+      tournament: 'Sapporo Futures · Outdoor Hard (QF)',
+      first_id: 'player-a',
+      second_id: 'player-b',
+      round_deadline: deadline,
+    },
+    {
+      key: 'different-pair',
+      tour: 'TE4',
+      tournament_id: 'Sapporo_2026_TE4',
+      tournament: 'Sapporo Futures · Outdoor Hard (QF)',
+      first_id: 'player-a',
+      second_id: 'player-c',
+      round_deadline: deadline,
+    },
+    {
+      key: 'different-deadline',
+      tour: 'TE4',
+      tournament_id: 'Sapporo_2026_TE4',
+      tournament: 'Sapporo Futures · Outdoor Hard (QF)',
+      first_id: 'player-a',
+      second_id: 'player-b',
+      round_deadline: 'Thu, 08 Oct 2026 22:59:00 GMT',
+    },
+    {
+      key: 'different-round',
+      tour: 'TE4',
+      tournament_id: 'Sapporo_2026_TE4',
+      tournament: 'Sapporo Futures · Outdoor Hard (SF)',
+      first_id: 'player-a',
+      second_id: 'player-b',
+      round_deadline: deadline,
+    },
+  ];
+  const tournaments = [
+    {
+      tour: 'TE4',
+      name: 'Sapporo Futures · Outdoor Hard',
+      official_url: tournamentUrl('Sapporo_2026_TE4'),
+    },
+    {
+      tour: 'TE4',
+      name: 'Sapporo Futures · Outdoor Hard',
+      official_url: tournamentUrl('Sapporo_2026_TE4_ALT'),
+    },
+  ];
+
+  assert.deepEqual(
+    deduplicateRedundantRoundFixtures(fixtures, tournaments).map((fixture) => fixture.key),
+    [
+      'canonical',
+      'different-event-id',
+      'different-pair',
+      'different-deadline',
+      'different-round',
+    ],
+  );
+});
