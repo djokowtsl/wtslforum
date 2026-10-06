@@ -229,9 +229,19 @@ h1, h2, h3 { margin: 0; }
 .live-score-card-head { display: flex; justify-content: space-between; align-items: center; margin-bottom: 11px; color: var(--muted); font-size: 10px; font-weight: 800; letter-spacing: .14em; text-transform: uppercase; }
 .live-score-card-head b { display: inline-flex; align-items: center; gap: 6px; color: var(--lime); }
 .live-score-card-head i { width: 7px; height: 7px; border-radius: 50%; background: var(--lime); }
+.live-score-probability { margin: 0 0 9px; padding: 10px 11px 11px; border: 1px solid var(--line); border-radius: 10px; background: linear-gradient(105deg, rgba(176, 244, 59, 0.055), transparent 52%, rgba(34, 194, 218, 0.055)), var(--panel); }
+.live-score-probability-title { color: var(--muted); font-size: 10px; font-weight: 800; letter-spacing: .14em; text-transform: uppercase; }
+.live-score-probability-values { display: flex; justify-content: space-between; margin: 7px 0 5px; font: italic 800 18px var(--font-display); font-variant-numeric: tabular-nums; line-height: 1; }
+.live-score-probability-first-value { color: var(--lime); }
+.live-score-probability-second-value { color: var(--cyan); }
+.live-score-probability-bar { display: flex; height: 10px; overflow: hidden; border: 1px solid rgba(255, 255, 255, .11); border-radius: 999px; background: rgba(0, 0, 0, .16); }
+.live-score-probability-first { min-width: 1px; background: linear-gradient(90deg, var(--lime), #b0f43b); transition: width 180ms ease; }
+.live-score-probability-second { min-width: 1px; border-left: 2px solid var(--panel); background: linear-gradient(90deg, var(--cyan), #54d6e8); transition: width 180ms ease; }
 .live-score-player { display: flex; align-items: center; gap: 9px; min-width: 0; padding: 5px 0; }
+.live-score-player--first::before, .live-score-player--second::before { width: 6px; height: 6px; flex: 0 0 6px; border-radius: 50%; content: ""; }
+.live-score-player--first::before { background: var(--lime); box-shadow: 0 0 8px rgba(176, 244, 59, .55); }
+.live-score-player--second::before { background: var(--cyan); box-shadow: 0 0 8px rgba(34, 194, 218, .55); }
 .live-score-player strong { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: 14px; }
-.live-score-player > b { color: var(--lime); font: italic 800 19px var(--font-display); }
 .live-score-center { display: flex; flex-wrap: wrap; justify-content: center; align-items: center; gap: 10px; padding: 8px 0; border-block: 1px solid var(--line); color: var(--text-strong); font-weight: 800; }
 .live-score-center small { color: var(--muted); font-size: 10px; font-weight: 600; }
 .live-score-meta { margin-top: 9px; color: var(--muted); font-size: 10px; text-transform: uppercase; letter-spacing: .08em; }
