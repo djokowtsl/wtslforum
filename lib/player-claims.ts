@@ -1,5 +1,6 @@
 import { sql } from './db';
 import { notifyPlayerVerified } from './discord';
+import { ONLINE_PRESENCE_WINDOW_MINUTES } from './presencePolicy';
 import { wtslCore } from './wtsl-core';
 
 export class PlayerIdentityConflictError extends Error {
@@ -231,6 +232,15 @@ export async function rejectClaim(claimId: string, adminId: string, note: string
 
 /** The verified account owner for a player profile, if any (used on /players/[id] to show a badge). */
 export async function getVerifiedOwner(wtslPlayerId: string, tour: string) {
-  const rows = await sql`SELECT u.id, u.display_name, u.avatar_url, u.discord_id, u.status, u.created_at FROM player_claims c JOIN users u ON u.id=c.user_id WHERE c.wtsl_player_id=${wtslPlayerId} AND c.tour=${tour} AND c.status='approved' LIMIT 1`;
+  const rows = await sql`
+    SELECT u.id, u.display_name, u.avatar_url, u.discord_id,
+      CASE WHEN u.status='online' AND (
+        u.last_active_at IS NULL OR u.last_active_at < NOW() - ${ONLINE_PRESENCE_WINDOW_MINUTES} * INTERVAL '1 minute'
+      ) THEN 'offline' ELSE COALESCE(u.status,'offline') END AS status,
+      u.created_at
+    FROM player_claims c
+    JOIN users u ON u.id=c.user_id
+    WHERE c.wtsl_player_id=${wtslPlayerId} AND c.tour=${tour} AND c.status='approved'
+    LIMIT 1`;
   return rows[0] ?? null;
 }
