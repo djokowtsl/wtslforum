@@ -91,13 +91,13 @@ function comparableDeadline(value: unknown) {
 }
 
 /**
- * Hide stale copies created when an official event name already included a
- * round and another round suffix was appended during schedule parsing.
+ * Hide stale copies where the schedule feed and official tournament directory
+ * label the same round fixture differently.
  *
  * Only collapse rows with the same official event, player IDs, deadline and
- * canonical event name. Keep the row with fewer appended round labels; other
- * markets, including the same players in a different event or at a different
- * deadline, remain visible.
+ * round. Keep the row with fewer appended round labels; other markets,
+ * including the same players in a different event or at a different deadline,
+ * remain visible.
  */
 export function deduplicateRedundantRoundFixtures<T extends FixtureRef>(
   fixtures: T[],
@@ -129,7 +129,12 @@ export function deduplicateRedundantRoundFixtures<T extends FixtureRef>(
       const names = eventNames.get(`${tour}|${fixtureId}`);
       if (!names) return null;
       if (names.has(baseName)) return { id: fixtureId, isCanonical: true };
-      const aliases = [...names].filter((name) => name.startsWith(baseName));
+      // The fixture ID ties this label to the official event. The schedule may
+      // add details missing from the directory name, so allow a unique prefix
+      // relationship in either direction.
+      const aliases = [...names].filter(
+        (name) => name.startsWith(baseName) || baseName.startsWith(name),
+      );
       return aliases.length === 1
         ? { id: fixtureId, isCanonical: false }
         : null;
