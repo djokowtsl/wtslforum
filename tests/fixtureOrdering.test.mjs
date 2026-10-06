@@ -1,6 +1,9 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
-import { sortOpenFixturesByTournamentRecency } from '../lib/fixture-order.ts';
+import {
+  deduplicateRedundantRoundFixtures,
+  sortOpenFixturesByTournamentRecency,
+} from '../lib/fixture-order.ts';
 
 const tournamentUrl = (id) =>
   `https://www.playwtsl.com/TE4/pages/tournament_page.php?tournament=${id}`;
@@ -56,5 +59,99 @@ test('fixture event name is a fallback when its tournament ID is missing', () =>
   assert.deepEqual(
     sortOpenFixturesByTournamentRecency(fixtures, tournaments).map((fixture) => fixture.key),
     ['new', 'old'],
+  );
+});
+
+test('removes only a stale nested round label for the same official fixture', () => {
+  const deadline = 'Tue, 06 Oct 2026 22:59:00 GMT';
+  const fixtures = [
+    {
+      key: 'stale',
+      tour: 'TE4',
+      tournament_id: 'Tokyo_2026_TE4',
+      tournament: 'Tokyo (R64) (R32)',
+      first_id: '20',
+      second_id: '4598',
+      round_deadline: deadline,
+    },
+    {
+      key: 'current',
+      tour: 'TE4',
+      tournament_id: 'Tokyo_2026_TE4',
+      tournament: 'Tokyo (R32)',
+      first_id: '20',
+      second_id: '4598',
+      round_deadline: deadline,
+    },
+    {
+      key: 'other-event',
+      tour: 'TE4',
+      tournament_id: 'Tokyo_Challenger_2026_TE4',
+      tournament: 'Tokyo (R64) (R32)',
+      first_id: '20',
+      second_id: '4598',
+      round_deadline: deadline,
+    },
+    {
+      key: 'different-deadline',
+      tour: 'TE4',
+      tournament_id: 'Tokyo_2026_TE4',
+      tournament: 'Tokyo (R64) (R32)',
+      first_id: '20',
+      second_id: '4598',
+      round_deadline: 'Wed, 07 Oct 2026 22:59:00 GMT',
+    },
+  ];
+  const tournaments = [
+    {
+      tour: 'TE4',
+      name: 'Tokyo',
+      official_url: tournamentUrl('Tokyo_2026_TE4'),
+    },
+    {
+      tour: 'TE4',
+      name: 'Tokyo',
+      official_url: tournamentUrl('Tokyo_Challenger_2026_TE4'),
+    },
+  ];
+
+  assert.deepEqual(
+    deduplicateRedundantRoundFixtures(fixtures, tournaments).map((fixture) => fixture.key),
+    ['current', 'other-event', 'different-deadline'],
+  );
+});
+
+test('keeps same-event fixtures with equally specific round labels', () => {
+  const fixtures = [
+    {
+      key: 'round-of-64',
+      tour: 'TE4',
+      tournament_id: 'Tokyo_2026_TE4',
+      tournament: 'Tokyo (R64)',
+      first_id: '20',
+      second_id: '4598',
+      round_deadline: 'Tue, 06 Oct 2026 22:59:00 GMT',
+    },
+    {
+      key: 'round-of-32',
+      tour: 'TE4',
+      tournament_id: 'Tokyo_2026_TE4',
+      tournament: 'Tokyo (R32)',
+      first_id: '20',
+      second_id: '4598',
+      round_deadline: 'Tue, 06 Oct 2026 22:59:00 GMT',
+    },
+  ];
+  const tournaments = [
+    {
+      tour: 'TE4',
+      name: 'Tokyo',
+      official_url: tournamentUrl('Tokyo_2026_TE4'),
+    },
+  ];
+
+  assert.deepEqual(
+    deduplicateRedundantRoundFixtures(fixtures, tournaments).map((fixture) => fixture.key),
+    ['round-of-64', 'round-of-32'],
   );
 });

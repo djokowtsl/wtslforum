@@ -8,7 +8,10 @@ import { FixtureCard, ResultCard } from '@/components/MatchCards';
 import PageHero from '@/components/PageHero';
 import TourTabs from '@/components/TourTabs';
 import { DEFAULT_TOUR, isTourCode, type TourCode } from '@/lib/wtsl';
-import { sortOpenFixturesByTournamentRecency } from '@/lib/fixture-order';
+import {
+  deduplicateRedundantRoundFixtures,
+  sortOpenFixturesByTournamentRecency,
+} from '@/lib/fixture-order';
 
 export const dynamic = 'force-dynamic';
 export const metadata: Metadata = { title: 'Matches' };
@@ -31,9 +34,12 @@ export default async function Matches({ searchParams }: { searchParams: Promise<
   // Fixtures come back tagged with the same raw tour codes used everywhere else on the
   // forum ("TE4", "TE4_(F)") — not "atp"/"wta" — so compare directly against the selected tour.
   const fx = sortOpenFixturesByTournamentRecency(
-    Array.isArray(fixtures)
-      ? fixtures.filter((f: any) => String(f.tour) === tour)
-      : [],
+    deduplicateRedundantRoundFixtures(
+      Array.isArray(fixtures)
+        ? fixtures.filter((f: any) => String(f.tour) === tour)
+        : [],
+      tournaments,
+    ),
     tournaments,
   );
 
