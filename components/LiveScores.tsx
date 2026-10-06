@@ -80,6 +80,7 @@ export default function LiveScores() {
           const splitNames = match.name.split(/\s+vs\s+/i);
           const first = match.players?.first;
           const second = match.players?.second;
+          const secondProbability = match.probability === null ? null : 100 - match.probability;
           const firstName = first?.name ?? splitNames[0] ?? match.name;
           const secondName = second?.name ?? splitNames[1] ?? '';
           const h2hUrl = first && second && match.tour
@@ -91,27 +92,40 @@ export default function LiveScores() {
                 <span>{match.tour === 'TE4_(F)' ? 'WTA' : match.tour === 'TE4' ? 'ATP' : 'WTSL'}</span>
                 <b><i />LIVE</b>
               </div>
-              <div className="live-score-player">
+              {match.probability !== null && secondProbability !== null && (
+                <div
+                  className="live-score-probability"
+                  role="group"
+                  aria-label={"Win probability: " + firstName + " " + match.probability + "%, " + (secondName || 'Opponent') + " " + secondProbability + "%"}
+                >
+                  <div className="live-score-probability-title">Win probability</div>
+                  <div className="live-score-probability-values" aria-hidden="true">
+                    <span className="live-score-probability-first-value">{match.probability}%</span>
+                    <span className="live-score-probability-second-value">{secondProbability}%</span>
+                  </div>
+                  <div className="live-score-probability-bar" aria-hidden="true">
+                    <span
+                      className="live-score-probability-first"
+                      style={{ width: String(match.probability) + '%' }}
+                    />
+                    <span
+                      className="live-score-probability-second"
+                      style={{ width: String(secondProbability) + '%' }}
+                    />
+                  </div>
+                </div>
+              )}
+              <div className="live-score-player live-score-player--first">
                 <PlayerAvatar src={first?.avatarUrl} flagSrc={first?.flagUrl} flagLabel={first?.country} name={firstName} size={34} />
                 <strong>{firstName}</strong>
-                {match.probability !== null && <b>{match.probability}%</b>}
               </div>
               <div className="live-score-center">
                 <span>{match.score || 'Score unavailable'}</span>
-                {match.probability !== null
-                  ? <small>
-                    {match.probabilitySource === 'all-results'
-                      ? 'Historical H2H estimate'
-                      : match.probabilitySource === 'no-history'
-                        ? 'No H2H · neutral estimate'
-                        : 'WTSL win probability'}
-                  </small>
-                  : <small>Probability unavailable</small>}
+                {match.probability === null && <small>Probability unavailable</small>}
               </div>
-              <div className="live-score-player">
+              <div className="live-score-player live-score-player--second">
                 <PlayerAvatar src={second?.avatarUrl} flagSrc={second?.flagUrl} flagLabel={second?.country} name={secondName} size={34} />
                 <strong>{secondName || 'Opponent'}</strong>
-                {match.probability !== null && <b>{100 - match.probability}%</b>}
               </div>
               <div className="live-score-meta">{match.mode} · Best of {match.bestOf} · {match.court}</div>
               {h2hUrl && <a className="live-score-h2h" href={h2hUrl} target="_blank" rel="noreferrer">Official H2H ↗</a>}
