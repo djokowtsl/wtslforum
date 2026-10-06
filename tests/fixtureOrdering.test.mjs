@@ -1,6 +1,7 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
 import {
+  deduplicateBettingBoardFixtures,
   deduplicateRedundantRoundFixtures,
   sortOpenFixturesByTournamentRecency,
 } from '../lib/fixture-order.ts';
@@ -257,4 +258,33 @@ test('deduplicates descriptive fixture names against a shorter official tourname
     deduplicateRedundantRoundFixtures(fixtures, tournaments).map((fixture) => fixture.key),
     ['pastore-short', 'ziggy-short', 'different-event-id'],
   );
+});
+test('deduplicates redundant aliases in both betting board sections', () => {
+  const deadline = 'Wed, 07 Oct 2026 22:59:00 GMT';
+  const fixture = (key, tournament, first_id, second_id, round_deadline = deadline) => ({
+    key,
+    tour: 'TE4',
+    tournament_id: 'Sapporo_2026_TE4',
+    tournament,
+    first_id,
+    second_id,
+    round_deadline,
+  });
+  const board = deduplicateBettingBoardFixtures({
+    open: [
+      fixture('open-short', 'Sapporo (QF)', 'a', 'b'),
+      fixture('open-descriptive', 'Sapporo Futures · Outdoor Hard (QF)', 'a', 'b'),
+      fixture('open-different-pair', 'Sapporo Futures · Outdoor Hard (QF)', 'a', 'c'),
+    ],
+    recent_settled: [
+      fixture('settled-short', 'Sapporo (SF)', 'd', 'e'),
+      fixture('settled-descriptive', 'Sapporo Futures · Outdoor Hard (SF)', 'd', 'e'),
+      fixture('settled-different-deadline', 'Sapporo Futures · Outdoor Hard (SF)', 'd', 'e', 'Thu, 08 Oct 2026 22:59:00 GMT'),
+    ],
+  }, [
+    { tour: 'TE4', name: 'Sapporo', official_url: tournamentUrl('Sapporo_2026_TE4') },
+  ]);
+
+  assert.deepEqual(board.open.map((item) => item.key), ['open-short', 'open-different-pair']);
+  assert.deepEqual(board.recent_settled.map((item) => item.key), ['settled-short', 'settled-different-deadline']);
 });
