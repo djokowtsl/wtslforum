@@ -155,15 +155,3 @@ export function parseInterviewResult(body: any): ResultContext | null {
   ) return null;
   return { messageId, createdAt, date, tournament, round, score, tour, winners, losers, content };
 }
-
-function published(req: NextRequest, topicId: number, matchKey: string, postType: string) {
-  const url = new URL(`/discussions/${topicId}`, req.url).toString();
-  return NextResponse.json({ status: 'published', url, matchKey, postType });
-}
-
-function pending(message: string, reason?: string) {
-    return NextResponse.json(
-      { status: 'pending', message, ...(reason ? { reason } : {}) },
-      { status: 202 },
-    );
-    }
