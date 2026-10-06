@@ -18,6 +18,18 @@ const sourceKeyFor = (threadId: string) => `wtsl-interview:${threadId}`;
 const slugify = (value: string) =>
   value.toLowerCase().trim().replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '').slice(0, 90);
 
+function published(req: NextRequest, topicId: number, matchKey: string, postType: string) {
+  const url = new URL(`/discussions/${topicId}`, req.url).toString();
+  return NextResponse.json({ status: 'published', url, matchKey, postType });
+}
+
+function pending(message: string, reason?: string) {
+  return NextResponse.json(
+    { status: 'pending', message, ...(reason ? { reason } : {}) },
+    { status: 202 },
+  );
+}
+
 async function findSourcePosts(sourceKey: string) {
   const topics = await sql`
     SELECT id, body, moderation_status FROM topics WHERE source_key=${sourceKey} LIMIT 1
