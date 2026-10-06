@@ -1,7 +1,7 @@
 # Deployment
 
 ## 1. Database
-Create a Neon PostgreSQL database and run `db.sql` once. Copy its connection string into `DATABASE_URL`. For an existing database, run `migrations/2026-10-02-default-player-claim.sql`, `migrations/2026-10-03-forum-moderation.sql`, and `migrations/2026-10-03-presence-heartbeat.sql` before deploying.
+Create a Neon PostgreSQL database and run `db.sql` once. Copy its connection string into `DATABASE_URL`. For an existing database, run `migrations/2026-10-02-default-player-claim.sql`, `migrations/2026-10-03-forum-moderation.sql`, `migrations/2026-10-03-tournament-discussion-recreation.sql`, and `migrations/2026-10-04-interview-transcript-idempotency.sql` before deploying. The interview-transcript migration adds the `source_key` columns and unique indexes required for idempotent Discord transcript sync.
 
 ## 2. Discord OAuth
 Create a Discord Developer Application. Add the Vercel callback URL:
