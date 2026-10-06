@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
 import { extractImageUrls, moderateContent, moderateTextAndImages, ModerationUnavailableError } from '../lib/moderation.ts';
-import { hasCommunityNoteConsensus, partitionCommunityNotes } from '../lib/communityNotePolicy.ts';
+import { anonymizeCommunityNote, hasCommunityNoteConsensus, partitionCommunityNotes } from '../lib/communityNotePolicy.ts';
 import { spoilerMarkupError } from '../lib/spoilers.ts';
 
 const originalFetch = globalThis.fetch;
@@ -53,19 +53,34 @@ test('community note consensus requires five ratings and at least 80% helpful vo
   assert.equal(hasCommunityNoteConsensus(10, 8), true);
 });
 
-test('public readers only receive consensus notes; signed-in readers can review proposed notes', () => {
+test('only consensus notes are public; proposals stay in the private review flow', () => {
   const notes = [
-    { id: 1, has_consensus: true },
-    { id: 2, has_consensus: false },
+    { id: 1, has_consensus: false },
+    { id: 2, has_consensus: true },
+    { id: 3, has_consensus: false },
   ];
-  assert.deepEqual(partitionCommunityNotes(notes, false), {
-    consensus: [notes[0]],
-    proposed: [],
-  });
-  assert.deepEqual(partitionCommunityNotes(notes, true), {
-    consensus: [notes[0]],
-    proposed: [notes[1]],
-  });
+  const partitioned = partitionCommunityNotes(notes);
+  assert.deepEqual(partitioned.publicNotes.map((note) => note.id), [2]);
+  assert.deepEqual(partitioned.pendingNotes.map((note) => note.id), [1, 3]);
+  assert.deepEqual(partitionCommunityNotes([]), { publicNotes: [], pendingNotes: [] });
+});
+
+test('community note payloads omit submitter identity but preserve the self-rating check', () => {
+  const ownNote = anonymizeCommunityNote(
+    { id: 9, author_id: 42, author: 'Private Member Name', body: 'Context' },
+    '42',
+  );
+  assert.deepEqual(ownNote, { id: 9, body: 'Context', viewer_is_author: true });
+  assert.equal('author_id' in ownNote, false);
+  assert.equal('author' in ownNote, false);
+
+  const otherNote = anonymizeCommunityNote(
+    { id: 10, author_id: 42, author: 'Private Member Name', body: 'More context' },
+    '77',
+  );
+  assert.equal(otherNote.viewer_is_author, false);
+  assert.equal('author_id' in otherNote, false);
+  assert.equal('author' in otherNote, false);
 });
 
 test('spoiler markup is paired, nonempty, and confined to one line', () => {
