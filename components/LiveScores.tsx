@@ -1,6 +1,6 @@
 'use client';
 
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import PlayerAvatar from '@/components/PlayerAvatar';
 
 type LivePlayer = {
@@ -28,6 +28,8 @@ type Payload = { matches: LiveMatch[]; checkedAt: string };
 export default function LiveScores() {
   const [payload, setPayload] = useState<Payload | null>(null);
   const [failed, setFailed] = useState(false);
+  const [selectedMatchIndex, setSelectedMatchIndex] = useState(0);
+  const trackRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
     let active = true;
@@ -72,10 +74,46 @@ export default function LiveScores() {
     );
   }
 
+  const activeMatchIndex = Math.min(selectedMatchIndex, payload.matches.length - 1);
+  const scrollToMatch = (index: number) => {
+    const track = trackRef.current;
+    const target = track?.children.item(index);
+    if (!track || !target) return;
+    const trackLeft = track.getBoundingClientRect().left;
+    const targetLeft = target.getBoundingClientRect().left;
+    const behavior: ScrollBehavior = window.matchMedia('(prefers-reduced-motion: reduce)').matches ? 'auto' : 'smooth';
+    track.scrollTo({ left: track.scrollLeft + targetLeft - trackLeft, behavior });
+  };
+
+  const updateActiveMatch = () => {
+    const track = trackRef.current;
+    if (!track || track.children.length === 0) return;
+    const trackLeft = track.getBoundingClientRect().left;
+    let nearestIndex = 0;
+    let nearestDistance = Number.POSITIVE_INFINITY;
+    Array.from(track.children).forEach((slide, index) => {
+      const distance = Math.abs(slide.getBoundingClientRect().left - trackLeft);
+      if (distance < nearestDistance) {
+        nearestDistance = distance;
+        nearestIndex = index;
+      }
+    });
+    setSelectedMatchIndex((currentIndex) => currentIndex === nearestIndex ? currentIndex : nearestIndex);
+  };
+
   return (
     <div className="live-score-section">
-      <div className="live-sub" style={{ marginTop: 0 }}>Live TE4 matches</div>
-      <div className="live-score-grid">
+      <div className="live-score-carousel-heading">
+        <div className="live-sub" style={{ marginTop: 0 }}>Live TE4 matches</div>
+        {payload.matches.length > 1 && (
+          <div className="live-score-carousel-controls">
+            <span aria-live="polite" aria-atomic="true">{activeMatchIndex + 1} of {payload.matches.length}</span>
+            <button type="button" aria-label="Previous live match" onClick={() => scrollToMatch(activeMatchIndex - 1)} disabled={activeMatchIndex === 0}>‹</button>
+            <button type="button" aria-label="Next live match" onClick={() => scrollToMatch(activeMatchIndex + 1)} disabled={activeMatchIndex === payload.matches.length - 1}>›</button>
+          </div>
+        )}
+      </div>
+      <div ref={trackRef} className="live-score-track" role="region" aria-label="Live WTSL matches" aria-roledescription="carousel" tabIndex={0} onScroll={updateActiveMatch}>
         {payload.matches.map((match, index) => {
           const splitNames = match.name.split(/\s+vs\s+/i);
           const first = match.players?.first;
@@ -87,7 +125,7 @@ export default function LiveScores() {
             ? `https://www.playwtsl.com/TE4/pages/h2h.php?tour=${encodeURIComponent(match.tour)}&pl_one=${encodeURIComponent(String(first.id))}&pl_two=${encodeURIComponent(String(second.id))}`
             : null;
           return (
-            <article className="live-score-card" key={`${match.name}-${match.court}-${index}`}>
+            <article className="live-score-card" key={`${match.name}-${match.court}-${index}`} role="group" aria-roledescription="slide" aria-label={`Match ${index + 1} of ${payload.matches.length}: ${firstName} vs ${secondName || 'Opponent'}`}>
               <div className="live-score-card-head">
                 <span>{match.tour === 'TE4_(F)' ? 'WTA' : match.tour === 'TE4' ? 'ATP' : 'WTSL'}</span>
                 <b><i />LIVE</b>
