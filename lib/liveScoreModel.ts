@@ -10,6 +10,41 @@ export type ParsedLiveMatch = {
 
 type PollToken = { value: string; quoted: boolean };
 
+/**
+ * Resolve an already-normalized live-feed name against normalized WTSL player
+ * names. TE4 shortens some account names to an initial plus surname (for
+ * example, "F.Franchicha"); accept that form only when it identifies one
+ * ranked player in the current tour.
+ */
+export function resolveLivePlayer<T>(
+  normalizedName: string,
+  playersByNormalizedName: ReadonlyMap<string, T>,
+): T | null {
+  const exactMatch = playersByNormalizedName.get(normalizedName);
+  if (exactMatch !== undefined) return exactMatch;
+
+  const abbreviation = normalizedName.match(
+    /^([\p{L}\p{N}])(?:\.|\s+)\s*([\p{L}\p{N}][\p{L}\p{N}'’_-]*)$/u,
+  );
+  if (!abbreviation) return null;
+
+  const [, firstInitial, surname] = abbreviation;
+  let uniqueMatch: T | null = null;
+  for (const [canonicalName, player] of playersByNormalizedName) {
+    const parts = canonicalName.split(/\s+/);
+    if (
+      parts.length !== 2
+      || !parts[0].startsWith(firstInitial)
+      || parts[1] !== surname
+    ) {
+      continue;
+    }
+    if (uniqueMatch !== null) return null;
+    uniqueMatch = player;
+  }
+  return uniqueMatch;
+}
+
 function tokenizePollText(text: string): PollToken[] {
   const tokens: PollToken[] = [];
   for (const match of text.matchAll(/"([^"]*)"|(\S+)/g)) {
