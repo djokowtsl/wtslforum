@@ -28,8 +28,8 @@ type RatingSourceRow = {
 /**
  * Match each rating to the Discord bot's `calculate_partial_overall_ratings`:
  * average each available player-side spreadsheet field, then sum only the
- * available components. A workbook row belongs to its `Player` / `player1`
- * side, so player2 is intentionally not treated as an empty duplicate.
+ * available components. Imported match stats are stored against the matching
+ * player side so both players receive their own screenshot evidence.
  */
 export async function importedMatchRatings(tour: string, metric: 'serve' | 'return' | 'pressure'): Promise<ImportedRating[]> {
   const rows = await sql`
@@ -56,21 +56,27 @@ export async function importedMatchRatings(tour: string, metric: 'serve' | 'retu
       GROUP BY player_id
     ), player_screenshots AS (
       SELECT
-        player_one_id AS player_id,
-        AVG((stats->'player1'->>'firstServePct')::numeric)::float AS first_serve_pct,
-        AVG((stats->'player1'->>'firstServeWonPct')::numeric)::float AS first_serve_won_pct,
-        AVG((stats->'player1'->>'secondServeWonPct')::numeric)::float AS second_serve_won_pct,
-        AVG((stats->'player1'->>'aces')::numeric)::float AS aces,
-        AVG((stats->'player1'->>'doubleFaults')::numeric)::float AS double_faults,
-        AVG((stats->'player1'->>'firstServeReturnWonPct')::numeric)::float AS first_serve_return_won_pct,
-        AVG((stats->'player1'->>'secondServeReturnWonPct')::numeric)::float AS second_serve_return_won_pct,
-        AVG((stats->'player1'->>'breakPointsWonPct')::numeric)::float AS break_points_won_pct,
-        AVG((stats->'player1'->>'breakPointsSavedPct')::numeric)::float AS break_points_saved_pct,
-        AVG((stats->'player1'->>'tieBreaksWonPct')::numeric)::float AS tie_breaks_won_pct,
-        AVG((stats->'player1'->>'decidingSetsWonPct')::numeric)::float AS deciding_sets_won_pct
-      FROM verified_matches
-      WHERE jsonb_typeof(stats->'player1') = 'object'
-      GROUP BY player_one_id
+        player_id,
+        AVG((player_stats->>'firstServePct')::numeric)::float AS first_serve_pct,
+        AVG((player_stats->>'firstServeWonPct')::numeric)::float AS first_serve_won_pct,
+        AVG((player_stats->>'secondServeWonPct')::numeric)::float AS second_serve_won_pct,
+        AVG((player_stats->>'aces')::numeric)::float AS aces,
+        AVG((player_stats->>'doubleFaults')::numeric)::float AS double_faults,
+        AVG((player_stats->>'firstServeReturnWonPct')::numeric)::float AS first_serve_return_won_pct,
+        AVG((player_stats->>'secondServeReturnWonPct')::numeric)::float AS second_serve_return_won_pct,
+        AVG((player_stats->>'breakPointsWonPct')::numeric)::float AS break_points_won_pct,
+        AVG((player_stats->>'breakPointsSavedPct')::numeric)::float AS break_points_saved_pct,
+        AVG((player_stats->>'tieBreaksWonPct')::numeric)::float AS tie_breaks_won_pct,
+        AVG((player_stats->>'decidingSetsWonPct')::numeric)::float AS deciding_sets_won_pct
+      FROM (
+        SELECT player_one_id AS player_id, stats->'player1' AS player_stats
+        FROM verified_matches
+        UNION ALL
+        SELECT player_two_id AS player_id, stats->'player2' AS player_stats
+        FROM verified_matches
+      ) sides
+      WHERE jsonb_typeof(player_stats) = 'object'
+      GROUP BY player_id
     )
     SELECT
       p.name AS player,

@@ -267,7 +267,9 @@ test('deduplicates redundant aliases in both betting board sections', () => {
     tournament_id: 'Sapporo_2026_TE4',
     tournament,
     first_id,
+    first_name: `Player ${first_id}`,
     second_id,
+    second_name: `Player ${second_id}`,
     round_deadline,
   });
   const board = deduplicateBettingBoardFixtures({

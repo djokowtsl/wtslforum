@@ -1,6 +1,8 @@
 type FixtureRef = {
   first_id?: string | number | null;
   second_id?: string | number | null;
+  first_name?: string | null;
+  second_name?: string | null;
   tour?: string | null;
   tournament?: string | null;
   tournament_id?: string | number | null;
@@ -19,6 +21,30 @@ type TournamentOrder = {
   statusRank: number;
   startTime: number | null;
 };
+
+const PLACEHOLDER_PLAYER_NAMES = new Set([
+  'tbc',
+  'tba',
+  'tbd',
+  'tobeconfirmed',
+  'tobeannounced',
+]);
+
+function isUnconfirmedPlayerName(value: unknown) {
+  const normalized = String(value ?? '')
+    .normalize('NFKD')
+    .replace(/[\u0300-\u036f]/g, '')
+    .toLowerCase()
+    .replace(/[^a-z0-9]/g, '');
+  return !normalized || PLACEHOLDER_PLAYER_NAMES.has(normalized);
+}
+
+export function filterUnconfirmedFixtures<T extends FixtureRef>(fixtures: T[]): T[] {
+  return fixtures.filter((fixture) =>
+    !isUnconfirmedPlayerName(fixture.first_name)
+    && !isUnconfirmedPlayerName(fixture.second_name),
+  );
+}
 
 function normalizeTour(value: unknown) {
   return String(value ?? '').trim().toLowerCase();
@@ -213,11 +239,13 @@ export function deduplicateBettingBoardFixtures<T extends FixtureRef>(
 ) {
   return {
     open: deduplicateRedundantRoundFixtures(
-      Array.isArray(board.open) ? board.open : [],
+      filterUnconfirmedFixtures(Array.isArray(board.open) ? board.open : []),
       tournaments,
     ),
     recent_settled: deduplicateRedundantRoundFixtures(
-      Array.isArray(board.recent_settled) ? board.recent_settled : [],
+      filterUnconfirmedFixtures(
+        Array.isArray(board.recent_settled) ? board.recent_settled : [],
+      ),
       tournaments,
     ),
   };

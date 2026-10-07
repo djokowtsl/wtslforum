@@ -12,6 +12,7 @@ import { discordAvatar } from '@/lib/auth';
 import { FixtureCard, ResultCard } from '@/components/MatchCards';
 import ForumAvatar from '@/components/ForumAvatar';
 import LiveScores from '@/components/LiveScores';
+import { filterUnconfirmedFixtures } from '@/lib/fixture-order';
 
 export const dynamic = 'force-dynamic';
 
@@ -43,7 +44,9 @@ export default async function Home({ searchParams }: { searchParams: Promise<{ e
   const top = topPlayers[0];
   const live = tournaments.filter((t: any) => t.status === 'ongoing').concat(tournaments.filter((t: any) => t.status === 'upcoming')).slice(0, 4);
   const tournamentNames = Object.fromEntries(tournaments.map((t: any) => [t.wtsl_tournament_key, t.name]));
-  const fx = (Array.isArray(fixtures) ? fixtures : []).slice(0, 3);
+  const fx = filterUnconfirmedFixtures(
+    Array.isArray(fixtures) ? fixtures : [],
+  ).slice(0, 3);
   const hasTour = results.length > 0 || fx.length > 0;
 
   return (
