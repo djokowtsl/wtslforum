@@ -172,7 +172,10 @@ export async function searchPlayers(tour: string, query: string, limit = 8) {
 export async function recentMatches(limit=20, tour='TE4'){
   return sql`
     WITH match_rows AS (
-      SELECT m.*, score.score_signature
+      SELECT
+        m.*,
+        score.score_signature,
+        score.unordered_score_signature
       FROM match_stats m
       LEFT JOIN LATERAL (
         SELECT string_agg(
@@ -182,7 +185,13 @@ export async function recentMatches(limit=20, tour='TE4'){
             ELSE set_score[2] || '-' || set_score[1]
           END,
           ' ' ORDER BY set_number
-        ) AS score_signature
+        ) AS score_signature,
+        string_agg(
+          LEAST(set_score[1]::integer, set_score[2]::integer)::text
+            || '-' ||
+          GREATEST(set_score[1]::integer, set_score[2]::integer)::text,
+          ' ' ORDER BY set_number
+        ) AS unordered_score_signature
         FROM regexp_matches(
           regexp_replace(COALESCE(m.score, ''), '\\([0-9]+\\)', '', 'g'),
           '([0-9]+)\\s*[-–]\\s*([0-9]+)',
@@ -200,6 +209,27 @@ export async function recentMatches(limit=20, tour='TE4'){
               )
           )
         )
+    ), ranked_match_rows AS (
+      SELECT
+        m.*,
+        row_number() OVER (
+          PARTITION BY
+            m.tour,
+            LEAST(m.player_one_id::text, m.player_two_id::text),
+            GREATEST(m.player_one_id::text, m.player_two_id::text),
+            m.played_at::date,
+            COALESCE(m.unordered_score_signature, 'no-score:' || m.id::text)
+          ORDER BY
+            CASE
+              WHEN COALESCE(m.source_id, '') LIKE 'recent:%' THEN 0
+              WHEN COALESCE(m.source_id, '') LIKE 'import:%' THEN 1
+              ELSE 2
+            END,
+            (m.tournament_key IS NOT NULL) DESC,
+            length(btrim(COALESCE(m.tournament_name, ''))) DESC,
+            m.id ASC
+        ) AS duplicate_rank
+      FROM match_rows m
     )
     SELECT m.*,
       p1.name player_one_name,
@@ -210,31 +240,10 @@ export async function recentMatches(limit=20, tour='TE4'){
       p2.avatar_url player_two_avatar,
       p2.flag_url player_two_flag,
       p2.country player_two_country
-    FROM match_rows m
+    FROM ranked_match_rows m
     LEFT JOIN wtsl_players p1 ON p1.wtsl_player_id=m.player_one_id AND p1.tour=m.tour
     LEFT JOIN wtsl_players p2 ON p2.wtsl_player_id=m.player_two_id AND p2.tour=m.tour
-    WHERE COALESCE(m.source_id, '') NOT LIKE 'import:%'
-      OR NOT EXISTS (
-        SELECT 1
-        FROM match_rows duplicate
-        WHERE duplicate.source_id <> m.source_id
-          AND duplicate.tour=m.tour
-          AND LEAST(duplicate.player_one_id::text, duplicate.player_two_id::text)
-              = LEAST(m.player_one_id::text, m.player_two_id::text)
-          AND GREATEST(duplicate.player_one_id::text, duplicate.player_two_id::text)
-              = GREATEST(m.player_one_id::text, m.player_two_id::text)
-          AND duplicate.winner_id=m.winner_id
-          AND duplicate.played_at::date = m.played_at::date
-          AND duplicate.score_signature IS NOT NULL
-          AND duplicate.score_signature=m.score_signature
-          AND (
-            COALESCE(duplicate.source_id, '') LIKE 'recent:%'
-            OR (
-              COALESCE(duplicate.source_id, '') LIKE 'import:%'
-              AND duplicate.source_id < m.source_id
-            )
-          )
-      )
+    WHERE m.duplicate_rank = 1
     ORDER BY m.played_at DESC
     LIMIT ${limit}
   `;
