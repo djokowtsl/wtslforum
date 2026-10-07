@@ -7,6 +7,8 @@ import TourTabs from '@/components/TourTabs';
 import PlayerStatsTable from '@/components/PlayerStatsTable';
 import { DEFAULT_TOUR, isTourCode, type TourCode } from '@/lib/wtsl';
 import { botRatingStats } from '@/lib/botRatingLeaderboards';
+import { getTournaments } from '@/lib/tournaments';
+import { buildWtslTournamentNameLookup, lookupWtslTournamentName } from '@/lib/wtslResultDisplay';
 
 export const dynamic = 'force-dynamic';
 export const metadata: Metadata = { title: 'Statistics' };
@@ -15,11 +17,13 @@ export default async function Stats({ searchParams }: { searchParams: Promise<{ 
   const { tour: tourParam } = await searchParams;
   // Coop has no individual player stats on the official site, so it's not a valid selection here.
   const tour: TourCode = isTourCode(tourParam) && tourParam !== 'TE4_Coop' ? tourParam : DEFAULT_TOUR;
-  const [allRows, matches, ratingRows] = await Promise.all([
+  const [allRows, matches, ratingRows, tournaments] = await Promise.all([
     safe(() => allPlayerStats(tour), [] as any[]),
     safe(() => recentMatches(8, tour), [] as any[]),
     safe(() => botRatingStats(tour), [] as any[]),
+    safe(() => getTournaments(tour), [] as any[]),
   ]);
+  const tournamentNames = buildWtslTournamentNameLookup(tournaments);
   const ratingByPlayer = new Map<string, any>(
     ratingRows.map((row: any) => [String(row.playerId), row]),
   );
@@ -56,7 +60,7 @@ export default async function Stats({ searchParams }: { searchParams: Promise<{ 
             {matches.length === 0 ? <div className="empty">No matches recorded yet.</div> : (
               <div className="stats-recent-list">
                 {matches.map((m: any) => (
-                  <div className="match-row" key={m.id}><div>{m.player_one_name}<br /><b>{m.score || '—'}</b><br />{m.player_two_name}</div><span>{m.tournament_name || m.tournament_key || ''}{m.round_name ? ` · ${m.round_name}` : ''}</span></div>
+                  <div className="match-row" key={m.id}><div>{m.player_one_name}<br /><b>{m.score || '—'}</b><br />{m.player_two_name}</div><span>{lookupWtslTournamentName(m.tournament_key, tournamentNames) || lookupWtslTournamentName(m.tournament_name, tournamentNames) || m.tournament_name || m.tournament_key || ''}{m.round_name ? ` · ${m.round_name}` : ''}</span></div>
                 ))}
               </div>
             )}

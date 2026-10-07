@@ -22,7 +22,10 @@ export default async function TournamentPage({ params }: { params: Promise<{ slu
   ]);
   const tournamentNames = buildWtslTournamentNameLookup([t]);
   const mine = matches
-    .filter((m: any) => lookupWtslTournamentName(m.tournament_key, tournamentNames) === t.name)
+    .filter((m: any) => (
+      lookupWtslTournamentName(m.tournament_key, tournamentNames) === t.name
+      || lookupWtslTournamentName(m.tournament_name, tournamentNames) === t.name
+    ))
     .slice(0, 12);
 
   return (

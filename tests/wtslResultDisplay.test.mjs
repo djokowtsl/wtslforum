@@ -119,6 +119,7 @@ test('canonical tournament names resolve both forum keys and official event IDs'
 
   assert.equal(lookupWtslTournamentName('te4-beijing-2026-te4', names), 'Beijing');
   assert.equal(lookupWtslTournamentName('Beijing_2026_TE4', names), 'Beijing');
+  assert.equal(lookupWtslTournamentName('Tennis Elbow 4 (ATP Characters) - Beijing 2026', names), 'Beijing');
   assert.equal(lookupWtslTournamentName('missing-event', names), undefined);
 });
 

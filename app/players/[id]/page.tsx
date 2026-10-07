@@ -10,6 +10,8 @@ import PageHero from '@/components/PageHero';
 import { StatusDot } from '@/components/StatusDot';
 import { DEFAULT_TOUR, getTourEloDesignation, isTourCode, tourLabel, type TourCode } from '@/lib/wtsl';
 import PlayerAvatar from '@/components/PlayerAvatar';
+import { getTournaments } from '@/lib/tournaments';
+import { buildWtslTournamentNameLookup, lookupWtslTournamentName } from '@/lib/wtslResultDisplay';
 
 export const dynamic = 'force-dynamic';
 
@@ -51,25 +53,29 @@ export default async function PlayerDashboard({ params, searchParams }: Props) {
   const p = rows.find((r: any) => r.tour === tour) ?? rows[0];
   const eloLabel = p.tour_elo == null ? p.elo_label : getTourEloDesignation(p.tour_elo);
 
-  const recent = await safe(() => sql`
-    SELECT r.*
-    FROM player_recent_results r
-    WHERE r.player_id=${id} AND r.tour=${tour}
-      AND (
-        ${tour} <> 'TE4_(F)'
-        OR EXISTS (
-          SELECT 1
-          FROM tournaments t
-          WHERE t.tour='TE4_(F)'
-            AND (
-              t.wtsl_tournament_key=r.tournament_key
-              OR (regexp_match(t.official_url, '[?&]tournament=([^&]+)'))[1]=r.tournament_key
-            )
+  const [recent, tournaments] = await Promise.all([
+    safe(() => sql`
+      SELECT r.*
+      FROM player_recent_results r
+      WHERE r.player_id=${id} AND r.tour=${tour}
+        AND (
+          ${tour} <> 'TE4_(F)'
+          OR EXISTS (
+            SELECT 1
+            FROM tournaments t
+            WHERE t.tour='TE4_(F)'
+              AND (
+                t.wtsl_tournament_key=r.tournament_key
+                OR (regexp_match(t.official_url, '[?&]tournament=([^&]+)'))[1]=r.tournament_key
+              )
+          )
         )
-      )
-    ORDER BY r.position ASC
-    LIMIT 10
-  `, [] as any[]);
+      ORDER BY r.position ASC
+      LIMIT 10
+    `, [] as any[]),
+    safe(() => getTournaments(tour), [] as any[]),
+  ]);
+  const tournamentNames = buildWtslTournamentNameLookup(tournaments);
   const verifiedOwner = await safe(() => getVerifiedOwner(id, tour), null as any);
   const viewer = await safe(() => getSession(), null);
   const forumContributions = verifiedOwner
@@ -161,7 +167,7 @@ export default async function PlayerDashboard({ params, searchParams }: Props) {
             <div className="panel-head"><h2 className="display">Recent results</h2></div>
             {recent.length === 0 ? <div className="empty">No recent results synced yet.</div> : recent.map((r: any) => (
               <div className="match-row" key={r.id}>
-                <div>{r.tournament_name}<br /><b>{r.score || '—'}</b><br />vs {r.opponent_name}</div>
+                <div>{lookupWtslTournamentName(r.tournament_key, tournamentNames) || lookupWtslTournamentName(r.tournament_name, tournamentNames) || r.tournament_name}<br /><b>{r.score || '—'}</b><br />vs {r.opponent_name}</div>
                 <span>{r.round_name}{r.played_at ? ` · ${new Date(r.played_at).toLocaleDateString()}` : ''}</span>
               </div>
             ))}
