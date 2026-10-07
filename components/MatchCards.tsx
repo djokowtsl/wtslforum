@@ -26,6 +26,7 @@ export function ResultCard({ m, tournamentNames }: { m: any; tournamentNames?: R
   const p2win = m.winner_id && String(m.winner_id) === String(m.player_two_id);
   // Prefer the canonical calendar label over feed text, which can include tour and event suffixes.
   const t = lookupWtslTournamentName(m.tournament_key, tournamentNames)
+    || lookupWtslTournamentName(m.tournament_name, tournamentNames)
     || m.tournament_name
     || prettyKey(m.tournament_key);
   return (

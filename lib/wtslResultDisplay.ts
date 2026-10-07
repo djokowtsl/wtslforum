@@ -27,7 +27,7 @@ export function buildWtslTournamentNameLookup(tournaments: unknown[]) {
     const name = text(row.name);
     if (!name) continue;
 
-    const references = [row.wtsl_tournament_key];
+    const references = [row.wtsl_tournament_key, row.name];
     try {
       const eventId = new URL(text(row.official_url)).searchParams.get('tournament');
       if (eventId) references.push(eventId);
@@ -47,7 +47,15 @@ export function lookupWtslTournamentName(
   names?: Record<string, string>,
 ) {
   const key = normalizeTournamentReference(tournamentKey);
-  return key ? names?.[key] : undefined;
+  if (!key) return undefined;
+  const direct = names?.[key];
+  if (direct) return direct;
+
+  // Core can omit the event ID and supply only its feed label, e.g.
+  // "Tennis Elbow 4 (ATP Characters) - Beijing 2026".
+  const feedLabel = key.match(/^tennis elbow 4 \([^)]*\)\s*-\s*(.+?)\s+\d{4}$/);
+  const canonicalName = normalizeTournamentReference(feedLabel?.[1]);
+  return canonicalName ? names?.[canonicalName] : undefined;
 }
 
 function normalizeName(value: unknown) {
