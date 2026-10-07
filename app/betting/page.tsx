@@ -6,11 +6,10 @@ import { wtslCore } from '@/lib/wtsl-core';
 import { getTournaments } from '@/lib/tournaments';
 import { getSession } from '@/lib/auth';
 import PageHero from '@/components/PageHero';
-import BettingAutoRefresh from '@/components/BettingAutoRefresh';
+import WtslDataAutoRefresh from '@/components/WtslDataAutoRefresh';
 import { timeAgo, fmtDateTime } from '@/lib/format';
 import {
   deduplicateBettingBoardFixtures,
-  sortOpenFixturesByTournamentRecency,
 } from '@/lib/fixture-order';
 
 export const dynamic = 'force-dynamic';
@@ -55,13 +54,13 @@ export default async function Betting() {
     },
     tournaments,
   );
-  const fixtures = sortOpenFixturesByTournamentRecency(bettingBoard.open, tournaments);
+  const fixtures = bettingBoard.open;
   const settled = bettingBoard.recent_settled;
   const betList = Array.isArray(bets) ? bets : [];
 
   return (
     <>
-      <BettingAutoRefresh />
+      <WtslDataAutoRefresh />
       <PageHero eyebrow="WTSL Forum" title="Virtual Betting">Follow live odds across the tour. Virtual bets are placed in Discord — use the button to jump straight there.</PageHero>
       <main className="container">
         {!wtslCore.configured() && <div className="notice warn" style={{ marginBottom: 22 }}>The WTSL Core API is not configured on this deployment, so odds and account data can&apos;t load right now.</div>}
