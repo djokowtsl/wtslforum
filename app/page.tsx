@@ -7,13 +7,14 @@ import { getTournaments } from '@/lib/tournaments';
 import { recentWtslSiteMatches } from '@/lib/stats';
 import { openFixtures } from '@/lib/betting';
 import { getSession } from '@/lib/auth';
-import { fmtDate, timeAgo } from '@/lib/format';
+import { fmtDate, matchDateLabel, timeAgo } from '@/lib/format';
 import { discordAvatar } from '@/lib/auth';
 import { FixtureCard, ResultCard } from '@/components/MatchCards';
 import ForumAvatar from '@/components/ForumAvatar';
 import LiveScores from '@/components/LiveScores';
 import WtslDataAutoRefresh from '@/components/WtslDataAutoRefresh';
 import { selectPublicOpenFixtures } from '@/lib/fixture-order';
+import { buildWtslTournamentNameLookup } from '@/lib/wtslResultDisplay';
 
 export const dynamic = 'force-dynamic';
 
@@ -44,7 +45,7 @@ export default async function Home({ searchParams }: { searchParams: Promise<{ e
   const lead = results[0];
   const top = topPlayers[0];
   const live = tournaments.filter((t: any) => t.status === 'ongoing').concat(tournaments.filter((t: any) => t.status === 'upcoming')).slice(0, 4);
-  const tournamentNames = Object.fromEntries(tournaments.map((t: any) => [t.wtsl_tournament_key, t.name]));
+  const tournamentNames = buildWtslTournamentNameLookup(tournaments);
   const fx = selectPublicOpenFixtures(
     Array.isArray(fixtures) ? fixtures : [],
     tournaments,
@@ -72,7 +73,7 @@ export default async function Home({ searchParams }: { searchParams: Promise<{ e
           <div className="hero-panel">
             <div className="panel-label">This week on the tour</div>
             {featured && <Link className="spot" href={'/tournaments/' + featured.wtsl_tournament_key}><small>{featured.status === 'ongoing' ? 'Ongoing now' : 'Up next'}</small><b>{featured.name}</b><span>{featured.location}{featured.country ? `, ${featured.country}` : ''} · {featured.surface}</span></Link>}
-            {lead && <Link className="spot" href="/matches"><small>Latest result</small><b>{lead.player_one_name} vs {lead.player_two_name}</b><span>{lead.score || '—'}{lead.played_at ? ` · ${timeAgo(lead.played_at)}` : ''}</span></Link>}
+            {lead && <Link className="spot" href="/matches"><small>Latest result</small><b>{lead.player_one_name} vs {lead.player_two_name}</b><span>{lead.score || '—'}{lead.played_at ? ` · ${matchDateLabel(lead.played_at)}` : ''}</span></Link>}
             {top && <Link className="spot" href="/players"><small>Tour Elo Leader</small><b>{top.name}</b><span>Tour Elo {top.tour_elo}{top.country ? ` · ${top.country}` : ''}</span></Link>}
             {topics[0] && <Link className="spot" href={'/discussions/' + topics[0].id}><small>Hot in the forum</small><b>{topics[0].title}</b><span>{topics[0].replies} {topics[0].replies === 1 ? 'reply' : 'replies'}{topics[0].category ? ` · ${topics[0].category}` : ''}</span></Link>}
             {!featured && !lead && !top && !topics[0] && ['Discussions|/discussions|Join the conversation', 'Matches|/matches|Results and fixtures', 'Tournaments|/tournaments|The WTSL calendar', 'Players|/players|Ratings and profiles'].map((x) => { const [a, h, d] = x.split('|'); return <Link className="spot" key={h} href={h}><small>Explore</small><b>{a}</b><span>{d}</span></Link>; })}

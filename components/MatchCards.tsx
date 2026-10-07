@@ -1,5 +1,6 @@
 import Link from 'next/link';
-import { prettyKey, timeAgo } from '@/lib/format';
+import { matchDateLabel, prettyKey } from '@/lib/format';
+import { lookupWtslTournamentName } from '@/lib/wtslResultDisplay';
 import PlayerAvatar from '@/components/PlayerAvatar';
 
 function Face({ src, flagSrc, flagLabel, name }: { src?: string | null; flagSrc?: string | null; flagLabel?: string | null; name?: string | null }) {
@@ -23,10 +24,10 @@ function PlayerLink({ id, tour, name }: { id?: string | number | null; tour?: st
 export function ResultCard({ m, tournamentNames }: { m: any; tournamentNames?: Record<string, string> }) {
   const p1win = m.winner_id && String(m.winner_id) === String(m.player_one_id);
   const p2win = m.winner_id && String(m.winner_id) === String(m.player_two_id);
-  // `tournament_name` is scraped and stored directly on the match row at sync time — preferred
-  // over the `tournamentNames` lookup (keyed by the `tournaments` table's generated slug, which
-  // doesn't match the raw tournament ID these recent-results rows carry) or the raw key itself.
-  const t = m.tournament_name || (m.tournament_key && tournamentNames?.[m.tournament_key]) || prettyKey(m.tournament_key);
+  // Prefer the canonical calendar label over feed text, which can include tour and event suffixes.
+  const t = lookupWtslTournamentName(m.tournament_key, tournamentNames)
+    || m.tournament_name
+    || prettyKey(m.tournament_key);
   return (
     <div className="match-card">
       <div className="match-top">
@@ -41,7 +42,7 @@ export function ResultCard({ m, tournamentNames }: { m: any; tournamentNames?: R
         <Face src={m.player_two_avatar} flagSrc={m.player_two_flag} flagLabel={m.player_two_country} name={m.player_two_name} />
         <span className={`nm ${p1win ? 'lost' : ''}`}><PlayerLink id={m.player_two_id} tour={m.tour} name={m.player_two_name} /></span>
       </div>
-      <div className="match-score">{m.score || '—'}{m.played_at ? ` · ${timeAgo(m.played_at)}` : ''}</div>
+      <div className="match-score">{m.score || '—'}{m.played_at ? ` · ${matchDateLabel(m.played_at)}` : ''}</div>
       <DiscussLink params={{ key: `match-${m.id}`, p1: m.player_one_name, p2: m.player_two_name, tournament: t, round: m.round_name, score: m.score, tour: m.tour }} />
     </div>
   );

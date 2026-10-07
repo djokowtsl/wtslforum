@@ -14,6 +14,42 @@ function text(value: unknown) {
   return value == null ? '' : String(value).trim();
 }
 
+function normalizeTournamentReference(value: unknown) {
+  return text(value).toLowerCase();
+}
+
+/** Index canonical tournament names by both the forum key and WTSL's event ID. */
+export function buildWtslTournamentNameLookup(tournaments: unknown[]) {
+  const entries: Array<[string, string]> = [];
+  for (const value of tournaments) {
+    if (!value || typeof value !== 'object') continue;
+    const row = value as MatchRow;
+    const name = text(row.name);
+    if (!name) continue;
+
+    const references = [row.wtsl_tournament_key];
+    try {
+      const eventId = new URL(text(row.official_url)).searchParams.get('tournament');
+      if (eventId) references.push(eventId);
+    } catch {
+      // A missing or malformed official URL does not prevent lookup by the forum key.
+    }
+    for (const reference of references) {
+      const key = normalizeTournamentReference(reference);
+      if (key) entries.push([key, name]);
+    }
+  }
+  return Object.fromEntries(entries);
+}
+
+export function lookupWtslTournamentName(
+  tournamentKey: unknown,
+  names?: Record<string, string>,
+) {
+  const key = normalizeTournamentReference(tournamentKey);
+  return key ? names?.[key] : undefined;
+}
+
 function normalizeName(value: unknown) {
   return text(value)
     .normalize('NFKD')
@@ -42,6 +78,18 @@ function normalizeDate(value: unknown) {
   }
   const parsed = Date.parse(raw);
   return Number.isFinite(parsed) ? new Date(parsed).toISOString().slice(0, 10) : '';
+}
+
+function normalizePlayedAt(value: unknown) {
+  if (value instanceof Date && Number.isFinite(value.getTime())) {
+    return value.toISOString();
+  }
+  const raw = text(value);
+  if (/^\d{4}-\d{2}-\d{2}[T ]\d{2}:\d{2}/.test(raw)) {
+    const timestamp = Date.parse(raw);
+    if (Number.isFinite(timestamp)) return new Date(timestamp).toISOString();
+  }
+  return normalizeDate(raw);
 }
 
 function normalizeTour(value: unknown) {
@@ -170,7 +218,9 @@ export function buildPublicWtslResults(
       priority: 0,
       time: Date.parse(normalizeDate(row.played_at)),
       order,
-      match: row,
+      // WTSL player-profile result tables publish a date, not a finish time. Store it as
+      // date-only so downstream display does not invent elapsed hours from midnight UTC.
+      match: { ...row, played_at: normalizeDate(row.played_at) },
     });
   });
 
@@ -183,17 +233,18 @@ export function buildPublicWtslResults(
     const firstName = row.p1 ?? row.player1;
     const secondName = row.p2 ?? row.player2;
     const score = row.result ?? row.score;
-    const playedAt = normalizeDate(row.date ?? row.played_at);
+    const playedAt = normalizePlayedAt(row.played_at ?? row.date);
+    const playedDate = normalizeDate(playedAt);
     const tournamentName = text(row.tournament ?? row.tournament_name);
     if (
       isPlaceholder(firstName)
       || isPlaceholder(secondName)
       || !completedResult(score)
-      || !playedAt
+      || !playedDate
       || !tournamentName
     ) return;
 
-    const identity = matchIdentity(tour, firstName, secondName, playedAt, score);
+    const identity = matchIdentity(tour, firstName, secondName, playedDate, score);
     if (!identity) return;
     const firstProfile = profiles.get(normalizeName(firstName));
     const secondProfile = profiles.get(normalizeName(secondName));

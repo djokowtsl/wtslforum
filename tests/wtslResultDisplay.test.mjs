@@ -1,6 +1,10 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
-import { buildPublicWtslResults } from '../lib/wtslResultDisplay.ts';
+import {
+  buildPublicWtslResults,
+  buildWtslTournamentNameLookup,
+  lookupWtslTournamentName,
+} from '../lib/wtslResultDisplay.ts';
 
 const officialSource = 'https://www.playwtsl.com/TE4/pages/all_results_fetch.php';
 
@@ -104,4 +108,42 @@ test('WTA core rows appear only on the WTA matches page', () => {
 
   assert.equal(buildPublicWtslResults(rows, [], 'TE4_(F)', 5).length, 1);
   assert.equal(buildPublicWtslResults(rows, [], 'TE4', 5).length, 0);
+});
+
+test('canonical tournament names resolve both forum keys and official event IDs', () => {
+  const names = buildWtslTournamentNameLookup([{
+    wtsl_tournament_key: 'te4-beijing-2026-te4',
+    name: 'Beijing',
+    official_url: 'https://www.playwtsl.com/TE4/pages/tournament.php?tournament=Beijing_2026_TE4',
+  }]);
+
+  assert.equal(lookupWtslTournamentName('te4-beijing-2026-te4', names), 'Beijing');
+  assert.equal(lookupWtslTournamentName('Beijing_2026_TE4', names), 'Beijing');
+  assert.equal(lookupWtslTournamentName('missing-event', names), undefined);
+});
+
+test('official result dates preserve exact times and keep profile-only dates date-only', () => {
+  const exactTime = '2026-10-06T18:42:00.000Z';
+  const coreResult = buildPublicWtslResults([{
+    source_url: officialSource,
+    tour: 'atp',
+    tournament: 'Beijing 2026 ATP Characters',
+    p1: 'Ace',
+    p2: 'Bex',
+    date: '06.10.2026',
+    played_at: exactTime,
+    result: '6-4 6-3',
+  }], [], 'TE4', 5);
+  const profileResult = buildPublicWtslResults([], [{
+    id: 42,
+    tour: 'TE4',
+    source_id: 'recent:official-profile-row',
+    player_one_name: 'Ace',
+    player_two_name: 'Bex',
+    score: '6-4 6-3',
+    played_at: '2026-10-06T00:00:00.000Z',
+  }], 'TE4', 5);
+
+  assert.equal(coreResult[0].played_at, exactTime);
+  assert.equal(profileResult[0].played_at, '2026-10-06');
 });

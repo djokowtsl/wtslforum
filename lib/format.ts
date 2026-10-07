@@ -14,6 +14,30 @@ export function timeAgo(input?: string | Date | null): string {
   return new Date(d).toLocaleDateString('en-GB', { day: 'numeric', month: 'short', year: 'numeric' });
 }
 
+/** Date-only WTSL results have calendar-day precision, not a midnight finish time. */
+export function matchDateLabel(input?: string | Date | null): string {
+  if (!input) return '';
+  const raw = input instanceof Date ? input.toISOString() : String(input).trim();
+  const dateOnly = raw.match(/^(\d{4})-(\d{2})-(\d{2})$/);
+  if (!dateOnly) return timeAgo(input);
+
+  const date = new Date(`${dateOnly[0]}T00:00:00.000Z`);
+  if (!Number.isFinite(date.getTime())) return '';
+  if (date.toISOString().slice(0, 10) !== raw) return '';
+
+  const now = new Date();
+  const today = Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), now.getUTCDate());
+  const daysAgo = Math.floor((today - date.getTime()) / 86_400_000);
+  if (daysAgo === 0) return 'Today';
+  if (daysAgo === 1) return 'Yesterday';
+  return date.toLocaleDateString('en-GB', {
+    day: 'numeric',
+    month: 'short',
+    year: 'numeric',
+    timeZone: 'UTC',
+  });
+}
+
 export const fmtDate = (input?: string | Date | null) =>
   input ? new Date(input).toLocaleDateString('en-GB', { day: 'numeric', month: 'short', year: 'numeric' }) : '—';
 
