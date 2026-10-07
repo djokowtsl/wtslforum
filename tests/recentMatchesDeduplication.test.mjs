@@ -25,3 +25,19 @@ test('official recent results suppress imported duplicates across one date bound
   assert.match(shadowingCte, /ABS\(official\.played_at::date - imported\.played_at::date\) = 1/);
   assert.match(recentMatchesQuery, /WHERE NOT EXISTS \([\s\S]*imported_matches_shadowed_by_official shadowed/);
 });
+
+test('the public WTSL results query excludes imported screenshot and TE4-post rows', () => {
+  assert.match(
+    recentMatchesQuery,
+    /source: 'all' \| 'wtsl' = 'all'/,
+  );
+  assert.match(
+    recentMatchesQuery,
+    /AND \(\$\{source !== 'wtsl'\} OR COALESCE\(m\.source_id, ''\) LIKE 'recent:%'\)/,
+  );
+  assert.match(
+    statsSource,
+    /recentWtslSiteMatches[\s\S]*?recentMatches\(fallbackLimit, tour, 'wtsl'\)/,
+  );
+  assert.match(statsSource, /cachedWtslCoreResults\(\)/);
+});

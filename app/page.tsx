@@ -4,7 +4,7 @@ import path from 'node:path';
 import { dbConfigured, safe, sql } from '@/lib/db';
 import { getTopics, getArticles, getCategoriesWithCounts } from '@/lib/queries';
 import { getTournaments } from '@/lib/tournaments';
-import { recentMatches } from '@/lib/stats';
+import { recentWtslSiteMatches } from '@/lib/stats';
 import { openFixtures } from '@/lib/betting';
 import { getSession } from '@/lib/auth';
 import { fmtDate, timeAgo } from '@/lib/format';
@@ -12,7 +12,8 @@ import { discordAvatar } from '@/lib/auth';
 import { FixtureCard, ResultCard } from '@/components/MatchCards';
 import ForumAvatar from '@/components/ForumAvatar';
 import LiveScores from '@/components/LiveScores';
-import { filterUnconfirmedFixtures } from '@/lib/fixture-order';
+import WtslDataAutoRefresh from '@/components/WtslDataAutoRefresh';
+import { selectPublicOpenFixtures } from '@/lib/fixture-order';
 
 export const dynamic = 'force-dynamic';
 
@@ -34,7 +35,7 @@ export default async function Home({ searchParams }: { searchParams: Promise<{ e
     safe(() => getCategoriesWithCounts(), [] as any[]),
     safe(() => getArticles(true, 3), [] as any[]),
     safe(() => getTournaments(), [] as any[]),
-    safe(() => recentMatches(3), [] as any[]),
+    safe(() => recentWtslSiteMatches(3), [] as any[]),
     safe(() => openFixtures(), [] as any[]),
     safe(() => sql`SELECT name,avatar_url,flag_url,country,tour_elo,official_url FROM wtsl_players WHERE tour_elo IS NOT NULL ORDER BY tour_elo DESC LIMIT 1`, [] as any[]),
   ]);
@@ -44,13 +45,15 @@ export default async function Home({ searchParams }: { searchParams: Promise<{ e
   const top = topPlayers[0];
   const live = tournaments.filter((t: any) => t.status === 'ongoing').concat(tournaments.filter((t: any) => t.status === 'upcoming')).slice(0, 4);
   const tournamentNames = Object.fromEntries(tournaments.map((t: any) => [t.wtsl_tournament_key, t.name]));
-  const fx = filterUnconfirmedFixtures(
+  const fx = selectPublicOpenFixtures(
     Array.isArray(fixtures) ? fixtures : [],
+    tournaments,
   ).slice(0, 3);
   const hasTour = results.length > 0 || fx.length > 0;
 
   return (
     <>
+      <WtslDataAutoRefresh />
       {error && <div className="banner"><div role="alert"><span>⚠️</span><span>{ERRORS[error] || 'Something went wrong. Please try again.'}</span></div></div>}
 
       <section className={`hero ${heroPhoto ? 'has-photo' : ''}`} style={heroPhoto ? { backgroundImage: 'linear-gradient(90deg,rgba(3,10,24,.96) 0%,rgba(3,10,24,.78) 55%,rgba(3,10,24,.5) 100%),url(/brand/hero.jpg)' } : undefined}>
