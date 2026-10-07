@@ -1,8 +1,10 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
 import {
+  cleanOpenFixtures,
   deduplicateBettingBoardFixtures,
   deduplicateRedundantRoundFixtures,
+  selectPublicOpenFixtures,
   sortOpenFixturesByTournamentRecency,
 } from '../lib/fixture-order.ts';
 
@@ -289,4 +291,27 @@ test('deduplicates redundant aliases in both betting board sections', () => {
 
   assert.deepEqual(board.open.map((item) => item.key), ['open-short', 'open-different-pair']);
   assert.deepEqual(board.recent_settled.map((item) => item.key), ['settled-short', 'settled-different-deadline']);
+});
+
+test('home, matches, and betting share only confirmed WTSL fixtures', () => {
+  const fixtures = [
+    { key: 'bad-placeholder', tour: 'TE4', tournament_id: 'Tokyo_2026_TE4', tournament: 'Tokyo (R32)', first_id: null, first_name: 'TBC', second_id: '4598', second_name: 'Sid' },
+    { key: 'official-pair', tour: 'TE4', tournament_id: 'Tokyo_2026_TE4', tournament: 'Tokyo (R32)', first_id: '20', first_name: 'Gifu', second_id: '4598', second_name: 'Sid' },
+  ];
+  const tournaments = [
+    { tour: 'TE4', name: 'Tokyo', status: 'ongoing', official_url: tournamentUrl('Tokyo_2026_TE4') },
+  ];
+
+  assert.deepEqual(
+    cleanOpenFixtures(fixtures, tournaments).map((fixture) => fixture.key),
+    ['official-pair'],
+  );
+  assert.deepEqual(
+    selectPublicOpenFixtures(fixtures, tournaments).map((fixture) => fixture.key),
+    ['official-pair'],
+  );
+  assert.deepEqual(
+    deduplicateBettingBoardFixtures({ open: fixtures }, tournaments).open.map((fixture) => fixture.key),
+    ['official-pair'],
+  );
 });
