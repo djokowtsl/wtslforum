@@ -1,18 +1,15 @@
 import Link from 'next/link';
 import type { Metadata } from 'next';
 import { safe } from '@/lib/db';
-import { recentMatches } from '@/lib/stats';
+import { recentWtslSiteMatches } from '@/lib/stats';
 import { openFixtures } from '@/lib/betting';
 import { getTournaments } from '@/lib/tournaments';
 import { FixtureCard, ResultCard } from '@/components/MatchCards';
 import PageHero from '@/components/PageHero';
 import TourTabs from '@/components/TourTabs';
+import WtslDataAutoRefresh from '@/components/WtslDataAutoRefresh';
 import { DEFAULT_TOUR, isTourCode, type TourCode } from '@/lib/wtsl';
-import {
-  deduplicateRedundantRoundFixtures,
-  filterUnconfirmedFixtures,
-  sortOpenFixturesByTournamentRecency,
-} from '@/lib/fixture-order';
+import { selectPublicOpenFixtures } from '@/lib/fixture-order';
 
 export const dynamic = 'force-dynamic';
 export const metadata: Metadata = { title: 'Matches' };
@@ -26,7 +23,7 @@ export default async function Matches({ searchParams }: { searchParams: Promise<
   const { tour: tourParam } = await searchParams;
   const tour: TourCode = isTourCode(tourParam) && tourParam !== 'TE4_Coop' ? tourParam : DEFAULT_TOUR;
   const [results, fixtures, tournaments] = await Promise.all([
-    safe(() => recentMatches(30, tour), [] as any[]),
+    safe(() => recentWtslSiteMatches(30, tour), [] as any[]),
     safe(() => openFixtures(), [] as any[]),
     safe(() => getTournaments(tour), [] as any[]),
   ]);
@@ -34,20 +31,16 @@ export default async function Matches({ searchParams }: { searchParams: Promise<
   const supportsBetting = BETTING_TOURS.includes(tour);
   // Fixtures come back tagged with the same raw tour codes used everywhere else on the
   // forum ("TE4", "TE4_(F)") — not "atp"/"wta" — so compare directly against the selected tour.
-  const fx = sortOpenFixturesByTournamentRecency(
-    deduplicateRedundantRoundFixtures(
-      filterUnconfirmedFixtures(
-        Array.isArray(fixtures)
-          ? fixtures.filter((f: any) => String(f.tour) === tour)
-          : [],
-      ),
-      tournaments,
-    ),
+  const fx = selectPublicOpenFixtures(
+    Array.isArray(fixtures)
+      ? fixtures.filter((f: any) => String(f.tour) === tour)
+      : [],
     tournaments,
   );
 
   return (
     <>
+      <WtslDataAutoRefresh />
       <PageHero eyebrow="WTSL Tour" title="Matches">Results and upcoming fixtures. Want to talk about one? Take it to the <Link href="/discussions?c=match-talk" style={{ color: 'var(--lime)' }}>Match Talk</Link> board.</PageHero>
       <main className="container">
         <TourTabs basePath="/matches" current={tour} exclude={['TE4_Coop']} />
