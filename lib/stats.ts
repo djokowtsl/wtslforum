@@ -171,6 +171,36 @@ export async function searchPlayers(tour: string, query: string, limit = 8) {
 // Open fixture status comes from the WTSL betting ledger, not match_stats.
 export async function recentMatches(limit=20, tour='TE4'){
   return sql`
+    WITH match_rows AS (
+      SELECT m.*, score.score_signature
+      FROM match_stats m
+      LEFT JOIN LATERAL (
+        SELECT string_agg(
+          CASE
+            WHEN m.player_one_id::text <= m.player_two_id::text
+              THEN set_score[1] || '-' || set_score[2]
+            ELSE set_score[2] || '-' || set_score[1]
+          END,
+          ' ' ORDER BY set_number
+        ) AS score_signature
+        FROM regexp_matches(
+          regexp_replace(COALESCE(m.score, ''), '\\([0-9]+\\)', '', 'g'),
+          '([0-9]+)\\s*[-–]\\s*([0-9]+)',
+          'g'
+        ) WITH ORDINALITY AS parsed(set_score, set_number)
+      ) score ON TRUE
+      WHERE m.tour=${tour} AND m.played_at IS NOT NULL
+        AND (
+          m.tour <> 'TE4_(F)' OR EXISTS (
+            SELECT 1 FROM tournaments t
+            WHERE t.tour='TE4_(F)'
+              AND (
+                t.wtsl_tournament_key=m.tournament_key
+                OR (regexp_match(t.official_url, '[?&]tournament=([^&]+)'))[1]=m.tournament_key
+              )
+          )
+        )
+    )
     SELECT m.*,
       p1.name player_one_name,
       p1.avatar_url player_one_avatar,
@@ -180,36 +210,30 @@ export async function recentMatches(limit=20, tour='TE4'){
       p2.avatar_url player_two_avatar,
       p2.flag_url player_two_flag,
       p2.country player_two_country
-    FROM match_stats m
+    FROM match_rows m
     LEFT JOIN wtsl_players p1 ON p1.wtsl_player_id=m.player_one_id AND p1.tour=m.tour
     LEFT JOIN wtsl_players p2 ON p2.wtsl_player_id=m.player_two_id AND p2.tour=m.tour
-    WHERE m.tour=${tour} AND m.played_at IS NOT NULL
-      AND (
-        m.tour <> 'TE4_(F)' OR EXISTS (
-          SELECT 1 FROM tournaments t
-          WHERE t.tour='TE4_(F)'
-            AND (
-              t.wtsl_tournament_key=m.tournament_key
-              OR (regexp_match(t.official_url, '[?&]tournament=([^&]+)'))[1]=m.tournament_key
+    WHERE COALESCE(m.source_id, '') NOT LIKE 'import:%'
+      OR NOT EXISTS (
+        SELECT 1
+        FROM match_rows duplicate
+        WHERE duplicate.source_id <> m.source_id
+          AND duplicate.tour=m.tour
+          AND LEAST(duplicate.player_one_id::text, duplicate.player_two_id::text)
+              = LEAST(m.player_one_id::text, m.player_two_id::text)
+          AND GREATEST(duplicate.player_one_id::text, duplicate.player_two_id::text)
+              = GREATEST(m.player_one_id::text, m.player_two_id::text)
+          AND duplicate.winner_id=m.winner_id
+          AND duplicate.played_at::date = m.played_at::date
+          AND duplicate.score_signature IS NOT NULL
+          AND duplicate.score_signature=m.score_signature
+          AND (
+            COALESCE(duplicate.source_id, '') LIKE 'recent:%'
+            OR (
+              COALESCE(duplicate.source_id, '') LIKE 'import:%'
+              AND duplicate.source_id < m.source_id
             )
-        )
-      )
-      AND (
-        m.source_id NOT LIKE 'import:%'
-        OR NOT EXISTS (
-          SELECT 1
-          FROM match_stats official
-          WHERE official.tour=m.tour
-            AND official.source_id LIKE 'recent:%'
-            AND official.played_at IS NOT NULL
-            AND LEAST(official.player_one_id, official.player_two_id)
-                = LEAST(m.player_one_id, m.player_two_id)
-            AND GREATEST(official.player_one_id, official.player_two_id)
-                = GREATEST(m.player_one_id, m.player_two_id)
-            AND official.played_at::date = m.played_at::date
-            AND regexp_replace(COALESCE(official.score, ''), '[^0-9]', '', 'g')
-                = regexp_replace(COALESCE(m.score, ''), '[^0-9]', '', 'g')
-        )
+          )
       )
     ORDER BY m.played_at DESC
     LIMIT ${limit}
