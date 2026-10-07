@@ -10,6 +10,7 @@ import TourTabs from '@/components/TourTabs';
 import WtslDataAutoRefresh from '@/components/WtslDataAutoRefresh';
 import { DEFAULT_TOUR, isTourCode, type TourCode } from '@/lib/wtsl';
 import { selectPublicOpenFixtures } from '@/lib/fixture-order';
+import { buildWtslTournamentNameLookup } from '@/lib/wtslResultDisplay';
 
 export const dynamic = 'force-dynamic';
 export const metadata: Metadata = { title: 'Matches' };
@@ -27,7 +28,7 @@ export default async function Matches({ searchParams }: { searchParams: Promise<
     safe(() => openFixtures(), [] as any[]),
     safe(() => getTournaments(tour), [] as any[]),
   ]);
-  const names = Object.fromEntries(tournaments.map((t: any) => [t.wtsl_tournament_key, t.name]));
+  const names = buildWtslTournamentNameLookup(tournaments);
   const supportsBetting = BETTING_TOURS.includes(tour);
   // Fixtures come back tagged with the same raw tour codes used everywhere else on the
   // forum ("TE4", "TE4_(F)") — not "atp"/"wta" — so compare directly against the selected tour.

@@ -6,6 +6,7 @@ import { ensureTournamentDiscussion } from '@/lib/tournamentDiscussions';
 import { recentMatches } from '@/lib/stats';
 import { ResultCard } from '@/components/MatchCards';
 import PlayerAvatar from '@/components/PlayerAvatar';
+import { buildWtslTournamentNameLookup, lookupWtslTournamentName } from '@/lib/wtslResultDisplay';
 
 export const dynamic = 'force-dynamic';
 
@@ -19,7 +20,10 @@ export default async function TournamentPage({ params }: { params: Promise<{ slu
     discussionTopicId ? safe(async () => (await sql`SELECT id FROM topics WHERE id=${discussionTopicId} AND moderation_status='approved'`)[0], null as any) : null,
     safe(() => recentMatches(200), [] as any[]),
   ]);
-  const mine = matches.filter((m: any) => m.tournament_key === t.wtsl_tournament_key).slice(0, 12);
+  const tournamentNames = buildWtslTournamentNameLookup([t]);
+  const mine = matches
+    .filter((m: any) => lookupWtslTournamentName(m.tournament_key, tournamentNames) === t.name)
+    .slice(0, 12);
 
   return (
     <main className="page-shell">
@@ -43,7 +47,7 @@ export default async function TournamentPage({ params }: { params: Promise<{ slu
       {mine.length > 0 && (
         <section className="section-block">
           <div className="section-heading"><h2>Results</h2><span>{mine.length}</span></div>
-          <div className="live-grid">{mine.map((m: any) => <ResultCard key={m.id} m={m} tournamentNames={{ [t.wtsl_tournament_key]: t.name }} />)}</div>
+          <div className="live-grid">{mine.map((m: any) => <ResultCard key={m.id} m={m} tournamentNames={tournamentNames} />)}</div>
         </section>
       )}
     </main>
