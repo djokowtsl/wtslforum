@@ -209,6 +209,24 @@ export async function recentMatches(limit=20, tour='TE4'){
               )
           )
         )
+    ), imported_matches_shadowed_by_official AS (
+      SELECT imported.id
+      FROM match_rows imported
+      WHERE COALESCE(imported.source_id, '') LIKE 'import:%'
+        AND imported.unordered_score_signature IS NOT NULL
+        AND EXISTS (
+          SELECT 1
+          FROM match_rows official
+          WHERE COALESCE(official.source_id, '') LIKE 'recent:%'
+            AND official.tour=imported.tour
+            AND LEAST(official.player_one_id::text, official.player_two_id::text)
+              = LEAST(imported.player_one_id::text, imported.player_two_id::text)
+            AND GREATEST(official.player_one_id::text, official.player_two_id::text)
+              = GREATEST(imported.player_one_id::text, imported.player_two_id::text)
+            AND official.unordered_score_signature=imported.unordered_score_signature
+            AND official.played_at::date <> imported.played_at::date
+            AND ABS(official.played_at::date - imported.played_at::date) = 1
+        )
     ), ranked_match_rows AS (
       SELECT
         m.*,
@@ -230,6 +248,11 @@ export async function recentMatches(limit=20, tour='TE4'){
             m.id ASC
         ) AS duplicate_rank
       FROM match_rows m
+      WHERE NOT EXISTS (
+        SELECT 1
+        FROM imported_matches_shadowed_by_official shadowed
+        WHERE shadowed.id=m.id
+      )
     )
     SELECT m.*,
       p1.name player_one_name,
