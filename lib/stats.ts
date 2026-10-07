@@ -1,9 +1,45 @@
 import {sql} from './db';
+import { wtslCore } from './wtsl-core';
+import { buildPublicWtslResults } from './wtslResultDisplay';
 
 // Small-sample stats (e.g. a 3-0 player at #1 by win %) are misleading on a ranked leaderboard,
 // so anyone under this many recorded matches is excluded entirely rather than just ranked low.
 // Exported so the page can display the same number in its "why isn't X here" note.
 export const LEADERBOARD_MIN_MATCHES = 20;
+
+const CORE_RESULTS_CACHE_MS = 60_000;
+let coreResultsCache: { at: number; rows: unknown[] } | null = null;
+let coreResultsRequest: Promise<unknown[]> | null = null;
+
+async function cachedWtslCoreResults() {
+  const now = Date.now();
+  if (coreResultsCache && now - coreResultsCache.at < CORE_RESULTS_CACHE_MS) {
+    return coreResultsCache.rows;
+  }
+  if (coreResultsRequest) return coreResultsRequest;
+
+  const request = wtslCore.results()
+    .then((rows) => {
+      if (!Array.isArray(rows)) throw new Error('WTSL Core returned an invalid results payload');
+      coreResultsCache = { at: Date.now(), rows };
+      return rows;
+    })
+    .catch((error) => {
+      console.warn(
+        '[matches] WTSL Core results unavailable; keeping official profile rows',
+        error instanceof Error ? error.message : 'Unknown error',
+      );
+      const rows = coreResultsCache?.rows ?? [];
+      coreResultsCache = { at: Date.now(), rows };
+      return rows;
+    })
+    .finally(() => {
+      if (coreResultsRequest === request) coreResultsRequest = null;
+    });
+
+  coreResultsRequest = request;
+  return request;
+}
 
 export async function leaderboard(tour='TE4', metric='wins'){
   const order = ['wins','win_pct','aces','winners','break_points','first_serve_pct','elo'].includes(metric)
@@ -169,7 +205,11 @@ export async function searchPlayers(tour: string, query: string, limit = 8) {
 }
 
 // Open fixture status comes from the WTSL betting ledger, not match_stats.
-export async function recentMatches(limit=20, tour='TE4'){
+export async function recentMatches(
+  limit=20,
+  tour='TE4',
+  source: 'all' | 'wtsl' = 'all',
+){
   return sql`
     WITH match_rows AS (
       SELECT
@@ -199,6 +239,7 @@ export async function recentMatches(limit=20, tour='TE4'){
         ) WITH ORDINALITY AS parsed(set_score, set_number)
       ) score ON TRUE
       WHERE m.tour=${tour} AND m.played_at IS NOT NULL
+        AND (${source !== 'wtsl'} OR COALESCE(m.source_id, '') LIKE 'recent:%')
         AND (
           m.tour <> 'TE4_(F)' OR EXISTS (
             SELECT 1 FROM tournaments t
@@ -270,5 +311,21 @@ export async function recentMatches(limit=20, tour='TE4'){
     ORDER BY m.played_at DESC
     LIMIT ${limit}
   `;
+}
+
+/** Public match boards use WTSL Core results, with official profile rows as fallback. */
+export async function recentWtslSiteMatches(limit=20, tour='TE4'){
+  const fallbackLimit = Math.min(Math.max(Math.floor(limit) * 2, 20), 200);
+  let profileRows: any[] = [];
+  try {
+    profileRows = await recentMatches(fallbackLimit, tour, 'wtsl');
+  } catch (error) {
+    console.warn(
+      '[matches] Official WTSL profile results unavailable',
+      error instanceof Error ? error.message : 'Unknown error',
+    );
+  }
+  const coreRows = await cachedWtslCoreResults();
+  return buildPublicWtslResults(coreRows, profileRows, tour, limit);
 }
 
