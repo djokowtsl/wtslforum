@@ -3,6 +3,12 @@ import { parseSets, computeClutchStats, normalizeMatchScore } from './playerStat
 import { normalizePlayerName } from './queries';
 import { type TourCode } from './wtsl';
 import { officialWtaEventByName, officialWtaScheduleForYear } from './wtaSchedule';
+import {
+  buildImportedMatchSourceId,
+  isPlaceholderPlayerName,
+  orientScoreForPlayerOrder,
+  scoreSignatureForPlayerOrder,
+} from './matchIdentity';
 
 export type MatchHistoryRow = {
   player1: string;
@@ -67,6 +73,7 @@ export async function importMatchHistory(tour: TourCode, rows: MatchHistoryRow[]
 
   let inserted = 0;
   let skippedNoScore = 0;
+  let skippedPlaceholderMatches = 0;
   let skippedUnmatched = 0;
   let skippedUnverifiedTournament = 0;
   const unmatched = new Set<string>();
@@ -77,6 +84,11 @@ export async function importMatchHistory(tour: TourCode, rows: MatchHistoryRow[]
   const wtaSchedules = new Map<number, Promise<Awaited<ReturnType<typeof officialWtaScheduleForYear>>>>();
 
   for (const r of rows) {
+    if (isPlaceholderPlayerName(r.player1) || isPlaceholderPlayerName(r.player2)) {
+      skippedPlaceholderMatches++;
+      continue;
+    }
+
     const score = normalizeMatchScore(r.score);
     const sets = parseSets(score);
     if (!sets) {
@@ -136,16 +148,34 @@ export async function importMatchHistory(tour: TourCode, rows: MatchHistoryRow[]
     const setsWon = sets.filter(([a, b]) => a > b).length;
     const winnerId = setsWon * 2 > sets.length ? p1 : p2;
     const pair = [p1, p2].sort();
-    const sourceId = `import:${tour}:${r.tournamentName ?? 'x'}:${r.round ?? 'x'}:${pair[0]}-${pair[1]}:${playedAt ?? ''}:${score}`;
+    const reverseScore = p1 !== pair[0];
+    const sourceId = buildImportedMatchSourceId({
+      tour,
+      tournamentKey,
+      tournamentName,
+      round: r.round ?? null,
+      playedAt,
+      playerOneId: pair[0],
+      playerTwoId: pair[1],
+      winnerId,
+      scoreSignature: scoreSignatureForPlayerOrder(sets, reverseScore),
+    });
+    const canonicalScore = orientScoreForPlayerOrder(score, reverseScore);
     const stats = cleanStats(r.stats);
+    const sideStats = JSON.stringify({
+      [reverseScore ? 'player2' : 'player1']: stats,
+    });
 
     try {
       const result = await sql`
         INSERT INTO match_stats(source_id,tour,tournament_key,tournament_name,round_name,player_one_id,player_two_id,score,winner_id,played_at,stats)
-        VALUES(${sourceId},${tour},${tournamentKey},${tournamentName || null},${r.round ?? null},${p1},${p2},${score},${winnerId},${playedAt},${JSON.stringify({ player1: stats })}::jsonb)
+        VALUES(${sourceId},${tour},${tournamentKey},${tournamentName || null},${r.round ?? null},${pair[0]},${pair[1]},${canonicalScore},${winnerId},${playedAt},${sideStats}::jsonb)
         ON CONFLICT(source_id) DO UPDATE SET
           tournament_key=COALESCE(EXCLUDED.tournament_key,match_stats.tournament_key),
           tournament_name=COALESCE(match_stats.tournament_name, EXCLUDED.tournament_name),
+          round_name=COALESCE(match_stats.round_name, EXCLUDED.round_name),
+          score=EXCLUDED.score,
+          winner_id=EXCLUDED.winner_id,
           stats=match_stats.stats || EXCLUDED.stats
         RETURNING (xmax = 0) AS inserted
       `;
@@ -167,6 +197,7 @@ export async function importMatchHistory(tour: TourCode, rows: MatchHistoryRow[]
     seen: rows.length,
     inserted,
     skippedNoScore,
+    skippedPlaceholderMatches,
     skippedUnmatched,
     skippedUnverifiedTournament,
     unverifiedTournaments: Array.from(unverifiedTournaments),
