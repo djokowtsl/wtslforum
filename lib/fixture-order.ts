@@ -238,17 +238,37 @@ export function deduplicateBettingBoardFixtures<T extends FixtureRef>(
   tournaments: TournamentRecord[],
 ) {
   return {
-    open: deduplicateRedundantRoundFixtures(
-      filterUnconfirmedFixtures(Array.isArray(board.open) ? board.open : []),
+    open: selectPublicOpenFixtures(
+      Array.isArray(board.open) ? board.open : [],
       tournaments,
     ),
-    recent_settled: deduplicateRedundantRoundFixtures(
-      filterUnconfirmedFixtures(
-        Array.isArray(board.recent_settled) ? board.recent_settled : [],
-      ),
+    recent_settled: cleanOpenFixtures(
+      Array.isArray(board.recent_settled) ? board.recent_settled : [],
       tournaments,
     ),
   };
+}
+
+/** The same confirmed, de-duplicated open fixtures for Home, Matches, and Betting. */
+export function cleanOpenFixtures<T extends FixtureRef>(
+  fixtures: T[],
+  tournaments: TournamentRecord[],
+): T[] {
+  return deduplicateRedundantRoundFixtures(
+    filterUnconfirmedFixtures(fixtures),
+    tournaments,
+  );
+}
+
+/** Canonical public ordering for the open fixture list on every page. */
+export function selectPublicOpenFixtures<T extends FixtureRef>(
+  fixtures: T[],
+  tournaments: TournamentRecord[],
+): T[] {
+  return sortOpenFixturesByTournamentRecency(
+    cleanOpenFixtures(fixtures, tournaments),
+    tournaments,
+  );
 }
 
 function statusRank(value: unknown) {
