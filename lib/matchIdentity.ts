@@ -32,6 +32,17 @@ export function scoreSignatureForPlayerOrder(
     .join(' ');
 }
 
+/** Keeps set game counts while discarding which player occupied either score side. */
+export function unorderedScoreSignature(sets: ParsedSetScore[]) {
+  return sets
+    .map(([first, second]) => [
+      Math.min(first, second),
+      Math.max(first, second),
+    ])
+    .map(([lower, higher]) => `${lower}-${higher}`)
+    .join(' ');
+}
+
 /** Reorients a display score while retaining any tiebreak points in parentheses. */
 export function orientScoreForPlayerOrder(score: string, reverse: boolean) {
   const normalized = score
