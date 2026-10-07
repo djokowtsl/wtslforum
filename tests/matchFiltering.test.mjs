@@ -5,6 +5,7 @@ import {
   isPlaceholderPlayerName,
   orientScoreForPlayerOrder,
   scoreSignatureForPlayerOrder,
+  unorderedScoreSignature,
 } from '../lib/matchIdentity.ts';
 import {
   deduplicateBettingBoardFixtures,
@@ -40,6 +41,21 @@ test('stable import identity collapses mirrored rows and tournament aliases', ()
   assert.equal(firstScore, '6-7 3-6');
   assert.equal(mirroredScore, firstScore);
   assert.equal(first, mirrored);
+});
+
+test('unordered score signature matches reversed-side duplicate result rows', () => {
+  const firstSide = [[6, 7], [3, 6]];
+  const secondSide = [[7, 6], [6, 3]];
+
+  assert.notEqual(
+    scoreSignatureForPlayerOrder(firstSide, false),
+    scoreSignatureForPlayerOrder(firstSide, true),
+  );
+  assert.equal(unorderedScoreSignature(firstSide), '6-7 3-6');
+  assert.equal(
+    unorderedScoreSignature(secondSide),
+    unorderedScoreSignature(firstSide),
+  );
 });
 
 test('import identity keeps distinct events and match results separate', () => {
