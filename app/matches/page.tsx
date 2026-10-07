@@ -10,6 +10,7 @@ import TourTabs from '@/components/TourTabs';
 import { DEFAULT_TOUR, isTourCode, type TourCode } from '@/lib/wtsl';
 import {
   deduplicateRedundantRoundFixtures,
+  filterUnconfirmedFixtures,
   sortOpenFixturesByTournamentRecency,
 } from '@/lib/fixture-order';
 
@@ -35,9 +36,11 @@ export default async function Matches({ searchParams }: { searchParams: Promise<
   // forum ("TE4", "TE4_(F)") — not "atp"/"wta" — so compare directly against the selected tour.
   const fx = sortOpenFixturesByTournamentRecency(
     deduplicateRedundantRoundFixtures(
-      Array.isArray(fixtures)
-        ? fixtures.filter((f: any) => String(f.tour) === tour)
-        : [],
+      filterUnconfirmedFixtures(
+        Array.isArray(fixtures)
+          ? fixtures.filter((f: any) => String(f.tour) === tour)
+          : [],
+      ),
       tournaments,
     ),
     tournaments,
