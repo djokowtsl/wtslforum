@@ -25,3 +25,12 @@ test('board and season views propagate availability rather than manufacturing em
   assert.match(dashboard, /: coreSeasonResults\.unavailable/);
   assert.match(season, /Official season match results are unavailable/);
 });
+
+test('Matches streams fixture verification and recent results independently', async () => {
+  const matches = await readFile(new URL('../app/matches/page.tsx', import.meta.url), 'utf8');
+  assert.match(matches, /<Suspense fallback={<MatchesDataLoading label="Checking live fixtures"/);
+  assert.match(matches, /<OpenFixturesSection tour={tour} \/>/);
+  assert.match(matches, /<Suspense fallback={<MatchesDataLoading label="Loading recent results"/);
+  assert.match(matches, /<RecentResultsSection tour={tour} \/>/);
+  assert.doesNotMatch(matches, /const \[results, fixturesState, tournaments\] = await Promise\.all/);
+});
