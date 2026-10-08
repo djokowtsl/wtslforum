@@ -1,3 +1,7 @@
+'use client';
+
+import { useState } from 'react';
+
 type Props = {
   src?: string | null;
   flagSrc?: string | null;
@@ -17,7 +21,8 @@ export default function PlayerAvatar({
 }: Props) {
   const flagWidth = Math.max(12, Math.round(size * 0.38));
   const flagHeight = Math.max(9, Math.round(flagWidth * 0.66));
-  const initial = name?.trim().charAt(0).toUpperCase() || '?';
+  const [failedSrc, setFailedSrc] = useState<string | null>(null);
+  const avatarSrc = src && src !== failedSrc ? src : null;
   return (
     <span
       className={`player-avatar ${className}`.trim()}
@@ -25,9 +30,9 @@ export default function PlayerAvatar({
       aria-hidden={!flagSrc ? true : undefined}
       title={flagLabel || undefined}
     >
-      {src
-        ? <img className="player-avatar-image" src={src} alt="" loading="lazy" />
-        : <span className="player-avatar-placeholder" style={{ fontSize: Math.max(12, Math.round(size * 0.42)) }}>{initial}</span>}
+      {avatarSrc
+        ? <img className="player-avatar-image" src={avatarSrc} alt="" loading="lazy" onError={() => setFailedSrc(avatarSrc)} />
+        : <img className="player-avatar-image player-avatar-fallback-image" src="/brand/wtsl-logo-200.png" alt="" loading="lazy" />}
       {flagSrc && (
         <img
           className="player-avatar-flag"
