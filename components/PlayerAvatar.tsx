@@ -1,6 +1,7 @@
 'use client';
 
 import { useState } from 'react';
+import { resolvePlayerAvatar } from '@/lib/playerAvatar';
 
 type Props = {
   src?: string | null;
@@ -15,14 +16,13 @@ export default function PlayerAvatar({
   src,
   flagSrc,
   flagLabel,
-  name,
   size = 34,
   className = '',
 }: Props) {
   const flagWidth = Math.max(12, Math.round(size * 0.38));
   const flagHeight = Math.max(9, Math.round(flagWidth * 0.66));
   const [failedSrc, setFailedSrc] = useState<string | null>(null);
-  const avatarSrc = src && src !== failedSrc ? src : null;
+  const avatar = resolvePlayerAvatar(src, failedSrc);
   return (
     <span
       className={`player-avatar ${className}`.trim()}
@@ -30,9 +30,13 @@ export default function PlayerAvatar({
       aria-hidden={!flagSrc ? true : undefined}
       title={flagLabel || undefined}
     >
-      {avatarSrc
-        ? <img className="player-avatar-image" src={avatarSrc} alt="" loading="lazy" onError={() => setFailedSrc(avatarSrc)} />
-        : <img className="player-avatar-image player-avatar-fallback-image" src="/brand/wtsl-logo-200.png" alt="" loading="lazy" />}
+      <img
+        className={`player-avatar-image${avatar.isFallback ? ' player-avatar-fallback-image' : ''}`}
+        src={avatar.src}
+        alt=""
+        loading="lazy"
+        onError={avatar.isFallback ? undefined : () => setFailedSrc(avatar.src)}
+      />
       {flagSrc && (
         <img
           className="player-avatar-flag"
