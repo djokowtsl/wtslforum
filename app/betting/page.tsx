@@ -105,7 +105,7 @@ export default async function Betting() {
         <div className="section-head section-space">
           <div>
             <h2 className="display">Recently settled</h2>
-            <p>Results the bot has closed out, with the winner and final odds. Note the bot doesn&apos;t always close out every finished match promptly, so this list can lag behind what&apos;s actually been played.</p>
+            <p>Markets the bot has resolved. If a pairing disappears from its official draw, the market is voided and affected bets are refunded.</p>
           </div>
         </div>
         {settled.length === 0 ? <div className="forum-list"><div className="empty"><strong>No settled fixtures yet</strong>Settled results appear here once the bot closes a market out.</div></div> : (
@@ -113,9 +113,10 @@ export default async function Betting() {
             {settled.map((f: any) => {
               const winnerIsFirst = f.winner_id != null && String(f.winner_id) === String(f.first_id);
               const winnerIsSecond = f.winner_id != null && String(f.winner_id) === String(f.second_id);
+              const refunded = f.winner_id == null;
               return (
                 <article className="fixture-card" key={f.key}>
-                  <div className="fixture-top"><span>{f.tournament || 'WTSL'} · {(f.tour || 'TE4').toUpperCase()}</span><b>SETTLED</b></div>
+                  <div className="fixture-top"><span>{f.tournament || 'WTSL'} · {(f.tour || 'TE4').toUpperCase()}</span><b>{refunded ? 'VOID / REFUNDED' : 'SETTLED'}</b></div>
                   <h2 className="fixture-matchup">
                     <span className={winnerIsFirst ? 'winner' : ''}>
                       {f.first_id && f.tour ? <Link href={`/players/${f.first_id}?tour=${encodeURIComponent(f.tour)}`}>{f.first_name}</Link> : f.first_name}
@@ -130,11 +131,11 @@ export default async function Betting() {
                   <div className="topic-meta">
                     {f.result_note ? `${f.result_note} · ` : ''}{f.settled_at ? `Settled ${timeAgo(f.settled_at)}` : ''}
                   </div>
-                  <div className="odds-compare">
+                  {!refunded && <div className="odds-compare">
                     <div className="odds-head"><span /><span>WTSL odds</span></div>
                     <div className="odds-side"><b>{f.first_name}</b><span>{(Number(f.odds_one) || 0).toFixed(2)}</span></div>
                     <div className="odds-side"><b>{f.second_name}</b><span>{(Number(f.odds_two) || 0).toFixed(2)}</span></div>
-                  </div>
+                  </div>}
                 </article>
               );
             })}
