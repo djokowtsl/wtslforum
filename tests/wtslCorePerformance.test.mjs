@@ -4,7 +4,7 @@ import test from 'node:test';
 process.env.WTSL_CORE_API_URL = 'https://core.example.test';
 process.env.WTSL_CORE_API_KEY = 'test-only-key';
 
-const { wtslCore, WTSL_CORE_PUBLIC_TIMEOUT_MS } = await import('../lib/wtsl-core.ts');
+const { wtslCore, WTSL_CORE_PUBLIC_TIMEOUT_MS, WTSL_CORE_FIXTURES_TIMEOUT_MS } = await import('../lib/wtsl-core.ts');
 
 test('public results and fixture reads are bounded and remain uncached at the fetch layer', async (t) => {
   const originalFetch = globalThis.fetch;
@@ -23,7 +23,8 @@ test('public results and fixture reads are bounded and remain uncached at the fe
     globalThis.fetch = originalFetch;
   });
 
-  assert.equal(WTSL_CORE_PUBLIC_TIMEOUT_MS, 3_000);
+  assert.equal(WTSL_CORE_PUBLIC_TIMEOUT_MS, 20_000);
+  assert.equal(WTSL_CORE_FIXTURES_TIMEOUT_MS, 120_000);
   assert.deepEqual(await wtslCore.results(), []);
   assert.deepEqual(await wtslCore.fixtures(), []);
   assert.deepEqual(await wtslCore.fixturesBoard(), { open: [], recent_settled: [] });
@@ -37,6 +38,28 @@ test('public results and fixture reads are bounded and remain uncached at the fe
     assert.equal(request.init.cache, 'no-store');
     assert.ok(request.init.signal instanceof AbortSignal);
   }
+});
+
+test('valid live feeds that exceed the former three-second budget are not discarded', async (t) => {
+  const originalFetch = globalThis.fetch;
+  globalThis.fetch = async (url, init) => {
+    await new Promise((resolve, reject) => {
+      const timer = setTimeout(resolve, 3_100);
+      init.signal.addEventListener('abort', () => {
+        clearTimeout(timer);
+        reject(init.signal.reason);
+      }, { once: true });
+    });
+    const payload = String(url).endsWith('/results')
+      ? [{ p1: 'A', p2: 'B', result: '6-2,6-3' }]
+      : { open: [{ key: 'live' }], recent_settled: [{ key: 'settled' }] };
+    return Response.json(payload);
+  };
+  t.after(() => { globalThis.fetch = originalFetch; });
+  const [results, board] = await Promise.all([wtslCore.results(), wtslCore.fixturesBoard()]);
+  assert.equal(results.length, 1);
+  assert.equal(board.open.length, 1);
+  assert.equal(board.recent_settled.length, 1);
 });
 
 test('non-public Core calls keep their existing uncached behavior without the public-feed timeout', async (t) => {
