@@ -7,30 +7,32 @@ import { buildPublicWtslResults } from './wtslResultDisplay';
 // Exported so the page can display the same number in its "why isn't X here" note.
 export const LEADERBOARD_MIN_MATCHES = 20;
 
-const CORE_RESULTS_CACHE_MS = 60_000;
-let coreResultsCache: { at: number; rows: unknown[] } | null = null;
+const PUBLIC_PROFILE_MATCHES_TIMEOUT_MS = 3_000;
 let coreResultsRequest: Promise<unknown[]> | null = null;
 
-async function cachedWtslCoreResults() {
-  const now = Date.now();
-  if (coreResultsCache && now - coreResultsCache.at < CORE_RESULTS_CACHE_MS) {
-    return coreResultsCache.rows;
-  }
+function withTimeout<T>(promise: Promise<T>, timeoutMs: number): Promise<T> {
+  let timer: ReturnType<typeof setTimeout> | undefined;
+  const timeout = new Promise<never>((_, reject) => {
+    timer = setTimeout(
+      () => reject(new Error(`Official profile results timed out after ${timeoutMs}ms`)),
+      timeoutMs,
+    );
+  });
+
+  return Promise.race([promise, timeout]).finally(() => {
+    if (timer) clearTimeout(timer);
+  });
+}
+
+/** Share only an active Core request; a later render always reads current results. */
+async function wtslCoreResultsInFlight() {
   if (coreResultsRequest) return coreResultsRequest;
 
   const request = wtslCore.results()
     .then((rows) => {
-      if (!Array.isArray(rows)) throw new Error('WTSL Core returned an invalid results payload');
-      coreResultsCache = { at: Date.now(), rows };
-      return rows;
-    })
-    .catch((error) => {
-      console.warn(
-        '[matches] WTSL Core results unavailable; keeping official profile rows',
-        error instanceof Error ? error.message : 'Unknown error',
-      );
-      const rows = coreResultsCache?.rows ?? [];
-      coreResultsCache = { at: Date.now(), rows };
+      if (!Array.isArray(rows)) {
+        throw new Error('WTSL Core returned an invalid results payload');
+      }
       return rows;
     })
     .finally(() => {
@@ -316,16 +318,49 @@ export async function recentMatches(
 /** Public match boards use WTSL Core results, with official profile rows as fallback. */
 export async function recentWtslSiteMatches(limit=20, tour='TE4'){
   const fallbackLimit = Math.min(Math.max(Math.floor(limit) * 2, 20), 200);
-  let profileRows: any[] = [];
-  try {
-    profileRows = await recentMatches(fallbackLimit, tour, 'wtsl');
-  } catch (error) {
-    console.warn(
-      '[matches] Official WTSL profile results unavailable',
-      error instanceof Error ? error.message : 'Unknown error',
-    );
-  }
-  const coreRows = await cachedWtslCoreResults();
+  const profileRowsPromise = withTimeout(
+    (async () => {
+      const startedAt = Date.now();
+      try {
+        const rows = await recentMatches(fallbackLimit, tour, 'wtsl');
+        const elapsedMs = Date.now() - startedAt;
+        if (elapsedMs >= 1_000) {
+          console.warn('[matches] Slow official profile results query', {
+            tour,
+            limit: fallbackLimit,
+            elapsedMs,
+          });
+        }
+        return rows;
+      } catch (error) {
+        console.warn('[matches] Official profile results query failed', {
+          tour,
+          limit: fallbackLimit,
+          elapsedMs: Date.now() - startedAt,
+          errorType: error instanceof Error ? error.name : 'UnknownError',
+        });
+        throw error;
+      }
+    })(),
+    PUBLIC_PROFILE_MATCHES_TIMEOUT_MS,
+  ).catch(() => {
+    console.warn('[matches] Official profile results unavailable within the page budget; using Core results', {
+      tour,
+      limit: fallbackLimit,
+      timeoutMs: PUBLIC_PROFILE_MATCHES_TIMEOUT_MS,
+    });
+    return [] as any[];
+  });
+  const coreRowsPromise = wtslCoreResultsInFlight().catch((error) => {
+    console.warn('[matches] WTSL Core results unavailable; using official profile rows', {
+      errorType: error instanceof Error ? error.name : 'UnknownError',
+    });
+    return [] as unknown[];
+  });
+  const [profileRows, coreRows] = await Promise.all([
+    profileRowsPromise,
+    coreRowsPromise,
+  ]);
   return buildPublicWtslResults(coreRows, profileRows, tour, limit);
 }
 

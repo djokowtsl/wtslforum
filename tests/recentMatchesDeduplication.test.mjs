@@ -3,6 +3,11 @@ import { readFile } from 'node:fs/promises';
 import test from 'node:test';
 
 const statsSource = await readFile(new URL('../lib/stats.ts', import.meta.url), 'utf8');
+const bettingSource = await readFile(new URL('../lib/betting.ts', import.meta.url), 'utf8');
+const autoRefreshSource = await readFile(
+  new URL('../components/WtslDataAutoRefresh.tsx', import.meta.url),
+  'utf8',
+);
 const recentMatchesQuery = statsSource.match(
   /export async function recentMatches[\s\S]*?(?=\nexport |\s*$)/,
 )?.[0];
@@ -35,9 +40,18 @@ test('the public WTSL results query excludes imported screenshot and TE4-post ro
     recentMatchesQuery,
     /AND \(\$\{source !== 'wtsl'\} OR COALESCE\(m\.source_id, ''\) LIKE 'recent:%'\)/,
   );
+  assert.match(statsSource, /recentMatches\(fallbackLimit, tour, 'wtsl'\)/);
   assert.match(
     statsSource,
-    /recentWtslSiteMatches[\s\S]*?recentMatches\(fallbackLimit, tour, 'wtsl'\)/,
+    /Promise\.all\(\[\s*profileRowsPromise,\s*coreRowsPromise/,
   );
-  assert.match(statsSource, /cachedWtslCoreResults\(\)/);
+  assert.match(statsSource, /wtslCoreResultsInFlight\(\)/);
+});
+
+test('public match boards avoid retained result caches and refresh visible pages frequently', () => {
+  assert.doesNotMatch(statsSource, /unstable_cache|CORE_RESULTS_CACHE_MS|coreResultsCache/);
+  assert.doesNotMatch(bettingSource, /unstable_cache|lastSuccessfulFixturesBoard|FIXTURES_RETRY/);
+  assert.match(bettingSource, /wtslCore\.fixturesBoard\(\)/);
+  assert.match(bettingSource, /fixturesBoardRequest/);
+  assert.match(autoRefreshSource, /LIVE_DATA_REFRESH_INTERVAL_MS = 15_000/);
 });

@@ -8,8 +8,19 @@
  */
 const base = (process.env.WTSL_CORE_API_URL || '').replace(/\/$/, '');
 const token = process.env.WTSL_CORE_API_KEY || '';
+export const WTSL_CORE_PUBLIC_TIMEOUT_MS = 3_000;
+const WTSL_CORE_ACCOUNT_TIMEOUT_MS = 5_000;
 
-async function core<T>(path: string, init: RequestInit = {}): Promise<T> {
+type CoreRequestOptions = {
+  timeoutMs?: number;
+  logLabel?: string;
+};
+
+async function core<T>(
+  path: string,
+  init: RequestInit = {},
+  options: CoreRequestOptions = {},
+): Promise<T> {
   if (!base) throw new Error('WTSL core API is not configured');
   if (!token) throw new Error('WTSL core API key is not configured');
 
@@ -17,16 +28,50 @@ async function core<T>(path: string, init: RequestInit = {}): Promise<T> {
   headers.set('accept', 'application/json');
   headers.set('authorization', `Bearer ${token}`);
 
-  const res = await fetch(`${base}${path}`, {
-    ...init,
-    headers,
-    cache: 'no-store',
-  });
+  const startedAt = Date.now();
+  let status: number | null = null;
+  const inferredOptions: CoreRequestOptions =
+    path === '/api/core/results' || path === '/api/core/betting/fixtures'
+      ? { timeoutMs: WTSL_CORE_PUBLIC_TIMEOUT_MS, logLabel: path.endsWith('/results') ? 'results' : 'fixtures' }
+      : {};
+  const requestOptions = { ...inferredOptions, ...options };
 
-  if (!res.ok) {
-    throw new Error(`WTSL core API ${res.status}`);
+  try {
+    const res = await fetch(`${base}${path}`, {
+      ...init,
+      headers,
+      cache: 'no-store',
+      ...(requestOptions.timeoutMs
+        ? { signal: init.signal ?? AbortSignal.timeout(requestOptions.timeoutMs) }
+        : {}),
+    });
+    status = res.status;
+
+    if (!res.ok) {
+      throw new Error(`WTSL core API ${res.status}`);
+    }
+
+    const data = (await res.json()) as T;
+    const elapsedMs = Date.now() - startedAt;
+    if (requestOptions.logLabel && elapsedMs >= 1_000) {
+      console.warn('[wtsl-core] Slow public data request', {
+        feed: requestOptions.logLabel,
+        elapsedMs,
+        status,
+      });
+    }
+    return data;
+  } catch (error) {
+    if (requestOptions.logLabel) {
+      console.warn('[wtsl-core] Public data request failed', {
+        feed: requestOptions.logLabel,
+        elapsedMs: Date.now() - startedAt,
+        status,
+        errorType: error instanceof Error ? error.name : 'UnknownError',
+      });
+    }
+    throw error;
   }
-  return res.json() as Promise<T>;
 }
 
 export type CoreFixture = {
@@ -122,7 +167,8 @@ export const wtslCore = {
     const result = await core<{
       open: CoreFixture[];
       recent_settled: CoreFixture[];
-    }>('/api/core/betting/fixtures', { method: 'POST' });
+    }>(
+      '/api/core/betting/fixtures', { method: 'POST' });
     return result.open;
   },
 
@@ -131,7 +177,8 @@ export const wtslCore = {
     core<{
       open: CoreFixture[];
       recent_settled: CoreFixture[];
-    }>('/api/core/betting/fixtures', { method: 'POST' }),
+    }>(
+      '/api/core/betting/fixtures', { method: 'POST' }),
 
   fixture: (fixtureKey: string | number) =>
     core<CoreFixture>(
@@ -147,11 +194,15 @@ export const wtslCore = {
       total_profit?: number | string;
     }>(
       `/api/core/betting/account/${encodeURIComponent(discordId)}`,
+      {},
+      { timeoutMs: WTSL_CORE_ACCOUNT_TIMEOUT_MS, logLabel: 'account-balance' },
     ),
 
   bets: (discordId: string) =>
     core<unknown[]>(
       `/api/core/betting/account/${encodeURIComponent(discordId)}/bets`,
+      {},
+      { timeoutMs: WTSL_CORE_ACCOUNT_TIMEOUT_MS, logLabel: 'account-bets' },
     ),
 
   leaderboard: () =>
@@ -196,7 +247,12 @@ export const wtslCore = {
     return result;
   },
 
-  results: () => core<unknown[]>('/api/core/results'),
+  results: () =>
+    core<unknown[]>(
+      '/api/core/results',
+      {},
+      { timeoutMs: WTSL_CORE_PUBLIC_TIMEOUT_MS, logLabel: 'results' },
+    ),
 
   matchSchedules: () => core<unknown[]>('/api/core/match-schedules'),
 
