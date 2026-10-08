@@ -30,14 +30,19 @@ async function core<T>(
 
   const startedAt = Date.now();
   let status: number | null = null;
+  const inferredOptions: CoreRequestOptions =
+    path === '/api/core/results' || path === '/api/core/betting/fixtures'
+      ? { timeoutMs: WTSL_CORE_PUBLIC_TIMEOUT_MS, logLabel: path.endsWith('/results') ? 'results' : 'fixtures' }
+      : {};
+  const requestOptions = { ...inferredOptions, ...options };
 
   try {
     const res = await fetch(`${base}${path}`, {
       ...init,
       headers,
       cache: 'no-store',
-      ...(options.timeoutMs
-        ? { signal: init.signal ?? AbortSignal.timeout(options.timeoutMs) }
+      ...(requestOptions.timeoutMs
+        ? { signal: init.signal ?? AbortSignal.timeout(requestOptions.timeoutMs) }
         : {}),
     });
     status = res.status;
@@ -48,18 +53,18 @@ async function core<T>(
 
     const data = (await res.json()) as T;
     const elapsedMs = Date.now() - startedAt;
-    if (options.logLabel && elapsedMs >= 1_000) {
+    if (requestOptions.logLabel && elapsedMs >= 1_000) {
       console.warn('[wtsl-core] Slow public data request', {
-        feed: options.logLabel,
+        feed: requestOptions.logLabel,
         elapsedMs,
         status,
       });
     }
     return data;
   } catch (error) {
-    if (options.logLabel) {
+    if (requestOptions.logLabel) {
       console.warn('[wtsl-core] Public data request failed', {
-        feed: options.logLabel,
+        feed: requestOptions.logLabel,
         elapsedMs: Date.now() - startedAt,
         status,
         errorType: error instanceof Error ? error.name : 'UnknownError',
@@ -163,10 +168,7 @@ export const wtslCore = {
       open: CoreFixture[];
       recent_settled: CoreFixture[];
     }>(
-      '/api/core/betting/fixtures',
-      { method: 'POST' },
-      { timeoutMs: WTSL_CORE_PUBLIC_TIMEOUT_MS, logLabel: 'fixtures' },
-    );
+      '/api/core/betting/fixtures', { method: 'POST' });
     return result.open;
   },
 
@@ -176,10 +178,7 @@ export const wtslCore = {
       open: CoreFixture[];
       recent_settled: CoreFixture[];
     }>(
-      '/api/core/betting/fixtures',
-      { method: 'POST' },
-      { timeoutMs: WTSL_CORE_PUBLIC_TIMEOUT_MS, logLabel: 'fixtures-board' },
-    ),
+      '/api/core/betting/fixtures', { method: 'POST' }),
 
   fixture: (fixtureKey: string | number) =>
     core<CoreFixture>(
