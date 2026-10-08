@@ -2,9 +2,19 @@ import Link from 'next/link';
 import { matchDateLabel, prettyKey } from '@/lib/format';
 import { lookupWtslTournamentName } from '@/lib/wtslResultDisplay';
 import PlayerAvatar from '@/components/PlayerAvatar';
+import { WTSL_PLAYER_AVATAR_FALLBACK } from '@/lib/playerAvatar';
 
 function Face({ src, flagSrc, flagLabel, name }: { src?: string | null; flagSrc?: string | null; flagLabel?: string | null; name?: string | null }) {
-  return <PlayerAvatar src={src} flagSrc={flagSrc} flagLabel={flagLabel} name={name} size={28} />;
+  return (
+    <PlayerAvatar
+      src={src}
+      fallbackSrc={WTSL_PLAYER_AVATAR_FALLBACK}
+      flagSrc={flagSrc}
+      flagLabel={flagLabel}
+      name={name}
+      size={28}
+    />
+  );
 }
 
 /** Links straight into (or creates) the Match Talk thread for this exact match, so you don't
