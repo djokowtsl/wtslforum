@@ -1,6 +1,7 @@
 import type { Metadata } from 'next';
 import Link from 'next/link';
 import { safe } from '@/lib/db';
+import { readLiveData } from '@/lib/liveData';
 import { playerStats, LEADERBOARD_MIN_MATCHES } from '@/lib/stats';
 import { getSession } from '@/lib/auth';
 import { getClaimsForUser } from '@/lib/player-claims';
@@ -63,8 +64,8 @@ export default async function Dashboard() {
   const hasWtaClaims = approved.some((c: any) => c.tour === 'TE4_(F)');
   const [coreSeasonResults, wtaSeasonResult] = await Promise.all([
     approved.length
-      ? safe(() => wtslCore.results(), [] as unknown[])
-      : Promise.resolve([] as unknown[]),
+      ? readLiveData(() => wtslCore.results(), [] as unknown[])
+      : Promise.resolve({ data: [] as unknown[], unavailable: false }),
     hasWtaClaims
       ? fetchWTSLWtaMatchResults()
           .then((rows) => ({ rows: rows as unknown[], unavailable: false }))
@@ -74,7 +75,7 @@ export default async function Dashboard() {
           })
       : Promise.resolve({ rows: [] as unknown[], unavailable: false }),
   ]);
-  const seasonResults = [...coreSeasonResults, ...wtaSeasonResult.rows];
+  const seasonResults = [...coreSeasonResults.data, ...wtaSeasonResult.rows];
 
   const playerCards: VerifiedPlayerCard[] = await Promise.all(
     approved.map(async (c: any) => {
@@ -97,7 +98,9 @@ export default async function Dashboard() {
         insights,
         ratings: ratingRows[0] ?? null,
         season: buildPlayerSeasonHighlights(seasonResults, c.player_name, c.tour, seasonYear, c.wtsl_player_id),
-        seasonUnavailable: c.tour === 'TE4_(F)' && wtaSeasonResult.unavailable,
+        seasonUnavailable: c.tour === 'TE4_(F)'
+          ? wtaSeasonResult.unavailable
+          : coreSeasonResults.unavailable,
       };
     })
   );

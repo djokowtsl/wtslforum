@@ -8,7 +8,7 @@ export default function PlayerSeasonHighlights({ highlights, unavailable = false
         <span>{highlights.year}</span>
       </div>
       {unavailable ? (
-        <p className="season-highlights-empty">Official WTA match results are unavailable right now. Please try again later.</p>
+        <p className="season-highlights-empty">Official season match results are unavailable right now. Please try again later.</p>
       ) : highlights.matches === 0 ? (
         <p className="season-highlights-empty">No completed year-to-date matches are available for this player.</p>
       ) : (

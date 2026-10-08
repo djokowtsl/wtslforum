@@ -1,6 +1,7 @@
 import type { Metadata } from 'next';
 import Link from 'next/link';
 import { safe } from '@/lib/db';
+import { readLiveData } from '@/lib/liveData';
 import { fixturesBoard, getBalance, getBets, poolOdds, hybridOdds } from '@/lib/betting';
 import { wtslCore } from '@/lib/wtsl-core';
 import { getTournaments } from '@/lib/tournaments';
@@ -13,6 +14,7 @@ import {
 } from '@/lib/fixture-order';
 
 export const dynamic = 'force-dynamic';
+export const maxDuration = 180;
 export const metadata: Metadata = { title: 'Virtual Betting fixtures' };
 
 const DISCORD_URL = 'https://discord.com/channels/786583939028090881/1550152646638174308';
@@ -39,13 +41,14 @@ function sideOdds(f: any, side: 'one' | 'two') {
 
 export default async function Betting() {
   const user = await getSession();
-  const [board, account, bets, atpTournaments, wtaTournaments] = await Promise.all([
-    safe(() => fixturesBoard(), { open: [] as any[], recent_settled: [] as any[] }),
+  const [boardState, account, bets, atpTournaments, wtaTournaments] = await Promise.all([
+    readLiveData(() => fixturesBoard(), { open: [] as any[], recent_settled: [] as any[] }),
     user ? safe(() => getBalance(user.discordId), null as any) : Promise.resolve(null),
     user ? safe(() => getBets(user.discordId), [] as any[]) : Promise.resolve([] as any[]),
     safe(() => getTournaments('TE4'), [] as any[]),
     safe(() => getTournaments('TE4_(F)'), [] as any[]),
   ]);
+  const board = boardState.data;
   const tournaments = [...atpTournaments, ...wtaTournaments];
   const bettingBoard = deduplicateBettingBoardFixtures(
     {
@@ -63,6 +66,7 @@ export default async function Betting() {
       <WtslDataAutoRefresh />
       <PageHero eyebrow="WTSL Forum" title="Virtual Betting">Follow live odds across the tour. Virtual bets are placed in Discord — use the button to jump straight there.</PageHero>
       <main className="container">
+        {boardState.unavailable && <div className="notice warn" role="status">The live betting feed is unavailable right now. Open and settled markets could not be loaded; they have not been cleared. Please try again shortly.</div>}
         {!wtslCore.configured() && <div className="notice warn" style={{ marginBottom: 22 }}>The WTSL Core API is not configured on this deployment, so odds and account data can&apos;t load right now.</div>}
 
         {user && (
@@ -81,7 +85,7 @@ export default async function Betting() {
           </div>
           <a className="btn btn-discord btn-sm" href={DISCORD_URL} target="_blank" rel="noreferrer">Place virtual bets in Discord ↗</a>
         </div>
-        {fixtures.length === 0 ? <div className="forum-list"><div className="empty"><strong>No open fixtures</strong>New fixtures appear when the next round opens.</div></div> : (
+        {boardState.unavailable ? null : fixtures.length === 0 ? <div className="forum-list"><div className="empty"><strong>No open fixtures</strong>New fixtures appear when the next round opens.</div></div> : (
           <div className="fixture-grid">
             {fixtures.map((f: any) => {
               const one = sideOdds(f, 'one');
@@ -108,7 +112,7 @@ export default async function Betting() {
             <p>Markets the bot has resolved. If a pairing disappears from its official draw, the market is voided and affected bets are refunded.</p>
           </div>
         </div>
-        {settled.length === 0 ? <div className="forum-list"><div className="empty"><strong>No settled fixtures yet</strong>Settled results appear here once the bot closes a market out.</div></div> : (
+        {boardState.unavailable ? null : settled.length === 0 ? <div className="forum-list"><div className="empty"><strong>No settled fixtures yet</strong>Settled results appear here once the bot closes a market out.</div></div> : (
           <div className="fixture-grid">
             {settled.map((f: any) => {
               const winnerIsFirst = f.winner_id != null && String(f.winner_id) === String(f.first_id);

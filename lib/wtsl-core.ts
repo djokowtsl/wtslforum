@@ -8,7 +8,10 @@
  */
 const base = (process.env.WTSL_CORE_API_URL || '').replace(/\/$/, '');
 const token = process.env.WTSL_CORE_API_KEY || '';
-export const WTSL_CORE_PUBLIC_TIMEOUT_MS = 3_000;
+// The complete results payload and exact-event verification take longer than
+// a small health request. Do not turn normal source latency into empty boards.
+export const WTSL_CORE_PUBLIC_TIMEOUT_MS = 20_000;
+export const WTSL_CORE_FIXTURES_TIMEOUT_MS = 120_000;
 const WTSL_CORE_ACCOUNT_TIMEOUT_MS = 5_000;
 
 type CoreRequestOptions = {
@@ -32,7 +35,12 @@ async function core<T>(
   let status: number | null = null;
   const inferredOptions: CoreRequestOptions =
     path === '/api/core/results' || path === '/api/core/betting/fixtures'
-      ? { timeoutMs: WTSL_CORE_PUBLIC_TIMEOUT_MS, logLabel: path.endsWith('/results') ? 'results' : 'fixtures' }
+      ? {
+          timeoutMs: path.endsWith('/results')
+            ? WTSL_CORE_PUBLIC_TIMEOUT_MS
+            : WTSL_CORE_FIXTURES_TIMEOUT_MS,
+          logLabel: path.endsWith('/results') ? 'results' : 'fixtures',
+        }
       : {};
   const requestOptions = { ...inferredOptions, ...options };
 
