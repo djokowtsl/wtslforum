@@ -1,6 +1,7 @@
-﻿import { NextRequest, NextResponse } from 'next/server';
+import { NextRequest, NextResponse } from 'next/server';
 import { syncTournamentsAllTours, syncPlayersAllTours } from '@/lib/tournaments';
 import { inspectWTSLRankings } from '@/lib/wtsl';
+import { isWtslSyncAuthorized } from '@/lib/wtslSyncAuth';
 
 export const dynamic = 'force-dynamic';
 export const maxDuration = 60;
@@ -8,12 +9,9 @@ export const maxDuration = 60;
 const msg = (e: unknown) => (e instanceof Error ? e.message : 'Sync failed');
 
 export async function GET(req: NextRequest) {
-  const external = req.headers.get('x-wtsl-sync-secret');
-  const cron = req.headers.get('authorization');
-  const cronSecret = process.env.CRON_SECRET;
-  const bearer = cronSecret ? ('Bearer ' + cronSecret) : null;
-  const authorized = (process.env.WTSL_SYNC_SECRET && external === process.env.WTSL_SYNC_SECRET) || (!!bearer && cron === bearer);
-  if (!authorized) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
+  if (!isWtslSyncAuthorized(req.headers)) {
+    return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
+  }
 
   // ?debug=1 -> show what the rankings page returned and how it was parsed (writes nothing).
   if (req.nextUrl.searchParams.get('debug')) {
