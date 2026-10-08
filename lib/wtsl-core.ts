@@ -122,7 +122,7 @@ export const wtslCore = {
     const result = await core<{
       open: CoreFixture[];
       recent_settled: CoreFixture[];
-    }>('/api/core/betting/fixtures');
+    }>('/api/core/betting/fixtures', { method: 'POST' });
     return result.open;
   },
 
@@ -131,7 +131,7 @@ export const wtslCore = {
     core<{
       open: CoreFixture[];
       recent_settled: CoreFixture[];
-    }>('/api/core/betting/fixtures'),
+    }>('/api/core/betting/fixtures', { method: 'POST' }),
 
   fixture: (fixtureKey: string | number) =>
     core<CoreFixture>(
