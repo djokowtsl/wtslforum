@@ -12,3 +12,14 @@ export function resolvePlayerAvatarSource(
     isFallback: !playerAvatar && Boolean(fallbackAvatar),
   };
 }
+
+export function resolvePlayerAvatar(
+  src: string | null | undefined,
+  failedSrc: string | null,
+): { src: string; isFallback: boolean } {
+  const usableSrc = typeof src === 'string' ? src.trim() : '';
+  if (usableSrc && usableSrc !== failedSrc) {
+    return { src: usableSrc, isFallback: false };
+  }
+  return { src: WTSL_PLAYER_AVATAR_FALLBACK, isFallback: true };
+}
