@@ -9,8 +9,7 @@ export function hybridOdds(officialOdds:number, pool:number|null){ return Math.m
 /** The Replit WTSL bot is authoritative. No second balance/ledger is created here. */
 import { sql } from './db';
 
-export async function openFixtures(){
-  const fixtures = await wtslCore.fixtures();
+async function enrichOpenFixtures(fixtures: any[]){
   if (!fixtures.length) return fixtures;
   const canonicalTour = (value?: string) => {
     const normalized = String(value ?? '').toLowerCase();
@@ -19,11 +18,16 @@ export async function openFixtures(){
     return value || 'TE4';
   };
   try {
+    const startedAt = Date.now();
     const players = await sql`
       SELECT tour, wtsl_player_id, avatar_url, flag_url, country
       FROM wtsl_players
       WHERE tour IN ('TE4','TE4_(F)')
     `;
+    const elapsedMs = Date.now() - startedAt;
+    if (elapsedMs >= 1_000) {
+      console.warn('[matches] Slow fixture player metadata query', { elapsedMs });
+    }
     const byId = new Map<string, any>();
     for (const player of players as any[]) {
       byId.set(`${player.tour}:${player.wtsl_player_id}`, player);
@@ -43,13 +47,51 @@ export async function openFixtures(){
         second_country: second?.country || null,
       };
     });
-  } catch {
+  } catch (error) {
+    console.warn('[matches] Fixture player metadata unavailable; using Core fixture data', {
+      errorType: error instanceof Error ? error.name : 'UnknownError',
+    });
     return fixtures;
   }
 }
 
+let fixturesBoardRequest: Promise<any> | null = null;
+
+async function loadPublicFixturesBoard(){
+  if (fixturesBoardRequest) return fixturesBoardRequest;
+
+  const request = wtslCore.fixturesBoard()
+    .then(async (board) => {
+      if (!Array.isArray(board.open) || !Array.isArray(board.recent_settled)) {
+        throw new Error('WTSL Core returned an invalid fixtures payload');
+      }
+      return {
+        ...board,
+        open: await enrichOpenFixtures(board.open),
+      };
+    })
+    .catch((error) => {
+      console.warn('[matches] Public fixtures feed unavailable', {
+        errorType: error instanceof Error ? error.name : 'UnknownError',
+      });
+      throw error;
+    })
+    .finally(() => {
+      if (fixturesBoardRequest === request) fixturesBoardRequest = null;
+    });
+
+  fixturesBoardRequest = request;
+  return request;
+}
+
+export async function openFixtures(){
+  return (await loadPublicFixturesBoard()).open;
+}
+
 /** Open fixtures plus the bot's recently-settled list in one request. */
-export async function fixturesBoard(){ return wtslCore.fixturesBoard(); }
+export async function fixturesBoard(){
+  return loadPublicFixturesBoard();
+}
 
 export async function getBalance(discordId:string){ return wtslCore.balance(discordId); }
 export async function getBets(discordId:string){ return wtslCore.bets(discordId); }
