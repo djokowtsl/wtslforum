@@ -164,7 +164,7 @@ export const wtslCore = {
       recent_settled: CoreFixture[];
     }>(
       '/api/core/betting/fixtures',
-      {},
+      { method: 'POST' },
       { timeoutMs: WTSL_CORE_PUBLIC_TIMEOUT_MS, logLabel: 'fixtures' },
     );
     return result.open;
@@ -177,7 +177,7 @@ export const wtslCore = {
       recent_settled: CoreFixture[];
     }>(
       '/api/core/betting/fixtures',
-      {},
+      { method: 'POST' },
       { timeoutMs: WTSL_CORE_PUBLIC_TIMEOUT_MS, logLabel: 'fixtures-board' },
     ),
 
