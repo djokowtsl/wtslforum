@@ -31,6 +31,8 @@ test('public results and fixture reads are bounded and remain uncached at the fe
   assert.match(requests[0].url, /\/api\/core\/results$/);
   assert.match(requests[1].url, /\/api\/core\/betting\/fixtures$/);
   assert.match(requests[2].url, /\/api\/core\/betting\/fixtures$/);
+  assert.equal(requests[1].init.method, 'POST');
+  assert.equal(requests[2].init.method, 'POST');
   for (const request of requests) {
     assert.equal(request.init.cache, 'no-store');
     assert.ok(request.init.signal instanceof AbortSignal);
