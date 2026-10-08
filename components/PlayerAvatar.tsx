@@ -1,5 +1,8 @@
+import { resolvePlayerAvatarSource } from '@/lib/playerAvatar';
+
 type Props = {
   src?: string | null;
+  fallbackSrc?: string | null;
   flagSrc?: string | null;
   flagLabel?: string | null;
   name?: string | null;
@@ -9,6 +12,7 @@ type Props = {
 
 export default function PlayerAvatar({
   src,
+  fallbackSrc,
   flagSrc,
   flagLabel,
   name,
@@ -18,6 +22,7 @@ export default function PlayerAvatar({
   const flagWidth = Math.max(12, Math.round(size * 0.38));
   const flagHeight = Math.max(9, Math.round(flagWidth * 0.66));
   const initial = name?.trim().charAt(0).toUpperCase() || '?';
+  const avatar = resolvePlayerAvatarSource(src, fallbackSrc);
   return (
     <span
       className={`player-avatar ${className}`.trim()}
@@ -25,8 +30,13 @@ export default function PlayerAvatar({
       aria-hidden={!flagSrc ? true : undefined}
       title={flagLabel || undefined}
     >
-      {src
-        ? <img className="player-avatar-image" src={src} alt="" loading="lazy" />
+      {avatar.src
+        ? <img
+            className={`player-avatar-image${avatar.isFallback ? ' player-avatar-image-wtsl-fallback' : ''}`}
+            src={avatar.src}
+            alt=""
+            loading="lazy"
+          />
         : <span className="player-avatar-placeholder" style={{ fontSize: Math.max(12, Math.round(size * 0.42)) }}>{initial}</span>}
       {flagSrc && (
         <img
