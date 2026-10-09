@@ -1,4 +1,5 @@
 import assert from 'node:assert/strict';
+import { readFile } from 'node:fs/promises';
 import test from 'node:test';
 import {
   resolvePlayerAvatarSource,
@@ -7,6 +8,17 @@ import {
 
 test('match-card fallback uses the WTSL brand logo', () => {
   assert.equal(WTSL_PLAYER_AVATAR_FALLBACK, '/brand/wtsl-logo-200.png');
+});
+
+test('WTSL player logos get a navy backplate on all light-theme player views', async () => {
+  const css = await readFile(new URL('../app/globals.css', import.meta.url), 'utf8');
+  const logoRule = css.match(
+    /:root\[data-theme='light'\]\s+\.player-avatar-image-wtsl-fallback,\s*:root\[data-theme='light'\]\s+\.player-avatar-image\[src\*="wtsl-logo"\]\s*\{[^}]+\}/,
+  );
+
+  assert.ok(logoRule, 'expected a shared light-theme rule for WTSL player logos');
+  assert.match(logoRule[0], /background:\s*#010c20;/);
+  assert.match(logoRule[0], /object-fit:\s*contain;/);
 });
 
 test('a real player avatar takes precedence over the fallback', () => {
