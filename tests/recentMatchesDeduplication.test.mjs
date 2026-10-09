@@ -57,7 +57,7 @@ test('live feeds use durable display snapshots and still refresh visibly from no
   assert.match(publicFeedsSource, /setInterval\(\(\) => void refresh\(\), 60_000\)/);
   assert.match(snapshotStoreSource, /ON CONFLICT \(snapshot_key\) DO UPDATE/);
   assert.match(snapshotSyncSource, /isWtslSyncAuthorized/);
-  assert.match(snapshotSyncSource, /wtslCore\.results\(366\)/);
+  assert.match(snapshotSyncSource, /wtslCore\.results\(\)/);
   assert.match(snapshotSyncSource, /predictionsLeaderboard\(100\)/);
 });
 
