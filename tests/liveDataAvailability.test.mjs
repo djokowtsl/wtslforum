@@ -59,6 +59,14 @@ test('fixture and results endpoints are live no-store reads with explicit unavai
   assert.match(client, /Recent results unavailable/);
 });
 
+test('homepage latest-result placeholder offers Matches instead of exposing an implementation detail', async () => {
+  const matches = await readFile(new URL('../components/LiveMatchPanels.tsx', import.meta.url), 'utf8');
+  const latestResultPanel = matches.split('export function HomeLatestResultSpot()')[1]
+    .split('export function HomeRecentResults()')[0];
+  assert.match(latestResultPanel, /View match results/);
+  assert.doesNotMatch(latestResultPanel, /Recent scores load separately/);
+});
+
 test('a failed private betting API read is never presented as an empty ledger', async () => {
   const [balanceRoute, ledgerRoute, client] = await Promise.all([
     readFile(new URL('../app/api/betting/account/route.ts', import.meta.url), 'utf8'),
