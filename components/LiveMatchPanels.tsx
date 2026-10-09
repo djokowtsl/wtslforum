@@ -23,7 +23,7 @@ function FeedStatus({ title, detail, unavailable = false }: {
 export function HomeLatestResultSpot() {
   const feed = usePublicResults();
   if (feed.status === 'loading') {
-    return <div className="spot"><small>Latest result</small><b>Recent scores load separately</b></div>;
+    return <Link className="spot" href="/matches"><small>Latest result</small><b>View match results →</b></Link>;
   }
   if (feed.status === 'unavailable') {
     return <Link className="spot" href="/matches"><small>Latest result</small><b>Open match centre</b><span>Recent results are temporarily unavailable.</span></Link>;
