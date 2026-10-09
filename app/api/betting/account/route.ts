@@ -14,20 +14,14 @@ export async function GET() {
   }
 
   try {
-    const [account, bets] = await Promise.all([
-      wtslCore.balance(user.discordId),
-      wtslCore.bets(user.discordId),
-    ]);
-    return NextResponse.json(
-      { account, bets: Array.isArray(bets) ? bets : [] },
-      { headers: noStore },
-    );
+    const account = await wtslCore.balance(user.discordId);
+    return NextResponse.json({ account }, { headers: noStore });
   } catch (error) {
-    console.warn('[betting-account] Core account feed unavailable', {
+    console.warn('[betting-account] Core balance feed unavailable', {
       errorType: error instanceof Error ? error.name : 'UnknownError',
     });
     return NextResponse.json(
-      { error: 'betting_account_unavailable' },
+      { error: 'betting_balance_unavailable' },
       { status: 503, headers: noStore },
     );
   }
