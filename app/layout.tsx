@@ -1,6 +1,7 @@
 import './globals.css';
 import type { Metadata, Viewport } from 'next';
 import { Barlow_Condensed, Inter } from 'next/font/google';
+import { Suspense } from 'react';
 import { ForumHeader } from '@/components/ForumHeader';
 import { ForumFooter } from '@/components/ForumFooter';
 import { ThemeBootstrapScript } from '@/components/ThemeToggle';
@@ -29,7 +30,7 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
       </head>
       <body>
         <ForumHeader />
-        {children}
+        <Suspense fallback={null}>{children}</Suspense>
         <ForumFooter />
       </body>
     </html>
