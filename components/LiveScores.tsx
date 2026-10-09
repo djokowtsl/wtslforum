@@ -77,10 +77,8 @@ export default function LiveScores({
   if (payload.matches.length === 0) {
     return (
       <div className="live-score-empty" role="status">
-        {source === 'snapshot'
-          ? 'No active WTSL-tagged TE4 matches in the saved feed.'
-          : 'No active WTSL-tagged TE4 matches right now.'}
-        <small><FeedUpdatedAt updatedAt={payload.updatedAt} /></small>
+        No active WTSL-tagged TE4 matches to display.
+        <FeedUpdatedAt updatedAt={payload.updatedAt} as="small" />
       </div>
     );
   }
@@ -139,7 +137,7 @@ export default function LiveScores({
             <article className="live-score-card" key={`${match.name}-${match.court}-${index}`} role="group" aria-roledescription="slide" aria-label={`Match ${index + 1} of ${payload.matches.length}: ${firstName} vs ${secondName || 'Opponent'}`}>
               <div className="live-score-card-head">
                 <span>{match.tour === 'TE4_(F)' ? 'WTA' : match.tour === 'TE4' ? 'ATP' : 'WTSL'}</span>
-                <b><i />{source === 'snapshot' ? 'LAST CHECKED' : 'LIVE'}</b>
+                <b><i />{source === 'snapshot' ? 'SCORE' : 'LIVE'}</b>
               </div>
               {match.probability !== null && secondProbability !== null && (
                 <div
@@ -182,10 +180,8 @@ export default function LiveScores({
           );
         })}
       </div>
-      <small className="live-score-updated">
-        <FeedUpdatedAt updatedAt={payload.updatedAt} />
-      </small>
-      {failed && <small className="live-score-updated" role="status">Live refresh unavailable; showing the saved feed.</small>}
+      <FeedUpdatedAt updatedAt={payload.updatedAt} as="small" className="live-score-updated" />
+      {failed && <small className="live-score-updated" role="status">Unable to refresh scores; showing previously loaded scores.</small>}
     </div>
   );
 }

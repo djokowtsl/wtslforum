@@ -6,6 +6,7 @@ import Link from 'next/link';
 import { fmtDateTime, timeAgo } from '@/lib/format';
 import { usePublicFixtures } from '@/components/PublicLiveData';
 import { fetchBetLedger } from '@/lib/betting-ledger';
+import FeedUpdatedAt from '@/components/FeedUpdatedAt';
 
 const DISCORD_URL = 'https://discord.com/channels/786583939028090881/1550152646638174308';
 const TAKEOUT = 0.05;
@@ -59,14 +60,10 @@ export function BettingBoardPanels() {
 
   return (
     <>
-      {feed.source === 'snapshot' && feed.checkedAt && (
-        <div className="notice warn" role="status">
-          Showing the last verified market snapshot from {new Date(feed.checkedAt).toLocaleString('en-GB', { dateStyle: 'medium', timeStyle: 'short' })}. The snapshot is for display; current draw eligibility is checked separately before any bet is accepted.
-        </div>
-      )}
+      <FeedUpdatedAt updatedAt={feed.updatedAt} as="p" className="muted feed-freshness" />
       {feed.refreshError && (
         <div className="notice warn" role="status">
-          The live market refresh is unavailable. Any displayed markets remain labelled with their last successful check time.
+          Unable to refresh markets. Please try again later.
         </div>
       )}
       <div className="section-head section-space">
@@ -77,9 +74,9 @@ export function BettingBoardPanels() {
         <a className="btn btn-discord btn-sm" href={DISCORD_URL} target="_blank" rel="noreferrer">Place virtual bets in Discord ↗</a>
       </div>
       {feed.status === 'loading' ? (
-        <FeedMessage title="Checking open fixtures…" detail="The latest verified market snapshot will appear here." />
+        <FeedMessage title="Loading open fixtures…" detail="Fixtures will appear here shortly." />
       ) : feed.status === 'unavailable' ? (
-        <FeedMessage title="Open fixtures unavailable." detail="The official-draw check did not finish. Markets have not been cleared or presented as open." unavailable />
+        <FeedMessage title="Open fixtures unavailable." detail="Please try again later." unavailable />
       ) : fixtures.length === 0 ? (
         <FeedMessage title="No open fixtures." detail="New fixtures appear when the next round opens." />
       ) : (
@@ -89,7 +86,7 @@ export function BettingBoardPanels() {
             const two = sideOdds(fixture, 'two');
             return (
               <article className="fixture-card" key={fixture.key}>
-                <div className="fixture-top"><span>{fixture.tournament || 'WTSL'} · {(fixture.tour || 'TE4').toUpperCase()}</span><b>{feed.source === 'snapshot' ? 'LAST VERIFIED OPEN' : String(fixture.status || 'open').toUpperCase()}</b></div>
+                <div className="fixture-top"><span>{fixture.tournament || 'WTSL'} · {(fixture.tour || 'TE4').toUpperCase()}</span><b>{feed.source === 'snapshot' ? 'UPCOMING' : String(fixture.status || 'open').toUpperCase()}</b></div>
                 <h2><PlayerName id={fixture.first_id} tour={fixture.tour} name={fixture.first_name} /> <small>vs</small> <PlayerName id={fixture.second_id} tour={fixture.tour} name={fixture.second_name} /></h2>
                 <div className="topic-meta">{fixture.round_deadline ? `Deadline: ${fmtDateTime(fixture.round_deadline)}` : 'No deadline set'}</div>
                 <div className="odds-compare">

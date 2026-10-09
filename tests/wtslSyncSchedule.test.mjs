@@ -46,11 +46,11 @@ test('GitHub Actions runs fast syncs and uses the protected secret without expos
   assert.match(pageRefresh, /SNAPSHOT_REFRESH_INTERVAL_MS = 300_000/);
 });
 
-test('the site reports the last successful full snapshot refresh', () => {
+test('full-sync diagnostics are retained without a public footer notice', () => {
   assert.match(snapshotSyncRoute, /failed\.length === 0[\s\S]*public-page-snapshot-sync-status/);
   assert.match(freshnessRoute, /public-page-snapshot-sync-status/);
   assert.match(freshnessRoute, /lastRefreshedAt/);
-  assert.match(footer, /PublicSnapshotFreshness/);
+  assert.doesNotMatch(footer, /PublicSnapshotFreshness/);
   assert.match(freshnessComponent, /Last full public-data snapshot refresh:/);
   assert.match(freshnessComponent, /Live panels may update sooner while you browse/);
 });

@@ -55,16 +55,14 @@ async function PredictionsLeaderboard() {
       {!wtslCore.configured() ? (
         <div className="notice">The predictions leaderboard isn&apos;t available on this deployment yet.</div>
       ) : leaderboard.unavailable ? (
-        <div className="notice warn" role="status">The predictions snapshot is not available yet. Standings will appear after the next successful background sync.</div>
+        <div className="notice warn" role="status">Standings are temporarily unavailable. Please try again later.</div>
       ) : rows.length === 0 ? (
         <>
-          {leaderboard.checkedAt && <p className="muted feed-freshness">Standings checked {new Date(leaderboard.checkedAt).toLocaleString('en-GB', { dateStyle: 'medium', timeStyle: 'short' })}</p>}
-          <div className="forum-list"><div className="empty"><strong>No predictions recorded yet</strong>Standings appear once the Discord bot scans a tournament&apos;s picks.</div></div>
+          <div className="forum-list"><div className="empty"><strong>No predictions recorded yet</strong>Standings appear as tournament predictions are added.</div></div>
         </>
       ) : (
         <section className="panel">
           <div className="panel-head"><h2 className="display">Top predictors</h2><span>{rows.length} ranked</span></div>
-          {leaderboard.checkedAt && <p className="muted feed-freshness">Standings checked {new Date(leaderboard.checkedAt).toLocaleString('en-GB', { dateStyle: 'medium', timeStyle: 'short' })}</p>}
           <table>
             <thead>
               <tr><th>#</th><th>Predictor</th><th>Points</th><th>Correct picks</th><th>Tournaments</th><th>Won</th><th>Avg score</th></tr>
