@@ -8,6 +8,7 @@ import { buildPublicWtslResults } from './wtslResultDisplay';
 export const LEADERBOARD_MIN_MATCHES = 20;
 
 const PUBLIC_PROFILE_MATCHES_TIMEOUT_MS = 3_000;
+const PUBLIC_WTSL_RESULTS_WINDOW_DAYS = 30;
 let coreResultsRequest: Promise<unknown[]> | null = null;
 
 function withTimeout<T>(promise: Promise<T>, timeoutMs: number): Promise<T> {
@@ -28,7 +29,7 @@ function withTimeout<T>(promise: Promise<T>, timeoutMs: number): Promise<T> {
 async function wtslCoreResultsInFlight() {
   if (coreResultsRequest) return coreResultsRequest;
 
-  const request = wtslCore.results()
+  const request = wtslCore.results(PUBLIC_WTSL_RESULTS_WINDOW_DAYS)
     .then((rows) => {
       if (!Array.isArray(rows)) {
         throw new Error('WTSL Core returned an invalid results payload');
