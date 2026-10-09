@@ -136,70 +136,81 @@ export function BettingBoardPanels() {
   );
 }
 
-type AccountPayload = {
-  account: Record<string, unknown>;
-  bets: any[];
-};
-
 export function MyBettingPanel() {
-  const [status, setStatus] = useState<'loading' | 'ready' | 'unauthorized' | 'unavailable'>('loading');
-  const [data, setData] = useState<AccountPayload | null>(null);
+  const [balanceStatus, setBalanceStatus] = useState<'loading' | 'ready' | 'unauthorized' | 'unavailable'>('loading');
+  const [account, setAccount] = useState<Record<string, unknown> | null>(null);
+  const [ledgerStatus, setLedgerStatus] = useState<'loading' | 'ready' | 'unauthorized' | 'unavailable'>('loading');
+  const [bets, setBets] = useState<any[]>([]);
 
   useEffect(() => {
     const controller = new AbortController();
-    fetch('/api/betting/account', { cache: 'no-store', signal: controller.signal })
-      .then(async (response) => {
-        if (controller.signal.aborted) return null;
-        if (response.status === 401) {
-          setStatus('unauthorized');
-          return null;
+    const loadBalance = async () => {
+      try {
+        const response = await fetch('/api/betting/account', { cache: 'no-store', signal: controller.signal });
+        if (!controller.signal.aborted) {
+          if (response.status === 401) setBalanceStatus('unauthorized');
+          else if (!response.ok) setBalanceStatus('unavailable');
+          else {
+            const payload = await response.json() as { account?: Record<string, unknown> };
+            if (payload.account) {
+              setAccount(payload.account);
+              setBalanceStatus('ready');
+            } else setBalanceStatus('unavailable');
+          }
         }
-        if (!response.ok) {
-          setStatus('unavailable');
-          return null;
+      } catch {
+        if (!controller.signal.aborted) setBalanceStatus('unavailable');
+      }
+    };
+    const loadLedger = async () => {
+      try {
+        const response = await fetch('/api/betting/ledger', { cache: 'no-store', signal: controller.signal });
+        if (!controller.signal.aborted) {
+          if (response.status === 401) setLedgerStatus('unauthorized');
+          else if (!response.ok) setLedgerStatus('unavailable');
+          else {
+            const payload = await response.json() as { bets?: any[] };
+            if (Array.isArray(payload.bets)) {
+              setBets(payload.bets);
+              setLedgerStatus('ready');
+            } else setLedgerStatus('unavailable');
+          }
         }
-        return response.json() as Promise<AccountPayload>;
-      })
-      .then((payload) => {
-        if (!payload) return;
-        if (!payload.account || !Array.isArray(payload.bets)) {
-          setStatus('unavailable');
-          return;
-        }
-        setData(payload);
-        setStatus('ready');
-      })
-      .catch(() => {
-        if (!controller.signal.aborted) setStatus('unavailable');
-      });
+      } catch {
+        if (!controller.signal.aborted) setLedgerStatus('unavailable');
+      }
+    };
+    void loadBalance();
+    void loadLedger();
     return () => controller.abort();
   }, []);
 
   return (
     <>
-      <div className="kpi-grid" aria-busy={status === 'loading'}>
-        <div><span>My W$ balance</span><b>{status === 'ready' ? `W$${money(data?.account.balance)}` : '—'}</b></div>
-        <div><span>Total staked</span><b>{status === 'ready' ? `W$${money(data?.account.total_staked)}` : '—'}</b></div>
-        <div><span>Total returned</span><b>{status === 'ready' ? `W$${money(data?.account.total_returned)}` : '—'}</b></div>
-        <div><span>Net profit</span><b>{status === 'ready' ? `W$${money(data?.account.total_profit)}` : '—'}</b></div>
+      <div className="kpi-grid" aria-busy={balanceStatus === 'loading'}>
+        <div><span>My W$ balance</span><b>{balanceStatus === 'ready' ? `W$${money(account?.balance)}` : '—'}</b></div>
+        <div><span>Total staked</span><b>{balanceStatus === 'ready' ? `W$${money(account?.total_staked)}` : '—'}</b></div>
+        <div><span>Total returned</span><b>{balanceStatus === 'ready' ? `W$${money(account?.total_returned)}` : '—'}</b></div>
+        <div><span>Net profit</span><b>{balanceStatus === 'ready' ? `W$${money(account?.total_profit)}` : '—'}</b></div>
       </div>
+      {balanceStatus === 'unavailable' && <FeedMessage title="Your balance is unavailable." detail="This does not affect your bet ledger." unavailable />}
       <div className="section-head section-space">
         <div>
           <h2 className="display">My bet ledger</h2>
           <p>Your recent bets placed in Discord.</p>
         </div>
       </div>
-      {status === 'loading' ? (
+      {ledgerStatus === 'loading' ? (
         <FeedMessage title="Your ledger is loading." detail="It is fetched separately from the public fixture board." />
-      ) : status === 'unauthorized' ? (
+      ) : ledgerStatus === 'unauthorized' ? (
         <div className="forum-list"><div className="empty"><strong>Sign in to view your ledger</strong><a className="btn btn-discord btn-sm" href="/api/auth/discord">Log in with Discord</a></div></div>
-      ) : status === 'unavailable' ? (
+      ) : ledgerStatus === 'unavailable' ? (
         <FeedMessage title="Your betting data is unavailable." detail="The account feed failed. This does not mean your ledger is empty." unavailable />
-      ) : data?.bets.length === 0 ? (
+      ) : bets.length === 0 ? (
         <div className="forum-list"><div className="empty"><strong>No bets yet</strong>Place a bet in Discord and it&apos;ll show up here.</div></div>
       ) : (
         <div className="forum-list">
-          {data?.bets.slice(0, 20).map((bet: any, index: number) => (
+          {bets.slice(0, 20).map((bet: any, index: number) => (
             <div className="bet-row" key={bet.bet_id ?? index}>
               <div>
                 <strong>{bet.selection_name || bet.selection_id}</strong>
