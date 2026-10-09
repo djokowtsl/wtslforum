@@ -2,6 +2,7 @@ import { sql } from './db';
 import { LEADERBOARD_MIN_MATCHES } from './stats';
 import { BOT_RATING_METRICS } from './botRatingMetrics';
 import type { BotRating } from './botRatingMetrics';
+import type { WtaProfileScreenshotStats } from './wtaProfileStatistics';
 export { BOT_RATING_METRICS } from './botRatingMetrics';
 export type { BotRating } from './botRatingMetrics';
 
@@ -382,6 +383,29 @@ export async function botLeaderboard(tour: string, metric: BotMetric): Promise<B
       const difference = definition.direction === 'asc' ? a.value - b.value : b.value - a.value;
       return difference || a.player.localeCompare(b.player);
     });
+}
+
+/** Read existing eligible screenshot aggregates, strictly bound to a WTA identity.
+ * Profile averages do not require the 20-match leaderboard/rating threshold.
+ */
+export async function wtaProfileScreenshotStats(
+  playerId: string,
+): Promise<WtaProfileScreenshotStats | null> {
+  const rows = await sql`
+    SELECT b.screenshots, b.metrics, b.metric_sample_counts
+    FROM bot_rating_leaderboards b
+    JOIN wtsl_players p ON p.tour=b.tour AND lower(p.name)=lower(b.player_name)
+    WHERE b.tour='TE4_(F)' AND p.wtsl_player_id=${playerId}
+      AND b.screenshots > 0
+    LIMIT 2
+  `;
+  if (rows.length > 1) throw new Error('Ambiguous WTA screenshot statistics identity');
+  if (!rows[0]) return null;
+  return {
+    screenshots: Number(rows[0].screenshots),
+    metrics: rows[0].metrics ?? {},
+    metricSampleCounts: rows[0].metric_sample_counts ?? {},
+  };
 }
 
 export type BotRatingStatsRow = {

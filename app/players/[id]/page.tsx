@@ -2,6 +2,8 @@ import type { Metadata } from 'next';
 import { notFound } from 'next/navigation';
 import { safe, sql } from '@/lib/db';
 import { playerStats } from '@/lib/stats';
+import { wtaProfileScreenshotStats } from '@/lib/botRatingLeaderboards';
+import WtaProfileMatchStatistics from '@/components/WtaProfileMatchStatistics';
 import { getVerifiedOwner } from '@/lib/player-claims';
 import { getContributionStats } from '@/lib/queries';
 import { discordAvatar, getSession } from '@/lib/auth';
@@ -53,7 +55,7 @@ export default async function PlayerDashboard({ params, searchParams }: Props) {
   const p = rows.find((r: any) => r.tour === tour) ?? rows[0];
   const eloLabel = p.tour_elo == null ? p.elo_label : getTourEloDesignation(p.tour_elo);
 
-  const [recent, tournaments] = await Promise.all([
+  const [recent, tournaments, wtaScreenshotStats] = await Promise.all([
     safe(() => sql`
       SELECT r.*
       FROM player_recent_results r
@@ -74,6 +76,12 @@ export default async function PlayerDashboard({ params, searchParams }: Props) {
       LIMIT 10
     `, [] as any[]),
     safe(() => getTournaments(tour), [] as any[]),
+    tour === 'TE4_(F)'
+      ? safe(
+          async () => ({ snapshot: await wtaProfileScreenshotStats(id), unavailable: false }),
+          { snapshot: null, unavailable: true },
+        )
+      : Promise.resolve({ snapshot: null, unavailable: false }),
   ]);
   const tournamentNames = buildWtslTournamentNameLookup(tournaments);
   const verifiedOwner = await safe(() => getVerifiedOwner(id, tour), null as any);
@@ -173,14 +181,16 @@ export default async function PlayerDashboard({ params, searchParams }: Props) {
             ))}
           </aside>
         </div>
-        <section className="panel">
+        {tour === 'TE4_(F)' ? (
+          <WtaProfileMatchStatistics {...wtaScreenshotStats} />
+        ) : <section className="panel">
           <div className="panel-head"><h2 className="display">Match Statistics</h2></div>
           <div className="player-stat-grid">
             {statLines.map((s) => (
               <div key={s.label}><small>{s.label}</small><strong>{s.value}</strong></div>
             ))}
           </div>
-        </section>
+        </section>}
       </main>
     </>
   );
