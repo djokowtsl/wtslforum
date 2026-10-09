@@ -63,7 +63,7 @@ export function BettingBoardPanels() {
         <a className="btn btn-discord btn-sm" href={DISCORD_URL} target="_blank" rel="noreferrer">Place virtual bets in Discord ↗</a>
       </div>
       {feed.status === 'loading' ? (
-        <FeedMessage title="Checking official draws." detail="A pairing appears as open only after its current draw is verified." />
+        null
       ) : feed.status === 'unavailable' ? (
         <FeedMessage title="Open fixtures unavailable." detail="The official-draw check did not finish. Markets have not been cleared or presented as open." unavailable />
       ) : fixtures.length === 0 ? (
@@ -96,7 +96,7 @@ export function BettingBoardPanels() {
         </div>
       </div>
       {feed.status === 'loading' ? (
-        <FeedMessage title="Settled markets" detail="Loading the betting ledger independently of your personal bet history." />
+        null
       ) : feed.status === 'unavailable' ? (
         <FeedMessage title="Settled markets unavailable." detail="The betting feed could not be loaded." unavailable />
       ) : settled.length === 0 ? (
@@ -187,12 +187,14 @@ export function MyBettingPanel() {
 
   return (
     <>
-      <div className="kpi-grid" aria-busy={balanceStatus === 'loading'}>
-        <div><span>My W$ balance</span><b>{balanceStatus === 'ready' ? `W$${money(account?.balance)}` : '—'}</b></div>
-        <div><span>Total staked</span><b>{balanceStatus === 'ready' ? `W$${money(account?.total_staked)}` : '—'}</b></div>
-        <div><span>Total returned</span><b>{balanceStatus === 'ready' ? `W$${money(account?.total_returned)}` : '—'}</b></div>
-        <div><span>Net profit</span><b>{balanceStatus === 'ready' ? `W$${money(account?.total_profit)}` : '—'}</b></div>
-      </div>
+      {balanceStatus !== 'loading' && (
+        <div className="kpi-grid">
+          <div><span>My W$ balance</span><b>{balanceStatus === 'ready' ? `W$${money(account?.balance)}` : '—'}</b></div>
+          <div><span>Total staked</span><b>{balanceStatus === 'ready' ? `W$${money(account?.total_staked)}` : '—'}</b></div>
+          <div><span>Total returned</span><b>{balanceStatus === 'ready' ? `W$${money(account?.total_returned)}` : '—'}</b></div>
+          <div><span>Net profit</span><b>{balanceStatus === 'ready' ? `W$${money(account?.total_profit)}` : '—'}</b></div>
+        </div>
+      )}
       {balanceStatus === 'unavailable' && <FeedMessage title="Your balance is unavailable." detail="This does not affect your bet ledger." unavailable />}
       <div className="section-head section-space">
         <div>
@@ -201,7 +203,7 @@ export function MyBettingPanel() {
         </div>
       </div>
       {ledgerStatus === 'loading' ? (
-        <FeedMessage title="Your ledger is loading." detail="It is fetched separately from the public fixture board." />
+        null
       ) : ledgerStatus === 'unauthorized' ? (
         <div className="forum-list"><div className="empty"><strong>Sign in to view your ledger</strong><a className="btn btn-discord btn-sm" href="/api/auth/discord">Log in with Discord</a></div></div>
       ) : ledgerStatus === 'unavailable' ? (
