@@ -1,5 +1,6 @@
 import type { Metadata } from 'next';
 import Link from 'next/link';
+import { Suspense } from 'react';
 import { safe } from '@/lib/db';
 import { readLiveData } from '@/lib/liveData';
 import { fixturesBoard, getBalance, getBets, poolOdds, hybridOdds } from '@/lib/betting';
@@ -39,12 +40,61 @@ function sideOdds(f: any, side: 'one' | 'two') {
   return { official, live: live ?? official, guaranteed };
 }
 
-export default async function Betting() {
-  const user = await getSession();
-  const [boardState, account, bets, atpTournaments, wtaTournaments] = await Promise.all([
+function BettingDataLoading({ title, detail }: { title: string; detail: string }) {
+  return (
+    <div className="forum-list">
+      <div className="empty" role="status" aria-live="polite">
+        <strong>{title}</strong>{detail}
+      </div>
+    </div>
+  );
+}
+
+async function BettingAccountSummary({ discordId }: { discordId: string }) {
+  const account = await safe(() => getBalance(discordId), null as any);
+  return (
+    <div className="kpi-grid">
+      <div><span>My W$ balance</span><b>{account ? `W$${money(account.balance)}` : '—'}</b></div>
+      <div><span>Total staked</span><b>{account ? `W$${money(account.total_staked)}` : '—'}</b></div>
+      <div><span>Total returned</span><b>{account ? `W$${money(account.total_returned)}` : '—'}</b></div>
+      <div><span>Net profit</span><b>{account ? `W$${money(account.total_profit)}` : '—'}</b></div>
+    </div>
+  );
+}
+
+async function BettingLedger({ discordId }: { discordId: string }) {
+  const betList = await safe(() => getBets(discordId), [] as any[]);
+  return (
+    <>
+      <div className="section-head section-space">
+        <div>
+          <h2 className="display">My bet ledger</h2>
+          <p>Your recent bets placed in Discord.</p>
+        </div>
+      </div>
+      {betList.length === 0 ? <div className="forum-list"><div className="empty"><strong>No bets yet</strong>Place a bet in Discord and it&apos;ll show up here.</div></div> : (
+        <div className="forum-list">
+          {betList.slice(0, 20).map((b: any, i: number) => (
+            <div className="bet-row" key={b.bet_id ?? i}>
+              <div>
+                <strong>{b.selection_name || b.selection_id}</strong>
+                <div className="topic-meta">{b.fixture_key}{b.placed_at ? ` · ${new Date(b.placed_at).toLocaleDateString()}` : ''}</div>
+              </div>
+              <div className="topic-meta">
+                Stake W${money(b.stake)} @ {Number(b.odds).toFixed(2)}
+                <span className="pill cyan">{String(b.status || 'open').toUpperCase()}</span>
+              </div>
+            </div>
+          ))}
+        </div>
+      )}
+    </>
+  );
+}
+
+async function BettingBoardSections() {
+  const [boardState, atpTournaments, wtaTournaments] = await Promise.all([
     readLiveData(() => fixturesBoard(), { open: [] as any[], recent_settled: [] as any[] }),
-    user ? safe(() => getBalance(user.discordId), null as any) : Promise.resolve(null),
-    user ? safe(() => getBets(user.discordId), [] as any[]) : Promise.resolve([] as any[]),
     safe(() => getTournaments('TE4'), [] as any[]),
     safe(() => getTournaments('TE4_(F)'), [] as any[]),
   ]);
@@ -59,33 +109,19 @@ export default async function Betting() {
   );
   const fixtures = bettingBoard.open;
   const settled = bettingBoard.recent_settled;
-  const betList = Array.isArray(bets) ? bets : [];
 
   return (
     <>
-      <WtslDataAutoRefresh />
-      <PageHero eyebrow="WTSL Forum" title="Virtual Betting">Follow live odds across the tour. Virtual bets are placed in Discord — use the button to jump straight there.</PageHero>
-      <main className="container">
-        {boardState.unavailable && <div className="notice warn" role="status">The live betting feed is unavailable right now. Open and settled markets could not be loaded; they have not been cleared. Please try again shortly.</div>}
-        {!wtslCore.configured() && <div className="notice warn" style={{ marginBottom: 22 }}>The WTSL Core API is not configured on this deployment, so odds and account data can&apos;t load right now.</div>}
+      {boardState.unavailable && <div className="notice warn" role="status">The live betting feed is unavailable right now. Open and settled markets could not be loaded; they have not been cleared. Please try again shortly.</div>}
 
-        {user && (
-          <div className="kpi-grid">
-            <div><span>My W$ balance</span><b>{account ? `W$${money(account.balance)}` : '—'}</b></div>
-            <div><span>Total staked</span><b>{account ? `W$${money(account.total_staked)}` : '—'}</b></div>
-            <div><span>Total returned</span><b>{account ? `W$${money(account.total_returned)}` : '—'}</b></div>
-            <div><span>Net profit</span><b>{account ? `W$${money(account.total_profit)}` : '—'}</b></div>
-          </div>
-        )}
-
-        <div className="section-head">
+      <div className="section-head">
           <div>
             <h2 className="display">Open fixtures</h2>
             <p>WTSL odds, house-adjusted live odds and the guaranteed minimum you&apos;d lock in right now.</p>
           </div>
           <a className="btn btn-discord btn-sm" href={DISCORD_URL} target="_blank" rel="noreferrer">Place virtual bets in Discord ↗</a>
-        </div>
-        {boardState.unavailable ? null : fixtures.length === 0 ? <div className="forum-list"><div className="empty"><strong>No open fixtures</strong>New fixtures appear when the next round opens.</div></div> : (
+      </div>
+      {boardState.unavailable ? null : fixtures.length === 0 ? <div className="forum-list"><div className="empty"><strong>No open fixtures</strong>New fixtures appear when the next round opens.</div></div> : (
           <div className="fixture-grid">
             {fixtures.map((f: any) => {
               const one = sideOdds(f, 'one');
@@ -104,15 +140,15 @@ export default async function Betting() {
               );
             })}
           </div>
-        )}
+      )}
 
-        <div className="section-head section-space">
-          <div>
-            <h2 className="display">Recently settled</h2>
-            <p>Markets the bot has resolved. If a pairing disappears from its official draw, the market is voided and affected bets are refunded.</p>
-          </div>
+      <div className="section-head section-space">
+        <div>
+          <h2 className="display">Recently settled</h2>
+          <p>Markets the bot has resolved. If a pairing disappears from its official draw, the market is voided and affected bets are refunded.</p>
         </div>
-        {boardState.unavailable ? null : settled.length === 0 ? <div className="forum-list"><div className="empty"><strong>No settled fixtures yet</strong>Settled results appear here once the bot closes a market out.</div></div> : (
+      </div>
+      {boardState.unavailable ? null : settled.length === 0 ? <div className="forum-list"><div className="empty"><strong>No settled fixtures yet</strong>Settled results appear here once the bot closes a market out.</div></div> : (
           <div className="fixture-grid">
             {settled.map((f: any) => {
               const winnerIsFirst = f.winner_id != null && String(f.winner_id) === String(f.first_id);
@@ -144,33 +180,32 @@ export default async function Betting() {
               );
             })}
           </div>
-        )}
+      )}
+    </>
+  );
+}
+
+export default async function Betting() {
+  const user = await getSession();
+  return (
+    <>
+      <WtslDataAutoRefresh />
+      <PageHero eyebrow="WTSL Forum" title="Virtual Betting">Follow live odds across the tour. Virtual bets are placed in Discord — use the button to jump straight there.</PageHero>
+      <main className="container">
+        {!wtslCore.configured() && <div className="notice warn" style={{ marginBottom: 22 }}>The WTSL Core API is not configured on this deployment, so odds and account data can&apos;t load right now.</div>}
 
         {user && (
-          <>
-            <div className="section-head section-space">
-              <div>
-                <h2 className="display">My bet ledger</h2>
-                <p>Your recent bets placed in Discord.</p>
-              </div>
-            </div>
-            {betList.length === 0 ? <div className="forum-list"><div className="empty"><strong>No bets yet</strong>Place a bet in Discord and it&apos;ll show up here.</div></div> : (
-              <div className="forum-list">
-                {betList.slice(0, 20).map((b: any, i: number) => (
-                  <div className="bet-row" key={b.bet_id ?? i}>
-                    <div>
-                      <strong>{b.selection_name || b.selection_id}</strong>
-                      <div className="topic-meta">{b.fixture_key}{b.placed_at ? ` · ${new Date(b.placed_at).toLocaleDateString()}` : ''}</div>
-                    </div>
-                    <div className="topic-meta">
-                      Stake W${money(b.stake)} @ {Number(b.odds).toFixed(2)}
-                      <span className="pill cyan">{String(b.status || 'open').toUpperCase()}</span>
-                    </div>
-                  </div>
-                ))}
-              </div>
-            )}
-          </>
+          <Suspense fallback={<BettingDataLoading title="Loading your balance." detail="Account figures load separately from the live boards." />}>
+            <BettingAccountSummary discordId={user.discordId} />
+          </Suspense>
+        )}
+        <Suspense fallback={<BettingDataLoading title="Verifying open fixtures." detail="The board only marks a pairing open after the official draw check." />}>
+          <BettingBoardSections />
+        </Suspense>
+        {user && (
+          <Suspense fallback={<BettingDataLoading title="Loading your bet history." detail="Your ledger loads separately from live fixture verification." />}>
+            <BettingLedger discordId={user.discordId} />
+          </Suspense>
         )}
       </main>
     </>
