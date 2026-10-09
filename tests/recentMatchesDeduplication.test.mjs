@@ -4,6 +4,7 @@ import test from 'node:test';
 
 const statsSource = await readFile(new URL('../lib/stats.ts', import.meta.url), 'utf8');
 const bettingSource = await readFile(new URL('../lib/betting.ts', import.meta.url), 'utf8');
+const coreSource = await readFile(new URL('../lib/wtsl-core.ts', import.meta.url), 'utf8');
 const autoRefreshSource = await readFile(
   new URL('../components/WtslDataAutoRefresh.tsx', import.meta.url),
   'utf8',
@@ -54,4 +55,13 @@ test('public match boards avoid retained result caches and refresh visible pages
   assert.match(bettingSource, /wtslCore\.fixturesBoard\(\)/);
   assert.match(bettingSource, /fixturesBoardRequest/);
   assert.match(autoRefreshSource, /LIVE_DATA_REFRESH_INTERVAL_MS = 15_000/);
+});
+
+test('public results request a bounded Core window and keep the results timeout', () => {
+  assert.match(statsSource, /const PUBLIC_WTSL_RESULTS_WINDOW_DAYS = 30/);
+  assert.match(statsSource, /wtslCore\.results\(PUBLIC_WTSL_RESULTS_WINDOW_DAYS\)/);
+  assert.match(coreSource, /results: \(days\?: number\)/);
+  assert.match(coreSource, /\/api\/core\/results\?days=/);
+  assert.match(coreSource, /const routePath = path\.split\('\?', 1\)\[0\]/);
+  assert.match(coreSource, /routePath === '\/api\/core\/results'/);
 });
