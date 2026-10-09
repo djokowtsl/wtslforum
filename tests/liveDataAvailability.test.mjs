@@ -15,37 +15,62 @@ test('valid nonempty data is preserved', async () => {
 });
 
 test('board and season views propagate availability rather than manufacturing empty histories', async () => {
-  const [matches, betting, dashboard, season] = await Promise.all([
-    'app/matches/page.tsx', 'app/betting/page.tsx', 'app/dashboard/page.tsx',
+  const [panels, dashboard, season] = await Promise.all([
+    'components/LiveMatchPanels.tsx', 'app/dashboard/page.tsx',
     'components/PlayerSeasonHighlights.tsx',
   ].map(path => readFile(new URL('../' + path, import.meta.url), 'utf8')));
-  assert.match(matches, /supportsBetting && fixturesState\.unavailable/);
-  assert.match(betting, /boardState\.unavailable \? null : fixtures\.length/);
-  assert.match(betting, /boardState\.unavailable \? null : settled\.length/);
+  assert.match(panels, /feed\.status === 'unavailable'/);
+  assert.match(panels, /this does not mean the tour has no matches/);
   assert.match(dashboard, /: coreSeasonResults\.unavailable/);
   assert.match(season, /Official season match results are unavailable/);
 });
 
-test('Matches streams fixture verification and recent results independently', async () => {
-  const matches = await readFile(new URL('../app/matches/page.tsx', import.meta.url), 'utf8');
-  assert.match(matches, /<Suspense fallback={<MatchesDataLoading label="Checking live fixtures"/);
-  assert.match(matches, /<OpenFixturesSection tour={tour} \/>/);
-  assert.match(matches, /<Suspense fallback={<MatchesDataLoading label="Loading recent results"/);
-  assert.match(matches, /<RecentResultsSection tour={tour} \/>/);
-  assert.doesNotMatch(matches, /const \[results, fixturesState, tournaments\] = await Promise\.all/);
+test('live-data sections are fetched after page rendering instead of holding route responses open', async () => {
+  const [home, matches, betting] = await Promise.all([
+    'app/page.tsx',
+    'app/matches/page.tsx',
+    'app/betting/page.tsx',
+  ].map(path => readFile(new URL('../' + path, import.meta.url), 'utf8')));
+
+  assert.match(home, /<PublicResultsProvider limit=\{3\} tour="TE4">/);
+  assert.match(home, /<PublicFixturesProvider>/);
+  assert.match(matches, /<PublicResultsProvider limit=\{30\} tour=\{tour\}>/);
+  assert.match(matches, /<PublicFixturesProvider enabled=\{supportsBetting\}>/);
+  assert.match(betting, /<PublicFixturesProvider>/);
+
+  for (const page of [home, matches, betting]) {
+    assert.doesNotMatch(page, /await (?:recentWtslSiteMatches|fixturesBoard|openFixtures)\(/);
+    assert.doesNotMatch(page, /<Suspense/);
+  }
 });
 
-test('homepage and Virtual Betting stream live feeds outside their page-level render', async () => {
-  const [home, betting] = await Promise.all([
-    readFile(new URL('../app/page.tsx', import.meta.url), 'utf8'),
-    readFile(new URL('../app/betting/page.tsx', import.meta.url), 'utf8'),
+test('fixture and results endpoints are live no-store reads with explicit unavailable responses', async () => {
+  const [fixtures, results, client] = await Promise.all([
+    readFile(new URL('../app/api/live-fixtures/route.ts', import.meta.url), 'utf8'),
+    readFile(new URL('../app/api/live-results/route.ts', import.meta.url), 'utf8'),
+    readFile(new URL('../components/LiveMatchPanels.tsx', import.meta.url), 'utf8'),
   ]);
-  assert.match(home, /<Suspense fallback={<LiveSectionLoading label="Loading recent results\."/);
-  assert.match(home, /<HomeRecentResults tournaments=\{tournaments\} \/>/);
-  assert.match(home, /<Suspense fallback={<LiveSectionLoading label="Verifying open fixtures\."/);
-  assert.match(home, /<HomeOpenFixtures tournaments=\{tournaments\} \/>/);
-  assert.match(betting, /<Suspense fallback={<BettingDataLoading title="Verifying open fixtures\."/);
-  assert.match(betting, /<BettingBoardSections \/>/);
-  assert.match(betting, /<BettingAccountSummary discordId=\{user\.discordId\} \/>/);
-  assert.match(betting, /<BettingLedger discordId=\{user\.discordId\} \/>/);
+  assert.match(fixtures, /fixturesBoard\(\)/);
+  assert.match(fixtures, /cache-control.*no-store/);
+  assert.match(fixtures, /status: 503/);
+  assert.match(results, /recentWtslSiteMatches/);
+  assert.match(results, /cache-control.*no-store/);
+  assert.match(client, /official-draw check could not be completed/i);
+  assert.match(client, /Recent results unavailable/);
+});
+
+test('a failed private betting API read is never presented as an empty ledger', async () => {
+  const [route, client] = await Promise.all([
+    readFile(new URL('../app/api/betting/account/route.ts', import.meta.url), 'utf8'),
+    readFile(new URL('../components/BettingPanels.tsx', import.meta.url), 'utf8'),
+  ]);
+  assert.match(route, /getSession\(\)/);
+  assert.match(route, /wtslCore\.balance/);
+  assert.match(route, /wtslCore\.bets/);
+  assert.match(route, /status: 503/);
+  assert.match(client, /Your betting data is unavailable/);
+  const unavailableBranch = client.indexOf("status === 'unavailable' ?");
+  const emptyLedgerBranch = client.indexOf("data?.bets.length === 0 ?");
+  assert(unavailableBranch >= 0 && emptyLedgerBranch > unavailableBranch,
+    'the explicit API error state must be rendered before the successful empty-ledger state');
 });
