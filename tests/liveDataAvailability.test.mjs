@@ -67,6 +67,17 @@ test('homepage latest-result placeholder offers Matches instead of exposing an i
   assert.doesNotMatch(latestResultPanel, /Recent scores load separately/);
 });
 
+test('Predictions uses a leaderboard skeleton instead of the shared latest-data loading message', async () => {
+  const [predictionsLoading, sharedLoading] = await Promise.all([
+    readFile(new URL('../app/predictions/loading.tsx', import.meta.url), 'utf8'),
+    readFile(new URL('../components/LiveDataLoading.tsx', import.meta.url), 'utf8'),
+  ]);
+  assert.match(predictionsLoading, /Predictions leaderboard/);
+  assert.match(predictionsLoading, /aria-busy="true"/);
+  assert.doesNotMatch(predictionsLoading, /Loading the latest official data/);
+  assert.match(sharedLoading, /Loading the latest official data/);
+});
+
 test('a failed private betting API read is never presented as an empty ledger', async () => {
   const [balanceRoute, ledgerRoute, client] = await Promise.all([
     readFile(new URL('../app/api/betting/account/route.ts', import.meta.url), 'utf8'),
