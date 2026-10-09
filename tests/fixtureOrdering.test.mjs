@@ -293,6 +293,32 @@ test('deduplicates redundant aliases in both betting board sections', () => {
   assert.deepEqual(board.recent_settled.map((item) => item.key), ['settled-short', 'settled-different-deadline']);
 });
 
+test('open and settled betting cards use the official tournament name and keep the round', () => {
+  const officialTournament = {
+    tour: 'TE4',
+    name: 'Seoul Challenger 125 · Outdoor Hard',
+    official_url: tournamentUrl('Seoul_2026_TE4'),
+  };
+  const fixture = (key, tournament, firstId, secondId) => ({
+    key,
+    tour: 'TE4',
+    tournament_id: 'Seoul_2026_TE4',
+    tournament,
+    first_id: firstId,
+    first_name: `Player ${firstId}`,
+    second_id: secondId,
+    second_name: `Player ${secondId}`,
+    round_deadline: 'Wed, 07 Oct 2026 22:59:00 GMT',
+  });
+  const board = deduplicateBettingBoardFixtures({
+    open: [fixture('open', 'SEOUL CHALLENGER 125 · OUTDOOR HARD (R16)', 'a', 'b')],
+    recent_settled: [fixture('settled', 'SEOUL (R16)', 'c', 'd')],
+  }, [officialTournament]);
+
+  assert.equal(board.open[0].tournament, 'Seoul Challenger 125 · Outdoor Hard (R16)');
+  assert.equal(board.recent_settled[0].tournament, 'Seoul Challenger 125 · Outdoor Hard (R16)');
+});
+
 test('home, matches, and betting share only confirmed WTSL fixtures', () => {
   const fixtures = [
     { key: 'bad-placeholder', tour: 'TE4', tournament_id: 'Tokyo_2026_TE4', tournament: 'Tokyo (R32)', first_id: null, first_name: 'TBC', second_id: '4598', second_name: 'Sid' },
