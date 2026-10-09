@@ -67,15 +67,39 @@ test('homepage latest-result placeholder offers Matches instead of exposing an i
   assert.doesNotMatch(latestResultPanel, /Recent scores load separately/);
 });
 
-test('Predictions uses a leaderboard skeleton instead of the shared latest-data loading message', async () => {
-  const [predictionsLoading, sharedLoading] = await Promise.all([
-    readFile(new URL('../app/predictions/loading.tsx', import.meta.url), 'utf8'),
-    readFile(new URL('../components/LiveDataLoading.tsx', import.meta.url), 'utf8'),
-  ]);
-  assert.match(predictionsLoading, /Predictions leaderboard/);
-  assert.match(predictionsLoading, /aria-busy="true"/);
-  assert.doesNotMatch(predictionsLoading, /Loading the latest official data/);
-  assert.match(sharedLoading, /Loading the latest official data/);
+test('all routes have no visible full-page loading fallbacks and the app chrome streams immediately', async () => {
+  const layout = await readFile(new URL('../app/layout.tsx', import.meta.url), 'utf8');
+  assert.match(layout, /<Suspense fallback=\{null\}>\{children\}<\/Suspense>/);
+  for (const path of [
+    'app/loading.tsx',
+    'app/matches/loading.tsx',
+    'app/betting/loading.tsx',
+    'app/predictions/loading.tsx',
+    'components/LiveDataLoading.tsx',
+  ]) {
+    await assert.rejects(
+      readFile(new URL('../' + path, import.meta.url), 'utf8'),
+      (error) => error.code === 'ENOENT',
+      `${path} should not render a loading placeholder`,
+    );
+  }
+  const predictions = await readFile(new URL('../app/predictions/page.tsx', import.meta.url), 'utf8');
+  assert.match(predictions, /export default function Predictions\(\)/);
+  assert.match(predictions, /<Suspense fallback=\{null\}>/);
+  assert.match(predictions, /<PredictionsLeaderboard \/>/);
+});
+
+test('page data sections stay quiet instead of showing loading placeholders', async () => {
+  const [livePanels, bettingPanels, screenshotRecords] = await Promise.all([
+    'components/LiveMatchPanels.tsx',
+    'components/BettingPanels.tsx',
+    'components/ScreenshotRecordsViewer.tsx',
+  ].map(path => readFile(new URL('../' + path, import.meta.url), 'utf8')));
+
+  assert.doesNotMatch(livePanels, /Updating from the WTSL|Confirming upcoming pairings|Results update independently/);
+  assert.doesNotMatch(bettingPanels, /Checking official draws|Loading the betting ledger|Your ledger is loading/);
+  assert.doesNotMatch(screenshotRecords, /Loading (?:players|opponents|tournaments|years|screenshot rows)/);
+  assert.match(screenshotRecords, /placeholder="Search player names"/);
 });
 
 test('a failed private betting API read is never presented as an empty ledger', async () => {
