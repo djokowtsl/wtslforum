@@ -42,7 +42,7 @@ export function HomeLatestResultSpot() {
 export function HomeRecentResults() {
   const feed = usePublicResults();
   if (feed.status === 'loading') {
-    return <FeedStatus title="Recent results" detail="Updating from the WTSL result feeds." />;
+    return null;
   }
   if (feed.status === 'unavailable') {
     return <FeedStatus title="Recent results unavailable." detail="The feed could not be loaded. This is not an empty results list." unavailable />;
@@ -60,7 +60,7 @@ export function HomeRecentResults() {
 export function HomeOpenFixtures() {
   const feed = usePublicFixtures();
   if (feed.status === 'loading') {
-    return <FeedStatus title="Open fixtures" detail="Confirming upcoming pairings against the official draws." />;
+    return null;
   }
   if (feed.status === 'unavailable') {
     return <FeedStatus title="Open fixtures unavailable." detail="The official-draw check could not be completed, so no pairings are being shown as open." unavailable />;
@@ -78,7 +78,7 @@ export function MatchesOpenFixtures({ tour }: { tour: TourCode }) {
     return <div className="forum-list"><div className="empty"><strong>No open fixtures right now</strong>The betting bot only runs markets for ATP and WTA singles — this tour has no fixtures.</div></div>;
   }
   if (feed.status === 'loading') {
-    return <FeedStatus title="Open fixtures" detail="Confirming upcoming pairings against the official draws." />;
+    return null;
   }
   if (feed.status === 'unavailable') {
     return <FeedStatus title="Open fixtures unavailable." detail="The official-draw check could not be completed; this does not mean the tour has no matches." unavailable />;
@@ -93,7 +93,7 @@ export function MatchesOpenFixtures({ tour }: { tour: TourCode }) {
 export function MatchesRecentResults() {
   const feed = usePublicResults();
   if (feed.status === 'loading') {
-    return <FeedStatus title="Recent results" detail="Results update independently of the fixture checks." />;
+    return null;
   }
   if (feed.status === 'unavailable') {
     return <FeedStatus title="Recent results unavailable." detail="The results feed could not be loaded." unavailable />;

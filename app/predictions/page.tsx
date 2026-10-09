@@ -1,5 +1,6 @@
 import type { Metadata } from 'next';
 import Link from 'next/link';
+import { Suspense } from 'react';
 import { wtslCore, type CorePredictionRow } from '@/lib/wtsl-core';
 import { getChallongeDisplayMap, type ChallongeDisplay } from '@/lib/challonge-claims';
 import { safe } from '@/lib/db';
@@ -34,62 +35,70 @@ function predictorName(r: CorePredictionRow, verified?: ChallongeDisplay): strin
   return username || r.prediction_name || 'Unknown';
 }
 
-export default async function Predictions() {
+async function PredictionsLeaderboard() {
   const [rows, challongeMap] = await Promise.all([
     safeLeaderboard(),
     safe(() => getChallongeDisplayMap(), new Map<string, ChallongeDisplay>()),
   ]);
   return (
+    <main className="container">
+      {!wtslCore.configured() ? (
+        <div className="notice">The predictions leaderboard isn&apos;t available on this deployment yet.</div>
+      ) : rows.length === 0 ? (
+        <div className="forum-list"><div className="empty"><strong>No predictions recorded yet</strong>Standings appear once the Discord bot scans a tournament&apos;s picks.</div></div>
+      ) : (
+        <section className="panel">
+          <div className="panel-head"><h2 className="display">Top predictors</h2><span>{rows.length} ranked</span></div>
+          <table>
+            <thead>
+              <tr><th>#</th><th>Predictor</th><th>Points</th><th>Correct picks</th><th>Tournaments</th><th>Won</th><th>Avg score</th></tr>
+            </thead>
+            <tbody>
+              {rows.map((r, i) => {
+                const possible = Number(r.total_picks_potential) || 0;
+                const correct = Number(r.total_picks) || 0;
+                const pct = possible > 0 ? Math.round((correct / possible) * 100) : 0;
+                const verified = challongeMap.get((r.challonge_username || '').trim().toLowerCase());
+                return (
+                  <tr key={r.challonge_user_id}>
+                    <td>{MEDALS[i] || i + 1}</td>
+                    <td>
+                      <div className="prediction-player">
+                        {verified && (verified.avatarUrl
+                          ? <img src={verified.avatarUrl} alt="" loading="lazy" />
+                          : <span className="prediction-avatar-placeholder" aria-hidden="true">{predictorName(r, verified).trim().slice(0, 1).toUpperCase() || '?'}</span>)}
+                        {verified?.wtslPlayerId && verified.tour ? (
+                          <Link href={`/players/${verified.wtslPlayerId}?tour=${encodeURIComponent(verified.tour)}`}>{predictorName(r, verified)}</Link>
+                        ) : (
+                          predictorName(r, verified)
+                        )}
+                      </div>
+                    </td>
+                    <td><b>{r.total_score}</b></td>
+                    <td>{correct}/{possible}{possible > 0 ? ` (${pct}%)` : ''}</td>
+                    <td>{r.tournaments}</td>
+                    <td>{r.tournaments_won}</td>
+                    <td>{Number(r.average_score).toFixed(1)}</td>
+                  </tr>
+                );
+              })}
+            </tbody>
+          </table>
+        </section>
+      )}
+    </main>
+  );
+}
+
+export default function Predictions() {
+  return (
     <>
       <PageHero eyebrow="WTSL Forum" title="Predictions leaderboard">
         Challonge prediction standings.
       </PageHero>
-      <main className="container">
-        {!wtslCore.configured() ? (
-          <div className="notice">The predictions leaderboard isn&apos;t available on this deployment yet.</div>
-        ) : rows.length === 0 ? (
-          <div className="forum-list"><div className="empty"><strong>No predictions recorded yet</strong>Standings appear once the Discord bot scans a tournament&apos;s picks.</div></div>
-        ) : (
-          <section className="panel">
-            <div className="panel-head"><h2 className="display">Top predictors</h2><span>{rows.length} ranked</span></div>
-            <table>
-              <thead>
-                <tr><th>#</th><th>Predictor</th><th>Points</th><th>Correct picks</th><th>Tournaments</th><th>Won</th><th>Avg score</th></tr>
-              </thead>
-              <tbody>
-                {rows.map((r, i) => {
-                  const possible = Number(r.total_picks_potential) || 0;
-                  const correct = Number(r.total_picks) || 0;
-                  const pct = possible > 0 ? Math.round((correct / possible) * 100) : 0;
-                  const verified = challongeMap.get((r.challonge_username || '').trim().toLowerCase());
-                  return (
-                    <tr key={r.challonge_user_id}>
-                      <td>{MEDALS[i] || i + 1}</td>
-                      <td>
-                        <div className="prediction-player">
-                          {verified && (verified.avatarUrl
-                            ? <img src={verified.avatarUrl} alt="" loading="lazy" />
-                            : <span className="prediction-avatar-placeholder" aria-hidden="true">{predictorName(r, verified).trim().slice(0, 1).toUpperCase() || '?'}</span>)}
-                          {verified?.wtslPlayerId && verified.tour ? (
-                            <Link href={`/players/${verified.wtslPlayerId}?tour=${encodeURIComponent(verified.tour)}`}>{predictorName(r, verified)}</Link>
-                          ) : (
-                            predictorName(r, verified)
-                          )}
-                        </div>
-                      </td>
-                      <td><b>{r.total_score}</b></td>
-                      <td>{correct}/{possible}{possible > 0 ? ` (${pct}%)` : ''}</td>
-                      <td>{r.tournaments}</td>
-                      <td>{r.tournaments_won}</td>
-                      <td>{Number(r.average_score).toFixed(1)}</td>
-                    </tr>
-                  );
-                })}
-              </tbody>
-            </table>
-          </section>
-        )}
-      </main>
+      <Suspense fallback={null}>
+        <PredictionsLeaderboard />
+      </Suspense>
     </>
   );
 }
