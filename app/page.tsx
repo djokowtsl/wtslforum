@@ -9,9 +9,9 @@ import { fmtDate, timeAgo } from '@/lib/format';
 import { discordAvatar } from '@/lib/auth';
 import ForumAvatar from '@/components/ForumAvatar';
 import LiveScores from '@/components/LiveScores';
-import WtslDataAutoRefresh from '@/components/WtslDataAutoRefresh';
 import { PublicFixturesProvider, PublicResultsProvider } from '@/components/PublicLiveData';
 import { HomeLatestResultSpot, HomeOpenFixtures, HomeRecentResults } from '@/components/LiveMatchPanels';
+import { initialLiveScores, initialPublicFixtures, initialPublicResults } from '@/lib/publicPageData';
 
 export const dynamic = 'force-dynamic';
 
@@ -27,13 +27,16 @@ const ERRORS: Record<string, string> = {
 
 export default async function Home({ searchParams }: { searchParams: Promise<{ error?: string }> }) {
   const { error } = await searchParams;
-  const [u, topics, categories, articles, tournaments, topPlayers] = await Promise.all([
+  const [u, topics, categories, articles, tournaments, topPlayers, initialResults, initialFixtures, initialScores] = await Promise.all([
     getSession(),
     safe(() => getTopics({ limit: 6 }), [] as any[]),
     safe(() => getCategoriesWithCounts(), [] as any[]),
     safe(() => getArticles(true, 3), [] as any[]),
     safe(() => getTournaments(), [] as any[]),
     safe(() => sql`SELECT name,avatar_url,flag_url,country,tour_elo,official_url FROM wtsl_players WHERE tour_elo IS NOT NULL ORDER BY tour_elo DESC LIMIT 1`, [] as any[]),
+    initialPublicResults(3, 'TE4'),
+    initialPublicFixtures(),
+    initialLiveScores(),
   ]);
   const heroPhoto = fs.existsSync(path.join(process.cwd(), 'public/brand/hero.jpg'));
   const featured = tournaments.find((t: any) => t.status === 'ongoing') || tournaments.find((t: any) => t.status === 'upcoming');
@@ -41,10 +44,9 @@ export default async function Home({ searchParams }: { searchParams: Promise<{ e
   const live = tournaments.filter((t: any) => t.status === 'ongoing').concat(tournaments.filter((t: any) => t.status === 'upcoming')).slice(0, 4);
 
   return (
-    <PublicResultsProvider limit={3} tour="TE4">
-    <PublicFixturesProvider>
+    <PublicResultsProvider limit={3} tour="TE4" initialFeed={initialResults}>
+    <PublicFixturesProvider initialFeed={initialFixtures}>
     <>
-      <WtslDataAutoRefresh />
       {error && <div className="banner"><div role="alert"><span>⚠️</span><span>{ERRORS[error] || 'Something went wrong. Please try again.'}</span></div></div>}
 
       <section className={`hero ${heroPhoto ? 'has-photo' : ''}`} style={heroPhoto ? { backgroundImage: 'linear-gradient(90deg,rgba(3,10,24,.96) 0%,rgba(3,10,24,.78) 55%,rgba(3,10,24,.5) 100%),url(/brand/hero.jpg)' } : undefined}>
@@ -74,7 +76,7 @@ export default async function Home({ searchParams }: { searchParams: Promise<{ e
       <section className="live">
         <div className="live-inner">
           <div className="live-head"><span className="live-dot" /><h2 className="display">Happening now</h2><Link href="/matches">All matches →</Link></div>
-          <LiveScores />
+          <LiveScores initialPayload={initialScores.payload} initialSource={initialScores.source} />
           <div className="live-sub" style={{ marginTop: 0 }}>Latest results</div>
           <HomeRecentResults />
           <div className="live-sub">Open fixtures</div>

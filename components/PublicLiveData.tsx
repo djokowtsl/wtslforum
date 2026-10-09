@@ -9,11 +9,16 @@ export type PublicFixtureFeeds = {
   errorStatus?: number;
   publicOpen: any[];
   bettingBoard: { open: any[]; recent_settled: any[] };
+  checkedAt?: string;
+  source?: 'snapshot' | 'live' | null;
+  refreshing?: boolean;
+  refreshError?: boolean;
 };
 
 type FixturePayload = {
   publicOpen: any[];
   bettingBoard: { open: any[]; recent_settled: any[] };
+  checkedAt?: string;
 };
 
 export type PublicResultsFeed = {
@@ -21,6 +26,10 @@ export type PublicResultsFeed = {
   errorStatus?: number;
   results: any[];
   tournamentNames: Record<string, string>;
+  checkedAt?: string;
+  source?: 'snapshot' | 'live' | null;
+  refreshing?: boolean;
+  refreshError?: boolean;
 };
 
 const fixtureFallback: PublicFixtureFeeds = {
@@ -36,12 +45,14 @@ const ResultsContext = createContext<PublicResultsFeed>(resultsFallback);
 export function PublicFixturesProvider({
   children,
   enabled = true,
+  initialFeed,
 }: {
   children: React.ReactNode;
   enabled?: boolean;
+  initialFeed?: PublicFixtureFeeds;
 }) {
   const [feed, setFeed] = useState<PublicFixtureFeeds>(
-    enabled ? fixtureFallback : { ...fixtureFallback, status: 'ready' },
+    initialFeed ?? (enabled ? fixtureFallback : { ...fixtureFallback, status: 'ready' }),
   );
 
   useEffect(() => {
@@ -49,35 +60,66 @@ export function PublicFixturesProvider({
       setFeed({ ...fixtureFallback, status: 'ready' });
       return;
     }
-    const controller = new AbortController();
     let active = true;
+    let inFlight = false;
+    let currentController: AbortController | null = null;
 
-    fetch('/api/live-fixtures', { cache: 'no-store', signal: controller.signal })
-      .then(async (response) => {
-        if (!active) return null;
+    const refresh = async () => {
+      if (!active || inFlight || document.visibilityState === 'hidden') return;
+      inFlight = true;
+      setFeed((current) => ({ ...current, refreshing: true }));
+      const controller = new AbortController();
+      currentController = controller;
+      try {
+        const response = await fetch('/api/live-fixtures', { cache: 'no-store', signal: controller.signal });
         if (!response.ok) {
-          setFeed({ ...fixtureFallback, status: 'unavailable', errorStatus: response.status });
-          return null;
+          setFeed((current) => current.status === 'ready'
+            ? { ...current, refreshing: false, refreshError: true, errorStatus: response.status }
+            : { ...fixtureFallback, status: 'unavailable', refreshing: false, refreshError: true, errorStatus: response.status });
+          return;
         }
-        return response.json() as Promise<FixturePayload>;
-      })
-      .then((data) => {
-        if (!active || !data) return;
+        const data = await response.json() as FixturePayload;
+        if (!active) return;
         if (!Array.isArray(data.publicOpen)
           || !Array.isArray(data.bettingBoard?.open)
           || !Array.isArray(data.bettingBoard?.recent_settled)) {
-          setFeed({ ...fixtureFallback, status: 'unavailable' });
+          setFeed((current) => current.status === 'ready'
+            ? { ...current, refreshing: false, refreshError: true }
+            : { ...fixtureFallback, status: 'unavailable', refreshing: false, refreshError: true });
           return;
         }
-        setFeed({ status: 'ready', publicOpen: data.publicOpen, bettingBoard: data.bettingBoard });
-      })
-      .catch(() => {
-        if (active) setFeed({ ...fixtureFallback, status: 'unavailable' });
-      });
+        setFeed({
+          status: 'ready',
+          publicOpen: data.publicOpen,
+          bettingBoard: data.bettingBoard,
+          checkedAt: data.checkedAt || new Date().toISOString(),
+          source: 'live',
+          refreshing: false,
+          refreshError: false,
+        });
+      } catch {
+        if (active) {
+          setFeed((current) => current.status === 'ready'
+            ? { ...current, refreshing: false, refreshError: true }
+            : { ...fixtureFallback, status: 'unavailable', refreshing: false, refreshError: true });
+        }
+      } finally {
+        inFlight = false;
+        if (currentController === controller) currentController = null;
+      }
+    };
 
+    const onVisibilityChange = () => {
+      if (document.visibilityState === 'visible') void refresh();
+    };
+    void refresh();
+    const timer = window.setInterval(() => void refresh(), 30_000);
+    document.addEventListener('visibilitychange', onVisibilityChange);
     return () => {
       active = false;
-      controller.abort();
+      currentController?.abort();
+      document.removeEventListener('visibilitychange', onVisibilityChange);
+      window.clearInterval(timer);
     };
   }, [enabled]);
 
@@ -92,42 +134,74 @@ export function PublicResultsProvider({
   children,
   limit,
   tour,
+  initialFeed,
 }: {
   children: React.ReactNode;
   limit: number;
   tour: string;
+  initialFeed?: PublicResultsFeed;
 }) {
-  const [feed, setFeed] = useState<PublicResultsFeed>(resultsFallback);
+  const [feed, setFeed] = useState<PublicResultsFeed>(initialFeed ?? resultsFallback);
 
   useEffect(() => {
-    const controller = new AbortController();
     let active = true;
-    const query = new URLSearchParams({ limit: String(limit), tour });
-
-    fetch(`/api/live-results?${query}`, { cache: 'no-store', signal: controller.signal })
-      .then(async (response) => {
-        if (!active) return null;
+    let inFlight = false;
+    let currentController: AbortController | null = null;
+    const refresh = async () => {
+      if (!active || inFlight || document.visibilityState === 'hidden') return;
+      inFlight = true;
+      setFeed((current) => ({ ...current, refreshing: true }));
+      const controller = new AbortController();
+      currentController = controller;
+      const query = new URLSearchParams({ limit: String(limit), tour });
+      try {
+        const response = await fetch(`/api/live-results?${query}`, { cache: 'no-store', signal: controller.signal });
         if (!response.ok) {
-          setFeed({ ...resultsFallback, status: 'unavailable', errorStatus: response.status });
-          return null;
-        }
-        return response.json() as Promise<{ results: any[]; tournamentNames: Record<string, string> }>;
-      })
-      .then((data) => {
-        if (!active || !data) return;
-        if (!Array.isArray(data.results) || !data.tournamentNames || typeof data.tournamentNames !== 'object') {
-          setFeed({ ...resultsFallback, status: 'unavailable' });
+          setFeed((current) => current.status === 'ready'
+            ? { ...current, refreshing: false, refreshError: true, errorStatus: response.status }
+            : { ...resultsFallback, status: 'unavailable', refreshing: false, refreshError: true, errorStatus: response.status });
           return;
         }
-        setFeed({ status: 'ready', results: data.results, tournamentNames: data.tournamentNames });
-      })
-      .catch(() => {
-        if (active) setFeed({ ...resultsFallback, status: 'unavailable' });
-      });
+        const data = await response.json() as { results: any[]; tournamentNames: Record<string, string>; checkedAt?: string };
+        if (!active) return;
+        if (!Array.isArray(data.results) || !data.tournamentNames || typeof data.tournamentNames !== 'object') {
+          setFeed((current) => current.status === 'ready'
+            ? { ...current, refreshing: false, refreshError: true }
+            : { ...resultsFallback, status: 'unavailable', refreshing: false, refreshError: true });
+          return;
+        }
+        setFeed({
+          status: 'ready',
+          results: data.results,
+          tournamentNames: data.tournamentNames,
+          checkedAt: data.checkedAt || new Date().toISOString(),
+          source: 'live',
+          refreshing: false,
+          refreshError: false,
+        });
+      } catch {
+        if (active) {
+          setFeed((current) => current.status === 'ready'
+            ? { ...current, refreshing: false, refreshError: true }
+            : { ...resultsFallback, status: 'unavailable', refreshing: false, refreshError: true });
+        }
+      } finally {
+        inFlight = false;
+        if (currentController === controller) currentController = null;
+      }
+    };
 
+    const onVisibilityChange = () => {
+      if (document.visibilityState === 'visible') void refresh();
+    };
+    void refresh();
+    const timer = window.setInterval(() => void refresh(), 60_000);
+    document.addEventListener('visibilitychange', onVisibilityChange);
     return () => {
       active = false;
-      controller.abort();
+      currentController?.abort();
+      document.removeEventListener('visibilitychange', onVisibilityChange);
+      window.clearInterval(timer);
     };
   }, [limit, tour]);
 
