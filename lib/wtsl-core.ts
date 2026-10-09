@@ -33,13 +33,14 @@ async function core<T>(
 
   const startedAt = Date.now();
   let status: number | null = null;
+  const routePath = path.split('?', 1)[0];
   const inferredOptions: CoreRequestOptions =
-    path === '/api/core/results' || path === '/api/core/betting/fixtures'
+    routePath === '/api/core/results' || routePath === '/api/core/betting/fixtures'
       ? {
-          timeoutMs: path.endsWith('/results')
+          timeoutMs: routePath.endsWith('/results')
             ? WTSL_CORE_PUBLIC_TIMEOUT_MS
             : WTSL_CORE_FIXTURES_TIMEOUT_MS,
-          logLabel: path.endsWith('/results') ? 'results' : 'fixtures',
+          logLabel: routePath.endsWith('/results') ? 'results' : 'fixtures',
         }
       : {};
   const requestOptions = { ...inferredOptions, ...options };
@@ -255,9 +256,11 @@ export const wtslCore = {
     return result;
   },
 
-  results: () =>
+  results: (days?: number) =>
     core<unknown[]>(
-      '/api/core/results',
+      days == null
+        ? '/api/core/results'
+        : `/api/core/results?days=${encodeURIComponent(String(days))}`,
       {},
       { timeoutMs: WTSL_CORE_PUBLIC_TIMEOUT_MS, logLabel: 'results' },
     ),
