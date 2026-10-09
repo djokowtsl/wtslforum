@@ -1,5 +1,6 @@
 'use client';
 import { useState } from 'react';
+import ReactionChip from '@/components/ReactionChip';
 
 const ALLOWED_EMOJI = ['👍', '🔥', '😂', '🎾', '❤️'];
 
@@ -61,23 +62,14 @@ export default function ReactionBar({ topicId, replyId, initial, signedIn }: Pro
   return (
     <div className="reaction-bar">
       {counts.map((c) => (
-        <div className="reaction-item" key={c.emoji}>
-          <button
-            type="button"
-            className={`reaction-chip${c.reacted ? ' active' : ''}`}
-            onClick={() => toggle(c.emoji)}
-            disabled={!signedIn || !!busy}
-            title={signedIn ? undefined : 'Log in with Discord to react'}
-          >
-            <span>{c.emoji}</span>{c.count > 0 && <b>{c.count}</b>}
-          </button>
-          {c.count > 0 && (
-            <details className="reaction-people">
-              <summary aria-label={`Show people who reacted with ${c.emoji}`}>Names</summary>
-              <span>{c.reactors.length ? c.reactors.join(', ') : 'Names unavailable'}</span>
-            </details>
-          )}
-        </div>
+        <ReactionChip
+          key={c.emoji}
+          {...c}
+          disabled={!signedIn || !!busy}
+          loginRequired={!signedIn}
+          updating={busy === c.emoji}
+          onToggle={() => toggle(c.emoji)}
+        />
       ))}
     </div>
   );
