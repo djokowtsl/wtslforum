@@ -361,8 +361,7 @@ h1, h2, h3 { margin: 0; }
 .reaction-toggle:disabled { opacity: .7; cursor: default; pointer-events: none; }
 .reaction-toggle:focus-visible, .reaction-count:focus-visible { outline: 2px solid var(--lime); outline-offset: -2px; }
 .reaction-tooltip { position: fixed; z-index: 100; padding: 10px 12px; border: 1px solid var(--line-2); border-radius: 10px; background: var(--panel); color: var(--soft); box-shadow: 0 8px 24px rgba(0,0,0,.25); font-size: 12px; line-height: 1.5; max-height: min(220px, 50vh); overflow-y: auto; overflow-wrap: anywhere; }
-.reaction-tooltip strong, .reaction-tooltip span { display: block; }
-.reaction-tooltip strong { color: var(--text); margin-bottom: 4px; }
+.reaction-tooltip span { display: block; }
 .topic-video-attachment { display: grid; gap: 7px; margin: 14px 0; color: var(--text-strong); }
 .topic-video-attachment span { color: var(--muted); font-size: 12px; line-height: 1.5; }
 .topic-video-attachment input { max-width: 100%; }

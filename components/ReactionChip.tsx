@@ -132,7 +132,6 @@ export default function ReactionChip({ emoji, count, reacted, reactors, disabled
           onMouseEnter={cancelClose}
           onMouseLeave={leave}
         >
-          <strong>{emoji} · {count} {count === 1 ? 'reaction' : 'reactions'}</strong>
           <span>{updating ? 'Updating reaction…' : reactors.length ? reactors.join(', ') : 'Reaction details unavailable.'}</span>
         </div>,
         document.body,
