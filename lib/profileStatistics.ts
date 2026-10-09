@@ -1,4 +1,4 @@
-export type WtaProfileScreenshotStats = {
+export type ProfileScreenshotStats = {
   screenshots: number;
   metrics: Record<string, unknown>;
   metricSampleCounts: Record<string, unknown>;
@@ -31,7 +31,7 @@ function finiteNumber(raw: unknown): number | null {
   return Number.isFinite(value) ? value : null;
 }
 
-export function buildWtaProfileStatLines(snapshot: WtaProfileScreenshotStats | null) {
+export function buildProfileStatLines(snapshot: ProfileScreenshotStats | null) {
   return PROFILE_METRICS.map(([label, sourceLabel, format]) => {
     const rawValue = finiteNumber(snapshot?.metrics[sourceLabel]);
     const rawCount = finiteNumber(snapshot?.metricSampleCounts[sourceLabel]);
