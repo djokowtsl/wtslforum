@@ -30,6 +30,7 @@ export async function initialPublicFixtures(): Promise<PublicFixtureFeeds> {
       publicOpen: snapshot.payload.publicOpen,
       bettingBoard: snapshot.payload.bettingBoard,
       checkedAt: snapshot.checkedAt,
+      updatedAt: snapshot.updatedAt,
       source: snapshot.source ?? 'snapshot',
     };
   } catch {
@@ -66,6 +67,7 @@ export async function initialPublicResults(
       results: snapshot.payload.results.slice(0, limit),
       tournamentNames: snapshot.payload.tournamentNames,
       checkedAt: snapshot.checkedAt,
+      updatedAt: snapshot.updatedAt,
       source: snapshot.source ?? 'snapshot',
     };
   } catch {
@@ -92,7 +94,7 @@ export async function initialLiveScores(): Promise<{
       return { payload: null, source: null };
     }
     return {
-      payload: { ...snapshot.payload, checkedAt: snapshot.checkedAt },
+      payload: { ...snapshot.payload, checkedAt: snapshot.checkedAt, updatedAt: snapshot.updatedAt },
       source: snapshot.source ?? 'snapshot',
     };
   } catch {

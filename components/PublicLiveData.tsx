@@ -10,6 +10,7 @@ export type PublicFixtureFeeds = {
   publicOpen: any[];
   bettingBoard: { open: any[]; recent_settled: any[] };
   checkedAt?: string;
+  updatedAt?: string | null;
   source?: 'snapshot' | 'live' | null;
   refreshing?: boolean;
   refreshError?: boolean;
@@ -19,6 +20,7 @@ type FixturePayload = {
   publicOpen: any[];
   bettingBoard: { open: any[]; recent_settled: any[] };
   checkedAt?: string;
+  updatedAt?: string | null;
 };
 
 export type PublicResultsFeed = {
@@ -27,6 +29,7 @@ export type PublicResultsFeed = {
   results: any[];
   tournamentNames: Record<string, string>;
   checkedAt?: string;
+  updatedAt?: string | null;
   source?: 'snapshot' | 'live' | null;
   refreshing?: boolean;
   refreshError?: boolean;
@@ -93,6 +96,7 @@ export function PublicFixturesProvider({
           publicOpen: data.publicOpen,
           bettingBoard: data.bettingBoard,
           checkedAt: data.checkedAt || new Date().toISOString(),
+          updatedAt: data.updatedAt ?? null,
           source: 'live',
           refreshing: false,
           refreshError: false,
@@ -162,7 +166,7 @@ export function PublicResultsProvider({
             : { ...resultsFallback, status: 'unavailable', refreshing: false, refreshError: true, errorStatus: response.status });
           return;
         }
-        const data = await response.json() as { results: any[]; tournamentNames: Record<string, string>; checkedAt?: string };
+        const data = await response.json() as { results: any[]; tournamentNames: Record<string, string>; checkedAt?: string; updatedAt?: string | null };
         if (!active) return;
         if (!Array.isArray(data.results) || !data.tournamentNames || typeof data.tournamentNames !== 'object') {
           setFeed((current) => current.status === 'ready'
@@ -175,6 +179,7 @@ export function PublicResultsProvider({
           results: data.results,
           tournamentNames: data.tournamentNames,
           checkedAt: data.checkedAt || new Date().toISOString(),
+          updatedAt: data.updatedAt ?? null,
           source: 'live',
           refreshing: false,
           refreshError: false,

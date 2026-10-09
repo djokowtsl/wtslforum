@@ -5,6 +5,7 @@ import { FixtureCard, ResultCard } from '@/components/MatchCards';
 import { usePublicFixtures, usePublicResults } from '@/components/PublicLiveData';
 import type { TourCode } from '@/lib/wtsl';
 import { matchDateLabel } from '@/lib/format';
+import FeedUpdatedAt from '@/components/FeedUpdatedAt';
 
 const BETTING_TOURS: TourCode[] = ['TE4', 'TE4_(F)'];
 
@@ -20,20 +21,13 @@ function FeedStatus({ title, detail, unavailable = false }: {
   );
 }
 
-function FeedFreshness({ checkedAt, source }: {
-  checkedAt?: string;
+function FeedFreshness({ updatedAt }: {
+  updatedAt?: string | null;
   source?: 'snapshot' | 'live' | null;
 }) {
-  if (!checkedAt) return null;
-  const checked = new Date(checkedAt);
-  if (!Number.isFinite(checked.getTime())) return null;
-  const label = checked.toLocaleString('en-GB', {
-    dateStyle: 'medium',
-    timeStyle: 'short',
-  });
   return (
     <p className="muted feed-freshness">
-      {source === 'snapshot' ? 'Last verified snapshot' : 'Source checked'} {label}
+      <FeedUpdatedAt updatedAt={updatedAt} />
     </p>
   );
 }
@@ -70,7 +64,7 @@ export function HomeRecentResults() {
   if (feed.results.length === 0) {
     return (
       <>
-        <FeedFreshness checkedAt={feed.checkedAt} source={feed.source} />
+        <FeedFreshness updatedAt={feed.updatedAt} source={feed.source} />
         {feed.refreshError && <FeedStatus title="Live refresh unavailable." detail="The last successful result snapshot is shown above." unavailable />}
         <div className="notice">No recent WTSL results are available right now. See the <Link href="/matches" style={{ color: 'var(--lime)' }}>matches page</Link> for completed matches.</div>
       </>
@@ -78,7 +72,7 @@ export function HomeRecentResults() {
   }
   return (
     <>
-      <FeedFreshness checkedAt={feed.checkedAt} source={feed.source} />
+      <FeedFreshness updatedAt={feed.updatedAt} source={feed.source} />
       {feed.refreshError && <FeedStatus title="Live refresh unavailable." detail="Showing the last successful official results snapshot." unavailable />}
       <div className="live-grid">
         {feed.results.map((match: any) => <ResultCard key={match.id} m={match} tournamentNames={feed.tournamentNames} />)}
@@ -99,7 +93,7 @@ export function HomeOpenFixtures() {
   if (fixtures.length === 0) {
     return (
       <>
-        <FeedFreshness checkedAt={feed.checkedAt} source={feed.source} />
+        <FeedFreshness updatedAt={feed.updatedAt} source={feed.source} />
         {feed.refreshError && <FeedStatus title="Live fixture refresh unavailable." detail="The saved snapshot did not contain an open fixture." unavailable />}
         <div className="notice">No open fixtures are available right now. See the <Link href="/tournaments" style={{ color: 'var(--lime)' }}>tournament calendar</Link> for scheduled events.</div>
       </>
@@ -107,7 +101,7 @@ export function HomeOpenFixtures() {
   }
   return (
     <>
-      <FeedFreshness checkedAt={feed.checkedAt} source={feed.source} />
+      <FeedFreshness updatedAt={feed.updatedAt} source={feed.source} />
       {feed.refreshError && <FeedStatus title="Live fixture refresh unavailable." detail="These pairings are the last successfully checked snapshot, not a fresh eligibility check." unavailable />}
       {feed.source === 'snapshot' && <FeedStatus title="Last verified fixture snapshot." detail="Current betting eligibility is checked separately before a bet is accepted." />}
       <div className="live-grid">{fixtures.map((fixture: any) => <FixtureCard key={fixture.key} f={fixture} />)}</div>
@@ -130,7 +124,7 @@ export function MatchesOpenFixtures({ tour }: { tour: TourCode }) {
   if (fixtures.length === 0) {
     return (
       <>
-        <FeedFreshness checkedAt={feed.checkedAt} source={feed.source} />
+        <FeedFreshness updatedAt={feed.updatedAt} source={feed.source} />
         {feed.refreshError && <FeedStatus title="Live fixture refresh unavailable." detail="The saved snapshot did not contain an open fixture." unavailable />}
         <div className="forum-list"><div className="empty"><strong>No open fixtures right now</strong>New fixtures appear here as soon as the next round is set.</div></div>
       </>
@@ -138,7 +132,7 @@ export function MatchesOpenFixtures({ tour }: { tour: TourCode }) {
   }
   return (
     <>
-      <FeedFreshness checkedAt={feed.checkedAt} source={feed.source} />
+      <FeedFreshness updatedAt={feed.updatedAt} source={feed.source} />
       {feed.refreshError && <FeedStatus title="Live fixture refresh unavailable." detail="These pairings are the last successfully checked snapshot." unavailable />}
       {feed.source === 'snapshot' && <FeedStatus title="Last verified fixture snapshot." detail="Current fixture status is checked again in the background." />}
       <div className="live-grid">{fixtures.map((fixture: any) => <FixtureCard key={fixture.key} f={fixture} />)}</div>
@@ -157,7 +151,7 @@ export function MatchesRecentResults() {
   if (feed.results.length === 0) {
     return (
       <>
-        <FeedFreshness checkedAt={feed.checkedAt} source={feed.source} />
+        <FeedFreshness updatedAt={feed.updatedAt} source={feed.source} />
         {feed.refreshError && <FeedStatus title="Live refresh unavailable." detail="The saved snapshot did not contain a completed result." unavailable />}
         <div className="forum-list"><div className="empty"><strong>No results yet</strong>Completed matches will be listed here.</div></div>
       </>
@@ -165,7 +159,7 @@ export function MatchesRecentResults() {
   }
   return (
     <>
-      <FeedFreshness checkedAt={feed.checkedAt} source={feed.source} />
+      <FeedFreshness updatedAt={feed.updatedAt} source={feed.source} />
       {feed.refreshError && <FeedStatus title="Live refresh unavailable." detail="Showing the last successful official results snapshot." unavailable />}
       <div className="live-grid">
         {feed.results.map((match: any) => <ResultCard key={match.id} m={match} tournamentNames={feed.tournamentNames} />)}

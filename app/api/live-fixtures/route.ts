@@ -10,14 +10,15 @@ const noStore = { 'cache-control': 'no-store, max-age=0' };
 export async function GET() {
   try {
     const payload = await loadPublicFixtures();
-    await writeSiteSnapshot('live-fixtures', payload, payload.checkedAt).catch((error) => {
+    const updatedAt = await writeSiteSnapshot('live-fixtures', payload, payload.checkedAt).catch((error) => {
       console.warn('[live-fixtures] Snapshot write failed', {
         errorType: error instanceof Error ? error.name : 'UnknownError',
       });
+      return null;
     });
 
     return NextResponse.json(
-      payload,
+      { ...payload, updatedAt },
       { headers: noStore },
     );
   } catch (error) {
