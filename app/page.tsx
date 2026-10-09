@@ -1,4 +1,5 @@
 import Link from 'next/link';
+import { Suspense } from 'react';
 import fs from 'node:fs';
 import path from 'node:path';
 import { dbConfigured, safe, sql } from '@/lib/db';
@@ -6,6 +7,7 @@ import { getTopics, getArticles, getCategoriesWithCounts } from '@/lib/queries';
 import { getTournaments } from '@/lib/tournaments';
 import { recentWtslSiteMatches } from '@/lib/stats';
 import { openFixtures } from '@/lib/betting';
+import { readLiveData } from '@/lib/liveData';
 import { getSession } from '@/lib/auth';
 import { fmtDate, matchDateLabel, timeAgo } from '@/lib/format';
 import { discordAvatar } from '@/lib/auth';
@@ -28,29 +30,77 @@ const ERRORS: Record<string, string> = {
   auth_secret: 'AUTH_SECRET is not set on this deployment, so sessions cannot be created.',
 };
 
+let homepageResultsInFlight: Promise<any[]> | null = null;
+
+function homepageResults() {
+  if (homepageResultsInFlight) return homepageResultsInFlight;
+  const request = recentWtslSiteMatches(3);
+  homepageResultsInFlight = request;
+  request.finally(() => {
+    if (homepageResultsInFlight === request) homepageResultsInFlight = null;
+  }).catch(() => undefined);
+  return request;
+}
+
+function LiveSectionLoading({ label, detail }: { label: string; detail: string }) {
+  return (
+    <div className="notice" role="status" aria-live="polite">
+      <strong>{label}</strong> {detail}
+    </div>
+  );
+}
+
+async function LatestResultSpot() {
+  const [lead] = await homepageResults();
+  if (!lead) return null;
+  return (
+    <Link className="spot" href="/matches">
+      <small>Latest result</small>
+      <b>{lead.player_one_name} vs {lead.player_two_name}</b>
+      <span>{lead.score || '—'}{lead.played_at ? ` · ${matchDateLabel(lead.played_at)}` : ''}</span>
+    </Link>
+  );
+}
+
+async function HomeRecentResults({ tournaments }: { tournaments: any[] }) {
+  const results = await homepageResults();
+  if (results.length === 0) {
+    return <div className="notice">No recent WTSL results are available right now. See the <Link href="/matches" style={{ color: 'var(--lime)' }}>matches page</Link> for completed matches.</div>;
+  }
+  const names = buildWtslTournamentNameLookup(tournaments);
+  return (
+    <div className="live-grid">
+      {results.map((match: any) => <ResultCard key={match.id} m={match} tournamentNames={names} />)}
+    </div>
+  );
+}
+
+async function HomeOpenFixtures({ tournaments }: { tournaments: any[] }) {
+  const state = await readLiveData(() => openFixtures(), [] as any[]);
+  if (state.unavailable) {
+    return <div className="notice warn" role="status">The live fixture feed is still being verified. Open pairings will appear here when the official draw check completes.</div>;
+  }
+  const fixtures = selectPublicOpenFixtures(state.data, tournaments).slice(0, 3);
+  if (fixtures.length === 0) {
+    return <div className="notice">No open fixtures are available right now. See the <Link href="/tournaments" style={{ color: 'var(--lime)' }}>tournament calendar</Link> for scheduled events.</div>;
+  }
+  return <div className="live-grid">{fixtures.map((fixture: any) => <FixtureCard key={fixture.key} f={fixture} />)}</div>;
+}
+
 export default async function Home({ searchParams }: { searchParams: Promise<{ error?: string }> }) {
   const { error } = await searchParams;
-  const [u, topics, categories, articles, tournaments, results, fixtures, topPlayers] = await Promise.all([
+  const [u, topics, categories, articles, tournaments, topPlayers] = await Promise.all([
     getSession(),
     safe(() => getTopics({ limit: 6 }), [] as any[]),
     safe(() => getCategoriesWithCounts(), [] as any[]),
     safe(() => getArticles(true, 3), [] as any[]),
     safe(() => getTournaments(), [] as any[]),
-    safe(() => recentWtslSiteMatches(3), [] as any[]),
-    safe(() => openFixtures(), [] as any[]),
     safe(() => sql`SELECT name,avatar_url,flag_url,country,tour_elo,official_url FROM wtsl_players WHERE tour_elo IS NOT NULL ORDER BY tour_elo DESC LIMIT 1`, [] as any[]),
   ]);
   const heroPhoto = fs.existsSync(path.join(process.cwd(), 'public/brand/hero.jpg'));
   const featured = tournaments.find((t: any) => t.status === 'ongoing') || tournaments.find((t: any) => t.status === 'upcoming');
-  const lead = results[0];
   const top = topPlayers[0];
   const live = tournaments.filter((t: any) => t.status === 'ongoing').concat(tournaments.filter((t: any) => t.status === 'upcoming')).slice(0, 4);
-  const tournamentNames = buildWtslTournamentNameLookup(tournaments);
-  const fx = selectPublicOpenFixtures(
-    Array.isArray(fixtures) ? fixtures : [],
-    tournaments,
-  ).slice(0, 3);
-  const hasTour = results.length > 0 || fx.length > 0;
 
   return (
     <>
@@ -73,10 +123,12 @@ export default async function Home({ searchParams }: { searchParams: Promise<{ e
           <div className="hero-panel">
             <div className="panel-label">This week on the tour</div>
             {featured && <Link className="spot" href={'/tournaments/' + featured.wtsl_tournament_key}><small>{featured.status === 'ongoing' ? 'Ongoing now' : 'Up next'}</small><b>{featured.name}</b><span>{featured.location}{featured.country ? `, ${featured.country}` : ''} · {featured.surface}</span></Link>}
-            {lead && <Link className="spot" href="/matches"><small>Latest result</small><b>{lead.player_one_name} vs {lead.player_two_name}</b><span>{lead.score || '—'}{lead.played_at ? ` · ${matchDateLabel(lead.played_at)}` : ''}</span></Link>}
+            <Suspense fallback={<div className="spot"><small>Latest result</small><b>Loading recent results…</b></div>}>
+              <LatestResultSpot />
+            </Suspense>
             {top && <Link className="spot" href="/players"><small>Tour Elo Leader</small><b>{top.name}</b><span>Tour Elo {top.tour_elo}{top.country ? ` · ${top.country}` : ''}</span></Link>}
             {topics[0] && <Link className="spot" href={'/discussions/' + topics[0].id}><small>Hot in the forum</small><b>{topics[0].title}</b><span>{topics[0].replies} {topics[0].replies === 1 ? 'reply' : 'replies'}{topics[0].category ? ` · ${topics[0].category}` : ''}</span></Link>}
-            {!featured && !lead && !top && !topics[0] && ['Discussions|/discussions|Join the conversation', 'Matches|/matches|Results and fixtures', 'Tournaments|/tournaments|The WTSL calendar', 'Players|/players|Ratings and profiles'].map((x) => { const [a, h, d] = x.split('|'); return <Link className="spot" key={h} href={h}><small>Explore</small><b>{a}</b><span>{d}</span></Link>; })}
+            {!featured && !top && !topics[0] && ['Discussions|/discussions|Join the conversation', 'Matches|/matches|Results and fixtures', 'Tournaments|/tournaments|The WTSL calendar', 'Players|/players|Ratings and profiles'].map((x) => { const [a, h, d] = x.split('|'); return <Link className="spot" key={h} href={h}><small>Explore</small><b>{a}</b><span>{d}</span></Link>; })}
           </div>
         </div>
       </section>
@@ -85,14 +137,14 @@ export default async function Home({ searchParams }: { searchParams: Promise<{ e
         <div className="live-inner">
           <div className="live-head"><span className="live-dot" /><h2 className="display">Happening now</h2><Link href="/matches">All matches →</Link></div>
           <LiveScores />
-          {hasTour ? (
-            <>
-              {results.length > 0 && (<><div className="live-sub" style={{ marginTop: 0 }}>Latest results</div><div className="live-grid">{results.map((m: any) => <ResultCard key={m.id} m={m} tournamentNames={tournamentNames} />)}</div></>)}
-              {fx.length > 0 && (<><div className="live-sub">Open fixtures</div><div className="live-grid">{fx.map((f: any) => <FixtureCard key={f.key} f={f} />)}</div></>)}
-            </>
-          ) : (
-            <div className="notice">No recent WTSL results or open fixtures are available right now. See the <Link href="/tournaments" style={{ color: 'var(--lime)' }}>tournament calendar</Link> for scheduled events.</div>
-          )}
+          <div className="live-sub" style={{ marginTop: 0 }}>Latest results</div>
+          <Suspense fallback={<LiveSectionLoading label="Loading recent results." detail="Live fixture checks run separately." />}>
+            <HomeRecentResults tournaments={tournaments} />
+          </Suspense>
+          <div className="live-sub">Open fixtures</div>
+          <Suspense fallback={<LiveSectionLoading label="Verifying open fixtures." detail="Checking current official tournament draws." />}>
+            <HomeOpenFixtures tournaments={tournaments} />
+          </Suspense>
         </div>
       </section>
 

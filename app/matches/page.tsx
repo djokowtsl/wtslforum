@@ -85,12 +85,12 @@ export default async function Matches({ searchParams }: { searchParams: Promise<
       <main className="container">
         <TourTabs basePath="/matches" current={tour} exclude={['TE4_Coop']} />
         <div className="section-head"><div><h2 className="display">Open fixtures</h2><p>Upcoming matches with current odds.</p></div><Link className="btn btn-primary btn-sm" href="/betting">🎲 Virtual Betting board</Link></div>
-        <Suspense fallback={<MatchesDataLoading label="Checking live fixtures" detail="Verifying upcoming pairings against the current official draws." />}>
+        <Suspense fallback={<MatchesDataLoading label="Checking live fixtures" detail="Upcoming pairings are verified against the official draws before they are shown as open." />}>
           <OpenFixturesSection tour={tour} />
         </Suspense>
 
         <div className="section-head section-space"><div><h2 className="display">Recent results</h2><p>The latest completed matches.</p></div></div>
-        <Suspense fallback={<MatchesDataLoading label="Loading recent results" detail="Completed match results will appear here." />}>
+        <Suspense fallback={<MatchesDataLoading label="Loading recent results" detail="Fetching the latest WTSL results independently of the fixture checks." />}>
           <RecentResultsSection tour={tour} />
         </Suspense>
       </main>
