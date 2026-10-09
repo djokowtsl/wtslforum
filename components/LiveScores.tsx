@@ -2,6 +2,7 @@
 
 import { useEffect, useRef, useState } from 'react';
 import PlayerAvatar from '@/components/PlayerAvatar';
+import FeedUpdatedAt from '@/components/FeedUpdatedAt';
 
 type LivePlayer = {
   id: string | number;
@@ -23,7 +24,7 @@ type LiveMatch = {
   players: { first: LivePlayer; second: LivePlayer } | null;
 };
 
-export type LiveScoresPayload = { matches: LiveMatch[]; checkedAt: string };
+export type LiveScoresPayload = { matches: LiveMatch[]; checkedAt: string; updatedAt?: string | null };
 
 export default function LiveScores({
   initialPayload = null,
@@ -49,7 +50,7 @@ export default function LiveScores({
         const data = await response.json();
         if (!response.ok || !data.ok) throw new Error('Live scores request failed');
         if (active) {
-          setPayload({ matches: data.matches, checkedAt: data.checkedAt });
+          setPayload({ matches: data.matches, checkedAt: data.checkedAt, updatedAt: data.updatedAt ?? null });
           setSource('live');
           setFailed(false);
         }
@@ -77,9 +78,9 @@ export default function LiveScores({
     return (
       <div className="live-score-empty" role="status">
         {source === 'snapshot'
-          ? 'No active WTSL-tagged TE4 matches at the last check.'
+          ? 'No active WTSL-tagged TE4 matches in the saved feed.'
           : 'No active WTSL-tagged TE4 matches right now.'}
-        <small>{source === 'snapshot' ? 'Last checked' : 'Checked'} {new Date(payload.checkedAt).toLocaleString('en-GB', { dateStyle: 'medium', timeStyle: 'short' })}</small>
+        <small><FeedUpdatedAt updatedAt={payload.updatedAt} /></small>
       </div>
     );
   }
@@ -182,9 +183,9 @@ export default function LiveScores({
         })}
       </div>
       <small className="live-score-updated">
-        {source === 'snapshot' ? 'Last checked' : 'Updated'} {new Date(payload.checkedAt).toLocaleString('en-GB', { dateStyle: 'medium', timeStyle: 'short' })}
+        <FeedUpdatedAt updatedAt={payload.updatedAt} />
       </small>
-      {failed && <small className="live-score-updated" role="status">Live refresh unavailable; showing the last successful check.</small>}
+      {failed && <small className="live-score-updated" role="status">Live refresh unavailable; showing the saved feed.</small>}
     </div>
   );
 }

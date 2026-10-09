@@ -7,12 +7,13 @@ export const dynamic = 'force-dynamic';
 export async function GET() {
   try {
     const payload = await getLiveWtslMatches();
-    await writeSiteSnapshot('live-scores', payload, payload.checkedAt).catch((error) => {
+    const updatedAt = await writeSiteSnapshot('live-scores', payload, payload.checkedAt).catch((error) => {
       console.warn('[live-scores] Snapshot write failed', {
         errorType: error instanceof Error ? error.name : 'UnknownError',
       });
+      return null;
     });
-    return NextResponse.json({ ok: true, ...payload }, {
+    return NextResponse.json({ ok: true, ...payload, updatedAt }, {
       headers: { 'Cache-Control': 'no-store, max-age=0' },
     });
   } catch (error) {

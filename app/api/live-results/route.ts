@@ -22,7 +22,7 @@ export async function GET(request: Request) {
 
   try {
     const payload = await loadPublicResults(60, tour);
-    await writeSiteSnapshot(`live-results:${tour}`, {
+    const updatedAt = await writeSiteSnapshot(`live-results:${tour}`, {
       results: payload.results,
       tournamentNames: payload.tournamentNames,
     }, payload.checkedAt).catch((error) => {
@@ -30,9 +30,10 @@ export async function GET(request: Request) {
         tour,
         errorType: error instanceof Error ? error.name : 'UnknownError',
       });
+      return null;
     });
     return NextResponse.json(
-      { ...payload, results: payload.results.slice(0, Math.min(requestedLimit, 60)) },
+      { ...payload, updatedAt, results: payload.results.slice(0, Math.min(requestedLimit, 60)) },
       { headers: noStore },
     );
   } catch (error) {
