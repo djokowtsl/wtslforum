@@ -60,17 +60,20 @@ test('fixture and results endpoints are live no-store reads with explicit unavai
 });
 
 test('a failed private betting API read is never presented as an empty ledger', async () => {
-  const [route, client] = await Promise.all([
+  const [balanceRoute, ledgerRoute, client] = await Promise.all([
     readFile(new URL('../app/api/betting/account/route.ts', import.meta.url), 'utf8'),
+    readFile(new URL('../app/api/betting/ledger/route.ts', import.meta.url), 'utf8'),
     readFile(new URL('../components/BettingPanels.tsx', import.meta.url), 'utf8'),
   ]);
-  assert.match(route, /getSession\(\)/);
-  assert.match(route, /wtslCore\.balance/);
-  assert.match(route, /wtslCore\.bets/);
-  assert.match(route, /status: 503/);
+  assert.match(balanceRoute, /getSession\(\)/);
+  assert.match(balanceRoute, /wtslCore\.balance/);
+  assert.match(balanceRoute, /status: 503/);
+  assert.match(ledgerRoute, /getSession\(\)/);
+  assert.match(ledgerRoute, /wtslCore\.bets/);
+  assert.match(ledgerRoute, /status: 503/);
   assert.match(client, /Your betting data is unavailable/);
-  const unavailableBranch = client.indexOf("status === 'unavailable' ?");
-  const emptyLedgerBranch = client.indexOf("data?.bets.length === 0 ?");
+  const unavailableBranch = client.indexOf("ledgerStatus === 'unavailable' ?");
+  const emptyLedgerBranch = client.indexOf("bets.length === 0 ?");
   assert(unavailableBranch >= 0 && emptyLedgerBranch > unavailableBranch,
     'the explicit API error state must be rendered before the successful empty-ledger state');
 });
