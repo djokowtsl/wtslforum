@@ -1,9 +1,11 @@
 'use client';
 
 import { useEffect, useState } from 'react';
+import type { ReactNode } from 'react';
 import Link from 'next/link';
 import { fmtDateTime, timeAgo } from '@/lib/format';
 import { usePublicFixtures } from '@/components/PublicLiveData';
+import { fetchBetLedger } from '@/lib/betting-ledger';
 
 const DISCORD_URL = 'https://discord.com/channels/786583939028090881/1550152646638174308';
 const TAKEOUT = 0.05;
@@ -33,15 +35,17 @@ function PlayerName({ id, tour, name }: { id?: string | number | null; tour?: st
   return <Link href={`/players/${id}?tour=${encodeURIComponent(tour)}`}>{name}</Link>;
 }
 
-function FeedMessage({ title, detail, unavailable = false }: {
+function FeedMessage({ title, detail, unavailable = false, action }: {
   title: string;
   detail: string;
   unavailable?: boolean;
+  action?: ReactNode;
 }) {
   return (
     <div className="forum-list">
       <div className={`empty${unavailable ? ' notice warn' : ''}`} role="status" aria-live="polite">
         <strong>{title}</strong>{detail}
+        {action ? <div className="feed-message-action">{action}</div> : null}
       </div>
     </div>
   );
@@ -55,7 +59,7 @@ export function BettingBoardPanels() {
 
   return (
     <>
-      <div className="section-head">
+      <div className="section-head section-space">
         <div>
           <h2 className="display">Open fixtures</h2>
           <p>WTSL odds, house-adjusted live odds and the guaranteed minimum you&apos;d lock in right now.</p>
@@ -139,8 +143,9 @@ export function BettingBoardPanels() {
 export function MyBettingPanel() {
   const [balanceStatus, setBalanceStatus] = useState<'loading' | 'ready' | 'unauthorized' | 'unavailable'>('loading');
   const [account, setAccount] = useState<Record<string, unknown> | null>(null);
-  const [ledgerStatus, setLedgerStatus] = useState<'loading' | 'ready' | 'unauthorized' | 'unavailable'>('loading');
+  const [ledgerStatus, setLedgerStatus] = useState<'loading' | 'ready' | 'unauthorized' | 'unavailable' | 'retrying'>('loading');
   const [bets, setBets] = useState<any[]>([]);
+  const [ledgerReloadKey, setLedgerReloadKey] = useState(0);
 
   useEffect(() => {
     const controller = new AbortController();
@@ -162,28 +167,32 @@ export function MyBettingPanel() {
         if (!controller.signal.aborted) setBalanceStatus('unavailable');
       }
     };
-    const loadLedger = async () => {
-      try {
-        const response = await fetch('/api/betting/ledger', { cache: 'no-store', signal: controller.signal });
-        if (!controller.signal.aborted) {
-          if (response.status === 401) setLedgerStatus('unauthorized');
-          else if (!response.ok) setLedgerStatus('unavailable');
-          else {
-            const payload = await response.json() as { bets?: any[] };
-            if (Array.isArray(payload.bets)) {
-              setBets(payload.bets);
-              setLedgerStatus('ready');
-            } else setLedgerStatus('unavailable');
-          }
-        }
-      } catch {
-        if (!controller.signal.aborted) setLedgerStatus('unavailable');
-      }
-    };
     void loadBalance();
-    void loadLedger();
     return () => controller.abort();
   }, []);
+
+  useEffect(() => {
+    const controller = new AbortController();
+    const loadLedger = async () => {
+      const result = await fetchBetLedger(controller.signal);
+      if (controller.signal.aborted || result.kind === 'aborted') return;
+      if (result.kind === 'unauthorized') {
+        setLedgerStatus('unauthorized');
+      } else if (result.kind === 'ready') {
+        setBets(result.bets);
+        setLedgerStatus('ready');
+      } else {
+        setLedgerStatus('unavailable');
+      }
+    };
+    void loadLedger();
+    return () => controller.abort();
+  }, [ledgerReloadKey]);
+
+  const retryLedger = () => {
+    setLedgerStatus('retrying');
+    setLedgerReloadKey((key) => key + 1);
+  };
 
   return (
     <>
@@ -206,8 +215,15 @@ export function MyBettingPanel() {
         null
       ) : ledgerStatus === 'unauthorized' ? (
         <div className="forum-list"><div className="empty"><strong>Sign in to view your ledger</strong><a className="btn btn-discord btn-sm" href="/api/auth/discord">Log in with Discord</a></div></div>
+      ) : ledgerStatus === 'retrying' ? (
+        <FeedMessage title="Retrying your bet ledger…" detail="Checking the betting feed again." />
       ) : ledgerStatus === 'unavailable' ? (
-        <FeedMessage title="Your betting data is unavailable." detail="The account feed failed. This does not mean your ledger is empty." unavailable />
+        <FeedMessage
+          title="Your betting data is unavailable."
+          detail="A feed error does not mean your ledger is empty. You can retry here without refreshing the page."
+          unavailable
+          action={<button className="btn btn-primary btn-sm" onClick={retryLedger} type="button">Try again</button>}
+        />
       ) : bets.length === 0 ? (
         <div className="forum-list"><div className="empty"><strong>No bets yet</strong>Place a bet in Discord and it&apos;ll show up here.</div></div>
       ) : (
