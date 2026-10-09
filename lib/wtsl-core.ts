@@ -13,6 +13,7 @@ const token = process.env.WTSL_CORE_API_KEY || '';
 export const WTSL_CORE_PUBLIC_TIMEOUT_MS = 20_000;
 export const WTSL_CORE_FIXTURES_TIMEOUT_MS = 120_000;
 const WTSL_CORE_ACCOUNT_TIMEOUT_MS = 5_000;
+export const WTSL_CORE_LEDGER_TIMEOUT_MS = 20_000;
 
 type CoreRequestOptions = {
   timeoutMs?: number;
@@ -211,7 +212,7 @@ export const wtslCore = {
     core<unknown[]>(
       `/api/core/betting/account/${encodeURIComponent(discordId)}/bets`,
       {},
-      { timeoutMs: WTSL_CORE_ACCOUNT_TIMEOUT_MS, logLabel: 'account-bets' },
+      { timeoutMs: WTSL_CORE_LEDGER_TIMEOUT_MS, logLabel: 'account-bets' },
     ),
 
   leaderboard: () =>
