@@ -109,6 +109,33 @@ function tournamentBaseAndRoundCount(value: unknown) {
   };
 }
 
+/** Apply the official event-directory name to every fixture tied to that event ID. */
+export function applyCanonicalTournamentNames<T extends FixtureRef>(
+  fixtures: T[],
+  tournaments: TournamentRecord[],
+): T[] {
+  const namesByEvent = new Map<string, string>();
+  for (const tournament of tournaments) {
+    const id = officialTournamentId(tournament.official_url);
+    const key = fixtureKey(tournament.tour, id);
+    const name = String(tournament.name ?? '').trim();
+    if (key && name && !namesByEvent.has(key)) namesByEvent.set(key, name);
+  }
+
+  return fixtures.map((fixture) => {
+    const key = fixtureKey(fixture.tour, fixture.tournament_id);
+    const canonicalName = key ? namesByEvent.get(key) : undefined;
+    if (!canonicalName) return fixture;
+
+    const round = String(fixture.tournament ?? '').match(ROUND_SUFFIX)?.[1];
+    const eventName = canonicalName.replace(ROUND_SUFFIX, '').trim();
+    return {
+      ...fixture,
+      tournament: round ? `${eventName} (${round.toUpperCase()})` : eventName,
+    };
+  });
+}
+
 function comparableDeadline(value: unknown) {
   const raw = String(value ?? '').trim();
   if (!raw) return null;
@@ -254,8 +281,11 @@ export function cleanOpenFixtures<T extends FixtureRef>(
   fixtures: T[],
   tournaments: TournamentRecord[],
 ): T[] {
-  return deduplicateRedundantRoundFixtures(
-    filterUnconfirmedFixtures(fixtures),
+  return applyCanonicalTournamentNames(
+    deduplicateRedundantRoundFixtures(
+      filterUnconfirmedFixtures(fixtures),
+      tournaments,
+    ),
     tournaments,
   );
 }
