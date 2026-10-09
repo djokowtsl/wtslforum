@@ -1,6 +1,7 @@
 'use client';
 
 import { useEffect, useState } from 'react';
+import { formatSnapshotRefreshTime } from '@/lib/snapshotFreshness';
 
 type RefreshState = 'loading' | 'ready' | 'unavailable';
 type RefreshStatusPayload = { lastRefreshedAt: string | null };
@@ -62,11 +63,7 @@ export default function PublicSnapshotFreshness() {
   } else if (state === 'unavailable') {
     message = 'Last full public-data snapshot refresh time is unavailable.';
   } else if (lastRefreshedAt) {
-    const formatted = new Intl.DateTimeFormat('en-GB', {
-      dateStyle: 'medium',
-      timeStyle: 'short',
-      timeZoneName: 'short',
-    }).format(new Date(lastRefreshedAt));
+    const formatted = formatSnapshotRefreshTime(lastRefreshedAt);
     message = `Last full public-data snapshot refresh: ${formatted}. Live panels may update sooner while you browse.`;
   } else {
     message = 'No successful full public-data snapshot refresh has completed yet.';

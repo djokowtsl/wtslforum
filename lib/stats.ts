@@ -344,14 +344,7 @@ export async function recentWtslSiteMatches(limit=20, tour='TE4'){
       }
     })(),
     PUBLIC_PROFILE_MATCHES_TIMEOUT_MS,
-  ).catch(() => {
-    console.warn('[matches] Official profile results unavailable within the page budget; using Core results', {
-      tour,
-      limit: fallbackLimit,
-      timeoutMs: PUBLIC_PROFILE_MATCHES_TIMEOUT_MS,
-    });
-    return [] as any[];
-  });
+  );
   const [profileResult, coreResult] = await Promise.allSettled([
     profileRowsPromise,
     wtslCoreResultsInFlight(),
