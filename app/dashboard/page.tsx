@@ -1,5 +1,6 @@
 import type { Metadata } from 'next';
 import Link from 'next/link';
+import { Suspense } from 'react';
 import { safe } from '@/lib/db';
 import { readLiveData } from '@/lib/liveData';
 import { playerStats, LEADERBOARD_MIN_MATCHES } from '@/lib/stats';
@@ -35,21 +36,30 @@ type VerifiedPlayerCard = {
   seasonUnavailable: boolean;
 };
 
-export default async function Dashboard() {
+export default function Dashboard() {
+  return (
+    <>
+      <PageHero eyebrow="Your dashboard" title="Your dashboard">
+        Your tour stats, forum activity and coaching insights, in one place.
+      </PageHero>
+      <Suspense fallback={null}>
+        <DashboardContent />
+      </Suspense>
+    </>
+  );
+}
+
+async function DashboardContent() {
   const viewer = await safe(() => getSession(), null);
 
   if (!viewer) {
     return (
-      <>
-        <PageHero eyebrow="WTSL Forum" title="Your dashboard">
-          Log in with Discord to view your personalised dashboard.
-        </PageHero>
-        <main className="container">
-          <div className="empty-cta panel">
-            <a className="btn btn-discord" href="/api/auth/discord">Log in with Discord</a>
-          </div>
-        </main>
-      </>
+      <main className="container">
+        <div className="empty-cta panel">
+          <p>Log in with Discord to view your personalised dashboard.</p>
+          <a className="btn btn-discord" href="/api/auth/discord">Log in with Discord</a>
+        </div>
+      </main>
     );
   }
 
@@ -106,9 +116,8 @@ export default async function Dashboard() {
   );
 
   return (
-    <>
-      <PageHero eyebrow="Your dashboard" title={`Welcome back, ${viewer.username}`}>Your tour stats, forum activity and coaching insights, in one place.</PageHero>
       <main className="container">
+        <p className="muted">Welcome back, {viewer.username}.</p>
         <div className="notice warn" style={{ marginBottom: 20, display: 'flex', gap: 10, alignItems: 'flex-start', fontWeight: 600 }}>
           <span>🚧</span>
           <span>These stats are still under construction and may not be fully accurate yet. For the most reliable numbers, use <code>/mystats</code> in Discord.</span>
@@ -219,6 +228,5 @@ export default async function Dashboard() {
           ))}
         </section>
       </main>
-    </>
   );
 }
