@@ -8,6 +8,7 @@ import { buildPublicWtslResults } from './wtslResultDisplay';
 export const LEADERBOARD_MIN_MATCHES = 20;
 
 const PUBLIC_PROFILE_MATCHES_TIMEOUT_MS = 3_000;
+const PUBLIC_WTSL_RESULTS_WINDOW_DAYS = 30;
 let coreResultsRequest: Promise<unknown[]> | null = null;
 
 function withTimeout<T>(promise: Promise<T>, timeoutMs: number): Promise<T> {
@@ -28,7 +29,7 @@ function withTimeout<T>(promise: Promise<T>, timeoutMs: number): Promise<T> {
 async function wtslCoreResultsInFlight() {
   if (coreResultsRequest) return coreResultsRequest;
 
-  const request = wtslCore.results()
+  const request = wtslCore.results(PUBLIC_WTSL_RESULTS_WINDOW_DAYS)
     .then((rows) => {
       if (!Array.isArray(rows)) {
         throw new Error('WTSL Core returned an invalid results payload');
@@ -343,24 +344,32 @@ export async function recentWtslSiteMatches(limit=20, tour='TE4'){
       }
     })(),
     PUBLIC_PROFILE_MATCHES_TIMEOUT_MS,
-  ).catch(() => {
-    console.warn('[matches] Official profile results unavailable within the page budget; using Core results', {
-      tour,
-      limit: fallbackLimit,
-      timeoutMs: PUBLIC_PROFILE_MATCHES_TIMEOUT_MS,
-    });
-    return [] as any[];
-  });
-  const coreRowsPromise = wtslCoreResultsInFlight().catch((error) => {
-    console.warn('[matches] WTSL Core results unavailable; using official profile rows', {
-      errorType: error instanceof Error ? error.name : 'UnknownError',
-    });
-    return [] as unknown[];
-  });
-  const [profileRows, coreRows] = await Promise.all([
+  );
+  const [profileResult, coreResult] = await Promise.allSettled([
     profileRowsPromise,
-    coreRowsPromise,
+    wtslCoreResultsInFlight(),
   ]);
+
+  if (profileResult.status === 'rejected') {
+    console.warn('[matches] Official profile results unavailable; using Core results', {
+      tour,
+      errorType: profileResult.reason instanceof Error ? profileResult.reason.name : 'UnknownError',
+    });
+  }
+  if (coreResult.status === 'rejected') {
+    console.warn('[matches] WTSL Core results unavailable; using official profile rows', {
+      errorType: coreResult.reason instanceof Error ? coreResult.reason.name : 'UnknownError',
+    });
+  }
+  if (profileResult.status === 'rejected' && coreResult.status === 'rejected') {
+    throw new AggregateError(
+      [profileResult.reason, coreResult.reason],
+      'Official WTSL results are unavailable from both Core and profile feeds',
+    );
+  }
+
+  const profileRows = profileResult.status === 'fulfilled' ? profileResult.value : [];
+  const coreRows = coreResult.status === 'fulfilled' ? coreResult.value : [];
   return buildPublicWtslResults(coreRows, profileRows, tour, limit);
 }
 

@@ -42,6 +42,7 @@ type FilterOptions = {
   opponents: string[];
   tournaments: string[];
   years: string[];
+  rankingListAvailable?: boolean;
 };
 
 const EMPTY_FILTER_OPTIONS: FilterOptions = {
@@ -83,18 +84,26 @@ function statusClass(status: string) {
 
 export default function ScreenshotRecordsViewer({
   initialTour,
+  initialResult,
+  initialFilterOptions,
+  initialLoadError = false,
+  initialOptionsError = false,
 }: {
   initialTour: ScreenshotStatsTour;
+  initialResult?: PageResult;
+  initialFilterOptions?: FilterOptions;
+  initialLoadError?: boolean;
+  initialOptionsError?: boolean;
 }) {
   const [draft, setDraft] = useState<Filters>(() => initialFilters(initialTour));
   const [applied, setApplied] = useState<Filters>(() => initialFilters(initialTour));
   const [page, setPage] = useState(1);
-  const [result, setResult] = useState<PageResult>(EMPTY_RESULT);
-  const [filterOptions, setFilterOptions] = useState<FilterOptions>(EMPTY_FILTER_OPTIONS);
-  const [optionsLoading, setOptionsLoading] = useState(true);
-  const [optionsError, setOptionsError] = useState('');
-  const [loading, setLoading] = useState(true);
-  const [error, setError] = useState('');
+  const [result, setResult] = useState<PageResult>(initialResult ?? EMPTY_RESULT);
+  const [filterOptions, setFilterOptions] = useState<FilterOptions>(initialFilterOptions ?? EMPTY_FILTER_OPTIONS);
+  const [optionsLoading, setOptionsLoading] = useState(!initialFilterOptions);
+  const [optionsError, setOptionsError] = useState(initialOptionsError ? 'Search suggestions could not be loaded. You can still type a value.' : '');
+  const [loading, setLoading] = useState(!initialResult);
+  const [error, setError] = useState(initialLoadError ? 'Screenshot rows could not be loaded. Please try again.' : '');
 
   useEffect(() => {
     const controller = new AbortController();

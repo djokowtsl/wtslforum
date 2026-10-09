@@ -1,11 +1,18 @@
 import { NextResponse } from 'next/server';
 import { getLiveWtslMatches } from '@/lib/liveScores';
+import { writeSiteSnapshot } from '@/lib/siteSnapshots';
 
 export const dynamic = 'force-dynamic';
 
 export async function GET() {
   try {
-    return NextResponse.json({ ok: true, ...(await getLiveWtslMatches()) }, {
+    const payload = await getLiveWtslMatches();
+    await writeSiteSnapshot('live-scores', payload, payload.checkedAt).catch((error) => {
+      console.warn('[live-scores] Snapshot write failed', {
+        errorType: error instanceof Error ? error.name : 'UnknownError',
+      });
+    });
+    return NextResponse.json({ ok: true, ...payload }, {
       headers: { 'Cache-Control': 'no-store, max-age=0' },
     });
   } catch (error) {

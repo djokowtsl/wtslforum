@@ -1,9 +1,7 @@
 import { NextResponse } from 'next/server';
-import { recentWtslSiteMatches } from '@/lib/stats';
 import { DEFAULT_TOUR, isTourCode } from '@/lib/wtsl';
-import { safe } from '@/lib/db';
-import { getTournaments } from '@/lib/tournaments';
-import { buildWtslTournamentNameLookup } from '@/lib/wtslResultDisplay';
+import { loadPublicResults } from '@/lib/publicFeeds';
+import { writeSiteSnapshot } from '@/lib/siteSnapshots';
 
 export const dynamic = 'force-dynamic';
 export const maxDuration = 30;
@@ -23,12 +21,18 @@ export async function GET(request: Request) {
   }
 
   try {
-    const [results, tournaments] = await Promise.all([
-      recentWtslSiteMatches(Math.min(requestedLimit, 60), tour),
-      safe(() => getTournaments(tour), [] as any[]),
-    ]);
+    const payload = await loadPublicResults(60, tour);
+    await writeSiteSnapshot(`live-results:${tour}`, {
+      results: payload.results,
+      tournamentNames: payload.tournamentNames,
+    }, payload.checkedAt).catch((error) => {
+      console.warn('[live-results] Snapshot write failed', {
+        tour,
+        errorType: error instanceof Error ? error.name : 'UnknownError',
+      });
+    });
     return NextResponse.json(
-      { results, tournamentNames: buildWtslTournamentNameLookup(tournaments) },
+      { ...payload, results: payload.results.slice(0, Math.min(requestedLimit, 60)) },
       { headers: noStore },
     );
   } catch (error) {

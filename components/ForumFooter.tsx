@@ -1,4 +1,5 @@
 import Link from 'next/link';
+import PublicSnapshotFreshness from '@/components/PublicSnapshotFreshness';
 
 export function ForumFooter() {
   return (
@@ -54,6 +55,7 @@ export function ForumFooter() {
       <div className="footer-base">
         <span>© {new Date().getFullYear()} WTSL Forum. WTSL and the WTSL logo belong to the World Tennis Simulation League.</span>
         <span>Community-run companion site</span>
+        <PublicSnapshotFreshness />
       </div>
     </footer>
   );

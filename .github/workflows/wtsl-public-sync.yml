@@ -1,0 +1,55 @@
+name: WTSL public data sync
+
+on:
+  schedule:
+    # Run every five minutes, offset from the top of the hour to reduce queue delays.
+    - cron: '3-58/5 * * * *'
+    # Keep the hourly tournament sync clear of the five-minute snapshot runs.
+    - cron: '17 * * * *'
+    - cron: '10,40 * * * *'
+
+permissions: {}
+
+jobs:
+  sync:
+    runs-on: ubuntu-latest
+    timeout-minutes: 6
+    concurrency:
+      group: wtsl-public-sync-${{ github.event.schedule }}
+      cancel-in-progress: false
+    env:
+      FORUM_BASE_URL: https://wtslforum.vercel.app
+      WTSL_SYNC_SECRET: ${{ secrets.WTSL_SYNC_SECRET }}
+      SYNC_SCHEDULE: ${{ github.event.schedule }}
+    steps:
+      - name: Require the WTSL sync secret
+        run: |
+          if [ -z "${WTSL_SYNC_SECRET:-}" ]; then
+            echo "::error::Configure the WTSL_SYNC_SECRET repository secret."
+            exit 1
+          fi
+
+      - name: Select the scheduled sync route
+        id: target
+        run: |
+          case "$SYNC_SCHEDULE" in
+            '3-58/5 * * * *') route='public-page-snapshots' ;;
+            '17 * * * *') route='wtsl-tournaments' ;;
+            '10,40 * * * *') route='wtsl-players' ;;
+            *)
+              echo "::error::Unexpected schedule: $SYNC_SCHEDULE"
+              exit 1
+              ;;
+          esac
+          echo "route=$route" >> "$GITHUB_OUTPUT"
+
+      - name: Call the protected Forum sync endpoint
+        env:
+          SYNC_ROUTE: ${{ steps.target.outputs.route }}
+        run: |
+          set -euo pipefail
+          curl --fail --silent --show-error --max-time 280 \
+            --output /dev/null \
+            --write-out "WTSL sync endpoint returned HTTP %{http_code}\n" \
+            --header "x-wtsl-sync-secret: ${WTSL_SYNC_SECRET}" \
+            "${FORUM_BASE_URL}/api/sync/${SYNC_ROUTE}"

@@ -2,7 +2,6 @@ import type { Metadata } from 'next';
 import Link from 'next/link';
 import { Suspense } from 'react';
 import { safe } from '@/lib/db';
-import { readLiveData } from '@/lib/liveData';
 import { playerStats, LEADERBOARD_MIN_MATCHES } from '@/lib/stats';
 import { getSession } from '@/lib/auth';
 import { getClaimsForUser } from '@/lib/player-claims';
@@ -10,9 +9,7 @@ import { getContributionStats, getRecentActivity } from '@/lib/queries';
 import { buildPlayerInsights, type PlayerInsightReport } from '@/lib/playerInsights';
 import { buildPlayerSeasonHighlights, type PlayerSeasonHighlights } from '@/lib/playerSeasonHighlights';
 import PlayerSeasonHighlightsPanel from '@/components/PlayerSeasonHighlights';
-import { wtslCore } from '@/lib/wtsl-core';
 import { tourLabel } from '@/lib/wtsl';
-import { fetchWTSLWtaMatchResults } from '@/lib/wtslSeasonResults';
 import { timeAgo } from '@/lib/format';
 import PageHero from '@/components/PageHero';
 import RatingMethodNote from '@/components/RatingMethodNote';
@@ -22,6 +19,10 @@ import {
   botRatingStats,
   type BotRatingStatsRow,
 } from '@/lib/botRatingLeaderboards';
+import { getPublicSiteSnapshot } from '@/lib/siteSnapshots';
+import SnapshotAutoRefresh from '@/components/SnapshotAutoRefresh';
+import { fetchWTSLWtaMatchResults } from '@/lib/wtslSeasonResults';
+import { wtslCore } from '@/lib/wtsl-core';
 
 export const dynamic = 'force-dynamic';
 export const metadata: Metadata = { title: 'Dashboard' };
@@ -34,6 +35,7 @@ type VerifiedPlayerCard = {
   ratings: BotRatingStatsRow | null;
   season: PlayerSeasonHighlights;
   seasonUnavailable: boolean;
+  seasonCheckedAt: string | null;
 };
 
 export default function Dashboard() {
@@ -42,6 +44,7 @@ export default function Dashboard() {
       <PageHero eyebrow="Your dashboard" title="Your dashboard">
         Your tour stats, forum activity and coaching insights, in one place.
       </PageHero>
+      <SnapshotAutoRefresh />
       <Suspense fallback={null}>
         <DashboardContent />
       </Suspense>
@@ -72,20 +75,24 @@ async function DashboardContent() {
   const pending = claims.filter((c: any) => c.status === 'pending');
   const seasonYear = new Date().getUTCFullYear();
   const hasWtaClaims = approved.some((c: any) => c.tour === 'TE4_(F)');
-  const [coreSeasonResults, wtaSeasonResult] = await Promise.all([
+  const [coreSeasonSnapshot, wtaSeasonSnapshot] = await Promise.all([
     approved.length
-      ? readLiveData(() => wtslCore.results(), [] as unknown[])
-      : Promise.resolve({ data: [] as unknown[], unavailable: false }),
+      ? safe(() => getPublicSiteSnapshot(
+          `dashboard-season-results:${seasonYear}`,
+          () => wtslCore.results(366),
+        ), null)
+      : Promise.resolve(null),
     hasWtaClaims
-      ? fetchWTSLWtaMatchResults()
-          .then((rows) => ({ rows: rows as unknown[], unavailable: false }))
-          .catch((error: unknown) => {
-            console.error('WTSL WTA season results unavailable:', error);
-            return { rows: [] as unknown[], unavailable: true };
-          })
-      : Promise.resolve({ rows: [] as unknown[], unavailable: false }),
+      ? safe(() => getPublicSiteSnapshot(
+          `dashboard-wta-season-results:${seasonYear}`,
+          fetchWTSLWtaMatchResults,
+        ), null)
+      : Promise.resolve(null),
   ]);
-  const seasonResults = [...coreSeasonResults.data, ...wtaSeasonResult.rows];
+  const seasonResults = [
+    ...(Array.isArray(coreSeasonSnapshot?.payload) ? coreSeasonSnapshot.payload : []),
+    ...(Array.isArray(wtaSeasonSnapshot?.payload) ? wtaSeasonSnapshot.payload : []),
+  ];
 
   const playerCards: VerifiedPlayerCard[] = await Promise.all(
     approved.map(async (c: any) => {
@@ -109,8 +116,11 @@ async function DashboardContent() {
         ratings: ratingRows[0] ?? null,
         season: buildPlayerSeasonHighlights(seasonResults, c.player_name, c.tour, seasonYear, c.wtsl_player_id),
         seasonUnavailable: c.tour === 'TE4_(F)'
-          ? wtaSeasonResult.unavailable
-          : coreSeasonResults.unavailable,
+          ? !Array.isArray(wtaSeasonSnapshot?.payload)
+          : !Array.isArray(coreSeasonSnapshot?.payload),
+        seasonCheckedAt: c.tour === 'TE4_(F)'
+          ? wtaSeasonSnapshot?.checkedAt ?? null
+          : coreSeasonSnapshot?.checkedAt ?? null,
       };
     })
   );
@@ -174,6 +184,11 @@ async function DashboardContent() {
                   <div className="player-record-grid">
                     <div><strong>{p.favorite_character}</strong><small>Most used character ({p.favorite_character_picks ?? 0}/{p.character_matches ?? 0} matches)</small></div>
                   </div>
+                )}
+                {card.seasonCheckedAt && (
+                  <p className="muted feed-freshness">
+                    Season results checked {new Date(card.seasonCheckedAt).toLocaleString('en-GB', { dateStyle: 'medium', timeStyle: 'short' })}
+                  </p>
                 )}
                 <PlayerSeasonHighlightsPanel highlights={card.season} unavailable={card.seasonUnavailable} />
                 <div className="player-record-grid">

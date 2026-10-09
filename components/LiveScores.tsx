@@ -23,10 +23,17 @@ type LiveMatch = {
   players: { first: LivePlayer; second: LivePlayer } | null;
 };
 
-type Payload = { matches: LiveMatch[]; checkedAt: string };
+export type LiveScoresPayload = { matches: LiveMatch[]; checkedAt: string };
 
-export default function LiveScores() {
-  const [payload, setPayload] = useState<Payload | null>(null);
+export default function LiveScores({
+  initialPayload = null,
+  initialSource = null,
+}: {
+  initialPayload?: LiveScoresPayload | null;
+  initialSource?: 'snapshot' | 'live' | null;
+}) {
+  const [payload, setPayload] = useState<LiveScoresPayload | null>(initialPayload);
+  const [source, setSource] = useState<'snapshot' | 'live' | null>(initialSource);
   const [failed, setFailed] = useState(false);
   const [selectedMatchIndex, setSelectedMatchIndex] = useState(0);
   const trackRef = useRef<HTMLDivElement>(null);
@@ -43,6 +50,7 @@ export default function LiveScores() {
         if (!response.ok || !data.ok) throw new Error('Live scores request failed');
         if (active) {
           setPayload({ matches: data.matches, checkedAt: data.checkedAt });
+          setSource('live');
           setFailed(false);
         }
       } catch {
@@ -68,8 +76,10 @@ export default function LiveScores() {
   if (payload.matches.length === 0) {
     return (
       <div className="live-score-empty" role="status">
-        No active WTSL-tagged TE4 matches right now.
-        <small>Checked {new Date(payload.checkedAt).toLocaleTimeString('en-GB', { hour: '2-digit', minute: '2-digit' })}</small>
+        {source === 'snapshot'
+          ? 'No active WTSL-tagged TE4 matches at the last check.'
+          : 'No active WTSL-tagged TE4 matches right now.'}
+        <small>{source === 'snapshot' ? 'Last checked' : 'Checked'} {new Date(payload.checkedAt).toLocaleString('en-GB', { dateStyle: 'medium', timeStyle: 'short' })}</small>
       </div>
     );
   }
@@ -128,7 +138,7 @@ export default function LiveScores() {
             <article className="live-score-card" key={`${match.name}-${match.court}-${index}`} role="group" aria-roledescription="slide" aria-label={`Match ${index + 1} of ${payload.matches.length}: ${firstName} vs ${secondName || 'Opponent'}`}>
               <div className="live-score-card-head">
                 <span>{match.tour === 'TE4_(F)' ? 'WTA' : match.tour === 'TE4' ? 'ATP' : 'WTSL'}</span>
-                <b><i />LIVE</b>
+                <b><i />{source === 'snapshot' ? 'LAST CHECKED' : 'LIVE'}</b>
               </div>
               {match.probability !== null && secondProbability !== null && (
                 <div
@@ -171,7 +181,10 @@ export default function LiveScores() {
           );
         })}
       </div>
-      <small className="live-score-updated">Updated {new Date(payload.checkedAt).toLocaleTimeString('en-GB', { hour: '2-digit', minute: '2-digit' })}</small>
+      <small className="live-score-updated">
+        {source === 'snapshot' ? 'Last checked' : 'Updated'} {new Date(payload.checkedAt).toLocaleString('en-GB', { dateStyle: 'medium', timeStyle: 'short' })}
+      </small>
+      {failed && <small className="live-score-updated" role="status">Live refresh unavailable; showing the last successful check.</small>}
     </div>
   );
 }

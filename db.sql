@@ -560,3 +560,14 @@ CREATE INDEX IF NOT EXISTS screenshot_records_opponent_idx ON screenshot_match_r
 CREATE INDEX IF NOT EXISTS screenshot_records_date_idx ON screenshot_match_records(tour, sync_id, played_on DESC);
 CREATE INDEX IF NOT EXISTS screenshot_records_tournament_idx ON screenshot_match_records(tour, sync_id, tournament_name);
 
+-- Public feed snapshots let pages render the last successfully checked upstream data
+-- before client-side revalidation. Never store user-specific balances, bets, or messages here.
+CREATE TABLE IF NOT EXISTS forum_public_page_snapshots (
+  snapshot_key TEXT PRIMARY KEY,
+  payload JSONB NOT NULL,
+  checked_at TIMESTAMPTZ NOT NULL,
+  stored_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+CREATE INDEX IF NOT EXISTS forum_public_page_snapshots_checked_idx
+  ON forum_public_page_snapshots (checked_at DESC);
+
