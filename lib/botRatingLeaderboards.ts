@@ -2,7 +2,7 @@ import { sql } from './db';
 import { LEADERBOARD_MIN_MATCHES } from './stats';
 import { BOT_RATING_METRICS } from './botRatingMetrics';
 import type { BotRating } from './botRatingMetrics';
-import type { WtaProfileScreenshotStats } from './wtaProfileStatistics';
+import type { ProfileScreenshotStats } from './profileStatistics';
 export { BOT_RATING_METRICS } from './botRatingMetrics';
 export type { BotRating } from './botRatingMetrics';
 
@@ -385,21 +385,25 @@ export async function botLeaderboard(tour: string, metric: BotMetric): Promise<B
     });
 }
 
-/** Read existing eligible screenshot aggregates, strictly bound to a WTA identity.
+/** Read existing eligible screenshot aggregates, strictly bound to a singles-tour identity.
  * Profile averages do not require the 20-match leaderboard/rating threshold.
  */
-export async function wtaProfileScreenshotStats(
+export async function profileScreenshotStats(
   playerId: string,
-): Promise<WtaProfileScreenshotStats | null> {
+  tour: 'TE4' | 'TE4_(F)',
+): Promise<ProfileScreenshotStats | null> {
+  if (tour !== 'TE4' && tour !== 'TE4_(F)') {
+    throw new Error('Screenshot profile statistics require an ATP or WTA singles tour');
+  }
   const rows = await sql`
     SELECT b.screenshots, b.metrics, b.metric_sample_counts
     FROM bot_rating_leaderboards b
     JOIN wtsl_players p ON p.tour=b.tour AND lower(p.name)=lower(b.player_name)
-    WHERE b.tour='TE4_(F)' AND p.wtsl_player_id=${playerId}
+    WHERE b.tour=${tour} AND p.wtsl_player_id=${playerId}
       AND b.screenshots > 0
     LIMIT 2
   `;
-  if (rows.length > 1) throw new Error('Ambiguous WTA screenshot statistics identity');
+  if (rows.length > 1) throw new Error('Ambiguous screenshot statistics identity');
   if (!rows[0]) return null;
   return {
     screenshots: Number(rows[0].screenshots),
