@@ -104,11 +104,18 @@ test('hover shows real reactor names in a viewport-clamped tooltip, including fo
   const h = harness({ disabled: true });
   h.item().props.onMouseEnter(); h.render();
   assert.match(h.html(), /Alice, Bob/);
+  assert.equal(renderToStaticMarkup(h.tooltip()).replace(/<[^>]*>/g, ''), 'Alice, Bob');
   assert.equal(h.toggle().props.disabled, true);
   assert.equal(h.count().props.disabled, undefined);
   assert.equal(h.tooltip().props.style.left, 98);
   assert.equal(h.tooltip().props.style.width, 280);
   assert.equal(h.calls(), 0);
+  h.cleanup();
+});
+test('a single-reactor popup contains only the name, not an emoji or reaction heading', () => {
+  const h = harness({ emoji: '❤️', count: 1, reactors: ['Squeaky'] });
+  h.item().props.onMouseEnter(); h.render();
+  assert.equal(renderToStaticMarkup(h.tooltip()).replace(/<[^>]*>/g, ''), 'Squeaky');
   h.cleanup();
 });
 test('tapping the count pins details without toggling a reaction; tapping again closes it', () => {
