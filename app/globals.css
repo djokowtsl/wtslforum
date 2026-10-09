@@ -568,6 +568,7 @@ h1, h2, h3 { margin: 0; }
 .odds-side b { font-weight: 700; }
 .odds-side span { color: var(--lime); }
 .section-space { margin-top: 36px; }
+.feed-message-action { margin-top: 14px; }
 .bet-row { display: flex; justify-content: space-between; align-items: center; gap: 14px; flex-wrap: wrap; padding: 14px 18px; border-bottom: 1px solid var(--line); }
 .bet-row:last-child { border-bottom: 0; }
 .bet-row .pill { margin-left: 8px; }
