@@ -86,12 +86,23 @@ test('the rendered profile labels source, sample coverage, values and missing me
   assert.match(html, /Screenshot-derived/);
   assert.match(html, /not official WTSL profile averages/);
   assert.match(html, /not a complete career record/);
+  assert.match(html, /title="WTA averages from eligible screenshot matches/);
+  assert.doesNotMatch(html, /<p\b/);
   assert.match(html, /71\.1%/);
   assert.match(html, /38 matches/);
   assert.match(html, /27 matches/);
   assert.match(html, /174\.26 km\/h/);
   assert.match(html, /Unavailable/);
   assert.match(html, /<strong>0<\/strong>/);
+});
+
+test('ATP and populated WTA match-statistics sections have no description paragraphs', async () => {
+  const page = await readFile(new URL('../app/players/[id]/page.tsx', import.meta.url), 'utf8');
+  const atpSection = page.slice(page.indexOf(') : <section className="panel">'), page.indexOf('</section>}'));
+  assert.match(atpSection, /Match Statistics/);
+  assert.doesNotMatch(atpSection, /<p\b/);
+  const wtaHtml = renderToStaticMarkup(createElement(WtaProfileMatchStatistics, { snapshot }));
+  assert.doesNotMatch(wtaHtml, /<p\b/);
 });
 
 test('no-data and query-failure profiles explain why the statistics are unavailable', () => {
