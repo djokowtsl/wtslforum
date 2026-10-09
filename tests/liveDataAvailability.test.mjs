@@ -20,7 +20,7 @@ test('board and season views preserve explicit unavailable states for missing sn
     'components/PlayerSeasonHighlights.tsx',
   ].map(path => readFile(new URL('../' + path, import.meta.url), 'utf8')));
   assert.match(panels, /feed\.status === 'unavailable'/);
-  assert.match(panels, /this does not mean the tour has no matches/);
+  assert.match(panels, /Open fixtures unavailable/);
   assert.match(dashboard, /getPublicSiteSnapshot/);
   assert.match(dashboard, /seasonUnavailable:/);
   assert.match(season, /Official season match results are unavailable/);
@@ -68,7 +68,8 @@ test('live endpoints remain no-store, refresh the persisted display snapshots, a
   assert.match(sources, /fixturesBoard\(\)/);
   assert.match(sources, /recentWtslSiteMatches\(limit, tour\)/);
   assert.match(results, /cache-control.*no-store/);
-  assert.match(client, /official-draw check could not be completed/i);
+  assert.match(client, /Open fixtures unavailable/);
+  assert.match(client, /Please try again later/);
   assert.match(client, /Recent results unavailable/);
 });
 

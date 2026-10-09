@@ -117,7 +117,7 @@ test('all public feed labels use content-update time, never polling time', async
     assert.match(source, /return null/);
   }
 });
-test('the actual timestamp component renders Updated at or an honest unknown state', async () => {
+test('the actual timestamp component renders Last Updated or nothing when unknown', async () => {
   const source = await readFile(new URL('../components/FeedUpdatedAt.tsx', import.meta.url), 'utf8');
   const component = new Module(import.meta.url);
   component.require = require;
@@ -128,10 +128,10 @@ test('the actual timestamp component renders Updated at or an honest unknown sta
   }).code, 'FeedUpdatedAt.js');
   const { createElement } = require('react');
   const { renderToStaticMarkup } = require('react-dom/server');
-  const render = (updatedAt) => renderToStaticMarkup(createElement(component.exports.default, { updatedAt }));
-  assert.match(render(first), /Updated at/);
+  const render = (updatedAt, as) => renderToStaticMarkup(createElement(component.exports.default, { updatedAt, as }));
+  assert.match(render(first), /Last Updated/);
   assert.match(render(first), /datetime="2026-10-09T12:00:00.000Z"/i);
-  for (const time of [null, undefined, 'invalid']) {
-    assert.equal(render(time), '<span>Update time unavailable</span>');
+  for (const time of [null, undefined, '', 'invalid']) {
+    for (const tag of ['span', 'p', 'small']) assert.equal(render(time, tag), '');
   }
 });
