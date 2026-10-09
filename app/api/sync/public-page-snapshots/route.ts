@@ -46,7 +46,9 @@ export async function GET(request: NextRequest) {
     },
     {
       key: `dashboard-season-results:${year}`,
-      load: async () => requireArray(await wtslCore.results(366), 'dashboard season results'),
+      // Keep full history for calendar-year highlights, including leap years.
+      // Core only accepts days=1..365; public recent-results boards still use 30.
+      load: async () => requireArray(await wtslCore.results(), 'dashboard season results'),
       count: (payload: any) => payload.length,
     },
     {

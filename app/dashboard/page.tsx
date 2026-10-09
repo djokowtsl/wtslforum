@@ -79,7 +79,8 @@ async function DashboardContent() {
     approved.length
       ? safe(() => getPublicSiteSnapshot(
           `dashboard-season-results:${seasonYear}`,
-          () => wtslCore.results(366),
+          // Highlights filter by calendar year; Core's days filter is capped at 365.
+          () => wtslCore.results(),
         ), null)
       : Promise.resolve(null),
     hasWtaClaims
