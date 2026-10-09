@@ -34,3 +34,18 @@ test('Matches streams fixture verification and recent results independently', as
   assert.match(matches, /<RecentResultsSection tour={tour} \/>/);
   assert.doesNotMatch(matches, /const \[results, fixturesState, tournaments\] = await Promise\.all/);
 });
+
+test('homepage and Virtual Betting stream live feeds outside their page-level render', async () => {
+  const [home, betting] = await Promise.all([
+    readFile(new URL('../app/page.tsx', import.meta.url), 'utf8'),
+    readFile(new URL('../app/betting/page.tsx', import.meta.url), 'utf8'),
+  ]);
+  assert.match(home, /<Suspense fallback={<LiveSectionLoading label="Loading recent results\."/);
+  assert.match(home, /<HomeRecentResults tournaments=\{tournaments\} \/>/);
+  assert.match(home, /<Suspense fallback={<LiveSectionLoading label="Verifying open fixtures\."/);
+  assert.match(home, /<HomeOpenFixtures tournaments=\{tournaments\} \/>/);
+  assert.match(betting, /<Suspense fallback={<BettingDataLoading title="Verifying open fixtures\."/);
+  assert.match(betting, /<BettingBoardSections \/>/);
+  assert.match(betting, /<BettingAccountSummary discordId=\{user\.discordId\} \/>/);
+  assert.match(betting, /<BettingLedger discordId=\{user\.discordId\} \/>/);
+});
