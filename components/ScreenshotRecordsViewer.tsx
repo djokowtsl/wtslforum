@@ -220,7 +220,7 @@ export default function ScreenshotRecordsViewer({
             options={filterOptions.players}
             value={draft.player}
             onChange={(value) => change('player', value)}
-            placeholder={optionsLoading ? 'Loading players…' : 'Search player names'}
+            placeholder="Search player names"
             loading={optionsLoading}
           />
         </div>
@@ -231,7 +231,7 @@ export default function ScreenshotRecordsViewer({
             options={filterOptions.opponents}
             value={draft.opponent}
             onChange={(value) => change('opponent', value)}
-            placeholder={optionsLoading ? 'Loading opponents…' : 'Search opponent names'}
+            placeholder="Search opponent names"
             loading={optionsLoading}
           />
         </div>
@@ -242,7 +242,7 @@ export default function ScreenshotRecordsViewer({
             options={filterOptions.tournaments}
             value={draft.tournament}
             onChange={(value) => change('tournament', value)}
-            placeholder={optionsLoading ? 'Loading tournaments…' : 'Search tournaments'}
+            placeholder="Search tournaments"
             loading={optionsLoading}
           />
         </div>
@@ -253,7 +253,7 @@ export default function ScreenshotRecordsViewer({
             options={filterOptions.years}
             value={draft.year}
             onChange={(value) => change('year', value.replace(/\D/g, '').slice(0, 4))}
-            placeholder={optionsLoading ? 'Loading years…' : 'Search years'}
+            placeholder="Search years"
             loading={optionsLoading}
           />
         </div>
@@ -295,7 +295,7 @@ export default function ScreenshotRecordsViewer({
 
       <div className="screenshot-records-summary" aria-live="polite">
         {loading
-          ? 'Loading screenshot rows…'
+          ? null
           : error
             ? 'Screenshot rows are temporarily unavailable'
             : result.total
