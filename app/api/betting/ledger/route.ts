@@ -3,7 +3,7 @@ import { getSession } from '@/lib/auth';
 import { wtslCore } from '@/lib/wtsl-core';
 
 export const dynamic = 'force-dynamic';
-export const maxDuration = 15;
+export const maxDuration = 30;
 
 const noStore = { 'cache-control': 'no-store, max-age=0' };
 
@@ -15,7 +15,8 @@ export async function GET() {
 
   try {
     const bets = await wtslCore.bets(user.discordId);
-    return NextResponse.json({ bets: Array.isArray(bets) ? bets : [] }, { headers: noStore });
+    if (!Array.isArray(bets)) throw new Error('Invalid Core ledger payload');
+    return NextResponse.json({ bets }, { headers: noStore });
   } catch (error) {
     console.warn('[betting-ledger] Core ledger feed unavailable', {
       errorType: error instanceof Error ? error.name : 'UnknownError',
