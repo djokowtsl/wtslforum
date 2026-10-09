@@ -2,10 +2,10 @@ import Link from 'next/link';
 import type { Metadata } from 'next';
 import PageHero from '@/components/PageHero';
 import TourTabs from '@/components/TourTabs';
-import WtslDataAutoRefresh from '@/components/WtslDataAutoRefresh';
 import { DEFAULT_TOUR, isTourCode, type TourCode } from '@/lib/wtsl';
 import { PublicFixturesProvider, PublicResultsProvider } from '@/components/PublicLiveData';
 import { MatchesOpenFixtures, MatchesRecentResults } from '@/components/LiveMatchPanels';
+import { initialPublicFixtures, initialPublicResults } from '@/lib/publicPageData';
 
 export const dynamic = 'force-dynamic';
 export const maxDuration = 180;
@@ -20,12 +20,15 @@ export default async function Matches({ searchParams }: { searchParams: Promise<
   const { tour: tourParam } = await searchParams;
   const tour: TourCode = isTourCode(tourParam) && tourParam !== 'TE4_Coop' ? tourParam : DEFAULT_TOUR;
   const supportsBetting = BETTING_TOURS.includes(tour);
+  const [initialResults, initialFixtures] = await Promise.all([
+    initialPublicResults(30, tour),
+    supportsBetting ? initialPublicFixtures() : Promise.resolve(undefined),
+  ]);
 
   return (
-    <PublicResultsProvider limit={30} tour={tour}>
-    <PublicFixturesProvider enabled={supportsBetting}>
+    <PublicResultsProvider limit={30} tour={tour} initialFeed={initialResults}>
+    <PublicFixturesProvider enabled={supportsBetting} initialFeed={initialFixtures}>
     <>
-      <WtslDataAutoRefresh />
       <PageHero eyebrow="WTSL Tour" title="Matches">Results and upcoming fixtures. Want to talk about one? Take it to the <Link href="/discussions?c=match-talk" style={{ color: 'var(--lime)' }}>Match Talk</Link> board.</PageHero>
       <main className="container">
         <TourTabs basePath="/matches" current={tour} exclude={['TE4_Coop']} />

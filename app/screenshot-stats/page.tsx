@@ -10,6 +10,11 @@ import type {
   ScreenshotStatsPopulations,
   ScreenshotStatsTour,
 } from '@/lib/screenshotStatsQuestions';
+import {
+  getScreenshotRecordFilterOptions,
+  getScreenshotRecordPage,
+  type ScreenshotRecordFilters,
+} from '@/lib/screenshotRecords';
 
 export const dynamic = 'force-dynamic';
 export const metadata: Metadata = { title: 'Screenshot Statistics' };
@@ -25,14 +30,34 @@ export default async function ScreenshotStatsPage({
   const initialTour: ScreenshotStatsTour = tourParam === 'TE4_(F)'
     ? 'TE4_(F)'
     : 'TE4';
-  const loaded = await Promise.allSettled(
-    TOURS.map((tour) => botRatingComparisonPopulation(tour)),
-  );
+  const initialFilters: ScreenshotRecordFilters = {
+    tour: initialTour,
+    page: 1,
+    player: '',
+    opponent: '',
+    tournament: '',
+    search: '',
+    year: null,
+    status: 'any',
+    metric: '',
+    min: null,
+    max: null,
+    rankedOnly: true,
+  };
+  const [loaded, initialRecordPage, initialFilterOptions] = await Promise.all([
+    Promise.allSettled(TOURS.map((tour) => botRatingComparisonPopulation(tour))),
+    Promise.allSettled([getScreenshotRecordPage(initialFilters)]),
+    Promise.allSettled([getScreenshotRecordFilterOptions(initialTour)]),
+  ]);
   const populations = {
     TE4: loaded[0].status === 'fulfilled' ? loaded[0].value : [],
     'TE4_(F)': loaded[1].status === 'fulfilled' ? loaded[1].value : [],
   } satisfies ScreenshotStatsPopulations;
   const hasLoadFailure = loaded.some((result) => result.status === 'rejected');
+  const initialRecords = initialRecordPage[0];
+  const initialOptions = initialFilterOptions[0];
+  const recordsLoadFailed = initialRecords.status === 'rejected';
+  const optionsLoadFailed = initialOptions.status === 'rejected';
   const metrics = BOT_AGGREGATE_METRICS.map((metric) => ({
     label: ['Fastest Serve', 'Avg 1st Serve Speed', 'Avg 2nd Serve Speed'].includes(metric.label)
       ? `${metric.label} (km/h)`
@@ -53,7 +78,13 @@ export default async function ScreenshotStatsPage({
             Screenshot statistics could not be loaded. Please try again shortly.
           </div>
         ) : null}
-        <ScreenshotRecordsViewer initialTour={initialTour} />
+        <ScreenshotRecordsViewer
+          initialTour={initialTour}
+          initialResult={initialRecords.status === 'fulfilled' ? initialRecords.value : undefined}
+          initialFilterOptions={initialOptions.status === 'fulfilled' ? initialOptions.value : undefined}
+          initialLoadError={recordsLoadFailed}
+          initialOptionsError={optionsLoadFailed}
+        />
         <ScreenshotStatsExplorer
           initialTour={initialTour}
           populations={populations}

@@ -5,10 +5,9 @@ import test from 'node:test';
 const statsSource = await readFile(new URL('../lib/stats.ts', import.meta.url), 'utf8');
 const bettingSource = await readFile(new URL('../lib/betting.ts', import.meta.url), 'utf8');
 const coreSource = await readFile(new URL('../lib/wtsl-core.ts', import.meta.url), 'utf8');
-const autoRefreshSource = await readFile(
-  new URL('../components/WtslDataAutoRefresh.tsx', import.meta.url),
-  'utf8',
-);
+const publicFeedsSource = await readFile(new URL('../components/PublicLiveData.tsx', import.meta.url), 'utf8');
+const snapshotStoreSource = await readFile(new URL('../lib/siteSnapshots.ts', import.meta.url), 'utf8');
+const snapshotSyncSource = await readFile(new URL('../app/api/sync/public-page-snapshots/route.ts', import.meta.url), 'utf8');
 const recentMatchesQuery = statsSource.match(
   /export async function recentMatches[\s\S]*?(?=\nexport |\s*$)/,
 )?.[0];
@@ -42,19 +41,24 @@ test('the public WTSL results query excludes imported screenshot and TE4-post ro
     /AND \(\$\{source !== 'wtsl'\} OR COALESCE\(m\.source_id, ''\) LIKE 'recent:%'\)/,
   );
   assert.match(statsSource, /recentMatches\(fallbackLimit, tour, 'wtsl'\)/);
-  assert.match(
-    statsSource,
-    /Promise\.all\(\[\s*profileRowsPromise,\s*coreRowsPromise/,
-  );
+  assert.match(statsSource, /Promise\.allSettled\(\[\s*profileRowsPromise,\s*wtslCoreResultsInFlight\(\)/);
+  assert.match(statsSource, /profileResult\.status === 'rejected' && coreResult\.status === 'rejected'/);
   assert.match(statsSource, /wtslCoreResultsInFlight\(\)/);
 });
 
-test('public match boards avoid retained result caches and refresh visible pages frequently', () => {
+test('live feeds use durable display snapshots and still refresh visibly from no-store sources', () => {
   assert.doesNotMatch(statsSource, /unstable_cache|CORE_RESULTS_CACHE_MS|coreResultsCache/);
   assert.doesNotMatch(bettingSource, /unstable_cache|lastSuccessfulFixturesBoard|FIXTURES_RETRY/);
   assert.match(bettingSource, /wtslCore\.fixturesBoard\(\)/);
   assert.match(bettingSource, /fixturesBoardRequest/);
-  assert.match(autoRefreshSource, /LIVE_DATA_REFRESH_INTERVAL_MS = 15_000/);
+  assert.match(publicFeedsSource, /fetch\('\/api\/live-fixtures', \{ cache: 'no-store'/);
+  assert.match(publicFeedsSource, /fetch\(`\/api\/live-results\?\$\{query\}`, \{ cache: 'no-store'/);
+  assert.match(publicFeedsSource, /setInterval\(\(\) => void refresh\(\), 30_000\)/);
+  assert.match(publicFeedsSource, /setInterval\(\(\) => void refresh\(\), 60_000\)/);
+  assert.match(snapshotStoreSource, /ON CONFLICT \(snapshot_key\) DO UPDATE/);
+  assert.match(snapshotSyncSource, /isWtslSyncAuthorized/);
+  assert.match(snapshotSyncSource, /wtslCore\.results\(366\)/);
+  assert.match(snapshotSyncSource, /predictionsLeaderboard\(100\)/);
 });
 
 test('public results request a bounded Core window and keep the results timeout', () => {

@@ -5,16 +5,25 @@ import { wtslCore, type CorePredictionRow } from '@/lib/wtsl-core';
 import { getChallongeDisplayMap, type ChallongeDisplay } from '@/lib/challonge-claims';
 import { safe } from '@/lib/db';
 import PageHero from '@/components/PageHero';
+import { getPublicSiteSnapshot } from '@/lib/siteSnapshots';
+import SnapshotAutoRefresh from '@/components/SnapshotAutoRefresh';
 
 export const dynamic = 'force-dynamic';
 export const metadata: Metadata = { title: 'Predictions leaderboard' };
 
-async function safeLeaderboard(): Promise<CorePredictionRow[]> {
-  if (!wtslCore.configured()) return [];
+async function safeLeaderboard(): Promise<{ rows: CorePredictionRow[]; checkedAt: string | null; unavailable: boolean }> {
+  if (!wtslCore.configured()) return { rows: [], checkedAt: null, unavailable: false };
   try {
-    return await wtslCore.predictionsLeaderboard(100);
+    const snapshot = await getPublicSiteSnapshot(
+      'predictions-leaderboard',
+      () => wtslCore.predictionsLeaderboard(100),
+    );
+    if (!Array.isArray(snapshot.payload)) {
+      return { rows: [], checkedAt: null, unavailable: true };
+    }
+    return { rows: snapshot.payload, checkedAt: snapshot.checkedAt, unavailable: false };
   } catch {
-    return [];
+    return { rows: [], checkedAt: null, unavailable: true };
   }
 }
 
@@ -36,19 +45,26 @@ function predictorName(r: CorePredictionRow, verified?: ChallongeDisplay): strin
 }
 
 async function PredictionsLeaderboard() {
-  const [rows, challongeMap] = await Promise.all([
+  const [leaderboard, challongeMap] = await Promise.all([
     safeLeaderboard(),
     safe(() => getChallongeDisplayMap(), new Map<string, ChallongeDisplay>()),
   ]);
+  const { rows } = leaderboard;
   return (
     <main className="container">
       {!wtslCore.configured() ? (
         <div className="notice">The predictions leaderboard isn&apos;t available on this deployment yet.</div>
+      ) : leaderboard.unavailable ? (
+        <div className="notice warn" role="status">The predictions snapshot is not available yet. Standings will appear after the next successful background sync.</div>
       ) : rows.length === 0 ? (
-        <div className="forum-list"><div className="empty"><strong>No predictions recorded yet</strong>Standings appear once the Discord bot scans a tournament&apos;s picks.</div></div>
+        <>
+          {leaderboard.checkedAt && <p className="muted feed-freshness">Standings checked {new Date(leaderboard.checkedAt).toLocaleString('en-GB', { dateStyle: 'medium', timeStyle: 'short' })}</p>}
+          <div className="forum-list"><div className="empty"><strong>No predictions recorded yet</strong>Standings appear once the Discord bot scans a tournament&apos;s picks.</div></div>
+        </>
       ) : (
         <section className="panel">
           <div className="panel-head"><h2 className="display">Top predictors</h2><span>{rows.length} ranked</span></div>
+          {leaderboard.checkedAt && <p className="muted feed-freshness">Standings checked {new Date(leaderboard.checkedAt).toLocaleString('en-GB', { dateStyle: 'medium', timeStyle: 'short' })}</p>}
           <table>
             <thead>
               <tr><th>#</th><th>Predictor</th><th>Points</th><th>Correct picks</th><th>Tournaments</th><th>Won</th><th>Avg score</th></tr>
@@ -96,6 +112,7 @@ export default function Predictions() {
       <PageHero eyebrow="WTSL Forum" title="Predictions leaderboard">
         Challonge prediction standings.
       </PageHero>
+      <SnapshotAutoRefresh />
       <Suspense fallback={null}>
         <PredictionsLeaderboard />
       </Suspense>

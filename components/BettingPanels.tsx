@@ -59,6 +59,16 @@ export function BettingBoardPanels() {
 
   return (
     <>
+      {feed.source === 'snapshot' && feed.checkedAt && (
+        <div className="notice warn" role="status">
+          Showing the last verified market snapshot from {new Date(feed.checkedAt).toLocaleString('en-GB', { dateStyle: 'medium', timeStyle: 'short' })}. The snapshot is for display; current draw eligibility is checked separately before any bet is accepted.
+        </div>
+      )}
+      {feed.refreshError && (
+        <div className="notice warn" role="status">
+          The live market refresh is unavailable. Any displayed markets remain labelled with their last successful check time.
+        </div>
+      )}
       <div className="section-head section-space">
         <div>
           <h2 className="display">Open fixtures</h2>
@@ -67,7 +77,7 @@ export function BettingBoardPanels() {
         <a className="btn btn-discord btn-sm" href={DISCORD_URL} target="_blank" rel="noreferrer">Place virtual bets in Discord ↗</a>
       </div>
       {feed.status === 'loading' ? (
-        null
+        <FeedMessage title="Checking open fixtures…" detail="The latest verified market snapshot will appear here." />
       ) : feed.status === 'unavailable' ? (
         <FeedMessage title="Open fixtures unavailable." detail="The official-draw check did not finish. Markets have not been cleared or presented as open." unavailable />
       ) : fixtures.length === 0 ? (
@@ -79,7 +89,7 @@ export function BettingBoardPanels() {
             const two = sideOdds(fixture, 'two');
             return (
               <article className="fixture-card" key={fixture.key}>
-                <div className="fixture-top"><span>{fixture.tournament || 'WTSL'} · {(fixture.tour || 'TE4').toUpperCase()}</span><b>{String(fixture.status || 'open').toUpperCase()}</b></div>
+                <div className="fixture-top"><span>{fixture.tournament || 'WTSL'} · {(fixture.tour || 'TE4').toUpperCase()}</span><b>{feed.source === 'snapshot' ? 'LAST VERIFIED OPEN' : String(fixture.status || 'open').toUpperCase()}</b></div>
                 <h2><PlayerName id={fixture.first_id} tour={fixture.tour} name={fixture.first_name} /> <small>vs</small> <PlayerName id={fixture.second_id} tour={fixture.tour} name={fixture.second_name} /></h2>
                 <div className="topic-meta">{fixture.round_deadline ? `Deadline: ${fmtDateTime(fixture.round_deadline)}` : 'No deadline set'}</div>
                 <div className="odds-compare">
@@ -100,7 +110,7 @@ export function BettingBoardPanels() {
         </div>
       </div>
       {feed.status === 'loading' ? (
-        null
+        <FeedMessage title="Checking settled markets…" detail="The latest saved settlement list will appear here." />
       ) : feed.status === 'unavailable' ? (
         <FeedMessage title="Settled markets unavailable." detail="The betting feed could not be loaded." unavailable />
       ) : settled.length === 0 ? (
@@ -140,56 +150,134 @@ export function BettingBoardPanels() {
   );
 }
 
-export function MyBettingPanel() {
-  const [balanceStatus, setBalanceStatus] = useState<'loading' | 'ready' | 'unauthorized' | 'unavailable'>('loading');
-  const [account, setAccount] = useState<Record<string, unknown> | null>(null);
-  const [ledgerStatus, setLedgerStatus] = useState<'loading' | 'ready' | 'unauthorized' | 'unavailable' | 'retrying'>('loading');
-  const [bets, setBets] = useState<any[]>([]);
+export function MyBettingPanel({
+  initialBalanceStatus,
+  initialAccount,
+  initialLedgerStatus,
+  initialBets,
+  initialCheckedAt,
+}: {
+  initialBalanceStatus: 'loading' | 'ready' | 'unauthorized' | 'unavailable';
+  initialAccount: Record<string, unknown> | null;
+  initialLedgerStatus: 'loading' | 'ready' | 'unauthorized' | 'unavailable';
+  initialBets: any[];
+  initialCheckedAt?: string;
+}) {
+  const [balanceStatus, setBalanceStatus] = useState(initialBalanceStatus);
+  const [account, setAccount] = useState<Record<string, unknown> | null>(initialAccount);
+  const [ledgerStatus, setLedgerStatus] = useState<'loading' | 'ready' | 'unauthorized' | 'unavailable' | 'retrying'>(initialLedgerStatus);
+  const [bets, setBets] = useState<any[]>(initialBets);
   const [ledgerReloadKey, setLedgerReloadKey] = useState(0);
+  const [balanceCheckedAt, setBalanceCheckedAt] = useState<string | null>(
+    initialBalanceStatus === 'ready' ? initialCheckedAt ?? null : null,
+  );
+  const [ledgerCheckedAt, setLedgerCheckedAt] = useState<string | null>(
+    initialLedgerStatus === 'ready' ? initialCheckedAt ?? null : null,
+  );
+  const [balanceRefreshError, setBalanceRefreshError] = useState(false);
+  const [ledgerRefreshError, setLedgerRefreshError] = useState(false);
 
   useEffect(() => {
-    const controller = new AbortController();
+    let active = true;
+    let inFlight = false;
+    let currentController: AbortController | null = null;
     const loadBalance = async () => {
+      if (!active || inFlight || document.visibilityState === 'hidden') return;
+      inFlight = true;
+      const controller = new AbortController();
+      currentController = controller;
       try {
         const response = await fetch('/api/betting/account', { cache: 'no-store', signal: controller.signal });
-        if (!controller.signal.aborted) {
-          if (response.status === 401) setBalanceStatus('unauthorized');
-          else if (!response.ok) setBalanceStatus('unavailable');
-          else {
-            const payload = await response.json() as { account?: Record<string, unknown> };
-            if (payload.account) {
-              setAccount(payload.account);
-              setBalanceStatus('ready');
-            } else setBalanceStatus('unavailable');
+        if (!active || controller.signal.aborted) return;
+        if (response.status === 401) {
+          setBalanceStatus('unauthorized');
+          setBalanceRefreshError(false);
+        } else if (!response.ok) {
+          setBalanceStatus((current) => current === 'ready' ? current : 'unavailable');
+          setBalanceRefreshError(true);
+        } else {
+          const payload = await response.json() as { account?: Record<string, unknown> };
+          if (!active || controller.signal.aborted) return;
+          if (payload.account) {
+            setAccount(payload.account);
+            setBalanceStatus('ready');
+            setBalanceCheckedAt(new Date().toISOString());
+            setBalanceRefreshError(false);
+          } else {
+            setBalanceStatus((current) => current === 'ready' ? current : 'unavailable');
+            setBalanceRefreshError(true);
           }
         }
       } catch {
-        if (!controller.signal.aborted) setBalanceStatus('unavailable');
+        if (active && !controller.signal.aborted) {
+          setBalanceStatus((current) => current === 'ready' ? current : 'unavailable');
+          setBalanceRefreshError(true);
+        }
+      } finally {
+        inFlight = false;
+        if (currentController === controller) currentController = null;
       }
     };
     void loadBalance();
-    return () => controller.abort();
+    const timer = window.setInterval(() => void loadBalance(), 60_000);
+    const onVisibilityChange = () => {
+      if (document.visibilityState === 'visible') void loadBalance();
+    };
+    document.addEventListener('visibilitychange', onVisibilityChange);
+    return () => {
+      active = false;
+      currentController?.abort();
+      window.clearInterval(timer);
+      document.removeEventListener('visibilitychange', onVisibilityChange);
+    };
   }, []);
 
   useEffect(() => {
-    const controller = new AbortController();
+    let active = true;
+    let inFlight = false;
+    let currentController: AbortController | null = null;
     const loadLedger = async () => {
+      if (!active || inFlight || document.visibilityState === 'hidden') return;
+      inFlight = true;
+      const controller = new AbortController();
+      currentController = controller;
       const result = await fetchBetLedger(controller.signal);
-      if (controller.signal.aborted || result.kind === 'aborted') return;
+      if (!active || controller.signal.aborted || result.kind === 'aborted') {
+        inFlight = false;
+        if (currentController === controller) currentController = null;
+        return;
+      }
       if (result.kind === 'unauthorized') {
         setLedgerStatus('unauthorized');
+        setLedgerRefreshError(false);
       } else if (result.kind === 'ready') {
         setBets(result.bets);
         setLedgerStatus('ready');
+        setLedgerCheckedAt(new Date().toISOString());
+        setLedgerRefreshError(false);
       } else {
-        setLedgerStatus('unavailable');
+        setLedgerStatus((current) => current === 'ready' ? current : 'unavailable');
+        setLedgerRefreshError(true);
       }
+      inFlight = false;
+      if (currentController === controller) currentController = null;
     };
     void loadLedger();
-    return () => controller.abort();
+    const timer = window.setInterval(() => void loadLedger(), 60_000);
+    const onVisibilityChange = () => {
+      if (document.visibilityState === 'visible') void loadLedger();
+    };
+    document.addEventListener('visibilitychange', onVisibilityChange);
+    return () => {
+      active = false;
+      currentController?.abort();
+      window.clearInterval(timer);
+      document.removeEventListener('visibilitychange', onVisibilityChange);
+    };
   }, [ledgerReloadKey]);
 
   const retryLedger = () => {
+    setLedgerRefreshError(false);
     setLedgerStatus('retrying');
     setLedgerReloadKey((key) => key + 1);
   };
@@ -205,12 +293,16 @@ export function MyBettingPanel() {
         </div>
       )}
       {balanceStatus === 'unavailable' && <FeedMessage title="Your balance is unavailable." detail="This does not affect your bet ledger." unavailable />}
+      {balanceCheckedAt && <p className="muted feed-freshness">Your balance was checked {new Date(balanceCheckedAt).toLocaleString('en-GB', { dateStyle: 'medium', timeStyle: 'short' })}.</p>}
+      {balanceRefreshError && balanceStatus === 'ready' && <FeedMessage title="Your balance could not be refreshed." detail="The last successfully loaded balance is still shown with its check time." unavailable />}
       <div className="section-head section-space">
         <div>
           <h2 className="display">My bet ledger</h2>
           <p>Your recent bets placed in Discord.</p>
         </div>
       </div>
+      {ledgerCheckedAt && <p className="muted feed-freshness">Your bet ledger was checked {new Date(ledgerCheckedAt).toLocaleString('en-GB', { dateStyle: 'medium', timeStyle: 'short' })}.</p>}
+      {ledgerRefreshError && ledgerStatus === 'ready' && <FeedMessage title="Your bet ledger could not be refreshed." detail="The last successfully loaded entries are still shown with their check time." unavailable />}
       {ledgerStatus === 'loading' ? (
         null
       ) : ledgerStatus === 'unauthorized' ? (

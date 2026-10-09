@@ -250,6 +250,14 @@ h1, h2, h3 { margin: 0; }
 .live-score-probability-first { min-width: 1px; background: linear-gradient(90deg, var(--lime), #b0f43b); transition: width 180ms ease; }
 .live-score-probability-second { min-width: 1px; border-left: 2px solid var(--panel); background: linear-gradient(90deg, var(--cyan), #54d6e8); transition: width 180ms ease; }
 .live-score-player { display: flex; align-items: center; gap: 9px; min-width: 0; padding: 5px 0; }
+/* The transparent WTSL mark needs its navy backplate on light score cards. */
+:root[data-theme='light'] .live-score-player .player-avatar-image-wtsl-fallback,
+:root[data-theme='light'] .live-score-player .player-avatar-image[src*="wtsl-logo"] {
+  border-color: var(--lime);
+  background: #010c20;
+  object-fit: contain;
+  padding: 3px;
+}
 .live-score-player--first::before, .live-score-player--second::before { width: 6px; height: 6px; flex: 0 0 6px; border-radius: 50%; content: ""; }
 .live-score-player--first::before { background: var(--lime); box-shadow: 0 0 8px rgba(176, 244, 59, .55); }
 .live-score-player--second::before { background: var(--cyan); box-shadow: 0 0 8px rgba(34, 194, 218, .55); }
@@ -661,6 +669,7 @@ h1, h2, h3 { margin: 0; }
 .footer-col a { display: block; color: var(--soft); font-size: 14px; padding: 5px 0; }
 .footer-col a:hover { color: var(--lime); }
 .footer-base { max-width: 1240px; margin: 0 auto; padding: 18px 24px 34px; border-top: 1px solid var(--line); color: #6f82a0; font-size: 12px; display: flex; justify-content: space-between; gap: 16px; flex-wrap: wrap; }
+.footer-data-freshness { flex: 1 0 100%; color: var(--muted); font-size: 11px; line-height: 1.5; }
 
 /* ---------- Responsive ---------- */
 @media (max-width: 1100px) {
