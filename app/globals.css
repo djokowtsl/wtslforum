@@ -1564,7 +1564,16 @@ h1, h2, h3 { margin: 0; }
 }
 .character-roster-list > p { grid-column: 1 / -1; }
 .character-data-note { margin: 0; color: var(--muted); font-size: 12px; line-height: 1.6; }
-.character-error { border-color: rgba(242, 184, 75, .45); }
+.character-error {
+  display: flex; align-items: center; justify-content: space-between; gap: 12px;
+  border-color: rgba(242, 184, 75, .45);
+}
+.character-error button {
+  flex: 0 0 auto; padding: 7px 11px; border: 1px solid var(--line-2);
+  border-radius: 7px; color: var(--text-strong); background: var(--panel-2);
+  font: inherit; font-size: 12px; font-weight: 700; cursor: pointer;
+}
+.character-error button:focus-visible { outline: 2px solid var(--cyan); outline-offset: 2px; }
 .character-loading { padding: 22px; }
 .character-profile-stack { display: grid; gap: 18px; }
 .character-profile-hero {
@@ -1742,7 +1751,33 @@ h1, h2, h3 { margin: 0; }
   .character-section-heading { align-items: flex-start; flex-direction: column; gap: 8px; }
   .character-section-heading h2 { font-size: 26px; }
   .character-section-heading > p { font-size: 11px; }
-  .character-stat-table { min-width: 535px; }
+   .character-table-scroll { min-width: 0; overflow-x: visible; }
+   .character-stat-table { width: 100%; min-width: 0; }
+   .character-stat-table th,
+   .character-stat-table td { padding: 7px 5px; }
+   .character-stat-table thead th {
+     font-size: 9px; letter-spacing: .04em; white-space: normal; overflow-wrap: anywhere;
+   }
+   .character-stat-table tbody th {
+     min-width: 0; font-size: 11px; overflow-wrap: anywhere;
+   }
+   .character-stat-table tbody td { font-size: 11px; white-space: normal; }
+   .character-attribute-table,
+   .character-full-ranking-table { table-layout: fixed; }
+   .character-attribute-table th:first-child,
+   .character-attribute-table td:first-child { width: 40%; }
+   .character-attribute-table th:nth-child(2),
+   .character-attribute-table td:nth-child(2) { width: 18%; }
+   .character-attribute-table th:last-child,
+   .character-attribute-table td:last-child { width: 42%; }
+   .character-full-ranking-table th:first-child,
+   .character-full-ranking-table td:first-child { width: 18%; }
+   .character-full-ranking-table th:nth-child(2),
+   .character-full-ranking-table td:nth-child(2) { width: 58%; }
+   .character-full-ranking-table th:last-child,
+   .character-full-ranking-table td:last-child { width: 24%; }
+   .character-stat-meter { min-width: 0; }
+   .character-stat-meter-label { padding: 0 2px; font-size: 8px; white-space: nowrap; }
   .character-stat-groups { gap: 10px; }
   .character-top-bottom { gap: 10px; }
 }

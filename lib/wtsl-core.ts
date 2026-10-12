@@ -14,6 +14,7 @@ export const WTSL_CORE_PUBLIC_TIMEOUT_MS = 20_000;
 export const WTSL_CORE_FIXTURES_TIMEOUT_MS = 120_000;
 const WTSL_CORE_ACCOUNT_TIMEOUT_MS = 5_000;
 export const WTSL_CORE_LEDGER_TIMEOUT_MS = 20_000;
+const WTSL_CORE_CHARACTER_STATS_TIMEOUT_MS = 15_000;
 
 type CoreRequestOptions = {
   timeoutMs?: number;
@@ -275,15 +276,21 @@ export const wtslCore = {
     character?: string;
     compare?: string;
     attribute?: string;
+    includeProfile?: boolean;
+    includeOfficial?: boolean;
   }) => {
     const params = new URLSearchParams({ tour: query.tour });
     if (query.character) params.set('character', query.character);
     if (query.compare) params.set('compare', query.compare);
     if (query.attribute) params.set('attribute', query.attribute);
+    if (query.includeProfile === false) params.set('include_profile', 'false');
+    if (query.includeOfficial !== undefined) {
+      params.set('include_official', String(query.includeOfficial));
+    }
     return core<Record<string, unknown>>(
       `/api/core/character-stats?${params.toString()}`,
       {},
-      { timeoutMs: 30_000, logLabel: 'character-stats' },
+      { timeoutMs: WTSL_CORE_CHARACTER_STATS_TIMEOUT_MS, logLabel: 'character-stats' },
     );
   },
 

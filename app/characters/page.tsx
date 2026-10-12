@@ -6,7 +6,7 @@ import { wtslCore } from '@/lib/wtsl-core';
 export const dynamic = 'force-dynamic';
 export const metadata: Metadata = {
   title: 'Characters',
-  description: 'Browse WTSL character profiles, attribute rankings, mechanics, and official match pick history.',
+  description: 'WTSL character profiles, attributes, rankings, and pick history.',
 };
 
 type Tour = 'all' | 'atp' | 'wta';
@@ -33,9 +33,6 @@ export default async function CharactersPage({
   return (
     <>
       <PageHero eyebrow="WTSL · CHARACTER DATA" title="Characters">
-        Explore the full ATP, WTA, or combined roster. Compare character builds,
-        inspect their mechanics and rankings, and see picks recorded in official
-        WTSL results.
       </PageHero>
       <main className="container character-page-main">
         {initialRoster ? (
