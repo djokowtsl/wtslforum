@@ -164,6 +164,9 @@ function StatHighlights({ title, stats, tone }: { title: string; stats: Stat[]; 
   return (
     <section className={`character-highlight-card character-highlight-${tone}`}>
       <h3>{title}</h3>
+      <p className="character-rating-explainer">
+        The number beside each stat is its raw value; the bar is its normalized roster score (0–100).
+      </p>
       {stats.length ? (
         <ul className="character-highlight-list">
           {stats.slice(0, 5).map((stat) => (
@@ -328,7 +331,7 @@ function PickHistory({
               : !available
                 ? 'Pick history unavailable.'
                 : pickCount > 0
-                  ? 'Popularity rank unavailable.'
+                  ? 'WTSL reports picks, but the Forum cannot yet verify a rank from its recorded match history.'
                   : 'No picks recorded.'}
           </p>
         )}
@@ -417,15 +420,14 @@ function Profile({
         available={data.picks_available}
         ranking={data.pick_ranking}
       />
-
       {comparisonMatches && comparison && (
         <Comparison comparison={comparison} selected={profile.character} />
       )}
       {rankingMatches && <RankedAttribute ranking={data.ranking!} character={profile.character} />}
 
       <div className="character-highlight-grid">
-        <StatHighlights title="Relative strengths" stats={relativeStrengths} tone="positive" />
-        <StatHighlights title="Relative weaknesses" stats={relativeWeaknesses} tone="caution" />
+        <StatHighlights title="Strengths" stats={relativeStrengths} tone="positive" />
+        <StatHighlights title="Weaknesses" stats={relativeWeaknesses} tone="caution" />
       </div>
 
       <section className="panel character-detail-panel">
@@ -439,6 +441,9 @@ function Profile({
         <div className="character-section-heading">
           <div><span className="panel-label">COMBINED SKILLS</span><h2>Ratings</h2></div>
         </div>
+        <p className="character-rating-explainer">
+          The number is the raw rating; the bar is its normalized roster score (0–100).
+        </p>
         <CombinedSkills stats={combined} />
       </section>
 
@@ -492,6 +497,7 @@ export default function CharacterStatsExplorer({
     draftCharacter !== character ||
     draftCompare !== compare ||
     draftAttribute !== attribute;
+  const isLoadingDifferentCharacter = Boolean(search.trim()) || draftCharacter !== character;
 
   function handleSearchSubmit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
@@ -754,10 +760,12 @@ export default function CharacterStatsExplorer({
           </datalist>
           <div className="character-search-actions">
             <p className="character-search-help">
-              Choose a character or adjust the comparison and ranking, then apply your options.
+              {isLoadingDifferentCharacter
+                ? 'Choose a character from the roster to load it.'
+                : 'Adjust the comparison or ranking options, then apply them.'}
             </p>
             <button type="submit" disabled={!currentRoster || !hasPendingChanges}>
-              Apply options
+              {isLoadingDifferentCharacter ? 'Load character' : 'Apply options'}
             </button>
           </div>
           {searchError && <p id="character-search-error" className="character-search-error" role="alert">{searchError}</p>}

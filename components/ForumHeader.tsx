@@ -57,26 +57,29 @@ export async function ForumHeader() {
               Chat{unread > 0 && <span className="pill red nav-badge">{unread}</span>}
             </Link>
           )}
-          {u ? (
-            <Link href="/profile" className="user-chip">
-              <img src={discordAvatar(u.avatar, u.username)} alt="" />
-              <StatusDot status={status} />
-              {u.username}
-            </Link>
-          ) : (
+          {!u && (
             <a className="btn btn-discord btn-sm nav-cta" href="/api/auth/discord">Log in with Discord</a>
           )}
         </nav>
 
-        <div className="header-theme-toggle"><ThemeToggle /></div>
-        <MobileNav
-          items={NAV}
-          isAdmin={!!u?.isAdmin}
-          canModerate={canModerate}
-          username={u?.username}
-          discordJoinHref="/api/auth/discord"
-          unreadMessages={unread}
-        />
+        <div className="header-actions">
+          {u && (
+            <Link href="/profile" className="header-user-chip" title={u.username}>
+              <img src={discordAvatar(u.avatar, u.username)} alt="" />
+              <StatusDot status={status} />
+              <span className="user-chip-name">{u.username}</span>
+            </Link>
+          )}
+          <div className="header-theme-toggle"><ThemeToggle /></div>
+          <MobileNav
+            items={NAV}
+            isAdmin={!!u?.isAdmin}
+            canModerate={canModerate}
+            username={u?.username}
+            discordJoinHref="/api/auth/discord"
+            unreadMessages={unread}
+          />
+        </div>
       </div>
       {u && <PresenceHeartbeat />}
     </header>
