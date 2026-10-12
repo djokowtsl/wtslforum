@@ -8,8 +8,9 @@ export const runtime = 'nodejs';
 export async function POST(req: Request) {
   const user = await getSession();
   if (!user?.isAdmin) return NextResponse.json({ error: 'Admin access required.' }, { status: 403 });
-  if (!process.env.BLOB_READ_WRITE_TOKEN) {
-    return NextResponse.json({ error: 'Article image storage is not configured. Ask the site administrator to connect Vercel Blob storage.' }, { status: 503 });
+  const storeId = process.env.ARTICLE_BLOB_STORE_ID;
+  if (!storeId) {
+    return NextResponse.json({ error: 'Article image storage is not configured. Ask the site administrator to connect the article image store.' }, { status: 503 });
   }
   const requestSize = Number(req.headers.get('content-length'));
   if (requestSize > MAX_ARTICLE_IMAGE_BYTES + 65536) return NextResponse.json({ error: 'Images must be 4 MB or smaller.' }, { status: 413 });
@@ -23,7 +24,7 @@ export async function POST(req: Request) {
     if (!contentType) return NextResponse.json({ error: 'Use a JPG, PNG, GIF, or WebP image. SVG and other file types are not allowed.' }, { status: 415 });
     const extension = { 'image/jpeg': 'jpg', 'image/png': 'png', 'image/gif': 'gif', 'image/webp': 'webp' }[contentType];
     const blob = await put(`articles/${user.id}/${crypto.randomUUID()}.${extension}`, Buffer.from(bytes), {
-      access: 'public', contentType, addRandomSuffix: false,
+      access: 'public', contentType, addRandomSuffix: false, storeId,
     });
     return NextResponse.json({ url: blob.url, name: file.name }, { status: 201 });
   } catch {

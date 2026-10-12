@@ -13,7 +13,7 @@ Set `DISCORD_CLIENT_ID`, `DISCORD_CLIENT_SECRET`, `DISCORD_REDIRECT_URI`, `AUTH_
 Import the repository, set the environment variables, and deploy. Do not prefix secrets with `NEXT_PUBLIC_`.
 
 ## Article image uploads
-Connect a public Vercel Blob store to the Forum project. Vercel provides `BLOB_READ_WRITE_TOKEN` to the deployment; the article desk uses that default public store for uploaded cover and in-article images (JPG, PNG, GIF, or WebP, up to 4 MB). The upload route returns 503 until storage is configured. The separate private store below is for pending community-media submissions, not article images.
+Connect a public Vercel Blob store to the Forum project and set its store ID as the plain `ARTICLE_BLOB_STORE_ID` environment variable for Production and Preview. Article uploads use Vercel's rotating OIDC authentication and explicitly target this store; the route does not read a static Blob token. Cover and in-article images accept JPG, PNG, GIF, or WebP files up to 4 MB. The upload route returns 503 until the article store is configured. The separate private store below is for pending community-media submissions, not article images.
 
 ## 4. Bot
 The Discord bot in `/bot` is intentionally separate from Vercel. Install its dependencies and set its `.env` values. Deploy it to an always-on Node host. It registers `/forum`, `/article`, and `/discussions` in the configured guild.
