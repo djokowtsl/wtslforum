@@ -253,7 +253,13 @@ function Comparison({ comparison, selected }: { comparison: Record<string, any>;
   const selectedIsFirst = comparison.first === selected;
   const selectedEdges = selectedIsFirst ? comparison.first_edges : comparison.second_edges;
   const otherEdges = selectedIsFirst ? comparison.second_edges : comparison.first_edges;
+  const selectedMechanics = selectedIsFirst ? comparison.first_mechanics : comparison.second_mechanics;
+  const otherMechanics = selectedIsFirst ? comparison.second_mechanics : comparison.first_mechanics;
+  const selectedGuidance = selectedIsFirst ? comparison.first_guidance : comparison.second_guidance;
+  const otherGuidance = selectedIsFirst ? comparison.second_guidance : comparison.first_guidance;
   const other = selectedIsFirst ? comparison.second : comparison.first;
+  const selectedChoice = selectedGuidance?.why_select || selectedGuidance?.benefit;
+  const otherChoice = otherGuidance?.why_select || otherGuidance?.benefit;
   const edgeList = (items: any[]) => (Array.isArray(items) ? items : [])
     .filter((item) => !isExcludedRatingAttribute(item?.attribute))
     .map((item) => {
@@ -279,12 +285,29 @@ function Comparison({ comparison, selected }: { comparison: Record<string, any>;
         <div className="character-edge character-edge-selected">
           <h3>{selected}</h3>
           {selectedEdges?.length ? <ul>{edgeList(selectedEdges)}</ul> : <p>No higher attributes.</p>}
+          {selectedMechanics?.length > 0 && (
+            <ul>{selectedMechanics.map((line: string, index: number) => <li key={index}>{line}</li>)}</ul>
+          )}
         </div>
         <div className="character-edge">
           <h3>{other}</h3>
           {otherEdges?.length ? <ul>{edgeList(otherEdges)}</ul> : <p>No higher attributes.</p>}
+          {otherMechanics?.length > 0 && (
+            <ul>{otherMechanics.map((line: string, index: number) => <li key={index}>{line}</li>)}</ul>
+          )}
         </div>
       </div>
+      {(typeof selectedChoice === 'string' && selectedChoice.trim()) ||
+      (typeof otherChoice === 'string' && otherChoice.trim()) ? (
+        <div className="character-comparison-choices">
+          {typeof selectedChoice === 'string' && selectedChoice.trim() && (
+            <p><b>Choose {selected} if:</b> {selectedChoice}</p>
+          )}
+          {typeof otherChoice === 'string' && otherChoice.trim() && (
+            <p><b>Choose {other} instead if:</b> {otherChoice}</p>
+          )}
+        </div>
+      ) : null}
     </section>
   );
 }
@@ -361,6 +384,30 @@ function Profile({
   attribute: string;
 }) {
   const profile = data.profile!;
+  const guidance = profile.selection_guidance || {};
+  const mechanics = profile.mechanics_insights || {};
+  const insightRows = [
+    ['Serve', mechanics.serve],
+    ['Groundstrokes', mechanics.groundstrokes],
+    ['Surface fit', mechanics.surface_fit],
+    ['Counterplay', mechanics.counter],
+    ['Net play', mechanics.net],
+    ['Variation', mechanics.variation],
+    ['Match play', mechanics.match_play],
+  ].filter(([, text]) => typeof text === 'string' && text.trim());
+  const advantages = Array.isArray(guidance.advantages) ? guidance.advantages : [];
+  const vulnerabilities = Array.isArray(guidance.vulnerabilities) ? guidance.vulnerabilities : [];
+  const pointPatterns = Array.isArray(guidance.point_patterns) ? guidance.point_patterns : [];
+  const topEdges = statsWithoutExcludedAttributes(guidance.top_edges);
+  const documentedEdges = Array.isArray(guidance.documented_edges) ? guidance.documented_edges : [];
+  const documentedTalents = Array.isArray(guidance.documented_talents) ? guidance.documented_talents : [];
+  const documentedExposures = Array.isArray(guidance.documented_exposures) ? guidance.documented_exposures : [];
+  const technicalInteractions = Array.isArray(profile.technical_interactions)
+    ? profile.technical_interactions
+    : [];
+  const styleDescription = typeof profile.style_description === 'string'
+    ? profile.style_description.trim()
+    : '';
   const attributes = statsWithoutExcludedAttributes(profile.stats);
   const combined = statsWithoutExcludedAttributes(profile.combined_ratings);
   const relativeStrengths = statsWithoutExcludedAttributes(profile.strengths).filter((stat) =>
@@ -408,6 +455,9 @@ function Profile({
           <div className="character-badges">
             <span>{profile.style}</span><span>Acceleration: {profile.acceleration}</span>
           </div>
+          {styleDescription && (
+            <p className="character-style-description">{styleDescription}</p>
+          )}
           {official.profile_url && (
             <a href={official.profile_url} target="_blank" rel="noreferrer">
               {official.source === profile.sex ? `Official ${profile.sex} profile` : 'Player profile'} ↗
@@ -447,6 +497,114 @@ function Profile({
         </p>
         <CombinedSkills stats={combined} />
       </section>
+
+      {(guidance.why_select || guidance.benefit || guidance.best_for || topEdges.length > 0 ||
+        guidance.game_plan || guidance.why_not_select || guidance.tradeoff) && (
+        <div className="character-guidance-columns character-selection-guidance">
+          {(guidance.why_select || guidance.benefit || guidance.best_for || topEdges.length > 0) && (
+            <section className="character-selection-card">
+              <span className="panel-label">WHY SELECT {profile.sex === 'WTA' ? 'HER' : 'HIM'}</span>
+              <h3>{guidance.strongest_label || 'Roster strengths'}</h3>
+              {(guidance.why_select || guidance.benefit) && (
+                <p>{guidance.why_select || guidance.benefit}</p>
+              )}
+              {guidance.best_for && <p><b>Best for:</b> {guidance.best_for}</p>}
+              {topEdges.length > 0 && (
+                <div className="character-selection-edges">
+                  <b>Roster evidence</b>
+                  <ul>
+                    {topEdges.slice(0, 5).map((stat) => (
+                      <li key={stat.attribute}>
+                        <span>{stat.attribute} · {formatValue(stat.value)}</span>
+                        <StatBar stat={stat} />
+                      </li>
+                    ))}
+                  </ul>
+                </div>
+              )}
+            </section>
+          )}
+          {(guidance.game_plan || guidance.why_not_select || guidance.tradeoff) && (
+            <section className="character-selection-card">
+              <span className="panel-label">HOW TO USE {profile.sex === 'WTA' ? 'HER' : 'HIM'}</span>
+              <h3>Game plan</h3>
+              {guidance.game_plan && <p>{guidance.game_plan}</p>}
+              {(guidance.why_not_select || guidance.tradeoff) && (
+                <p><b>Why not select:</b> {guidance.why_not_select || guidance.tradeoff}</p>
+              )}
+            </section>
+          )}
+        </div>
+      )}
+
+      {(insightRows.length > 0 || advantages.length > 0 || vulnerabilities.length > 0 ||
+        pointPatterns.length > 0 || technicalInteractions.length > 0 ||
+        guidance.style_mechanics || guidance.acceleration_mechanics ||
+        documentedEdges.length > 0 || documentedTalents.length > 0 ||
+        documentedExposures.length > 0) && (
+        <section className="panel character-guidance-panel">
+          <div className="character-section-heading">
+            <div><span className="panel-label">HOW THE BUILD PLAYS</span><h2>Game plan &amp; mechanics</h2></div>
+            {guidance.strongest_label && (
+              <span className="character-strongest-label">Top edge: {guidance.strongest_label}</span>
+            )}
+          </div>
+          {insightRows.length > 0 && (
+            <div className="character-insight-grid">
+              {insightRows.map(([title, text]) => (
+                <article key={String(title)}><h3>{title}</h3><p>{String(text)}</p></article>
+              ))}
+            </div>
+          )}
+          {(advantages.length > 0 || vulnerabilities.length > 0) && (
+            <div className="character-guidance-columns">
+              {advantages.length > 0 && (
+                <div><h3>Advantages</h3><ul>{advantages.map((item: string, index: number) => <li key={index}>{item}</li>)}</ul></div>
+              )}
+              {vulnerabilities.length > 0 && (
+                <div><h3>Trade-offs</h3><ul>{vulnerabilities.map((item: string, index: number) => <li key={index}>{item}</li>)}</ul></div>
+              )}
+            </div>
+          )}
+          {pointPatterns.length > 0 && (
+            <div className="character-point-patterns">
+              <h3>Point patterns</h3>
+              <ol>{pointPatterns.map((item: string, index: number) => <li key={index}>{item}</li>)}</ol>
+            </div>
+          )}
+          {(technicalInteractions.length > 0 || guidance.style_mechanics ||
+            guidance.acceleration_mechanics || documentedEdges.length > 0 ||
+            documentedTalents.length > 0 || documentedExposures.length > 0) && (
+            <details className="character-mechanics-details">
+              <summary>Character traits &amp; technical interactions</summary>
+              <ul className="character-documented-mechanics">
+                {guidance.style_mechanics && (
+                  <li><b>{profile.style} style</b><span>{guidance.style_mechanics}</span></li>
+                )}
+                {guidance.acceleration_mechanics && (
+                  <li><b>{profile.acceleration} acceleration</b><span>{guidance.acceleration_mechanics}</span></li>
+                )}
+                {documentedEdges.map((item: string, index: number) => (
+                  <li key={`edge-${index}`}><b>Documented edge</b><span>{item}</span></li>
+                ))}
+                {documentedTalents.map((item: string, index: number) => (
+                  <li key={`talent-${index}`}><b>Talent</b><span>{item}</span></li>
+                ))}
+                {documentedExposures.map((item: string, index: number) => (
+                  <li key={`exposure-${index}`}><b>Documented trade-off</b><span>{item}</span></li>
+                ))}
+              </ul>
+              {technicalInteractions.length > 0 && (
+                <ul>
+                  {technicalInteractions.map(([name, description]: [string, string]) => (
+                    <li key={name}><b>{name}</b><span>{description}</span></li>
+                  ))}
+                </ul>
+              )}
+            </details>
+          )}
+        </section>
+      )}
 
     </div>
   );
