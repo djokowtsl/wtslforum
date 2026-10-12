@@ -14,7 +14,6 @@ type Stat = {
 };
 type CharacterPayload = {
   tour: Tour;
-  roster_count: number;
   names: string[];
   attributes: string[];
   profile?: Record<string, any> | null;
@@ -83,16 +82,15 @@ function StatTable({ stats }: { stats: Stat[] }) {
         <section className="character-stat-group" key={group}>
           <h3>{group}</h3>
           <div className="character-table-scroll">
-            <table className="character-stat-table">
+            <table className="character-stat-table character-attribute-table">
               <thead>
-                <tr><th>Attribute</th><th>Value</th><th>Roster rank</th><th>Percentile</th></tr>
+                <tr><th>Attribute</th><th>Value</th><th>Percentile</th></tr>
               </thead>
               <tbody>
                 {grouped[group].map((stat) => (
                   <tr key={stat.attribute}>
                     <th scope="row">{stat.attribute}</th>
                     <td>{formatValue(stat.value, stat.attribute === 'Topspin' ? '%' : '')}</td>
-                    <td>{stat.rank == null ? '—' : `#${stat.rank} of ${stat.count}`}</td>
                     <td><StatBar stat={stat} /></td>
                   </tr>
                 ))}
@@ -119,7 +117,7 @@ function StatHighlights({ title, stats, tone }: { title: string; stats: Stat[]; 
             </li>
           ))}
         </ul>
-      ) : <p className="character-muted">No roster-relative data available.</p>}
+      ) : <p className="character-muted">No data.</p>}
     </section>
   );
 }
@@ -153,24 +151,14 @@ function CombinedSkills({ stats }: { stats: Stat[] }) {
 
 function RankedAttribute({ ranking, character }: { ranking: Record<string, any>; character: string }) {
   const rows = Array.isArray(ranking.ranked) ? ranking.ranked as Record<string, any>[] : [];
-  const selected = rows.find((row) => row.character === character);
   const top = rows.slice(0, 3);
   const bottom = rows.slice(-3).reverse();
 
   return (
     <section className="panel character-ranking-panel">
       <div className="character-section-heading">
-        <div><span className="panel-label">ROSTER RANKING</span><h2>{ranking.attribute}</h2></div>
-        <span className="character-range">
-          Range {formatValue(ranking.minimum)}–{formatValue(ranking.maximum)}
-        </span>
+        <div><span className="panel-label">ATTRIBUTE RANKING</span><h2>{ranking.attribute}</h2></div>
       </div>
-      {selected && (
-        <p className="character-selected-rank">
-          <b>{character}</b> ranks <b>#{selected.rank}</b> at {formatValue(selected.value)}
-          {' '}among {ranking.count} characters.
-        </p>
-      )}
       <div className="character-top-bottom">
         <div>
           <h3>Top characters</h3>
@@ -182,9 +170,9 @@ function RankedAttribute({ ranking, character }: { ranking: Record<string, any>;
         </div>
       </div>
       <details className="character-full-ranking">
-        <summary>Show full ranking ({rows.length} characters)</summary>
+        <summary>Show full ranking ({rows.length})</summary>
         <div className="character-table-scroll">
-          <table className="character-stat-table">
+          <table className="character-stat-table character-full-ranking-table">
             <thead><tr><th>Rank</th><th>Character</th><th>Value</th></tr></thead>
             <tbody>
               {rows.map((row) => (
@@ -204,10 +192,6 @@ function Comparison({ comparison, selected }: { comparison: Record<string, any>;
   const selectedIsFirst = comparison.first === selected;
   const selectedEdges = selectedIsFirst ? comparison.first_edges : comparison.second_edges;
   const otherEdges = selectedIsFirst ? comparison.second_edges : comparison.first_edges;
-  const selectedMechanics = selectedIsFirst ? comparison.first_mechanics : comparison.second_mechanics;
-  const otherMechanics = selectedIsFirst ? comparison.second_mechanics : comparison.first_mechanics;
-  const selectedGuidance = selectedIsFirst ? comparison.first_guidance : comparison.second_guidance;
-  const otherGuidance = selectedIsFirst ? comparison.second_guidance : comparison.first_guidance;
   const other = selectedIsFirst ? comparison.second : comparison.first;
   const edgeList = (items: any[]) => (Array.isArray(items) ? items : []).map((item) => {
     const value = selectedIsFirst ? item.first_value : item.second_value;
@@ -215,7 +199,10 @@ function Comparison({ comparison, selected }: { comparison: Record<string, any>;
     return (
       <li key={`${item.group}-${item.attribute}`}>
         <b>{item.attribute}</b>
-        <span>{formatValue(value)} vs {formatValue(otherValue)} · {Math.round(Math.abs(Number(item.delta || 0)) * 100)} percentile pts</span>
+        <span>
+          {formatValue(value)} vs {formatValue(otherValue)} ·{' '}
+          {Math.round(Math.abs(Number(item.delta || 0)) * 100)} percentile points
+        </span>
       </li>
     );
   });
@@ -227,19 +214,13 @@ function Comparison({ comparison, selected }: { comparison: Record<string, any>;
       </div>
       <div className="character-comparison-grid">
         <div className="character-edge character-edge-selected">
-          <h3>{selected} leads</h3>
-          {selectedEdges?.length ? <ul>{edgeList(selectedEdges)}</ul> : <p>No distinct attribute edge.</p>}
-          {selectedMechanics?.length > 0 && <ul>{selectedMechanics.map((line: string, index: number) => <li key={index}>{line}</li>)}</ul>}
+          <h3>{selected}</h3>
+          {selectedEdges?.length ? <ul>{edgeList(selectedEdges)}</ul> : <p>No higher attributes.</p>}
         </div>
         <div className="character-edge">
-          <h3>{other} leads</h3>
-          {otherEdges?.length ? <ul>{edgeList(otherEdges)}</ul> : <p>No distinct attribute edge.</p>}
-          {otherMechanics?.length > 0 && <ul>{otherMechanics.map((line: string, index: number) => <li key={index}>{line}</li>)}</ul>}
+          <h3>{other}</h3>
+          {otherEdges?.length ? <ul>{edgeList(otherEdges)}</ul> : <p>No higher attributes.</p>}
         </div>
-      </div>
-      <div className="character-comparison-choices">
-        <p><b>Choose {selected} if:</b> {selectedGuidance?.why_select || selectedGuidance?.benefit}</p>
-        <p><b>Choose {other} instead if:</b> {otherGuidance?.why_select || otherGuidance?.benefit}</p>
       </div>
     </section>
   );
@@ -253,49 +234,55 @@ function PickHistory({ profile, available }: { profile: Record<string, any>; ava
         <strong className="character-pick-total">{available ? profile.pick_count ?? 0 : '—'}<small>known picks</small></strong>
       </div>
       {!available ? (
-        <p className="character-muted">Pick history is temporarily unavailable. The profile and workbook rankings are still shown.</p>
+        <p className="character-muted">Pick history unavailable.</p>
       ) : profile.top_pickers?.length ? (
         <ol className="character-pickers">
           {profile.top_pickers.map(([name, count]: [string, number]) => (
             <li key={name}><span>{name}</span><b>{count} {count === 1 ? 'pick' : 'picks'}</b></li>
           ))}
         </ol>
-      ) : <p className="character-muted">No picks for this character were found in the available official WTSL results.</p>}
+      ) : <p className="character-muted">No picks recorded.</p>}
     </section>
   );
 }
 
-function Profile({ data }: { data: CharacterPayload }) {
+function Profile({
+  data,
+  compare,
+  attribute,
+}: {
+  data: CharacterPayload;
+  compare: string;
+  attribute: string;
+}) {
   const profile = data.profile!;
-  const guidance = profile.selection_guidance || {};
-  const mechanics = profile.mechanics_insights || {};
-  const insightRows = [
-    ['Serve', mechanics.serve],
-    ['Groundstrokes', mechanics.groundstrokes],
-    ['Surface fit', mechanics.surface_fit],
-    ['Counterplay', mechanics.counter],
-    ['Net play', mechanics.net],
-    ['Variation', mechanics.variation],
-    ['Match play', mechanics.match_play],
-  ].filter(([, text]) => typeof text === 'string' && text.trim());
-  const advantages = Array.isArray(guidance.advantages) ? guidance.advantages : [];
-  const vulnerabilities = Array.isArray(guidance.vulnerabilities) ? guidance.vulnerabilities : [];
-  const pointPatterns = Array.isArray(guidance.point_patterns) ? guidance.point_patterns : [];
-  const topEdges = Array.isArray(guidance.top_edges) ? guidance.top_edges as Stat[] : [];
-  const documentedEdges = Array.isArray(guidance.documented_edges) ? guidance.documented_edges : [];
-  const documentedTalents = Array.isArray(guidance.documented_talents) ? guidance.documented_talents : [];
-  const documentedExposures = Array.isArray(guidance.documented_exposures) ? guidance.documented_exposures : [];
   const attributes = Array.isArray(profile.stats) ? profile.stats as Stat[] : [];
   const combined = Array.isArray(profile.combined_ratings) ? profile.combined_ratings as Stat[] : [];
   const official = data.official || {};
   const profileImage = official.avatar_url;
+  const [imageFailed, setImageFailed] = useState(false);
+  const comparison = data.comparison;
+  const comparisonMatches = Boolean(
+    compare &&
+      comparison &&
+      ((comparison.first === profile.character && comparison.second === compare) ||
+        (comparison.second === profile.character && comparison.first === compare)),
+  );
+  const rankingMatches = Boolean(
+    attribute && data.ranking && data.ranking.attribute === attribute,
+  );
 
   return (
     <div className="character-profile-stack">
       <section className="panel character-profile-hero">
         <div className="character-portrait">
-          {profileImage
-            ? <img src={profileImage} alt={`${profile.character} profile`} referrerPolicy="no-referrer" />
+          {profileImage && !imageFailed
+            ? <img
+                src={profileImage}
+                alt={`${profile.character} profile`}
+                referrerPolicy="no-referrer"
+                onError={() => setImageFailed(true)}
+              />
             : <span aria-hidden="true">{profile.country_flag || '🎾'}</span>}
         </div>
         <div className="character-profile-identity">
@@ -308,9 +295,7 @@ function Profile({ data }: { data: CharacterPayload }) {
           </p>
           <div className="character-badges">
             <span>{profile.style}</span><span>Acceleration: {profile.acceleration}</span>
-            <span>{profile.roster_count} characters in roster</span>
           </div>
-          <p className="character-style-description">{profile.style_description}</p>
           {official.profile_url && (
             <a href={official.profile_url} target="_blank" rel="noreferrer">
               {official.source === profile.sex ? `Official ${profile.sex} profile` : 'Player profile'} ↗
@@ -319,107 +304,31 @@ function Profile({ data }: { data: CharacterPayload }) {
         </div>
       </section>
 
-      <section className="panel character-detail-panel">
-        <div className="character-section-heading">
-          <div><span className="panel-label">COMPLETE BUILD</span><h2>Attribute rankings</h2></div>
-          <p>Values and percentiles are measured against the selected roster.</p>
-        </div>
-        <StatTable stats={attributes} />
-      </section>
-
-      <section className="panel character-detail-panel">
-        <div className="character-section-heading">
-          <div><span className="panel-label">SIMULATED SKILL</span><h2>Combined ratings</h2></div>
-        </div>
-        <CombinedSkills stats={combined} />
-      </section>
+      {comparisonMatches && comparison && (
+        <Comparison comparison={comparison} selected={profile.character} />
+      )}
+      {rankingMatches && <RankedAttribute ranking={data.ranking!} character={profile.character} />}
 
       <div className="character-highlight-grid">
         <StatHighlights title="Relative strengths" stats={profile.strengths || []} tone="positive" />
         <StatHighlights title="Relative weaknesses" stats={profile.weaknesses || []} tone="caution" />
       </div>
 
-      <div className="character-guidance-columns character-selection-guidance">
-        <section className="character-selection-card">
-          <span className="panel-label">WHY SELECT {profile.sex === 'WTA' ? 'HER' : 'HIM'}</span>
-          <h3>{guidance.strongest_label || 'Roster strengths'}</h3>
-          <p>{guidance.why_select || guidance.benefit || 'A balanced character with usable roster-relative strengths.'}</p>
-          <p><b>Best for:</b> {guidance.best_for || 'A flexible game plan.'}</p>
-          {topEdges.length > 0 && (
-            <div className="character-selection-edges">
-              <b>Roster evidence</b>
-              <ul>
-                {topEdges.slice(0, 5).map((stat) => (
-                  <li key={stat.attribute}>
-                    <span>{stat.attribute} · {formatValue(stat.value)}</span>
-                    <StatBar stat={stat} />
-                  </li>
-                ))}
-              </ul>
-            </div>
-          )}
-        </section>
-        <section className="character-selection-card">
-          <span className="panel-label">HOW TO USE {profile.sex === 'WTA' ? 'HER' : 'HIM'}</span>
-          <h3>Game plan</h3>
-          <p>{guidance.game_plan || 'Use the strongest attributes deliberately and adjust to court position.'}</p>
-          <p><b>Why not select:</b> {guidance.why_not_select || guidance.tradeoff || 'No clear roster trade-off was found.'}</p>
-        </section>
-      </div>
-
-      <section className="panel character-guidance-panel">
+      <section className="panel character-detail-panel">
         <div className="character-section-heading">
-          <div><span className="panel-label">HOW THE BUILD PLAYS</span><h2>Game plan &amp; mechanics</h2></div>
-          {guidance.strongest_label && <span className="character-strongest-label">Top edge: {guidance.strongest_label}</span>}
+          <div><span className="panel-label">ATTRIBUTES</span><h2>Attribute rankings</h2></div>
         </div>
-        <div className="character-insight-grid">
-          {insightRows.map(([title, text]) => (
-            <article key={String(title)}><h3>{title}</h3><p>{String(text)}</p></article>
-          ))}
+        <StatTable stats={attributes} />
+      </section>
+
+      <section className="panel character-detail-panel">
+        <div className="character-section-heading">
+          <div><span className="panel-label">COMBINED SKILLS</span><h2>Ratings</h2></div>
         </div>
-        <div className="character-guidance-columns">
-          <div><h3>Advantages</h3><ul>{advantages.map((item: string, index: number) => <li key={index}>{item}</li>)}</ul></div>
-          <div><h3>Trade-offs</h3><ul>{vulnerabilities.map((item: string, index: number) => <li key={index}>{item}</li>)}</ul></div>
-        </div>
-        {pointPatterns.length > 0 && (
-          <div className="character-point-patterns">
-            <h3>Point patterns</h3>
-            <ol>{pointPatterns.map((item: string, index: number) => <li key={index}>{item}</li>)}</ol>
-          </div>
-        )}
-        {Array.isArray(profile.technical_interactions) && (
-          <details className="character-mechanics-details">
-            <summary>Character traits &amp; technical interactions</summary>
-            <ul className="character-documented-mechanics">
-              {guidance.style_mechanics && (
-                <li><b>{profile.style} style</b><span>{guidance.style_mechanics}</span></li>
-              )}
-              {guidance.acceleration_mechanics && (
-                <li><b>{profile.acceleration} acceleration</b><span>{guidance.acceleration_mechanics}</span></li>
-              )}
-              {documentedEdges.map((item: string, index: number) => (
-                <li key={`edge-${index}`}><b>Documented edge</b><span>{item}</span></li>
-              ))}
-              {documentedTalents.map((item: string, index: number) => (
-                <li key={`talent-${index}`}><b>Talent</b><span>{item}</span></li>
-              ))}
-              {documentedExposures.map((item: string, index: number) => (
-                <li key={`exposure-${index}`}><b>Documented trade-off</b><span>{item}</span></li>
-              ))}
-            </ul>
-            <ul>
-              {profile.technical_interactions.map(([name, description]: [string, string]) => (
-                <li key={name}><b>{name}</b><span>{description}</span></li>
-              ))}
-            </ul>
-          </details>
-        )}
+        <CombinedSkills stats={combined} />
       </section>
 
       <PickHistory profile={profile} available={data.picks_available} />
-
-      {data.comparison && <Comparison comparison={data.comparison} selected={profile.character} />}
-      {data.ranking && <RankedAttribute ranking={data.ranking} character={profile.character} />}
     </div>
   );
 }
@@ -447,17 +356,25 @@ export default function CharacterStatsExplorer({
   const [loading, setLoading] = useState(initialNames.length > 0);
   const [rosterLoading, setRosterLoading] = useState(false);
   const [error, setError] = useState('');
+  const [retryToken, setRetryToken] = useState(0);
   const requestNumber = useRef(0);
+  const dataRef = useRef(data);
   const currentRoster = roster.tour === tour ? roster : null;
   const names = currentRoster?.names || [];
   const attributes = currentRoster?.attributes || [];
+  const currentProfile =
+    data?.tour === tour && data.profile?.character === character ? data : null;
   const filteredNames = useMemo(() => {
     const query = search.trim().toLowerCase();
     return query ? names.filter((name) => name.toLowerCase().includes(query)) : names;
   }, [names, search]);
 
   useEffect(() => {
-    if (tour === initialTour) return;
+    dataRef.current = data;
+  }, [data]);
+
+  useEffect(() => {
+    if (tour === roster.tour) return;
     const controller = new AbortController();
     setRosterLoading(true);
     setError('');
@@ -480,13 +397,13 @@ export default function CharacterStatsExplorer({
       })
       .catch((reason: unknown) => {
         if (reason instanceof Error && reason.name === 'AbortError') return;
-        setError('The selected roster could not be loaded. Please try again.');
+        setError('Could not load this roster.');
       })
       .finally(() => {
         if (!controller.signal.aborted) setRosterLoading(false);
       });
     return () => controller.abort();
-  }, [tour, initialTour]);
+  }, [tour, roster.tour, retryToken]);
 
   useEffect(() => {
     if (!character || !currentRoster || readyTour !== tour) {
@@ -494,14 +411,26 @@ export default function CharacterStatsExplorer({
       setLoading(false);
       return;
     }
+    const existing = dataRef.current;
+    const hasMatchingProfile =
+      existing?.tour === tour && existing.profile?.character === character;
+    if (hasMatchingProfile && !compare && !attribute) {
+      setData((previous) => previous
+        ? { ...previous, comparison: null, ranking: null }
+        : previous);
+      setLoading(false);
+      setError('');
+      return;
+    }
     const controller = new AbortController();
     const requestId = ++requestNumber.current;
-    setData(null);
     setLoading(true);
     setError('');
     const params = new URLSearchParams({ tour, character });
     if (compare && compare !== character) params.set('compare', compare);
     if (attribute) params.set('attribute', attribute);
+    params.set('include_official', 'false');
+    if (hasMatchingProfile) params.set('include_profile', 'false');
     fetch(`/api/character-stats?${params.toString()}`, {
       cache: 'no-store',
       signal: controller.signal,
@@ -512,19 +441,68 @@ export default function CharacterStatsExplorer({
         return result as CharacterPayload;
       })
       .then((result) => {
-        if (requestId === requestNumber.current) setData(result);
+        if (requestId !== requestNumber.current) return;
+        if (!hasMatchingProfile) {
+          setData(result);
+          return;
+        }
+        setData((previous) => previous?.profile
+          ? {
+              ...previous,
+              ...result,
+              profile: previous.profile,
+              official: previous.official,
+              picks_available: previous.picks_available,
+            }
+          : result);
       })
       .catch((reason: unknown) => {
         if (reason instanceof Error && reason.name === 'AbortError') return;
         if (requestId === requestNumber.current) {
-          setError('Character data could not be loaded. Please try again.');
+          setError(hasMatchingProfile ? 'Could not update results.' : 'Could not load this character.');
         }
       })
       .finally(() => {
         if (requestId === requestNumber.current) setLoading(false);
       });
     return () => controller.abort();
-  }, [tour, character, compare, attribute, currentRoster, readyTour]);
+  }, [tour, character, compare, attribute, currentRoster, readyTour, retryToken]);
+
+  const profileCharacter = currentProfile?.profile?.character;
+  const profileOfficial = currentProfile?.official;
+  useEffect(() => {
+    if (!profileCharacter || profileOfficial != null) return;
+    const controller = new AbortController();
+    const params = new URLSearchParams({
+      tour,
+      character: profileCharacter,
+      include_profile: 'false',
+      include_official: 'true',
+    });
+    fetch(`/api/character-stats?${params.toString()}`, {
+      cache: 'no-store',
+      signal: controller.signal,
+    })
+      .then(async (response) => {
+        const result = await response.json();
+        if (!response.ok) throw new Error(result.error || 'photo_unavailable');
+        return result as CharacterPayload;
+      })
+      .then((result) => {
+        setData((previous) => previous?.tour === tour &&
+          previous.profile?.character === profileCharacter
+          ? { ...previous, official: result.official || {} }
+          : previous);
+      })
+      .catch((reason: unknown) => {
+        if (reason instanceof Error && reason.name === 'AbortError') return;
+        setData((previous) => previous?.tour === tour &&
+          previous.profile?.character === profileCharacter
+          ? { ...previous, official: {} }
+          : previous);
+      });
+    return () => controller.abort();
+  }, [tour, profileCharacter, profileOfficial]);
 
   return (
     <div className="character-explorer">
@@ -550,7 +528,7 @@ export default function CharacterStatsExplorer({
               type="search"
               value={search}
               onChange={(event) => setSearch(event.target.value)}
-              placeholder={`Find a character${currentRoster ? ` among ${currentRoster.roster_count}` : ''}`}
+              placeholder="Search names"
               disabled={!currentRoster}
             />
           </label>
@@ -572,10 +550,10 @@ export default function CharacterStatsExplorer({
 
         {rosterLoading && <p className="character-loading-note" role="status">Loading roster…</p>}
         <div className="character-roster-heading">
-          <h2>{currentRoster ? `${currentRoster.roster_count} characters` : 'Character roster'}</h2>
+          <h2>Character roster</h2>
           <span>
             {filteredNames.length !== names.length
-              ? `${filteredNames.length} matches`
+              ? `${filteredNames.length} ${filteredNames.length === 1 ? 'result' : 'results'}`
               : character
                 ? `Viewing ${character}`
                 : 'Select a character'}
@@ -600,17 +578,30 @@ export default function CharacterStatsExplorer({
         )}
       </section>
 
-      <p className="character-data-note">
-        Character attributes and mechanics come from the bot’s current roster workbook.
-        Player picks are counted from the available official WTSL results snapshot.
-      </p>
-      {error && <div className="notice warn character-error" role="alert">{error}</div>}
-      {loading && (
-        <div className="notice character-loading" role="status">
-          Loading {character}&apos;s profile and roster rankings…
+      {error && (
+        <div className="notice warn character-error" role="alert">
+          <span>{error}</span>
+          <button type="button" onClick={() => setRetryToken((value) => value + 1)}>
+            Retry
+          </button>
         </div>
       )}
-      {!loading && data?.profile && <Profile data={data} />}
+      {loading && !currentProfile && (
+        <div className="notice character-loading" role="status">
+          Loading {character}…
+        </div>
+      )}
+      {loading && currentProfile && (
+        <p className="character-loading-note" role="status">Updating results…</p>
+      )}
+      {currentProfile && (
+        <Profile
+          key={`${tour}:${character}`}
+          data={currentProfile}
+          compare={compare}
+          attribute={attribute}
+        />
+      )}
     </div>
   );
 }
