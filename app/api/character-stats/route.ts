@@ -1,5 +1,8 @@
 import { NextResponse } from 'next/server';
-import { getCharacterPickRanking } from '@/lib/characterPickPopularity.server';
+import {
+  parseCharacterPickRanking,
+  type CharacterPickRanking,
+} from '@/lib/characterPickPopularity';
 import { wtslCore } from '@/lib/wtsl-core';
 
 export const dynamic = 'force-dynamic';
@@ -49,22 +52,16 @@ export async function GET(request: Request) {
       return NextResponse.json(payload, { headers: noStore });
     }
 
-    let pick_ranking = null;
+    let pick_ranking: CharacterPickRanking | null = null;
     const expectedPicks = Number(profile.pick_count);
     if (
       payload.picks_available === true &&
-      String(profile.tour || '').toLowerCase() === 'atp' &&
+      String(profile.sex || '').toLowerCase() === 'atp' &&
       Number.isSafeInteger(expectedPicks) &&
       expectedPicks > 0 &&
       typeof profile.character === 'string'
     ) {
-      try {
-        pick_ranking = await getCharacterPickRanking(profile.character, expectedPicks);
-      } catch (rankingError) {
-        console.warn('[character-stats] Character pick ranking unavailable', {
-          errorType: rankingError instanceof Error ? rankingError.name : 'UnknownError',
-        });
-      }
+      pick_ranking = parseCharacterPickRanking(payload.pick_ranking, expectedPicks);
     }
 
     return NextResponse.json({ ...payload, pick_ranking }, { headers: noStore });
