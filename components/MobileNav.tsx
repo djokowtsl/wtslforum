@@ -11,6 +11,7 @@ export function MobileNav({
   isAdmin,
   canModerate,
   username,
+  profileAvatar,
   discordJoinHref,
   unreadMessages = 0,
 }: {
@@ -18,6 +19,7 @@ export function MobileNav({
   isAdmin: boolean;
   canModerate: boolean;
   username?: string;
+  profileAvatar?: string;
   discordJoinHref: string;
   unreadMessages?: number;
 }) {
@@ -49,7 +51,10 @@ export function MobileNav({
           </Link>
         )}
         {username ? (
-          <Link href="/profile" className="btn btn-ghost" onClick={close}>{username}</Link>
+          <Link href="/profile" className="btn btn-ghost mobile-profile-link" onClick={close}>
+            {profileAvatar && <img src={profileAvatar} alt="" />}
+            <span>{username}</span>
+          </Link>
         ) : (
           <a className="btn btn-discord" href={discordJoinHref} onClick={close}>Log in with Discord</a>
         )}
