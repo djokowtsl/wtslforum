@@ -27,10 +27,22 @@ CREATE TABLE IF NOT EXISTS articles (
  excerpt TEXT DEFAULT '', body TEXT NOT NULL, cover_url TEXT, published BOOLEAN NOT NULL DEFAULT FALSE,
  created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(), updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );
+CREATE TABLE IF NOT EXISTS article_comments (
+ id BIGSERIAL PRIMARY KEY, article_id BIGINT NOT NULL REFERENCES articles(id) ON DELETE CASCADE,
+ author_id BIGINT REFERENCES users(id) ON DELETE SET NULL, body TEXT NOT NULL,
+ moderation_status TEXT NOT NULL DEFAULT 'approved', moderation_reason TEXT,
+ moderated_by BIGINT REFERENCES users(id) ON DELETE SET NULL, moderated_at TIMESTAMPTZ,
+ created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(), updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+CREATE INDEX IF NOT EXISTS article_comments_visible_idx ON article_comments(article_id, moderation_status, created_at DESC);
+CREATE INDEX IF NOT EXISTS article_comments_pending_idx ON article_comments(moderation_status, created_at DESC);
 CREATE TABLE IF NOT EXISTS reactions (
  id BIGSERIAL PRIMARY KEY, user_id BIGINT REFERENCES users(id) ON DELETE CASCADE, topic_id BIGINT REFERENCES topics(id) ON DELETE CASCADE,
- reply_id BIGINT REFERENCES replies(id) ON DELETE CASCADE, emoji TEXT NOT NULL, UNIQUE(user_id,topic_id,reply_id,emoji)
+ reply_id BIGINT REFERENCES replies(id) ON DELETE CASCADE, article_id BIGINT REFERENCES articles(id) ON DELETE CASCADE,
+ emoji TEXT NOT NULL, UNIQUE(user_id,topic_id,reply_id,emoji),
+ CONSTRAINT reactions_exactly_one_target CHECK (num_nonnulls(topic_id,reply_id,article_id)=1)
 );
+CREATE UNIQUE INDEX IF NOT EXISTS reactions_article_user_emoji_idx ON reactions(user_id,article_id,emoji) WHERE article_id IS NOT NULL;
 INSERT INTO categories(name,slug,description,position) VALUES
 ('General WTSL','general','League news, community discussion and everything WTSL.',1),
 ('Match Talk','match-talk','Previews, results, tactics, rivalries and match discussion.',2),

@@ -7,6 +7,7 @@ const ALLOWED_EMOJI = ['👍', '🔥', '😂', '🎾', '❤️'];
 type Props = {
   topicId?: number;
   replyId?: number;
+  articleId?: number;
   initial: { emoji: string; count: number; reacted: boolean; reactors: string[] }[];
   signedIn: boolean;
 };
@@ -14,7 +15,7 @@ type Props = {
 /** Small like/upvote-style reaction bar shown under a topic's opening post or a reply. Clicking an
  * emoji toggles your own reaction for it (the API is a toggle, not an add-only), with an optimistic
  * local update so it feels instant — the server response still overwrites it with the real counts. */
-export default function ReactionBar({ topicId, replyId, initial, signedIn }: Props) {
+export default function ReactionBar({ topicId, replyId, articleId, initial, signedIn }: Props) {
   const [counts, setCounts] = useState(() => {
     const m = new Map(initial.map((r) => [r.emoji, r]));
     return ALLOWED_EMOJI.map((emoji) => ({
@@ -36,7 +37,7 @@ export default function ReactionBar({ topicId, replyId, initial, signedIn }: Pro
       const r = await fetch('/api/reactions', {
         method: 'POST',
         headers: { 'content-type': 'application/json' },
-        body: JSON.stringify({ topicId, replyId, emoji }),
+        body: JSON.stringify({ topicId, replyId, articleId, emoji }),
       });
       const data = await r.json().catch(() => null);
       if (r.ok && data?.ok) {
