@@ -58,7 +58,11 @@ async function core<T>(
     status = res.status;
 
     if (!res.ok) {
-      throw new Error(`WTSL core API ${res.status}`);
+      const error = new Error(`WTSL core API ${res.status}`) as Error & {
+        statusCode: number;
+      };
+      error.statusCode = res.status;
+      throw error;
     }
 
     const data = (await res.json()) as T;
@@ -265,6 +269,23 @@ export const wtslCore = {
       {},
       { timeoutMs: WTSL_CORE_PUBLIC_TIMEOUT_MS, logLabel: 'results' },
     ),
+
+  characterStats: (query: {
+    tour: 'all' | 'atp' | 'wta';
+    character?: string;
+    compare?: string;
+    attribute?: string;
+  }) => {
+    const params = new URLSearchParams({ tour: query.tour });
+    if (query.character) params.set('character', query.character);
+    if (query.compare) params.set('compare', query.compare);
+    if (query.attribute) params.set('attribute', query.attribute);
+    return core<Record<string, unknown>>(
+      `/api/core/character-stats?${params.toString()}`,
+      {},
+      { timeoutMs: 30_000, logLabel: 'character-stats' },
+    );
+  },
 
   matchSchedules: () => core<unknown[]>('/api/core/match-schedules'),
 
