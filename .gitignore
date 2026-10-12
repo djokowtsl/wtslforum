@@ -1,0 +1,7 @@
+/node_modules/
+/.next/
+/.cache/
+/generated-artifacts/
+*.tsbuildinfo
+.env*
+!.env.example
