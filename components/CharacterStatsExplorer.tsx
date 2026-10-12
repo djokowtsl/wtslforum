@@ -34,6 +34,7 @@ const tourOptions: { value: Tour; label: string }[] = [
   { value: 'all', label: 'ATP + WTA' },
 ];
 const groupNames = ['Groundstrokes', 'Serve', 'Net & Feel', 'Movement & Variety'];
+const uninformativeRelativeStrengths = new Set(['slice serve', 'topspin serve', 'twist serve']);
 
 function statGroup(attribute: string) {
   const name = attribute.toLowerCase();
@@ -305,6 +306,11 @@ function Profile({
   const profile = data.profile!;
   const attributes = Array.isArray(profile.stats) ? profile.stats as Stat[] : [];
   const combined = Array.isArray(profile.combined_ratings) ? profile.combined_ratings as Stat[] : [];
+  const relativeStrengths = Array.isArray(profile.strengths)
+    ? (profile.strengths as Stat[]).filter((stat) =>
+        !uninformativeRelativeStrengths.has(stat.attribute.trim().toLowerCase()),
+      )
+    : [];
   const official = data.official || {};
   const profileImage = official.avatar_url;
   const [imageFailed, setImageFailed] = useState(false);
@@ -363,7 +369,7 @@ function Profile({
       {rankingMatches && <RankedAttribute ranking={data.ranking!} character={profile.character} />}
 
       <div className="character-highlight-grid">
-        <StatHighlights title="Relative strengths" stats={profile.strengths || []} tone="positive" />
+        <StatHighlights title="Relative strengths" stats={relativeStrengths} tone="positive" />
         <StatHighlights title="Relative weaknesses" stats={profile.weaknesses || []} tone="caution" />
       </div>
 
