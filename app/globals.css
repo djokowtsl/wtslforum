@@ -130,6 +130,9 @@ h1, h2, h3 { margin: 0; }
 .theme-toggle { display: inline-flex; align-items: center; justify-content: center; gap: 8px; min-height: 42px; padding: 0 14px; border: 1px solid var(--lime); border-radius: 999px; background: var(--lime); color: #0b0f14; cursor: pointer; font-family: inherit; font-size: 12px; font-weight: 800; line-height: 1; white-space: nowrap; }
 .theme-toggle:hover { background: #c7ff63; border-color: #c7ff63; }
 .theme-toggle svg { flex: none; }
+.theme-toggle:focus-visible,
+.mobile-menu summary:focus-visible,
+.header-user-chip:focus-visible { outline: 2px solid var(--lime); outline-offset: 3px; }
 
 /* Mobile menu (no JS — <details>) */
 .mobile-menu { display: none; margin-left: auto; position: relative; }
@@ -138,10 +141,12 @@ h1, h2, h3 { margin: 0; }
 .burger, .burger::before, .burger::after { display: block; width: 20px; height: 2px; background: var(--text); border-radius: 2px; content: ''; position: relative; }
 .burger::before { position: absolute; top: -6px; }
 .burger::after { position: absolute; top: 6px; }
-.mobile-panel { position: fixed; left: 0; right: 0; top: 70px; background: var(--header-bg-solid); border-bottom: 1px solid var(--line); padding: 14px 16px 22px; display: grid; gap: 4px; max-height: calc(100vh - 70px); overflow: auto; }
+.mobile-panel { position: fixed; z-index: 60; left: 0; right: 0; top: 70px; background: var(--header-bg-solid); border-bottom: 1px solid var(--line); padding: 14px 16px 22px; display: grid; gap: 4px; max-height: calc(100vh - 70px); overflow: auto; }
 .mobile-panel a { padding: 14px 12px; border-radius: 10px; font-weight: 600; color: var(--soft); }
 .mobile-panel a:hover { background: var(--panel-2); color: var(--text-strong); }
 .mobile-panel .btn { margin-top: 10px; }
+.mobile-panel a.mobile-profile-link { display: flex; align-items: center; gap: 10px; border: 1px solid var(--line-2); background: var(--panel); color: var(--text-strong); }
+.mobile-profile-link img { width: 30px; height: 30px; border-radius: 50%; object-fit: cover; }
 
 /* ---------- Layout primitives ---------- */
 .container { max-width: 1240px; margin: 0 auto; padding: 44px 24px; }
@@ -700,15 +705,14 @@ h1, h2, h3 { margin: 0; }
   .hero h1 { font-size: 52px; }
   .hero .tagline { font-size: 22px; }
   .container, .page-shell { padding: 30px 16px 50px; }
-  .header-inner { padding: 0 16px; height: 60px; gap: 8px; }
+  .header-inner { padding: 0 12px; height: 60px; gap: 8px; }
   .brand { gap: 6px; }
   .brand-logo { height: 38px; width: 38px; padding: 3px; }
   .brand-text { padding-left: 6px; }
   .brand-text span { display: none; }
   .brand-text b { font-size: 16px; }
-  .header-actions { gap: 6px; }
-  .header-user-chip { gap: 0; padding: 4px; }
-  .header-user-chip .user-chip-name { display: none; }
+  .header-actions { gap: 8px; }
+  .header-user-chip { display: none; }
   .mobile-panel { top: 60px; max-height: calc(100vh - 60px); }
   .search-toggle { width: 36px; height: 36px; }
   .mobile-menu summary { width: 42px; height: 42px; }
@@ -768,6 +772,25 @@ h1, h2, h3 { margin: 0; }
   .footer-inner { grid-template-columns: 1fr; padding: 34px 16px 20px; }
   .footer-base { padding: 16px; }
   .article-long { padding: 22px 18px; }
+}
+@media (max-width: 420px) {
+  .theme-toggle { width: 38px; min-height: 38px; padding: 0; gap: 0; border-color: var(--line-2); border-radius: 12px; background: var(--panel); color: var(--text-strong); }
+  .theme-toggle span { display: none; }
+  .theme-toggle:hover { background: var(--panel-2); border-color: var(--lime); color: var(--lime); }
+}
+@media (min-width: 701px) and (max-width: 1760px) {
+  .mobile-panel a.mobile-profile-link { display: none; }
+}
+@media (max-width: 360px) {
+  .header-inner { padding: 0 10px; gap: 6px; }
+  .brand { gap: 5px; }
+  .brand-logo { width: 34px; height: 34px; }
+  .brand-text { padding-left: 5px; }
+  .brand-text b { font-size: 15px; }
+  .header-actions { gap: 6px; }
+  .search-toggle { width: 34px; height: 34px; }
+  .theme-toggle { width: 36px; min-height: 36px; }
+  .mobile-menu summary { width: 38px; height: 38px; }
 }
 
 .tour-tabs { display: flex; flex-wrap: wrap; gap: 8px; margin: 0 0 20px; }
