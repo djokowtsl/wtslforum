@@ -1,6 +1,6 @@
 'use client';
 
-import { useEffect, useMemo, useRef, useState } from 'react';
+import { type FormEvent, useEffect, useMemo, useRef, useState } from 'react';
 
 type Tour = 'all' | 'atp' | 'wta';
 type Stat = {
@@ -346,12 +346,17 @@ export default function CharacterStatsExplorer({
   const [roster, setRoster] = useState<CharacterPayload>(initialRoster as CharacterPayload);
   const [readyTour, setReadyTour] = useState<Tour>(initialTour);
   const initialNames = Array.isArray(initialRoster.names) ? initialRoster.names as string[] : [];
-  const [character, setCharacter] = useState(
-    initialNames.includes(initialCharacter) ? initialCharacter : initialNames[0] || '',
-  );
+  const initialCharacterSelection =
+    initialNames.includes(initialCharacter) ? initialCharacter : initialNames[0] || '';
+  const [character, setCharacter] = useState(initialCharacterSelection);
+  const characterRef = useRef(initialCharacterSelection);
+  const [draftCharacter, setDraftCharacter] = useState(initialCharacterSelection);
   const [compare, setCompare] = useState('');
+  const [draftCompare, setDraftCompare] = useState('');
   const [attribute, setAttribute] = useState('');
+  const [draftAttribute, setDraftAttribute] = useState('');
   const [search, setSearch] = useState('');
+  const [searchError, setSearchError] = useState('');
   const [data, setData] = useState<CharacterPayload | null>(null);
   const [loading, setLoading] = useState(initialNames.length > 0);
   const [rosterLoading, setRosterLoading] = useState(false);
@@ -368,6 +373,54 @@ export default function CharacterStatsExplorer({
     const query = search.trim().toLowerCase();
     return query ? names.filter((name) => name.toLowerCase().includes(query)) : names;
   }, [names, search]);
+  const hasPendingChanges =
+    Boolean(search.trim()) ||
+    draftCharacter !== character ||
+    draftCompare !== compare ||
+    draftAttribute !== attribute;
+
+  function handleSearchSubmit(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    if (!currentRoster || names.length === 0) {
+      setSearchError('The selected roster is not available yet.');
+      return;
+    }
+
+    const query = search.trim();
+    const exactMatch = query
+      ? names.find((name) => name.toLowerCase() === query.toLowerCase())
+      : null;
+    if (query && !exactMatch) {
+      setSearchError(filteredNames.length
+        ? 'Choose a full character name from the roster results.'
+        : 'No character in this roster matches your search.');
+      return;
+    }
+
+    const nextCharacter = exactMatch || draftCharacter || character;
+    if (!names.includes(nextCharacter)) {
+      setSearchError('Choose a character from the selected roster.');
+      return;
+    }
+    if (draftCompare && (draftCompare === nextCharacter || !names.includes(draftCompare))) {
+      setSearchError(draftCompare === nextCharacter
+        ? 'Choose a different character to compare.'
+        : 'Choose a comparison character from the selected roster.');
+      return;
+    }
+    if (draftAttribute && !attributes.includes(draftAttribute)) {
+      setSearchError('Choose an attribute from the selected roster.');
+      return;
+    }
+
+    characterRef.current = nextCharacter;
+    setCharacter(nextCharacter);
+    setDraftCharacter(nextCharacter);
+    setCompare(draftCompare);
+    setAttribute(draftAttribute);
+    setSearch('');
+    setSearchError('');
+  }
 
   useEffect(() => {
     dataRef.current = data;
@@ -378,6 +431,7 @@ export default function CharacterStatsExplorer({
     const controller = new AbortController();
     setRosterLoading(true);
     setError('');
+    setSearchError('');
     fetch(`/api/character-stats?tour=${encodeURIComponent(tour)}`, {
       cache: 'no-store',
       signal: controller.signal,
@@ -390,10 +444,18 @@ export default function CharacterStatsExplorer({
       .then((result) => {
         setRoster(result);
         setReadyTour(tour);
-        setCharacter((current) => result.names.includes(current) ? current : result.names[0] || '');
+        const nextCharacter = result.names.includes(characterRef.current)
+          ? characterRef.current
+          : result.names[0] || '';
+        characterRef.current = nextCharacter;
+        setCharacter(nextCharacter);
+        setDraftCharacter(nextCharacter);
         setCompare('');
+        setDraftCompare('');
         setAttribute('');
+        setDraftAttribute('');
         setSearch('');
+        setSearchError('');
       })
       .catch((reason: unknown) => {
         if (reason instanceof Error && reason.name === 'AbortError') return;
@@ -521,37 +583,76 @@ export default function CharacterStatsExplorer({
           ))}
         </div>
 
-        <div className="character-control-grid">
-          <label>
-            <span>Search roster</span>
-            <input
-              type="search"
-              value={search}
-              onChange={(event) => setSearch(event.target.value)}
-              placeholder="Search names"
-              disabled={!currentRoster}
-            />
-          </label>
-          <label>
-            <span>Compare with</span>
-            <select value={compare} onChange={(event) => setCompare(event.target.value)} disabled={!currentRoster || !character}>
-              <option value="">No comparison</option>
-              {names.filter((name) => name !== character).map((name) => <option key={name} value={name}>{name}</option>)}
-            </select>
-          </label>
-          <label>
-            <span>Rank an attribute</span>
-            <select value={attribute} onChange={(event) => setAttribute(event.target.value)} disabled={!currentRoster}>
-              <option value="">No attribute ranking</option>
-              {attributes.map((name) => <option key={name} value={name}>{name}</option>)}
-            </select>
-          </label>
-        </div>
+        <form className="character-search-form" onSubmit={handleSearchSubmit}>
+          <div className="character-control-grid">
+            <label>
+              <span>Search roster</span>
+              <input
+                type="search"
+                list="character-roster-options"
+                value={search}
+                onChange={(event) => {
+                  const value = event.target.value;
+                  const exactMatch = names.find((name) => name.toLowerCase() === value.trim().toLowerCase());
+                  setSearch(value);
+                  setDraftCharacter(exactMatch || '');
+                  setSearchError('');
+                }}
+                placeholder="Search names"
+                disabled={!currentRoster}
+                aria-invalid={Boolean(searchError)}
+                aria-describedby={searchError ? 'character-search-error' : undefined}
+              />
+            </label>
+            <label>
+              <span>Compare with</span>
+              <select
+                value={draftCompare}
+                onChange={(event) => {
+                  setDraftCompare(event.target.value);
+                  setSearchError('');
+                }}
+                disabled={!currentRoster || !character}
+              >
+                <option value="">No comparison</option>
+                {names
+                  .filter((name) => name !== (draftCharacter || character))
+                  .map((name) => <option key={name} value={name}>{name}</option>)}
+              </select>
+            </label>
+            <label>
+              <span>Rank an attribute</span>
+              <select
+                value={draftAttribute}
+                onChange={(event) => {
+                  setDraftAttribute(event.target.value);
+                  setSearchError('');
+                }}
+                disabled={!currentRoster}
+              >
+                <option value="">No attribute ranking</option>
+                {attributes.map((name) => <option key={name} value={name}>{name}</option>)}
+              </select>
+            </label>
+          </div>
+          <datalist id="character-roster-options">
+            {names.map((name) => <option key={name} value={name} />)}
+          </datalist>
+          <div className="character-search-actions">
+            <p className="character-search-help">
+              Choose a character or adjust the comparison and ranking, then update the results.
+            </p>
+            <button type="submit" disabled={!currentRoster || !hasPendingChanges}>
+              Update results
+            </button>
+          </div>
+          {searchError && <p id="character-search-error" className="character-search-error" role="alert">{searchError}</p>}
+        </form>
 
         {rosterLoading && <p className="character-loading-note" role="status">Loading roster…</p>}
         <div className="character-roster-heading">
           <h2>Character roster</h2>
-          <span>
+          <span aria-live="polite">
             {filteredNames.length !== names.length
               ? `${filteredNames.length} ${filteredNames.length === 1 ? 'result' : 'results'}`
               : character
@@ -565,9 +666,13 @@ export default function CharacterStatsExplorer({
               <button
                 type="button"
                 key={name}
-                className={character === name ? 'selected' : ''}
-                aria-pressed={character === name}
-                onClick={() => setCharacter(name)}
+                className={draftCharacter === name ? 'selected' : ''}
+                aria-pressed={draftCharacter === name}
+                onClick={() => {
+                  setDraftCharacter(name);
+                  setSearch(name);
+                  setSearchError('');
+                }}
               >
                 {name}
               </button>
@@ -575,6 +680,11 @@ export default function CharacterStatsExplorer({
           </div>
         ) : (
           <p className="character-muted">The selected roster is not available right now.</p>
+        )}
+        {character && (
+          <p className="character-search-current" aria-live="polite">
+            Currently viewing <strong>{character}</strong>. You can search for another character at any time.
+          </p>
         )}
       </section>
 
