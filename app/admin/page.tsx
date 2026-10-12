@@ -3,7 +3,6 @@ import { safe } from '@/lib/db';
 import { getSession } from '@/lib/auth';
 import { getArticles, getTopics } from '@/lib/queries';
 import { listClaims } from '@/lib/player-claims';
-import AdminArticleForm from '@/components/AdminArticleForm';
 import AdminSyncButton from '@/components/AdminSyncButton';
 import PageHero from '@/components/PageHero';
 
@@ -23,7 +22,7 @@ export default async function Admin() {
       <PageHero eyebrow="Staff" title="Admin">Moderation and community publishing.</PageHero>
       <main className="container">
         <div className="admin-grid">
-          <div className="admin-card"><h3>Create article</h3><AdminArticleForm /></div>
+          <div className="admin-card"><h3>Article desk</h3><p className="notice">Write, preview, save drafts, and update published WTSL stories from one workspace.</p><a className="btn btn-sm btn-primary" href="/admin/articles" style={{ marginTop: 12, display: 'inline-block' }}>Open article desk</a></div>
           <div className="admin-card"><h3>Forum overview</h3><div className="stat"><span>Discussions</span><b>{topics.length}</b></div><div className="stat"><span>Articles</span><b>{articles.length}</b></div><p className="notice" style={{ marginTop: 14 }}>Manage community content and staff access.</p><a className="btn btn-sm" href="/admin/moderation" style={{ marginTop: 12, display: 'inline-block' }}>Moderation queue</a><a className="btn btn-sm btn-ghost" href="/admin/roles" style={{ marginTop: 12, marginLeft: 8, display: 'inline-block' }}>Account roles</a></div>
           <div className="admin-card"><h3>Awards</h3><p className="notice">Manage this season&apos;s award nominees, open or close voting, and import Google Form responses.</p><a className="btn btn-sm" href="/admin/awards" style={{ marginTop: 12, display: 'inline-block' }}>Manage awards</a></div>
           <div className="admin-card"><h3>WTSL sync</h3><p className="notice">Players, tournaments and stats sync automatically every hour/day. Use this to force a sync right now.</p><AdminSyncButton /></div>
