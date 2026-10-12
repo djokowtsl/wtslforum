@@ -3,6 +3,7 @@
 import { useEffect, useRef, useState } from 'react';
 import PlayerAvatar from '@/components/PlayerAvatar';
 import FeedUpdatedAt from '@/components/FeedUpdatedAt';
+import LivePlayerStatsPopover from '@/components/LivePlayerStatsPopover';
 
 type LivePlayer = {
   id: string | number;
@@ -130,9 +131,33 @@ export default function LiveScores({
           const secondProbability = match.probability === null ? null : 100 - match.probability;
           const firstName = first?.name ?? splitNames[0] ?? match.name;
           const secondName = second?.name ?? splitNames[1] ?? '';
+          const statsTour = match.tour === 'TE4' || match.tour === 'TE4_(F)' ? match.tour : null;
           const h2hUrl = first && second && match.tour
             ? `https://www.playwtsl.com/TE4/pages/h2h.php?tour=${encodeURIComponent(match.tour)}&pl_one=${encodeURIComponent(String(first.id))}&pl_two=${encodeURIComponent(String(second.id))}`
             : null;
+          const renderPlayer = (player: LivePlayer | undefined, name: string, side: 'first' | 'second') => {
+            const rowClassName = `live-score-player live-score-player--${side}`;
+            const rowContent = (
+              <>
+                <PlayerAvatar src={player?.avatarUrl} flagSrc={player?.flagUrl} flagLabel={player?.country} name={name} size={34} />
+                <strong>{name}</strong>
+              </>
+            );
+            if (player && statsTour) {
+              return (
+                <LivePlayerStatsPopover
+                  key={`${statsTour}:${player.id}`}
+                  playerId={player.id}
+                  playerName={name}
+                  tour={statsTour}
+                  rowClassName={rowClassName}
+                >
+                  {rowContent}
+                </LivePlayerStatsPopover>
+              );
+            }
+            return <div className={rowClassName}>{rowContent}</div>;
+          };
           return (
             <article className="live-score-card" key={`${match.name}-${match.court}-${index}`} role="group" aria-roledescription="slide" aria-label={`Match ${index + 1} of ${payload.matches.length}: ${firstName} vs ${secondName || 'Opponent'}`}>
               <div className="live-score-card-head">
@@ -162,18 +187,12 @@ export default function LiveScores({
                   </div>
                 </div>
               )}
-              <div className="live-score-player live-score-player--first">
-                <PlayerAvatar src={first?.avatarUrl} flagSrc={first?.flagUrl} flagLabel={first?.country} name={firstName} size={34} />
-                <strong>{firstName}</strong>
-              </div>
+              {renderPlayer(first ?? undefined, firstName, 'first')}
               <div className="live-score-center">
                 <span>{match.score || 'Score unavailable'}</span>
                 {match.probability === null && <small>Probability unavailable</small>}
               </div>
-              <div className="live-score-player live-score-player--second">
-                <PlayerAvatar src={second?.avatarUrl} flagSrc={second?.flagUrl} flagLabel={second?.country} name={secondName} size={34} />
-                <strong>{secondName || 'Opponent'}</strong>
-              </div>
+              {renderPlayer(second ?? undefined, secondName || 'Opponent', 'second')}
               <div className="live-score-meta">{match.mode} · Best of {match.bestOf} · {match.court}</div>
               {h2hUrl && <a className="live-score-h2h" href={h2hUrl} target="_blank" rel="noreferrer">Official H2H ↗</a>}
             </article>
