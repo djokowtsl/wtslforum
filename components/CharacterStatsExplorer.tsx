@@ -343,10 +343,6 @@ function PickHistory({
         {rankLabel ? (
           <>
             <strong>{rankLabel}</strong>
-            <p>
-              {ranking?.picks.toLocaleString()} recorded picks
-              {rosterCount > 0 ? ' among ' + rosterCount + ' ' + tourLabel + ' characters' : ''}
-            </p>
           </>
         ) : (
           <p>
