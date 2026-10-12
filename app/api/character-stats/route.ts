@@ -1,4 +1,5 @@
 import { NextResponse } from 'next/server';
+import { getCharacterPickRanking } from '@/lib/characterPickPopularity.server';
 import { wtslCore } from '@/lib/wtsl-core';
 
 export const dynamic = 'force-dynamic';
@@ -41,7 +42,32 @@ export async function GET(request: Request) {
       includeProfile,
       includeOfficial,
     });
-    return NextResponse.json(payload, { headers: noStore });
+    const profile = payload.profile && typeof payload.profile === 'object'
+      ? payload.profile as Record<string, unknown>
+      : null;
+    if (!includeProfile || !profile) {
+      return NextResponse.json(payload, { headers: noStore });
+    }
+
+    let pick_ranking = null;
+    const expectedPicks = Number(profile.pick_count);
+    if (
+      payload.picks_available === true &&
+      String(profile.tour || '').toLowerCase() === 'atp' &&
+      Number.isSafeInteger(expectedPicks) &&
+      expectedPicks > 0 &&
+      typeof profile.character === 'string'
+    ) {
+      try {
+        pick_ranking = await getCharacterPickRanking(profile.character, expectedPicks);
+      } catch (rankingError) {
+        console.warn('[character-stats] Character pick ranking unavailable', {
+          errorType: rankingError instanceof Error ? rankingError.name : 'UnknownError',
+        });
+      }
+    }
+
+    return NextResponse.json({ ...payload, pick_ranking }, { headers: noStore });
   } catch (error) {
     const statusCode =
       error && typeof error === 'object' && 'statusCode' in error
