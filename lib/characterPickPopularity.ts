@@ -1,51 +1,37 @@
-export type CharacterPickCount = {
-  character: string;
-  picks: number | string;
-};
-
 export type CharacterPickRanking = {
   rank: number;
   picks: number;
   tied: boolean;
+  character_count: number;
 };
 
-function normalizeCharacterName(name: string) {
-  return name.trim().toLocaleLowerCase();
-}
-
-/** Rank one character against the recorded pick totals, using shared competition ranks for ties. */
-export function rankCharacterPickCounts(
-  rows: readonly CharacterPickCount[],
-  character: string,
+/** Accept only a Core API rank consistent with the official count shown on the card. */
+export function parseCharacterPickRanking(
+  value: unknown,
   expectedPicks: number,
 ): CharacterPickRanking | null {
   if (!Number.isSafeInteger(expectedPicks) || expectedPicks <= 0) return null;
+  if (!value || typeof value !== 'object' || Array.isArray(value)) return null;
 
-  const targetName = normalizeCharacterName(character);
-  if (!targetName) return null;
-
-  const totals = new Map<string, { character: string; picks: number }>();
-  for (const row of rows) {
-    if (typeof row.character !== 'string') continue;
-    const normalizedName = normalizeCharacterName(row.character);
-    const picks = Number(row.picks);
-    if (!normalizedName || !Number.isSafeInteger(picks) || picks <= 0) continue;
-
-    const current = totals.get(normalizedName);
-    if (current) current.picks += picks;
-    else totals.set(normalizedName, { character: row.character.trim(), picks });
+  const candidate = value as Record<string, unknown>;
+  const { rank, picks, tied, character_count } = candidate;
+  if (
+    typeof rank !== 'number' ||
+    !Number.isSafeInteger(rank) ||
+    rank < 1 ||
+    typeof picks !== 'number' ||
+    !Number.isSafeInteger(picks) ||
+    picks !== expectedPicks ||
+    typeof tied !== 'boolean' ||
+    typeof character_count !== 'number' ||
+    !Number.isSafeInteger(character_count) ||
+    character_count < 1 ||
+    rank > character_count
+  ) {
+    return null;
   }
 
-  const ordered = [...totals.entries()]
-    .map(([normalizedName, item]) => ({ normalizedName, ...item }))
-    .sort((left, right) => right.picks - left.picks ||
-      left.normalizedName.localeCompare(right.normalizedName));
-  const target = ordered.find((item) => item.normalizedName === targetName);
-  if (!target || target.picks !== expectedPicks) return null;
-
-  const rank = ordered.findIndex((item) => item.picks === target.picks) + 1;
-  const tied = ordered.filter((item) => item.picks === target.picks).length > 1;
-  return { rank, picks: target.picks, tied };
+  return { rank, picks, tied, character_count };
 }
 
 export function formatOrdinalRank(rank: number) {
