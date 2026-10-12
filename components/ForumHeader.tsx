@@ -15,6 +15,7 @@ export const NAV = [
   { href: '/betting', label: 'Virtual Betting' },
   { href: '/tournaments', label: 'Tournaments' },
   { href: '/players', label: 'Players' },
+  { href: '/characters', label: 'Characters' },
   { href: '/articles', label: 'Articles' },
   { href: '/media', label: 'Media' },
   { href: '/awards', label: 'Awards' },
