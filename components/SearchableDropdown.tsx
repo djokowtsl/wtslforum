@@ -1,6 +1,6 @@
 'use client';
 
-import { useId, useMemo, useState, type KeyboardEvent } from 'react';
+import { useId, useMemo, useRef, useState, type KeyboardEvent } from 'react';
 
 type SearchableDropdownProps = {
   id: string;
@@ -9,6 +9,13 @@ type SearchableDropdownProps = {
   onChange: (value: string) => void;
   placeholder?: string;
   loading?: boolean;
+  disabled?: boolean;
+  invalid?: boolean;
+  describedBy?: string;
+  showAllOnFocus?: boolean;
+  showDropdownIndicator?: boolean;
+  dropdownLabel?: string;
+  emptyOptionLabel?: string;
 };
 
 const OPTION_LIMIT = 60;
@@ -20,17 +27,31 @@ export default function SearchableDropdown({
   onChange,
   placeholder,
   loading = false,
+  disabled = false,
+  invalid = false,
+  describedBy,
+  showAllOnFocus = false,
+  showDropdownIndicator = false,
+  dropdownLabel = 'options',
+  emptyOptionLabel,
 }: SearchableDropdownProps) {
   const generatedId = useId().replace(/:/g, '');
   const listId = id + '-options-' + generatedId;
+  const inputRef = useRef<HTMLInputElement>(null);
   const [isOpen, setIsOpen] = useState(false);
   const [activeIndex, setActiveIndex] = useState(-1);
-  const query = value.trim().toLocaleLowerCase();
+  const [showAllOptions, setShowAllOptions] = useState(false);
+  const query = (showAllOnFocus && showAllOptions ? '' : value).trim().toLocaleLowerCase();
   const matchingOptions = useMemo(
     () => options.filter((option) => option.toLocaleLowerCase().includes(query)),
     [options, query],
   );
   const visibleOptions = matchingOptions.slice(0, OPTION_LIMIT);
+  const optionItems = [
+    ...(emptyOptionLabel ? [{ value: '', label: emptyOptionLabel }] : []),
+    ...visibleOptions.map((option) => ({ value: option, label: option })),
+  ];
+  const firstMatchIndex = emptyOptionLabel && visibleOptions.length ? 1 : 0;
 
   function optionId(index: number) {
     return listId + '-option-' + index;
@@ -40,78 +61,122 @@ export default function SearchableDropdown({
     onChange(option);
     setIsOpen(false);
     setActiveIndex(-1);
+    setShowAllOptions(false);
   }
 
   function handleKeyDown(event: KeyboardEvent<HTMLInputElement>) {
     if (event.key === 'ArrowDown') {
-      if (!visibleOptions.length) {
+      if (!optionItems.length) {
         setIsOpen(true);
         return;
       }
       event.preventDefault();
       setIsOpen(true);
-      setActiveIndex((current) => Math.min(current < 0 ? 0 : current + 1, visibleOptions.length - 1));
+      setActiveIndex((current) => Math.min(
+        current < 0 ? firstMatchIndex : current + 1,
+        optionItems.length - 1,
+      ));
     } else if (event.key === 'ArrowUp') {
-      if (!visibleOptions.length) return;
+      if (!optionItems.length) return;
       event.preventDefault();
       setIsOpen(true);
       setActiveIndex((current) => Math.max(current <= 0 ? 0 : current - 1, 0));
-    } else if (event.key === 'Enter' && isOpen && activeIndex >= 0 && visibleOptions[activeIndex]) {
+    } else if (event.key === 'Enter' && isOpen && activeIndex >= 0 && optionItems[activeIndex]) {
       event.preventDefault();
-      selectOption(visibleOptions[activeIndex]);
+      selectOption(optionItems[activeIndex].value);
     } else if (event.key === 'Escape' && isOpen) {
       event.preventDefault();
       setIsOpen(false);
       setActiveIndex(-1);
+      setShowAllOptions(false);
     } else if (event.key === 'Tab') {
       setIsOpen(false);
       setActiveIndex(-1);
+      setShowAllOptions(false);
     }
   }
 
   return (
-    <div className="screenshot-searchable-dropdown">
+    <div className={`screenshot-searchable-dropdown${showDropdownIndicator ? ' screenshot-searchable-dropdown--indicator' : ''}`}>
       <input
+        ref={inputRef}
         id={id}
         type="text"
         role="combobox"
         aria-autocomplete="list"
         aria-expanded={isOpen}
         aria-controls={listId}
-        aria-activedescendant={isOpen && activeIndex >= 0 && activeIndex < visibleOptions.length ? optionId(activeIndex) : undefined}
+        aria-activedescendant={isOpen && activeIndex >= 0 && activeIndex < optionItems.length ? optionId(activeIndex) : undefined}
         aria-busy={loading}
+        aria-invalid={invalid || undefined}
+        aria-describedby={describedBy}
         autoComplete="off"
         value={value}
         placeholder={placeholder}
+        disabled={disabled}
         onFocus={() => {
           setIsOpen(true);
           setActiveIndex(-1);
+          setShowAllOptions(showAllOnFocus);
+          if (showAllOnFocus) inputRef.current?.select();
         }}
-        onBlur={() => setIsOpen(false)}
+        onBlur={() => {
+          setIsOpen(false);
+          setActiveIndex(-1);
+          setShowAllOptions(false);
+        }}
         onChange={(event) => {
           onChange(event.target.value);
           setIsOpen(true);
           setActiveIndex(-1);
+          setShowAllOptions(false);
         }}
         onKeyDown={handleKeyDown}
       />
+      {showDropdownIndicator && (
+        <button
+          type="button"
+          className="screenshot-searchable-dropdown-toggle"
+          aria-label={`${isOpen ? 'Hide' : 'Show'} ${dropdownLabel}`}
+          aria-expanded={isOpen}
+          aria-controls={listId}
+          disabled={disabled}
+          onPointerDown={(event) => event.preventDefault()}
+          onClick={() => {
+            setActiveIndex(-1);
+            if (isOpen) {
+              setIsOpen(false);
+              setShowAllOptions(false);
+            } else {
+              setIsOpen(true);
+              setShowAllOptions(showAllOnFocus);
+              inputRef.current?.focus();
+            }
+          }}
+        >
+          <svg viewBox="0 0 20 20" aria-hidden="true">
+            <path d="m5 7.5 5 5 5-5" />
+          </svg>
+        </button>
+      )}
       <div id={listId} className="screenshot-searchable-dropdown-list" role="listbox" hidden={!isOpen}>
-        {visibleOptions.length ? visibleOptions.map((option, index) => (
+        {optionItems.map((option, index) => (
           <button
-            key={option}
+            key={option.value || 'empty-option'}
             id={optionId(index)}
             type="button"
             role="option"
-            aria-selected={value === option}
+            aria-selected={value === option.value}
             data-active={activeIndex === index ? 'true' : undefined}
             className="screenshot-searchable-dropdown-option"
             onPointerDown={(event) => event.preventDefault()}
             onPointerMove={() => setActiveIndex(index)}
-            onClick={() => selectOption(option)}
+            onClick={() => selectOption(option.value)}
           >
-            {option}
+            {option.label}
           </button>
-        )) : (
+        ))}
+        {!visibleOptions.length && (
           <div className="screenshot-searchable-dropdown-empty" role="option" aria-disabled="true">
             No matching values
           </div>
