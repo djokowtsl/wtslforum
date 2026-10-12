@@ -5,6 +5,7 @@ import {
   formatOrdinalRank,
   type CharacterPickRanking,
 } from '@/lib/characterPickPopularity';
+import SearchableDropdown from '@/components/SearchableDropdown';
 
 type Tour = 'all' | 'atp' | 'wta';
 type Stat = {
@@ -705,44 +706,53 @@ export default function CharacterStatsExplorer({
 
         <form className="character-search-form" onSubmit={handleSearchSubmit}>
           <div className="character-control-grid">
-            <label>
-              <span>Search roster</span>
-              <input
-                type="search"
-                list="character-roster-options"
+            <div className="character-control">
+              <label htmlFor="character-roster-search">Search roster</label>
+              <SearchableDropdown
+                id="character-roster-search"
+                options={names}
                 value={search}
-                onChange={(event) => {
-                  const value = event.target.value;
+                onChange={(value) => {
                   const exactMatch = names.find((name) => name.toLowerCase() === value.trim().toLowerCase());
                   setSearch(value);
                   setDraftCharacter(exactMatch || '');
                   setSearchError('');
                 }}
                 placeholder="Search names"
+                loading={rosterLoading}
                 disabled={!currentRoster}
-                aria-invalid={Boolean(searchError)}
-                aria-describedby={searchError ? 'character-search-error' : undefined}
+                invalid={Boolean(searchError)}
+                describedBy={searchError ? 'character-search-error' : undefined}
+                showAllOnFocus
+                showDropdownIndicator
+                dropdownLabel="roster characters"
               />
-            </label>
-            <label>
-              <span>Compare with</span>
-              <select
+            </div>
+            <div className="character-control">
+              <label htmlFor="character-compare-search">Compare with</label>
+              <SearchableDropdown
+                id="character-compare-search"
+                options={names.filter((name) => name !== (draftCharacter || character))}
                 value={draftCompare}
-                onChange={(event) => {
-                  setDraftCompare(event.target.value);
+                onChange={(value) => {
+                  setDraftCompare(value);
                   setSearchError('');
                 }}
+                placeholder="No comparison (optional)"
+                loading={rosterLoading}
                 disabled={!currentRoster || !character}
-              >
-                <option value="">No comparison</option>
-                {names
-                  .filter((name) => name !== (draftCharacter || character))
-                  .map((name) => <option key={name} value={name}>{name}</option>)}
-              </select>
-            </label>
-            <label>
-              <span>Rank an attribute</span>
+                invalid={Boolean(searchError)}
+                describedBy={searchError ? 'character-search-error' : undefined}
+                showAllOnFocus
+                showDropdownIndicator
+                dropdownLabel="comparison characters"
+                emptyOptionLabel="No comparison"
+              />
+            </div>
+            <div className="character-control">
+              <label htmlFor="character-attribute-rank">Rank an attribute</label>
               <select
+                id="character-attribute-rank"
                 value={draftAttribute}
                 onChange={(event) => {
                   setDraftAttribute(event.target.value);
@@ -753,11 +763,8 @@ export default function CharacterStatsExplorer({
                 <option value="">No attribute ranking</option>
                 {attributes.map((name) => <option key={name} value={name}>{name}</option>)}
               </select>
-            </label>
+            </div>
           </div>
-          <datalist id="character-roster-options">
-            {names.map((name) => <option key={name} value={name} />)}
-          </datalist>
           <div className="character-search-actions">
             <p className="character-search-help">
               {isLoadingDifferentCharacter
