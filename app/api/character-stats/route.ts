@@ -19,6 +19,12 @@ export async function GET(request: Request) {
   const character = params.get('character') || undefined;
   const compare = params.get('compare') || undefined;
   const attribute = params.get('attribute') || undefined;
+  const includeProfile = params.get('include_profile') !== 'false';
+  const includeOfficial = params.get('include_official') === 'true'
+    ? true
+    : params.get('include_official') === 'false'
+      ? false
+      : undefined;
   if ([character, compare, attribute].some((value) => (value?.length || 0) > 120)) {
     return NextResponse.json(
       { error: 'selection_too_long' },
@@ -32,6 +38,8 @@ export async function GET(request: Request) {
       character,
       compare,
       attribute,
+      includeProfile,
+      includeOfficial,
     });
     return NextResponse.json(payload, { headers: noStore });
   } catch (error) {
