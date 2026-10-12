@@ -58,6 +58,14 @@ function formatValue(value: unknown, suffix = '') {
   return `${String(value)}${suffix}`;
 }
 
+function formatPercentile(percentile: Stat['percentile']) {
+  if (percentile === null || percentile === undefined || !Number.isFinite(Number(percentile))) {
+    return '—';
+  }
+  const value = Math.max(0, Math.min(1, Number(percentile)));
+  return `${Math.round(value * 100)}%`;
+}
+
 function StatBar({ stat }: { stat: Stat }) {
   const value = Math.max(0, Math.min(100, Number(stat.percentile || 0) * 100));
   return (
@@ -103,6 +111,26 @@ function StatTable({ stats }: { stats: Stat[] }) {
               </tbody>
             </table>
           </div>
+          <ul className="character-attribute-card-list">
+            {grouped[group].map((stat) => (
+              <li className="character-attribute-card" key={stat.attribute}>
+                <div className="character-attribute-card-heading">
+                  <h4>{stat.attribute}</h4>
+                  <div className="character-attribute-rating">
+                    <span>Rating</span>
+                    <b>{formatValue(stat.value, stat.attribute === 'Topspin' ? '%' : '')}</b>
+                  </div>
+                </div>
+                <div className="character-attribute-percentile">
+                  <div className="character-attribute-percentile-heading">
+                    <span>Percentile</span>
+                    <b>{formatPercentile(stat.percentile)}</b>
+                  </div>
+                  <StatBar stat={stat} />
+                </div>
+              </li>
+            ))}
+          </ul>
         </section>
       ))}
     </div>
