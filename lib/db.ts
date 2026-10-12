@@ -16,6 +16,14 @@ export function sql(strings: TemplateStringsArray, ...values: any[]): Promise<Ro
   return client(strings, ...values);
 }
 
+/** Run a set of Neon HTTP queries in one transaction. */
+export function transaction(buildQueries: (query: any) => any[]) {
+  const url = process.env.DATABASE_URL;
+  if (!url) return Promise.reject(new Error('DATABASE_URL is not set'));
+  client ??= neon(url);
+  return client.transaction(buildQueries);
+}
+
 /** Run a read and fall back to a default instead of taking the whole page down. */
 export async function safe<T>(run: () => Promise<T>, fallback: T): Promise<T> {
   try {
