@@ -44,6 +44,62 @@ export async function getThreadReactions(topicId: number, replyIds: number[], vi
   return { topic, replies };
 }
 
+/** Public, approved comments on one published article. For articles without a tour, use the
+ * member's approved ATP identity first, then their selected default, then their Discord name. */
+export async function getArticleComments(articleId: number) {
+  return sql`
+    SELECT c.id,c.article_id,c.author_id,c.body,c.created_at,c.updated_at,
+      COALESCE(article_identity.player_name,u.display_name) author,
+      u.avatar_url avatar,article_identity.wtsl_player_id AS official_player_id,
+      article_identity.tour AS official_tour
+    FROM article_comments c
+    LEFT JOIN users u ON u.id=c.author_id
+    LEFT JOIN LATERAL (
+      SELECT COALESCE(NULLIF(wp.name,''),NULLIF(pc.player_name,'')) player_name,
+        pc.wtsl_player_id,pc.tour
+      FROM player_claims pc
+      LEFT JOIN wtsl_players wp ON wp.wtsl_player_id=pc.wtsl_player_id AND wp.tour=pc.tour
+      WHERE pc.user_id=u.id AND pc.status='approved'
+      ORDER BY CASE WHEN pc.tour='TE4' THEN 0 ELSE 1 END,
+        CASE WHEN pc.id=u.default_player_claim_id THEN 0 ELSE 1 END,
+        pc.created_at ASC,pc.id ASC
+      LIMIT 1
+    ) article_identity ON TRUE
+    WHERE c.article_id=${articleId} AND c.moderation_status='approved'
+    ORDER BY c.created_at DESC
+    LIMIT 100
+  `;
+}
+
+/** Article reactions share the same fixed emoji set, signed-in viewer state, and public reactor
+ * identity labels as discussion reactions. */
+export async function getArticleReactions(articleId: number, viewerId: string | number | null): Promise<ReactionSummary> {
+  const vid = viewerId ? Number(viewerId) : null;
+  const rows = await sql`
+    SELECT r.emoji,COUNT(*)::int count,
+      COALESCE(BOOL_OR(r.user_id=${vid}::bigint),false) reacted,
+      COALESCE(ARRAY_AGG(
+        COALESCE(reaction_identity.player_name,u.display_name)
+        ORDER BY COALESCE(reaction_identity.player_name,u.display_name)
+      ) FILTER (WHERE COALESCE(reaction_identity.player_name,u.display_name) IS NOT NULL),
+        ARRAY[]::text[]) reactors
+    FROM reactions r
+    LEFT JOIN users u ON u.id=r.user_id
+    LEFT JOIN LATERAL (
+      SELECT COALESCE(NULLIF(wp.name,''),NULLIF(pc.player_name,'')) player_name
+      FROM player_claims pc
+      LEFT JOIN wtsl_players wp ON wp.wtsl_player_id=pc.wtsl_player_id AND wp.tour=pc.tour
+      WHERE pc.user_id=u.id AND pc.status='approved'
+      ORDER BY CASE WHEN pc.id=u.default_player_claim_id THEN 0 ELSE 1 END,
+        CASE WHEN pc.tour='TE4' THEN 0 ELSE 1 END,pc.created_at ASC,pc.id ASC
+      LIMIT 1
+    ) reaction_identity ON TRUE
+    WHERE r.article_id=${articleId}
+    GROUP BY r.emoji
+  `;
+  return rows as unknown as ReactionSummary;
+}
+
 export async function getTopics(opts: { category?: string | null; limit?: number } = {}) {
   const cat = opts.category || null;
   const limit = opts.limit ?? 100;

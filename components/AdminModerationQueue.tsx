@@ -6,7 +6,7 @@ import RichText from './RichText';
 
 export type ModerationQueueItem = {
   id: number;
-  kind: 'topic' | 'reply' | 'media' | 'note';
+  kind: 'topic' | 'reply' | 'media' | 'note' | 'article_comment';
   title: string;
   body: string;
   author: string | null;
