@@ -1,6 +1,10 @@
 'use client';
 
 import { type FormEvent, useEffect, useMemo, useRef, useState } from 'react';
+import {
+  formatOrdinalRank,
+  type CharacterPickRanking,
+} from '@/lib/characterPickPopularity';
 
 type Tour = 'all' | 'atp' | 'wta';
 type Stat = {
@@ -21,6 +25,7 @@ type CharacterPayload = {
   comparison?: Record<string, any> | null;
   ranking?: Record<string, any> | null;
   picks_available?: boolean | null;
+  pick_ranking?: CharacterPickRanking | null;
 };
 
 const tourOptions: { value: Tour; label: string }[] = [
@@ -29,6 +34,7 @@ const tourOptions: { value: Tour; label: string }[] = [
   { value: 'all', label: 'ATP + WTA' },
 ];
 const groupNames = ['Groundstrokes', 'Serve', 'Net & Feel', 'Movement & Variety'];
+const uninformativeRelativeStrengths = new Set(['slice serve', 'topspin serve', 'twist serve']);
 
 function statGroup(attribute: string) {
   const name = attribute.toLowerCase();
@@ -81,7 +87,7 @@ function StatTable({ stats }: { stats: Stat[] }) {
       {groupNames.map((group) => grouped[group]?.length > 0 && (
         <section className="character-stat-group" key={group}>
           <h3>{group}</h3>
-          <div className="character-table-scroll">
+          <div className="character-table-scroll character-attribute-table-scroll">
             <table className="character-stat-table character-attribute-table">
               <thead>
                 <tr><th>Attribute</th><th>Value</th><th>Percentile</th></tr>
@@ -226,22 +232,64 @@ function Comparison({ comparison, selected }: { comparison: Record<string, any>;
   );
 }
 
-function PickHistory({ profile, available }: { profile: Record<string, any>; available: boolean | null | undefined }) {
+function PickHistory({
+  profile,
+  available,
+  ranking,
+}: {
+  profile: Record<string, any>;
+  available: boolean | null | undefined;
+  ranking?: CharacterPickRanking | null;
+}) {
+  const pickCount = Number(profile.pick_count ?? 0);
+  const rosterCount = Number(profile.roster_count ?? 0);
+  const tourLabel = String(profile.tour || '').toLowerCase() === 'wta' ? 'WTA' : 'ATP';
+  const hasPublishedPickHistory = tourLabel === 'ATP';
+  const rankLabel = ranking
+    ? ranking.tied
+      ? 'Tied for ' + formatOrdinalRank(ranking.rank) + ' most picked character'
+      : ranking.rank === 1
+        ? 'Most picked character'
+        : formatOrdinalRank(ranking.rank) + ' most picked character'
+    : null;
+
   return (
     <section className="panel character-picks-panel">
       <div className="character-section-heading">
-        <div><span className="panel-label">OFFICIAL WTSL RESULTS</span><h2>Character pick history</h2></div>
-        <strong className="character-pick-total">{available ? profile.pick_count ?? 0 : '—'}<small>known picks</small></strong>
+        <div><span className="panel-label">OFFICIAL WTSL RESULTS</span><h2>Pick popularity</h2></div>
+        <strong className="character-pick-total">{available && hasPublishedPickHistory ? pickCount : '—'}<small>recorded picks</small></strong>
       </div>
-      {!available ? (
-        <p className="character-muted">Pick history unavailable.</p>
-      ) : profile.top_pickers?.length ? (
-        <ol className="character-pickers">
-          {profile.top_pickers.map(([name, count]: [string, number]) => (
-            <li key={name}><span>{name}</span><b>{count} {count === 1 ? 'pick' : 'picks'}</b></li>
-          ))}
-        </ol>
-      ) : <p className="character-muted">No picks recorded.</p>}
+      <div className="character-pick-rank">
+        {rankLabel ? (
+          <>
+            <strong>{rankLabel}</strong>
+            <p>
+              {ranking?.picks.toLocaleString()} recorded picks
+              {rosterCount > 0 ? ' among ' + rosterCount + ' ' + tourLabel + ' characters' : ''}
+            </p>
+          </>
+        ) : (
+          <p>
+            {!hasPublishedPickHistory
+              ? 'WTSL does not publish WTA character pick totals.'
+              : !available
+                ? 'Pick history unavailable.'
+                : pickCount > 0
+                  ? 'Popularity rank unavailable.'
+                  : 'No picks recorded.'}
+          </p>
+        )}
+      </div>
+      {available && hasPublishedPickHistory && Array.isArray(profile.top_pickers) && profile.top_pickers.length ? (
+        <>
+          <p className="character-pickers-label">Players who picked this character</p>
+          <ol className="character-pickers">
+            {profile.top_pickers.map(([name, count]: [string, number]) => (
+              <li key={name}><span>{name}</span><b>{count} {count === 1 ? 'pick' : 'picks'}</b></li>
+            ))}
+          </ol>
+        </>
+      ) : null}
     </section>
   );
 }
@@ -258,6 +306,11 @@ function Profile({
   const profile = data.profile!;
   const attributes = Array.isArray(profile.stats) ? profile.stats as Stat[] : [];
   const combined = Array.isArray(profile.combined_ratings) ? profile.combined_ratings as Stat[] : [];
+  const relativeStrengths = Array.isArray(profile.strengths)
+    ? (profile.strengths as Stat[]).filter((stat) =>
+        !uninformativeRelativeStrengths.has(stat.attribute.trim().toLowerCase()),
+      )
+    : [];
   const official = data.official || {};
   const profileImage = official.avatar_url;
   const [imageFailed, setImageFailed] = useState(false);
@@ -304,13 +357,19 @@ function Profile({
         </div>
       </section>
 
+      <PickHistory
+        profile={profile}
+        available={data.picks_available}
+        ranking={data.pick_ranking}
+      />
+
       {comparisonMatches && comparison && (
         <Comparison comparison={comparison} selected={profile.character} />
       )}
       {rankingMatches && <RankedAttribute ranking={data.ranking!} character={profile.character} />}
 
       <div className="character-highlight-grid">
-        <StatHighlights title="Relative strengths" stats={profile.strengths || []} tone="positive" />
+        <StatHighlights title="Relative strengths" stats={relativeStrengths} tone="positive" />
         <StatHighlights title="Relative weaknesses" stats={profile.weaknesses || []} tone="caution" />
       </div>
 
@@ -328,7 +387,6 @@ function Profile({
         <CombinedSkills stats={combined} />
       </section>
 
-      <PickHistory profile={profile} available={data.picks_available} />
     </div>
   );
 }
@@ -640,10 +698,10 @@ export default function CharacterStatsExplorer({
           </datalist>
           <div className="character-search-actions">
             <p className="character-search-help">
-              Choose a character or adjust the comparison and ranking, then update the results.
+              Choose a character or adjust the comparison and ranking, then apply your options.
             </p>
             <button type="submit" disabled={!currentRoster || !hasPendingChanges}>
-              Update results
+              Apply options
             </button>
           </div>
           {searchError && <p id="character-search-error" className="character-search-error" role="alert">{searchError}</p>}
@@ -702,7 +760,7 @@ export default function CharacterStatsExplorer({
         </div>
       )}
       {loading && currentProfile && (
-        <p className="character-loading-note" role="status">Updating results…</p>
+        <p className="character-loading-note" role="status">Applying options…</p>
       )}
       {currentProfile && (
         <Profile
