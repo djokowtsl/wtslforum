@@ -497,6 +497,12 @@ function Profile({
       {(guidance.why_select || guidance.benefit || guidance.best_for || topEdges.length > 0 ||
         guidance.game_plan || guidance.why_not_select || guidance.tradeoff) && (
         <div className="character-guidance-columns character-selection-guidance">
+          <div className="notice warn character-ai-insight-warning" role="note">
+            <span aria-hidden="true">🚧</span>
+            <span>
+              <strong>AI insight warning:</strong> All insights below are AI derived, and the model is still under construction. It is not advised to fully rely on these insights for your character choices.
+            </span>
+          </div>
           {(guidance.why_select || guidance.benefit || guidance.best_for || topEdges.length > 0) && (
             <section className="character-selection-card">
               <span className="panel-label">WHY SELECT {profile.sex === 'WTA' ? 'HER' : 'HIM'}</span>
