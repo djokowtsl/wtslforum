@@ -1538,6 +1538,23 @@ h1, h2, h3 { margin: 0; }
 .character-control-grid select:focus { outline: 2px solid var(--cyan); outline-offset: 1px; }
 .character-control-grid input:disabled,
 .character-control-grid select:disabled { opacity: .55; }
+.character-search-form { display: grid; gap: 0; }
+.character-search-actions {
+  display: flex; align-items: center; justify-content: space-between; gap: 14px;
+  margin-top: 13px;
+}
+.character-search-help { margin: 0; color: var(--muted); font-size: 12px; line-height: 1.5; }
+.character-search-actions button {
+  flex: 0 0 auto; min-height: 44px; padding: 10px 16px;
+  border: 0; border-radius: 9px; color: #061006; background: var(--lime);
+  font: inherit; font-size: 13px; font-weight: 800; cursor: pointer;
+}
+.character-search-actions button:hover:not(:disabled) { filter: brightness(1.06); }
+.character-search-actions button:focus-visible { outline: 3px solid var(--cyan); outline-offset: 2px; }
+.character-search-actions button:disabled { opacity: .5; cursor: not-allowed; }
+.character-search-error { margin: 9px 0 0; color: var(--amber); font-size: 12px; font-weight: 700; }
+.character-search-current { margin: 13px 0 0; color: var(--soft); font-size: 12px; line-height: 1.5; }
+.character-search-current strong { color: var(--text-strong); }
 .character-roster-heading {
   display: flex; align-items: baseline; justify-content: space-between; gap: 12px;
   margin: 24px 0 10px;
@@ -1741,6 +1758,8 @@ h1, h2, h3 { margin: 0; }
   .character-top-bottom { grid-template-columns: minmax(0, 1fr); }
   .character-comparison-choices { grid-template-columns: minmax(0, 1fr); }
   .character-control-grid label:first-child { grid-column: auto; }
+  .character-search-actions { align-items: stretch; flex-direction: column; }
+  .character-search-actions button { width: 100%; }
   .character-roster-list { grid-template-columns: repeat(2, minmax(0, 1fr)); max-height: 260px; }
   .character-roster-heading h2 { font-size: 22px; }
   .character-profile-hero { grid-template-columns: 82px minmax(0, 1fr); gap: 14px; padding: 18px; }
