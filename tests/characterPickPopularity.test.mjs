@@ -3,35 +3,25 @@ import test from 'node:test';
 
 import {
   formatOrdinalRank,
-  rankCharacterPickCounts,
+  parseCharacterPickRanking,
 } from '../lib/characterPickPopularity.ts';
 
-test('ranks a character against the same recorded pick totals as its profile', () => {
-  const rank = rankCharacterPickCounts([
-    { character: 'A', picks: 18 },
-    { character: 'B', picks: '12' },
-    { character: 'C', picks: 4 },
-  ], 'B', 12);
+test('accepts a Core API rank only when it agrees with the official pick total', () => {
+  const rank = {
+    rank: 2,
+    picks: 857,
+    tied: false,
+    character_count: 102,
+  };
 
-  assert.deepEqual(rank, { rank: 2, picks: 12, tied: false });
+  assert.deepEqual(parseCharacterPickRanking(rank, 857), rank);
+  assert.equal(parseCharacterPickRanking(rank, 856), null);
+  assert.equal(parseCharacterPickRanking({ ...rank, rank: 103 }, 857), null);
 });
 
-test('shares competition rank for ties and combines case-insensitive duplicates', () => {
-  const rank = rankCharacterPickCounts([
-    { character: 'A', picks: 12 },
-    { character: 'B', picks: 8 },
-    { character: 'b', picks: 2 },
-    { character: 'C', picks: 10 },
-  ], 'B', 10);
-
-  assert.deepEqual(rank, { rank: 2, picks: 10, tied: true });
-});
-
-test('does not report a rank when the saved source total disagrees with the profile', () => {
-  assert.equal(rankCharacterPickCounts([
-    { character: 'A', picks: 10 },
-    { character: 'B', picks: 8 },
-  ], 'B', 9), null);
+test('rejects incomplete or malformed official ranks', () => {
+  assert.equal(parseCharacterPickRanking({ rank: 1, picks: 9 }, 9), null);
+  assert.equal(parseCharacterPickRanking(null, 9), null);
 });
 
 test('formats ordinal ranks including the teen suffix exception', () => {
