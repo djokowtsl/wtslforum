@@ -35,6 +35,18 @@ const tourOptions: { value: Tour; label: string }[] = [
 ];
 const groupNames = ['Groundstrokes', 'Serve', 'Net & Feel', 'Movement & Variety'];
 const uninformativeRelativeStrengths = new Set(['slice serve', 'topspin serve', 'twist serve']);
+const excludedRatingAttributes = new Set(['boomboomserver', 'ontimeserver']);
+
+function isExcludedRatingAttribute(attribute: unknown) {
+  const normalized = String(attribute ?? '').toLowerCase().replace(/[^a-z0-9]/g, '');
+  return excludedRatingAttributes.has(normalized);
+}
+
+function statsWithoutExcludedAttributes(value: unknown): Stat[] {
+  return Array.isArray(value)
+    ? (value as Stat[]).filter((stat) => !isExcludedRatingAttribute(stat.attribute))
+    : [];
+}
 
 function statGroup(attribute: string) {
   const name = attribute.toLowerCase();
@@ -58,26 +70,38 @@ function formatValue(value: unknown, suffix = '') {
   return `${String(value)}${suffix}`;
 }
 
-function formatPercentile(percentile: Stat['percentile']) {
+function normalizedPercentile(percentile: Stat['percentile']) {
   if (percentile === null || percentile === undefined || !Number.isFinite(Number(percentile))) {
-    return '—';
+    return null;
   }
-  const value = Math.max(0, Math.min(1, Number(percentile)));
-  return `${Math.round(value * 100)}%`;
+  return Math.round(Math.max(0, Math.min(1, Number(percentile))) * 100);
 }
 
 function StatBar({ stat }: { stat: Stat }) {
-  const value = Math.max(0, Math.min(100, Number(stat.percentile || 0) * 100));
+  const score = normalizedPercentile(stat.percentile);
+  const rankContext = stat.rank == null
+    ? 'Rank unavailable.'
+    : `Ranked #${stat.rank}${stat.count ? ` of ${stat.count} characters` : ''}.`;
+  const tooltip = `${score === null ? 'Normalized score unavailable.' : `Normalized score ${score} out of 100.`} ${rankContext}`;
   return (
-    <div className="character-stat-meter">
+    <div
+      className="character-stat-meter"
+      role={score === null ? 'img' : 'meter'}
+      tabIndex={0}
+      aria-label={tooltip}
+      aria-valuemin={score === null ? undefined : 0}
+      aria-valuemax={score === null ? undefined : 100}
+      aria-valuenow={score ?? undefined}
+      aria-valuetext={score === null ? undefined : tooltip}
+      title={tooltip}
+    >
       <span
         className="character-stat-meter-fill"
-        style={{ width: `${value}%` }}
+        style={{ width: `${score ?? 0}%` }}
         aria-hidden="true"
       />
       <span className="character-stat-meter-label">
-        {stat.rank == null ? '—' : `#${stat.rank}`}
-        {stat.count ? ` / ${stat.count}` : ''}
+        <span>{score === null ? '—' : `${score}/100`}</span>
       </span>
     </div>
   );
@@ -98,7 +122,7 @@ function StatTable({ stats }: { stats: Stat[] }) {
           <div className="character-table-scroll character-attribute-table-scroll">
             <table className="character-stat-table character-attribute-table">
               <thead>
-                <tr><th>Attribute</th><th>Value</th><th>Percentile</th></tr>
+                <tr><th>Attribute</th><th>Value</th><th>Normalized score</th></tr>
               </thead>
               <tbody>
                 {grouped[group].map((stat) => (
@@ -123,8 +147,7 @@ function StatTable({ stats }: { stats: Stat[] }) {
                 </div>
                 <div className="character-attribute-percentile">
                   <div className="character-attribute-percentile-heading">
-                    <span>Percentile</span>
-                    <b>{formatPercentile(stat.percentile)}</b>
+                    <span>Normalized score</span>
                   </div>
                   <StatBar stat={stat} />
                 </div>
@@ -146,7 +169,7 @@ function StatHighlights({ title, stats, tone }: { title: string; stats: Stat[]; 
           {stats.slice(0, 5).map((stat) => (
             <li key={stat.attribute}>
               <span>{stat.attribute}</span>
-              <b>{formatValue(stat.value)} <small>#{stat.rank}</small></b>
+              <b>{formatValue(stat.value)}</b>
               <StatBar stat={stat} />
             </li>
           ))}
@@ -227,7 +250,9 @@ function Comparison({ comparison, selected }: { comparison: Record<string, any>;
   const selectedEdges = selectedIsFirst ? comparison.first_edges : comparison.second_edges;
   const otherEdges = selectedIsFirst ? comparison.second_edges : comparison.first_edges;
   const other = selectedIsFirst ? comparison.second : comparison.first;
-  const edgeList = (items: any[]) => (Array.isArray(items) ? items : []).map((item) => {
+  const edgeList = (items: any[]) => (Array.isArray(items) ? items : [])
+    .filter((item) => !isExcludedRatingAttribute(item?.attribute))
+    .map((item) => {
     const value = selectedIsFirst ? item.first_value : item.second_value;
     const otherValue = selectedIsFirst ? item.second_value : item.first_value;
     return (
@@ -332,13 +357,12 @@ function Profile({
   attribute: string;
 }) {
   const profile = data.profile!;
-  const attributes = Array.isArray(profile.stats) ? profile.stats as Stat[] : [];
-  const combined = Array.isArray(profile.combined_ratings) ? profile.combined_ratings as Stat[] : [];
-  const relativeStrengths = Array.isArray(profile.strengths)
-    ? (profile.strengths as Stat[]).filter((stat) =>
-        !uninformativeRelativeStrengths.has(stat.attribute.trim().toLowerCase()),
-      )
-    : [];
+  const attributes = statsWithoutExcludedAttributes(profile.stats);
+  const combined = statsWithoutExcludedAttributes(profile.combined_ratings);
+  const relativeStrengths = statsWithoutExcludedAttributes(profile.strengths).filter((stat) =>
+    !uninformativeRelativeStrengths.has(stat.attribute.trim().toLowerCase()),
+  );
+  const relativeWeaknesses = statsWithoutExcludedAttributes(profile.weaknesses);
   const official = data.official || {};
   const profileImage = official.avatar_url;
   const [imageFailed, setImageFailed] = useState(false);
@@ -350,7 +374,10 @@ function Profile({
         (comparison.second === profile.character && comparison.first === compare)),
   );
   const rankingMatches = Boolean(
-    attribute && data.ranking && data.ranking.attribute === attribute,
+    attribute &&
+      data.ranking &&
+      data.ranking.attribute === attribute &&
+      !isExcludedRatingAttribute(data.ranking.attribute),
   );
 
   return (
@@ -398,7 +425,7 @@ function Profile({
 
       <div className="character-highlight-grid">
         <StatHighlights title="Relative strengths" stats={relativeStrengths} tone="positive" />
-        <StatHighlights title="Relative weaknesses" stats={profile.weaknesses || []} tone="caution" />
+        <StatHighlights title="Relative weaknesses" stats={relativeWeaknesses} tone="caution" />
       </div>
 
       <section className="panel character-detail-panel">
@@ -452,7 +479,8 @@ export default function CharacterStatsExplorer({
   const dataRef = useRef(data);
   const currentRoster = roster.tour === tour ? roster : null;
   const names = currentRoster?.names || [];
-  const attributes = currentRoster?.attributes || [];
+  const attributes = (currentRoster?.attributes || [])
+    .filter((name) => !isExcludedRatingAttribute(name));
   const currentProfile =
     data?.tour === tour && data.profile?.character === character ? data : null;
   const filteredNames = useMemo(() => {
