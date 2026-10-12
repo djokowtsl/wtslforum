@@ -1646,7 +1646,9 @@ h1, h2, h3 { margin: 0; }
 .character-stat-meter {
   position: relative; display: flex; align-items: center; min-width: 105px; height: 19px;
   overflow: hidden; border: 1px solid var(--line); border-radius: 999px; background: var(--panel);
+  cursor: help;
 }
+.character-stat-meter:focus-visible { outline: 2px solid var(--cyan); outline-offset: 2px; }
 .character-stat-meter-fill {
   position: absolute; inset: 0 auto 0 0; border-radius: inherit;
   background: linear-gradient(90deg, var(--lime-d), var(--lime));
@@ -1654,8 +1656,9 @@ h1, h2, h3 { margin: 0; }
 .character-stat-meter-label {
   position: relative; z-index: 1; width: 100%; color: var(--text-strong);
   text-align: center; font-size: 9px; font-weight: 800;
-  text-shadow: 0 1px 3px var(--bg);
+  font-variant-numeric: tabular-nums; white-space: nowrap;
 }
+.character-stat-meter-label > span { padding: 0 4px; border-radius: 999px; background: var(--bg); }
 .character-combined-grid { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 12px; }
 .character-combined-card { min-width: 0; padding: 16px; border: 1px solid var(--line); border-radius: 11px; background: var(--bg-2); }
 .character-combined-heading { display: flex; align-items: baseline; justify-content: space-between; gap: 8px; }
