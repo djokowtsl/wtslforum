@@ -1743,8 +1743,11 @@ h1, h2, h3 { margin: 0; }
 .character-max-serve { margin: 11px 0 0; color: var(--cyan); font-size: 11px; font-weight: 700; }
 .character-highlight-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 14px; }
 .character-highlight-card { min-width: 0; padding: 21px; border: 1px solid var(--line); border-radius: var(--radius); background: var(--panel); }
-.character-highlight-positive { border-top: 2px solid var(--lime); }
-.character-highlight-caution { border-top: 2px solid var(--amber); }
+.character-highlight-positive { --character-highlight-accent: var(--lime); border-top: 2px solid var(--character-highlight-accent); }
+.character-highlight-caution { --character-highlight-accent: var(--amber); border-top: 2px solid var(--character-highlight-accent); }
+.character-highlight-card h3 { color: var(--character-highlight-accent); }
+.character-highlight-card .character-stat-meter-fill { background: var(--character-highlight-accent); }
+.character-highlight-card .character-highlight-list li > b { color: var(--character-highlight-accent); }
 .character-rating-explainer { margin: -4px 0 14px; color: var(--muted); font-size: 11px; line-height: 1.45; }
 .character-highlight-list { display: grid; gap: 12px; margin: 0; padding: 0; list-style: none; }
 .character-highlight-list li { display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: 4px 10px; align-items: baseline; font-size: 12px; }
