@@ -299,8 +299,8 @@ function PickHistory({
   ranking?: CharacterPickRanking | null;
 }) {
   const pickCount = Number(profile.pick_count ?? 0);
-  const rosterCount = Number(profile.roster_count ?? 0);
-  const tourLabel = String(profile.tour || '').toLowerCase() === 'wta' ? 'WTA' : 'ATP';
+  const rosterCount = Number(ranking?.character_count ?? profile.roster_count ?? 0);
+  const tourLabel = String(profile.sex || profile.tour || '').toLowerCase() === 'wta' ? 'WTA' : 'ATP';
   const hasPublishedPickHistory = tourLabel === 'ATP';
   const rankLabel = ranking
     ? ranking.tied
@@ -332,7 +332,7 @@ function PickHistory({
               : !available
                 ? 'Pick history unavailable.'
                 : pickCount > 0
-                  ? 'WTSL reports picks, but the Forum cannot yet verify a rank from its recorded match history.'
+                  ? "WTSL's official popularity rank is not available right now."
                   : 'No picks recorded.'}
           </p>
         )}
