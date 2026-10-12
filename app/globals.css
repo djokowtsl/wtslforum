@@ -1812,6 +1812,8 @@ h1, h2, h3 { margin: 0; }
 .character-full-ranking { margin-top: 7px; }
 .character-current-row { color: var(--lime); background: rgba(176, 244, 59, .08); }
 .character-selection-guidance { margin-top: 0; }
+.character-ai-insight-warning { grid-column: 1 / -1; display: flex; gap: 10px; align-items: flex-start; font-weight: 600; }
+.character-ai-insight-warning strong { color: var(--text-strong); }
 .character-selection-card { min-width: 0; padding: 21px; border: 1px solid var(--line); border-radius: var(--radius); background: var(--panel); }
 .character-selection-card:first-child { border-top: 2px solid var(--lime); }
 .character-selection-card:last-child { border-top: 2px solid var(--cyan); }
