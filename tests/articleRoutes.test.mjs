@@ -124,12 +124,12 @@ test('bad publication content is rejected, and database failures do not report s
 });
 
 test('image uploads validate contents, size and configuration and return the stored public URL', async () => {
-  const previous = process.env.BLOB_READ_WRITE_TOKEN;
+  const previous = process.env.ARTICLE_BLOB_STORE_ID;
   try {
-    delete process.env.BLOB_READ_WRITE_TOKEN;
+    delete process.env.ARTICLE_BLOB_STORE_ID;
     const { handlers, calls } = route('app/api/articles/images/route.ts');
     assert.equal((await handlers.POST(jsonRequest({}))).status, 503);
-    process.env.BLOB_READ_WRITE_TOKEN = 'isolated-test-placeholder';
+    process.env.ARTICLE_BLOB_STORE_ID = 'store_article_test';
     function request(bytes, name = 'image.png') {
       const form = new FormData();
       form.set('file', new File([bytes], name, { type: 'image/png' }));
@@ -142,9 +142,10 @@ test('image uploads validate contents, size and configuration and return the sto
     assert.match((await response.json()).url, /^https:\/\/test\.public\.blob/);
     assert.equal(calls.uploads.length, 1);
     assert.equal(calls.uploads[0][2].contentType, 'image/png');
+    assert.equal(calls.uploads[0][2].storeId, 'store_article_test');
   } finally {
-    if (previous === undefined) delete process.env.BLOB_READ_WRITE_TOKEN;
-    else process.env.BLOB_READ_WRITE_TOKEN = previous;
+    if (previous === undefined) delete process.env.ARTICLE_BLOB_STORE_ID;
+    else process.env.ARTICLE_BLOB_STORE_ID = previous;
   }
 });
 
