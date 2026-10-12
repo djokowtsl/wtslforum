@@ -1,5 +1,6 @@
-import { sql } from './db';
+import { sql, transaction } from './db';
 import { fetchWTSLPlayer, fetchWTSLPlayerStatsTable, fetchWTSLAllResults, TOURS, DEFAULT_TOUR, type TourCode } from './wtsl';
+import { aggregateCharacterUsage } from './characterUsage';
 import { computeOfficialClutchAggregates, parseSets } from './clutchStats';
 import { officialWtaEventByTournamentKey, officialWtaScheduleForYear } from './wtaSchedule';
 export { parseSets, normalizeMatchScore } from './clutchStats';
@@ -251,42 +252,44 @@ export async function computeClutchStats(tour: TourCode) {
  */
 export async function syncCharacterUsage() {
   const rows = await fetchWTSLAllResults();
-  const picks = new Map<string, Map<string, number>>(); // playerId -> character -> count
-  const bump = (playerId: string, character: string) => {
-    if (!picks.has(playerId)) picks.set(playerId, new Map());
-    const m = picks.get(playerId)!;
-    m.set(character, (m.get(character) ?? 0) + 1);
-  };
-  let matchesCounted = 0;
-  for (const r of rows) {
-    if (!parseSets(r.score)) continue; // only count completed matches, not Walkover/Coin Toss/Scheduled/etc
-    matchesCounted++;
-    if (r.player1Character) bump(r.player1Id, r.player1Character);
-    if (r.player2Character) bump(r.player2Id, r.player2Character);
+  const aggregate = aggregateCharacterUsage(rows);
+  if (!rows.length || !aggregate.picksCounted) {
+    throw new Error('WTSL all-results feed contained no character picks; refusing to replace the usage snapshot');
   }
+  const usageRows = JSON.stringify(aggregate.entries);
+  const summaryRows = JSON.stringify(aggregate.summaries);
+  const matchesCounted = rows.reduce((count, row) => count + (parseSets(row.score) ? 1 : 0), 0);
 
-  let charactersWritten = 0;
-  let playersUpdated = 0;
-  for (const [playerId, characters] of picks) {
-    let topCharacter = '';
-    let topPicks = 0;
-    let total = 0;
-    for (const [character, count] of characters) {
-      total += count;
-      if (count > topPicks) { topPicks = count; topCharacter = character; }
-      await sql`
-        INSERT INTO player_character_usage(player_id,tour,character,picks,updated_at)
-        VALUES (${playerId},'TE4',${character},${count},NOW())
-        ON CONFLICT (player_id,tour,character) DO UPDATE SET picks=EXCLUDED.picks, updated_at=NOW()
-      `;
-      charactersWritten++;
-    }
-    await sql`
+  await transaction((query) => [
+    query`DELETE FROM player_character_usage WHERE tour='TE4'`,
+    query`
+      INSERT INTO player_character_usage(player_id,tour,character,picks,updated_at)
+      SELECT source.player_id, 'TE4', source.character, source.picks, NOW()
+      FROM jsonb_to_recordset(${usageRows}::jsonb)
+        AS source(player_id text, character text, picks integer)
+    `,
+    query`
       UPDATE player_stats_summary
-      SET favorite_character=${topCharacter}, favorite_character_picks=${topPicks}, character_matches=${total}
-      WHERE player_id=${playerId} AND tour='TE4'
-    `;
-    playersUpdated++;
-  }
-  return { tour: 'TE4' as const, rowsSeen: rows.length, matchesCounted, charactersWritten, playersUpdated };
+      SET favorite_character='', favorite_character_picks=0, character_matches=0
+      WHERE tour='TE4'
+    `,
+    query`
+      UPDATE player_stats_summary AS summary
+      SET favorite_character=source.favorite_character,
+          favorite_character_picks=source.favorite_character_picks,
+          character_matches=source.character_matches
+      FROM jsonb_to_recordset(${summaryRows}::jsonb)
+        AS source(player_id text, favorite_character text, favorite_character_picks integer, character_matches integer)
+      WHERE summary.player_id=source.player_id AND summary.tour='TE4'
+    `,
+  ]);
+
+  return {
+    tour: 'TE4' as const,
+    rowsSeen: rows.length,
+    matchesCounted,
+    charactersWritten: aggregate.entries.length,
+    playersUpdated: aggregate.summaries.length,
+    picksCounted: aggregate.picksCounted,
+  };
 }
