@@ -76,6 +76,7 @@ export async function ForumHeader() {
             isAdmin={!!u?.isAdmin}
             canModerate={canModerate}
             username={u?.username}
+            profileAvatar={u ? discordAvatar(u.avatar, u.username) : undefined}
             discordJoinHref="/api/auth/discord"
             unreadMessages={unread}
           />
