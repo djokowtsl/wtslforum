@@ -408,8 +408,8 @@ function Profile({
   const guidance = profile.selection_guidance || {};
   const mechanics = profile.mechanics_insights || {};
   const strokeSetupLabels = buildStrokeSetupLabels(profile);
-  const sizeInsight = buildSizeMechanicsInsight(profile.height, profile.weight);
-  const strokeInsight = buildStrokeMechanicsInsight(profile);
+  const sizeInsight = mechanics.size_reach || buildSizeMechanicsInsight(profile.height, profile.weight);
+  const strokeInsight = mechanics.stroke_setup || buildStrokeMechanicsInsight(profile);
   const insightRows = [
     ['Serve', mechanics.serve],
     ['Groundstrokes', mechanics.groundstrokes],
@@ -426,9 +426,6 @@ function Profile({
   const documentedEdges = Array.isArray(guidance.documented_edges) ? guidance.documented_edges : [];
   const documentedTalents = Array.isArray(guidance.documented_talents) ? guidance.documented_talents : [];
   const documentedExposures = Array.isArray(guidance.documented_exposures) ? guidance.documented_exposures : [];
-  const technicalInteractions = Array.isArray(profile.technical_interactions)
-    ? profile.technical_interactions
-    : [];
   const attributes = statsWithoutExcludedAttributes(profile.stats);
   const characterSummary = buildCharacterProfileSummary(
     profile.character,
@@ -575,8 +572,7 @@ function Profile({
         </span>
       </div>
 
-      {(guidance.style_mechanics || guidance.acceleration_mechanics || traitNotes.length > 0 ||
-        technicalInteractions.length > 0) && (
+      {(guidance.style_mechanics || guidance.acceleration_mechanics || traitNotes.length > 0) && (
         <section className="panel character-trait-panel">
           <div className="character-section-heading">
             <div><span className="panel-label">DOCUMENTED CHARACTER SHEET</span><h2>Style &amp; traits</h2></div>
@@ -592,16 +588,6 @@ function Profile({
               <li key={`${name}-${index}`}><b>{name}</b><span>{description}</span></li>
             ))}
           </ul>
-          {technicalInteractions.length > 0 && (
-            <details className="character-mechanics-details">
-              <summary>Technical skill interactions</summary>
-              <ul>
-                {technicalInteractions.map(([name, description]: [string, string]) => (
-                  <li key={name}><b>{name}</b><span>{description}</span></li>
-                ))}
-              </ul>
-            </details>
-          )}
         </section>
       )}
 
