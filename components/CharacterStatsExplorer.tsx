@@ -453,6 +453,9 @@ function Profile({
   ].filter(([, text]) => typeof text === 'string' && text.trim());
   const advantages = Array.isArray(guidance.advantages) ? guidance.advantages : [];
   const vulnerabilities = Array.isArray(guidance.vulnerabilities) ? guidance.vulnerabilities : [];
+  const selectionRationale = normalizeCharacterCopy(
+    guidance.why_select || guidance.benefit || guidance.best_for,
+  );
   const topEdges = statsWithoutExcludedAttributes(guidance.top_edges);
   const documentedEdges = Array.isArray(guidance.documented_edges) ? guidance.documented_edges : [];
   const documentedTalents = Array.isArray(guidance.documented_talents) ? guidance.documented_talents : [];
@@ -542,7 +545,7 @@ function Profile({
           </div>
           {characterSummary && (
             <div className="character-profile-summary">
-              <span className="panel-label">WHY PICK THIS CHARACTER?</span>
+              <span className="panel-label">SUMMARY</span>
               <p className="character-style-description">{characterSummary}</p>
             </div>
           )}
@@ -679,9 +682,16 @@ function Profile({
         </section>
       )}
 
-      {(topEdges.length > 0 || rosterEvidenceNotes.additionalNotes.length > 0 || gamePlanSteps.length > 0 ||
+      {(selectionRationale || topEdges.length > 0 || rosterEvidenceNotes.additionalNotes.length > 0 || gamePlanSteps.length > 0 ||
         guidance.why_not_select || guidance.tradeoff) && (
         <div className="character-guidance-columns character-selection-guidance">
+          {selectionRationale && (
+            <section className="character-selection-card">
+              <span className="panel-label">PLAYER GUIDANCE</span>
+              <h3>Why pick this character?</h3>
+              <p>{selectionRationale}</p>
+            </section>
+          )}
           {(topEdges.length > 0 || rosterEvidenceNotes.additionalNotes.length > 0) && (
             <section className="character-selection-card">
               <span className="panel-label">ROSTER EVIDENCE</span>
