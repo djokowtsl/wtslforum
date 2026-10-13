@@ -5,6 +5,7 @@ import {
   formatOrdinalRank,
   type CharacterPickRanking,
 } from '@/lib/characterPickPopularity';
+import { characterCategoryScores } from '@/lib/characterProfileGroups.mjs';
 import SearchableDropdown from '@/components/SearchableDropdown';
 
 type Tour = 'all' | 'atp' | 'wta';
@@ -59,6 +60,18 @@ function statGroup(attribute: string) {
     return 'Groundstrokes';
   }
   return 'Movement & Variety';
+}
+
+function percentileDescription(stat: Stat) {
+  const percentile = normalizedPercentile(stat.percentile);
+  return percentile === null ? null : `${formatOrdinalRank(percentile)} percentile`;
+}
+
+function splitTraitDescription(value: string) {
+  const separator = value.indexOf(':');
+  return separator > 0
+    ? { name: value.slice(0, separator).trim(), description: value.slice(separator + 1).trim() }
+    : { name: 'Documented mechanic', description: value.trim() };
 }
 
 function formatValue(value: unknown, suffix = '') {
@@ -172,8 +185,11 @@ function StatHighlights({ title, stats, tone }: { title: string; stats: Stat[]; 
         <ul className="character-highlight-list">
           {stats.slice(0, 5).map((stat) => (
             <li key={stat.attribute}>
-              <span>{stat.attribute}</span>
-              <b>{formatValue(stat.value)}</b>
+              <span>
+                {stat.attribute}
+                <small>{percentileDescription(stat) || 'Roster percentile unavailable'}</small>
+              </span>
+              <b>{formatValue(stat.value, stat.attribute.toLowerCase() === 'topspin' ? '%' : '/100')}</b>
               <StatBar stat={stat} />
             </li>
           ))}
@@ -385,15 +401,13 @@ function Profile({
   const insightRows = [
     ['Serve', mechanics.serve],
     ['Groundstrokes', mechanics.groundstrokes],
-    ['Surface fit', mechanics.surface_fit],
+    ['Court speed', mechanics.surface_fit],
     ['Counterplay', mechanics.counter],
     ['Net play', mechanics.net],
-    ['Variation', mechanics.variation],
-    ['Match play', mechanics.match_play],
+    ['Shot variety', mechanics.variation],
   ].filter(([, text]) => typeof text === 'string' && text.trim());
   const advantages = Array.isArray(guidance.advantages) ? guidance.advantages : [];
   const vulnerabilities = Array.isArray(guidance.vulnerabilities) ? guidance.vulnerabilities : [];
-  const pointPatterns = Array.isArray(guidance.point_patterns) ? guidance.point_patterns : [];
   const topEdges = statsWithoutExcludedAttributes(guidance.top_edges);
   const documentedEdges = Array.isArray(guidance.documented_edges) ? guidance.documented_edges : [];
   const documentedTalents = Array.isArray(guidance.documented_talents) ? guidance.documented_talents : [];
@@ -405,11 +419,23 @@ function Profile({
     ? profile.style_description.trim()
     : '';
   const attributes = statsWithoutExcludedAttributes(profile.stats);
+  const categoryScores = characterCategoryScores(guidance.group_scores, attributes);
+  const strongestGroup = String(guidance.strongest_group || categoryScores[0]?.name || '');
+  const weakestGroup = String(
+    guidance.weakest_group || categoryScores[categoryScores.length - 1]?.name || '',
+  );
   const combined = statsWithoutExcludedAttributes(profile.combined_ratings);
   const relativeStrengths = statsWithoutExcludedAttributes(profile.strengths).filter((stat) =>
     !uninformativeRelativeStrengths.has(stat.attribute.trim().toLowerCase()),
   );
   const relativeWeaknesses = statsWithoutExcludedAttributes(profile.weaknesses);
+  const traitNotes = [
+    ...documentedEdges,
+    ...documentedTalents,
+    ...documentedExposures,
+  ]
+    .filter((item): item is string => typeof item === 'string' && item.trim().length > 0)
+    .map(splitTraitDescription);
   const official = data.official || {};
   const profileImage = official.avatar_url;
   const [imageFailed, setImageFailed] = useState(false);
@@ -452,7 +478,10 @@ function Profile({
             <span>{profile.style}</span><span>Acceleration: {profile.acceleration}</span>
           </div>
           {styleDescription && (
-            <p className="character-style-description">{styleDescription}</p>
+            <div className="character-profile-summary">
+              <span className="panel-label">SUMMARY</span>
+              <p className="character-style-description">{styleDescription}</p>
+            </div>
           )}
           {official.profile_url && (
             <a href={official.profile_url} target="_blank" rel="noreferrer">
@@ -472,37 +501,122 @@ function Profile({
       )}
       {rankingMatches && <RankedAttribute ranking={data.ranking!} character={profile.character} />}
 
+      {categoryScores.length > 0 && (
+        <section className="panel character-category-panel">
+          <div className="character-section-heading">
+            <div><span className="panel-label">ROSTER COMPARISON</span><h2>Category profile</h2></div>
+            {Number.isSafeInteger(Number(profile.roster_count)) && Number(profile.roster_count) > 0 && (
+              <p>Compared with {profile.roster_count} {profile.sex} characters</p>
+            )}
+          </div>
+          <p className="character-rating-explainer">
+            Each category is the average percentile of its rankable attributes in this roster,
+            not an average of raw ratings.
+          </p>
+          <div className="character-category-grid">
+            {categoryScores.map((category) => {
+              const isStrongest = category.name === strongestGroup;
+              const isWeakest = category.name === weakestGroup;
+              return (
+                <article
+                  className={`character-category-card${isStrongest ? ' strongest' : ''}${isWeakest && !isStrongest ? ' weakest' : ''}`}
+                  key={category.name}
+                >
+                  <div className="character-category-heading">
+                    <h3>{category.name}</h3>
+                    <strong>{formatOrdinalRank(category.score)}<small> percentile</small></strong>
+                  </div>
+                  <div
+                    className="character-category-meter"
+                    role="meter"
+                    aria-label={`${category.name}: ${formatOrdinalRank(category.score)} percentile`}
+                    aria-valuemin={0}
+                    aria-valuemax={100}
+                    aria-valuenow={category.score}
+                  >
+                    <span style={{ width: `${category.score}%` }} />
+                  </div>
+                  {category.edges.length > 0 && (
+                    <p>{category.edges.slice(0, 2).map((stat) => stat.attribute).join(' · ')}</p>
+                  )}
+                </article>
+              );
+            })}
+          </div>
+        </section>
+      )}
+
       <div className="character-highlight-grid">
-        <StatHighlights title="Strengths" stats={relativeStrengths} tone="positive" />
-        <StatHighlights title="Weaknesses" stats={relativeWeaknesses} tone="caution" />
+        <StatHighlights title="Relative strengths" stats={relativeStrengths} tone="positive" />
+        <StatHighlights title="Relative weaknesses" stats={relativeWeaknesses} tone="caution" />
       </div>
 
-      <section className="panel character-detail-panel">
-        <div className="character-section-heading">
-          <div><span className="panel-label">ATTRIBUTES</span><h2>Attribute rankings</h2></div>
-        </div>
-        <StatTable stats={attributes} />
-      </section>
+      <div className="notice warn character-ai-insight-warning" role="note">
+        <span aria-hidden="true">AI</span>
+        <span>
+          <strong>AI insight warning:</strong> Tactical explanations, selection guidance, and game
+          plans are AI-generated recommendations, not verified match statistics or guaranteed outcomes.
+        </span>
+      </div>
 
-      <section className="panel character-detail-panel">
-        <div className="character-section-heading">
-          <div><span className="panel-label">COMBINED SKILLS</span><h2>Ratings</h2></div>
-        </div>
-        <p className="character-rating-explainer">
-          The number is the raw rating; the bar is its normalized roster score (0–100).
-        </p>
-        <CombinedSkills stats={combined} />
-      </section>
+      {(guidance.style_mechanics || guidance.acceleration_mechanics || traitNotes.length > 0 ||
+        technicalInteractions.length > 0) && (
+        <section className="panel character-trait-panel">
+          <div className="character-section-heading">
+            <div><span className="panel-label">DOCUMENTED CHARACTER SHEET</span><h2>Style &amp; traits</h2></div>
+          </div>
+          <ul className="character-trait-list">
+            {guidance.style_mechanics && (
+              <li><b>Style · {profile.style}</b><span>{guidance.style_mechanics}</span></li>
+            )}
+            {guidance.acceleration_mechanics && (
+              <li><b>Acceleration · {profile.acceleration}</b><span>{guidance.acceleration_mechanics}</span></li>
+            )}
+            {traitNotes.map(({ name, description }, index) => (
+              <li key={`${name}-${index}`}><b>{name}</b><span>{description}</span></li>
+            ))}
+          </ul>
+          {technicalInteractions.length > 0 && (
+            <details className="character-mechanics-details">
+              <summary>Technical skill interactions</summary>
+              <ul>
+                {technicalInteractions.map(([name, description]: [string, string]) => (
+                  <li key={name}><b>{name}</b><span>{description}</span></li>
+                ))}
+              </ul>
+            </details>
+          )}
+        </section>
+      )}
+
+      {(insightRows.length > 0 || advantages.length > 0 || vulnerabilities.length > 0) && (
+        <section className="panel character-guidance-panel">
+          <div className="character-section-heading">
+            <div><span className="panel-label">TE4 MECHANICS</span><h2>Technical summary</h2></div>
+          </div>
+          {insightRows.length > 0 && (
+            <div className="character-insight-grid">
+              {insightRows.map(([title, text]) => (
+                <article key={String(title)}><h3>{title}</h3><p>{String(text)}</p></article>
+              ))}
+            </div>
+          )}
+          {(advantages.length > 0 || vulnerabilities.length > 0) && (
+            <div className="character-guidance-columns">
+              {advantages.length > 0 && (
+                <div><h3>Advantages</h3><ul>{advantages.map((item: string, index: number) => <li key={index}>{item}</li>)}</ul></div>
+              )}
+              {vulnerabilities.length > 0 && (
+                <div><h3>Trade-offs</h3><ul>{vulnerabilities.map((item: string, index: number) => <li key={index}>{item}</li>)}</ul></div>
+              )}
+            </div>
+          )}
+        </section>
+      )}
 
       {(guidance.why_select || guidance.benefit || guidance.best_for || topEdges.length > 0 ||
         guidance.game_plan || guidance.why_not_select || guidance.tradeoff) && (
         <div className="character-guidance-columns character-selection-guidance">
-          <div className="notice warn character-ai-insight-warning" role="note">
-            <span aria-hidden="true">🚧</span>
-            <span>
-              <strong>AI insight warning:</strong> All insights below are AI derived, and the model is still under construction. It is not advised to fully rely on these insights for your character choices.
-            </span>
-          </div>
           {(guidance.why_select || guidance.benefit || guidance.best_for || topEdges.length > 0) && (
             <section className="character-selection-card">
               <span className="panel-label">WHY SELECT {profile.sex === 'WTA' ? 'HER' : 'HIM'}</span>
@@ -517,7 +631,13 @@ function Profile({
                   <ul>
                     {topEdges.slice(0, 5).map((stat) => (
                       <li key={stat.attribute}>
-                        <span>{stat.attribute} · {formatValue(stat.value)}</span>
+                        <span>
+                          {stat.attribute} · {formatValue(
+                            stat.value,
+                            stat.attribute.toLowerCase() === 'topspin' ? '%' : '/100',
+                          )}
+                          <small>{percentileDescription(stat) || 'Percentile unavailable'}</small>
+                        </span>
                         <StatBar stat={stat} />
                       </li>
                     ))}
@@ -539,74 +659,28 @@ function Profile({
         </div>
       )}
 
-      {(insightRows.length > 0 || advantages.length > 0 || vulnerabilities.length > 0 ||
-        pointPatterns.length > 0 || technicalInteractions.length > 0 ||
-        guidance.style_mechanics || guidance.acceleration_mechanics ||
-        documentedEdges.length > 0 || documentedTalents.length > 0 ||
-        documentedExposures.length > 0) && (
-        <section className="panel character-guidance-panel">
-          <div className="character-section-heading">
-            <div><span className="panel-label">HOW THE BUILD PLAYS</span><h2>Game plan &amp; mechanics</h2></div>
-            {guidance.strongest_label && (
-              <span className="character-strongest-label">Top edge: {guidance.strongest_label}</span>
-            )}
-          </div>
-          {insightRows.length > 0 && (
-            <div className="character-insight-grid">
-              {insightRows.map(([title, text]) => (
-                <article key={String(title)}><h3>{title}</h3><p>{String(text)}</p></article>
-              ))}
-            </div>
-          )}
-          {(advantages.length > 0 || vulnerabilities.length > 0) && (
-            <div className="character-guidance-columns">
-              {advantages.length > 0 && (
-                <div><h3>Advantages</h3><ul>{advantages.map((item: string, index: number) => <li key={index}>{item}</li>)}</ul></div>
-              )}
-              {vulnerabilities.length > 0 && (
-                <div><h3>Trade-offs</h3><ul>{vulnerabilities.map((item: string, index: number) => <li key={index}>{item}</li>)}</ul></div>
-              )}
-            </div>
-          )}
-          {pointPatterns.length > 0 && (
-            <div className="character-point-patterns">
-              <h3>Point patterns</h3>
-              <ol>{pointPatterns.map((item: string, index: number) => <li key={index}>{item}</li>)}</ol>
-            </div>
-          )}
-          {(technicalInteractions.length > 0 || guidance.style_mechanics ||
-            guidance.acceleration_mechanics || documentedEdges.length > 0 ||
-            documentedTalents.length > 0 || documentedExposures.length > 0) && (
-            <details className="character-mechanics-details">
-              <summary>Character traits &amp; technical interactions</summary>
-              <ul className="character-documented-mechanics">
-                {guidance.style_mechanics && (
-                  <li><b>{profile.style} style</b><span>{guidance.style_mechanics}</span></li>
-                )}
-                {guidance.acceleration_mechanics && (
-                  <li><b>{profile.acceleration} acceleration</b><span>{guidance.acceleration_mechanics}</span></li>
-                )}
-                {documentedEdges.map((item: string, index: number) => (
-                  <li key={`edge-${index}`}><b>Documented edge</b><span>{item}</span></li>
-                ))}
-                {documentedTalents.map((item: string, index: number) => (
-                  <li key={`talent-${index}`}><b>Talent</b><span>{item}</span></li>
-                ))}
-                {documentedExposures.map((item: string, index: number) => (
-                  <li key={`exposure-${index}`}><b>Documented trade-off</b><span>{item}</span></li>
-                ))}
-              </ul>
-              {technicalInteractions.length > 0 && (
-                <ul>
-                  {technicalInteractions.map(([name, description]: [string, string]) => (
-                    <li key={name}><b>{name}</b><span>{description}</span></li>
-                  ))}
-                </ul>
-              )}
-            </details>
-          )}
-        </section>
-      )}
+      <section className="character-profile-method-note" aria-label="How to read this profile">
+        <div><b>Roster comparisons</b><p>Standouts, drawbacks, and category scores compare this character with the selected tour roster. Category scores average rankable attribute percentiles, not raw ratings.</p></div>
+        <div><b>Mechanics explanations</b><p>Technical notes use the character’s own ratings and documented TE4 mechanics; they are not comparisons with other players.</p></div>
+        <div><b>Point-event statistics</b><p>Winners, unforced errors, and rally length are not estimated without point-level match data.</p></div>
+      </section>
+
+      <section className="panel character-detail-panel">
+        <div className="character-section-heading">
+          <div><span className="panel-label">COMBINED SKILLS</span><h2>Ratings</h2></div>
+        </div>
+        <p className="character-rating-explainer">
+          The number is the raw rating; the bar is its normalized roster score (0–100).
+        </p>
+        <CombinedSkills stats={combined} />
+      </section>
+
+      <section className="panel character-detail-panel">
+        <div className="character-section-heading">
+          <div><span className="panel-label">ATTRIBUTES</span><h2>Attribute rankings</h2></div>
+        </div>
+        <StatTable stats={attributes} />
+      </section>
 
     </div>
   );
