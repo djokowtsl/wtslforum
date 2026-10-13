@@ -28,6 +28,19 @@ test('character profiles derive a summary from their own ratings and render prof
   assert.ok(!component.includes('profile.style_description'));
 });
 
+test('serve speed is labelled as average maximal, and size insight uses TE4 reach mechanics', () => {
+  for (const marker of [
+    'Average maximal serve speed (not absolute peak)',
+    'profile.height',
+    'profile.weight',
+    'TE4 gives smaller characters a very small run-acceleration bonus',
+    'offsets shorter wingspan',
+    "['Size & reach', sizeInsight]",
+  ]) {
+    assert.ok(component.includes(marker), `TE4 profile mechanic missing: ${marker}`);
+  }
+});
+
 test('same-style characters get summaries from their distinct roster ratings', () => {
   const sharedDescription =
     'Can play deep, take the ball early, or come forward, choosing the best court position instead of forcing one pattern.';
