@@ -7,6 +7,10 @@ import {
 } from '@/lib/characterPickPopularity';
 import { characterCategoryScores } from '@/lib/characterProfileGroups.mjs';
 import { buildCharacterProfileSummary } from '@/lib/characterProfileSummary.mjs';
+import {
+  buildSizeMechanicsInsight,
+  buildStrokeMechanicsInsight,
+} from '@/lib/characterProfileMechanics.mjs';
 import SearchableDropdown from '@/components/SearchableDropdown';
 
 type Tour = 'all' | 'atp' | 'wta';
@@ -402,18 +406,14 @@ function Profile({
   const profile = data.profile!;
   const guidance = profile.selection_guidance || {};
   const mechanics = profile.mechanics_insights || {};
-  const dimensions = [
-    profile.height != null ? `Height ${formatValue(profile.height, ' cm')}` : '',
-    profile.weight != null ? `weight ${formatValue(profile.weight, ' kg')}` : '',
-  ].filter(Boolean).join(' · ');
-  const sizeInsight = dimensions
-    ? `${dimensions}. TE4 gives smaller characters a very small run-acceleration bonus that offsets shorter wingspan, so smaller characters are not handicapped.`
-    : '';
+  const sizeInsight = buildSizeMechanicsInsight(profile.height, profile.weight);
+  const strokeInsight = buildStrokeMechanicsInsight(profile);
   const insightRows = [
     ['Serve', mechanics.serve],
     ['Groundstrokes', mechanics.groundstrokes],
     ['Court speed', mechanics.surface_fit],
     ['Size & reach', sizeInsight],
+    ['Stroke setup', strokeInsight],
     ['Counterplay', mechanics.counter],
     ['Net play', mechanics.net],
     ['Shot variety', mechanics.variation],
