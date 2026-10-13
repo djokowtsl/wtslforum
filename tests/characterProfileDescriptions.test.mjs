@@ -37,6 +37,7 @@ test('character profiles derive a selected-character summary and render profile 
     'character-selection-guidance',
     'profile.mechanics_insights',
     'className="panel character-guidance-panel"',
+    'WHY PICK THIS CHARACTER?',
     'Style &amp; traits',
     'Technical summary',
     'Trade-off:',
