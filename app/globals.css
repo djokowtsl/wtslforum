@@ -221,7 +221,17 @@ h1, h2, h3 { margin: 0; }
   .projection-open-link { width: 100%; }
   .projection-controls { align-items: stretch; flex-direction: column; }
   .projection-controls select, .projection-controls button { width: 100%; }
-  .projection-frame { height: 72vh; min-height: 520px; }
+  .projection-frame-wrap { position: relative; height: 72vh; min-height: 520px; }
+  .projection-frame {
+    position: absolute;
+    top: 0;
+    left: 0;
+    width: 133.3333%;
+    height: 133.3333%;
+    min-height: 0;
+    transform: scale(.75);
+    transform-origin: top left;
+  }
 }
 
 /* ---------- Banners / notices ---------- */
