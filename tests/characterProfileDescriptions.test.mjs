@@ -2,6 +2,10 @@ import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
 import test from 'node:test';
 import { characterCategoryScores } from '../lib/characterProfileGroups.mjs';
+import {
+  buildSizeMechanicsInsight,
+  buildStrokeMechanicsInsight,
+} from '../lib/characterProfileMechanics.mjs';
 import { buildCharacterProfileSummary } from '../lib/characterProfileSummary.mjs';
 import { removeUnsupportedCharacterProjections } from '../lib/characterProfileSafety.mjs';
 
@@ -31,14 +35,37 @@ test('character profiles derive a summary from their own ratings and render prof
 test('serve speed is labelled as average maximal, and size insight uses TE4 reach mechanics', () => {
   for (const marker of [
     'Average maximal serve speed (not absolute peak)',
-    'profile.height',
-    'profile.weight',
-    'TE4 gives smaller characters a very small run-acceleration bonus',
-    'offsets shorter wingspan',
+    'buildSizeMechanicsInsight(profile.height, profile.weight)',
+    'buildStrokeMechanicsInsight(profile)',
     "['Size & reach', sizeInsight]",
+    "['Stroke setup', strokeInsight]",
   ]) {
     assert.ok(component.includes(marker), `TE4 profile mechanic missing: ${marker}`);
   }
+  assert.match(
+    buildSizeMechanicsInsight(180, 70),
+    /Height 180 cm · weight 70 kg.*very small run-acceleration bonus.*shorter wingspan/,
+  );
+});
+
+test('character profile explains stroke setup and the documented two-handed tradeoff', () => {
+  const insight = buildStrokeMechanicsInsight({
+    playing_hand: 'left',
+    forehand_type: 'one-handed',
+    backhand_type: 'two-handed',
+  });
+
+  assert.match(insight, /Left-handed/);
+  assert.match(insight, /one-handed forehand/);
+  assert.match(insight, /two-handed backhand/);
+  assert.match(insight, /less powerful and less wide-reaching/);
+  assert.match(insight, /orange\/red Danger Zone/);
+  assert.match(insight, /15 Counter/);
+  assert.equal(buildStrokeMechanicsInsight({
+    playing_hand: 'right',
+    forehand_type: 'one-handed',
+    backhand_type: 'one-handed',
+  }), 'Right-handed · one-handed forehand · one-handed backhand');
 });
 
 test('same-style characters get summaries from their distinct roster ratings', () => {
