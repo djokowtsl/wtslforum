@@ -9,6 +9,7 @@ import { getContributionStats, getRecentActivity } from '@/lib/queries';
 import { buildPlayerInsights, type PlayerInsightReport } from '@/lib/playerInsights';
 import { buildPlayerSeasonHighlights, type PlayerSeasonHighlights } from '@/lib/playerSeasonHighlights';
 import PlayerSeasonHighlightsPanel from '@/components/PlayerSeasonHighlights';
+import CharacterSuggestions from '@/components/CharacterSuggestions';
 import { tourLabel } from '@/lib/wtsl';
 import { timeAgo } from '@/lib/format';
 import PageHero from '@/components/PageHero';
@@ -22,7 +23,10 @@ import {
 import { getPublicSiteSnapshot } from '@/lib/siteSnapshots';
 import SnapshotAutoRefresh from '@/components/SnapshotAutoRefresh';
 import { fetchWTSLWtaMatchResults } from '@/lib/wtslSeasonResults';
-import { wtslCore } from '@/lib/wtsl-core';
+import {
+  wtslCore,
+  type CoreCharacterRecommendation,
+} from '@/lib/wtsl-core';
 
 export const dynamic = 'force-dynamic';
 export const metadata: Metadata = { title: 'Dashboard' };
@@ -32,6 +36,7 @@ type VerifiedPlayerCard = {
   playerName: string;
   stats: any;
   insights: PlayerInsightReport;
+  characterRecommendations: CoreCharacterRecommendation[] | null;
   ratings: BotRatingStatsRow | null;
   season: PlayerSeasonHighlights;
   seasonUnavailable: boolean;
@@ -105,15 +110,30 @@ async function DashboardContent() {
       const insights = await safe(() => buildPlayerInsights(c.wtsl_player_id, c.tour), {
         qualifies: false,
         groupPercentiles: { serve: null, return: null, rally: null },
+        metrics: [],
         strongest: null,
         weakest: null,
         trainingFocus: null,
       } as PlayerInsightReport);
+      const isCharacterTour = c.tour === 'TE4' || c.tour === 'TE4_(F)';
+      const recommendationTour = c.tour === 'TE4_(F)' ? 'wta' : 'atp';
+      const characterRecommendations = !isCharacterTour
+        ? null
+        : !insights.qualifies
+          ? []
+          : await safe(async () => {
+              const result = await wtslCore.characterRecommendations({
+                tour: recommendationTour,
+                metrics: insights.metrics,
+              });
+              return result.recommendations;
+            }, null as CoreCharacterRecommendation[] | null);
       return {
         tour: c.tour,
         playerName: c.player_name,
         stats,
         insights,
+        characterRecommendations,
         ratings: ratingRows[0] ?? null,
         season: buildPlayerSeasonHighlights(seasonResults, c.player_name, c.tour, seasonYear, c.wtsl_player_id),
         seasonUnavailable: c.tour === 'TE4_(F)'
@@ -185,6 +205,11 @@ async function DashboardContent() {
                   <div className="player-record-grid">
                     <div><strong>{p.favorite_character}</strong><small>Most used character ({p.favorite_character_picks ?? 0}/{p.character_matches ?? 0} matches)</small></div>
                   </div>
+                )}
+                {(card.tour === 'TE4' || card.tour === 'TE4_(F)') && (
+                  <CharacterSuggestions
+                    recommendations={card.characterRecommendations}
+                  />
                 )}
                 {card.seasonCheckedAt && (
                   <p className="muted feed-freshness">
