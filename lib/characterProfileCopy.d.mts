@@ -3,3 +3,11 @@ export function cleanCharacterMechanic(value: unknown, character?: unknown): str
 export function buildCourtSpeedInsight(stats: unknown, fallbackText?: unknown): string;
 export function cleanSizeReachInsight(value: unknown): string;
 export function buildGamePlanSteps(value: unknown, acceleration?: unknown): string[];
+export function splitRosterEvidenceNotes(
+  stats: Array<{ attribute?: string }>,
+  notes: unknown,
+  excludedText?: unknown,
+): {
+  edgeNotes: Map<string, string>;
+  additionalNotes: Array<{ name: string; description: string }>;
+};
