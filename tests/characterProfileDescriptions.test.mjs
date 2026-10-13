@@ -8,6 +8,13 @@ import {
   buildStrokeMechanicsInsight,
 } from '../lib/characterProfileMechanics.mjs';
 import { buildCharacterProfileSummary } from '../lib/characterProfileSummary.mjs';
+import {
+  buildCourtSpeedInsight,
+  buildGamePlanSteps,
+  cleanCharacterMechanic,
+  cleanSizeReachInsight,
+  normalizeCharacterCopy,
+} from '../lib/characterProfileCopy.mjs';
 import { removeUnsupportedCharacterProjections } from '../lib/characterProfileSafety.mjs';
 
 const component = readFileSync(
@@ -31,7 +38,7 @@ test('character profiles derive a selected-character summary and render profile 
     'className="panel character-guidance-panel"',
     'Style &amp; traits',
     'Technical summary',
-    'Why not select:',
+    'Trade-off:',
     'Rally-fit guidance',
     'mechanics.exchange_fit',
     'not a prediction of rally duration, point wins, or match results',
@@ -41,6 +48,90 @@ test('character profiles derive a selected-character summary and render profile 
     assert.ok(component.includes(marker), `character copy binding missing: ${marker}`);
   }
   assert.ok(!component.includes('profile.style_description'));
+  assert.ok(component.includes('<span className="panel-label">ROSTER EVIDENCE</span>'));
+  assert.ok(component.includes('<ol className="character-game-plan-list">'));
+  assert.ok(!component.includes('guidance.why_select || guidance.benefit'));
+});
+
+test('style and acceleration mechanics do not repeat roster ranking evidence', () => {
+  const style = cleanCharacterMechanic(
+    "Meet the ball early and move forward. This character's leading roster edges are Forehand Power 94/100 (rank #20 of 102).",
+    'Tommy Paul',
+  );
+  const acceleration = cleanCharacterMechanic(
+    "Tommy Paul: has no special acceleration modifier; movement, timing, and shot choice matter more. The clearest roster-relative limits are Speed 82/100 (rank #66 of 102).",
+    'Tommy Paul',
+  );
+
+  assert.equal(style, 'Meet the ball early and move forward.');
+  assert.equal(
+    acceleration,
+    'Has no special acceleration modifier; movement, timing, and shot choice matter more.',
+  );
+});
+
+test('court-speed copy is concise and based on the character Topspin rating', () => {
+  assert.equal(
+    buildCourtSpeedInsight([{ attribute: 'Topspin', value: 58 }]),
+    'Topspin 58% does not suggest a strong fast- or slow-court preference.',
+  );
+  assert.match(
+    buildCourtSpeedInsight([{ attribute: 'Topspin', value: 23 }]),
+    /Topspin 23% favors a flatter, faster trajectory/,
+  );
+  assert.match(
+    buildCourtSpeedInsight([{ attribute: 'Topspin', value: 78 }]),
+    /Topspin 78% supports a higher, heavier bounce/,
+  );
+  assert.doesNotMatch(
+    buildCourtSpeedInsight([], 'Choose a Top Spin stroke when needed, then use the forehand.'),
+    /Choose a Top Spin stroke/,
+  );
+});
+
+test('size-and-reach copy explains height, backhand fit, and weight in plain language', () => {
+  const insight = cleanSizeReachInsight(
+    "At 193 cm (82nd percentile in the ATP roster), That gives a small directional advantage against shoulder-high heavy-spin contact. The more useful cue is this two-handed backhand's 82/100 directional fit; that supports favor taking a balanced shoulder-height ball early. At 85 kg (74th percentile in the ATP roster), body mass is distinctive but has no separate documented pace or movement effect; Speed and Muscle Tone are the relevant court-coverage ratings.",
+  );
+
+  assert.match(insight, /At 193 cm \(82nd percentile in the ATP roster\), shoulder-high, heavy-spin balls are a little easier to handle/i);
+  assert.match(insight, /The two-handed backhand scores 82\/100 for shoulder-height contact/i);
+  assert.match(insight, /From balance, take those balls early to attack/i);
+  assert.match(insight, /Weight is 85 kg \(74th percentile in the ATP roster\)/);
+  assert.match(insight, /Speed and Muscle Tone describe court coverage more directly/i);
+  assert.doesNotMatch(insight, /supports favor taking/i);
+});
+
+test('size-and-reach copy keeps neutral-height and lower-fit advice clear', () => {
+  const insight = cleanSizeReachInsight(
+    "At 185 cm (48th percentile in the ATP roster), Height itself is neutral in the model's high-ball estimate. The more useful cue is this one-handed backhand's 61/100 directional fit; that supports favor a normal rally ball to regain balance before attacking.",
+  );
+
+  assert.match(insight, /height has little effect on the high-ball estimate/i);
+  assert.match(insight, /The one-handed backhand scores 61\/100 for shoulder-height contact/i);
+  assert.match(insight, /Use a normal rally ball to regain balance before attacking/i);
+  assert.doesNotMatch(insight, /directional fit; that supports favor/i);
+});
+
+test('game plans read as short action steps instead of stat-labeled fragments', () => {
+  const steps = buildGamePlanSteps(
+    'Focus: Prepare early and choose direction before the ball reaches you. Forehand Consistency: Use deep forehand cross-court shape, then change direction when the reply sits short. Muscle Tone: Use normal or Top Spin rally strikes while recovering through the middle; choose an acceleration only when balanced and the reply is short.',
+    'None',
+  );
+
+  assert.deepEqual(steps, [
+    'Prepare early and pick a target before contact.',
+    'Keep the forehand deep and cross-court; change direction when a short ball gives you time.',
+    'Recover through the middle after each shot. Use Top Spin when you need extra clearance; rely on timing and positioning rather than a special acceleration.',
+  ]);
+  assert.ok(steps.every((step) => !/^(Focus|Forehand Consistency|Muscle Tone):/.test(step)));
+  assert.equal(normalizeCharacterCopy('Use the build to earn a short reply.'), 'Use this character to earn a short reply.');
+  assert.equal(
+    buildCharacterProfileSummary('Player One', [], [], {
+      why_select: 'Use the build to earn a short reply.',
+    }),
+    'Use this character to earn a short reply.',
+  );
 });
 
 test('technical summary uses character-specific size and stroke insights from Core', () => {
