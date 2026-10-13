@@ -123,10 +123,30 @@ test('size-and-reach copy explains height, backhand fit, and weight in plain lan
 
   assert.match(insight, /At 193 cm \(82nd percentile in the ATP roster\), shoulder-high, heavy-spin balls are a little easier to handle/i);
   assert.match(insight, /The two-handed backhand scores 82\/100 for shoulder-height contact/i);
-  assert.match(insight, /From balance, take those balls early to attack/i);
-  assert.match(insight, /Weight is 85 kg \(74th percentile in the ATP roster\)/);
-  assert.match(insight, /Speed and Muscle Tone describe court coverage more directly/i);
+  assert.match(insight, /Once you're set, take those balls early to attack/i);
+  assert.match(insight, /At 85 kg, this character is heavier than about 74% of the ATP roster/i);
+  assert.match(insight, /Weight alone doesn't tell us how quickly they move/i);
+  assert.match(insight, /Speed and Muscle Tone are better guides to court coverage/i);
   assert.doesNotMatch(insight, /supports favor taking/i);
+});
+
+test('weight copy explains the roster comparison without treating weight as speed', () => {
+  const profileWeightInsight = (weight, percentile) => cleanSizeReachInsight(
+    `At ${weight} kg (${percentile}), body mass is distinctive but has no separate documented pace or movement effect; Speed and Muscle Tone are the relevant court-coverage ratings.`,
+  );
+
+  assert.equal(
+    profileWeightInsight(90, '90th percentile in the ATP roster'),
+    "At 90 kg, this character is heavier than about 90% of the ATP roster. Weight alone doesn't tell us how quickly they move; Speed and Muscle Tone are better guides to court coverage.",
+  );
+  assert.equal(
+    profileWeightInsight(54, '12th percentile in the WTA roster'),
+    "At 54 kg, this character is lighter than about 88% of the WTA roster. Weight alone doesn't tell us how quickly they move; Speed and Muscle Tone are better guides to court coverage.",
+  );
+  assert.equal(
+    profileWeightInsight(75, '50th percentile in the ATP roster'),
+    "At 75 kg, this character is around the middle of the ATP roster by weight. Weight alone doesn't tell us how quickly they move; Speed and Muscle Tone are better guides to court coverage.",
+  );
 });
 
 test('size-and-reach copy keeps neutral-height and lower-fit advice clear', () => {
@@ -139,7 +159,7 @@ test('size-and-reach copy keeps neutral-height and lower-fit advice clear', () =
 
   assert.match(insight, /height has little effect on the high-ball estimate/i);
   assert.match(insight, /The one-handed backhand scores 61\/100 for shoulder-height contact/i);
-  assert.match(insight, /Use a normal rally ball to regain balance before attacking/i);
+  assert.match(insight, /Play a steady rally ball first, then attack once you're set/i);
   assert.doesNotMatch(insight, /directional fit; that supports favor/i);
   assert.match(
     heightChallenge,
@@ -159,6 +179,13 @@ test('game plans read as short action steps instead of stat-labeled fragments', 
     'Keep the forehand deep and cross-court; change direction when a short ball gives you time.',
     'Recover through the middle after each shot. Use Top Spin when you need extra clearance; rely on timing and positioning rather than a special acceleration.',
   ]);
+  assert.deepEqual(
+    buildGamePlanSteps(
+      'Muscle Tone: Use normal or Top Spin rally strikes while recovering through the middle; choose an acceleration only when balanced and the reply is short.',
+      'Sprint',
+    ),
+    ["Recover through the middle after each shot. Use Top Spin when you need extra clearance; save acceleration for a short ball once you're set."],
+  );
   assert.ok(steps.every((step) => !/^(Focus|Forehand Consistency|Muscle Tone):/.test(step)));
   assert.equal(normalizeCharacterCopy('Use the build to earn a short reply.'), 'Use this character to earn a short reply.');
   assert.equal(
@@ -215,6 +242,18 @@ test('stroke setup fallback uses the character ratings rather than a shared bonu
   assert.match(insight, /\+15 Counter \(52 to 67\)/);
   assert.match(insight, /Backhand Rating 82.6/);
   assert.match(insight, /stronger groundstroke \(82.6 vs 75.2\)/);
+  assert.match(insight, /support taking heavy topspin early once you're set/i);
+
+  const lowerBounceFitInsight = buildStrokeMechanicsInsight({
+    ...profile,
+    mechanics_insights: {
+      signals: { ...profile.mechanics_insights.signals, backhand_high_bounce_fit: 52 },
+    },
+  });
+  assert.match(
+    lowerBounceFitInsight,
+    /favor a steady rally shot first, then attack heavy topspin once you're set/i,
+  );
 });
 
 test('character portrait image fills its frame', () => {
