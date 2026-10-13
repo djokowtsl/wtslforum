@@ -6,6 +6,7 @@ import {
   type CharacterPickRanking,
 } from '@/lib/characterPickPopularity';
 import { characterCategoryScores } from '@/lib/characterProfileGroups.mjs';
+import { buildCharacterProfileSummary } from '@/lib/characterProfileSummary.mjs';
 import SearchableDropdown from '@/components/SearchableDropdown';
 
 type Tour = 'all' | 'atp' | 'wta';
@@ -415,10 +416,11 @@ function Profile({
   const technicalInteractions = Array.isArray(profile.technical_interactions)
     ? profile.technical_interactions
     : [];
-  const styleDescription = typeof profile.style_description === 'string'
-    ? profile.style_description.trim()
-    : '';
   const attributes = statsWithoutExcludedAttributes(profile.stats);
+  const characterSummary = buildCharacterProfileSummary(
+    profile.character,
+    attributes,
+  );
   const categoryScores = characterCategoryScores(guidance.group_scores, attributes);
   const strongestGroup = String(guidance.strongest_group || categoryScores[0]?.name || '');
   const weakestGroup = String(
@@ -477,10 +479,10 @@ function Profile({
           <div className="character-badges">
             <span>{profile.style}</span><span>Acceleration: {profile.acceleration}</span>
           </div>
-          {styleDescription && (
+          {characterSummary && (
             <div className="character-profile-summary">
               <span className="panel-label">SUMMARY</span>
-              <p className="character-style-description">{styleDescription}</p>
+              <p className="character-style-description">{characterSummary}</p>
             </div>
           )}
           {official.profile_url && (
