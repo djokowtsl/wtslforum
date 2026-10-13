@@ -106,11 +106,19 @@ test('size-and-reach copy keeps neutral-height and lower-fit advice clear', () =
   const insight = cleanSizeReachInsight(
     "At 185 cm (48th percentile in the ATP roster), Height itself is neutral in the model's high-ball estimate. The more useful cue is this one-handed backhand's 61/100 directional fit; that supports favor a normal rally ball to regain balance before attacking.",
   );
+  const heightChallenge = cleanSizeReachInsight(
+    "At 172 cm (12th percentile in the WTA roster), That adds a small directional challenge against shoulder-high heavy-spin contact. The more useful cue is this two-handed backhand's 63/100 directional fit; that supports favor a normal rally ball to regain balance before attacking.",
+  );
 
   assert.match(insight, /height has little effect on the high-ball estimate/i);
   assert.match(insight, /The one-handed backhand scores 61\/100 for shoulder-height contact/i);
   assert.match(insight, /Use a normal rally ball to regain balance before attacking/i);
   assert.doesNotMatch(insight, /directional fit; that supports favor/i);
+  assert.match(
+    heightChallenge,
+    /At 172 cm \(12th percentile in the WTA roster\), shoulder-high, heavy-spin balls are a little harder to handle/i,
+  );
+  assert.match(heightChallenge, /The two-handed backhand scores 63\/100 for shoulder-height contact/i);
 });
 
 test('game plans read as short action steps instead of stat-labeled fragments', () => {
