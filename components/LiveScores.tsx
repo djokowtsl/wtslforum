@@ -4,6 +4,7 @@ import { useEffect, useRef, useState } from 'react';
 import PlayerAvatar from '@/components/PlayerAvatar';
 import FeedUpdatedAt from '@/components/FeedUpdatedAt';
 import LivePlayerStatsPopover from '@/components/LivePlayerStatsPopover';
+import { formatLivePlayerElos } from '@/lib/liveScoreModel';
 
 type LivePlayer = {
   id: string | number;
@@ -11,6 +12,7 @@ type LivePlayer = {
   avatarUrl: string | null;
   flagUrl: string | null;
   country: string | null;
+  tourElo?: number | null;
 };
 
 type LiveMatch = {
@@ -22,6 +24,8 @@ type LiveMatch = {
   tour: string | null;
   probability: number | null;
   probabilitySource: 'official' | 'all-results' | 'no-history' | null;
+  inGameElo1?: number | null;
+  inGameElo2?: number | null;
   players: { first: LivePlayer; second: LivePlayer } | null;
 };
 
@@ -135,12 +139,21 @@ export default function LiveScores({
           const h2hUrl = first && second && match.tour
             ? `https://www.playwtsl.com/TE4/pages/h2h.php?tour=${encodeURIComponent(match.tour)}&pl_one=${encodeURIComponent(String(first.id))}&pl_two=${encodeURIComponent(String(second.id))}`
             : null;
-          const renderPlayer = (player: LivePlayer | undefined, name: string, side: 'first' | 'second') => {
+          const renderPlayer = (
+            player: LivePlayer | undefined,
+            name: string,
+            side: 'first' | 'second',
+            inGameElo: number | null | undefined,
+          ) => {
             const rowClassName = `live-score-player live-score-player--${side}`;
+            const eloText = formatLivePlayerElos(inGameElo, player?.tourElo);
             const rowContent = (
               <>
                 <PlayerAvatar src={player?.avatarUrl} flagSrc={player?.flagUrl} flagLabel={player?.country} name={name} size={34} />
-                <strong>{name}</strong>
+                <span className="live-score-player-copy">
+                  <strong>{name}</strong>
+                  {eloText && <small className="live-score-player-elo">{eloText}</small>}
+                </span>
               </>
             );
             if (player && statsTour) {
@@ -187,12 +200,12 @@ export default function LiveScores({
                   </div>
                 </div>
               )}
-              {renderPlayer(first ?? undefined, firstName, 'first')}
+              {renderPlayer(first ?? undefined, firstName, 'first', match.inGameElo1)}
               <div className="live-score-center">
                 <span>{match.score || 'Score unavailable'}</span>
                 {match.probability === null && <small>Probability unavailable</small>}
               </div>
-              {renderPlayer(second ?? undefined, secondName || 'Opponent', 'second')}
+              {renderPlayer(second ?? undefined, secondName || 'Opponent', 'second', match.inGameElo2)}
               <div className="live-score-meta">{match.mode} · Best of {match.bestOf} · {match.court}</div>
               {h2hUrl && <a className="live-score-h2h" href={h2hUrl} target="_blank" rel="noreferrer">Official H2H ↗</a>}
             </article>
