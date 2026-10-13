@@ -6,6 +6,8 @@ export type ParsedLiveMatch = {
   mode: string;
   bestOf: 1 | 3 | 5;
   tourHint: 'TE4' | 'TE4_(F)' | null;
+  inGameElo1: number | null;
+  inGameElo2: number | null;
 };
 
 type PollToken = { value: string; quoted: boolean };
@@ -84,6 +86,11 @@ function fromHex(value: string): number {
   return Number.isFinite(parsed) ? parsed : 0;
 }
 
+function playerEloFromHex(value: string | undefined): number | null {
+  const elo = fromHex(value ?? '');
+  return elo > 0 ? elo : null;
+}
+
 function decodeSettings(gameInfoHex: string) {
   const gameInfo = fromHex(gameInfoHex);
   const playerConfig = (gameInfo >> 2) & 7;
@@ -112,10 +119,13 @@ export function parseLiveWtslMatches(pollText: string): ParsedLiveMatch[] {
     const name = block[index++];
     if (!name?.quoted) continue;
     const gameInfo = block[index++]?.value;
-    index += 3; // max ping, host Elo, game count
+    index += 1; // max ping
+    const inGameElo1 = playerEloFromHex(block[index++]?.value);
+    index += 1; // game count
     const tagline = block[index++];
     const score = block[index++];
-    index += 3; // opponent Elo, give-up count, reputation
+    const inGameElo2 = playerEloFromHex(block[index++]?.value);
+    index += 2; // give-up count, reputation
     const court = block[index++];
     if (!gameInfo || !tagline?.quoted || !score?.quoted || !court?.quoted) continue;
     if (!tagline.value.toUpperCase().includes('XKT(WTSL)')) continue;
@@ -133,6 +143,8 @@ export function parseLiveWtslMatches(pollText: string): ParsedLiveMatch[] {
       mode: settings.mode,
       bestOf: settings.bestOf,
       tourHint,
+      inGameElo1,
+      inGameElo2,
     };
     const key = [match.name.toLowerCase(), match.court.toLowerCase(), match.tagline, match.score].join('|');
     if (!seen.has(key)) {
@@ -141,6 +153,20 @@ export function parseLiveWtslMatches(pollText: string): ParsedLiveMatch[] {
     }
   }
   return output;
+}
+
+export function formatLivePlayerElos(
+  inGameElo: number | null | undefined,
+  tourElo: number | null | undefined,
+): string | null {
+  const ratings: string[] = [];
+  if (typeof inGameElo === 'number' && Number.isFinite(inGameElo) && inGameElo > 0) {
+    ratings.push(`Game: ${inGameElo}`);
+  }
+  if (typeof tourElo === 'number' && Number.isFinite(tourElo) && tourElo > 0) {
+    ratings.push(`Tour: ${tourElo}`);
+  }
+  return ratings.length > 0 ? `[${ratings.join(' | ')}]` : null;
 }
 
 function bestOfThree(setProbability: number) {
