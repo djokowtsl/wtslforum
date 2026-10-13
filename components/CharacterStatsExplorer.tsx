@@ -219,7 +219,10 @@ function CombinedSkills({ stats }: { stats: Stat[] }) {
             ))}
           </div>
           {stat.max_serve_speed_kmh != null && (
-            <p className="character-max-serve">Max serve {formatValue(stat.max_serve_speed_kmh, ' km/h')}</p>
+            <p className="character-max-serve">
+              Average maximal serve speed (not absolute peak):{' '}
+              {formatValue(stat.max_serve_speed_kmh, ' km/h')}
+            </p>
           )}
         </article>
       ))}
@@ -399,10 +402,18 @@ function Profile({
   const profile = data.profile!;
   const guidance = profile.selection_guidance || {};
   const mechanics = profile.mechanics_insights || {};
+  const dimensions = [
+    profile.height != null ? `Height ${formatValue(profile.height, ' cm')}` : '',
+    profile.weight != null ? `weight ${formatValue(profile.weight, ' kg')}` : '',
+  ].filter(Boolean).join(' · ');
+  const sizeInsight = dimensions
+    ? `${dimensions}. TE4 gives smaller characters a very small run-acceleration bonus that offsets shorter wingspan, so smaller characters are not handicapped.`
+    : '';
   const insightRows = [
     ['Serve', mechanics.serve],
     ['Groundstrokes', mechanics.groundstrokes],
     ['Court speed', mechanics.surface_fit],
+    ['Size & reach', sizeInsight],
     ['Counterplay', mechanics.counter],
     ['Net play', mechanics.net],
     ['Shot variety', mechanics.variation],
