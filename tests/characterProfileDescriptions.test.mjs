@@ -49,17 +49,17 @@ test('serve speed is labelled as average maximal, and size insight uses TE4 reac
   );
 });
 
-test('character profile explains stroke setup and the documented two-handed tradeoff', () => {
+test('character profile explains fixed two-handed stroke effects without comparing alternate builds', () => {
   const insight = buildStrokeMechanicsInsight({
     forehand_type: 'one-handed',
     backhand_type: 'two-handed',
   });
 
-  assert.match(insight, /two-handed backhand/);
-  assert.match(insight, /less powerful and less wide/);
-  assert.match(insight, /the player needs to get closer to the ball/);
+  assert.match(insight, /This character's two-handed backhand/);
+  assert.match(insight, /safer contact/);
   assert.match(insight, /orange\/red Danger Zone/);
-  assert.match(insight, /15 points to Counter/);
+  assert.match(insight, /15-point Counter bonus/);
+  assert.doesNotMatch(insight, /one-handed version|less powerful|less wide|closer to the ball/i);
   assert.equal(buildStrokeMechanicsInsight({
     forehand_type: 'one-handed',
     backhand_type: 'one-handed',
@@ -67,7 +67,11 @@ test('character profile explains stroke setup and the documented two-handed trad
   assert.match(buildStrokeMechanicsInsight({
     forehand_type: 'two-handed',
     backhand_type: 'one-handed',
-  }), /two-handed forehand/i);
+  }), /This character's two-handed forehand provides/);
+  assert.match(buildStrokeMechanicsInsight({
+    forehand_type: 'two-handed',
+    backhand_type: 'two-handed',
+  }), /two-handed forehand and backhand provide/);
 });
 
 test('character profile prominently shows one- or two-handed forehand and backhand setup', () => {
