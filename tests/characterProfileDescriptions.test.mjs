@@ -27,7 +27,6 @@ test('character profiles derive a summary from their own ratings and render prof
     'character-selection-guidance',
     'profile.mechanics_insights',
     'className="panel character-guidance-panel"',
-    'profile.technical_interactions',
     'Style &amp; traits',
     'Technical summary',
     'Why not select:',
@@ -37,9 +36,11 @@ test('character profiles derive a summary from their own ratings and render prof
   assert.ok(!component.includes('profile.style_description'));
 });
 
-test('serve speed is labelled as average maximal, and size insight uses TE4 reach mechanics', () => {
+test('technical summary uses character-specific size and stroke insights from Core', () => {
   for (const marker of [
     'Average maximal serve speed (not absolute peak)',
+    'mechanics.size_reach',
+    'mechanics.stroke_setup',
     'buildSizeMechanicsInsight(profile.height, profile.weight)',
     'buildStrokeMechanicsInsight(profile)',
     "['Size & reach', sizeInsight]",
@@ -47,41 +48,46 @@ test('serve speed is labelled as average maximal, and size insight uses TE4 reac
   ]) {
     assert.ok(component.includes(marker), `TE4 profile mechanic missing: ${marker}`);
   }
-  assert.match(
-    buildSizeMechanicsInsight(180, 70),
-    /Height 180 cm · weight 70 kg.*very small run-acceleration bonus.*shorter wingspan/,
+  assert.ok(!component.includes('technicalInteractions'));
+  assert.ok(!component.includes('profile.technical_interactions'));
+  assert.match(buildSizeMechanicsInsight(193, 88), /Height 193 cm · weight 88 kg/);
+  assert.doesNotMatch(
+    buildSizeMechanicsInsight(193, 88),
+    /smaller characters|shorter wingspan|not handicapped/,
   );
+});
+
+test('stroke setup fallback uses the character ratings rather than a shared bonus sentence', () => {
+  const profile = {
+    forehand_type: 'one-handed',
+    backhand_type: 'two-handed',
+    stats: [{ attribute: 'Counter', value: 52 }],
+    combined_ratings: [
+      { attribute: 'Forehand Rating', value: 75.2 },
+      { attribute: 'Backhand Rating', value: 82.6 },
+    ],
+    mechanics_insights: {
+      signals: {
+        counter: 52,
+        effective_counter: 67,
+        backhand_rating: 82.6,
+        forehand_rating: 75.2,
+        backhand_high_bounce_fit: 70,
+      },
+    },
+  };
+  const insight = buildStrokeMechanicsInsight(profile);
+
+  assert.match(insight, /backhand two-handed/);
+  assert.match(insight, /\+15 Counter \(52 to 67\)/);
+  assert.match(insight, /Backhand Rating 82.6/);
+  assert.match(insight, /stronger groundstroke \(82.6 vs 75.2\)/);
 });
 
 test('character portrait image fills its frame', () => {
   const rule = styles.match(/\.character-portrait img\s*\{([^}]+)\}/);
   assert.ok(rule, 'character portrait image styles are present');
   assert.match(rule[1], /object-fit:\s*cover/);
-});
-
-test('character profile explains fixed two-handed stroke effects without comparing alternate builds', () => {
-  const insight = buildStrokeMechanicsInsight({
-    forehand_type: 'one-handed',
-    backhand_type: 'two-handed',
-  });
-
-  assert.match(insight, /This character's two-handed backhand/);
-  assert.match(insight, /safer contact/);
-  assert.match(insight, /orange\/red Danger Zone/);
-  assert.match(insight, /15-point Counter bonus/);
-  assert.doesNotMatch(insight, /one-handed version|less powerful|less wide|closer to the ball/i);
-  assert.equal(buildStrokeMechanicsInsight({
-    forehand_type: 'one-handed',
-    backhand_type: 'one-handed',
-  }), '');
-  assert.match(buildStrokeMechanicsInsight({
-    forehand_type: 'two-handed',
-    backhand_type: 'one-handed',
-  }), /This character's two-handed forehand provides/);
-  assert.match(buildStrokeMechanicsInsight({
-    forehand_type: 'two-handed',
-    backhand_type: 'two-handed',
-  }), /two-handed forehand and backhand provide/);
 });
 
 test('character profile prominently shows one- or two-handed forehand and backhand setup', () => {
