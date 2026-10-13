@@ -54,8 +54,10 @@ export default function CharacterSuggestions({
                 {recommendation.style && <small>{recommendation.style}</small>}
               </div>
               <p>
-                Matched to your {groupName(recommendation.strength_group)} strength;
-                targets {groupName(recommendation.development_group)} development.
+                Built around your{' '}
+                <strong>{groupName(recommendation.strength_group)}</strong> strength,
+                with <strong>{groupName(recommendation.development_group)}</strong> as
+                the development focus.
               </p>
               <p>{recommendation.mechanics_reason}</p>
               <p>{recommendation.development_route}</p>

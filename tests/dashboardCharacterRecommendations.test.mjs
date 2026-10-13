@@ -39,3 +39,9 @@ test('suggestions show character fit, player evidence, mechanics, and trade-offs
     assert.ok(suggestions.includes(marker), `suggestion detail missing: ${marker}`);
   }
 });
+
+test('suggestions explain the strength match and development focus in plain language', () => {
+  assert.ok(suggestions.includes('Built around your'));
+  assert.ok(suggestions.includes('the development focus.'));
+  assert.ok(!suggestions.includes('Matched to your'));
+});
