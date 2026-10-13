@@ -1820,6 +1820,7 @@ h1, h2, h3 { margin: 0; }
 .character-combined-heading h3 { font-size: 13px; }
 .character-combined-heading > strong { color: var(--lime); font-size: 23px; }
 .character-combined-card > .character-stat-meter { margin: 10px 0 12px; }
+.character-combined-rank { margin: -5px 0 12px; color: var(--muted); font-size: 10px; line-height: 1.45; }
 .character-component-row { display: grid; grid-template-columns: repeat(3, 1fr); gap: 8px; }
 .character-component-row span { display: grid; gap: 2px; }
 .character-component-row small { color: var(--muted); font-size: 9px; }
@@ -1862,6 +1863,7 @@ h1, h2, h3 { margin: 0; }
 .character-trait-list b { color: var(--text-strong); }
 .character-trait-list span { color: var(--muted); line-height: 1.55; }
 .character-insight-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 10px; }
+.character-exchange-fit-grid { grid-template-columns: repeat(auto-fit, minmax(230px, 1fr)); }
 .character-insight-grid article { padding: 14px; border: 1px solid var(--line); border-radius: 10px; background: var(--bg-2); }
 .character-insight-grid h3,
 .character-guidance-columns h3,

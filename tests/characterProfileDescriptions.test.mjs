@@ -19,7 +19,7 @@ const styles = readFileSync(
   'utf8',
 );
 
-test('character profiles derive a summary from their own ratings and render profile guidance', () => {
+test('character profiles derive a selected-character summary and render profile guidance', () => {
   for (const marker of [
     'buildCharacterProfileSummary(',
     '<p className="character-style-description">{characterSummary}</p>',
@@ -32,6 +32,11 @@ test('character profiles derive a summary from their own ratings and render prof
     'Style &amp; traits',
     'Technical summary',
     'Why not select:',
+    'Rally-fit guidance',
+    'mechanics.exchange_fit',
+    'not a prediction of rally duration, point wins, or match results',
+    'WTSL calculates these combined ratings',
+    'WTSL-combined ${item.attribute}',
   ]) {
     assert.ok(component.includes(marker), `character copy binding missing: ${marker}`);
   }
@@ -105,7 +110,7 @@ test('character profile prominently shows one- or two-handed forehand and backha
   assert.ok(component.includes('strokeSetupLabels.map((label)'));
 });
 
-test('same-style characters get summaries from their distinct roster ratings', () => {
+test('same-style characters get tactical summaries from their own selection guidance', () => {
   const sharedDescription =
     'Can play deep, take the ball early, or come forward, choosing the best court position instead of forcing one pattern.';
   const firstProfile = {
@@ -117,6 +122,10 @@ test('same-style characters get summaries from their distinct roster ratings', (
       { attribute: 'Service Precision', value: 88, rank: 8, percentile: 0.93 },
       { attribute: 'Speed', value: 85, rank: 12, percentile: 0.89 },
     ],
+    selection_guidance: {
+      why_select: 'Player One suits building through the forehand, then attacking a short reply.',
+      why_not_select: 'Backhand Consistency is a matchup risk if repeatedly targeted.',
+    },
   };
   const secondProfile = {
     character: 'Player Two',
@@ -127,25 +136,41 @@ test('same-style characters get summaries from their distinct roster ratings', (
       { attribute: 'Backhand Consistency', value: 91, rank: 5, percentile: 0.96 },
       { attribute: 'Stamina', value: 83, rank: 20, percentile: 0.81 },
     ],
+    selection_guidance: {
+      why_select: 'Player Two suits using the serve to start the point and the backhand to redirect pace.',
+      why_not_select: 'Movement is the relative pressure point in extended exchanges.',
+    },
   };
   const firstSummary = buildCharacterProfileSummary(
     firstProfile.character,
     firstProfile.stats,
+    [],
+    firstProfile.selection_guidance,
   );
   const secondSummary = buildCharacterProfileSummary(
     secondProfile.character,
     secondProfile.stats,
+    [],
+    secondProfile.selection_guidance,
   );
 
   assert.notEqual(firstSummary, secondSummary);
-  assert.match(firstSummary, /Forehand Power 94\/100 \(99th percentile\)/);
-  assert.match(secondSummary, /Service Power 97\/100 \(100th percentile\)/);
-  assert.doesNotMatch(firstSummary, /game shaped by|supporting .* first strikes/i);
+  assert.match(firstSummary, /build.*forehand.*attacking a short reply/i);
+  assert.match(secondSummary, /serve to start the point.*backhand to redirect pace/i);
+  assert.doesNotMatch(firstSummary, /rank #|\/100/);
   assert.ok(!firstSummary.includes(sharedDescription));
 });
 
-test('profile summary uses combined ratings and avoids attribute-as-playstyle templates', () => {
+test('profile summary prefers tactical guidance over a combined-rating rank dump', () => {
   const summary = buildCharacterProfileSummary('Player One', [], [
+    { attribute: 'Serve Rating', value: 81.4, rank: 12, count: 102, percentile: 0.89 },
+    { attribute: 'Forehand Rating', value: 84.2, rank: 6, count: 102, percentile: 0.94 },
+    { attribute: 'Backhand Rating', value: 77.9, rank: 31, count: 102, percentile: 0.70 },
+  ], {
+    why_select: 'Player One suits using the forehand to create openings and finish short replies.',
+    why_not_select: 'The serve estimate is lower relative to the roster, so use it to set up the next shot.',
+  });
+  const fallbackSummary = buildCharacterProfileSummary('Player One', [], [
     { attribute: 'Serve Rating', value: 81.4, rank: 12, count: 102, percentile: 0.89 },
     { attribute: 'Forehand Rating', value: 84.2, rank: 6, count: 102, percentile: 0.94 },
     { attribute: 'Backhand Rating', value: 77.9, rank: 31, count: 102, percentile: 0.70 },
@@ -155,11 +180,13 @@ test('profile summary uses combined ratings and avoids attribute-as-playstyle te
     { attribute: 'Flat Backhand', value: 84, rank: 12, count: 102, percentile: 0.89 },
   ]);
 
-  assert.match(summary, /Forehand Rating 84\.2\/100 \(rank #6 of 102\)/);
-  assert.match(summary, /Forehand leads the other groundstroke rating by 6\.3 points/);
-  assert.match(oddAttributeSummary, /Clay Mover 89\/100 \(rank #4 of 102\)/);
-  assert.match(oddAttributeSummary, /Flat Backhand 84\/100 \(rank #12 of 102\)/);
-  assert.doesNotMatch(oddAttributeSummary, /game shaped by|flat backhand.*playstyle/i);
+  assert.match(summary, /using the forehand to create openings and finish short replies/i);
+  assert.doesNotMatch(summary, /serve estimate is lower relative to the roster/i);
+  assert.doesNotMatch(summary, /rank #|Forehand Rating 84\.2/);
+  assert.match(fallbackSummary, /strongest WTSL-combined roster skill is Forehand Rating/i);
+  assert.doesNotMatch(fallbackSummary, /rank #|\/100/);
+  assert.match(oddAttributeSummary, /clearest roster edge is Clay Mover/i);
+  assert.doesNotMatch(oddAttributeSummary, /rank #|\/100|flat backhand.*playstyle/i);
 });
 
 test('summary reports missing ratings instead of reusing generic playstyle copy', () => {
@@ -220,6 +247,12 @@ test('character profile endpoint strips unverified simulation fields recursively
       character: 'Adrian Mannarino',
       mechanics_insights: {
         serve: 'A documented serving note.',
+        size_reach: 'Height has a directional effect for this build.',
+        exchange_fit: {
+          short: 'WTSL quick-point fit is around the roster midpoint.',
+          medium: 'WTSL neutral-rally fit is above the midpoint.',
+          extended: 'WTSL sustained-play fit is among the roster leaders.',
+        },
         match_play: '12.1 winners and 5.1 unforced errors per 100 points.',
         signals: { average_rally_length: 10.7 },
       },
@@ -228,8 +261,11 @@ test('character profile endpoint strips unverified simulation fields recursively
         point_patterns: ['Estimated winners: 12.1 per 100 points.'],
       },
       combined_ratings: [{
-        attribute: 'Overall',
+        attribute: 'Forehand Rating',
         value: 72,
+        rank: 4,
+        count: 102,
+        percentile: 0.97,
         simulation: { match_win_pct: 53.4, winners_per_100: 12.1 },
       }],
     },
@@ -242,13 +278,22 @@ test('character profile endpoint strips unverified simulation fields recursively
       character: 'Adrian Mannarino',
       mechanics_insights: {
         serve: 'A documented serving note.',
+        size_reach: 'Height has a directional effect for this build.',
+        exchange_fit: {
+          short: 'WTSL quick-point fit is around the roster midpoint.',
+          medium: 'WTSL neutral-rally fit is above the midpoint.',
+          extended: 'WTSL sustained-play fit is among the roster leaders.',
+        },
       },
       selection_guidance: {
         why_select: 'Use touch and controlled net finishes.',
       },
       combined_ratings: [{
-        attribute: 'Overall',
+        attribute: 'Forehand Rating',
         value: 72,
+        rank: 4,
+        count: 102,
+        percentile: 0.97,
       }],
     },
   });
