@@ -9,7 +9,34 @@ import { getPublicSiteSnapshot } from '@/lib/siteSnapshots';
 import SnapshotAutoRefresh from '@/components/SnapshotAutoRefresh';
 
 export const dynamic = 'force-dynamic';
-export const metadata: Metadata = { title: 'Predictions leaderboard' };
+export const metadata: Metadata = { title: 'Predictions & Projections' };
+
+const PROJECTIONS = [
+  ['Shanghai', 'Shanghai_2026_TE4'],
+  ['Cincinnati', 'Cincinnati_2026_TE4'],
+  ['Wimbledon', 'Wimbledon_2026_TE4'],
+  ['Halle', 'Halle_2026_TE4'],
+  ['s-Hertogenbosch', 'sHertogenbosch_2026_TE4'],
+  ['Boss Open', 'Boss_Open_2026_TE4'],
+  ['Roland Garros', 'Roland_Garros_2026_TE4'],
+  ['Rome', 'Rome_2026_TE4'],
+  ['Bordeaux', 'Bordeaux_2026_TE4'],
+  ['Carnac', 'Carnac_2026_TE4'],
+  ['Cagliari', 'Cagliari_2026_TE4'],
+  ['Madrid', 'Madrid_2026_TE4'],
+  ['Reggio Emilia', 'Reggio_Emilia_2026_TE4'],
+  ['Valencia', 'Valencia_2026_TE4'],
+  ['Castelldefels', 'Castelldefels_2026_TE4'],
+  ['Barcelona', 'Barcelona_2026_TE4'],
+  ['Oeiras', 'Oeiras_2026_TE4'],
+  ['Cueta', 'Cueta_2026_TE4'],
+  ['Monte Carlo', 'Monte_Carlo_2026_TE4'],
+  ['Miami', 'Miami_2026_TE4'],
+] as const;
+
+const DEFAULT_PROJECTION = PROJECTIONS[0][1];
+const projectionUrl = (id: string) =>
+  `https://www.playwtsl.com/pages/bracket.php?tournament=${encodeURIComponent(id)}`;
 
 async function safeLeaderboard(): Promise<{ rows: CorePredictionRow[]; checkedAt: string | null; unavailable: boolean }> {
   if (!wtslCore.configured()) return { rows: [], checkedAt: null, unavailable: false };
@@ -51,7 +78,7 @@ async function PredictionsLeaderboard() {
   ]);
   const { rows } = leaderboard;
   return (
-    <main className="container">
+    <section className="predictions-leaderboard-scroll" aria-label="Challonge prediction leaderboard">
       {!wtslCore.configured() ? (
         <div className="notice">The predictions leaderboard isn&apos;t available on this deployment yet.</div>
       ) : leaderboard.unavailable ? (
@@ -100,20 +127,66 @@ async function PredictionsLeaderboard() {
           </table>
         </section>
       )}
-    </main>
+    </section>
   );
 }
 
-export default function Predictions() {
+export default async function Predictions({ searchParams }: { searchParams: Promise<{ tournament?: string }> }) {
+  const params = await searchParams;
+  const selectedProjection = PROJECTIONS.find(([, id]) => id === params.tournament)?.[1] ?? DEFAULT_PROJECTION;
+  const selectedName = PROJECTIONS.find(([, id]) => id === selectedProjection)?.[0] ?? 'Shanghai';
+  const selectedUrl = projectionUrl(selectedProjection);
   return (
     <>
-      <PageHero eyebrow="WTSL Forum" title="Predictions leaderboard">
-        Challonge prediction standings.
+      <PageHero eyebrow="WTSL Forum" title="Predictions & Projections">
+        Community Challonge standings, alongside the official 2026 tournament projections.
       </PageHero>
       <SnapshotAutoRefresh />
-      <Suspense fallback={null}>
-        <PredictionsLeaderboard />
-      </Suspense>
+      <main className="container predictions-page">
+        <div className="predictions-section-heading">
+          <div>
+            <span className="eyebrow">Community standings</span>
+            <h2 className="display">Top predictors</h2>
+          </div>
+          <span className="predictions-section-note">Ranked by tournament picks</span>
+        </div>
+        <Suspense fallback={<section className="predictions-leaderboard-scroll"><div className="forum-list"><div className="empty" aria-label="Loading leaderboard"><strong>Loading standings</strong><span className="predictions-skeleton" /></div></div></section>}>
+          <PredictionsLeaderboard />
+        </Suspense>
+
+        <section className="projection-section" aria-labelledby="projection-heading">
+          <div className="predictions-section-heading projection-heading">
+            <div>
+              <span className="eyebrow">Official tournament draw</span>
+              <h2 id="projection-heading" className="display">2026 projections</h2>
+              <p>Choose an event to explore its projected draw. Table and Matches views remain available in the source page.</p>
+            </div>
+            <a className="btn btn-ghost projection-open-link" href={selectedUrl} target="_blank" rel="noopener noreferrer">
+              Open {selectedName} 2026 separately <span aria-hidden="true">↗</span>
+            </a>
+          </div>
+          <form className="projection-controls" action="/predictions" method="get">
+            <label htmlFor="projection-tournament">Tournament</label>
+            <select id="projection-tournament" name="tournament" defaultValue={selectedProjection}>
+              {PROJECTIONS.map(([name, id]) => (
+                <option key={id} value={id}>{name} 2026</option>
+              ))}
+            </select>
+            <button className="btn btn-primary btn-sm" type="submit">Show projection</button>
+          </form>
+          <div className="projection-frame-wrap">
+            <iframe
+              key={selectedProjection}
+              className="projection-frame"
+              src={selectedUrl}
+              title={`${selectedName} 2026 official tournament projection`}
+              loading="lazy"
+              referrerPolicy="strict-origin-when-cross-origin"
+              allowFullScreen
+            />
+          </div>
+        </section>
+      </main>
     </>
   );
 }
