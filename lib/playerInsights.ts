@@ -149,6 +149,7 @@ export type MetricInsight = {
 export type PlayerInsightReport = {
   qualifies: boolean; // at least one metric has comparable observations on this tour
   groupPercentiles: Record<'serve' | 'return' | 'rally', number | null>;
+  metrics: MetricInsight[];
   strongest: (MetricInsight & { commentary: string; tactic: string; standing: string }) | null;
   weakest: (MetricInsight & { commentary: string; tactic: string; standing: string }) | null;
   trainingFocus: string | null;
@@ -163,6 +164,7 @@ export async function buildPlayerInsights(playerId: string, tour: string): Promi
   const empty = (): PlayerInsightReport => ({
     qualifies: false,
     groupPercentiles: { serve: null, return: null, rally: null },
+    metrics: [],
     strongest: null,
     weakest: null,
     trainingFocus: null,
@@ -255,5 +257,12 @@ export async function buildPlayerInsights(playerId: string, tour: string): Promi
 
   const trainingFocus = weakest ? TRAINING_FOCUS[weakest.group] : null;
 
-  return { qualifies: true, groupPercentiles, strongest, weakest, trainingFocus };
+  return {
+    qualifies: true,
+    groupPercentiles,
+    metrics: metricInsights,
+    strongest,
+    weakest,
+    trainingFocus,
+  };
 }
