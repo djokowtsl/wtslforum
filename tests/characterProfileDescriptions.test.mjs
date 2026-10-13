@@ -24,6 +24,8 @@ test('character profiles derive a summary from their own ratings and render prof
     'buildCharacterProfileSummary(',
     '<p className="character-style-description">{characterSummary}</p>',
     'profile.selection_guidance',
+    'profile.combined_ratings',
+    'ranking_options?: string[]',
     'character-selection-guidance',
     'profile.mechanics_insights',
     'className="panel character-guidance-panel"',
@@ -137,10 +139,27 @@ test('same-style characters get summaries from their distinct roster ratings', (
 
   assert.notEqual(firstSummary, secondSummary);
   assert.match(firstSummary, /Forehand Power 94\/100 \(99th percentile\)/);
-  assert.match(firstSummary, /forehand-led first strikes/);
   assert.match(secondSummary, /Service Power 97\/100 \(100th percentile\)/);
-  assert.match(secondSummary, /first-serve pressure/);
+  assert.doesNotMatch(firstSummary, /game shaped by|supporting .* first strikes/i);
   assert.ok(!firstSummary.includes(sharedDescription));
+});
+
+test('profile summary uses combined ratings and avoids attribute-as-playstyle templates', () => {
+  const summary = buildCharacterProfileSummary('Player One', [], [
+    { attribute: 'Serve Rating', value: 81.4, rank: 12, count: 102, percentile: 0.89 },
+    { attribute: 'Forehand Rating', value: 84.2, rank: 6, count: 102, percentile: 0.94 },
+    { attribute: 'Backhand Rating', value: 77.9, rank: 31, count: 102, percentile: 0.70 },
+  ]);
+  const oddAttributeSummary = buildCharacterProfileSummary('Player Two', [
+    { attribute: 'Clay Mover', value: 89, rank: 4, count: 102, percentile: 0.96 },
+    { attribute: 'Flat Backhand', value: 84, rank: 12, count: 102, percentile: 0.89 },
+  ]);
+
+  assert.match(summary, /Forehand Rating 84\.2\/100 \(rank #6 of 102\)/);
+  assert.match(summary, /Forehand leads the other groundstroke rating by 6\.3 points/);
+  assert.match(oddAttributeSummary, /Clay Mover 89\/100 \(rank #4 of 102\)/);
+  assert.match(oddAttributeSummary, /Flat Backhand 84\/100 \(rank #12 of 102\)/);
+  assert.doesNotMatch(oddAttributeSummary, /game shaped by|flat backhand.*playstyle/i);
 });
 
 test('summary reports missing ratings instead of reusing generic playstyle copy', () => {
