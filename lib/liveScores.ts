@@ -25,6 +25,7 @@ type PlayerRow = {
   wtsl_player_id: string | number;
   tour: string;
   name: string;
+  tour_elo: number | null;
   avatar_url: string | null;
   flag_url: string | null;
   country: string | null;
@@ -157,6 +158,7 @@ async function enrichMatch(
       first: {
         id: entry.first.wtsl_player_id,
         name: entry.first.name,
+        tourElo: entry.first.tour_elo,
         avatarUrl: entry.first.avatar_url,
         flagUrl: entry.first.flag_url,
         country: entry.first.country,
@@ -164,6 +166,7 @@ async function enrichMatch(
       second: {
         id: entry.second.wtsl_player_id,
         name: entry.second.name,
+        tourElo: entry.second.tour_elo,
         avatarUrl: entry.second.avatar_url,
         flagUrl: entry.second.flag_url,
         country: entry.second.country,
@@ -187,7 +190,7 @@ export async function getLiveWtslMatches() {
   let rows: PlayerRow[] = [];
   try {
     rows = await sql`
-      SELECT wtsl_player_id, tour, name, avatar_url, flag_url, country
+      SELECT wtsl_player_id, tour, name, tour_elo, avatar_url, flag_url, country
       FROM wtsl_players
       WHERE tour IN ('TE4','TE4_(F)')
       ORDER BY synced_at DESC
