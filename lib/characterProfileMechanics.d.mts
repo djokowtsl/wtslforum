@@ -4,8 +4,8 @@ type CharacterStrokeSetup = {
   backhand_type?: string | null;
 };
 
-export function buildSizeMechanicsInsight(height: Dimension, weight: Dimension): string;
-
 export function buildStrokeSetupLabels(profile?: CharacterStrokeSetup): string[];
 
-export function buildStrokeMechanicsInsight(profile?: CharacterStrokeSetup): string;
+export function buildSizeMechanicsInsight(height: Dimension, weight: Dimension): string;
+
+export function buildStrokeMechanicsInsight(profile?: CharacterStrokeSetup & Record<string, unknown>): string;
