@@ -1943,10 +1943,17 @@ h1, h2, h3 { margin: 0; }
 .character-selection-card h3 { margin: 5px 0 9px; font-family: var(--font-display); font-size: 22px; font-style: italic; text-transform: uppercase; }
 .character-selection-card p { margin: 8px 0; color: var(--soft); font-size: 12px; line-height: 1.65; }
 .character-selection-card p b { color: var(--text-strong); }
+.character-game-plan-list { display: grid; gap: 8px; margin: 8px 0; padding-left: 19px; color: var(--soft); font-size: 12px; line-height: 1.65; }
+.character-game-plan-list li { padding-left: 2px; }
 .character-selection-edges { margin-top: 13px; color: var(--muted); font-size: 11px; }
 .character-selection-edges ul { display: grid; gap: 9px; margin: 10px 0 0; padding: 0; list-style: none; }
 .character-selection-edges li { display: grid; gap: 5px; color: var(--soft); font-size: 11px; }
 .character-selection-edges .character-stat-meter { min-width: 0; }
+.character-roster-notes { margin-top: 14px; padding-top: 12px; border-top: 1px solid var(--line); }
+.character-roster-notes h4 { margin: 0 0 8px; color: var(--muted); font-size: 10px; letter-spacing: .12em; text-transform: uppercase; }
+.character-roster-notes ul { display: grid; gap: 8px; margin: 0; padding: 0; list-style: none; }
+.character-roster-notes li { color: var(--soft); font-size: 11px; line-height: 1.55; }
+.character-roster-notes b { color: var(--text-strong); }
 .character-documented-mechanics { margin-bottom: 12px !important; }
 
 @media (max-width: 900px) {

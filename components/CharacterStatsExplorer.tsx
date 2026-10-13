@@ -12,6 +12,14 @@ import {
   buildStrokeSetupLabels,
   buildStrokeMechanicsInsight,
 } from '@/lib/characterProfileMechanics.mjs';
+import {
+  buildCourtSpeedInsight,
+  buildGamePlanSteps,
+  cleanCharacterMechanic,
+  cleanSizeReachInsight,
+  normalizeCharacterCopy,
+  splitRosterEvidenceNotes,
+} from '@/lib/characterProfileCopy.mjs';
 import SearchableDropdown from '@/components/SearchableDropdown';
 
 type Tour = 'all' | 'atp' | 'wta';
@@ -73,13 +81,6 @@ function statGroup(attribute: string) {
 function percentileDescription(stat: Stat) {
   const percentile = normalizedPercentile(stat.percentile);
   return percentile === null ? null : `${formatOrdinalRank(percentile)} percentile`;
-}
-
-function splitTraitDescription(value: string) {
-  const separator = value.indexOf(':');
-  return separator > 0
-    ? { name: value.slice(0, separator).trim(), description: value.slice(separator + 1).trim() }
-    : { name: 'Documented mechanic', description: value.trim() };
 }
 
 function formatValue(value: unknown, suffix = '') {
@@ -429,12 +430,21 @@ function Profile({
   const guidance = profile.selection_guidance || {};
   const mechanics = profile.mechanics_insights || {};
   const strokeSetupLabels = buildStrokeSetupLabels(profile);
-  const sizeInsight = mechanics.size_reach || buildSizeMechanicsInsight(profile.height, profile.weight);
+  const sizeInsight = cleanSizeReachInsight(
+    mechanics.size_reach || buildSizeMechanicsInsight(profile.height, profile.weight),
+  );
   const strokeInsight = mechanics.stroke_setup || buildStrokeMechanicsInsight(profile);
+  const courtSpeedInsight = buildCourtSpeedInsight(profile.stats, mechanics.surface_fit);
+  const styleMechanic = cleanCharacterMechanic(guidance.style_mechanics, profile.character);
+  const accelerationMechanic = cleanCharacterMechanic(
+    guidance.acceleration_mechanics,
+    profile.character,
+  );
+  const gamePlanSteps = buildGamePlanSteps(guidance.game_plan, profile.acceleration);
   const insightRows = [
     ['Serve', mechanics.serve],
     ['Groundstrokes', mechanics.groundstrokes],
-    ['Court speed', mechanics.surface_fit],
+    ['Court speed', courtSpeedInsight],
     ['Size & reach', sizeInsight],
     ['Stroke setup', strokeInsight],
     ['Counterplay', mechanics.counter],
@@ -447,6 +457,16 @@ function Profile({
   const documentedEdges = Array.isArray(guidance.documented_edges) ? guidance.documented_edges : [];
   const documentedTalents = Array.isArray(guidance.documented_talents) ? guidance.documented_talents : [];
   const documentedExposures = Array.isArray(guidance.documented_exposures) ? guidance.documented_exposures : [];
+  const documentedRosterNotes = [
+    ...documentedEdges,
+    ...documentedTalents,
+    ...documentedExposures,
+  ].filter((item): item is string => typeof item === 'string' && item.trim().length > 0);
+  const rosterEvidenceNotes = splitRosterEvidenceNotes(
+    topEdges,
+    documentedRosterNotes,
+    guidance.why_not_select || guidance.tradeoff || '',
+  );
   const attributes = statsWithoutExcludedAttributes(profile.stats);
   const characterSummary = buildCharacterProfileSummary(
     profile.character,
@@ -478,13 +498,6 @@ function Profile({
       text: exchangeFit[key],
     }))
     .filter((row) => typeof row.text === 'string' && row.text.trim());
-  const traitNotes = [
-    ...documentedEdges,
-    ...documentedTalents,
-    ...documentedExposures,
-  ]
-    .filter((item): item is string => typeof item === 'string' && item.trim().length > 0)
-    .map(splitTraitDescription);
   const official = data.official || {};
   const profileImage = official.avatar_url;
   const [imageFailed, setImageFailed] = useState(false);
@@ -609,21 +622,18 @@ function Profile({
         </span>
       </div>
 
-      {(guidance.style_mechanics || guidance.acceleration_mechanics || traitNotes.length > 0) && (
+      {(styleMechanic || accelerationMechanic) && (
         <section className="panel character-trait-panel">
           <div className="character-section-heading">
             <div><span className="panel-label">DOCUMENTED CHARACTER SHEET</span><h2>Style &amp; traits</h2></div>
           </div>
           <ul className="character-trait-list">
-            {guidance.style_mechanics && (
-              <li><b>Style · {profile.style}</b><span>{guidance.style_mechanics}</span></li>
+            {styleMechanic && (
+              <li><b>Style · {profile.style}</b><span>{styleMechanic}</span></li>
             )}
-            {guidance.acceleration_mechanics && (
-              <li><b>Acceleration · {profile.acceleration}</b><span>{guidance.acceleration_mechanics}</span></li>
+            {accelerationMechanic && (
+              <li><b>Acceleration · {profile.acceleration}</b><span>{accelerationMechanic}</span></li>
             )}
-            {traitNotes.map(({ name, description }, index) => (
-              <li key={`${name}-${index}`}><b>{name}</b><span>{description}</span></li>
-            ))}
           </ul>
         </section>
       )}
@@ -669,20 +679,15 @@ function Profile({
         </section>
       )}
 
-      {(guidance.why_select || guidance.benefit || guidance.best_for || topEdges.length > 0 ||
-        guidance.game_plan || guidance.why_not_select || guidance.tradeoff) && (
+      {(topEdges.length > 0 || rosterEvidenceNotes.additionalNotes.length > 0 || gamePlanSteps.length > 0 ||
+        guidance.why_not_select || guidance.tradeoff) && (
         <div className="character-guidance-columns character-selection-guidance">
-          {(guidance.why_select || guidance.benefit || guidance.best_for || topEdges.length > 0) && (
+          {(topEdges.length > 0 || rosterEvidenceNotes.additionalNotes.length > 0) && (
             <section className="character-selection-card">
-              <span className="panel-label">WHY SELECT {profile.sex === 'WTA' ? 'HER' : 'HIM'}</span>
-              <h3>{guidance.strongest_label || 'Roster strengths'}</h3>
-              {(guidance.why_select || guidance.benefit) && (
-                <p>{guidance.why_select || guidance.benefit}</p>
-              )}
-              {guidance.best_for && <p><b>Best for:</b> {guidance.best_for}</p>}
+              <span className="panel-label">ROSTER EVIDENCE</span>
+              <h3>{topEdges.length ? guidance.strongest_label || 'Roster strengths' : 'Documented notes'}</h3>
               {topEdges.length > 0 && (
                 <div className="character-selection-edges">
-                  <b>Roster evidence</b>
                   <ul>
                     {topEdges.slice(0, 5).map((stat) => (
                       <li key={stat.attribute}>
@@ -694,6 +699,21 @@ function Profile({
                           <small>{percentileDescription(stat) || 'Percentile unavailable'}</small>
                         </span>
                         <StatBar stat={stat} />
+                        {rosterEvidenceNotes.edgeNotes.get(stat.attribute) && (
+                          <small>{rosterEvidenceNotes.edgeNotes.get(stat.attribute)}</small>
+                        )}
+                      </li>
+                    ))}
+                  </ul>
+                </div>
+              )}
+              {rosterEvidenceNotes.additionalNotes.length > 0 && (
+                <div className="character-roster-notes">
+                  {topEdges.length > 0 && <h4>Other roster context</h4>}
+                  <ul>
+                    {rosterEvidenceNotes.additionalNotes.map(({ name, description }) => (
+                      <li key={name}>
+                        <b>{name}</b>{description ? `: ${description}` : ''}
                       </li>
                     ))}
                   </ul>
@@ -701,13 +721,19 @@ function Profile({
               )}
             </section>
           )}
-          {(guidance.game_plan || guidance.why_not_select || guidance.tradeoff) && (
+          {(gamePlanSteps.length > 0 || guidance.why_not_select || guidance.tradeoff) && (
             <section className="character-selection-card">
-              <span className="panel-label">HOW TO USE {profile.sex === 'WTA' ? 'HER' : 'HIM'}</span>
+              <span className="panel-label">TACTICAL PLAN</span>
               <h3>Game plan</h3>
-              {guidance.game_plan && <p>{guidance.game_plan}</p>}
+              {gamePlanSteps.length > 0 && (
+                <ol className="character-game-plan-list">
+                  {gamePlanSteps.map((step, index) => <li key={`${index}-${step}`}>{step}</li>)}
+                </ol>
+              )}
               {(guidance.why_not_select || guidance.tradeoff) && (
-                <p><b>Why not select:</b> {guidance.why_not_select || guidance.tradeoff}</p>
+                <p><b>Trade-off:</b> {normalizeCharacterCopy(
+                  guidance.why_not_select || guidance.tradeoff,
+                )}</p>
               )}
             </section>
           )}
