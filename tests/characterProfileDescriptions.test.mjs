@@ -31,13 +31,15 @@ test('character profiles derive a selected-character summary and render profile 
   for (const marker of [
     'buildCharacterProfileSummary(',
     '<p className="character-style-description">{characterSummary}</p>',
+    '<span className="panel-label">SUMMARY</span>',
     'profile.selection_guidance',
     'profile.combined_ratings',
     'ranking_options?: string[]',
     'character-selection-guidance',
+    'const selectionRationale = normalizeCharacterCopy(',
+    '<h3>Why pick this character?</h3>',
     'profile.mechanics_insights',
     'className="panel character-guidance-panel"',
-    'WHY PICK THIS CHARACTER?',
     'Style &amp; traits',
     'Technical summary',
     'Trade-off:',
@@ -52,7 +54,12 @@ test('character profiles derive a selected-character summary and render profile 
   assert.ok(!component.includes('profile.style_description'));
   assert.ok(component.includes('<span className="panel-label">ROSTER EVIDENCE</span>'));
   assert.ok(component.includes('<ol className="character-game-plan-list">'));
-  assert.ok(!component.includes('guidance.why_select || guidance.benefit'));
+  assert.ok(component.includes('guidance.why_select || guidance.benefit || guidance.best_for'));
+  const summaryHeadingIndex = component.indexOf('<span className="panel-label">SUMMARY</span>');
+  const whyPickHeadingIndex = component.indexOf('<h3>Why pick this character?</h3>');
+  const rosterEvidenceHeadingIndex = component.indexOf('<span className="panel-label">ROSTER EVIDENCE</span>');
+  assert.ok(summaryHeadingIndex < whyPickHeadingIndex);
+  assert.ok(whyPickHeadingIndex < rosterEvidenceHeadingIndex);
 });
 
 test('style and acceleration mechanics do not repeat roster ranking evidence', () => {
@@ -193,7 +200,7 @@ test('game plans read as short action steps instead of stat-labeled fragments', 
     buildCharacterProfileSummary('Player One', [], [], {
       why_select: 'Use the build to earn a short reply.',
     }),
-    'Use this character to earn a short reply.',
+    'Player One does not have enough rating data for a character-specific summary yet.',
   );
 });
 
@@ -276,7 +283,7 @@ test('character profile prominently shows one- or two-handed forehand and backha
   assert.ok(component.includes('strokeSetupLabels.map((label)'));
 });
 
-test('same-style characters get tactical summaries from their own selection guidance', () => {
+test('profile summaries use roster data rather than selection advice', () => {
   const sharedDescription =
     'Can play deep, take the ball early, or come forward, choosing the best court position instead of forcing one pattern.';
   const firstProfile = {
@@ -321,8 +328,10 @@ test('same-style characters get tactical summaries from their own selection guid
   );
 
   assert.notEqual(firstSummary, secondSummary);
-  assert.match(firstSummary, /build.*forehand.*attacking a short reply/i);
-  assert.match(secondSummary, /serve to start the point.*backhand to redirect pace/i);
+  assert.match(firstSummary, /clearest roster edge is Forehand Power/i);
+  assert.match(secondSummary, /clearest roster edge is Service Power/i);
+  assert.doesNotMatch(firstSummary, /Player One suits building through the forehand/i);
+  assert.doesNotMatch(secondSummary, /Player Two suits using the serve/i);
   assert.doesNotMatch(firstSummary, /rank #|\/100/);
   assert.ok(!firstSummary.includes(sharedDescription));
 });
@@ -358,7 +367,7 @@ test('repeated Core summary templates are individualized from each character’s
   assert.doesNotMatch(`${first} ${second}`, /Use the build|rank #|\/100/i);
 });
 
-test('profile summary prefers tactical guidance over a combined-rating rank dump', () => {
+test('profile summary prefers objective roster ratings over selection guidance', () => {
   const summary = buildCharacterProfileSummary('Player One', [], [
     { attribute: 'Serve Rating', value: 81.4, rank: 12, count: 102, percentile: 0.89 },
     { attribute: 'Forehand Rating', value: 84.2, rank: 6, count: 102, percentile: 0.94 },
@@ -377,7 +386,8 @@ test('profile summary prefers tactical guidance over a combined-rating rank dump
     { attribute: 'Flat Backhand', value: 84, rank: 12, count: 102, percentile: 0.89 },
   ]);
 
-  assert.match(summary, /using the forehand to create openings and finish short replies/i);
+  assert.match(summary, /strongest WTSL-combined roster skill is Forehand Rating/i);
+  assert.doesNotMatch(summary, /using the forehand to create openings and finish short replies/i);
   assert.doesNotMatch(summary, /serve estimate is lower relative to the roster/i);
   assert.doesNotMatch(summary, /rank #|Forehand Rating 84\.2/);
   assert.match(fallbackSummary, /strongest WTSL-combined roster skill is Forehand Rating/i);
