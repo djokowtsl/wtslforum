@@ -28,6 +28,7 @@ type CharacterPayload = {
   tour: Tour;
   names: string[];
   attributes: string[];
+  ranking_options?: string[];
   profile?: Record<string, any> | null;
   official?: { profile_url?: string | null; avatar_url?: string | null; source?: string | null } | null;
   comparison?: Record<string, any> | null;
@@ -42,6 +43,7 @@ const tourOptions: { value: Tour; label: string }[] = [
   { value: 'all', label: 'ATP + WTA' },
 ];
 const groupNames = ['Groundstrokes', 'Serve', 'Net & Feel', 'Movement & Variety'];
+const combinedSkillRatings = new Set(['Serve Rating', 'Forehand Rating', 'Backhand Rating']);
 const uninformativeRelativeStrengths = new Set(['slice serve', 'topspin serve', 'twist serve']);
 const excludedRatingAttributes = new Set(['boomboomserver', 'ontimeserver']);
 
@@ -243,7 +245,7 @@ function RankedAttribute({ ranking, character }: { ranking: Record<string, any>;
   return (
     <section className="panel character-ranking-panel">
       <div className="character-section-heading">
-        <div><span className="panel-label">ATTRIBUTE RANKING</span><h2>{ranking.attribute}</h2></div>
+        <div><span className="panel-label">ROSTER RANKING</span><h2>{ranking.attribute}</h2></div>
       </div>
       <div className="character-top-bottom">
         <div>
@@ -408,8 +410,8 @@ function Profile({
   const guidance = profile.selection_guidance || {};
   const mechanics = profile.mechanics_insights || {};
   const strokeSetupLabels = buildStrokeSetupLabels(profile);
-  const sizeInsight = buildSizeMechanicsInsight(profile.height, profile.weight);
-  const strokeInsight = buildStrokeMechanicsInsight(profile);
+  const sizeInsight = mechanics.size_reach || buildSizeMechanicsInsight(profile.height, profile.weight);
+  const strokeInsight = mechanics.stroke_setup || buildStrokeMechanicsInsight(profile);
   const insightRows = [
     ['Serve', mechanics.serve],
     ['Groundstrokes', mechanics.groundstrokes],
@@ -426,13 +428,11 @@ function Profile({
   const documentedEdges = Array.isArray(guidance.documented_edges) ? guidance.documented_edges : [];
   const documentedTalents = Array.isArray(guidance.documented_talents) ? guidance.documented_talents : [];
   const documentedExposures = Array.isArray(guidance.documented_exposures) ? guidance.documented_exposures : [];
-  const technicalInteractions = Array.isArray(profile.technical_interactions)
-    ? profile.technical_interactions
-    : [];
   const attributes = statsWithoutExcludedAttributes(profile.stats);
   const characterSummary = buildCharacterProfileSummary(
     profile.character,
     attributes,
+    profile.combined_ratings,
   );
   const categoryScores = characterCategoryScores(guidance.group_scores, attributes);
   const strongestGroup = String(guidance.strongest_group || categoryScores[0]?.name || '');
@@ -575,8 +575,7 @@ function Profile({
         </span>
       </div>
 
-      {(guidance.style_mechanics || guidance.acceleration_mechanics || traitNotes.length > 0 ||
-        technicalInteractions.length > 0) && (
+      {(guidance.style_mechanics || guidance.acceleration_mechanics || traitNotes.length > 0) && (
         <section className="panel character-trait-panel">
           <div className="character-section-heading">
             <div><span className="panel-label">DOCUMENTED CHARACTER SHEET</span><h2>Style &amp; traits</h2></div>
@@ -592,16 +591,6 @@ function Profile({
               <li key={`${name}-${index}`}><b>{name}</b><span>{description}</span></li>
             ))}
           </ul>
-          {technicalInteractions.length > 0 && (
-            <details className="character-mechanics-details">
-              <summary>Technical skill interactions</summary>
-              <ul>
-                {technicalInteractions.map(([name, description]: [string, string]) => (
-                  <li key={name}><b>{name}</b><span>{description}</span></li>
-                ))}
-              </ul>
-            </details>
-          )}
         </section>
       )}
 
@@ -734,8 +723,10 @@ export default function CharacterStatsExplorer({
   const dataRef = useRef(data);
   const currentRoster = roster.tour === tour ? roster : null;
   const names = currentRoster?.names || [];
-  const attributes = (currentRoster?.attributes || [])
+  const attributes = (currentRoster?.ranking_options || currentRoster?.attributes || [])
     .filter((name) => !isExcludedRatingAttribute(name));
+  const combinedRatingOptions = attributes.filter((name) => combinedSkillRatings.has(name));
+  const attributeRankingOptions = attributes.filter((name) => !combinedSkillRatings.has(name));
   const currentProfile =
     data?.tour === tour && data.profile?.character === character ? data : null;
   const filteredNames = useMemo(() => {
@@ -1002,7 +993,7 @@ export default function CharacterStatsExplorer({
               />
             </div>
             <div className="character-control">
-              <label htmlFor="character-attribute-rank">Rank an attribute</label>
+              <label htmlFor="character-attribute-rank">Rank players by</label>
               <select
                 id="character-attribute-rank"
                 value={draftAttribute}
@@ -1012,8 +1003,17 @@ export default function CharacterStatsExplorer({
                 }}
                 disabled={!currentRoster}
               >
-                <option value="">No attribute ranking</option>
-                {attributes.map((name) => <option key={name} value={name}>{name}</option>)}
+                <option value="">No ranking</option>
+                {combinedRatingOptions.length > 0 && (
+                  <optgroup label="Combined skill ratings">
+                    {combinedRatingOptions.map((name) => <option key={name} value={name}>{name}</option>)}
+                  </optgroup>
+                )}
+                {attributeRankingOptions.length > 0 && (
+                  <optgroup label="Character attributes">
+                    {attributeRankingOptions.map((name) => <option key={name} value={name}>{name}</option>)}
+                  </optgroup>
+                )}
               </select>
             </div>
           </div>
