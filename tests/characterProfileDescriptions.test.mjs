@@ -4,6 +4,7 @@ import test from 'node:test';
 import { characterCategoryScores } from '../lib/characterProfileGroups.mjs';
 import {
   buildSizeMechanicsInsight,
+  buildStrokeSetupLabels,
   buildStrokeMechanicsInsight,
 } from '../lib/characterProfileMechanics.mjs';
 import { buildCharacterProfileSummary } from '../lib/characterProfileSummary.mjs';
@@ -50,22 +51,36 @@ test('serve speed is labelled as average maximal, and size insight uses TE4 reac
 
 test('character profile explains stroke setup and the documented two-handed tradeoff', () => {
   const insight = buildStrokeMechanicsInsight({
-    playing_hand: 'left',
     forehand_type: 'one-handed',
     backhand_type: 'two-handed',
   });
 
-  assert.match(insight, /Left-handed/);
-  assert.match(insight, /one-handed forehand/);
   assert.match(insight, /two-handed backhand/);
-  assert.match(insight, /less powerful and less wide-reaching/);
+  assert.match(insight, /less powerful and less wide/);
+  assert.match(insight, /the player needs to get closer to the ball/);
   assert.match(insight, /orange\/red Danger Zone/);
-  assert.match(insight, /15 Counter/);
+  assert.match(insight, /15 points to Counter/);
   assert.equal(buildStrokeMechanicsInsight({
-    playing_hand: 'right',
     forehand_type: 'one-handed',
     backhand_type: 'one-handed',
-  }), 'Right-handed · one-handed forehand · one-handed backhand');
+  }), '');
+  assert.match(buildStrokeMechanicsInsight({
+    forehand_type: 'two-handed',
+    backhand_type: 'one-handed',
+  }), /two-handed forehand/i);
+});
+
+test('character profile prominently shows one- or two-handed forehand and backhand setup', () => {
+  assert.deepEqual(buildStrokeSetupLabels({
+    forehand_type: 'one-handed',
+    backhand_type: 'two-handed',
+  }), ['Forehand: one-handed', 'Backhand: two-handed']);
+  assert.deepEqual(buildStrokeSetupLabels({
+    forehand_type: null,
+    backhand_type: 'unknown',
+  }), []);
+  assert.ok(component.includes('buildStrokeSetupLabels(profile)'));
+  assert.ok(component.includes('strokeSetupLabels.map((label)'));
 });
 
 test('same-style characters get summaries from their distinct roster ratings', () => {
