@@ -6,6 +6,11 @@ import {
   type CharacterPickRanking,
 } from '@/lib/characterPickPopularity';
 import { characterCategoryScores } from '@/lib/characterProfileGroups.mjs';
+import { buildCharacterProfileSummary } from '@/lib/characterProfileSummary.mjs';
+import {
+  buildSizeMechanicsInsight,
+  buildStrokeMechanicsInsight,
+} from '@/lib/characterProfileMechanics.mjs';
 import SearchableDropdown from '@/components/SearchableDropdown';
 
 type Tour = 'all' | 'atp' | 'wta';
@@ -218,7 +223,10 @@ function CombinedSkills({ stats }: { stats: Stat[] }) {
             ))}
           </div>
           {stat.max_serve_speed_kmh != null && (
-            <p className="character-max-serve">Max serve {formatValue(stat.max_serve_speed_kmh, ' km/h')}</p>
+            <p className="character-max-serve">
+              Average maximal serve speed (not absolute peak):{' '}
+              {formatValue(stat.max_serve_speed_kmh, ' km/h')}
+            </p>
           )}
         </article>
       ))}
@@ -398,10 +406,14 @@ function Profile({
   const profile = data.profile!;
   const guidance = profile.selection_guidance || {};
   const mechanics = profile.mechanics_insights || {};
+  const sizeInsight = buildSizeMechanicsInsight(profile.height, profile.weight);
+  const strokeInsight = buildStrokeMechanicsInsight(profile);
   const insightRows = [
     ['Serve', mechanics.serve],
     ['Groundstrokes', mechanics.groundstrokes],
     ['Court speed', mechanics.surface_fit],
+    ['Size & reach', sizeInsight],
+    ['Stroke setup', strokeInsight],
     ['Counterplay', mechanics.counter],
     ['Net play', mechanics.net],
     ['Shot variety', mechanics.variation],
@@ -415,10 +427,11 @@ function Profile({
   const technicalInteractions = Array.isArray(profile.technical_interactions)
     ? profile.technical_interactions
     : [];
-  const styleDescription = typeof profile.style_description === 'string'
-    ? profile.style_description.trim()
-    : '';
   const attributes = statsWithoutExcludedAttributes(profile.stats);
+  const characterSummary = buildCharacterProfileSummary(
+    profile.character,
+    attributes,
+  );
   const categoryScores = characterCategoryScores(guidance.group_scores, attributes);
   const strongestGroup = String(guidance.strongest_group || categoryScores[0]?.name || '');
   const weakestGroup = String(
@@ -477,10 +490,10 @@ function Profile({
           <div className="character-badges">
             <span>{profile.style}</span><span>Acceleration: {profile.acceleration}</span>
           </div>
-          {styleDescription && (
+          {characterSummary && (
             <div className="character-profile-summary">
               <span className="panel-label">SUMMARY</span>
-              <p className="character-style-description">{styleDescription}</p>
+              <p className="character-style-description">{characterSummary}</p>
             </div>
           )}
           {official.profile_url && (

@@ -1898,6 +1898,20 @@ h1, h2, h3 { margin: 0; }
 .character-pickers li { display: flex; justify-content: space-between; gap: 15px; padding: 11px 13px; border: 1px solid var(--line); border-radius: 8px; background: var(--bg-2); font-size: 12px; }
 .character-pickers li > span { min-width: 0; color: var(--soft); overflow-wrap: anywhere; }
 .character-pickers li > b { color: var(--cyan); white-space: nowrap; }
+.character-suggestions { display: grid; gap: 12px; margin: 14px 0; padding: 14px; border: 1px solid var(--line); border-radius: 10px; background: var(--bg-2); }
+.character-suggestions-heading h3 { margin: 0; font-size: 16px; }
+.character-suggestions-heading p,
+.character-suggestions-note,
+.character-suggestions-empty { margin: 6px 0 0; color: var(--muted); font-size: 12px; line-height: 1.55; }
+.character-suggestion-list { display: grid; gap: 10px; margin: 0; padding: 0; list-style: none; }
+.character-suggestion-card { display: grid; gap: 6px; padding: 12px; border: 1px solid var(--line); border-radius: 8px; background: var(--bg-1); }
+.character-suggestion-title { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
+.character-suggestion-title > span { display: grid; width: 22px; height: 22px; place-items: center; border-radius: 50%; background: var(--lime); color: var(--bg-0); font-size: 11px; font-weight: 800; }
+.character-suggestion-title > strong { color: var(--soft); }
+.character-suggestion-title > small { color: var(--muted); font-size: 11px; }
+.character-suggestion-card p { margin: 0; color: var(--soft); font-size: 12px; line-height: 1.55; }
+.character-suggestion-card .character-suggestion-evidence { color: var(--muted); font-size: 11px; }
+.character-suggestion-card .character-suggestion-tradeoff { color: var(--muted); font-size: 11px; }
 .character-comparison-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 12px; }
 .character-comparison-choices { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 12px; margin-top: 14px; }
 .character-comparison-choices p { margin: 0; padding: 12px; border: 1px solid var(--line); border-radius: 9px; background: var(--bg-2); color: var(--soft); font-size: 12px; line-height: 1.65; }

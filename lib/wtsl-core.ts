@@ -165,6 +165,31 @@ export type CoreMatchlogIdentitySyncResult = {
   reason?: string;
 };
 
+export type CoreCharacterRecommendation = {
+  character: string;
+  score: number;
+  style: string;
+  strength_group: string;
+  development_group: string;
+  training_group: string;
+  player_strength_metric?: { metric: string; value?: number; percentile: number } | null;
+  player_development_metric?: { metric: string; value?: number; percentile: number } | null;
+  edge_details: { attribute: string; value: number; percentile: number }[];
+  mechanics_reason: string;
+  development_route: string;
+  tradeoff: string;
+};
+
+export type CoreCharacterRecommendationMetric = {
+  label: string;
+  group: 'serve' | 'return' | 'rally';
+  value: number;
+  percentile: number;
+  players: number;
+};
+
+export const WTSL_CORE_CHARACTER_RECOMMENDATION_TIMEOUT_MS = 12_000;
+
 export const wtslCore = {
   configured: () => Boolean(base && token),
 
@@ -293,6 +318,25 @@ export const wtslCore = {
       { timeoutMs: WTSL_CORE_CHARACTER_STATS_TIMEOUT_MS, logLabel: 'character-stats' },
     );
   },
+
+  characterRecommendations: (query: {
+    tour: 'atp' | 'wta';
+    metrics: CoreCharacterRecommendationMetric[];
+  }) =>
+    core<{
+      tour: string;
+      recommendations: CoreCharacterRecommendation[];
+    }>(
+      '/api/core/character-recommendations',
+      {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify(query),
+        signal: AbortSignal.timeout(
+          WTSL_CORE_CHARACTER_RECOMMENDATION_TIMEOUT_MS,
+        ),
+      },
+    ),
 
   matchSchedules: () => core<unknown[]>('/api/core/match-schedules'),
 
