@@ -743,12 +743,15 @@ export default function CharacterStatsExplorer({
     const query = search.trim().toLowerCase();
     return query ? names.filter((name) => name.toLowerCase().includes(query)) : names;
   }, [names, search]);
+  const hasPendingSearch =
+    Boolean(search.trim()) &&
+    search.trim().toLowerCase() !== character.toLowerCase();
   const hasPendingChanges =
-    Boolean(search.trim()) ||
+    hasPendingSearch ||
     draftCharacter !== character ||
     draftCompare !== compare ||
     draftAttribute !== attribute;
-  const isLoadingDifferentCharacter = Boolean(search.trim()) || draftCharacter !== character;
+  const isLoadingDifferentCharacter = hasPendingSearch || draftCharacter !== character;
 
   function handleSearchSubmit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
@@ -1048,9 +1051,13 @@ export default function CharacterStatsExplorer({
                 className={draftCharacter === name ? 'selected' : ''}
                 aria-pressed={draftCharacter === name}
                 onClick={() => {
+                  characterRef.current = name;
+                  setCharacter(name);
                   setDraftCharacter(name);
                   setSearch(name);
                   setSearchError('');
+                  if (compare === name) setCompare('');
+                  if (draftCompare === name) setDraftCompare('');
                 }}
               >
                 {name}
