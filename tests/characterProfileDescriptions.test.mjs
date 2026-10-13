@@ -14,6 +14,7 @@ import {
   cleanCharacterMechanic,
   cleanSizeReachInsight,
   normalizeCharacterCopy,
+  splitRosterEvidenceNotes,
 } from '../lib/characterProfileCopy.mjs';
 import { removeUnsupportedCharacterProjections } from '../lib/characterProfileSafety.mjs';
 
@@ -68,6 +69,32 @@ test('style and acceleration mechanics do not repeat roster ranking evidence', (
     acceleration,
     'Has no special acceleration modifier; movement, timing, and shot choice matter more.',
   );
+  assert.ok(!component.includes('traitNotes.map'));
+  assert.ok(component.includes('rosterEvidenceNotes.edgeNotes.get(stat.attribute)'));
+  assert.ok(component.includes('rosterEvidenceNotes.additionalNotes.map'));
+});
+
+test('roster evidence merges matching notes and avoids repeated or summarized attributes', () => {
+  const notes = splitRosterEvidenceNotes(
+    [{ attribute: 'Forehand Power' }, { attribute: 'Ball Feeling' }],
+    [
+      'Forehand Power 95/100 (rank #5 of 102): sets first-strike pace',
+      'Ball Feeling 94/100 (rank #7 of 102): improves soft touch',
+      'Ball Feeling 94/100 (rank #7 of 102): improves soft touch',
+      'Slice serve 100/100 (rank #1 of 102): adds slice on fast surfaces',
+      'Backhand Precision 86/100 (rank #91 of 102): controls accuracy',
+    ],
+    'Backhand Precision is the clearest trade-off.',
+  );
+
+  assert.equal(notes.edgeNotes.get('Forehand Power'), 'sets first-strike pace');
+  assert.equal(notes.edgeNotes.get('Ball Feeling'), 'improves soft touch');
+  assert.deepEqual(notes.additionalNotes, [
+    {
+      name: 'Slice serve 100/100 (rank #1 of 102)',
+      description: 'adds slice on fast surfaces',
+    },
+  ]);
 });
 
 test('court-speed copy is concise and based on the character Topspin rating', () => {
