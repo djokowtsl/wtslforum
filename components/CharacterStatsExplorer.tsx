@@ -208,6 +208,10 @@ function StatHighlights({ title, stats, tone }: { title: string; stats: Stat[]; 
 }
 
 function CombinedSkills({ stats }: { stats: Stat[] }) {
+  if (!stats.length) {
+    return <p className="character-muted">WTSL combined-rating data is unavailable for this character.</p>;
+  }
+
   return (
     <div className="character-combined-grid">
       {stats.map((stat) => (
@@ -217,6 +221,10 @@ function CombinedSkills({ stats }: { stats: Stat[] }) {
             <strong>{formatValue(stat.value)}</strong>
           </div>
           <StatBar stat={stat} />
+          <p className="character-combined-rank">
+            {stat.rank == null ? 'Roster rank unavailable' : `Rank #${stat.rank}${stat.count ? ` of ${stat.count}` : ''}`}
+            {percentileDescription(stat) ? ` · ${percentileDescription(stat)}` : ''}
+          </p>
           <div className="character-component-row">
             {['Power', 'Consistency', 'Precision'].map((component) => (
               <span key={component}>
@@ -241,12 +249,23 @@ function RankedAttribute({ ranking, character }: { ranking: Record<string, any>;
   const rows = Array.isArray(ranking.ranked) ? ranking.ranked as Record<string, any>[] : [];
   const top = rows.slice(0, 3);
   const bottom = rows.slice(-3).reverse();
+  const isCombinedRating = combinedSkillRatings.has(String(ranking.attribute));
 
   return (
     <section className="panel character-ranking-panel">
       <div className="character-section-heading">
-        <div><span className="panel-label">ROSTER RANKING</span><h2>{ranking.attribute}</h2></div>
+        <div>
+          <span className="panel-label">
+            {isCombinedRating ? 'WTSL-CALCULATED RANKING' : 'GAME-SHEET VALUE · ROSTER RANKING'}
+          </span>
+          <h2>{ranking.attribute}</h2>
+        </div>
       </div>
+      <p className="character-rating-explainer">
+        {isCombinedRating
+          ? 'WTSL calculates this combined skill and ranks it against the selected tour roster; the game does not provide this combined-rating ranking.'
+          : 'This orders the character-sheet rating supplied by the game within the selected tour roster.'}
+      </p>
       <div className="character-top-bottom">
         <div>
           <h3>Top characters</h3>
@@ -294,7 +313,7 @@ function Comparison({ comparison, selected }: { comparison: Record<string, any>;
     const otherValue = selectedIsFirst ? item.second_value : item.first_value;
     return (
       <li key={`${item.group}-${item.attribute}`}>
-        <b>{item.attribute}</b>
+        <b>{combinedSkillRatings.has(String(item.attribute)) ? `WTSL-combined ${item.attribute}` : item.attribute}</b>
         <span>
           {formatValue(value)} vs {formatValue(otherValue)} ·{' '}
           {Math.round(Math.abs(Number(item.delta || 0)) * 100)} percentile points
@@ -433,6 +452,7 @@ function Profile({
     profile.character,
     attributes,
     profile.combined_ratings,
+    guidance,
   );
   const categoryScores = characterCategoryScores(guidance.group_scores, attributes);
   const strongestGroup = String(guidance.strongest_group || categoryScores[0]?.name || '');
@@ -444,6 +464,20 @@ function Profile({
     !uninformativeRelativeStrengths.has(stat.attribute.trim().toLowerCase()),
   );
   const relativeWeaknesses = statsWithoutExcludedAttributes(profile.weaknesses);
+  const exchangeFit = mechanics.exchange_fit && typeof mechanics.exchange_fit === 'object'
+    ? mechanics.exchange_fit
+    : {};
+  const exchangeFitRows = [
+    ['short', 'Quick points'],
+    ['medium', 'Neutral rallies'],
+    ['extended', 'Long rallies & matches'],
+  ]
+    .map(([key, title]) => ({
+      key,
+      title,
+      text: exchangeFit[key],
+    }))
+    .filter((row) => typeof row.text === 'string' && row.text.trim());
   const traitNotes = [
     ...documentedEdges,
     ...documentedTalents,
@@ -619,6 +653,22 @@ function Profile({
         </section>
       )}
 
+      {exchangeFitRows.length > 0 && (
+        <section className="panel character-exchange-fit-panel">
+          <div className="character-section-heading">
+            <div><span className="panel-label">WTSL ROSTER COMPARISON</span><h2>Rally-fit guidance</h2></div>
+          </div>
+          <p className="character-rating-explainer">
+            Tactical fit only—not a prediction of rally duration, point wins, or match results.
+          </p>
+          <div className="character-insight-grid character-exchange-fit-grid">
+            {exchangeFitRows.map(({ key, title, text }) => (
+              <article key={key}><h3>{title}</h3><p>{text}</p></article>
+            ))}
+          </div>
+        </section>
+      )}
+
       {(guidance.why_select || guidance.benefit || guidance.best_for || topEdges.length > 0 ||
         guidance.game_plan || guidance.why_not_select || guidance.tradeoff) && (
         <div className="character-guidance-columns character-selection-guidance">
@@ -666,6 +716,7 @@ function Profile({
 
       <section className="character-profile-method-note" aria-label="How to read this profile">
         <div><b>Roster comparisons</b><p>Standouts, drawbacks, and category scores compare this character with the selected tour roster. Category scores average rankable attribute percentiles, not raw ratings.</p></div>
+        <div><b>Combined skill ratings</b><p>Serve, Forehand, and Backhand Rating are WTSL-calculated estimates with roster ranks; the game does not supply those combined-rating rankings.</p></div>
         <div><b>Mechanics explanations</b><p>Technical notes use the character’s own ratings and documented TE4 mechanics; they are not comparisons with other players.</p></div>
       </section>
 
@@ -674,7 +725,9 @@ function Profile({
           <div><span className="panel-label">COMBINED SKILLS</span><h2>Ratings</h2></div>
         </div>
         <p className="character-rating-explainer">
-          The number is the raw rating; the bar is its normalized roster score (0–100).
+          WTSL calculates these combined ratings from Power, Consistency, and Precision. Ranks and
+          percentiles compare the selected tour roster; the game does not provide this combined-skill
+          ranking. The number is the raw estimate; the bar is its normalized roster score (0–100).
         </p>
         <CombinedSkills stats={combined} />
       </section>
