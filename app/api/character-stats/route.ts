@@ -3,6 +3,7 @@ import {
   parseCharacterPickRanking,
   type CharacterPickRanking,
 } from '@/lib/characterPickPopularity';
+import { removeUnsupportedCharacterProjections } from '@/lib/characterProfileSafety.mjs';
 import { wtslCore } from '@/lib/wtsl-core';
 
 export const dynamic = 'force-dynamic';
@@ -37,7 +38,7 @@ export async function GET(request: Request) {
   }
 
   try {
-    const payload = await wtslCore.characterStats({
+    const upstreamPayload = await wtslCore.characterStats({
       tour: tour as 'all' | 'atp' | 'wta',
       character,
       compare,
@@ -45,26 +46,31 @@ export async function GET(request: Request) {
       includeProfile,
       includeOfficial,
     });
-    const profile = payload.profile && typeof payload.profile === 'object'
-      ? payload.profile as Record<string, unknown>
+    const payload = removeUnsupportedCharacterProjections(upstreamPayload);
+    if (!payload || typeof payload !== 'object' || Array.isArray(payload)) {
+      throw new Error('WTSL character feed returned an invalid payload.');
+    }
+    const safePayload = payload as Record<string, unknown>;
+    const profile = safePayload.profile && typeof safePayload.profile === 'object'
+      ? safePayload.profile as Record<string, unknown>
       : null;
     if (!includeProfile || !profile) {
-      return NextResponse.json(payload, { headers: noStore });
+      return NextResponse.json(safePayload, { headers: noStore });
     }
 
     let pick_ranking: CharacterPickRanking | null = null;
     const expectedPicks = Number(profile.pick_count);
     if (
-      payload.picks_available === true &&
+      safePayload.picks_available === true &&
       String(profile.sex || '').toLowerCase() === 'atp' &&
       Number.isSafeInteger(expectedPicks) &&
       expectedPicks > 0 &&
       typeof profile.character === 'string'
     ) {
-      pick_ranking = parseCharacterPickRanking(payload.pick_ranking, expectedPicks);
+      pick_ranking = parseCharacterPickRanking(safePayload.pick_ranking, expectedPicks);
     }
 
-    return NextResponse.json({ ...payload, pick_ranking }, { headers: noStore });
+    return NextResponse.json({ ...safePayload, pick_ranking }, { headers: noStore });
   } catch (error) {
     const statusCode =
       error && typeof error === 'object' && 'statusCode' in error
