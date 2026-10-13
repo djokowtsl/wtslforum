@@ -354,7 +354,9 @@ h1, h2, h3 { margin: 0; }
 .live-score-player--first::before, .live-score-player--second::before { width: 6px; height: 6px; flex: 0 0 6px; border-radius: 50%; content: ""; }
 .live-score-player--first::before { background: var(--lime); box-shadow: 0 0 8px rgba(176, 244, 59, .55); }
 .live-score-player--second::before { background: var(--cyan); box-shadow: 0 0 8px rgba(34, 194, 218, .55); }
-.live-score-player strong { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: 14px; }
+.live-score-player-copy { display: grid; gap: 2px; flex: 1; min-width: 0; }
+.live-score-player strong { display: block; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: 14px; }
+.live-score-player-elo { overflow: hidden; color: var(--muted); font-size: 10px; font-variant-numeric: tabular-nums; line-height: 1.25; text-overflow: ellipsis; white-space: nowrap; }
 .live-score-player-stats { min-width: 0; }
 .live-player-stats-trigger { flex: 0 0 auto; min-height: 27px; padding: 3px 7px; border: 1px solid var(--line-2); border-radius: 7px; background: transparent; color: var(--muted); font: 700 10px/1 var(--font-display); cursor: pointer; }
 .live-player-stats-trigger:hover, .live-player-stats-trigger:focus-visible { border-color: var(--lime); color: var(--lime); }

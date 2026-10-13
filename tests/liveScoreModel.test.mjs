@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
-import { resolveLivePlayer } from '../lib/liveScoreModel.ts';
+import { formatLivePlayerElos, parseLiveWtslMatches, resolveLivePlayer } from '../lib/liveScoreModel.ts';
 
 test('live player resolution keeps exact normalized ranked names', () => {
   const franky = { id: '917', name: 'Franky Franchicha' };
@@ -39,4 +39,22 @@ test('unmatched or unsupported abbreviations do not guess a ranked player', () =
   assert.equal(resolveLivePlayer('x.unknown', players), null);
   assert.equal(resolveLivePlayer('f.franchicha extra', players), null);
   assert.equal(resolveLivePlayer('f.del potro', players), null);
+});
+
+test('live WTSL feed parses both players’ in-game Elo values', () => {
+  const poll = '0 1 "Player One vs Player Two" 40 00 05dc 00 "XKT(WTSL) ATP" "1-0, 2-1" 0666 00 00 "1 Clay Court" trailer';
+  const [match] = parseLiveWtslMatches(poll);
+
+  assert.equal(match.inGameElo1, 1500);
+  assert.equal(match.inGameElo2, 1638);
+  assert.equal(match.mode, 'Singles');
+  assert.equal(match.bestOf, 3);
+  assert.equal(match.court, 'Clay Court');
+});
+
+test('live Elo labels match the Discord embed and omit unavailable ratings', () => {
+  assert.equal(formatLivePlayerElos(1500, 1638), '[Game: 1500 | Tour: 1638]');
+  assert.equal(formatLivePlayerElos(1500, null), '[Game: 1500]');
+  assert.equal(formatLivePlayerElos(null, 1638), '[Tour: 1638]');
+  assert.equal(formatLivePlayerElos(0, 0), null);
 });
