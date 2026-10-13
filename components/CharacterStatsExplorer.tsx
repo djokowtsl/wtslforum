@@ -18,6 +18,7 @@ import {
   cleanCharacterMechanic,
   cleanSizeReachInsight,
   normalizeCharacterCopy,
+  splitRosterEvidenceNotes,
 } from '@/lib/characterProfileCopy.mjs';
 import SearchableDropdown from '@/components/SearchableDropdown';
 
@@ -80,13 +81,6 @@ function statGroup(attribute: string) {
 function percentileDescription(stat: Stat) {
   const percentile = normalizedPercentile(stat.percentile);
   return percentile === null ? null : `${formatOrdinalRank(percentile)} percentile`;
-}
-
-function splitTraitDescription(value: string) {
-  const separator = value.indexOf(':');
-  return separator > 0
-    ? { name: value.slice(0, separator).trim(), description: value.slice(separator + 1).trim() }
-    : { name: 'Documented mechanic', description: value.trim() };
 }
 
 function formatValue(value: unknown, suffix = '') {
@@ -463,6 +457,16 @@ function Profile({
   const documentedEdges = Array.isArray(guidance.documented_edges) ? guidance.documented_edges : [];
   const documentedTalents = Array.isArray(guidance.documented_talents) ? guidance.documented_talents : [];
   const documentedExposures = Array.isArray(guidance.documented_exposures) ? guidance.documented_exposures : [];
+  const documentedRosterNotes = [
+    ...documentedEdges,
+    ...documentedTalents,
+    ...documentedExposures,
+  ].filter((item): item is string => typeof item === 'string' && item.trim().length > 0);
+  const rosterEvidenceNotes = splitRosterEvidenceNotes(
+    topEdges,
+    documentedRosterNotes,
+    guidance.why_not_select || guidance.tradeoff || '',
+  );
   const attributes = statsWithoutExcludedAttributes(profile.stats);
   const characterSummary = buildCharacterProfileSummary(
     profile.character,
@@ -494,13 +498,6 @@ function Profile({
       text: exchangeFit[key],
     }))
     .filter((row) => typeof row.text === 'string' && row.text.trim());
-  const traitNotes = [
-    ...documentedEdges,
-    ...documentedTalents,
-    ...documentedExposures,
-  ]
-    .filter((item): item is string => typeof item === 'string' && item.trim().length > 0)
-    .map(splitTraitDescription);
   const official = data.official || {};
   const profileImage = official.avatar_url;
   const [imageFailed, setImageFailed] = useState(false);
@@ -625,7 +622,7 @@ function Profile({
         </span>
       </div>
 
-      {(styleMechanic || accelerationMechanic || traitNotes.length > 0) && (
+      {(styleMechanic || accelerationMechanic) && (
         <section className="panel character-trait-panel">
           <div className="character-section-heading">
             <div><span className="panel-label">DOCUMENTED CHARACTER SHEET</span><h2>Style &amp; traits</h2></div>
@@ -637,9 +634,6 @@ function Profile({
             {accelerationMechanic && (
               <li><b>Acceleration · {profile.acceleration}</b><span>{accelerationMechanic}</span></li>
             )}
-            {traitNotes.map(({ name, description }, index) => (
-              <li key={`${name}-${index}`}><b>{name}</b><span>{description}</span></li>
-            ))}
           </ul>
         </section>
       )}
@@ -685,29 +679,46 @@ function Profile({
         </section>
       )}
 
-      {(topEdges.length > 0 || gamePlanSteps.length > 0 ||
+      {(topEdges.length > 0 || rosterEvidenceNotes.additionalNotes.length > 0 || gamePlanSteps.length > 0 ||
         guidance.why_not_select || guidance.tradeoff) && (
         <div className="character-guidance-columns character-selection-guidance">
-          {topEdges.length > 0 && (
+          {(topEdges.length > 0 || rosterEvidenceNotes.additionalNotes.length > 0) && (
             <section className="character-selection-card">
               <span className="panel-label">ROSTER EVIDENCE</span>
-              <h3>{guidance.strongest_label || 'Roster strengths'}</h3>
-              <div className="character-selection-edges">
-                <ul>
-                  {topEdges.slice(0, 5).map((stat) => (
-                    <li key={stat.attribute}>
-                      <span>
-                        {stat.attribute} · {formatValue(
-                          stat.value,
-                          stat.attribute.toLowerCase() === 'topspin' ? '%' : '/100',
+              <h3>{topEdges.length ? guidance.strongest_label || 'Roster strengths' : 'Documented notes'}</h3>
+              {topEdges.length > 0 && (
+                <div className="character-selection-edges">
+                  <ul>
+                    {topEdges.slice(0, 5).map((stat) => (
+                      <li key={stat.attribute}>
+                        <span>
+                          {stat.attribute} · {formatValue(
+                            stat.value,
+                            stat.attribute.toLowerCase() === 'topspin' ? '%' : '/100',
+                          )}
+                          <small>{percentileDescription(stat) || 'Percentile unavailable'}</small>
+                        </span>
+                        <StatBar stat={stat} />
+                        {rosterEvidenceNotes.edgeNotes.get(stat.attribute) && (
+                          <small>{rosterEvidenceNotes.edgeNotes.get(stat.attribute)}</small>
                         )}
-                        <small>{percentileDescription(stat) || 'Percentile unavailable'}</small>
-                      </span>
-                      <StatBar stat={stat} />
-                    </li>
-                  ))}
-                </ul>
-              </div>
+                      </li>
+                    ))}
+                  </ul>
+                </div>
+              )}
+              {rosterEvidenceNotes.additionalNotes.length > 0 && (
+                <div className="character-roster-notes">
+                  {topEdges.length > 0 && <h4>Other roster context</h4>}
+                  <ul>
+                    {rosterEvidenceNotes.additionalNotes.map(({ name, description }) => (
+                      <li key={name}>
+                        <b>{name}</b>{description ? `: ${description}` : ''}
+                      </li>
+                    ))}
+                  </ul>
+                </div>
+              )}
             </section>
           )}
           {(gamePlanSteps.length > 0 || guidance.why_not_select || guidance.tradeoff) && (
