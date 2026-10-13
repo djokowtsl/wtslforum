@@ -84,7 +84,7 @@ const TACTICAL_STRENGTH: Record<string, string> = {
 
 const TACTICAL_DEVELOPMENT: Record<string, string> = {
   '1st Serve %': 'Choose two high-margin first-serve targets and accept a neutral first ball rather than forcing placement.',
-  '1st Serve Won %': 'Use safer locations and a clearer serve-plus-one target so the first attacking ball is played from balance.',
+  '1st Serve Won %': "Use safer locations and a clear serve-plus-one target so you're ready to attack the next ball.",
   '2nd Serve Won %': 'Add height and margin to the second serve, then protect the next ball instead of chasing immediate offence.',
   Aces: 'Use placement and disguise to create predictable returns; do not turn the lack of aces into low-percentage serving.',
   'Double Faults': 'Prioritise a repeatable second-serve target with more net clearance and make the opponent win the rally.',
