@@ -287,6 +287,37 @@ test('same-style characters get tactical summaries from their own selection guid
   assert.ok(!firstSummary.includes(sharedDescription));
 });
 
+test('repeated Core summary templates are individualized from each character’s strengths', () => {
+  const sharedTemplate = (character) =>
+    `${character} (All-Rounder) suits using touch and controlled net finishes. Use the build to earn a short reply, then use touch or a controlled volley to finish.`;
+  const first = buildCharacterProfileSummary('Player One', [], [], {
+    why_select: sharedTemplate('Player One'),
+    top_edges: [
+      { attribute: 'Service Precision', value: 96 },
+      { attribute: 'Service Consistency', value: 92 },
+      { attribute: 'Forehand Volley', value: 81 },
+    ],
+  });
+  const second = buildCharacterProfileSummary('Player Two', [], [], {
+    why_select: sharedTemplate('Player Two'),
+    top_edges: [
+      { attribute: 'Counter', value: 91 },
+      { attribute: 'Speed', value: 88 },
+      { attribute: 'Stamina', value: 84 },
+    ],
+  });
+
+  assert.notEqual(
+    first.replace('Player One', 'PLAYER').toLowerCase(),
+    second.replace('Player Two', 'PLAYER').toLowerCase(),
+  );
+  assert.match(first, /serve placement, serve reliability, and forehand volleys/i);
+  assert.match(first, /draw a short reply.*finish with touch or a volley/i);
+  assert.match(second, /counterpunching, court coverage, and stamina/i);
+  assert.match(second, /recover through the middle.*incoming pace/i);
+  assert.doesNotMatch(`${first} ${second}`, /Use the build|rank #|\/100/i);
+});
+
 test('profile summary prefers tactical guidance over a combined-rating rank dump', () => {
   const summary = buildCharacterProfileSummary('Player One', [], [
     { attribute: 'Serve Rating', value: 81.4, rank: 12, count: 102, percentile: 0.89 },
