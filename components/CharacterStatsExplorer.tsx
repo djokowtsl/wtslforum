@@ -678,7 +678,6 @@ function Profile({
       <section className="character-profile-method-note" aria-label="How to read this profile">
         <div><b>Roster comparisons</b><p>Standouts, drawbacks, and category scores compare this character with the selected tour roster. Category scores average rankable attribute percentiles, not raw ratings.</p></div>
         <div><b>Mechanics explanations</b><p>Technical notes use the character’s own ratings and documented TE4 mechanics; they are not comparisons with other players.</p></div>
-        <div><b>Point-event statistics</b><p>Winners, unforced errors, and rally length are not estimated without point-level match data.</p></div>
       </section>
 
       <section className="panel character-detail-panel">

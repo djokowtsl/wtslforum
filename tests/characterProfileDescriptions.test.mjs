@@ -14,6 +14,10 @@ const component = readFileSync(
   new URL('../components/CharacterStatsExplorer.tsx', import.meta.url),
   'utf8',
 );
+const styles = readFileSync(
+  new URL('../app/globals.css', import.meta.url),
+  'utf8',
+);
 
 test('character profiles derive a summary from their own ratings and render profile guidance', () => {
   for (const marker of [
@@ -47,6 +51,12 @@ test('serve speed is labelled as average maximal, and size insight uses TE4 reac
     buildSizeMechanicsInsight(180, 70),
     /Height 180 cm · weight 70 kg.*very small run-acceleration bonus.*shorter wingspan/,
   );
+});
+
+test('character portrait image fills its frame', () => {
+  const rule = styles.match(/\.character-portrait img\s*\{([^}]+)\}/);
+  assert.ok(rule, 'character portrait image styles are present');
+  assert.match(rule[1], /object-fit:\s*cover/);
 });
 
 test('character profile explains fixed two-handed stroke effects without comparing alternate builds', () => {
@@ -234,6 +244,8 @@ test('profile follows the Discord content order and explains roster and AI evide
   assert.ok(component.includes('character-profile-method-note'));
   assert.ok(component.includes('character-ai-insight-warning'));
   assert.ok(component.includes('AI-generated recommendations, not verified match statistics'));
+  assert.ok(!component.includes('Point-event statistics'));
+  assert.ok(!component.includes('not estimated without point-level match data'));
   assert.ok(component.includes('Each category is the average percentile of its rankable attributes'));
   assert.ok(component.includes('Court speed'));
   assert.ok(component.includes('Shot variety'));
