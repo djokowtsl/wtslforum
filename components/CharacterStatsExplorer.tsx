@@ -542,7 +542,7 @@ function Profile({
           </div>
           {characterSummary && (
             <div className="character-profile-summary">
-              <span className="panel-label">SUMMARY</span>
+              <span className="panel-label">WHY PICK THIS CHARACTER?</span>
               <p className="character-style-description">{characterSummary}</p>
             </div>
           )}
