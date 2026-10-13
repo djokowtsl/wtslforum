@@ -1,1 +1,5 @@
-export function buildCharacterProfileSummary(character: unknown, stats: unknown): string;
+export function buildCharacterProfileSummary(
+  character: unknown,
+  stats: unknown,
+  combinedRatings?: unknown,
+): string;
