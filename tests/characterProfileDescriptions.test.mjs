@@ -2,6 +2,7 @@ import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
 import test from 'node:test';
 import { characterCategoryScores } from '../lib/characterProfileGroups.mjs';
+import { buildCharacterProfileSummary } from '../lib/characterProfileSummary.mjs';
 import { removeUnsupportedCharacterProjections } from '../lib/characterProfileSafety.mjs';
 
 const component = readFileSync(
@@ -9,10 +10,10 @@ const component = readFileSync(
   'utf8',
 );
 
-test('character profiles render Core descriptions and game-plan guidance', () => {
+test('character profiles derive a summary from their own ratings and render profile guidance', () => {
   for (const marker of [
-    'profile.style_description',
-    '<p className="character-style-description">{styleDescription}</p>',
+    'buildCharacterProfileSummary(',
+    '<p className="character-style-description">{characterSummary}</p>',
     'profile.selection_guidance',
     'character-selection-guidance',
     'profile.mechanics_insights',
@@ -24,6 +25,56 @@ test('character profiles render Core descriptions and game-plan guidance', () =>
   ]) {
     assert.ok(component.includes(marker), `character copy binding missing: ${marker}`);
   }
+  assert.ok(!component.includes('profile.style_description'));
+});
+
+test('same-style characters get summaries from their distinct roster ratings', () => {
+  const sharedDescription =
+    'Can play deep, take the ball early, or come forward, choosing the best court position instead of forcing one pattern.';
+  const firstProfile = {
+    character: 'Player One',
+    style: 'All-Rounder',
+    style_description: sharedDescription,
+    stats: [
+      { attribute: 'Forehand Power', value: 94, rank: 2, percentile: 0.99 },
+      { attribute: 'Service Precision', value: 88, rank: 8, percentile: 0.93 },
+      { attribute: 'Speed', value: 85, rank: 12, percentile: 0.89 },
+    ],
+  };
+  const secondProfile = {
+    character: 'Player Two',
+    style: 'All-Rounder',
+    style_description: sharedDescription,
+    stats: [
+      { attribute: 'Service Power', value: 97, rank: 1, percentile: 1 },
+      { attribute: 'Backhand Consistency', value: 91, rank: 5, percentile: 0.96 },
+      { attribute: 'Stamina', value: 83, rank: 20, percentile: 0.81 },
+    ],
+  };
+  const firstSummary = buildCharacterProfileSummary(
+    firstProfile.character,
+    firstProfile.stats,
+  );
+  const secondSummary = buildCharacterProfileSummary(
+    secondProfile.character,
+    secondProfile.stats,
+  );
+
+  assert.notEqual(firstSummary, secondSummary);
+  assert.match(firstSummary, /Forehand Power 94\/100 \(99th percentile\)/);
+  assert.match(firstSummary, /forehand-led first strikes/);
+  assert.match(secondSummary, /Service Power 97\/100 \(100th percentile\)/);
+  assert.match(secondSummary, /first-serve pressure/);
+  assert.ok(!firstSummary.includes(sharedDescription));
+});
+
+test('summary reports missing ratings instead of reusing generic playstyle copy', () => {
+  const first = buildCharacterProfileSummary('Player One', []);
+  const second = buildCharacterProfileSummary('Player Two', []);
+
+  assert.notEqual(first, second);
+  assert.match(first, /Player One/);
+  assert.match(first, /not have enough rating data/);
 });
 
 test('category profile uses Core roster percentiles and omits empty default groups', () => {
