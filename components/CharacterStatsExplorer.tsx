@@ -9,6 +9,7 @@ import { characterCategoryScores } from '@/lib/characterProfileGroups.mjs';
 import { buildCharacterProfileSummary } from '@/lib/characterProfileSummary.mjs';
 import {
   buildSizeMechanicsInsight,
+  buildStrokeSetupLabels,
   buildStrokeMechanicsInsight,
 } from '@/lib/characterProfileMechanics.mjs';
 import SearchableDropdown from '@/components/SearchableDropdown';
@@ -406,6 +407,7 @@ function Profile({
   const profile = data.profile!;
   const guidance = profile.selection_guidance || {};
   const mechanics = profile.mechanics_insights || {};
+  const strokeSetupLabels = buildStrokeSetupLabels(profile);
   const sizeInsight = buildSizeMechanicsInsight(profile.height, profile.weight);
   const strokeInsight = buildStrokeMechanicsInsight(profile);
   const insightRows = [
@@ -489,6 +491,7 @@ function Profile({
           </p>
           <div className="character-badges">
             <span>{profile.style}</span><span>Acceleration: {profile.acceleration}</span>
+            {strokeSetupLabels.map((label) => <span key={label}>{label}</span>)}
           </div>
           {characterSummary && (
             <div className="character-profile-summary">
