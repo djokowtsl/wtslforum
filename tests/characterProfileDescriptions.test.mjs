@@ -190,8 +190,8 @@ test('court-fit copy treats near-neutral Topspin carefully and covers all three 
     'Topspin 51% is only 1 point above neutral: effectively balanced on medium-paced courts, with a slight slow-court benefit and fast-court handicap.',
   );
   assert.equal(
-    buildCourtSpeedInsight([{ attribute: 'Topspin', value: 23 }]),
-    'Topspin 23% is 27 points below neutral: the slow-court handicap grows with the gap, while medium-paced courts stay near neutral. Low Topspin alone does not create a fast-court bonus.',
+    buildCourtSpeedInsight([{ attribute: 'Topspin', value: 25 }]),
+    'Topspin is 25% (50% is neutral). Below 50%, slow courts are a tougher fit, and the further below, the bigger the disadvantage. Lower Topspin can suit fast courts by producing flatter, faster shots, especially for Volleyers. Medium-paced courts are little affected, and the other ratings still influence overall court fit.',
   );
   assert.doesNotMatch(nearNeutral, /suits slow courts|strong slow-court advantage/i);
   assert.equal(buildCourtSpeedInsight([], 'Choose a Top Spin stroke when needed.'), '');
@@ -264,7 +264,7 @@ test('net-play advice recommends or cautions against approaches from roster-rela
   assert.match(strongNetProfile, /Available net ratings average at the 80th roster percentile/);
   assert.match(
     strongNetProfile,
-    /Net Presence combines with volley and smash ratings for precision and consistency—not power—and reduces the volley movement penalty/,
+    /Net Presence contributes to volley and smash accuracy and consistency\. Higher Net Presence lets a player move more while hitting a volley before movement starts to affect the shot/,
   );
   assert.match(strongNetProfile, /Net play is a roster strength; come forward selectively after a deep shot draws a short reply/);
 
@@ -479,7 +479,7 @@ test('size-and-reach copy keeps neutral-height and lower-fit advice clear', () =
   assert.doesNotMatch(insight, /one-handed backhand scores|Normal strike first|Short Strike/i);
   assert.match(
     heightChallenge,
-    /Height 172 cm \(12th percentile in the WTA roster\). Small challenge against shoulder-high, heavy-spin contact only/i,
+    /Height 172 cm \(12th percentile in the WTA roster\). A slight challenge on shoulder-high balls when they carry heavy spin/i,
   );
   assert.match(heightChallenge, /Backhand fit for this situation: 63\/100/i);
   assert.doesNotMatch(heightChallenge, /two-handed backhand scores|Normal strike first|Short Strike/i);

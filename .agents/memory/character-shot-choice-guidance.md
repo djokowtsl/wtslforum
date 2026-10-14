@@ -13,11 +13,11 @@ For WTSL Forum character profiles, keep the copy concise and conversational. Sta
 
 ### Court fit and physical profile guidance
 
-For character profiles, 50% Topspin is neutral; values close to 50% are near-neutral, and surface effects grow with distance from that midpoint. Explain slow, medium-paced, and fast-court fit without claiming that 51% meaningfully favors slow courts. Tiredness is always on for all characters; explain fatigue using Speed, Muscle Tone, and Stamina. Weight does not affect gameplay and must not appear in profile copy.
+For character profiles, 50% Topspin is neutral; values close to 50% are near-neutral, and surface effects grow with distance from that midpoint. Explain slow, medium-paced, and fast-court fit without claiming that 51% meaningfully favors slow courts. State the 50% reference plainly and explain each court-pace effect in direct language; avoid relying on unclear phrases such as “points below neutral” or an unexplained “bonus.” A below-50 Topspin rating can suit a flatter, faster game on fast courts, especially for Volleyers; do not imply it guarantees overall fast-court fit. Tiredness is always on for all characters; explain fatigue using Speed, Muscle Tone, and Stamina. Weight does not affect gameplay and must not appear in profile copy.
 
-**Why:** The user clarified that Tiredness is on for everyone and everyone already knows this, so it should not be repeated on character profiles. They also clarified that weight has no gameplay effect, and asked for medium-court guidance, near-neutral copy at 51% Topspin, physical comparisons, restored rally-fit analyses, and character-specific tactical plans. They later described the row-by-row physical values and formula as a data dump and asked for a more insightful player takeaway.
+**Why:** The user clarified that Tiredness is on for everyone and everyone already knows this, so it should not be repeated on character profiles. They also clarified that weight has no gameplay effect, and asked for medium-court guidance, near-neutral copy at 51% Topspin, physical comparisons, restored rally-fit analyses, and character-specific tactical plans. They later described the row-by-row physical values and formula as a data dump and asked for a more insightful player takeaway. They also said the Topspin surface-effect explanation using “points below neutral” and “bonus” was unclear to readers, and pointed out that low Topspin can help on fast courts. The TE4 manual notes that Volleyers may prefer low Topspin on fast surfaces because higher Topspin slows shots.
 
-**How to apply:** Use same-tour percentiles to identify court-coverage strengths and weaknesses, then explain the likely effect on wide-ball coverage, first-step acceleration, or recovery. Relate Stamina to sustaining repeated runs and energy in longer exchanges. Synthesize the three ratings into one or two player-focused sentences with a practical positioning or recovery cue; do not list every raw value, percentile, or formula, and omit the universal Tiredness setting. Do not use conditional on/off wording. Omit weight from headings, dimensions, mechanics, and general profile guidance.
+**How to apply:** Use same-tour percentiles to identify court-coverage strengths and weaknesses, then explain the likely effect on wide-ball coverage, first-step acceleration, or recovery. Relate Stamina to sustaining repeated runs and energy in longer exchanges. Synthesize the three ratings into one or two player-focused sentences with a practical positioning or recovery cue; do not list every raw value, percentile, or formula, and omit the universal Tiredness setting. For a height-related challenge, use “A slight challenge on shoulder-high balls when they carry heavy spin,” and keep it limited to that situation. Do not use conditional on/off wording. Omit weight from headings, dimensions, mechanics, and general profile guidance.
 
 ### Groundstroke wording and roster context
 
@@ -26,3 +26,11 @@ Call the selectable shot the “Short strike,” not just “Short.” Describe 
 **Why:** The user questioned ambiguous strike naming, preferred “Hit shots on the rise,” and pointed out that an 89 rating at the 13th percentile should not be described as a strength.
 
 **How to apply:** Use “Normal strike” and “Short strike” in shot cues. Translate “Time them near the bounce” to “Hit shots on the rise” in Forum-rendered copy without editing Core. Make difficult-shot claims match the tour-relative Consistency percentile.
+
+### Net Presence wording
+
+Net Presence contributes to volley and smash accuracy and consistency, and lets players move more while hitting a volley before movement affects the shot. Explain these effects directly; avoid an unexplained “volley movement penalty” or an aside that it does not affect power.
+
+**Why:** The user questioned why profile copy mentioned that Net Presence does not affect power and asked what the “volley movement penalty” means.
+
+**How to apply:** In user-facing copy, state the positive effect on volley/smash accuracy and consistency, then explain that higher Net Presence lets a player move more while hitting a volley before movement starts to affect the shot.
