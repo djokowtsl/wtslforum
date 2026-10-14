@@ -485,26 +485,47 @@ test('size-and-reach copy keeps neutral-height and lower-fit advice clear', () =
 });
 
 test('game plans preserve full character-specific detail without a step cap', () => {
+  const ratingStats = [
+    { attribute: 'Forehand Consistency' },
+    { attribute: 'Muscle Tone' },
+  ];
   const steps = buildGamePlanSteps(
     'Focus: Prepare early and choose direction before the ball reaches you. Forehand Consistency: Use deep forehand cross-court shape, then change direction when the reply sits short. Muscle Tone: Use normal or Top Spin rally strikes while recovering through the middle; choose an acceleration only when balanced and the reply is short.',
     'None',
+    ratingStats,
   );
 
   assert.deepEqual(steps, [
     'Focus: Prepare early and choose direction before the ball reaches you.',
-    'Forehand Consistency: Use deep forehand cross-court shape, then change direction when the reply sits short.',
-    'Muscle Tone: Use normal or Top Spin rally strikes while recovering through the middle; choose an acceleration only when balanced and the reply is short.',
+    'Use deep forehand cross-court shape, then change direction when the reply sits short.',
+    'Use normal or Top Spin rally strikes while recovering through the middle; choose an acceleration only when balanced and the reply is short.',
   ]);
   assert.deepEqual(
     buildGamePlanSteps(
       'Muscle Tone: Use normal or Top Spin rally strikes while recovering through the middle; choose an acceleration only when balanced and the reply is short.',
       'Sprint',
+      ratingStats,
     ),
-    ['Muscle Tone: Use normal or Top Spin rally strikes while recovering through the middle; choose an acceleration only when balanced and the reply is short.'],
+    ['Use normal or Top Spin rally strikes while recovering through the middle; choose an acceleration only when balanced and the reply is short.'],
   );
-  assert.ok(steps.some((step) => /Forehand Consistency:/.test(step)));
+  assert.doesNotMatch(steps.join(' '), /(?:Forehand Consistency|Muscle Tone):/);
   assert.ok(steps.some((step) => /\bforehand\b/i.test(step)));
   assert.ok(steps.some((step) => /\bacceleration\b/i.test(step)));
+
+  const exampleTactics = buildGamePlanSteps(
+    "Forehand Volley: Approach only after a short or defensive reply; direct the first volley toward the side the opponent has just left open. Ball Feeling: Use a drop shot or short angle only after moving the opponent behind the baseline. Service Precision: Vary the serve between body and corner targets, then attack the returner's recovery with the next ball.",
+    '',
+    [
+      { attribute: 'Forehand Volley' },
+      { attribute: 'Ball Feeling' },
+      { attribute: 'Service Precision' },
+    ],
+  );
+  assert.deepEqual(exampleTactics, [
+    'Approach only after a short or defensive reply; direct the first volley toward the side the opponent has just left open.',
+    'Use a drop shot or short angle only after moving the opponent behind the baseline.',
+    "Vary the serve between body and corner targets, then attack the returner's recovery with the next ball.",
+  ]);
 
   const completePlan = [
     'Focus: Hold the middle early.',
