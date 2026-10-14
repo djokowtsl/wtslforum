@@ -270,6 +270,12 @@ test('stroke setup fallback uses the character ratings rather than a shared bonu
 });
 
 test('Counterplay copy describes Counter as a rating, not a shot', () => {
+  const copyTypes = readFileSync(
+    new URL('../lib/characterProfileCopy.d.mts', import.meta.url),
+    'utf8',
+  );
+  assert.match(copyTypes, /export function cleanCounterInsight\(value: unknown\): string;/);
+
   const cases = [
     ['Forehand', '75.2 vs 82.6'],
     ['Backhand', '82.6 vs 75.2'],
