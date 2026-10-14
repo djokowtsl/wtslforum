@@ -107,18 +107,18 @@ test('roster evidence merges matching notes and avoids repeated or summarized at
   ]);
 });
 
-test('court-speed copy is concise and based on the character Topspin rating', () => {
+test('court-fit copy follows the documented Topspin surface modifiers', () => {
   assert.equal(
-    buildCourtSpeedInsight([{ attribute: 'Topspin', value: 58 }]),
-    'Topspin 58% does not suggest a strong fast- or slow-court preference.',
+    buildCourtSpeedInsight([{ attribute: 'Topspin', value: 68 }]),
+    'Topspin 68% is above neutral: it gives a bonus on clay and slow surfaces (stronger for rally players, smaller for volley players) but increases the handicap on fast surfaces.',
   );
-  assert.match(
+  assert.equal(
+    buildCourtSpeedInsight([{ attribute: 'Topspin', value: 50 }]),
+    'Topspin 50% is neutral: it gives neither a bonus nor a handicap on fast or slow surfaces.',
+  );
+  assert.equal(
     buildCourtSpeedInsight([{ attribute: 'Topspin', value: 23 }]),
-    /Topspin 23% favors a flatter, faster trajectory/,
-  );
-  assert.match(
-    buildCourtSpeedInsight([{ attribute: 'Topspin', value: 78 }]),
-    /Topspin 78% supports a higher, heavier bounce/,
+    'Topspin 23% is below neutral: lower Topspin favors fast surfaces, while the handicap on slow surfaces grows as the rating falls.',
   );
   assert.doesNotMatch(
     buildCourtSpeedInsight([], 'Choose a Top Spin stroke when needed, then use the forehand.'),
@@ -557,7 +557,7 @@ test('profile follows the Discord content order and explains roster and AI evide
   assert.ok(!component.includes('Point-event statistics'));
   assert.ok(!component.includes('not estimated without point-level match data'));
   assert.ok(component.includes('Each category is the average percentile of its rankable attributes'));
-  assert.ok(component.includes('Court speed'));
+  assert.ok(component.includes('Fit on fast and slow courts'));
   assert.ok(component.includes('Shot variety'));
   assert.ok(!component.includes('the model is still under construction'));
   assert.ok(!component.includes("['Match play', mechanics.match_play]"));
