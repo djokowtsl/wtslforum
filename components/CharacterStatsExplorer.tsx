@@ -17,6 +17,7 @@ import {
   buildGamePlanSteps,
   cleanCharacterMechanic,
   cleanCounterInsight,
+  cleanShotVarietyInsight,
   cleanSizeReachInsight,
   normalizeCharacterCopy,
   splitRosterEvidenceNotes,
@@ -450,7 +451,7 @@ function Profile({
     ['Stroke setup', strokeInsight],
     ['Counterplay', cleanCounterInsight(mechanics.counter)],
     ['Net play', mechanics.net],
-    ['Shot variety', mechanics.variation],
+    ['Shot variety', cleanShotVarietyInsight(mechanics.variation)],
   ].filter(([, text]) => typeof text === 'string' && text.trim());
   const advantages = Array.isArray(guidance.advantages) ? guidance.advantages : [];
   const vulnerabilities = Array.isArray(guidance.vulnerabilities) ? guidance.vulnerabilities : [];
