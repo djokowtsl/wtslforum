@@ -12,6 +12,7 @@ import {
   buildCourtSpeedInsight,
   buildGamePlanSteps,
   cleanCharacterMechanic,
+  cleanCounterInsight,
   cleanSizeReachInsight,
   normalizeCharacterCopy,
   splitRosterEvidenceNotes,
@@ -39,6 +40,7 @@ test('character profiles derive a selected-character summary and render profile 
     'const selectionRationale = normalizeCharacterCopy(',
     '<h3>Why pick this character?</h3>',
     'profile.mechanics_insights',
+    'cleanCounterInsight(mechanics.counter)',
     'className="panel character-guidance-panel"',
     'Style &amp; traits',
     'Technical summary',
@@ -265,6 +267,28 @@ test('stroke setup fallback uses the character ratings rather than a shared bonu
     lowerBounceFitInsight,
     /favor a steady rally shot first, then attack heavy topspin once you're set/i,
   );
+});
+
+test('Counterplay copy describes Counter as a rating, not a shot', () => {
+  const cases = [
+    ['Forehand', '75.2 vs 82.6'],
+    ['Backhand', '82.6 vs 75.2'],
+  ];
+
+  for (const [strongerWing, ratingComparison] of cases) {
+    const insight = cleanCounterInsight(
+      `Counter 52 (49th percentile in the ATP roster) gives an effective value of 67/100 after stroke setup. Use Counter when the incoming ball already has pace; this profile's ${strongerWing} is the better redirecting option (${ratingComparison}). Against a slower reply, build pace with a prepared first strike.`,
+    );
+
+    assert.match(
+      insight,
+      new RegExp(
+        `The Counter rating helps this character redirect incoming pace with its stronger ${strongerWing} \\(${ratingComparison.replaceAll('.', '\\.')}\\)`,
+      ),
+    );
+    assert.match(insight, /Against a slower reply, build pace with a prepared first strike/);
+    assert.doesNotMatch(insight, /Use Counter when/i);
+  }
 });
 
 test('character portrait image fills its frame', () => {
