@@ -16,10 +16,12 @@ import {
   buildCounterInsight,
   buildServeInsight,
   buildGroundstrokeInsight,
+  buildPhysicalInsight,
   buildCourtSpeedInsight,
   buildGamePlanSteps,
   buildNetPlayInsight,
   buildShotVarietyInsight,
+  cleanRallyFit,
   cleanCharacterGuidance,
   cleanCharacterMechanic,
   cleanSizeReachInsight,
@@ -442,10 +444,14 @@ function Profile({
   const mechanics = profile.mechanics_insights || {};
   const strokeSetupLabels = buildStrokeSetupLabels(profile);
   const sizeInsight = cleanSizeReachInsight(
-    mechanics.size_reach || buildSizeMechanicsInsight(profile.height, profile.weight),
+    mechanics.size_reach || buildSizeMechanicsInsight(profile.height),
   );
   const strokeInsight = buildStrokeMechanicsInsight(profile);
-  const surfaceFitInsight = buildCourtSpeedInsight(profile.stats);
+  const groundstrokeInsight = [
+    buildGroundstrokeInsight(profile),
+    strokeInsight,
+  ].filter(Boolean).join(' ');
+  const surfaceFitInsight = buildCourtSpeedInsight(profile.stats, profile.style);
   const styleMechanic = cleanCharacterMechanic(guidance.style_mechanics, profile.character);
   const accelerationMechanic = cleanCharacterMechanic(
     guidance.acceleration_mechanics,
@@ -455,10 +461,10 @@ function Profile({
   const serveInsight = buildServeInsight(profile);
   const insightRows = [
     ['Serve', serveInsight],
-    ['Groundstrokes', buildGroundstrokeInsight(profile)],
-    ['Fit on fast and slow courts', surfaceFitInsight],
+    ['Groundstrokes', groundstrokeInsight],
+    ['Fit on fast, medium & slow courts', surfaceFitInsight],
     ['Size & reach', sizeInsight],
-    ['Hand use', strokeInsight],
+    ['Physical', buildPhysicalInsight(profile)],
     ['Counterplay', buildCounterInsight(profile)],
     ['Net play', buildNetPlayInsight(profile.stats)],
     ['Shot variety', buildShotVarietyInsight(profile)],
@@ -517,9 +523,8 @@ function Profile({
     .map(([key, title]) => ({
       key,
       title,
-      text: cleanCharacterGuidance(exchangeFit[key]),
-    }))
-    .filter((row) => typeof row.text === 'string' && row.text.trim());
+      text: cleanRallyFit(exchangeFit[key]) || 'No rally-fit analysis is available for this exchange length.',
+    }));
   const official = data.official || {};
   const profileImage = official.avatar_url;
   const [imageFailed, setImageFailed] = useState(false);
@@ -556,7 +561,6 @@ function Profile({
           <p className="character-profile-meta">
             {profile.country_flag} {profile.country || 'Country unavailable'}
             {' · '}{formatValue(profile.height, ' cm')}
-            {' · '}{formatValue(profile.weight, ' kg')}
           </p>
           <div className="character-badges">
             <span>{profile.style}</span><span>Acceleration: {profile.acceleration}</span>

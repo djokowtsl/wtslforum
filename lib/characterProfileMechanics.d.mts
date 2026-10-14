@@ -6,6 +6,6 @@ type CharacterStrokeSetup = {
 
 export function buildStrokeSetupLabels(profile?: CharacterStrokeSetup): string[];
 
-export function buildSizeMechanicsInsight(height: Dimension, weight: Dimension): string;
+export function buildSizeMechanicsInsight(height: Dimension): string;
 
 export function buildStrokeMechanicsInsight(profile?: CharacterStrokeSetup & Record<string, unknown>): string;
