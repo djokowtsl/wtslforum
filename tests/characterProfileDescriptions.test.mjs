@@ -377,7 +377,7 @@ test('groundstroke advice keeps character ratings and useful cues concise', () =
   assert.ok(component.includes('buildGroundstrokeInsight(profile)'));
 });
 
-test('physical notes connect roster-relative Speed, Muscle Tone, and Stamina with Tiredness on', () => {
+test('physical notes connect roster-relative Speed, Muscle Tone, and Stamina with Tiredness enabled', () => {
   const profile = {
     stats: [
       { attribute: 'Speed', value: 90, percentile: 0.9 },
@@ -390,8 +390,9 @@ test('physical notes connect roster-relative Speed, Muscle Tone, and Stamina wit
   assert.match(balanced, /Muscle Tone 60 \(40th roster percentile\) contributes to running acceleration/);
   assert.match(balanced, /\(Speed \+ Muscle Tone\) \/ 2 = 75/);
   assert.match(balanced, /Stamina 75 \(70th roster percentile\) matches that movement average/);
-  assert.match(balanced, /Tiredness is on for all characters/);
+  assert.match(balanced, /Tiredness is enabled for all characters/);
   assert.match(balanced, /running and strokes drain energy, and faster running costs more/);
+  assert.doesNotMatch(balanced, /\bwhen\b/i);
 
   const highStamina = buildPhysicalInsight({
     stats: [
@@ -400,7 +401,7 @@ test('physical notes connect roster-relative Speed, Muscle Tone, and Stamina wit
       { attribute: 'Stamina', value: 90 },
     ],
   });
-  assert.match(highStamina, /Stamina 90 is above that movement average, so energy drains more slowly/);
+  assert.match(highStamina, /Stamina 90 is above that movement average, so running fatigue builds more slowly/);
 
   const lowStamina = buildPhysicalInsight({
     stats: [
@@ -409,7 +410,7 @@ test('physical notes connect roster-relative Speed, Muscle Tone, and Stamina wit
       { attribute: 'Stamina', value: 60 },
     ],
   });
-  assert.match(lowStamina, /Stamina 60 is below that movement average, so energy drains faster/);
+  assert.match(lowStamina, /Stamina 60 is below that movement average, so running fatigue builds faster/);
   assert.equal(buildPhysicalInsight({ stats: [] }), '');
   assert.ok(component.includes("['Physical', buildPhysicalInsight(profile)]"));
 });
