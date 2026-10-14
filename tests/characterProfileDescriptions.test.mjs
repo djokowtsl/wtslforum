@@ -9,6 +9,7 @@ import {
 } from '../lib/characterProfileMechanics.mjs';
 import { buildCharacterProfileSummary } from '../lib/characterProfileSummary.mjs';
 import {
+  buildServeInsight,
   buildCourtSpeedInsight,
   buildGamePlanSteps,
   buildNetPlayInsight,
@@ -218,6 +219,47 @@ test('net-play advice changes with each character’s roster-relative net skill'
     /export function buildNetPlayInsight\(stats: unknown, fallbackText\?: unknown\): string;/,
   );
   assert.ok(component.includes('buildNetPlayInsight(profile.stats, mechanics.net)'));
+});
+
+test('serve advice uses service percentiles and the character’s stronger first groundstroke', () => {
+  const profile = {
+    stats: [
+      { attribute: 'Service Power', value: 82, percentile: 0.8 },
+      { attribute: 'Service Consistency', value: 81, percentile: 0.55 },
+      { attribute: 'Service Precision', value: 94, percentile: 0.88 },
+    ],
+    combined_ratings: [
+      { attribute: 'Serve Rating', value: 85, max_serve_speed_kmh: 200 },
+      { attribute: 'Forehand Rating', value: 89.4 },
+      { attribute: 'Backhand Rating', value: 81.6 },
+    ],
+  };
+  assert.equal(
+    buildServeInsight(profile, 'Generic Core serve advice.'),
+    'Average maximal serve speed is 200.0 km/h. Service Power 82 (80th percentile), Consistency 81 (55th percentile), and Precision 94 (88th percentile). Power is the stronger roster-relative asset despite the close raw ratings; use first-serve pace selectively and protect the second serve. Placement is a top-quartile strength; use it to vary body and corner targets. When a short return sits up, attack with the forehand (89.4 vs 81.6).',
+  );
+
+  const saferProfile = {
+    stats: [
+      { attribute: 'Service Power', value: 70, percentile: 0.35 },
+      { attribute: 'Service Consistency', value: 70, percentile: 0.65 },
+      { attribute: 'Service Precision', value: 60, percentile: 0.35 },
+    ],
+    combined_ratings: [
+      { attribute: 'Serve Rating', max_serve_speed_kmh: 192 },
+      { attribute: 'Forehand Rating', value: 82.1 },
+      { attribute: 'Backhand Rating', value: 86.4 },
+    ],
+  };
+  const saferAdvice = buildServeInsight(saferProfile);
+  assert.match(saferAdvice, /Consistency is the stronger roster-relative asset/);
+  assert.match(saferAdvice, /Placement is below the roster midpoint/);
+  assert.match(saferAdvice, /attack with the backhand \(86\.4 vs 82\.1\)/);
+  assert.match(
+    copyTypes,
+    /export function buildServeInsight\(profile: unknown, fallbackText\?: unknown\): string;/,
+  );
+  assert.ok(component.includes('buildServeInsight(profile, mechanics.serve)'));
 });
 
 test('size-and-reach copy explains height, backhand fit, and weight in plain language', () => {
