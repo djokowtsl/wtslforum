@@ -19,6 +19,7 @@ import {
   cleanCharacterMechanic,
   cleanCounterInsight,
   cleanNetInsight,
+  cleanStrokeMechanicsInsight,
   cleanShotVarietyInsight,
   cleanSizeReachInsight,
   normalizeCharacterCopy,
@@ -437,7 +438,9 @@ function Profile({
   const sizeInsight = cleanSizeReachInsight(
     mechanics.size_reach || buildSizeMechanicsInsight(profile.height, profile.weight),
   );
-  const strokeInsight = mechanics.stroke_setup || buildStrokeMechanicsInsight(profile);
+  const strokeInsight = cleanStrokeMechanicsInsight(
+    mechanics.stroke_setup || buildStrokeMechanicsInsight(profile),
+  );
   const surfaceFitInsight = buildCourtSpeedInsight(profile.stats, mechanics.surface_fit);
   const styleMechanic = cleanCharacterMechanic(guidance.style_mechanics, profile.character);
   const accelerationMechanic = cleanCharacterMechanic(
