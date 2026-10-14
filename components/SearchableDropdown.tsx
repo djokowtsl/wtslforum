@@ -16,6 +16,9 @@ type SearchableDropdownProps = {
   showDropdownIndicator?: boolean;
   dropdownLabel?: string;
   emptyOptionLabel?: string;
+  optionLabels?: Record<string, string>;
+  optionLimit?: number;
+  selectionOnly?: boolean;
 };
 
 const OPTION_LIMIT = 60;
@@ -34,6 +37,9 @@ export default function SearchableDropdown({
   showDropdownIndicator = false,
   dropdownLabel = 'options',
   emptyOptionLabel,
+  optionLabels,
+  optionLimit = OPTION_LIMIT,
+  selectionOnly = false,
 }: SearchableDropdownProps) {
   const generatedId = useId().replace(/:/g, '');
   const listId = id + '-options-' + generatedId;
@@ -41,15 +47,25 @@ export default function SearchableDropdown({
   const [isOpen, setIsOpen] = useState(false);
   const [activeIndex, setActiveIndex] = useState(-1);
   const [showAllOptions, setShowAllOptions] = useState(false);
-  const query = (showAllOnFocus && showAllOptions ? '' : value).trim().toLocaleLowerCase();
+  const [searchQuery, setSearchQuery] = useState('');
+  const selectedLabel = value ? optionLabels?.[value] ?? value : '';
+  const inputValue = selectionOnly ? (isOpen ? searchQuery : selectedLabel) : value;
+  const queryValue = selectionOnly ? searchQuery : value;
+  const query = (showAllOnFocus && showAllOptions ? '' : queryValue).trim().toLocaleLowerCase();
   const matchingOptions = useMemo(
-    () => options.filter((option) => option.toLocaleLowerCase().includes(query)),
-    [options, query],
+    () => options.filter((option) => {
+      const label = optionLabels?.[option] ?? option;
+      return option.toLocaleLowerCase().includes(query) || label.toLocaleLowerCase().includes(query);
+    }),
+    [options, optionLabels, query],
   );
-  const visibleOptions = matchingOptions.slice(0, OPTION_LIMIT);
+  const visibleOptions = matchingOptions.slice(0, Math.max(1, optionLimit));
   const optionItems = [
     ...(emptyOptionLabel ? [{ value: '', label: emptyOptionLabel }] : []),
-    ...visibleOptions.map((option) => ({ value: option, label: option })),
+    ...visibleOptions.map((option) => ({
+      value: option,
+      label: optionLabels?.[option] ?? option,
+    })),
   ];
   const firstMatchIndex = emptyOptionLabel && visibleOptions.length ? 1 : 0;
 
@@ -59,6 +75,7 @@ export default function SearchableDropdown({
 
   function selectOption(option: string) {
     onChange(option);
+    setSearchQuery('');
     setIsOpen(false);
     setActiveIndex(-1);
     setShowAllOptions(false);
@@ -89,10 +106,12 @@ export default function SearchableDropdown({
       setIsOpen(false);
       setActiveIndex(-1);
       setShowAllOptions(false);
+      setSearchQuery('');
     } else if (event.key === 'Tab') {
       setIsOpen(false);
       setActiveIndex(-1);
       setShowAllOptions(false);
+      setSearchQuery('');
     }
   }
 
@@ -111,12 +130,13 @@ export default function SearchableDropdown({
         aria-invalid={invalid || undefined}
         aria-describedby={describedBy}
         autoComplete="off"
-        value={value}
+        value={inputValue}
         placeholder={placeholder}
         disabled={disabled}
         onFocus={() => {
           setIsOpen(true);
           setActiveIndex(-1);
+          if (selectionOnly) setSearchQuery('');
           setShowAllOptions(showAllOnFocus);
           if (showAllOnFocus) inputRef.current?.select();
         }}
@@ -124,9 +144,11 @@ export default function SearchableDropdown({
           setIsOpen(false);
           setActiveIndex(-1);
           setShowAllOptions(false);
+          setSearchQuery('');
         }}
         onChange={(event) => {
-          onChange(event.target.value);
+          if (selectionOnly) setSearchQuery(event.target.value);
+          else onChange(event.target.value);
           setIsOpen(true);
           setActiveIndex(-1);
           setShowAllOptions(false);
@@ -147,8 +169,10 @@ export default function SearchableDropdown({
             if (isOpen) {
               setIsOpen(false);
               setShowAllOptions(false);
+              setSearchQuery('');
             } else {
               setIsOpen(true);
+              if (selectionOnly) setSearchQuery('');
               setShowAllOptions(showAllOnFocus);
               inputRef.current?.focus();
             }
@@ -181,8 +205,10 @@ export default function SearchableDropdown({
             No matching values
           </div>
         )}
-        {matchingOptions.length > OPTION_LIMIT ? (
-          <div className="screenshot-searchable-dropdown-hint">Showing the first {OPTION_LIMIT} matches. Type to narrow.</div>
+        {matchingOptions.length > optionLimit ? (
+          <div className="screenshot-searchable-dropdown-hint">
+            Showing the first {optionLimit} matches. Type to narrow.
+          </div>
         ) : null}
       </div>
     </div>
