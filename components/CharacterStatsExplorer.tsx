@@ -648,6 +648,7 @@ function Profile({
         <span>
           <strong>AI insight warning:</strong> Tactical explanations, selection guidance, and game
           plans are AI-generated recommendations, not verified match statistics or guaranteed outcomes.
+          The models receive all official TE4 documentation as context.
         </span>
       </div>
 
