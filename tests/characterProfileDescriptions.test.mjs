@@ -391,40 +391,52 @@ test('groundstroke advice keeps character ratings and useful cues concise', () =
   assert.ok(component.includes('buildGroundstrokeInsight(profile)'));
 });
 
-test('physical notes connect roster-relative Speed, Muscle Tone, and Stamina with Tiredness enabled', () => {
-  const profile = {
+test('physical insight turns Speed, Muscle Tone, and Stamina into a player-focused takeaway', () => {
+  const lowCoverageHighStamina = buildPhysicalInsight({
+    stats: [
+      { attribute: 'Speed', value: 81, percentile: 0.1 },
+      { attribute: 'Muscle Tone', value: 66, percentile: 0.08 },
+      { attribute: 'Stamina', value: 85, percentile: 0.81 },
+    ],
+  });
+  assert.equal(
+    lowCoverageHighStamina,
+    'Both Speed and Muscle Tone are near the bottom of the roster, making wide-ball coverage and recovery difficult. High Stamina helps sustain repeated runs but cannot make the first step quicker; position early to limit long chases.',
+  );
+  assert.doesNotMatch(
+    lowCoverageHighStamina,
+    /(?:Speed|Muscle Tone|Stamina) \d|roster percentile|Speed \+ Muscle Tone|Tiredness is enabled/,
+  );
+
+  const highCoverageLowStamina = buildPhysicalInsight({
     stats: [
       { attribute: 'Speed', value: 90, percentile: 0.9 },
-      { attribute: 'Muscle Tone', value: 60, percentile: 0.4 },
-      { attribute: 'Stamina', value: 75, percentile: 0.7 },
+      { attribute: 'Muscle Tone', value: 85, percentile: 0.85 },
+      { attribute: 'Stamina', value: 60, percentile: 0.2 },
     ],
-  };
-  const balanced = buildPhysicalInsight(profile);
-  assert.match(balanced, /Speed 90 \(90th roster percentile\) sets maximum running speed/);
-  assert.match(balanced, /Muscle Tone 60 \(40th roster percentile\) contributes to running acceleration/);
-  assert.match(balanced, /\(Speed \+ Muscle Tone\) \/ 2 = 75/);
-  assert.match(balanced, /Stamina 75 \(70th roster percentile\) matches that movement average/);
-  assert.match(balanced, /Tiredness is enabled for all characters/);
-  assert.match(balanced, /running and strokes drain energy, and faster running costs more/);
-  assert.doesNotMatch(balanced, /\bwhen\b/i);
+  });
+  assert.equal(
+    highCoverageLowStamina,
+    'Strong Speed and Muscle Tone make court coverage and recovery a strength. Low Stamina makes repeated running more draining; recover efficiently to preserve energy in longer rallies.',
+  );
 
-  const highStamina = buildPhysicalInsight({
+  const highStaminaFallback = buildPhysicalInsight({
     stats: [
       { attribute: 'Speed', value: 90 },
       { attribute: 'Muscle Tone', value: 60 },
       { attribute: 'Stamina', value: 90 },
     ],
   });
-  assert.match(highStamina, /Stamina 90 is above that movement average, so running fatigue builds more slowly/);
+  assert.match(highStaminaFallback, /Stamina helps sustain repeated runs through longer exchanges/);
 
-  const lowStamina = buildPhysicalInsight({
+  const lowStaminaFallback = buildPhysicalInsight({
     stats: [
       { attribute: 'Speed', value: 90 },
       { attribute: 'Muscle Tone', value: 60 },
       { attribute: 'Stamina', value: 60 },
     ],
   });
-  assert.match(lowStamina, /Stamina 60 is below that movement average, so running fatigue builds faster/);
+  assert.match(lowStaminaFallback, /Stamina trails the movement ratings, so repeated running can cost more energy/);
   assert.equal(buildPhysicalInsight({ stats: [] }), '');
   assert.ok(component.includes("['Physical', buildPhysicalInsight(profile)]"));
 });
