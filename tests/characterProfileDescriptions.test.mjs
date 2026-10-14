@@ -455,32 +455,49 @@ test('size-and-reach copy keeps neutral-height and lower-fit advice clear', () =
   assert.doesNotMatch(heightChallenge, /two-handed backhand scores|Normal strike first|Short Strike/i);
 });
 
-test('game plans preserve concise character-specific tactical steps', () => {
+test('game plans preserve full character-specific detail without a step cap', () => {
   const steps = buildGamePlanSteps(
     'Focus: Prepare early and choose direction before the ball reaches you. Forehand Consistency: Use deep forehand cross-court shape, then change direction when the reply sits short. Muscle Tone: Use normal or Top Spin rally strikes while recovering through the middle; choose an acceleration only when balanced and the reply is short.',
     'None',
   );
 
   assert.deepEqual(steps, [
-    'Prepare early and pick a target before contact.',
-    'Use deep forehand cross-court shape, then change direction when the reply sits short.',
-    'Use normal or Top Spin rally strikes while recovering through the middle.',
-    'Choose an acceleration only when balanced and the reply is short.',
+    'Focus: Prepare early and choose direction before the ball reaches you.',
+    'Forehand Consistency: Use deep forehand cross-court shape, then change direction when the reply sits short.',
+    'Muscle Tone: Use normal or Top Spin rally strikes while recovering through the middle; choose an acceleration only when balanced and the reply is short.',
   ]);
   assert.deepEqual(
     buildGamePlanSteps(
       'Muscle Tone: Use normal or Top Spin rally strikes while recovering through the middle; choose an acceleration only when balanced and the reply is short.',
       'Sprint',
     ),
-    [
-      'Use normal or Top Spin rally strikes while recovering through the middle.',
-      'Choose an acceleration only when balanced and the reply is short.',
-    ],
+    ['Muscle Tone: Use normal or Top Spin rally strikes while recovering through the middle; choose an acceleration only when balanced and the reply is short.'],
   );
-  assert.ok(steps.every((step) => !/^(Focus|Forehand Consistency|Muscle Tone):/.test(step)));
+  assert.ok(steps.some((step) => /Forehand Consistency:/.test(step)));
   assert.ok(steps.some((step) => /\bforehand\b/i.test(step)));
   assert.ok(steps.some((step) => /\bacceleration\b/i.test(step)));
-  assert.doesNotMatch(buildGamePlanSteps('Weight 85 kg should be used to improve movement.').join(' '), /Weight|85 kg/i);
+
+  const completePlan = [
+    'Focus: Hold the middle early.',
+    'Serve plan: Change location after the first serve.',
+    'Return plan: Block deep through the middle.',
+    'Forehand plan: Use the cross-court lane before changing direction.',
+    'Backhand plan: Redirect pace when balanced.',
+    'Movement plan: Recover behind the shot.',
+    'Closing plan: Approach only when the reply is short.',
+  ].join(' ');
+  const completeSteps = buildGamePlanSteps(completePlan);
+  assert.equal(completeSteps.length, 7);
+  assert.match(completeSteps.at(-1), /Approach only when the reply is short/);
+
+  const withoutWeight = buildGamePlanSteps(
+    'Focus: Use deep targets to earn a short reply. Weight 85 kg is unusual. Recovery: Reset behind the shot.',
+  );
+  assert.deepEqual(withoutWeight, [
+    'Focus: Use deep targets to earn a short reply.',
+    'Recovery: Reset behind the shot.',
+  ]);
+  assert.doesNotMatch(withoutWeight.join(' '), /Weight|85 kg/i);
   assert.equal(normalizeCharacterCopy('Use the build to earn a short reply.'), 'Use this character to earn a short reply.');
   assert.equal(
     buildCharacterProfileSummary('Player One', [], [], {
