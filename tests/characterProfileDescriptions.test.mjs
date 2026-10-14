@@ -164,20 +164,54 @@ test('court-fit copy follows the documented Topspin surface modifiers', () => {
   assert.equal(buildCourtSpeedInsight([], 'Choose a Top Spin stroke when needed.'), '');
 });
 
-test('shot-variety copy reports the skills without overclaiming from unweighted ratings', () => {
+test('shot variety prioritizes Drop Shot and Slice Mastery, surfacing Lob only as a roster standout', () => {
+  const closeRatings = buildShotVarietyInsight({
+    stats: [
+      { attribute: 'Lob', value: 82, percentile: 0.64 },
+      { attribute: 'Drop Shot', value: 81, percentile: 0.61 },
+      { attribute: 'Slice Mastery', value: 48, percentile: 0.52 },
+      { attribute: 'Topspin', value: 49, percentile: 0.45 },
+    ],
+  });
   assert.equal(
-    buildShotVarietyInsight({
-      stats: [
-        { attribute: 'Lob', value: 86 },
-        { attribute: 'Drop Shot', value: 82 },
-      ],
-    }),
-    'Lob 86 and Drop Shot 82 are character-sheet skill values. The TE4 manual says each skill is balanced with the Forehand or Backhand used, so these values alone do not establish which shot is better. The higher weighted skill improves control of fast incoming balls; the manual warns that fast balls can send either shot too far.',
+    closeRatings,
+    'Character-sheet values: Drop Shot 81 (61st roster percentile); Slice Mastery 48 (52nd roster percentile).',
   );
-  assert.equal(
-    buildShotVarietyInsight({ stats: [{ attribute: 'Lob', value: 75 }] }),
-    'Lob 75 is a character-sheet skill value. The TE4 manual says each skill is balanced with the Forehand or Backhand used, so this value alone does not establish which shot is better. The higher weighted skill improves control of fast incoming balls; the manual warns that fast balls can send either shot too far.',
-  );
+  assert.doesNotMatch(closeRatings, /Lob 82|banana shot|favor the lob|higher than Drop Shot/);
+
+  const standoutRatings = buildShotVarietyInsight({
+    stats: [
+      { attribute: 'Lob', value: 94, percentile: 0.95 },
+      { attribute: 'Drop Shot', value: 90, percentile: 0.85 },
+      { attribute: 'Slice Mastery', value: 86, percentile: 0.80 },
+      { attribute: 'Topspin', value: 82, percentile: 0.90 },
+    ],
+  });
+  assert.match(standoutRatings, /Drop Shot is a roster standout; consider it after moving an opponent deep/);
+  assert.match(standoutRatings, /Slice Mastery is a roster standout; a short-slice variation may suit this character/);
+  assert.match(standoutRatings, /defensive slice\/squash shot may be a situational recovery option/);
+  assert.match(standoutRatings, /Lob itself for an opponent at the net, not routine exchanges/);
+  assert.match(standoutRatings, /banana-shot variation may suit a spin-focused point/);
+  assert.match(standoutRatings, /manual confirms Topspin adds spin to several strikes but does not document the named banana shot/);
+  assert.doesNotMatch(standoutRatings, /Lob 94 is higher than Drop Shot 90/);
+
+  const sliceWithoutStandoutLob = buildShotVarietyInsight({
+    stats: [
+      { attribute: 'Lob', value: 82, percentile: 0.64 },
+      { attribute: 'Slice Mastery', value: 88, percentile: 0.86 },
+    ],
+  });
+  assert.match(sliceWithoutStandoutLob, /short-slice variation may suit this character/);
+  assert.doesNotMatch(sliceWithoutStandoutLob, /Lob 82|defensive slice\/squash/);
+
+  const lobWithoutSliceMastery = buildShotVarietyInsight({
+    stats: [
+      { attribute: 'Lob', value: 91, percentile: 0.93 },
+      { attribute: 'Slice Mastery', value: 47, percentile: 0.42 },
+    ],
+  });
+  assert.match(lobWithoutSliceMastery, /Lob is a top-decile strength/);
+  assert.doesNotMatch(lobWithoutSliceMastery, /defensive slice\/squash/);
   assert.ok(component.includes('buildShotVarietyInsight(profile)'));
 });
 
