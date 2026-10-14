@@ -191,7 +191,7 @@ test('court-fit copy treats near-neutral Topspin carefully and covers all three 
   );
   assert.equal(
     buildCourtSpeedInsight([{ attribute: 'Topspin', value: 25 }]),
-    'Topspin is 25%, below the 50% neutral level. That makes slow courts less favorable; the further below 50%, the bigger the disadvantage. Medium-paced courts stay close to neutral, and low Topspin does not make fast courts more favorable.',
+    'Topspin is 25% (50% is neutral). This makes slow courts a tougher fit; the lower the rating, the greater the disadvantage. Topspin has little effect on medium-paced courts. A low rating does not make fast courts easier to play on.',
   );
   assert.doesNotMatch(nearNeutral, /suits slow courts|strong slow-court advantage/i);
   assert.equal(buildCourtSpeedInsight([], 'Choose a Top Spin stroke when needed.'), '');
