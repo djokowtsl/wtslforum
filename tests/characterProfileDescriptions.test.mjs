@@ -992,6 +992,7 @@ test('profile follows the Discord content order and explains roster and AI evide
   assert.ok(!component.includes('character-profile-method-note'));
   assert.ok(component.includes('character-ai-insight-warning'));
   assert.ok(component.includes('AI-generated recommendations, not verified match statistics'));
+  assert.ok(component.includes('The models receive all official TE4 documentation as context.'));
   assert.ok(!component.includes('Point-event statistics'));
   assert.ok(!component.includes('not estimated without point-level match data'));
   assert.ok(component.includes('Each category is the average percentile of its rankable attributes'));
