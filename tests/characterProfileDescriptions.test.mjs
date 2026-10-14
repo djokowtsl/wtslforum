@@ -436,7 +436,7 @@ test('technical summary builds shot claims from profile data and links their TE4
     'buildSizeMechanicsInsight(profile.height, profile.weight)',
     'buildStrokeMechanicsInsight(profile)',
     "['Size & reach', sizeInsight]",
-    "['Stroke setup', strokeInsight]",
+    "['Hand use', strokeInsight]",
     "['Counterplay', buildCounterInsight(profile)]",
     "['Shot variety', buildShotVarietyInsight(profile)]",
     'https://www.managames.com/tennis/doc/Tennis_Elbow-Tennis_Game.html',
@@ -453,7 +453,7 @@ test('technical summary builds shot claims from profile data and links their TE4
   );
 });
 
-test('stroke setup avoids repeating the narrow high-bounce fit as backhand guidance', () => {
+test('hand-use copy explains the stroke and avoids repeating the narrow high-bounce fit', () => {
   const profile = {
     forehand_type: 'one-handed',
     backhand_type: 'two-handed',
@@ -474,11 +474,18 @@ test('stroke setup avoids repeating the narrow high-bounce fit as backhand guida
   };
   const insight = buildStrokeMechanicsInsight(profile);
 
-  assert.match(insight, /backhand two-handed/);
-  assert.match(insight, /two-handed backhand strokes add 15 Counter and are safer in the Danger Zone/i);
-  assert.match(insight, /a little less power and width/i);
+  assert.match(insight, /This character uses a one-handed forehand and a two-handed backhand/);
+  assert.match(insight, /two-handed backhand strokes add \+15 Counter and are safer in the Danger Zone/i);
+  assert.match(insight, /trade a little power and width/);
   assert.match(insight, /WTSL combined groundstroke estimates are Forehand 88\.3 and Backhand 91\.9/i);
   assert.doesNotMatch(insight, /shoulder-height fit|high-bounce fit|heavy-spin|take heavy topspin|choose a Normal strike|Short Acceleration|support taking heavy topspin early/i);
+
+  const oneHandedInsight = buildStrokeMechanicsInsight({
+    forehand_type: 'one-handed',
+    backhand_type: 'one-handed',
+  });
+  assert.match(oneHandedInsight, /This character uses a one-handed forehand and a one-handed backhand/);
+  assert.match(oneHandedInsight, /no two-handed stroke is listed here/);
 
   const roundedTie = buildStrokeMechanicsInsight({
     forehand_type: 'one-handed',
@@ -517,7 +524,7 @@ test('character profile prominently shows one- or two-handed forehand and backha
   assert.deepEqual(buildStrokeSetupLabels({
     forehand_type: 'one-handed',
     backhand_type: 'two-handed',
-  }), ['Forehand: one-handed', 'Backhand: two-handed']);
+  }), ['One-handed forehand', 'Two-handed backhand']);
   assert.deepEqual(buildStrokeSetupLabels({
     forehand_type: null,
     backhand_type: 'unknown',

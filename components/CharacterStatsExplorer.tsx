@@ -458,7 +458,7 @@ function Profile({
     ['Groundstrokes', buildGroundstrokeInsight(profile)],
     ['Fit on fast and slow courts', surfaceFitInsight],
     ['Size & reach', sizeInsight],
-    ['Stroke setup', strokeInsight],
+    ['Hand use', strokeInsight],
     ['Counterplay', buildCounterInsight(profile)],
     ['Net play', buildNetPlayInsight(profile.stats)],
     ['Shot variety', buildShotVarietyInsight(profile)],
