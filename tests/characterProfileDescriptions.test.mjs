@@ -57,7 +57,7 @@ test('character profiles derive a selected-character summary and render profile 
     'buildCounterInsight(profile)',
     'buildPhysicalInsight(profile)',
     'cleanRallyFit(exchangeFit[key])',
-    'buildNetPlayInsight(profile.stats)',
+    'buildNetPlayInsight(profile)',
     'buildShotVarietyInsight(profile)',
     'className="panel character-guidance-panel"',
     'Style &amp; traits',
@@ -175,25 +175,79 @@ test('roster evidence merges matching notes and avoids repeated or summarized at
   ]);
 });
 
-test('court-fit copy treats near-neutral Topspin carefully and covers all three paces', () => {
+test('movement trade-offs describe opponent-caused wide chases rather than a player plan', () => {
   assert.equal(
-    buildCourtSpeedInsight([{ attribute: 'Topspin', value: 68 }]),
-    'Topspin 68% is 18 points above neutral: it benefits slow courts and brings a fast-court handicap that grows with the gap; medium-paced courts stay closer to neutral. The slow-court bonus is stronger for rally players and smaller for Volleyers.',
+    cleanCharacterGuidance(
+      'It matters most when your plan depends on repeated wide-court recoveries; defend through the middle, recover, and counter when the reply is short.',
+    ),
+    'This character is most vulnerable against opponents who repeatedly pull them wide; deep, central replies can limit their angles and give more time to recover.',
+  );
+});
+
+test('rally-fit copy uses consistent quick-point grammar and explains long-rally evidence plainly', () => {
+  assert.equal(
+    cleanRallyFit(
+      "Short exchanges: rates the quick-point fit as among the roster's stronger builds.",
+    ),
+    "Quick-point fit is among the roster's stronger builds.",
   );
   assert.equal(
-    buildCourtSpeedInsight([{ attribute: 'Topspin', value: 50 }]),
-    'Topspin 50% is neutral on slow, medium-paced, and fast courts.',
+    cleanRallyFit(
+      'Stamina is a roster-leading support for repeated movement and accelerations. The groundstroke consistency is not an obvious roster-level weakness in a sustained exchange.',
+    ),
+    'High Stamina helps this character keep covering ground through longer rallies. Groundstrokes should hold up in longer rallies, even if they are not a standout strength.',
   );
+});
+
+test('court-fit copy combines Topspin, style, and the character’s other roster ratings', () => {
+  const highSpin = buildCourtSpeedInsight([{ attribute: 'Topspin', value: 68 }]);
+  assert.match(highSpin, /Topspin 68% leans toward slower courts/);
+  assert.match(highSpin, /Slow courts are the better overall match; medium-paced courts are closer to neutral; fast courts are the tougher overall fit/);
+
+  const neutral = buildCourtSpeedInsight([{ attribute: 'Topspin', value: 50 }]);
+  assert.match(neutral, /Topspin 50% is close to neutral/);
+  assert.match(neutral, /Slow courts are a similar fit to the other paces; medium-paced courts are a similar fit to the other paces; fast courts are a similar fit to the other paces/);
+
   const nearNeutral = buildCourtSpeedInsight([{ attribute: 'Topspin', value: 51 }]);
-  assert.equal(
-    nearNeutral,
-    'Topspin 51% is only 1 point above neutral: effectively balanced on medium-paced courts, with a slight slow-court benefit and fast-court handicap.',
-  );
-  assert.equal(
-    buildCourtSpeedInsight([{ attribute: 'Topspin', value: 25 }]),
-    'Topspin is 25% (50% is neutral). Below 50%, slow courts are a tougher fit, and the further below, the bigger the disadvantage. Lower Topspin can suit fast courts by producing flatter, faster shots, especially for Volleyers. Medium-paced courts are little affected, and the other ratings still influence overall court fit.',
-  );
-  assert.doesNotMatch(nearNeutral, /suits slow courts|strong slow-court advantage/i);
+  assert.match(nearNeutral, /Topspin 51% is close to neutral/);
+  assert.match(nearNeutral, /a similar fit to the other paces/);
+
+  const lowSpinVolleyer = buildCourtSpeedInsight({
+    style: 'Volleyer',
+    stats: [
+      { attribute: 'Topspin', value: 25, percentile: 0.2 },
+      { attribute: 'Service Power', value: 91, percentile: 0.95 },
+      { attribute: 'Service Precision', value: 88, percentile: 0.9 },
+      { attribute: 'Forehand Volley', value: 89, percentile: 0.92 },
+      { attribute: 'Net Presence', value: 90, percentile: 0.95 },
+      { attribute: 'Smash', value: 92, percentile: 0.95 },
+      { attribute: 'Forehand Consistency', value: 45, percentile: 0.25 },
+      { attribute: 'Backhand Consistency', value: 40, percentile: 0.2 },
+    ],
+  });
+  assert.match(lowSpinVolleyer, /Topspin 25% leans toward faster courts/);
+  assert.match(lowSpinVolleyer, /Slow courts are the tougher overall fit; medium-paced courts are closer to neutral; fast courts are the better overall match/);
+  assert.match(lowSpinVolleyer, /Strong Service Power and Net Presence ratings support that overall fit/);
+
+  const lowSpinRallyer = buildCourtSpeedInsight({
+    style: 'Rally',
+    stats: [
+      { attribute: 'Topspin', value: 25, percentile: 0.2 },
+      { attribute: 'Forehand Consistency', value: 92, percentile: 0.95 },
+      { attribute: 'Backhand Consistency', value: 90, percentile: 0.93 },
+      { attribute: 'Forehand Precision', value: 88, percentile: 0.9 },
+      { attribute: 'Backhand Precision', value: 86, percentile: 0.88 },
+      { attribute: 'Counter', value: 90, percentile: 0.95 },
+      { attribute: 'Stamina', value: 91, percentile: 0.92 },
+      { attribute: 'Service Power', value: 48, percentile: 0.15 },
+      { attribute: 'Net Presence', value: 45, percentile: 0.12 },
+      { attribute: 'Forehand Volley', value: 44, percentile: 0.1 },
+      { attribute: 'Backhand Volley', value: 42, percentile: 0.1 },
+      { attribute: 'Smash', value: 47, percentile: 0.16 },
+    ],
+  });
+  assert.match(lowSpinRallyer, /Slow courts are the better overall match/);
+  assert.match(lowSpinRallyer, /fast courts are the tougher overall fit/);
   assert.equal(buildCourtSpeedInsight([], 'Choose a Top Spin stroke when needed.'), '');
 });
 
@@ -260,36 +314,46 @@ test('net-play advice recommends or cautions against approaches from roster-rela
       }),
     );
 
-  const strongNetProfile = buildNetPlayInsight(stats([90, 80, 60, 90]));
+  const strongNetProfile = buildNetPlayInsight({
+    style: 'Volleyer',
+    stats: stats([90, 80, 60, 90]),
+  });
   assert.match(strongNetProfile, /Available net ratings average at the 80th roster percentile/);
   assert.match(
     strongNetProfile,
-    /Net Presence contributes to volley and smash accuracy and consistency\. Higher Net Presence lets a player move more while hitting a volley before movement starts to affect the shot/,
+    /Strong Net Presence supports accurate, consistent volleys and smashes, and gives this character more room to move before movement affects a volley/,
   );
-  assert.match(strongNetProfile, /Net play is a roster strength; come forward selectively after a deep shot draws a short reply/);
+  assert.match(strongNetProfile, /Volleyer style and strong net ratings make forward play a regular option/);
 
-  const balancedNetProfile = buildNetPlayInsight(stats([60, 55, 60, 45], [65, 68, 66, 67]));
-  assert.match(balancedNetProfile, /Net play is a balanced option; come forward when the rally creates a clear short-ball chance/);
+  const balancedNetProfile = buildNetPlayInsight({
+    style: 'All-Rounder',
+    stats: stats([60, 55, 60, 45], [65, 68, 66, 67]),
+  });
+  assert.match(balancedNetProfile, /Treat net play as an occasional change-up/);
 
-  const weakNetProfile = buildNetPlayInsight(stats([20, 25, 20, 10], [55, 58, 61, 60]));
-  assert.match(weakNetProfile, /Net play is a roster weakness; do not build the plan around repeated approaches/);
+  const weakNetProfile = buildNetPlayInsight({
+    style: 'Rally',
+    stats: stats([20, 25, 20, 10], [55, 58, 61, 60]),
+  });
+  assert.match(weakNetProfile, /Keep approaches rare/);
+  assert.match(weakNetProfile, /repeated trips forward a poor default/);
 
   const partial = buildNetPlayInsight([{ attribute: 'Net Presence', value: 65 }]);
   assert.match(partial, /Net Presence 65/);
-  assert.match(partial, /Net play is a balanced option/);
+  assert.match(partial, /Treat net play as an occasional change-up/);
   const ratingsOnly = buildNetPlayInsight([
     { attribute: 'Net Presence', value: 90 },
     { attribute: 'Forehand Volley', value: 90 },
     { attribute: 'Backhand Volley', value: 90 },
     { attribute: 'Smash', value: 90 },
   ]);
-  assert.match(ratingsOnly, /Net play looks like a strength from these ratings/);
+  assert.match(ratingsOnly, /The strong net ratings make approaches a regular option/);
   assert.doesNotMatch(ratingsOnly, /roster strength/);
   assert.match(
     copyTypes,
-    /export function buildNetPlayInsight\(stats: unknown, fallbackText\?: unknown\): string;/,
+    /export function buildNetPlayInsight\(profile: unknown\): string;/,
   );
-  assert.ok(component.includes('buildNetPlayInsight(profile.stats)'));
+  assert.ok(component.includes('buildNetPlayInsight(profile)'));
 });
 
 test('serve guidance estimates first-serve success without recommending serve types', () => {
