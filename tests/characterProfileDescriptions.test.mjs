@@ -479,7 +479,7 @@ test('size-and-reach copy keeps neutral-height and lower-fit advice clear', () =
   assert.doesNotMatch(insight, /one-handed backhand scores|Normal strike first|Short Strike/i);
   assert.match(
     heightChallenge,
-    /Height 172 cm \(12th percentile in the WTA roster\). Small challenge against shoulder-high, heavy-spin contact only/i,
+    /Height 172 cm \(12th percentile in the WTA roster\). A slight challenge on shoulder-high balls when they carry heavy spin/i,
   );
   assert.match(heightChallenge, /Backhand fit for this situation: 63\/100/i);
   assert.doesNotMatch(heightChallenge, /two-handed backhand scores|Normal strike first|Short Strike/i);
