@@ -350,9 +350,9 @@ test('size-and-reach copy labels WTSL fit estimates and uses documented height a
   );
 
   assert.match(insight, /Height 193 cm \(82nd percentile in the ATP roster\)/i);
-  assert.match(insight, /small directional advantage for shoulder-high, heavy-spin contact/i);
-  assert.match(insight, /one narrow model scenario, not a general backhand recommendation/i);
+  assert.match(insight, /small directional advantage in one narrow height model scenario, not a general backhand recommendation/i);
   assert.match(insight, /WTSL backhand high-bounce fit is 82\/100/i);
+  assert.match(insight, /specific scenario is shoulder-high, heavy-spin contact/i);
   assert.match(insight, /not an overall backhand rating or a tactical instruction/i);
   assert.match(insight, /smaller characters accelerate slightly faster/i);
   assert.match(insight, /Acceleration is fastest near the top of the bounce/i);
@@ -394,7 +394,7 @@ test('size-and-reach copy keeps neutral-height and lower-fit advice clear', () =
   assert.doesNotMatch(insight, /one-handed backhand scores|Normal strike first|Short Strike/i);
   assert.match(
     heightChallenge,
-    /Height 172 cm \(12th percentile in the WTA roster\). WTSL describes a small directional challenge for shoulder-high, heavy-spin contact/i,
+    /Height 172 cm \(12th percentile in the WTA roster\). WTSL describes this as a small directional challenge in one narrow height model scenario/i,
   );
   assert.match(heightChallenge, /WTSL backhand high-bounce fit is 63\/100/i);
   assert.doesNotMatch(heightChallenge, /two-handed backhand scores|Normal strike first|Short Strike/i);
