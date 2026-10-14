@@ -283,7 +283,7 @@ test('net-play advice never turns roster percentile into an unsupported approach
   assert.ok(component.includes('buildNetPlayInsight(profile.stats)'));
 });
 
-test('serve advice gives concise, profile-specific choices', () => {
+test('serve guidance estimates first-serve success without recommending serve types', () => {
   const profile = {
     stats: [
       { attribute: 'Service Power', value: 82, percentile: 0.8 },
@@ -298,10 +298,10 @@ test('serve advice gives concise, profile-specific choices', () => {
   };
   assert.equal(
     buildServeInsight(profile, 'Generic Core serve advice.'),
-    'Average maximal serve speed: 200.0 km/h. Power 82, Consistency 81, Precision 94. Strong first-serve success is expected below 70%; Normal falls between Strong and Safe; Safe is 100%. Precision is the stronger serve attribute, helping with placement.',
+    'Average maximal serve speed: 200.0 km/h. Power 82, Consistency 81, Precision 94. Estimated first-serve success: Strong below 70%; Normal likely below 85%.',
   );
-  assert.match(buildServeInsight(profile), /Strong first-serve success is expected below 70%/);
-  assert.match(buildServeInsight(profile), /Normal falls between Strong and Safe/);
+  assert.match(buildServeInsight(profile), /Strong below 70%; Normal likely below 85%/);
+  assert.doesNotMatch(buildServeInsight(profile), /riskier|steadiest|choose (?:Strong|Normal|Safe)|use (?:Strong|Normal|Safe)/i);
 
   const saferProfile = {
     stats: [
@@ -318,9 +318,9 @@ test('serve advice gives concise, profile-specific choices', () => {
   const saferAdvice = buildServeInsight(saferProfile);
   assert.match(
     saferAdvice,
-    /With even Power and Consistency, Strong first-serve success is 70%, Normal is 85%, and Safe is 100%/,
+    /With even Power and Consistency, estimated first-serve success is Strong 70% and Normal 85%/,
   );
-  assert.match(saferAdvice, /Power leads Precision, so favor larger targets over the corners/);
+  assert.doesNotMatch(saferAdvice, /\bSafe\b|riskier|steadiest|choose /i);
   assert.doesNotMatch(saferAdvice, /Generic Core serve advice|Short Acceleration|body and corner/);
 
   const consistencyLedAdvice = buildServeInsight({
@@ -330,7 +330,7 @@ test('serve advice gives concise, profile-specific choices', () => {
       { attribute: 'Service Precision', value: 74 },
     ],
   });
-  assert.match(consistencyLedAdvice, /Strong first-serve success is expected above 70%/i);
+  assert.match(consistencyLedAdvice, /Strong above 70%; Normal likely above 85%/i);
   assert.match(
     copyTypes,
     /export function buildServeInsight\(profile: unknown, fallbackText\?: unknown\): string;/,
