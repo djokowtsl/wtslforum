@@ -256,8 +256,9 @@ test('serve advice applies the manual’s Strong, Normal, Safe, and Precision ru
   };
   assert.equal(
     buildServeInsight(profile, 'Generic Core serve advice.'),
-    'WTSL estimates average maximum serve speed at 200.0 km/h. Service Power 82 (80th percentile), Consistency 81 (55th percentile), and Precision 94 (88th percentile). Power exceeds Consistency; the TE4 manual says a Strong first serve then has under 70% success. Normal lies between Strong and Safe, while Safe is 100% successful. Precision 94 (88th percentile) is above Power 82; the manual says this makes the serve more accurate.',
+    'WTSL estimates average maximum serve speed at 200.0 km/h. Service Power 82 (80th percentile), Consistency 81 (55th percentile), and Precision 94 (88th percentile). Power exceeds Consistency; the TE4 manual says a Strong first serve then has under 70% success. If first-serve reliability matters, consider Normal or Safe; Normal lies between Strong and Safe, while Safe is 100% successful. Precision 94 (88th percentile) is above Power 82; the manual says this makes the serve more accurate.',
   );
+  assert.match(buildServeInsight(profile), /consider Normal or Safe/);
 
   const saferProfile = {
     stats: [
@@ -273,8 +274,18 @@ test('serve advice applies the manual’s Strong, Normal, Safe, and Precision ru
   };
   const saferAdvice = buildServeInsight(saferProfile);
   assert.match(saferAdvice, /Strong a 70% first-serve success rate, Normal 85%, and Safe 100%/);
+  assert.match(saferAdvice, /choose according to the reliability you want/);
   assert.match(saferAdvice, /Precision 60 \(35th percentile\) is not above Power 70/);
   assert.doesNotMatch(saferAdvice, /Generic Core serve advice|Short Acceleration|body and corner/);
+
+  const consistencyLedAdvice = buildServeInsight({
+    stats: [
+      { attribute: 'Service Power', value: 65 },
+      { attribute: 'Service Consistency', value: 82 },
+      { attribute: 'Service Precision', value: 74 },
+    ],
+  });
+  assert.match(consistencyLedAdvice, /consider Strong when extra pace is worth its lower success rate/i);
   assert.match(
     copyTypes,
     /export function buildServeInsight\(profile: unknown, fallbackText\?: unknown\): string;/,
@@ -298,11 +309,17 @@ test('groundstroke advice maps character ratings to documented depth, timing, an
 
   assert.match(advice, /Forehand and Backhand Consistency average 83 \(81st roster percentile\)/);
   assert.match(advice, /higher Consistency lowers faults on difficult balls, deepens Normal strikes, and shortens Short Strikes/);
+  assert.match(advice, /For this roster standout, consider Normal when you need depth or Short when you want a shorter landing/);
   assert.match(advice, /off-position contact can make short shots travel longer than intended/);
   assert.match(advice, /WTSL combined groundstroke estimates are Forehand 89\.4 and Backhand 81\.6/);
   assert.match(advice, /Stamina 42% maps to 2 good accelerations and aggressive lobs per point when TE4 Tiredness is off/);
   assert.match(advice, /Acceleration is fastest near the top of the bounce/);
   assert.doesNotMatch(advice, /The forehand rates higher|short reply gives|open short court/);
+
+  const ordinaryConsistencyAdvice = buildGroundstrokeInsight({
+    stats: [{ attribute: 'Forehand Consistency', value: 64, percentile: 0.48 }],
+  });
+  assert.doesNotMatch(ordinaryConsistencyAdvice, /For this roster standout/);
 
   const higherStaminaAdvice = buildGroundstrokeInsight({
     ...profile,
@@ -588,7 +605,7 @@ test('repeated Core summary templates are individualized from each character’s
     second.replace('Player Two', 'PLAYER').toLowerCase(),
   );
   assert.match(first, /serve placement, serve reliability, and forehand volleys/i);
-  assert.match(first, /not shot-selection recommendations/i);
+  assert.match(first, /not per-shot predictions/i);
   assert.match(second, /counterpunching, court coverage, and stamina/i);
   assert.doesNotMatch(`${first} ${second}`, /Use the build|draw a short reply|finish with touch|recover through the middle|rank #|\/100/i);
   assert.doesNotMatch(`${first} ${second}`, /\b(?:use|choose|attack|finish)\b/i);
