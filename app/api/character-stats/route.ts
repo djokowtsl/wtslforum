@@ -25,6 +25,7 @@ export async function GET(request: Request) {
   const compare = params.get('compare') || undefined;
   const attribute = params.get('attribute') || undefined;
   const includeProfile = params.get('include_profile') !== 'false';
+  const includeChartData = params.get('include_chart_data') === 'true';
   const includeOfficial = params.get('include_official') === 'true'
     ? true
     : params.get('include_official') === 'false'
@@ -45,6 +46,7 @@ export async function GET(request: Request) {
       attribute,
       includeProfile,
       includeOfficial,
+      includeChartData,
     });
     const payload = removeUnsupportedCharacterProjections(upstreamPayload);
     if (!payload || typeof payload !== 'object' || Array.isArray(payload)) {
