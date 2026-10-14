@@ -457,7 +457,7 @@ function Profile({
     guidance.acceleration_mechanics,
     profile.character,
   );
-  const gamePlanSteps = buildGamePlanSteps(guidance.game_plan, profile.acceleration);
+  const gamePlanSteps = buildGamePlanSteps(guidance.game_plan, profile.acceleration, profile.stats);
   const serveInsight = buildServeInsight(profile);
   const insightRows = [
     ['Serve', serveInsight],
