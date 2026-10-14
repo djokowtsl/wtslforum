@@ -435,7 +435,7 @@ function Profile({
     mechanics.size_reach || buildSizeMechanicsInsight(profile.height, profile.weight),
   );
   const strokeInsight = mechanics.stroke_setup || buildStrokeMechanicsInsight(profile);
-  const courtSpeedInsight = buildCourtSpeedInsight(profile.stats, mechanics.surface_fit);
+  const surfaceFitInsight = buildCourtSpeedInsight(profile.stats, mechanics.surface_fit);
   const styleMechanic = cleanCharacterMechanic(guidance.style_mechanics, profile.character);
   const accelerationMechanic = cleanCharacterMechanic(
     guidance.acceleration_mechanics,
@@ -445,7 +445,7 @@ function Profile({
   const insightRows = [
     ['Serve', mechanics.serve],
     ['Groundstrokes', mechanics.groundstrokes],
-    ['Court speed', courtSpeedInsight],
+    ['Fit on fast and slow courts', surfaceFitInsight],
     ['Size & reach', sizeInsight],
     ['Stroke setup', strokeInsight],
     ['Counterplay', cleanCounterInsight(mechanics.counter)],
