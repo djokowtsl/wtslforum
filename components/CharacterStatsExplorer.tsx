@@ -896,6 +896,16 @@ export default function CharacterStatsExplorer({
     ])) as Record<CharacterFilterField, string[]>,
     [filterMetadata],
   );
+  const filterOptionLabels = useMemo(
+    () => Object.fromEntries(characterFilterDefinitions.map(({ field }) => [
+      field,
+      Object.fromEntries(filterOptions[field].map((value) => [
+        value,
+        characterFilterOptionLabel(field, value),
+      ])),
+    ])) as Record<CharacterFilterField, Record<string, string>>,
+    [filterOptions],
+  );
   const matchingNames = useMemo(
     () => hasFilterMetadata
       ? filterCharacterNames(names, filterMetadata, characterFilters)
@@ -1150,23 +1160,24 @@ export default function CharacterStatsExplorer({
             {characterFilterDefinitions.map(({ field, label, emptyLabel }) => (
               <div className="character-control" key={field}>
                 <label htmlFor={`character-filter-${field}`}>{label}</label>
-                <select
+                <SearchableDropdown
                   id={`character-filter-${field}`}
                   value={characterFilters[field]}
-                  onChange={(event) => {
-                    const value = event.target.value;
+                  options={filterOptions[field]}
+                  optionLabels={filterOptionLabels[field]}
+                  optionLimit={field === 'country' ? 300 : 60}
+                  selectionOnly
+                  showAllOnFocus
+                  showDropdownIndicator
+                  dropdownLabel={label.toLocaleLowerCase()}
+                  emptyOptionLabel={emptyLabel}
+                  placeholder={emptyLabel}
+                  disabled={!currentRoster || !hasFilterMetadata}
+                  onChange={(value) => {
                     setCharacterFilters((previous) => ({ ...previous, [field]: value }));
                     setSearchError('');
                   }}
-                  disabled={!currentRoster || !hasFilterMetadata}
-                >
-                  <option value="">{emptyLabel}</option>
-                  {filterOptions[field].map((value) => (
-                    <option key={value} value={value}>
-                      {characterFilterOptionLabel(field, value)}
-                    </option>
-                  ))}
-                </select>
+                />
               </div>
             ))}
           </div>
