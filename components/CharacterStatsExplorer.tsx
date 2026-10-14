@@ -779,7 +779,7 @@ function Profile({
           <div><span className="panel-label">COMBINED SKILLS</span><h2>Ratings</h2></div>
         </div>
         <p className="character-rating-explainer">
-          Each rating combines Power, Consistency, and Precision.
+          WTSL calculates Serve Rating, Forehand Rating, and Backhand Rating from the in-game Power, Consistency, and Precision attributes; these combined ratings are not provided by the game.
         </p>
         <CombinedSkills stats={combined} />
       </section>

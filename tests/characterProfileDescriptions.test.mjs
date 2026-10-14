@@ -65,7 +65,7 @@ test('character profiles derive a selected-character summary and render profile 
     'Across rally lengths',
     'mechanics.exchange_fit',
     'How this character tends to hold up in shorter and longer exchanges.',
-    'Each rating combines Power, Consistency, and Precision.',
+    'WTSL calculates Serve Rating, Forehand Rating, and Backhand Rating from the in-game Power, Consistency, and Precision attributes; these combined ratings are not provided by the game.',
     'Combined ${item.attribute}',
   ]) {
     assert.ok(component.includes(marker), `character copy binding missing: ${marker}`);
@@ -870,6 +870,11 @@ test('profile follows the Discord content order and explains roster and AI evide
   assert.ok(categoryIndex >= 0 && traitsIndex > categoryIndex);
   assert.ok(mechanicsIndex > traitsIndex && guidanceIndex > mechanicsIndex);
   assert.ok(ratingsIndex > guidanceIndex && attributesIndex > ratingsIndex);
+  assert.ok(
+    component.includes(
+      'WTSL calculates Serve Rating, Forehand Rating, and Backhand Rating from the in-game Power, Consistency, and Precision attributes; these combined ratings are not provided by the game.',
+    ),
+  );
   assert.ok(component.includes('TE4 mechanics reference'));
   assert.ok(!component.includes('character-profile-method-note'));
   assert.ok(component.includes('character-ai-insight-warning'));
