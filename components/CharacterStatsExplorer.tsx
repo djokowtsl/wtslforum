@@ -453,7 +453,7 @@ function Profile({
     buildGroundstrokeInsight(profile),
     strokeInsight,
   ].filter(Boolean).join(' ');
-  const surfaceFitInsight = buildCourtSpeedInsight(profile.stats, profile.style);
+  const surfaceFitInsight = buildCourtSpeedInsight(profile);
   const styleMechanic = cleanCharacterMechanic(guidance.style_mechanics, profile.character);
   const accelerationMechanic = cleanCharacterMechanic(
     guidance.acceleration_mechanics,
@@ -468,7 +468,7 @@ function Profile({
     ['Size & reach', sizeInsight],
     ['Physical', buildPhysicalInsight(profile)],
     ['Counterplay', buildCounterInsight(profile)],
-    ['Net play', buildNetPlayInsight(profile.stats)],
+    ['Net play', buildNetPlayInsight(profile)],
     ['Shot variety', buildShotVarietyInsight(profile)],
   ].filter(([, text]) => typeof text === 'string' && text.trim());
   const advantages = (Array.isArray(guidance.advantages) ? guidance.advantages : [])
