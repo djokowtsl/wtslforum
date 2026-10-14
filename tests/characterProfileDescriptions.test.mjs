@@ -13,6 +13,7 @@ import {
   buildGamePlanSteps,
   cleanCharacterMechanic,
   cleanCounterInsight,
+  cleanShotVarietyInsight,
   cleanSizeReachInsight,
   normalizeCharacterCopy,
   splitRosterEvidenceNotes,
@@ -21,6 +22,10 @@ import { removeUnsupportedCharacterProjections } from '../lib/characterProfileSa
 
 const component = readFileSync(
   new URL('../components/CharacterStatsExplorer.tsx', import.meta.url),
+  'utf8',
+);
+const copyTypes = readFileSync(
+  new URL('../lib/characterProfileCopy.d.mts', import.meta.url),
   'utf8',
 );
 const styles = readFileSync(
@@ -124,6 +129,37 @@ test('court-fit copy follows the documented Topspin surface modifiers', () => {
     buildCourtSpeedInsight([], 'Choose a Top Spin stroke when needed, then use the forehand.'),
     /Choose a Top Spin stroke/,
   );
+});
+
+test('shot-variety copy prioritizes each character’s higher Lob or Drop shot rating', () => {
+  const sliceNote =
+    ' Slice Mastery 80% supports a controlled rally slice; use it to change the bounce after moving the opponent deep.';
+  const selectableTemplate =
+    ' support selectable shot variation: use the drop shot after pushing the opponent deep, or choose a lob when they close the net.';
+  const supportingTemplate =
+    ' are supporting options. Establish depth first and use either only when court position gives the shot a purpose.';
+
+  assert.equal(
+    cleanShotVarietyInsight(`Lob 86 and drop shot 82${selectableTemplate}${sliceNote}`),
+    `Lob 86 is higher than drop shot 82 by 4 points. Favor the lob when the opponent closes in; use the drop shot after pushing them deep.${sliceNote}`,
+  );
+  assert.equal(
+    cleanShotVarietyInsight(`Lob 78 and drop shot 91${selectableTemplate}`),
+    'Drop shot 91 is higher than lob 78 by 13 points. Favor it after pushing the opponent deep; keep the lob for when they close in.',
+  );
+  assert.equal(
+    cleanShotVarietyInsight(`Lob 82 and drop shot 82${selectableTemplate}`),
+    'Lob and drop shot are tied at 82; use the drop shot after pushing the opponent deep and lob when they close in.',
+  );
+  assert.equal(
+    cleanShotVarietyInsight(`Lob 60 and drop shot 50${supportingTemplate}`),
+    'Lob 60 leads drop shot 50 by 10 points, though neither is a standout. Build depth first, then look for the lob when the opponent closes in.',
+  );
+  assert.match(
+    copyTypes,
+    /export function cleanShotVarietyInsight\(value: unknown\): string;/,
+  );
+  assert.ok(component.includes('cleanShotVarietyInsight(mechanics.variation)'));
 });
 
 test('size-and-reach copy explains height, backhand fit, and weight in plain language', () => {
