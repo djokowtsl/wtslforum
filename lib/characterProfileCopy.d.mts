@@ -4,6 +4,7 @@ export function cleanCounterInsight(value: unknown): string;
 export function cleanShotVarietyInsight(value: unknown): string;
 export function cleanNetInsight(value: unknown): string;
 export function cleanStrokeMechanicsInsight(value: unknown): string;
+export function buildServeInsight(profile: unknown, fallbackText?: unknown): string;
 export function buildNetPlayInsight(stats: unknown, fallbackText?: unknown): string;
 export function buildCourtSpeedInsight(stats: unknown, fallbackText?: unknown): string;
 export function cleanSizeReachInsight(value: unknown): string;

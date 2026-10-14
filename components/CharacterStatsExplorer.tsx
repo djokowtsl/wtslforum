@@ -13,6 +13,7 @@ import {
   buildStrokeMechanicsInsight,
 } from '@/lib/characterProfileMechanics.mjs';
 import {
+  buildServeInsight,
   buildCourtSpeedInsight,
   buildGamePlanSteps,
   buildNetPlayInsight,
@@ -448,8 +449,9 @@ function Profile({
     profile.character,
   );
   const gamePlanSteps = buildGamePlanSteps(guidance.game_plan, profile.acceleration);
+  const serveInsight = buildServeInsight(profile, mechanics.serve);
   const insightRows = [
-    ['Serve', mechanics.serve],
+    ['Serve', serveInsight],
     ['Groundstrokes', mechanics.groundstrokes],
     ['Fit on fast and slow courts', surfaceFitInsight],
     ['Size & reach', sizeInsight],
