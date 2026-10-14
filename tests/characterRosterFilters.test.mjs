@@ -77,13 +77,39 @@ test('active filters do not match roster names with missing metadata', () => {
   );
 });
 
-test('character filter options are unique, sorted, and exclude empty values', () => {
+test('trait filter options are unique, sorted, and exclude empty values', () => {
   const options = characterFilterOptions([
-    { character: 'A', country: 'Spain' },
-    { character: 'B', country: '' },
-    { character: 'C', country: 'spain' },
-    { character: 'D', country: 'Argentina' },
-  ], 'country');
+    { character: 'A', style: 'Defender' },
+    { character: 'B', style: '' },
+    { character: 'C', style: 'defender' },
+    { character: 'D', style: 'Power Baseliner' },
+  ], 'style');
 
-  assert.deepEqual(options, ['Argentina', 'Spain']);
+  assert.deepEqual(options, ['Defender', 'Power Baseliner']);
+});
+
+test('nationality options include countries with no character in the mod', () => {
+  const options = characterFilterOptions([], 'country');
+
+  assert.ok(options.length >= 249);
+  assert.ok(options.includes('Afghanistan'));
+  assert.ok(options.includes('Japan'));
+  assert.ok(options.includes('United States'));
+});
+
+test('nationality names match Core API country codes and absent nationalities return no characters', () => {
+  assert.deepEqual(
+    filterCharacterNames(['Alex'], [{ character: 'Alex', country: 'US' }], {
+      ...noFilters,
+      country: 'United States',
+    }),
+    ['Alex'],
+  );
+  assert.deepEqual(
+    filterCharacterNames(['Alex'], [{ character: 'Alex', country: 'US' }], {
+      ...noFilters,
+      country: 'Japan',
+    }),
+    [],
+  );
 });
