@@ -11,6 +11,7 @@ import { buildCharacterProfileSummary } from '../lib/characterProfileSummary.mjs
 import {
   buildCourtSpeedInsight,
   buildGamePlanSteps,
+  buildNetPlayInsight,
   cleanCharacterMechanic,
   cleanCounterInsight,
   cleanNetInsight,
@@ -180,7 +181,42 @@ test('net-play copy frames Core-supported net finishes as situational', () => {
     copyTypes,
     /export function cleanNetInsight\(value: unknown\): string;/,
   );
-  assert.ok(component.includes('cleanNetInsight(mechanics.net)'));
+  assert.ok(component.includes('buildNetPlayInsight(profile.stats, mechanics.net)'));
+});
+
+test('net-play advice changes with each character’s roster-relative net skill', () => {
+  const stats = (percentiles, values = [83, 92, 78, 89]) =>
+    ['Net Presence', 'Forehand Volley', 'Backhand Volley', 'Smash'].map(
+      (attribute, index) => ({
+        attribute,
+        value: values[index],
+        percentile: percentiles[index] / 100,
+        rank: index + 1,
+        count: 100,
+      }),
+    );
+
+  assert.equal(
+    buildNetPlayInsight(stats([90, 80, 60, 90])),
+    'Net Presence 83, average volley 85, and Smash 89. Across the selected roster, the four net attributes average the 80th percentile. Net play is a relative strength, so look for chances to move forward after a short or defensive reply—not as a default net-first pattern. The forehand volley (92) is the stronger finishing wing than the backhand volley (78).',
+  );
+  assert.match(
+    buildNetPlayInsight(stats([60, 55, 60, 45], [65, 68, 66, 67])),
+    /average the 55th percentile\. Net play is not a top-quarter strength; use it as a situational finish/,
+  );
+  assert.match(
+    buildNetPlayInsight(stats([30, 38, 42, 20], [55, 58, 61, 60])),
+    /average the 33rd percentile\. Net play is below the roster midpoint; keep the baseline as the default/,
+  );
+  assert.match(
+    buildNetPlayInsight([{ attribute: 'Net Presence', value: 65 }], 'Move forward to finish a short ball, not as the default pattern.'),
+    /Move forward to finish a short ball, not as the default pattern/,
+  );
+  assert.match(
+    copyTypes,
+    /export function buildNetPlayInsight\(stats: unknown, fallbackText\?: unknown\): string;/,
+  );
+  assert.ok(component.includes('buildNetPlayInsight(profile.stats, mechanics.net)'));
 });
 
 test('size-and-reach copy explains height, backhand fit, and weight in plain language', () => {
