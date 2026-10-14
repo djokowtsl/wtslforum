@@ -127,6 +127,10 @@ test('unverified shot-choice advice is omitted from profile guidance', () => {
     'Around the roster midpoint. Above the roster midpoint. Among the roster leaders.',
   );
   assert.equal(
+    cleanCharacterGuidance('Time them near the bounce.'),
+    'Hit shots on the rise.',
+  );
+  assert.equal(
     cleanRallyFit(
       'WTSL neutral-rally fit is above the midpoint. This profile can use its consistency to stay in the point.',
     ),
@@ -355,10 +359,20 @@ test('groundstroke advice keeps character ratings and useful cues concise', () =
   const advice = buildGroundstrokeInsight(profile, 'The forehand rates higher (89.4 vs 81.6).');
 
   assert.match(advice, /Consistency average 83 \(81st percentile\)/);
-  assert.match(advice, /use Normal for depth or Short as a change of pace after pushing the opponent back/);
+  assert.match(advice, /use the Normal strike for depth or the Short strike as a change of pace after pushing the opponent back/);
   assert.match(advice, /Forehand 89\.4 · Backhand 81\.6/);
   assert.doesNotMatch(advice, /Stamina|Tiredness/);
   assert.doesNotMatch(advice, /WTSL|TE4 manual|profile estimate|aggressive lob/);
+
+  const lowConsistencyAdvice = buildGroundstrokeInsight({
+    stats: [
+      { attribute: 'Forehand Consistency', value: 89, percentile: 0.13 },
+      { attribute: 'Backhand Consistency', value: 89, percentile: 0.13 },
+    ],
+  });
+  assert.match(lowConsistencyAdvice, /Consistency average 89 \(13th percentile\)/);
+  assert.match(lowConsistencyAdvice, /relative weakness for difficult shots compared with the tour roster/);
+  assert.doesNotMatch(lowConsistencyAdvice, /supports steadier difficult shots|helps steady difficult shots/);
 
   const ordinaryConsistencyAdvice = buildGroundstrokeInsight({
     stats: [{ attribute: 'Forehand Consistency', value: 64, percentile: 0.48 }],

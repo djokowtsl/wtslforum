@@ -18,3 +18,11 @@ For character profiles, 50% Topspin is neutral; values close to 50% are near-neu
 **Why:** The user clarified the always-on Tiredness setting and lack of weight gameplay effect, and asked for medium-court guidance, near-neutral copy at 51% Topspin, physical comparisons, restored rally-fit analyses, and character-specific tactical plans.
 
 **How to apply:** Compare Speed, Muscle Tone, and Stamina with same-tour roster percentiles; explain that Speed sets top running speed, Speed and Muscle Tone average into running acceleration, and Stamina relative to that average affects running fatigue. State directly that Tiredness is enabled for all characters and that running and strokes drain energy; do not use conditional on/off wording. Omit weight from headings, dimensions, mechanics, and general profile guidance.
+
+### Groundstroke wording and roster context
+
+Call the selectable shot the “Short strike,” not just “Short.” Describe early contact as hitting shots on the rise. A low Consistency percentile is a relative weakness for difficult shots, not evidence of above-average control.
+
+**Why:** The user questioned ambiguous strike naming, preferred “Hit shots on the rise,” and pointed out that an 89 rating at the 13th percentile should not be described as a strength.
+
+**How to apply:** Use “Normal strike” and “Short strike” in shot cues. Translate “Time them near the bounce” to “Hit shots on the rise” in Forum-rendered copy without editing Core. Make difficult-shot claims match the tour-relative Consistency percentile.
