@@ -261,8 +261,10 @@ test('net-play advice recommends or cautions against approaches from roster-rela
 
   const strongNetProfile = buildNetPlayInsight(stats([90, 80, 60, 90]));
   assert.match(strongNetProfile, /Available net ratings average at the 80th roster percentile/);
-  assert.match(strongNetProfile, /precision and consistency, not power/);
-  assert.match(strongNetProfile, /reduces the movement handicap while volleying/);
+  assert.match(
+    strongNetProfile,
+    /Net Presence combines with volley and smash ratings for precision and consistency—not power—and reduces the volley movement penalty/,
+  );
   assert.match(strongNetProfile, /Net play is a roster strength; come forward selectively after a deep shot draws a short reply/);
 
   const balancedNetProfile = buildNetPlayInsight(stats([60, 55, 60, 45], [65, 68, 66, 67]));
