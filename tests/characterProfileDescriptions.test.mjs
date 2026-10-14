@@ -350,9 +350,10 @@ test('size-and-reach copy labels WTSL fit estimates and uses documented height a
   );
 
   assert.match(insight, /Height 193 cm \(82nd percentile in the ATP roster\)/i);
-  assert.match(insight, /WTSL describes the height signal as a small directional advantage/i);
-  assert.match(insight, /WTSL backhand shoulder-height fit is 82\/100/i);
-  assert.match(insight, /not an in-game success rate/i);
+  assert.match(insight, /small directional advantage for shoulder-high, heavy-spin contact/i);
+  assert.match(insight, /one narrow model scenario, not a general backhand recommendation/i);
+  assert.match(insight, /WTSL backhand high-bounce fit is 82\/100/i);
+  assert.match(insight, /not an overall backhand rating or a tactical instruction/i);
   assert.match(insight, /smaller characters accelerate slightly faster/i);
   assert.match(insight, /Acceleration is fastest near the top of the bounce/i);
   assert.doesNotMatch(insight, /choose a Normal strike|Short Strike only after|balanced shoulder-height ball early/i);
@@ -389,13 +390,13 @@ test('size-and-reach copy keeps neutral-height and lower-fit advice clear', () =
   );
 
   assert.match(insight, /WTSL describes height as neutral in its high-ball estimate/i);
-  assert.match(insight, /WTSL backhand shoulder-height fit is 61\/100/i);
+  assert.match(insight, /WTSL backhand high-bounce fit is 61\/100/i);
   assert.doesNotMatch(insight, /one-handed backhand scores|Normal strike first|Short Strike/i);
   assert.match(
     heightChallenge,
-    /Height 172 cm \(12th percentile in the WTA roster\). WTSL describes the height signal as a small directional challenge/i,
+    /Height 172 cm \(12th percentile in the WTA roster\). WTSL describes a small directional challenge for shoulder-high, heavy-spin contact/i,
   );
-  assert.match(heightChallenge, /WTSL backhand shoulder-height fit is 63\/100/i);
+  assert.match(heightChallenge, /WTSL backhand high-bounce fit is 63\/100/i);
   assert.doesNotMatch(heightChallenge, /two-handed backhand scores|Normal strike first|Short Strike/i);
 });
 
@@ -452,22 +453,22 @@ test('technical summary builds shot claims from profile data and links their TE4
   );
 });
 
-test('stroke setup separates documented hand-count effects from WTSL fit estimates', () => {
+test('stroke setup avoids repeating the narrow high-bounce fit as backhand guidance', () => {
   const profile = {
     forehand_type: 'one-handed',
     backhand_type: 'two-handed',
     stats: [{ attribute: 'Counter', value: 52 }],
     combined_ratings: [
-      { attribute: 'Forehand Rating', value: 75.2 },
-      { attribute: 'Backhand Rating', value: 82.6 },
+      { attribute: 'Forehand Rating', value: 88.3 },
+      { attribute: 'Backhand Rating', value: 91.9 },
     ],
     mechanics_insights: {
       signals: {
         counter: 52,
         effective_counter: 67,
-        backhand_rating: 82.6,
-        forehand_rating: 75.2,
-        backhand_high_bounce_fit: 70,
+        backhand_rating: 91.9,
+        forehand_rating: 88.3,
+        backhand_high_bounce_fit: 81,
       },
     },
   };
@@ -476,10 +477,8 @@ test('stroke setup separates documented hand-count effects from WTSL fit estimat
   assert.match(insight, /backhand two-handed/);
   assert.match(insight, /two-handed backhand strokes add 15 Counter and are safer in the Danger Zone/i);
   assert.match(insight, /a little less power and width/i);
-  assert.match(insight, /WTSL combined groundstroke estimates are Forehand 75\.2 and Backhand 82\.6/i);
-  assert.match(insight, /WTSL’s backhand shoulder-height fit is 70\/100, a directional model estimate/i);
-  assert.match(insight, /Acceleration is fastest near the top of the bounce/i);
-  assert.doesNotMatch(insight, /take heavy topspin|choose a Normal strike|Short Acceleration/i);
+  assert.match(insight, /WTSL combined groundstroke estimates are Forehand 88\.3 and Backhand 91\.9/i);
+  assert.doesNotMatch(insight, /shoulder-height fit|high-bounce fit|heavy-spin|take heavy topspin|choose a Normal strike|Short Acceleration|support taking heavy topspin early/i);
 
   const roundedTie = buildStrokeMechanicsInsight({
     forehand_type: 'one-handed',
