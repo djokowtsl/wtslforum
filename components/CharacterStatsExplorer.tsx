@@ -15,6 +15,7 @@ import {
 import {
   buildCourtSpeedInsight,
   buildGamePlanSteps,
+  buildNetPlayInsight,
   cleanCharacterMechanic,
   cleanCounterInsight,
   cleanNetInsight,
@@ -451,7 +452,7 @@ function Profile({
     ['Size & reach', sizeInsight],
     ['Stroke setup', strokeInsight],
     ['Counterplay', cleanCounterInsight(mechanics.counter)],
-    ['Net play', cleanNetInsight(mechanics.net)],
+    ['Net play', buildNetPlayInsight(profile.stats, mechanics.net)],
     ['Shot variety', cleanShotVarietyInsight(mechanics.variation)],
   ].filter(([, text]) => typeof text === 'string' && text.trim());
   const advantages = Array.isArray(guidance.advantages) ? guidance.advantages : [];
