@@ -16,6 +16,7 @@ import {
   buildCourtSpeedInsight,
   buildGamePlanSteps,
   cleanCharacterMechanic,
+  cleanCounterInsight,
   cleanSizeReachInsight,
   normalizeCharacterCopy,
   splitRosterEvidenceNotes,
@@ -447,7 +448,7 @@ function Profile({
     ['Court speed', courtSpeedInsight],
     ['Size & reach', sizeInsight],
     ['Stroke setup', strokeInsight],
-    ['Counterplay', mechanics.counter],
+    ['Counterplay', cleanCounterInsight(mechanics.counter)],
     ['Net play', mechanics.net],
     ['Shot variety', mechanics.variation],
   ].filter(([, text]) => typeof text === 'string' && text.trim());
