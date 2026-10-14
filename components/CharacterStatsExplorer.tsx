@@ -13,18 +13,16 @@ import {
   buildStrokeMechanicsInsight,
 } from '@/lib/characterProfileMechanics.mjs';
 import {
+  buildCounterInsight,
   buildServeInsight,
   buildGroundstrokeInsight,
   buildCourtSpeedInsight,
   buildGamePlanSteps,
   buildNetPlayInsight,
+  buildShotVarietyInsight,
+  cleanCharacterGuidance,
   cleanCharacterMechanic,
-  cleanCounterInsight,
-  cleanNetInsight,
-  cleanStrokeMechanicsInsight,
-  cleanShotVarietyInsight,
   cleanSizeReachInsight,
-  normalizeCharacterCopy,
   splitRosterEvidenceNotes,
 } from '@/lib/characterProfileCopy.mjs';
 import SearchableDropdown from '@/components/SearchableDropdown';
@@ -312,8 +310,14 @@ function Comparison({ comparison, selected }: { comparison: Record<string, any>;
   const selectedGuidance = selectedIsFirst ? comparison.first_guidance : comparison.second_guidance;
   const otherGuidance = selectedIsFirst ? comparison.second_guidance : comparison.first_guidance;
   const other = selectedIsFirst ? comparison.second : comparison.first;
-  const selectedChoice = selectedGuidance?.why_select || selectedGuidance?.benefit;
-  const otherChoice = otherGuidance?.why_select || otherGuidance?.benefit;
+  const selectedChoice = cleanCharacterGuidance(selectedGuidance?.why_select || selectedGuidance?.benefit);
+  const otherChoice = cleanCharacterGuidance(otherGuidance?.why_select || otherGuidance?.benefit);
+  const selectedMechanicLines = (Array.isArray(selectedMechanics) ? selectedMechanics : [])
+    .map(cleanCharacterGuidance)
+    .filter(Boolean);
+  const otherMechanicLines = (Array.isArray(otherMechanics) ? otherMechanics : [])
+    .map(cleanCharacterGuidance)
+    .filter(Boolean);
   const edgeList = (items: any[]) => (Array.isArray(items) ? items : [])
     .filter((item) => !isExcludedRatingAttribute(item?.attribute))
     .map((item) => {
@@ -339,15 +343,15 @@ function Comparison({ comparison, selected }: { comparison: Record<string, any>;
         <div className="character-edge character-edge-selected">
           <h3>{selected}</h3>
           {selectedEdges?.length ? <ul>{edgeList(selectedEdges)}</ul> : <p>No higher attributes.</p>}
-          {selectedMechanics?.length > 0 && (
-            <ul>{selectedMechanics.map((line: string, index: number) => <li key={index}>{line}</li>)}</ul>
+          {selectedMechanicLines.length > 0 && (
+            <ul>{selectedMechanicLines.map((line: string, index: number) => <li key={index}>{line}</li>)}</ul>
           )}
         </div>
         <div className="character-edge">
           <h3>{other}</h3>
           {otherEdges?.length ? <ul>{edgeList(otherEdges)}</ul> : <p>No higher attributes.</p>}
-          {otherMechanics?.length > 0 && (
-            <ul>{otherMechanics.map((line: string, index: number) => <li key={index}>{line}</li>)}</ul>
+          {otherMechanicLines.length > 0 && (
+            <ul>{otherMechanicLines.map((line: string, index: number) => <li key={index}>{line}</li>)}</ul>
           )}
         </div>
       </div>
@@ -440,31 +444,36 @@ function Profile({
   const sizeInsight = cleanSizeReachInsight(
     mechanics.size_reach || buildSizeMechanicsInsight(profile.height, profile.weight),
   );
-  const strokeInsight = cleanStrokeMechanicsInsight(
-    mechanics.stroke_setup || buildStrokeMechanicsInsight(profile),
-  );
-  const surfaceFitInsight = buildCourtSpeedInsight(profile.stats, mechanics.surface_fit);
+  const strokeInsight = buildStrokeMechanicsInsight(profile);
+  const surfaceFitInsight = buildCourtSpeedInsight(profile.stats);
   const styleMechanic = cleanCharacterMechanic(guidance.style_mechanics, profile.character);
   const accelerationMechanic = cleanCharacterMechanic(
     guidance.acceleration_mechanics,
     profile.character,
   );
   const gamePlanSteps = buildGamePlanSteps(guidance.game_plan, profile.acceleration);
-  const serveInsight = buildServeInsight(profile, mechanics.serve);
+  const serveInsight = buildServeInsight(profile);
   const insightRows = [
     ['Serve', serveInsight],
-    ['Groundstrokes', buildGroundstrokeInsight(profile, mechanics.groundstrokes)],
+    ['Groundstrokes', buildGroundstrokeInsight(profile)],
     ['Fit on fast and slow courts', surfaceFitInsight],
     ['Size & reach', sizeInsight],
-    ['Stroke setup', strokeInsight],
-    ['Counterplay', cleanCounterInsight(mechanics.counter)],
-    ['Net play', buildNetPlayInsight(profile.stats, mechanics.net)],
-    ['Shot variety', cleanShotVarietyInsight(mechanics.variation)],
+    ['Hand use', strokeInsight],
+    ['Counterplay', buildCounterInsight(profile)],
+    ['Net play', buildNetPlayInsight(profile.stats)],
+    ['Shot variety', buildShotVarietyInsight(profile)],
   ].filter(([, text]) => typeof text === 'string' && text.trim());
-  const advantages = Array.isArray(guidance.advantages) ? guidance.advantages : [];
-  const vulnerabilities = Array.isArray(guidance.vulnerabilities) ? guidance.vulnerabilities : [];
-  const selectionRationale = normalizeCharacterCopy(
+  const advantages = (Array.isArray(guidance.advantages) ? guidance.advantages : [])
+    .map(cleanCharacterGuidance)
+    .filter(Boolean);
+  const vulnerabilities = (Array.isArray(guidance.vulnerabilities) ? guidance.vulnerabilities : [])
+    .map(cleanCharacterGuidance)
+    .filter(Boolean);
+  const selectionRationale = cleanCharacterGuidance(
     guidance.why_select || guidance.benefit || guidance.best_for,
+  );
+  const tradeoffCopy = cleanCharacterGuidance(
+    guidance.why_not_select || guidance.tradeoff || '',
   );
   const topEdges = statsWithoutExcludedAttributes(guidance.top_edges);
   const documentedEdges = Array.isArray(guidance.documented_edges) ? guidance.documented_edges : [];
@@ -478,7 +487,7 @@ function Profile({
   const rosterEvidenceNotes = splitRosterEvidenceNotes(
     topEdges,
     documentedRosterNotes,
-    guidance.why_not_select || guidance.tradeoff || '',
+    tradeoffCopy,
   );
   const attributes = statsWithoutExcludedAttributes(profile.stats);
   const characterSummary = buildCharacterProfileSummary(
@@ -508,7 +517,7 @@ function Profile({
     .map(([key, title]) => ({
       key,
       title,
-      text: exchangeFit[key],
+      text: cleanCharacterGuidance(exchangeFit[key]),
     }))
     .filter((row) => typeof row.text === 'string' && row.text.trim());
   const official = data.official || {};
@@ -656,6 +665,10 @@ function Profile({
           <div className="character-section-heading">
             <div><span className="panel-label">TE4 MECHANICS</span><h2>Technical summary</h2></div>
           </div>
+          <p className="character-rating-explainer">
+            Shot mechanics follow the <a href="https://www.managames.com/tennis/doc/Tennis_Elbow-Tennis_Game.html" target="_blank" rel="noopener noreferrer">official TE4 manual</a>.
+            Character values come from the profile; WTSL-calculated ratings and model estimates are labelled as such.
+          </p>
           {insightRows.length > 0 && (
             <div className="character-insight-grid">
               {insightRows.map(([title, text]) => (
@@ -692,8 +705,8 @@ function Profile({
         </section>
       )}
 
-      {(selectionRationale || topEdges.length > 0 || rosterEvidenceNotes.additionalNotes.length > 0 || gamePlanSteps.length > 0 ||
-        guidance.why_not_select || guidance.tradeoff) && (
+      {(selectionRationale || topEdges.length > 0 || rosterEvidenceNotes.additionalNotes.length > 0 ||
+        gamePlanSteps.length > 0 || tradeoffCopy) && (
         <div className="character-guidance-columns character-selection-guidance">
           {selectionRationale && (
             <section className="character-selection-card">
@@ -741,7 +754,7 @@ function Profile({
               )}
             </section>
           )}
-          {(gamePlanSteps.length > 0 || guidance.why_not_select || guidance.tradeoff) && (
+          {(gamePlanSteps.length > 0 || tradeoffCopy) && (
             <section className="character-selection-card">
               <span className="panel-label">TACTICAL PLAN</span>
               <h3>Game plan</h3>
@@ -750,10 +763,8 @@ function Profile({
                   {gamePlanSteps.map((step, index) => <li key={`${index}-${step}`}>{step}</li>)}
                 </ol>
               )}
-              {(guidance.why_not_select || guidance.tradeoff) && (
-                <p><b>Trade-off:</b> {normalizeCharacterCopy(
-                  guidance.why_not_select || guidance.tradeoff,
-                )}</p>
+              {tradeoffCopy && (
+                <p><b>Trade-off:</b> {tradeoffCopy}</p>
               )}
             </section>
           )}

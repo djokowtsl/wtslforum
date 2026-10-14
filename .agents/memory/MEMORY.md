@@ -1,0 +1,1 @@
+- [Character shot-choice guidance](character-shot-choice-guidance.md) — keep shot-choice suggestions sparse and grounded in each character's ratings and the TE4 manual.
