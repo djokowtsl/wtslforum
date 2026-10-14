@@ -36,6 +36,7 @@ import {
   type CharacterRosterFilters,
 } from '@/lib/characterRosterFilters.mjs';
 import SearchableDropdown from '@/components/SearchableDropdown';
+import CharacterMetricCharts from '@/components/CharacterMetricCharts';
 
 type Tour = 'all' | 'atp' | 'wta';
 type Stat = {
@@ -1313,6 +1314,19 @@ export default function CharacterStatsExplorer({
           </p>
         )}
       </section>
+
+      <CharacterMetricCharts
+        tour={tour}
+        onSelectCharacter={(name) => {
+          characterRef.current = name;
+          setCharacter(name);
+          setDraftCharacter(name);
+          setSearch(name);
+          setSearchError('');
+          if (compare === name) setCompare('');
+          if (draftCompare === name) setDraftCompare('');
+        }}
+      />
 
       {error && (
         <div className="notice warn character-error" role="alert">
