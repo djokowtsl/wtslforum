@@ -56,13 +56,13 @@ test('character profiles derive a selected-character summary and render profile 
     'buildShotVarietyInsight(profile)',
     'className="panel character-guidance-panel"',
     'Style &amp; traits',
-    'Technical summary',
+    'On-court notes',
     'Trade-off:',
-    'Rally-fit guidance',
+    'Across rally lengths',
     'mechanics.exchange_fit',
-    'not a prediction of rally duration, point wins, or match results',
-    'WTSL calculates these combined ratings',
-    'WTSL-combined ${item.attribute}',
+    'How this character tends to hold up in shorter and longer exchanges.',
+    'Each rating combines Power, Consistency, and Precision.',
+    'Combined ${item.attribute}',
   ]) {
     assert.ok(component.includes(marker), `character copy binding missing: ${marker}`);
   }
@@ -114,7 +114,13 @@ test('unverified shot-choice advice is omitted from profile guidance', () => {
     cleanCharacterGuidance(
       'The manual says Counter adds speed to Normal strikes. Use Counter to attack fast balls.',
     ),
-    'The manual says Counter adds speed to Normal strikes.',
+    'Counter adds speed to Normal strikes.',
+  );
+  assert.equal(
+    cleanCharacterGuidance(
+      'WTSL quick-point fit is around the roster midpoint. WTSL neutral-rally fit is above the midpoint. WTSL sustained-play fit is among the roster leaders.',
+    ),
+    'Around the roster midpoint. Above the roster midpoint. Among the roster leaders.',
   );
   assert.equal(
     cleanCharacterGuidance('Use touch or a controlled volley to finish.'),
@@ -123,6 +129,8 @@ test('unverified shot-choice advice is omitted from profile guidance', () => {
   assert.ok(component.includes('Array.isArray(selectedMechanics) ? selectedMechanics : []'));
   assert.ok(component.includes('Array.isArray(otherMechanics) ? otherMechanics : []'));
   assert.ok(component.includes('cleanCharacterGuidance(exchangeFit[key])'));
+  assert.ok(component.includes('Average maximal serve speed:'));
+  assert.ok(component.includes("formatValue(stat.max_serve_speed_kmh, ' km/h')"));
 });
 
 test('roster evidence merges matching notes and avoids repeated or summarized attributes', () => {
@@ -151,20 +159,20 @@ test('roster evidence merges matching notes and avoids repeated or summarized at
 test('court-fit copy follows the documented Topspin surface modifiers', () => {
   assert.equal(
     buildCourtSpeedInsight([{ attribute: 'Topspin', value: 68 }]),
-    'Topspin 68%. The manual says ratings above 50% give a bonus on clay and slow surfaces and a handicap on fast surfaces; the bonus is stronger for rally players and smaller for volley players. The manual also says higher Topspin adds spin and slows Normal, Top Spin, Short, Acceleration, and Short Acceleration strikes. Top Spin is therefore a spin-versus-speed choice, not an automatic pick based on surface alone.',
+    'Topspin 68% adds spin and suits slow courts, but can cost pace on fast courts.',
   );
   assert.equal(
     buildCourtSpeedInsight([{ attribute: 'Topspin', value: 50 }]),
-    'Topspin 50%. The manual defines 50% as neutral: neither a bonus nor a handicap on fast or slow surfaces. The manual also says higher Topspin adds spin and slows Normal, Top Spin, Short, Acceleration, and Short Acceleration strikes. Top Spin is therefore a spin-versus-speed choice, not an automatic pick based on surface alone.',
+    'Topspin 50% is neutral for court fit.',
   );
   assert.equal(
     buildCourtSpeedInsight([{ attribute: 'Topspin', value: 23 }]),
-    'Topspin 23%. The manual says ratings below 50% increase the handicap on clay and slow surfaces as the value falls; it does not describe that as a bonus on fast courts. The manual also says higher Topspin adds spin and slows Normal, Top Spin, Short, Acceleration, and Short Acceleration strikes. Top Spin is therefore a spin-versus-speed choice, not an automatic pick based on surface alone.',
+    'Topspin 23% is below neutral, so slow courts can be tougher; it is not an automatic fast-court bonus.',
   );
   assert.equal(buildCourtSpeedInsight([], 'Choose a Top Spin stroke when needed.'), '');
 });
 
-test('shot variety prioritizes Drop Shot and Slice Mastery, surfacing Lob only as a roster standout', () => {
+test('shot variety copy keeps the focus on useful profile-specific options', () => {
   const closeRatings = buildShotVarietyInsight({
     stats: [
       { attribute: 'Lob', value: 82, percentile: 0.64 },
@@ -175,7 +183,7 @@ test('shot variety prioritizes Drop Shot and Slice Mastery, surfacing Lob only a
   });
   assert.equal(
     closeRatings,
-    'Character-sheet values: Drop Shot 81 (61st roster percentile); Slice Mastery 48 (52nd roster percentile).',
+    'Drop Shot 81 · Slice Mastery 48.',
   );
   assert.doesNotMatch(closeRatings, /Lob 82|banana shot|favor the lob|higher than Drop Shot/);
 
@@ -187,12 +195,12 @@ test('shot variety prioritizes Drop Shot and Slice Mastery, surfacing Lob only a
       { attribute: 'Topspin', value: 82, percentile: 0.90 },
     ],
   });
-  assert.match(standoutRatings, /Drop Shot is a roster standout; consider it after moving an opponent deep/);
-  assert.match(standoutRatings, /Slice Mastery is a roster standout; a short-slice variation may suit this character/);
-  assert.match(standoutRatings, /defensive slice\/squash shot may be a situational recovery option/);
-  assert.match(standoutRatings, /Lob itself for an opponent at the net, not routine exchanges/);
-  assert.match(standoutRatings, /banana-shot variation may suit a spin-focused point/);
-  assert.match(standoutRatings, /manual confirms Topspin adds spin to several strikes but does not document the named banana shot/);
+  assert.match(standoutRatings, /A strong Drop Shot can bring an opponent forward after they have been pushed deep/);
+  assert.match(standoutRatings, /High Slice Mastery makes the short slice a useful change of pace/);
+  assert.match(standoutRatings, /squash-style slice may help in defense/);
+  assert.match(standoutRatings, /save the Lob itself for an opponent at the net/);
+  assert.match(standoutRatings, /High Topspin may suit a banana-shot variation when you want extra spin/);
+  assert.doesNotMatch(standoutRatings, /WTSL profile cues|manual (?:says|confirms|describes)|roster percentile/);
   assert.doesNotMatch(standoutRatings, /Lob 94 is higher than Drop Shot 90/);
 
   const sliceWithoutStandoutLob = buildShotVarietyInsight({
@@ -201,7 +209,7 @@ test('shot variety prioritizes Drop Shot and Slice Mastery, surfacing Lob only a
       { attribute: 'Slice Mastery', value: 88, percentile: 0.86 },
     ],
   });
-  assert.match(sliceWithoutStandoutLob, /short-slice variation may suit this character/);
+  assert.match(sliceWithoutStandoutLob, /High Slice Mastery makes the short slice a useful change of pace/);
   assert.doesNotMatch(sliceWithoutStandoutLob, /Lob 82|defensive slice\/squash/);
 
   const lobWithoutSliceMastery = buildShotVarietyInsight({
@@ -210,7 +218,7 @@ test('shot variety prioritizes Drop Shot and Slice Mastery, surfacing Lob only a
       { attribute: 'Slice Mastery', value: 47, percentile: 0.42 },
     ],
   });
-  assert.match(lobWithoutSliceMastery, /Lob is a top-decile strength/);
+  assert.match(lobWithoutSliceMastery, /Save a strong Lob for an opponent at the net/);
   assert.doesNotMatch(lobWithoutSliceMastery, /defensive slice\/squash/);
   assert.ok(component.includes('buildShotVarietyInsight(profile)'));
 });
@@ -229,7 +237,7 @@ test('net-play advice reports character values and the manual’s documented Net
   }));
   assert.equal(
     buildNetPlayInsight(stats),
-    'Net Presence 83, Forehand Volley 92, Backhand Volley 78, Smash 89. These available net attributes average the 80th roster percentile. The TE4 manual says Net Presence combines with the selected Volley or Smash skill for precision and consistency, not power; higher Net Presence also allows more running while volleying without a movement handicap.',
+    'Net Presence 83, Forehand Volley 92, Backhand Volley 78, Smash 89. Net Presence helps with control and movement at the net, not power.',
   );
   const partial = buildNetPlayInsight(
     [{ attribute: 'Net Presence', value: 65 }],
@@ -254,19 +262,19 @@ test('net-play advice never turns roster percentile into an unsupported approach
 
   assert.equal(
     buildNetPlayInsight(stats([90, 80, 60, 90])),
-    'Net Presence 83, Forehand Volley 92, Backhand Volley 78, Smash 89. These available net attributes average the 80th roster percentile. The TE4 manual says Net Presence combines with the selected Volley or Smash skill for precision and consistency, not power; higher Net Presence also allows more running while volleying without a movement handicap.',
+    'Net Presence 83, Forehand Volley 92, Backhand Volley 78, Smash 89. Net Presence helps with control and movement at the net, not power.',
   );
   assert.match(
     buildNetPlayInsight(stats([60, 55, 60, 45], [65, 68, 66, 67])),
-    /average the 55th roster percentile\. The TE4 manual says Net Presence combines/,
+    /Net Presence helps with control and movement at the net, not power/,
   );
   assert.match(
     buildNetPlayInsight(stats([30, 38, 42, 20], [55, 58, 61, 60])),
-    /average the 33rd roster percentile\. The TE4 manual says Net Presence combines/,
+    /Net Presence helps with control and movement at the net, not power/,
   );
   assert.equal(
     buildNetPlayInsight([{ attribute: 'Net Presence', value: 65 }], 'Move forward to finish a short ball, not as the default pattern.'),
-    'Net Presence 65. The TE4 manual says Net Presence combines with the selected Volley or Smash skill for precision and consistency, not power; higher Net Presence also allows more running while volleying without a movement handicap.',
+    'Net Presence 65. Net Presence helps with control and movement at the net, not power.',
   );
   assert.match(
     copyTypes,
@@ -275,7 +283,7 @@ test('net-play advice never turns roster percentile into an unsupported approach
   assert.ok(component.includes('buildNetPlayInsight(profile.stats)'));
 });
 
-test('serve advice applies the manual’s Strong, Normal, Safe, and Precision rules', () => {
+test('serve guidance estimates first-serve success without recommending serve types', () => {
   const profile = {
     stats: [
       { attribute: 'Service Power', value: 82, percentile: 0.8 },
@@ -290,9 +298,10 @@ test('serve advice applies the manual’s Strong, Normal, Safe, and Precision ru
   };
   assert.equal(
     buildServeInsight(profile, 'Generic Core serve advice.'),
-    'WTSL estimates average maximum serve speed at 200.0 km/h. Service Power 82 (80th percentile), Consistency 81 (55th percentile), and Precision 94 (88th percentile). Power exceeds Consistency; the TE4 manual says a Strong first serve then has under 70% success. If first-serve reliability matters, consider Normal or Safe; Normal lies between Strong and Safe, while Safe is 100% successful. Precision 94 (88th percentile) is above Power 82; the manual says this makes the serve more accurate.',
+    'Average maximal serve speed: 200.0 km/h. Power 82, Consistency 81, Precision 94. Estimated first-serve success: Strong below 70%; Normal likely below 85%.',
   );
-  assert.match(buildServeInsight(profile), /consider Normal or Safe/);
+  assert.match(buildServeInsight(profile), /Strong below 70%; Normal likely below 85%/);
+  assert.doesNotMatch(buildServeInsight(profile), /riskier|steadiest|choose (?:Strong|Normal|Safe)|use (?:Strong|Normal|Safe)/i);
 
   const saferProfile = {
     stats: [
@@ -307,9 +316,11 @@ test('serve advice applies the manual’s Strong, Normal, Safe, and Precision ru
     ],
   };
   const saferAdvice = buildServeInsight(saferProfile);
-  assert.match(saferAdvice, /Strong a 70% first-serve success rate, Normal 85%, and Safe 100%/);
-  assert.match(saferAdvice, /choose according to the reliability you want/);
-  assert.match(saferAdvice, /Precision 60 \(35th percentile\) is not above Power 70/);
+  assert.match(
+    saferAdvice,
+    /With even Power and Consistency, estimated first-serve success is Strong 70% and Normal 85%/,
+  );
+  assert.doesNotMatch(saferAdvice, /\bSafe\b|riskier|steadiest|choose /i);
   assert.doesNotMatch(saferAdvice, /Generic Core serve advice|Short Acceleration|body and corner/);
 
   const consistencyLedAdvice = buildServeInsight({
@@ -319,7 +330,7 @@ test('serve advice applies the manual’s Strong, Normal, Safe, and Precision ru
       { attribute: 'Service Precision', value: 74 },
     ],
   });
-  assert.match(consistencyLedAdvice, /consider Strong when extra pace is worth its lower success rate/i);
+  assert.match(consistencyLedAdvice, /Strong above 70%; Normal likely above 85%/i);
   assert.match(
     copyTypes,
     /export function buildServeInsight\(profile: unknown, fallbackText\?: unknown\): string;/,
@@ -327,7 +338,7 @@ test('serve advice applies the manual’s Strong, Normal, Safe, and Precision ru
   assert.ok(component.includes('buildServeInsight(profile)'));
 });
 
-test('groundstroke advice maps character ratings to documented depth, timing, and fatigue rules', () => {
+test('groundstroke advice keeps character ratings and useful cues concise', () => {
   const profile = {
     stats: [
       { attribute: 'Forehand Consistency', value: 84, percentile: 0.82 },
@@ -341,19 +352,17 @@ test('groundstroke advice maps character ratings to documented depth, timing, an
   };
   const advice = buildGroundstrokeInsight(profile, 'The forehand rates higher (89.4 vs 81.6).');
 
-  assert.match(advice, /Forehand and Backhand Consistency average 83 \(81st roster percentile\)/);
-  assert.match(advice, /higher Consistency lowers faults on difficult balls, deepens Normal strikes, and shortens Short Strikes/);
-  assert.match(advice, /For this roster standout, consider Normal when you need depth or Short when you want a shorter landing/);
-  assert.match(advice, /off-position contact can make short shots travel longer than intended/);
-  assert.match(advice, /WTSL combined groundstroke estimates are Forehand 89\.4 and Backhand 81\.6/);
-  assert.match(advice, /Stamina 42% maps to 2 good accelerations and aggressive lobs per point when TE4 Tiredness is off/);
-  assert.match(advice, /Acceleration is fastest near the top of the bounce/);
-  assert.doesNotMatch(advice, /The forehand rates higher|short reply gives|open short court/);
+  assert.match(advice, /Consistency average 83 \(81st percentile\)/);
+  assert.match(advice, /use Normal for depth or Short as a change of pace after pushing the opponent back/);
+  assert.match(advice, /Forehand 89\.4 · Backhand 81\.6/);
+  assert.match(advice, /Stamina 42% supports about 2 hard accelerations per point when Tiredness is off/);
+  assert.match(advice, /Time them near the bounce/);
+  assert.doesNotMatch(advice, /WTSL|TE4 manual|profile estimate|aggressive lob/);
 
   const ordinaryConsistencyAdvice = buildGroundstrokeInsight({
     stats: [{ attribute: 'Forehand Consistency', value: 64, percentile: 0.48 }],
   });
-  assert.doesNotMatch(ordinaryConsistencyAdvice, /For this roster standout/);
+  assert.doesNotMatch(ordinaryConsistencyAdvice, /use Normal for depth or Short/);
 
   const higherStaminaAdvice = buildGroundstrokeInsight({
     ...profile,
@@ -363,7 +372,7 @@ test('groundstroke advice maps character ratings to documented depth, timing, an
   });
   assert.match(
     higherStaminaAdvice,
-    /Stamina 82% maps to 4 good accelerations and aggressive lobs per point/,
+    /Stamina 82% supports about 4 hard accelerations per point/,
   );
 
   const roundedTie = buildGroundstrokeInsight({
@@ -372,46 +381,41 @@ test('groundstroke advice maps character ratings to documented depth, timing, an
       { attribute: 'Backhand Rating', value: 91.56 },
     ],
   });
-  assert.match(roundedTie, /WTSL combined groundstroke estimates are evenly rated at 91\.6/);
+  assert.match(roundedTie, /Forehand 91\.6 · Backhand 91\.6/);
   assert.doesNotMatch(roundedTie, /The (?:forehand|backhand) rates higher/);
   assert.match(copyTypes, /export function buildGroundstrokeInsight\(profile: unknown, fallbackText\?: unknown\): string;/);
   assert.ok(component.includes('buildGroundstrokeInsight(profile)'));
 });
 
-test('size-and-reach copy labels WTSL fit estimates and uses documented height and weight mechanics', () => {
+test('size-and-reach copy keeps the height scenario and weight note brief', () => {
   const insight = cleanSizeReachInsight(
     "At 193 cm (82nd percentile in the ATP roster), That gives a small directional advantage against shoulder-high heavy-spin contact. The more useful cue is this two-handed backhand's 82/100 directional fit; that supports favor taking a balanced shoulder-height ball early. At 85 kg (74th percentile in the ATP roster), body mass is distinctive but has no separate documented pace or movement effect; Speed and Muscle Tone are the relevant court-coverage ratings.",
   );
 
   assert.match(insight, /Height 193 cm \(82nd percentile in the ATP roster\)/i);
-  assert.match(insight, /small directional advantage in one narrow height model scenario, not a general backhand recommendation/i);
-  assert.match(insight, /WTSL backhand high-bounce fit is 82\/100/i);
-  assert.match(insight, /specific scenario is shoulder-high, heavy-spin contact/i);
-  assert.match(insight, /not an overall backhand rating or a tactical instruction/i);
-  assert.match(insight, /smaller characters accelerate slightly faster/i);
-  assert.match(insight, /Acceleration is fastest near the top of the bounce/i);
+  assert.match(insight, /Slight edge against shoulder-high, heavy-spin contact only/i);
+  assert.match(insight, /Backhand fit for this situation: 82\/100/i);
   assert.doesNotMatch(insight, /choose a Normal strike|Short Strike only after|balanced shoulder-height ball early/i);
-  assert.match(insight, /Weight 85 kg; this character is heavier than about 74% of the ATP roster/i);
-  assert.match(insight, /manual says weight is cosmetic/i);
-  assert.match(insight, /Speed determines maximum running speed/i);
+  assert.match(insight, /Weight 85 kg; heavier than about 74% of the ATP roster/i);
+  assert.match(insight, /Weight itself does not change movement; Speed and Muscle Tone do/i);
 });
 
-test('weight copy explains the roster comparison without treating weight as speed', () => {
+test('weight copy states the roster comparison without overexplaining mechanics', () => {
   const profileWeightInsight = (weight, percentile) => cleanSizeReachInsight(
     `At ${weight} kg (${percentile}), body mass is distinctive but has no separate documented pace or movement effect; Speed and Muscle Tone are the relevant court-coverage ratings.`,
   );
 
   assert.equal(
     profileWeightInsight(90, '90th percentile in the ATP roster'),
-    'Weight 90 kg; this character is heavier than about 90% of the ATP roster. The TE4 manual says weight is cosmetic; Speed determines maximum running speed and Speed with Muscle Tone determines running acceleration.',
+    'Weight 90 kg; heavier than about 90% of the ATP roster. Weight itself does not change movement; Speed and Muscle Tone do.',
   );
   assert.equal(
     profileWeightInsight(54, '12th percentile in the WTA roster'),
-    'Weight 54 kg; this character is lighter than about 88% of the WTA roster. The TE4 manual says weight is cosmetic; Speed determines maximum running speed and Speed with Muscle Tone determines running acceleration.',
+    'Weight 54 kg; lighter than about 88% of the WTA roster. Weight itself does not change movement; Speed and Muscle Tone do.',
   );
   assert.equal(
     profileWeightInsight(75, '50th percentile in the ATP roster'),
-    'Weight 75 kg; this character is around the middle of the ATP roster by weight. The TE4 manual says weight is cosmetic; Speed determines maximum running speed and Speed with Muscle Tone determines running acceleration.',
+    'Weight 75 kg; around the middle of the ATP roster by weight. Weight itself does not change movement; Speed and Muscle Tone do.',
   );
 });
 
@@ -423,14 +427,14 @@ test('size-and-reach copy keeps neutral-height and lower-fit advice clear', () =
     "At 172 cm (12th percentile in the WTA roster), That adds a small directional challenge against shoulder-high heavy-spin contact. The more useful cue is this two-handed backhand's 63/100 directional fit; that supports favor a normal rally ball to regain balance before attacking.",
   );
 
-  assert.match(insight, /WTSL describes height as neutral in its high-ball estimate/i);
-  assert.match(insight, /WTSL backhand high-bounce fit is 61\/100/i);
+  assert.match(insight, /No clear height edge in the high-ball estimate/i);
+  assert.match(insight, /Backhand fit for this situation: 61\/100/i);
   assert.doesNotMatch(insight, /one-handed backhand scores|Normal strike first|Short Strike/i);
   assert.match(
     heightChallenge,
-    /Height 172 cm \(12th percentile in the WTA roster\). WTSL describes this as a small directional challenge in one narrow height model scenario/i,
+    /Height 172 cm \(12th percentile in the WTA roster\). Small challenge against shoulder-high, heavy-spin contact only/i,
   );
-  assert.match(heightChallenge, /WTSL backhand high-bounce fit is 63\/100/i);
+  assert.match(heightChallenge, /Backhand fit for this situation: 63\/100/i);
   assert.doesNotMatch(heightChallenge, /two-handed backhand scores|Normal strike first|Short Strike/i);
 });
 
@@ -464,7 +468,7 @@ test('game plans omit unverified shot-specific directives and retain generic pos
 
 test('technical summary builds shot claims from profile data and links their TE4 source', () => {
   for (const marker of [
-    'Average maximal serve speed (not absolute peak)',
+    'Average maximal serve speed',
     'mechanics.size_reach',
     'buildGroundstrokeInsight(profile)',
     'buildSizeMechanicsInsight(profile.height, profile.weight)',
@@ -474,7 +478,7 @@ test('technical summary builds shot claims from profile data and links their TE4
     "['Counterplay', buildCounterInsight(profile)]",
     "['Shot variety', buildShotVarietyInsight(profile)]",
     'https://www.managames.com/tennis/doc/Tennis_Elbow-Tennis_Game.html',
-    'official TE4 manual',
+    'TE4 mechanics reference',
   ]) {
     assert.ok(component.includes(marker), `TE4 profile mechanic missing: ${marker}`);
   }
@@ -511,7 +515,7 @@ test('hand-use copy explains the stroke and avoids repeating the narrow high-bou
   assert.match(insight, /This character uses a one-handed forehand and a two-handed backhand/);
   assert.match(insight, /two-handed backhand strokes add \+15 Counter and are safer in the Danger Zone/i);
   assert.match(insight, /trade a little power and width/);
-  assert.match(insight, /WTSL combined groundstroke estimates are Forehand 88\.3 and Backhand 91\.9/i);
+  assert.match(insight, /Groundstroke ratings: Forehand 88\.3, Backhand 91\.9/i);
   assert.doesNotMatch(insight, /shoulder-height fit|high-bounce fit|heavy-spin|take heavy topspin|choose a Normal strike|Short Acceleration|support taking heavy topspin early/i);
 
   const oneHandedInsight = buildStrokeMechanicsInsight({
@@ -519,7 +523,7 @@ test('hand-use copy explains the stroke and avoids repeating the narrow high-bou
     backhand_type: 'one-handed',
   });
   assert.match(oneHandedInsight, /This character uses a one-handed forehand and a one-handed backhand/);
-  assert.match(oneHandedInsight, /no two-handed stroke is listed here/);
+  assert.doesNotMatch(oneHandedInsight, /Two-handed .*strokes add \+15 Counter/);
 
   const roundedTie = buildStrokeMechanicsInsight({
     forehand_type: 'one-handed',
@@ -528,7 +532,7 @@ test('hand-use copy explains the stroke and avoids repeating the narrow high-bou
       signals: { counter: 52, effective_counter: 67, backhand_rating: 91.56, forehand_rating: 91.64 },
     },
   });
-  assert.match(roundedTie, /WTSL combined groundstroke estimates are evenly rated at 91\.6/);
+  assert.match(roundedTie, /Groundstroke ratings are even at 91\.6/);
   assert.doesNotMatch(roundedTie, /stronger groundstroke|attack a shorter reply/);
   assert.ok(component.includes('buildStrokeMechanicsInsight(profile)'));
 });
@@ -541,9 +545,7 @@ test('Counterplay copy states the manual-backed effects without inventing a pref
       { attribute: 'Backhand Rating', value: 82.6 },
     ],
   });
-  assert.match(insight, /Counter 52 \(49th roster percentile\) is a rating, not a selectable strike/);
-  assert.match(insight, /up to 7\.5 km\/h of extra speed on Normal and Top Spin strikes/i);
-  assert.match(insight, /higher Counter helps handle fast balls but makes slow incoming balls less easy/i);
+  assert.match(insight, /Counter 52 \(49th percentile\) helps with fast incoming balls; slower ones are harder to handle/i);
   assert.doesNotMatch(insight, /better redirecting option|Acceleration|preferred wing/i);
   assert.ok(component.includes("['Counterplay', buildCounterInsight(profile)]"));
 });
@@ -612,8 +614,8 @@ test('profile summaries use roster data rather than selection advice', () => {
   );
 
   assert.notEqual(firstSummary, secondSummary);
-  assert.match(firstSummary, /clearest roster edge is Forehand Power/i);
-  assert.match(secondSummary, /clearest roster edge is Service Power/i);
+  assert.match(firstSummary, /clearest strength is Forehand Power/i);
+  assert.match(secondSummary, /clearest strength is Service Power/i);
   assert.doesNotMatch(firstSummary, /Player One suits building through the forehand/i);
   assert.doesNotMatch(secondSummary, /Player Two suits using the serve/i);
   assert.doesNotMatch(firstSummary, /rank #|\/100/);
@@ -645,7 +647,7 @@ test('repeated Core summary templates are individualized from each character’s
     second.replace('Player Two', 'PLAYER').toLowerCase(),
   );
   assert.match(first, /serve placement, serve reliability, and forehand volleys/i);
-  assert.match(first, /not per-shot predictions/i);
+  assert.doesNotMatch(first, /not per-shot predictions|WTSL|manual/i);
   assert.match(second, /counterpunching, court coverage, and stamina/i);
   assert.doesNotMatch(`${first} ${second}`, /Use the build|draw a short reply|finish with touch|recover through the middle|rank #|\/100/i);
   assert.doesNotMatch(`${first} ${second}`, /\b(?:use|choose|attack|finish)\b/i);
@@ -670,13 +672,13 @@ test('profile summary prefers objective roster ratings over selection guidance',
     { attribute: 'Flat Backhand', value: 84, rank: 12, count: 102, percentile: 0.89 },
   ]);
 
-  assert.match(summary, /strongest WTSL-combined roster rating is Forehand Rating/i);
+  assert.match(summary, /strongest combined rating is Forehand Rating/i);
   assert.doesNotMatch(summary, /using the forehand to create openings and finish short replies/i);
   assert.doesNotMatch(summary, /serve estimate is lower relative to the roster/i);
   assert.doesNotMatch(summary, /rank #|Forehand Rating 84\.2/);
-  assert.match(fallbackSummary, /strongest WTSL-combined roster rating is Forehand Rating/i);
+  assert.match(fallbackSummary, /strongest combined rating is Forehand Rating/i);
   assert.doesNotMatch(fallbackSummary, /rank #|\/100/);
-  assert.match(oddAttributeSummary, /clearest roster edge is Clay Mover/i);
+  assert.match(oddAttributeSummary, /clearest strength is Clay Mover/i);
   assert.doesNotMatch(oddAttributeSummary, /rank #|\/100|flat backhand.*playstyle/i);
 });
 
@@ -798,7 +800,7 @@ test('character profile endpoint strips unverified simulation fields recursively
 test('profile follows the Discord content order and explains roster and AI evidence', () => {
   const categoryIndex = component.indexOf('className="panel character-category-panel"');
   const traitsIndex = component.indexOf('<h2>Style &amp; traits</h2>');
-  const mechanicsIndex = component.indexOf('<h2>Technical summary</h2>');
+  const mechanicsIndex = component.indexOf('<h2>On-court notes</h2>');
   const guidanceIndex = component.indexOf('character-selection-guidance');
   const ratingsIndex = component.indexOf('COMBINED SKILLS');
   const attributesIndex = component.indexOf('Attribute rankings');
@@ -806,7 +808,8 @@ test('profile follows the Discord content order and explains roster and AI evide
   assert.ok(categoryIndex >= 0 && traitsIndex > categoryIndex);
   assert.ok(mechanicsIndex > traitsIndex && guidanceIndex > mechanicsIndex);
   assert.ok(ratingsIndex > guidanceIndex && attributesIndex > ratingsIndex);
-  assert.ok(component.includes('character-profile-method-note'));
+  assert.ok(component.includes('TE4 mechanics reference'));
+  assert.ok(!component.includes('character-profile-method-note'));
   assert.ok(component.includes('character-ai-insight-warning'));
   assert.ok(component.includes('AI-generated recommendations, not verified match statistics'));
   assert.ok(!component.includes('Point-event statistics'));

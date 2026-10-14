@@ -215,7 +215,7 @@ function StatHighlights({ title, stats, tone }: { title: string; stats: Stat[]; 
 
 function CombinedSkills({ stats }: { stats: Stat[] }) {
   if (!stats.length) {
-    return <p className="character-muted">WTSL combined-rating data is unavailable for this character.</p>;
+    return <p className="character-muted">Combined ratings are unavailable for this character.</p>;
   }
 
   return (
@@ -241,7 +241,7 @@ function CombinedSkills({ stats }: { stats: Stat[] }) {
           </div>
           {stat.max_serve_speed_kmh != null && (
             <p className="character-max-serve">
-              Average maximal serve speed (not absolute peak):{' '}
+              Average maximal serve speed:{' '}
               {formatValue(stat.max_serve_speed_kmh, ' km/h')}
             </p>
           )}
@@ -262,15 +262,15 @@ function RankedAttribute({ ranking, character }: { ranking: Record<string, any>;
       <div className="character-section-heading">
         <div>
           <span className="panel-label">
-            {isCombinedRating ? 'WTSL-CALCULATED RANKING' : 'GAME-SHEET VALUE · ROSTER RANKING'}
+            {isCombinedRating ? 'COMBINED RATING' : 'ROSTER RANKING'}
           </span>
           <h2>{ranking.attribute}</h2>
         </div>
       </div>
       <p className="character-rating-explainer">
         {isCombinedRating
-          ? 'WTSL calculates this combined skill and ranks it against the selected tour roster; the game does not provide this combined-rating ranking.'
-          : 'This orders the character-sheet rating supplied by the game within the selected tour roster.'}
+          ? 'Combines Power, Consistency, and Precision, then compares the result with the selected tour roster.'
+          : 'Character-sheet ratings ranked against the selected tour roster.'}
       </p>
       <div className="character-top-bottom">
         <div>
@@ -325,7 +325,7 @@ function Comparison({ comparison, selected }: { comparison: Record<string, any>;
     const otherValue = selectedIsFirst ? item.second_value : item.first_value;
     return (
       <li key={`${item.group}-${item.attribute}`}>
-        <b>{combinedSkillRatings.has(String(item.attribute)) ? `WTSL-combined ${item.attribute}` : item.attribute}</b>
+        <b>{combinedSkillRatings.has(String(item.attribute)) ? `Combined ${item.attribute}` : item.attribute}</b>
         <span>
           {formatValue(value)} vs {formatValue(otherValue)} ·{' '}
           {Math.round(Math.abs(Number(item.delta || 0)) * 100)} percentile points
@@ -394,7 +394,7 @@ function PickHistory({
   return (
     <section className="panel character-picks-panel">
       <div className="character-section-heading">
-        <div><span className="panel-label">OFFICIAL WTSL RESULTS</span><h2>Pick popularity</h2></div>
+        <div><span className="panel-label">PICK POPULARITY</span><h2>Pick popularity</h2></div>
         <strong className="character-pick-total">{available && hasPublishedPickHistory ? pickCount : '—'}<small>recorded picks</small></strong>
       </div>
       <div className="character-pick-rank">
@@ -405,11 +405,11 @@ function PickHistory({
         ) : (
           <p>
             {!hasPublishedPickHistory
-              ? 'WTSL does not publish WTA character pick totals.'
+              ? 'WTA pick totals are not available.'
               : !available
                 ? 'Pick history unavailable.'
                 : pickCount > 0
-                  ? "WTSL's official popularity rank is not available right now."
+                  ? 'Popularity rank is not available right now.'
                   : 'No picks recorded.'}
           </p>
         )}
@@ -663,11 +663,10 @@ function Profile({
       {(insightRows.length > 0 || advantages.length > 0 || vulnerabilities.length > 0) && (
         <section className="panel character-guidance-panel">
           <div className="character-section-heading">
-            <div><span className="panel-label">TE4 MECHANICS</span><h2>Technical summary</h2></div>
+            <div><span className="panel-label">PLAYING CUES</span><h2>On-court notes</h2></div>
           </div>
           <p className="character-rating-explainer">
-            Shot mechanics follow the <a href="https://www.managames.com/tennis/doc/Tennis_Elbow-Tennis_Game.html" target="_blank" rel="noopener noreferrer">official TE4 manual</a>.
-            Character values come from the profile; WTSL-calculated ratings and model estimates are labelled as such.
+            <a href="https://www.managames.com/tennis/doc/Tennis_Elbow-Tennis_Game.html" target="_blank" rel="noopener noreferrer">TE4 mechanics reference</a>
           </p>
           {insightRows.length > 0 && (
             <div className="character-insight-grid">
@@ -692,10 +691,10 @@ function Profile({
       {exchangeFitRows.length > 0 && (
         <section className="panel character-exchange-fit-panel">
           <div className="character-section-heading">
-            <div><span className="panel-label">WTSL ROSTER COMPARISON</span><h2>Rally-fit guidance</h2></div>
+            <div><span className="panel-label">RALLY FIT</span><h2>Across rally lengths</h2></div>
           </div>
           <p className="character-rating-explainer">
-            Tactical fit only—not a prediction of rally duration, point wins, or match results.
+            How this character tends to hold up in shorter and longer exchanges.
           </p>
           <div className="character-insight-grid character-exchange-fit-grid">
             {exchangeFitRows.map(({ key, title, text }) => (
@@ -771,20 +770,12 @@ function Profile({
         </div>
       )}
 
-      <section className="character-profile-method-note" aria-label="How to read this profile">
-        <div><b>Roster comparisons</b><p>Standouts, drawbacks, and category scores compare this character with the selected tour roster. Category scores average rankable attribute percentiles, not raw ratings.</p></div>
-        <div><b>Combined skill ratings</b><p>Serve, Forehand, and Backhand Rating are WTSL-calculated estimates with roster ranks; the game does not supply those combined-rating rankings.</p></div>
-        <div><b>Mechanics explanations</b><p>Technical notes use the character’s own ratings and documented TE4 mechanics; they are not comparisons with other players.</p></div>
-      </section>
-
       <section className="panel character-detail-panel">
         <div className="character-section-heading">
           <div><span className="panel-label">COMBINED SKILLS</span><h2>Ratings</h2></div>
         </div>
         <p className="character-rating-explainer">
-          WTSL calculates these combined ratings from Power, Consistency, and Precision. Ranks and
-          percentiles compare the selected tour roster; the game does not provide this combined-skill
-          ranking. The number is the raw estimate; the bar is its normalized roster score (0–100).
+          Each rating combines Power, Consistency, and Precision.
         </p>
         <CombinedSkills stats={combined} />
       </section>

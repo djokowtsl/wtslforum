@@ -1,1 +1,1 @@
-- [Character shot-choice guidance](character-shot-choice-guidance.md) — keep shot-choice suggestions sparse and grounded in each character's ratings and the TE4 manual.
+- [Character profile copy](character-shot-choice-guidance.md) — keep profile prose conversational, source attribution compact, and serve speed separate from first-serve percentage.
