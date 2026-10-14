@@ -130,7 +130,8 @@ test('size-and-reach copy explains height, backhand fit, and weight in plain lan
   );
 
   assert.match(insight, /At 193 cm \(82nd percentile in the ATP roster\), shoulder-high, heavy-spin balls are a little easier to handle/i);
-  assert.match(insight, /The two-handed backhand scores 82\/100 for shoulder-height contact/i);
+  assert.match(insight, /This character's backhand scores 82\/100 for shoulder-height contact/i);
+  assert.doesNotMatch(insight, /(?:one|two)-handed backhand scores/i);
   assert.match(insight, /Once you're set, take those balls early to attack/i);
   assert.match(insight, /At 85 kg, this character is heavier than about 74% of the ATP roster/i);
   assert.match(insight, /Weight alone doesn't tell us how quickly they move/i);
@@ -166,14 +167,16 @@ test('size-and-reach copy keeps neutral-height and lower-fit advice clear', () =
   );
 
   assert.match(insight, /height has little effect on the high-ball estimate/i);
-  assert.match(insight, /The one-handed backhand scores 61\/100 for shoulder-height contact/i);
+  assert.match(insight, /This character's backhand scores 61\/100 for shoulder-height contact/i);
+  assert.doesNotMatch(insight, /(?:one|two)-handed backhand scores/i);
   assert.match(insight, /Play a steady rally ball first, then attack once you're set/i);
   assert.doesNotMatch(insight, /directional fit; that supports favor/i);
   assert.match(
     heightChallenge,
     /At 172 cm \(12th percentile in the WTA roster\), shoulder-high, heavy-spin balls are a little harder to handle/i,
   );
-  assert.match(heightChallenge, /The two-handed backhand scores 63\/100 for shoulder-height contact/i);
+  assert.match(heightChallenge, /This character's backhand scores 63\/100 for shoulder-height contact/i);
+  assert.doesNotMatch(heightChallenge, /(?:one|two)-handed backhand scores/i);
 });
 
 test('game plans read as short action steps instead of stat-labeled fragments', () => {
