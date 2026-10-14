@@ -26,3 +26,11 @@ Call the selectable shot the “Short strike,” not just “Short.” Describe 
 **Why:** The user questioned ambiguous strike naming, preferred “Hit shots on the rise,” and pointed out that an 89 rating at the 13th percentile should not be described as a strength.
 
 **How to apply:** Use “Normal strike” and “Short strike” in shot cues. Translate “Time them near the bounce” to “Hit shots on the rise” in Forum-rendered copy without editing Core. Make difficult-shot claims match the tour-relative Consistency percentile.
+
+### Net Presence wording
+
+Net Presence contributes to volley and smash accuracy and consistency, and lets players move more while hitting a volley before movement affects the shot. Explain these effects directly; avoid an unexplained “volley movement penalty” or an aside that it does not affect power.
+
+**Why:** The user questioned why profile copy mentioned that Net Presence does not affect power and asked what the “volley movement penalty” means.
+
+**How to apply:** In user-facing copy, state the positive effect on volley/smash accuracy and consistency, then explain that higher Net Presence lets a player move more while hitting a volley before movement starts to affect the shot.
