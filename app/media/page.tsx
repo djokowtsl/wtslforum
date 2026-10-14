@@ -5,6 +5,7 @@ import { getClips, youtubeId } from '@/lib/media';
 import { isTourCode, tourLabel, TOURS, type TourCode } from '@/lib/wtsl';
 import PageHero from '@/components/PageHero';
 import MediaSubmitForm from '@/components/MediaSubmitForm';
+import DmoSubmitForm from '@/components/DmoSubmitForm';
 import MediaGrid from '@/components/MediaGrid';
 
 export const dynamic = 'force-dynamic';
@@ -28,10 +29,13 @@ export default async function Media({ searchParams }: { searchParams: Promise<{ 
         </div>
 
         {user ? (
-          <div style={{ marginBottom: 36 }}><MediaSubmitForm /></div>
+          <div style={{ display: 'grid', gap: 18, marginBottom: 36 }}>
+            <MediaSubmitForm />
+            <DmoSubmitForm />
+          </div>
         ) : (
           <div className="notice" style={{ marginBottom: 36 }}>
-            <a className="btn btn-sm btn-discord" href="/api/auth/discord">Log in with Discord</a> to submit your own clips.
+            <a className="btn btn-sm btn-discord" href="/api/auth/discord">Log in with Discord</a> to submit clips or match recordings.
           </div>
         )}
 
