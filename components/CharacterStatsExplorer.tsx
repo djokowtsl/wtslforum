@@ -28,6 +28,13 @@ import {
   cleanSizeReachInsight,
   splitRosterEvidenceNotes,
 } from '@/lib/characterProfileCopy.mjs';
+import {
+  characterFilterOptions,
+  filterCharacterNames,
+  type CharacterFilterField,
+  type CharacterFilterMetadata,
+  type CharacterRosterFilters,
+} from '@/lib/characterRosterFilters.mjs';
 import SearchableDropdown from '@/components/SearchableDropdown';
 
 type Tour = 'all' | 'atp' | 'wta';
@@ -45,6 +52,7 @@ type CharacterPayload = {
   names: string[];
   attributes: string[];
   ranking_options?: string[];
+  character_filter_metadata?: CharacterFilterMetadata[];
   profile?: Record<string, any> | null;
   official?: { profile_url?: string | null; avatar_url?: string | null; source?: string | null } | null;
   comparison?: Record<string, any> | null;
@@ -58,6 +66,26 @@ const tourOptions: { value: Tour; label: string }[] = [
   { value: 'wta', label: 'WTA' },
   { value: 'all', label: 'ATP + WTA' },
 ];
+const characterFilterDefinitions: {
+  field: CharacterFilterField;
+  label: string;
+  emptyLabel: string;
+}[] = [
+  { field: 'acceleration', label: 'Acceleration trait', emptyLabel: 'Any acceleration' },
+  { field: 'style', label: 'Playstyle', emptyLabel: 'Any playstyle' },
+  { field: 'playing_hand', label: 'Playing hand', emptyLabel: 'Either hand' },
+  { field: 'forehand_type', label: 'Forehand', emptyLabel: 'Any forehand' },
+  { field: 'backhand_type', label: 'Backhand', emptyLabel: 'Any backhand' },
+  { field: 'country', label: 'Nationality', emptyLabel: 'Any nationality' },
+];
+const emptyCharacterFilters: CharacterRosterFilters = {
+  acceleration: '',
+  style: '',
+  playing_hand: '',
+  forehand_type: '',
+  backhand_type: '',
+  country: '',
+};
 const groupNames = ['Groundstrokes', 'Serve', 'Net & Feel', 'Movement & Variety'];
 const combinedSkillRatings = new Set(['Serve Rating', 'Forehand Rating', 'Backhand Rating']);
 const uninformativeRelativeStrengths = new Set(['slice serve', 'topspin serve', 'twist serve']);
@@ -66,6 +94,21 @@ const excludedRatingAttributes = new Set(['boomboomserver', 'ontimeserver']);
 function isExcludedRatingAttribute(attribute: unknown) {
   const normalized = String(attribute ?? '').toLowerCase().replace(/[^a-z0-9]/g, '');
   return excludedRatingAttributes.has(normalized);
+}
+
+function characterFilterOptionLabel(field: CharacterFilterField, value: string) {
+  const normalized = value.trim().toLocaleLowerCase();
+  if (field === 'acceleration' && normalized === 'none') return 'No special trait';
+  if (field === 'acceleration') return value.replace(/([a-z0-9])([A-Z])/g, '$1 $2');
+  if (field === 'playing_hand') {
+    if (normalized === 'left') return 'Left-handed';
+    if (normalized === 'right') return 'Right-handed';
+  }
+  if (field === 'forehand_type' || field === 'backhand_type') {
+    if (normalized === 'one-handed') return 'One-handed';
+    if (normalized === 'two-handed') return 'Two-handed';
+  }
+  return value;
 }
 
 function statsWithoutExcludedAttributes(value: unknown): Stat[] {
@@ -822,6 +865,8 @@ export default function CharacterStatsExplorer({
   const [attribute, setAttribute] = useState('');
   const [draftAttribute, setDraftAttribute] = useState('');
   const [search, setSearch] = useState('');
+  const [characterFilters, setCharacterFilters] =
+    useState<CharacterRosterFilters>({ ...emptyCharacterFilters });
   const [searchError, setSearchError] = useState('');
   const [data, setData] = useState<CharacterPayload | null>(null);
   const [loading, setLoading] = useState(initialNames.length > 0);
@@ -838,10 +883,32 @@ export default function CharacterStatsExplorer({
   const attributeRankingOptions = attributes.filter((name) => !combinedSkillRatings.has(name));
   const currentProfile =
     data?.tour === tour && data.profile?.character === character ? data : null;
+  const filterMetadata = Array.isArray(currentRoster?.character_filter_metadata)
+    ? currentRoster.character_filter_metadata
+    : [];
+  const hasFilterMetadata = filterMetadata.length > 0;
+  const filterOptions = useMemo(
+    () => Object.fromEntries(characterFilterDefinitions.map(({ field }) => [
+      field,
+      characterFilterOptions(filterMetadata, field).filter((value) =>
+        !(field === 'style' && value.toLocaleLowerCase() === 'unknown'),
+      ),
+    ])) as Record<CharacterFilterField, string[]>,
+    [filterMetadata],
+  );
+  const matchingNames = useMemo(
+    () => hasFilterMetadata
+      ? filterCharacterNames(names, filterMetadata, characterFilters)
+      : names,
+    [names, filterMetadata, hasFilterMetadata, characterFilters],
+  );
   const filteredNames = useMemo(() => {
     const query = search.trim().toLowerCase();
-    return query ? names.filter((name) => name.toLowerCase().includes(query)) : names;
-  }, [names, search]);
+    return query
+      ? matchingNames.filter((name) => name.toLowerCase().includes(query))
+      : matchingNames;
+  }, [matchingNames, search]);
+  const hasActiveCharacterFilters = Object.values(characterFilters).some(Boolean);
   const hasPendingSearch =
     Boolean(search.trim()) &&
     search.trim().toLowerCase() !== character.toLowerCase();
@@ -852,6 +919,11 @@ export default function CharacterStatsExplorer({
     draftAttribute !== attribute;
   const isLoadingDifferentCharacter = hasPendingSearch || draftCharacter !== character;
 
+  useEffect(() => {
+    if (draftCompare && !matchingNames.includes(draftCompare)) setDraftCompare('');
+    if (compare && !matchingNames.includes(compare)) setCompare('');
+  }, [compare, draftCompare, matchingNames]);
+
   function handleSearchSubmit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
     if (!currentRoster || names.length === 0) {
@@ -861,12 +933,12 @@ export default function CharacterStatsExplorer({
 
     const query = search.trim();
     const exactMatch = query
-      ? names.find((name) => name.toLowerCase() === query.toLowerCase())
+      ? matchingNames.find((name) => name.toLowerCase() === query.toLowerCase())
       : null;
     if (query && !exactMatch) {
       setSearchError(filteredNames.length
-        ? 'Choose a full character name from the roster results.'
-        : 'No character in this roster matches your search.');
+        ? 'Choose a full character name from the matching roster results.'
+        : 'No character matches your search and filters.');
       return;
     }
 
@@ -1056,16 +1128,65 @@ export default function CharacterStatsExplorer({
           ))}
         </div>
 
+        <div className="character-roster-filters" aria-label="Filter character roster">
+          <div className="character-filter-heading">
+            <div>
+              <span className="panel-label">ROSTER FILTERS</span>
+              <p className="character-filter-description">
+                Combine filters; the roster updates as you change them.
+              </p>
+            </div>
+            {hasActiveCharacterFilters && (
+              <button
+                type="button"
+                className="character-filter-reset"
+                onClick={() => setCharacterFilters({ ...emptyCharacterFilters })}
+              >
+                Clear filters
+              </button>
+            )}
+          </div>
+          <div className="character-control-grid character-filter-grid">
+            {characterFilterDefinitions.map(({ field, label, emptyLabel }) => (
+              <div className="character-control" key={field}>
+                <label htmlFor={`character-filter-${field}`}>{label}</label>
+                <select
+                  id={`character-filter-${field}`}
+                  value={characterFilters[field]}
+                  onChange={(event) => {
+                    const value = event.target.value;
+                    setCharacterFilters((previous) => ({ ...previous, [field]: value }));
+                    setSearchError('');
+                  }}
+                  disabled={!currentRoster || !hasFilterMetadata}
+                >
+                  <option value="">{emptyLabel}</option>
+                  {filterOptions[field].map((value) => (
+                    <option key={value} value={value}>
+                      {characterFilterOptionLabel(field, value)}
+                    </option>
+                  ))}
+                </select>
+              </div>
+            ))}
+          </div>
+          {currentRoster && names.length > 0 && !hasFilterMetadata && (
+            <p className="character-filter-unavailable" role="status">
+              Character filters are temporarily unavailable.
+            </p>
+          )}
+        </div>
+
         <form className="character-search-form" onSubmit={handleSearchSubmit}>
           <div className="character-control-grid">
             <div className="character-control">
               <label htmlFor="character-roster-search">Search roster</label>
               <SearchableDropdown
                 id="character-roster-search"
-                options={names}
+                options={matchingNames}
                 value={search}
                 onChange={(value) => {
-                  const exactMatch = names.find((name) => name.toLowerCase() === value.trim().toLowerCase());
+                  const exactMatch = matchingNames.find((name) => name.toLowerCase() === value.trim().toLowerCase());
                   setSearch(value);
                   setDraftCharacter(exactMatch || '');
                   setSearchError('');
@@ -1084,7 +1205,7 @@ export default function CharacterStatsExplorer({
               <label htmlFor="character-compare-search">Compare with</label>
               <SearchableDropdown
                 id="character-compare-search"
-                options={names.filter((name) => name !== (draftCharacter || character))}
+                options={matchingNames.filter((name) => name !== (draftCharacter || character))}
                 value={draftCompare}
                 onChange={(value) => {
                   setDraftCompare(value);
@@ -1129,8 +1250,8 @@ export default function CharacterStatsExplorer({
           <div className="character-search-actions">
             <p className="character-search-help">
               {isLoadingDifferentCharacter
-                ? 'Choose a character from the roster to load it.'
-                : 'Adjust the comparison or ranking options, then apply them.'}
+                ? 'Choose a character from the filtered roster to load it.'
+                : 'Use the filters above to narrow the roster, then apply comparison or ranking options.'}
             </p>
             <button type="submit" disabled={!currentRoster || !hasPendingChanges}>
               {isLoadingDifferentCharacter ? 'Load character' : 'Apply options'}
@@ -1144,7 +1265,7 @@ export default function CharacterStatsExplorer({
           <h2>Character roster</h2>
           <span aria-live="polite">
             {filteredNames.length !== names.length
-              ? `${filteredNames.length} ${filteredNames.length === 1 ? 'result' : 'results'}`
+              ? `${filteredNames.length} of ${names.length} characters`
               : character
                 ? `Viewing ${character}`
                 : 'Select a character'}
@@ -1170,7 +1291,7 @@ export default function CharacterStatsExplorer({
               >
                 {name}
               </button>
-            )) : <p className="character-muted">No characters match this search.</p>}
+            )) : <p className="character-muted">No characters match your search and filters.</p>}
           </div>
         ) : (
           <p className="character-muted">The selected roster is not available right now.</p>
