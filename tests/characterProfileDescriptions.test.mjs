@@ -3,6 +3,7 @@ import { readFileSync } from 'node:fs';
 import test from 'node:test';
 import { characterCategoryScores } from '../lib/characterProfileGroups.mjs';
 import {
+  buildPlayingHandLabel,
   buildSizeMechanicsInsight,
   buildStrokeSetupLabels,
   buildStrokeMechanicsInsight,
@@ -666,6 +667,17 @@ test('character profile prominently shows one- or two-handed forehand and backha
   assert.ok(component.includes('strokeSetupLabels.map((label)'));
 });
 
+test('character profile shows playing hand in the header above the summary', () => {
+  assert.equal(buildPlayingHandLabel('left'), 'Left-handed');
+  assert.equal(buildPlayingHandLabel('right'), 'Right-handed');
+  assert.equal(buildPlayingHandLabel('unknown'), null);
+  assert.equal(buildPlayingHandLabel(null), null);
+  assert.ok(component.includes('buildPlayingHandLabel(profile.playing_hand)'));
+  const handBadgeIndex = component.indexOf('{playingHandLabel && <span>{playingHandLabel}</span>}');
+  const summaryIndex = component.indexOf('<span className="panel-label">SUMMARY</span>');
+  assert.ok(handBadgeIndex >= 0 && handBadgeIndex < summaryIndex);
+});
+
 test('profile summaries use roster data rather than selection advice', () => {
   const sharedDescription =
     'Can play deep, take the ball early, or come forward, choosing the best court position instead of forcing one pattern.';
@@ -839,6 +851,7 @@ test('character profile endpoint strips unverified simulation fields recursively
   const unsafe = {
     profile: {
       character: 'Adrian Mannarino',
+      playing_hand: 'left',
       mechanics_insights: {
         serve: 'A documented serving note.',
         size_reach: 'Height has a directional effect for this build.',
@@ -870,6 +883,7 @@ test('character profile endpoint strips unverified simulation fields recursively
   assert.deepEqual(safe, {
     profile: {
       character: 'Adrian Mannarino',
+      playing_hand: 'left',
       mechanics_insights: {
         serve: 'A documented serving note.',
         size_reach: 'Height has a directional effect for this build.',
