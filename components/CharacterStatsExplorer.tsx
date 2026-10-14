@@ -8,6 +8,7 @@ import {
 import { characterCategoryScores } from '@/lib/characterProfileGroups.mjs';
 import { buildCharacterProfileSummary } from '@/lib/characterProfileSummary.mjs';
 import {
+  buildPlayingHandLabel,
   buildSizeMechanicsInsight,
   buildStrokeSetupLabels,
   buildStrokeMechanicsInsight,
@@ -442,6 +443,7 @@ function Profile({
   const profile = data.profile!;
   const guidance = profile.selection_guidance || {};
   const mechanics = profile.mechanics_insights || {};
+  const playingHandLabel = buildPlayingHandLabel(profile.playing_hand);
   const strokeSetupLabels = buildStrokeSetupLabels(profile);
   const sizeInsight = cleanSizeReachInsight(
     mechanics.size_reach || buildSizeMechanicsInsight(profile.height),
@@ -457,7 +459,7 @@ function Profile({
     guidance.acceleration_mechanics,
     profile.character,
   );
-  const gamePlanSteps = buildGamePlanSteps(guidance.game_plan, profile.acceleration);
+  const gamePlanSteps = buildGamePlanSteps(guidance.game_plan, profile.acceleration, profile.stats);
   const serveInsight = buildServeInsight(profile);
   const insightRows = [
     ['Serve', serveInsight],
@@ -564,6 +566,7 @@ function Profile({
           </p>
           <div className="character-badges">
             <span>{profile.style}</span><span>Acceleration: {profile.acceleration}</span>
+            {playingHandLabel && <span>{playingHandLabel}</span>}
             {strokeSetupLabels.map((label) => <span key={label}>{label}</span>)}
           </div>
           {characterSummary && (

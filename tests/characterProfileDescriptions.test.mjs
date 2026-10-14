@@ -3,6 +3,7 @@ import { readFileSync } from 'node:fs';
 import test from 'node:test';
 import { characterCategoryScores } from '../lib/characterProfileGroups.mjs';
 import {
+  buildPlayingHandLabel,
   buildSizeMechanicsInsight,
   buildStrokeSetupLabels,
   buildStrokeMechanicsInsight,
@@ -261,8 +262,10 @@ test('net-play advice recommends or cautions against approaches from roster-rela
 
   const strongNetProfile = buildNetPlayInsight(stats([90, 80, 60, 90]));
   assert.match(strongNetProfile, /Available net ratings average at the 80th roster percentile/);
-  assert.match(strongNetProfile, /precision and consistency, not power/);
-  assert.match(strongNetProfile, /reduces the movement handicap while volleying/);
+  assert.match(
+    strongNetProfile,
+    /Net Presence combines with volley and smash ratings for precision and consistency—not power—and reduces the volley movement penalty/,
+  );
   assert.match(strongNetProfile, /Net play is a roster strength; come forward selectively after a deep shot draws a short reply/);
 
   const balancedNetProfile = buildNetPlayInsight(stats([60, 55, 60, 45], [65, 68, 66, 67]));
@@ -391,40 +394,52 @@ test('groundstroke advice keeps character ratings and useful cues concise', () =
   assert.ok(component.includes('buildGroundstrokeInsight(profile)'));
 });
 
-test('physical notes connect roster-relative Speed, Muscle Tone, and Stamina with Tiredness enabled', () => {
-  const profile = {
+test('physical insight turns Speed, Muscle Tone, and Stamina into a player-focused takeaway', () => {
+  const lowCoverageHighStamina = buildPhysicalInsight({
+    stats: [
+      { attribute: 'Speed', value: 81, percentile: 0.1 },
+      { attribute: 'Muscle Tone', value: 66, percentile: 0.08 },
+      { attribute: 'Stamina', value: 85, percentile: 0.81 },
+    ],
+  });
+  assert.equal(
+    lowCoverageHighStamina,
+    'Both Speed and Muscle Tone are near the bottom of the roster, making wide-ball coverage and recovery difficult. High Stamina helps sustain repeated runs but cannot make the first step quicker; position early to limit long chases.',
+  );
+  assert.doesNotMatch(
+    lowCoverageHighStamina,
+    /(?:Speed|Muscle Tone|Stamina) \d|roster percentile|Speed \+ Muscle Tone|Tiredness is enabled/,
+  );
+
+  const highCoverageLowStamina = buildPhysicalInsight({
     stats: [
       { attribute: 'Speed', value: 90, percentile: 0.9 },
-      { attribute: 'Muscle Tone', value: 60, percentile: 0.4 },
-      { attribute: 'Stamina', value: 75, percentile: 0.7 },
+      { attribute: 'Muscle Tone', value: 85, percentile: 0.85 },
+      { attribute: 'Stamina', value: 60, percentile: 0.2 },
     ],
-  };
-  const balanced = buildPhysicalInsight(profile);
-  assert.match(balanced, /Speed 90 \(90th roster percentile\) sets maximum running speed/);
-  assert.match(balanced, /Muscle Tone 60 \(40th roster percentile\) contributes to running acceleration/);
-  assert.match(balanced, /\(Speed \+ Muscle Tone\) \/ 2 = 75/);
-  assert.match(balanced, /Stamina 75 \(70th roster percentile\) matches that movement average/);
-  assert.match(balanced, /Tiredness is enabled for all characters/);
-  assert.match(balanced, /running and strokes drain energy, and faster running costs more/);
-  assert.doesNotMatch(balanced, /\bwhen\b/i);
+  });
+  assert.equal(
+    highCoverageLowStamina,
+    'Strong Speed and Muscle Tone make court coverage and recovery a strength. Low Stamina makes repeated running more draining; recover efficiently to preserve energy in longer rallies.',
+  );
 
-  const highStamina = buildPhysicalInsight({
+  const highStaminaFallback = buildPhysicalInsight({
     stats: [
       { attribute: 'Speed', value: 90 },
       { attribute: 'Muscle Tone', value: 60 },
       { attribute: 'Stamina', value: 90 },
     ],
   });
-  assert.match(highStamina, /Stamina 90 is above that movement average, so running fatigue builds more slowly/);
+  assert.match(highStaminaFallback, /Stamina helps sustain repeated runs through longer exchanges/);
 
-  const lowStamina = buildPhysicalInsight({
+  const lowStaminaFallback = buildPhysicalInsight({
     stats: [
       { attribute: 'Speed', value: 90 },
       { attribute: 'Muscle Tone', value: 60 },
       { attribute: 'Stamina', value: 60 },
     ],
   });
-  assert.match(lowStamina, /Stamina 60 is below that movement average, so running fatigue builds faster/);
+  assert.match(lowStaminaFallback, /Stamina trails the movement ratings, so repeated running can cost more energy/);
   assert.equal(buildPhysicalInsight({ stats: [] }), '');
   assert.ok(component.includes("['Physical', buildPhysicalInsight(profile)]"));
 });
@@ -471,26 +486,47 @@ test('size-and-reach copy keeps neutral-height and lower-fit advice clear', () =
 });
 
 test('game plans preserve full character-specific detail without a step cap', () => {
+  const ratingStats = [
+    { attribute: 'Forehand Consistency' },
+    { attribute: 'Muscle Tone' },
+  ];
   const steps = buildGamePlanSteps(
     'Focus: Prepare early and choose direction before the ball reaches you. Forehand Consistency: Use deep forehand cross-court shape, then change direction when the reply sits short. Muscle Tone: Use normal or Top Spin rally strikes while recovering through the middle; choose an acceleration only when balanced and the reply is short.',
     'None',
+    ratingStats,
   );
 
   assert.deepEqual(steps, [
     'Focus: Prepare early and choose direction before the ball reaches you.',
-    'Forehand Consistency: Use deep forehand cross-court shape, then change direction when the reply sits short.',
-    'Muscle Tone: Use normal or Top Spin rally strikes while recovering through the middle; choose an acceleration only when balanced and the reply is short.',
+    'Use deep forehand cross-court shape, then change direction when the reply sits short.',
+    'Use normal or Top Spin rally strikes while recovering through the middle; choose an acceleration only when balanced and the reply is short.',
   ]);
   assert.deepEqual(
     buildGamePlanSteps(
       'Muscle Tone: Use normal or Top Spin rally strikes while recovering through the middle; choose an acceleration only when balanced and the reply is short.',
       'Sprint',
+      ratingStats,
     ),
-    ['Muscle Tone: Use normal or Top Spin rally strikes while recovering through the middle; choose an acceleration only when balanced and the reply is short.'],
+    ['Use normal or Top Spin rally strikes while recovering through the middle; choose an acceleration only when balanced and the reply is short.'],
   );
-  assert.ok(steps.some((step) => /Forehand Consistency:/.test(step)));
+  assert.doesNotMatch(steps.join(' '), /(?:Forehand Consistency|Muscle Tone):/);
   assert.ok(steps.some((step) => /\bforehand\b/i.test(step)));
   assert.ok(steps.some((step) => /\bacceleration\b/i.test(step)));
+
+  const exampleTactics = buildGamePlanSteps(
+    "Forehand Volley: Approach only after a short or defensive reply; direct the first volley toward the side the opponent has just left open. Ball Feeling: Use a drop shot or short angle only after moving the opponent behind the baseline. Service Precision: Vary the serve between body and corner targets, then attack the returner's recovery with the next ball.",
+    '',
+    [
+      { attribute: 'Forehand Volley' },
+      { attribute: 'Ball Feeling' },
+      { attribute: 'Service Precision' },
+    ],
+  );
+  assert.deepEqual(exampleTactics, [
+    'Approach only after a short or defensive reply; direct the first volley toward the side the opponent has just left open.',
+    'Use a drop shot or short angle only after moving the opponent behind the baseline.',
+    "Vary the serve between body and corner targets, then attack the returner's recovery with the next ball.",
+  ]);
 
   const completePlan = [
     'Focus: Hold the middle early.',
@@ -629,6 +665,17 @@ test('character profile prominently shows one- or two-handed forehand and backha
   }), []);
   assert.ok(component.includes('buildStrokeSetupLabels(profile)'));
   assert.ok(component.includes('strokeSetupLabels.map((label)'));
+});
+
+test('character profile shows playing hand in the header above the summary', () => {
+  assert.equal(buildPlayingHandLabel('left'), 'Left-handed');
+  assert.equal(buildPlayingHandLabel('right'), 'Right-handed');
+  assert.equal(buildPlayingHandLabel('unknown'), null);
+  assert.equal(buildPlayingHandLabel(null), null);
+  assert.ok(component.includes('buildPlayingHandLabel(profile.playing_hand)'));
+  const handBadgeIndex = component.indexOf('{playingHandLabel && <span>{playingHandLabel}</span>}');
+  const summaryIndex = component.indexOf('<span className="panel-label">SUMMARY</span>');
+  assert.ok(handBadgeIndex >= 0 && handBadgeIndex < summaryIndex);
 });
 
 test('profile summaries use roster data rather than selection advice', () => {
@@ -804,6 +851,7 @@ test('character profile endpoint strips unverified simulation fields recursively
   const unsafe = {
     profile: {
       character: 'Adrian Mannarino',
+      playing_hand: 'left',
       mechanics_insights: {
         serve: 'A documented serving note.',
         size_reach: 'Height has a directional effect for this build.',
@@ -835,6 +883,7 @@ test('character profile endpoint strips unverified simulation fields recursively
   assert.deepEqual(safe, {
     profile: {
       character: 'Adrian Mannarino',
+      playing_hand: 'left',
       mechanics_insights: {
         serve: 'A documented serving note.',
         size_reach: 'Height has a directional effect for this build.',
