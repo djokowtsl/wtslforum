@@ -15,6 +15,7 @@ import {
   cleanCharacterMechanic,
   cleanCounterInsight,
   cleanNetInsight,
+  cleanStrokeMechanicsInsight,
   cleanShotVarietyInsight,
   cleanSizeReachInsight,
   normalizeCharacterCopy,
@@ -349,6 +350,35 @@ test('stroke setup fallback uses the character ratings rather than a shared bonu
   assert.match(insight, /Backhand Rating 82.6/);
   assert.match(insight, /stronger groundstroke \(82.6 vs 75.2\)/);
   assert.match(insight, /support taking heavy topspin early once you're set/i);
+
+  const roundedTie = buildStrokeMechanicsInsight({
+    forehand_type: 'one-handed',
+    backhand_type: 'two-handed',
+    mechanics_insights: {
+      signals: { counter: 52, effective_counter: 67, backhand_rating: 91.56, forehand_rating: 91.64 },
+    },
+  });
+  assert.match(roundedTie, /Forehand and backhand are evenly rated \(91\.6 each\)/);
+  assert.doesNotMatch(roundedTie, /stronger groundstroke/);
+
+  const coreTie = cleanStrokeMechanicsInsight(
+    'The forehand is the stronger groundstroke (91.6 vs 91.6); use it to attack a shorter reply.',
+  );
+  assert.equal(
+    coreTie,
+    'Forehand and backhand are evenly rated (91.6 each); neither has a rating edge. Choose the better-positioned wing to attack a shorter reply.',
+  );
+  assert.match(
+    copyTypes,
+    /export function cleanStrokeMechanicsInsight\(value: unknown\): string;/,
+  );
+  assert.ok(component.includes('cleanStrokeMechanicsInsight('));
+  assert.equal(
+    cleanStrokeMechanicsInsight(
+      'The backhand is the stronger groundstroke (92.1 vs 91.6); use it to attack a shorter reply.',
+    ),
+    'The backhand is the stronger groundstroke (92.1 vs 91.6); use it to attack a shorter reply.',
+  );
 
   const lowerBounceFitInsight = buildStrokeMechanicsInsight({
     ...profile,
