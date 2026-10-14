@@ -264,7 +264,7 @@ test('net-play advice recommends or cautions against approaches from roster-rela
   assert.match(strongNetProfile, /Available net ratings average at the 80th roster percentile/);
   assert.match(
     strongNetProfile,
-    /Net Presence combines with volley and smash ratings for precision and consistency—not power—and reduces the volley movement penalty/,
+    /Net Presence contributes to volley and smash accuracy and consistency\. Higher Net Presence lets a player move more while hitting a volley before movement starts to affect the shot/,
   );
   assert.match(strongNetProfile, /Net play is a roster strength; come forward selectively after a deep shot draws a short reply/);
 
