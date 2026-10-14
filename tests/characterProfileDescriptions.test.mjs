@@ -13,6 +13,7 @@ import {
   buildGamePlanSteps,
   cleanCharacterMechanic,
   cleanCounterInsight,
+  cleanNetInsight,
   cleanShotVarietyInsight,
   cleanSizeReachInsight,
   normalizeCharacterCopy,
@@ -160,6 +161,26 @@ test('shot-variety copy prioritizes each character’s higher Lob or Drop shot r
     /export function cleanShotVarietyInsight\(value: unknown\): string;/,
   );
   assert.ok(component.includes('cleanShotVarietyInsight(mechanics.variation)'));
+});
+
+test('net-play copy frames Core-supported net finishes as situational', () => {
+  const volleyContext =
+    ' The forehand volley (83) is the stronger finishing wing than the backhand volley (67).';
+  assert.equal(
+    cleanNetInsight(
+      `Net Presence 65, average volley 76, and smash 76 support a net finish. Approach after a short or defensive reply, then aim the first volley toward the side the opponent has left open.${volleyContext}`,
+    ),
+    `Net Presence 65, average volley 76, and smash 76 make a net finish a situational option, not a net-first plan. Approach only after a short or defensive reply; target the open side with the first volley.${volleyContext}`,
+  );
+  assert.equal(
+    cleanNetInsight('Move forward to finish a short ball, not as the default pattern.'),
+    'Move forward to finish a short ball, not as the default pattern.',
+  );
+  assert.match(
+    copyTypes,
+    /export function cleanNetInsight\(value: unknown\): string;/,
+  );
+  assert.ok(component.includes('cleanNetInsight(mechanics.net)'));
 });
 
 test('size-and-reach copy explains height, backhand fit, and weight in plain language', () => {
