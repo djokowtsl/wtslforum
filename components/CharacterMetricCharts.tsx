@@ -1,6 +1,6 @@
 'use client';
 
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useId, useMemo, useState } from 'react';
 import styles from './CharacterMetricCharts.module.css';
 
 type Tour = 'all' | 'atp' | 'wta';
@@ -76,10 +76,31 @@ function rawDomain(values: number[]) {
 }
 
 function axisTicks(domain: { min: number; max: number }, normalized: boolean) {
-  if (normalized) return [0, 20, 40, 60, 80, 100];
+  if (normalized && domain.min === 0 && domain.max === 100) {
+    return [0, 20, 40, 60, 80, 100];
+  }
   return Array.from({ length: 5 }, (_, index) =>
     domain.min + ((domain.max - domain.min) * index) / 4,
   );
+}
+
+function zoomedDomain(
+  domain: { min: number; max: number },
+  center: number,
+  zoomLevel: number,
+) {
+  const range = (domain.max - domain.min) / 2 ** zoomLevel;
+  let min = center - range / 2;
+  let max = center + range / 2;
+  if (min < domain.min) {
+    max += domain.min - min;
+    min = domain.min;
+  }
+  if (max > domain.max) {
+    min -= max - domain.max;
+    max = domain.max;
+  }
+  return { min, max };
 }
 
 function chartValue(value: number, values: number[], normalized: boolean) {
@@ -111,6 +132,39 @@ function metricOptionsMarkup(options: string[]) {
         </optgroup>
       )}
     </>
+  );
+}
+
+function ZoomControl({
+  label,
+  value,
+  onChange,
+}: {
+  label: string;
+  value: number;
+  onChange: (value: number) => void;
+}) {
+  const id = useId();
+  const multiplier = 2 ** value;
+
+  return (
+    <label className={styles.zoomControl} htmlFor={id}>
+      <span className={styles.zoomControlHeading}>
+        <span>{label}</span>
+        <output htmlFor={id}>{multiplier}×</output>
+      </span>
+      <input
+        id={id}
+        type="range"
+        min="0"
+        max="3"
+        step="1"
+        value={value}
+        aria-label={label}
+        aria-valuetext={`${multiplier} times zoom`}
+        onChange={(event) => onChange(Number(event.target.value))}
+      />
+    </label>
   );
 }
 
@@ -178,127 +232,167 @@ function ScatterPlot({
   onSelectCharacter: (character: string) => void;
 }) {
   const [activePoint, setActivePoint] = useState<Point | null>(null);
+  const [xZoom, setXZoom] = useState(0);
+  const [yZoom, setYZoom] = useState(0);
+  const clipId = useId().replace(/:/g, '');
   const plotWidth = WIDTH - PAIR_MARGIN.left - PAIR_MARGIN.right;
   const plotHeight = PAIR_HEIGHT - PAIR_MARGIN.top - PAIR_MARGIN.bottom;
   const xValues = points.map((point) => point.xValue!);
   const yValues = points.map((point) => point.yValue!);
-  const xDomain = normalized ? { min: 0, max: 100 } : rawDomain(xValues);
-  const yDomain = normalized ? { min: 0, max: 100 } : rawDomain(yValues);
+  const baseXDomain = normalized ? { min: 0, max: 100 } : rawDomain(xValues);
+  const baseYDomain = normalized ? { min: 0, max: 100 } : rawDomain(yValues);
+  const medianX = chartValue(median(xValues), xValues, normalized);
+  const medianY = chartValue(median(yValues), yValues, normalized);
+  const xDomain = zoomedDomain(baseXDomain, medianX, xZoom);
+  const yDomain = zoomedDomain(baseYDomain, medianY, yZoom);
   const xTicks = axisTicks(xDomain, normalized);
   const yTicks = axisTicks(yDomain, normalized);
+  const visiblePoints = points.filter((point) => {
+    const x = chartValue(point.xValue!, xValues, normalized);
+    const y = chartValue(point.yValue!, yValues, normalized);
+    return x >= xDomain.min && x <= xDomain.max
+      && y >= yDomain.min && y <= yDomain.max;
+  });
   const xPosition = (value: number) =>
     PAIR_MARGIN.left + ((value - xDomain.min) / (xDomain.max - xDomain.min)) * plotWidth;
   const yPosition = (value: number) =>
     PAIR_MARGIN.top + plotHeight - ((value - yDomain.min) / (yDomain.max - yDomain.min)) * plotHeight;
-  const medianX = chartValue(median(xValues), xValues, normalized);
-  const medianY = chartValue(median(yValues), yValues, normalized);
 
   return (
-    <div className={styles.svgScroller}>
-      <svg
-        className={styles.chart}
-        viewBox={`0 0 ${WIDTH} ${PAIR_HEIGHT}`}
-        role="group"
-        aria-label={`${points.length} characters plotted by ${xMetric} and ${yMetric}`}
-      >
-        <title>{`${xMetric} versus ${yMetric} for ${points.length} characters`}</title>
-        {xTicks.map((tick) => (
-          <g key={`x-${tick}`} className={styles.plotGrid}>
+    <>
+      <div className={styles.zoomControls}>
+        <ZoomControl label="X-axis zoom" value={xZoom} onChange={setXZoom} />
+        <ZoomControl label="Y-axis zoom" value={yZoom} onChange={setYZoom} />
+        <button
+          className={styles.zoomReset}
+          type="button"
+          disabled={xZoom === 0 && yZoom === 0}
+          onClick={() => {
+            setXZoom(0);
+            setYZoom(0);
+          }}
+        >
+          Reset zoom
+        </button>
+      </div>
+      <div className={styles.svgScroller}>
+        <svg
+          className={styles.chart}
+          viewBox={`0 0 ${WIDTH} ${PAIR_HEIGHT}`}
+          role="group"
+          aria-label={`${points.length} characters plotted by ${xMetric} and ${yMetric}`}
+        >
+          <title>{`${xMetric} versus ${yMetric} for ${points.length} characters`}</title>
+          <defs>
+            <clipPath id={clipId}>
+              <rect
+                x={PAIR_MARGIN.left}
+                y={PAIR_MARGIN.top}
+                width={plotWidth}
+                height={plotHeight}
+              />
+            </clipPath>
+          </defs>
+          {xTicks.map((tick) => (
+            <g key={`x-${tick}`} className={styles.plotGrid}>
+              <line
+                x1={xPosition(tick)}
+                x2={xPosition(tick)}
+                y1={PAIR_MARGIN.top}
+                y2={PAIR_HEIGHT - PAIR_MARGIN.bottom}
+              />
+              <text x={xPosition(tick)} y={PAIR_HEIGHT - PAIR_MARGIN.bottom + 20} textAnchor="middle">
+                {formatAxis(tick, normalized)}
+              </text>
+            </g>
+          ))}
+          {yTicks.map((tick) => (
+            <g key={`y-${tick}`} className={styles.plotGrid}>
+              <line
+                x1={PAIR_MARGIN.left}
+                x2={WIDTH - PAIR_MARGIN.right}
+                y1={yPosition(tick)}
+                y2={yPosition(tick)}
+              />
+              <text x={PAIR_MARGIN.left - 12} y={yPosition(tick) + 4} textAnchor="end">
+                {formatAxis(tick, normalized)}
+              </text>
+            </g>
+          ))}
+          <g clipPath={`url(#${clipId})`}>
             <line
-              x1={xPosition(tick)}
-              x2={xPosition(tick)}
+              className={styles.median}
+              x1={xPosition(medianX)}
+              x2={xPosition(medianX)}
               y1={PAIR_MARGIN.top}
               y2={PAIR_HEIGHT - PAIR_MARGIN.bottom}
             />
-            <text x={xPosition(tick)} y={PAIR_HEIGHT - PAIR_MARGIN.bottom + 20} textAnchor="middle">
-              {formatAxis(tick, normalized)}
-            </text>
-          </g>
-        ))}
-        {yTicks.map((tick) => (
-          <g key={`y-${tick}`} className={styles.plotGrid}>
             <line
+              className={styles.median}
               x1={PAIR_MARGIN.left}
               x2={WIDTH - PAIR_MARGIN.right}
-              y1={yPosition(tick)}
-              y2={yPosition(tick)}
+              y1={yPosition(medianY)}
+              y2={yPosition(medianY)}
             />
-            <text x={PAIR_MARGIN.left - 12} y={yPosition(tick) + 4} textAnchor="end">
-              {formatAxis(tick, normalized)}
-            </text>
+            {visiblePoints.map((point) => {
+              const x = chartValue(point.xValue!, xValues, normalized);
+              const y = chartValue(point.yValue!, yValues, normalized);
+              const href = `/characters?tour=${tour}&character=${encodeURIComponent(point.character)}`;
+              return (
+                <a
+                  key={point.character}
+                  className={styles.pointLink}
+                  href={href}
+                  aria-label={`${point.character}: ${xMetric} ${formatValue(point.xValue!, xMetric)}, ${yMetric} ${formatValue(point.yValue!, yMetric)}. Open profile.`}
+                  onMouseEnter={() => setActivePoint(point)}
+                  onMouseLeave={() => setActivePoint(null)}
+                  onFocus={() => setActivePoint(point)}
+                  onBlur={() => setActivePoint(null)}
+                  onClick={(event) => {
+                    event.preventDefault();
+                    onSelectCharacter(point.character);
+                  }}
+                >
+                  <circle cx={xPosition(x)} cy={yPosition(y)} r="5" />
+                  <title>
+                    {`${point.character} · ${xMetric}: ${formatValue(point.xValue!, xMetric)} · ${yMetric}: ${formatValue(point.yValue!, yMetric)}`}
+                  </title>
+                </a>
+              );
+            })}
+            {activePoint && visiblePoints.some((point) => point.character === activePoint.character) && (
+              <PointTooltip
+                x={xPosition(chartValue(activePoint.xValue!, xValues, normalized))}
+                y={yPosition(chartValue(activePoint.yValue!, yValues, normalized))}
+                chartHeight={PAIR_HEIGHT}
+                lines={[
+                  activePoint.character,
+                  `${xMetric}: ${formatValue(activePoint.xValue!, xMetric)}`,
+                  `${yMetric}: ${formatValue(activePoint.yValue!, yMetric)}`,
+                ]}
+              />
+            )}
           </g>
-        ))}
-        <line
-          className={styles.median}
-          x1={xPosition(medianX)}
-          x2={xPosition(medianX)}
-          y1={PAIR_MARGIN.top}
-          y2={PAIR_HEIGHT - PAIR_MARGIN.bottom}
-        />
-        <line
-          className={styles.median}
-          x1={PAIR_MARGIN.left}
-          x2={WIDTH - PAIR_MARGIN.right}
-          y1={yPosition(medianY)}
-          y2={yPosition(medianY)}
-        />
-        {points.map((point) => {
-          const x = chartValue(point.xValue!, xValues, normalized);
-          const y = chartValue(point.yValue!, yValues, normalized);
-          const href = `/characters?tour=${tour}&character=${encodeURIComponent(point.character)}`;
-          return (
-            <a
-              key={point.character}
-              className={styles.pointLink}
-              href={href}
-              aria-label={`${point.character}: ${xMetric} ${formatValue(point.xValue!, xMetric)}, ${yMetric} ${formatValue(point.yValue!, yMetric)}. Open profile.`}
-              onMouseEnter={() => setActivePoint(point)}
-              onMouseLeave={() => setActivePoint(null)}
-              onFocus={() => setActivePoint(point)}
-              onBlur={() => setActivePoint(null)}
-              onClick={(event) => {
-                event.preventDefault();
-                onSelectCharacter(point.character);
-              }}
-            >
-              <circle cx={xPosition(x)} cy={yPosition(y)} r="5" />
-              <title>
-                {`${point.character} · ${xMetric}: ${formatValue(point.xValue!, xMetric)} · ${yMetric}: ${formatValue(point.yValue!, yMetric)}`}
-              </title>
-            </a>
-          );
-        })}
-        {activePoint && (
-          <PointTooltip
-            x={xPosition(chartValue(activePoint.xValue!, xValues, normalized))}
-            y={yPosition(chartValue(activePoint.yValue!, yValues, normalized))}
-            chartHeight={PAIR_HEIGHT}
-            lines={[
-              activePoint.character,
-              `${xMetric}: ${formatValue(activePoint.xValue!, xMetric)}`,
-              `${yMetric}: ${formatValue(activePoint.yValue!, yMetric)}`,
-            ]}
-          />
-        )}
-        <text
-          className={styles.axisLabel}
-          x={PAIR_MARGIN.left + plotWidth / 2}
-          y={PAIR_HEIGHT - 17}
-          textAnchor="middle"
-        >
-          {xMetric}{normalized ? ' · normalized 0–100' : ''}
-        </text>
-        <text
-          className={styles.axisLabel}
-          x="19"
-          y={PAIR_MARGIN.top + plotHeight / 2}
-          textAnchor="middle"
-          transform={`rotate(-90 19 ${PAIR_MARGIN.top + plotHeight / 2})`}
-        >
-          {yMetric}{normalized ? ' · normalized 0–100' : ''}
-        </text>
-      </svg>
-    </div>
+          <text
+            className={styles.axisLabel}
+            x={PAIR_MARGIN.left + plotWidth / 2}
+            y={PAIR_HEIGHT - 17}
+            textAnchor="middle"
+          >
+            {xMetric}{normalized ? ' · normalized 0–100' : ''}
+          </text>
+          <text
+            className={styles.axisLabel}
+            x="19"
+            y={PAIR_MARGIN.top + plotHeight / 2}
+            textAnchor="middle"
+            transform={`rotate(-90 19 ${PAIR_MARGIN.top + plotHeight / 2})`}
+          >
+            {yMetric}{normalized ? ' · normalized 0–100' : ''}
+          </text>
+        </svg>
+      </div>
+    </>
   );
 }
 
@@ -342,89 +436,120 @@ function SingleMetricPlot({
   onSelectCharacter: (character: string) => void;
 }) {
   const [activePoint, setActivePoint] = useState<JitteredPoint | null>(null);
+  const [xZoom, setXZoom] = useState(0);
+  const clipId = useId().replace(/:/g, '');
   const plotWidth = WIDTH - SINGLE_MARGIN.left - SINGLE_MARGIN.right;
   const values = points.map((point) => point.value);
-  const domain = rawDomain(values);
+  const baseDomain = rawDomain(values);
+  const domain = zoomedDomain(baseDomain, median(values), xZoom);
   const xPosition = (value: number) =>
     SINGLE_MARGIN.left + ((value - domain.min) / (domain.max - domain.min)) * plotWidth;
-  const { placed, step } = jitteredPoints(points, xPosition);
+  const visiblePoints = points.filter((point) =>
+    point.value >= domain.min && point.value <= domain.max,
+  );
+  const { placed, step } = jitteredPoints(visiblePoints, xPosition);
   const extent = placed.reduce((max, point) => Math.max(max, Math.abs(point.lane)), 0) * step;
   const height = Math.max(300, extent * 2 + 140);
   const centerY = height / 2;
   const xTicks = axisTicks(domain, false);
 
   return (
-    <div className={styles.svgScroller}>
-      <svg
-        className={styles.chart}
-        viewBox={`0 0 ${WIDTH} ${height}`}
-        role="group"
-        aria-label={`${points.length} characters plotted by ${metric}; vertical positions only separate points`}
-      >
-        <title>{`${metric} values for ${points.length} characters`}</title>
-        {xTicks.map((tick) => (
-          <g key={tick} className={styles.plotGrid}>
-            <line
-              x1={xPosition(tick)}
-              x2={xPosition(tick)}
-              y1={centerY - extent - 12}
-              y2={centerY + extent + 12}
-            />
-            <text x={xPosition(tick)} y={centerY + extent + 34} textAnchor="middle">
-              {formatAxis(tick, false)}
-            </text>
-          </g>
-        ))}
-        <line
-          className={styles.baseline}
-          x1={SINGLE_MARGIN.left}
-          x2={WIDTH - SINGLE_MARGIN.right}
-          y1={centerY}
-          y2={centerY}
-        />
-        {placed.map((point) => {
-          const href = `/characters?tour=${tour}&character=${encodeURIComponent(point.character)}`;
-          return (
-            <a
-              key={point.character}
-              className={styles.pointLink}
-              href={href}
-              aria-label={`${point.character}: ${metric} ${formatValue(point.value, metric)}. Open profile.`}
-              onMouseEnter={() => setActivePoint(point)}
-              onMouseLeave={() => setActivePoint(null)}
-              onFocus={() => setActivePoint(point)}
-              onBlur={() => setActivePoint(null)}
-              onClick={(event) => {
-                event.preventDefault();
-                onSelectCharacter(point.character);
-              }}
-            >
-              <circle cx={point.x} cy={centerY + point.lane * step} r="5" />
-              <title>{`${point.character} · ${metric}: ${formatValue(point.value, metric)}`}</title>
-            </a>
-          );
-        })}
-        {activePoint && (
-          <PointTooltip
-            x={activePoint.x}
-            y={centerY + activePoint.lane * step}
-            chartHeight={height}
-            lines={[
-              activePoint.character,
-              `${metric}: ${formatValue(activePoint.value, metric)}`,
-            ]}
-          />
-        )}
-        <text
-          className={styles.axisLabel}
-          x={SINGLE_MARGIN.left + plotWidth / 2}
-          y={height - 16}
-          textAnchor="middle"
+    <>
+      <div className={`${styles.zoomControls} ${styles.zoomControlsSingle}`}>
+        <ZoomControl label="Horizontal zoom" value={xZoom} onChange={setXZoom} />
+        <button
+          className={styles.zoomReset}
+          type="button"
+          disabled={xZoom === 0}
+          onClick={() => setXZoom(0)}
         >
-          {metric}
-        </text>
-      </svg>
-    </div>
+          Reset zoom
+        </button>
+      </div>
+      <div className={styles.svgScroller}>
+        <svg
+          className={styles.chart}
+          viewBox={`0 0 ${WIDTH} ${height}`}
+          role="group"
+          aria-label={`${points.length} characters plotted by ${metric}; vertical positions only separate points`}
+        >
+          <title>{`${metric} values for ${points.length} characters`}</title>
+          <defs>
+            <clipPath id={clipId}>
+              <rect
+                x={SINGLE_MARGIN.left}
+                y={centerY - extent - 12}
+                width={plotWidth}
+                height={extent * 2 + 24}
+              />
+            </clipPath>
+          </defs>
+          {xTicks.map((tick) => (
+            <g key={tick} className={styles.plotGrid}>
+              <line
+                x1={xPosition(tick)}
+                x2={xPosition(tick)}
+                y1={centerY - extent - 12}
+                y2={centerY + extent + 12}
+              />
+              <text x={xPosition(tick)} y={centerY + extent + 34} textAnchor="middle">
+                {formatAxis(tick, false)}
+              </text>
+            </g>
+          ))}
+          <g clipPath={`url(#${clipId})`}>
+            <line
+              className={styles.baseline}
+              x1={SINGLE_MARGIN.left}
+              x2={WIDTH - SINGLE_MARGIN.right}
+              y1={centerY}
+              y2={centerY}
+            />
+            {placed.map((point) => {
+              const href = `/characters?tour=${tour}&character=${encodeURIComponent(point.character)}`;
+              return (
+                <a
+                  key={point.character}
+                  className={styles.pointLink}
+                  href={href}
+                  aria-label={`${point.character}: ${metric} ${formatValue(point.value, metric)}. Open profile.`}
+                  onMouseEnter={() => setActivePoint(point)}
+                  onMouseLeave={() => setActivePoint(null)}
+                  onFocus={() => setActivePoint(point)}
+                  onBlur={() => setActivePoint(null)}
+                  onClick={(event) => {
+                    event.preventDefault();
+                    onSelectCharacter(point.character);
+                  }}
+                >
+                  <circle cx={point.x} cy={centerY + point.lane * step} r="5" />
+                  <title>{`${point.character} · ${metric}: ${formatValue(point.value, metric)}`}</title>
+                </a>
+              );
+            })}
+            {activePoint && visiblePoints.some((point) => point.character === activePoint.character) && (
+              <PointTooltip
+                x={activePoint.x}
+                y={centerY + activePoint.lane * step}
+                chartHeight={height}
+                lines={[
+                  activePoint.character,
+                  `${metric}: ${formatValue(activePoint.value, metric)}`,
+                ]}
+              />
+            )}
+          </g>
+          <text
+            className={styles.axisLabel}
+            x={SINGLE_MARGIN.left + plotWidth / 2}
+            y={height - 16}
+            textAnchor="middle"
+          >
+            {metric}
+          </text>
+        </svg>
+      </div>
+    </>
   );
 }
 
@@ -590,12 +715,13 @@ export default function CharacterMetricCharts({
               Normalize each axis to 0–100
             </label>
             <p className={styles.note}>
-              Normalization scales each selected metric across this roster. Hover or focus a point for its original values. Dashed guides mark the medians.
+              Normalization scales each selected metric across this roster. Use the X- and Y-axis controls to zoom independently around the medians; reset to return to the full range. Hover or focus a point for its original values.
             </p>
             {metricNames.length < 2 ? (
               <p className={styles.status}>At least two metrics are needed for this chart.</p>
             ) : pairPoints.length ? (
               <ScatterPlot
+                key={JSON.stringify([tour, xMetric, yMetric, normalized])}
                 points={pairPoints}
                 xMetric={xMetric}
                 yMetric={yMetric}
@@ -623,10 +749,11 @@ export default function CharacterMetricCharts({
               </select>
             </label>
             <p className={styles.note}>
-              Dots are separated vertically only to reduce overlap; vertical position is not another measure.
+              Dots are separated vertically only to reduce overlap; vertical position is not another measure. Use horizontal zoom to inspect a narrower value range.
             </p>
             {singlePoints.length ? (
               <SingleMetricPlot
+                key={JSON.stringify([tour, singleMetric])}
                 points={singlePoints}
                 metric={singleMetric}
                 tour={tour}
