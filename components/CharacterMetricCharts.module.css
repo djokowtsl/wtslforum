@@ -104,21 +104,86 @@
   accent-color: var(--cyan, #6ee7ed);
 }
 
-.zoomControls {
+.scatterChartFrame,
+.singleChartFrame {
   display: grid;
-  grid-template-columns: repeat(2, minmax(0, 1fr)) auto;
-  align-items: end;
   gap: 10px;
+  min-width: 0;
 }
 
-.zoomControlsSingle {
+.scatterPlotRow {
+  display: grid;
+  grid-template-columns: 36px minmax(0, 1fr);
+  align-items: stretch;
+  gap: 4px;
+  min-width: 0;
+}
+
+.yAxisZoomRail {
+  position: relative;
+  min-width: 0;
+}
+
+.verticalZoomControl {
+  position: absolute;
+  top: 5.45%;
+  right: 0;
+  bottom: 17.27%;
+  left: 0;
+  display: grid;
+  grid-template-rows: auto minmax(0, 1fr) auto;
+  justify-items: center;
+  align-items: center;
+  gap: 5px;
+  color: var(--soft, #687386);
+  font-size: 10px;
+  font-weight: 700;
+}
+
+.verticalZoomLabel {
+  writing-mode: vertical-rl;
+  transform: rotate(180deg);
+  line-height: 1;
+}
+
+.verticalZoomControl output {
+  color: var(--ink, inherit);
+  font-variant-numeric: tabular-nums;
+}
+
+.verticalZoomControl input {
+  width: 16px;
+  height: 100%;
+  min-height: 0;
+  margin: 0;
+  accent-color: var(--cyan, #6ee7ed);
+  writing-mode: vertical-lr;
+  direction: rtl;
+  cursor: pointer;
+}
+
+.xAxisControlRow,
+.singleXAxisControlRow {
+  display: grid;
   grid-template-columns: minmax(0, 1fr) auto;
+  align-items: end;
+  gap: 12px;
+}
+
+.xAxisControlRow {
+  margin-left: 40px;
+  padding: 0 3% 0 9.75%;
+}
+
+.singleXAxisControlRow {
+  padding: 0 3.75% 0 7.75%;
 }
 
 .zoomControl {
   display: grid;
   gap: 6px;
   min-width: 0;
+  flex: 1 1 auto;
   color: var(--soft, #687386);
   font-size: 12px;
   font-weight: 700;
@@ -162,7 +227,8 @@
 }
 
 .zoomReset:focus-visible,
-.zoomControl input:focus-visible {
+.zoomControl input:focus-visible,
+.verticalZoomControl input:focus-visible {
   outline: 2px solid var(--cyan, #6ee7ed);
   outline-offset: 3px;
 }
@@ -307,21 +373,8 @@
     grid-template-columns: 1fr;
   }
 
-  .zoomControls {
-    grid-template-columns: repeat(2, minmax(0, 1fr));
-  }
-
   .zoomReset {
-    grid-column: 1 / -1;
     justify-self: end;
-  }
-
-  .zoomControlsSingle {
-    grid-template-columns: minmax(0, 1fr) auto;
-  }
-
-  .zoomControlsSingle .zoomReset {
-    grid-column: auto;
   }
 
   .chart {

@@ -168,6 +168,35 @@ function ZoomControl({
   );
 }
 
+function VerticalZoomControl({
+  value,
+  onChange,
+}: {
+  value: number;
+  onChange: (value: number) => void;
+}) {
+  const id = useId();
+  const multiplier = 2 ** value;
+
+  return (
+    <label className={styles.verticalZoomControl} htmlFor={id}>
+      <span className={styles.verticalZoomLabel}>Y zoom</span>
+      <input
+        id={id}
+        type="range"
+        min="0"
+        max="3"
+        step="1"
+        value={value}
+        aria-label="Y-axis zoom"
+        aria-valuetext={`${multiplier} times zoom`}
+        onChange={(event) => onChange(Number(event.target.value))}
+      />
+      <output htmlFor={id}>{multiplier}×</output>
+    </label>
+  );
+}
+
 function PointTooltip({
   x,
   y,
@@ -260,28 +289,18 @@ function ScatterPlot({
 
   return (
     <>
-      <div className={styles.zoomControls}>
-        <ZoomControl label="X-axis zoom" value={xZoom} onChange={setXZoom} />
-        <ZoomControl label="Y-axis zoom" value={yZoom} onChange={setYZoom} />
-        <button
-          className={styles.zoomReset}
-          type="button"
-          disabled={xZoom === 0 && yZoom === 0}
-          onClick={() => {
-            setXZoom(0);
-            setYZoom(0);
-          }}
-        >
-          Reset zoom
-        </button>
-      </div>
-      <div className={styles.svgScroller}>
-        <svg
-          className={styles.chart}
-          viewBox={`0 0 ${WIDTH} ${PAIR_HEIGHT}`}
-          role="group"
-          aria-label={`${points.length} characters plotted by ${xMetric} and ${yMetric}`}
-        >
+      <div className={styles.scatterChartFrame}>
+        <div className={styles.scatterPlotRow}>
+          <div className={styles.yAxisZoomRail}>
+            <VerticalZoomControl value={yZoom} onChange={setYZoom} />
+          </div>
+          <div className={styles.svgScroller}>
+            <svg
+              className={styles.chart}
+              viewBox={`0 0 ${WIDTH} ${PAIR_HEIGHT}`}
+              role="group"
+              aria-label={`${points.length} characters plotted by ${xMetric} and ${yMetric}`}
+            >
           <title>{`${xMetric} versus ${yMetric} for ${points.length} characters`}</title>
           <defs>
             <clipPath id={clipId}>
@@ -390,7 +409,23 @@ function ScatterPlot({
           >
             {yMetric}{normalized ? ' · normalized 0–100' : ''}
           </text>
-        </svg>
+            </svg>
+          </div>
+        </div>
+        <div className={styles.xAxisControlRow}>
+          <ZoomControl label="X-axis zoom" value={xZoom} onChange={setXZoom} />
+          <button
+            className={styles.zoomReset}
+            type="button"
+            disabled={xZoom === 0 && yZoom === 0}
+            onClick={() => {
+              setXZoom(0);
+              setYZoom(0);
+            }}
+          >
+            Reset zoom
+          </button>
+        </div>
       </div>
     </>
   );
@@ -455,18 +490,8 @@ function SingleMetricPlot({
 
   return (
     <>
-      <div className={`${styles.zoomControls} ${styles.zoomControlsSingle}`}>
-        <ZoomControl label="Horizontal zoom" value={xZoom} onChange={setXZoom} />
-        <button
-          className={styles.zoomReset}
-          type="button"
-          disabled={xZoom === 0}
-          onClick={() => setXZoom(0)}
-        >
-          Reset zoom
-        </button>
-      </div>
-      <div className={styles.svgScroller}>
+      <div className={styles.singleChartFrame}>
+        <div className={styles.svgScroller}>
         <svg
           className={styles.chart}
           viewBox={`0 0 ${WIDTH} ${height}`}
@@ -548,6 +573,18 @@ function SingleMetricPlot({
             {metric}
           </text>
         </svg>
+        </div>
+        <div className={styles.singleXAxisControlRow}>
+          <ZoomControl label="Horizontal zoom" value={xZoom} onChange={setXZoom} />
+          <button
+            className={styles.zoomReset}
+            type="button"
+            disabled={xZoom === 0}
+            onClick={() => setXZoom(0)}
+          >
+            Reset zoom
+          </button>
+        </div>
       </div>
     </>
   );
