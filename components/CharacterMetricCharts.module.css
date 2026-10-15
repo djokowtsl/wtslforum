@@ -104,6 +104,69 @@
   accent-color: var(--cyan, #6ee7ed);
 }
 
+.zoomControls {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr)) auto;
+  align-items: end;
+  gap: 10px;
+}
+
+.zoomControlsSingle {
+  grid-template-columns: minmax(0, 1fr) auto;
+}
+
+.zoomControl {
+  display: grid;
+  gap: 6px;
+  min-width: 0;
+  color: var(--soft, #687386);
+  font-size: 12px;
+  font-weight: 700;
+}
+
+.zoomControlHeading {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+}
+
+.zoomControl output {
+  color: var(--ink, inherit);
+  font-variant-numeric: tabular-nums;
+}
+
+.zoomControl input {
+  width: 100%;
+  margin: 0;
+  accent-color: var(--cyan, #6ee7ed);
+  cursor: pointer;
+}
+
+.zoomReset {
+  min-height: 34px;
+  padding: 6px 10px;
+  border: 1px solid var(--line, rgba(120, 140, 160, 0.35));
+  border-radius: 9px;
+  color: var(--ink, inherit);
+  background: transparent;
+  font: inherit;
+  font-size: 12px;
+  font-weight: 700;
+  cursor: pointer;
+}
+
+.zoomReset:disabled {
+  opacity: 0.55;
+  cursor: default;
+}
+
+.zoomReset:focus-visible,
+.zoomControl input:focus-visible {
+  outline: 2px solid var(--cyan, #6ee7ed);
+  outline-offset: 3px;
+}
+
 .note,
 .status {
   margin: 0;
@@ -242,6 +305,23 @@
 
   .controls {
     grid-template-columns: 1fr;
+  }
+
+  .zoomControls {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  .zoomReset {
+    grid-column: 1 / -1;
+    justify-self: end;
+  }
+
+  .zoomControlsSingle {
+    grid-template-columns: minmax(0, 1fr) auto;
+  }
+
+  .zoomControlsSingle .zoomReset {
+    grid-column: auto;
   }
 
   .chart {
