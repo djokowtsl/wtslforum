@@ -82,12 +82,18 @@
   width: 100%;
   min-width: 0;
   padding: 9px 10px;
-  border: 1px solid var(--line, rgba(120, 140, 160, 0.35));
+  border: 1px solid var(--line-2, rgba(20, 40, 80, 0.18));
   border-radius: 9px;
-  background: var(--surface, #111820);
-  color: var(--ink, inherit);
+  background: var(--bg-2, #050f22);
+  color: var(--text, inherit);
   font: inherit;
   font-size: 13px;
+}
+
+.controls select option,
+.singleSelect select option {
+  background: var(--panel, #081328);
+  color: var(--text, #f1f5fb);
 }
 
 .normalizeToggle {
