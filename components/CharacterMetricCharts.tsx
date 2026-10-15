@@ -24,6 +24,11 @@ type Point = {
   yValue?: number;
 };
 
+type JitteredPoint = Point & {
+  x: number;
+  lane: number;
+};
+
 const WIDTH = 800;
 const PAIR_HEIGHT = 440;
 const PAIR_MARGIN = { top: 24, right: 24, bottom: 76, left: 78 };
@@ -109,6 +114,54 @@ function metricOptionsMarkup(options: string[]) {
   );
 }
 
+function PointTooltip({
+  x,
+  y,
+  lines,
+  chartHeight,
+}: {
+  x: number;
+  y: number;
+  lines: string[];
+  chartHeight: number;
+}) {
+  const longestLine = Math.max(...lines.map((line) => line.length));
+  const tooltipWidth = Math.min(Math.max(longestLine * 7 + 20, 96), 320);
+  const tooltipHeight = lines.length * 15 + 14;
+  const left = Math.max(
+    8,
+    Math.min(x - tooltipWidth / 2, WIDTH - tooltipWidth - 8),
+  );
+  const above = y - tooltipHeight - 10;
+  const top = above >= 8
+    ? above
+    : Math.min(y + 10, chartHeight - tooltipHeight - 8);
+
+  return (
+    <g className={styles.tooltip} pointerEvents="none" aria-hidden="true">
+      <rect
+        x={left}
+        y={top}
+        width={tooltipWidth}
+        height={tooltipHeight}
+        rx="7"
+      />
+      <text x={left + 10} y={top + 18}>
+        {lines.map((line, index) => (
+          <tspan
+            key={`${index}-${line}`}
+            x={left + 10}
+            dy={index === 0 ? 0 : 15}
+            className={index === 0 ? styles.tooltipTitle : undefined}
+          >
+            {line}
+          </tspan>
+        ))}
+      </text>
+    </g>
+  );
+}
+
 function ScatterPlot({
   points,
   xMetric,
@@ -124,6 +177,7 @@ function ScatterPlot({
   tour: Tour;
   onSelectCharacter: (character: string) => void;
 }) {
+  const [activePoint, setActivePoint] = useState<Point | null>(null);
   const plotWidth = WIDTH - PAIR_MARGIN.left - PAIR_MARGIN.right;
   const plotHeight = PAIR_HEIGHT - PAIR_MARGIN.top - PAIR_MARGIN.bottom;
   const xValues = points.map((point) => point.xValue!);
@@ -198,6 +252,10 @@ function ScatterPlot({
               className={styles.pointLink}
               href={href}
               aria-label={`${point.character}: ${xMetric} ${formatValue(point.xValue!, xMetric)}, ${yMetric} ${formatValue(point.yValue!, yMetric)}. Open profile.`}
+              onMouseEnter={() => setActivePoint(point)}
+              onMouseLeave={() => setActivePoint(null)}
+              onFocus={() => setActivePoint(point)}
+              onBlur={() => setActivePoint(null)}
               onClick={(event) => {
                 event.preventDefault();
                 onSelectCharacter(point.character);
@@ -210,6 +268,18 @@ function ScatterPlot({
             </a>
           );
         })}
+        {activePoint && (
+          <PointTooltip
+            x={xPosition(chartValue(activePoint.xValue!, xValues, normalized))}
+            y={yPosition(chartValue(activePoint.yValue!, yValues, normalized))}
+            chartHeight={PAIR_HEIGHT}
+            lines={[
+              activePoint.character,
+              `${xMetric}: ${formatValue(activePoint.xValue!, xMetric)}`,
+              `${yMetric}: ${formatValue(activePoint.yValue!, yMetric)}`,
+            ]}
+          />
+        )}
         <text
           className={styles.axisLabel}
           x={PAIR_MARGIN.left + plotWidth / 2}
@@ -233,7 +303,7 @@ function ScatterPlot({
 }
 
 function jitteredPoints(points: Point[], xPosition: (value: number) => number) {
-  const placed: Array<Point & { x: number; lane: number }> = [];
+  const placed: JitteredPoint[] = [];
   const ordered = [...points].sort((a, b) =>
     a.value - b.value || a.character.localeCompare(b.character),
   );
@@ -271,6 +341,7 @@ function SingleMetricPlot({
   tour: Tour;
   onSelectCharacter: (character: string) => void;
 }) {
+  const [activePoint, setActivePoint] = useState<JitteredPoint | null>(null);
   const plotWidth = WIDTH - SINGLE_MARGIN.left - SINGLE_MARGIN.right;
   const values = points.map((point) => point.value);
   const domain = rawDomain(values);
@@ -319,6 +390,10 @@ function SingleMetricPlot({
               className={styles.pointLink}
               href={href}
               aria-label={`${point.character}: ${metric} ${formatValue(point.value, metric)}. Open profile.`}
+              onMouseEnter={() => setActivePoint(point)}
+              onMouseLeave={() => setActivePoint(null)}
+              onFocus={() => setActivePoint(point)}
+              onBlur={() => setActivePoint(null)}
               onClick={(event) => {
                 event.preventDefault();
                 onSelectCharacter(point.character);
@@ -329,6 +404,17 @@ function SingleMetricPlot({
             </a>
           );
         })}
+        {activePoint && (
+          <PointTooltip
+            x={activePoint.x}
+            y={centerY + activePoint.lane * step}
+            chartHeight={height}
+            lines={[
+              activePoint.character,
+              `${metric}: ${formatValue(activePoint.value, metric)}`,
+            ]}
+          />
+        )}
         <text
           className={styles.axisLabel}
           x={SINGLE_MARGIN.left + plotWidth / 2}

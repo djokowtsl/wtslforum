@@ -174,6 +174,28 @@
   stroke-width: 2.5;
 }
 
+.tooltip {
+  pointer-events: none;
+  filter: drop-shadow(0 4px 8px rgba(0, 0, 0, 0.28));
+}
+
+.tooltip rect {
+  fill: var(--surface, #111820);
+  stroke: var(--line, rgba(120, 140, 160, 0.5));
+  stroke-width: 1;
+}
+
+.tooltip text {
+  fill: var(--ink, #fff);
+  font-family: inherit;
+  font-size: 11px;
+  font-weight: 600;
+}
+
+.tooltipTitle {
+  font-weight: 800;
+}
+
 .error {
   display: flex;
   align-items: center;
