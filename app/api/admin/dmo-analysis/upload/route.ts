@@ -19,7 +19,24 @@ function isAllowedPath(pathname: string): boolean {
   return !pathname.split('/').some((segment) => segment === '.' || segment === '..');
 }
 
+function getUploadRequestId(request: Request): string {
+  const requestId = request.headers.get('x-dmo-upload-id') ?? '';
+  return /^[a-f0-9-]{36}$/i.test(requestId) ? requestId : 'untracked';
+}
+
+function getSafeErrorMessage(error: unknown): string {
+  const message = error instanceof Error ? error.message : 'Unknown upload preparation error.';
+  return message
+    .replace(/\b(authorization\s*[:=]\s*)Bearer\s+[^\s,;]+/gi, '$1Bearer [redacted]')
+    .replace(/\bBearer\s+[^\s,;]+/gi, 'Bearer [redacted]')
+    .replace(/\b(token|signature)\s*([:=])\s*["']?[^"'&\s,;]+/gi, '$1$2[redacted]')
+    .replace(/([?&](?:token|signature|clientSigningToken|delegationToken)=)[^&\s]+/gi, '$1[redacted]')
+    .replace(/[\r\n\t]+/g, ' ')
+    .slice(0, 300);
+}
+
 export async function POST(request: Request) {
+  const requestId = getUploadRequestId(request);
   const user = await getSession();
   if (!user?.isAdmin) {
     return NextResponse.json({ error: 'Admin access required.' }, { status: 403 });
@@ -27,6 +44,7 @@ export async function POST(request: Request) {
 
   const storeId = process.env.MODERATION_BLOB_STORE_ID;
   if (!storeId) {
+    console.error('[dmo-analysis] private upload storage is not configured', { requestId });
     return NextResponse.json({ error: 'Private DMO storage is not configured.' }, { status: 503 });
   }
 
@@ -68,7 +86,11 @@ export async function POST(request: Request) {
     });
   } catch (error) {
     const message = error instanceof Error ? error.message : '';
-    console.error('[dmo-analysis] private upload token failed');
+    console.error('[dmo-analysis] private upload token failed', {
+      requestId,
+      errorName: error instanceof Error ? error.name : 'UnknownError',
+      errorMessage: getSafeErrorMessage(error),
+    });
     const status = /Only DMO recordings/i.test(message) ? 400 : 503;
     return NextResponse.json(
       { error: status === 400 ? message : 'A secure private upload could not be prepared.' },

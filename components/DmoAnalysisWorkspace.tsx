@@ -122,6 +122,7 @@ export default function DmoAnalysisWorkspace() {
 
   const analyze = async () => {
     if (!file || phase === 'uploading' || phase === 'analyzing') return;
+    const uploadRequestId = crypto.randomUUID();
     setError('');
     setResult(null);
     setSelectedPoint(null);
@@ -134,6 +135,7 @@ export default function DmoAnalysisWorkspace() {
         handleUploadUrl: '/api/admin/dmo-analysis/upload',
         contentType: 'application/octet-stream',
         multipart: true,
+        headers: { 'x-dmo-upload-id': uploadRequestId },
         onUploadProgress: ({ percentage }) => setProgress(Math.round(percentage)),
       });
       setPhase('analyzing');
@@ -152,7 +154,11 @@ export default function DmoAnalysisWorkspace() {
       setSelectedPoint(analysis.highlights[0]?.point ?? null);
     } catch (cause) {
       setPhase('error');
-      setError(cause instanceof Error ? cause.message : 'The recording could not be analyzed. Try again.');
+      if (cause instanceof Error && cause.message === 'Failed to retrieve the presigned URL') {
+        setError(`Private upload setup failed before the recording was sent. Reference ${uploadRequestId}; ask a Forum admin to check the Vercel server logs.`);
+      } else {
+        setError(cause instanceof Error ? cause.message : 'The recording could not be analyzed. Try again.');
+      }
     }
   };
 

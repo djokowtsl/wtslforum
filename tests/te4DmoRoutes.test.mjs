@@ -22,10 +22,10 @@ function loadRoute(path, mocks) {
   return module.exports;
 }
 
-function request(body) {
+function request(body, headers = {}) {
   return new Request('https://forum.test/api/admin/dmo-analysis', {
     method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
+    headers: { 'Content-Type': 'application/json', ...headers },
     body: JSON.stringify(body),
   });
 }
@@ -99,6 +99,50 @@ test('DMO upload token rejects path traversal and non-demo uploads', async () =>
     assert.equal(response.status, 400);
     assert.match((await response.json()).error, /only DMO/i);
   } finally {
+    if (originalStoreId === undefined) delete process.env.MODERATION_BLOB_STORE_ID;
+    else process.env.MODERATION_BLOB_STORE_ID = originalStoreId;
+  }
+});
+
+test('DMO upload token failures log a correlation id and redacted diagnostic without exposing it to the client', async () => {
+  process.env.MODERATION_BLOB_STORE_ID = 'store_private_test';
+  const requestId = 'a1b2c3d4-e5f6-4789-a123-456789abcdef';
+  const originalConsoleError = console.error;
+  const logged = [];
+  console.error = (...args) => logged.push(args);
+  try {
+    const handlers = loadRoute('app/api/admin/dmo-analysis/upload/route.ts', {
+      '@vercel/blob': {
+        issueSignedToken: async () => {
+          throw new Error('Blob API rejected token=private-value Authorization: Bearer private-bearer');
+        },
+      },
+      '@vercel/blob/client': {
+        handleUploadPresigned: async (options) => options.getSignedToken('dmo-analysis/test-match.dmo', null, true),
+      },
+      'next/server': { NextResponse: { json: (body, init) => Response.json(body, init) } },
+      '@/lib/auth': { getSession: async () => admin },
+      '@/lib/te4DmoParser': { MAX_DMO_BYTES: 64 * 1024 * 1024 },
+    });
+    const response = await handlers.POST(
+      request(
+        { type: 'blob.generate-presigned-url' },
+        { 'x-dmo-upload-id': requestId },
+      ),
+    );
+    assert.equal(response.status, 503);
+    assert.deepEqual(await response.json(), {
+      error: 'A secure private upload could not be prepared.',
+    });
+    assert.equal(logged.length, 1);
+    assert.equal(logged[0][0], '[dmo-analysis] private upload token failed');
+    assert.deepEqual(logged[0][1], {
+      requestId,
+      errorName: 'Error',
+      errorMessage: 'Blob API rejected token=[redacted] Authorization: Bearer [redacted]',
+    });
+  } finally {
+    console.error = originalConsoleError;
     if (originalStoreId === undefined) delete process.env.MODERATION_BLOB_STORE_ID;
     else process.env.MODERATION_BLOB_STORE_ID = originalStoreId;
   }
