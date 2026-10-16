@@ -46,22 +46,6 @@ export async function ForumHeader() {
 
         <SearchBar className="header-search" compact />
 
-        <nav className="nav" aria-label="Main">
-          {NAV.map((n) => (
-            <Link key={n.href} href={n.href}>{n.label}</Link>
-          ))}
-          {u?.isAdmin && <Link href="/admin">Admin</Link>}
-          {canModerate && <Link href="/admin/moderation">Moderation</Link>}
-          {u && (
-            <Link href="/messages" className="nav-messages">
-              Chat{unread > 0 && <span className="pill red nav-badge">{unread}</span>}
-            </Link>
-          )}
-          {!u && (
-            <a className="btn btn-discord btn-sm nav-cta" href="/api/auth/discord">Log in with Discord</a>
-          )}
-        </nav>
-
         <div className="header-actions">
           {u && (
             <Link href="/profile" className="header-user-chip" title={u.username}>
@@ -82,6 +66,29 @@ export async function ForumHeader() {
           />
         </div>
       </div>
+      <nav className="desktop-nav" aria-label="Main">
+        <div className="desktop-nav-inner">
+          <div className="desktop-nav-links">
+            {NAV.map((n) => (
+              <Link key={n.href} href={n.href}>{n.label}</Link>
+            ))}
+          </div>
+          <div className="desktop-nav-utility">
+            {u?.isAdmin && <Link href="/admin">Admin</Link>}
+            {canModerate && <Link href="/admin/moderation">Moderation</Link>}
+            {u && (
+              <Link href="/messages" className="nav-messages">
+                Chat{unread > 0 && <span className="pill red nav-badge">{unread}</span>}
+              </Link>
+            )}
+            {!u && (
+              <a className="btn btn-discord btn-sm nav-cta" href="/api/auth/discord">
+                Log in with Discord
+              </a>
+            )}
+          </div>
+        </div>
+      </nav>
       {u && <PresenceHeartbeat />}
     </header>
   );
