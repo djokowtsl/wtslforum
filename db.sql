@@ -583,3 +583,31 @@ CREATE TABLE IF NOT EXISTS forum_public_page_snapshots (
 CREATE INDEX IF NOT EXISTS forum_public_page_snapshots_checked_idx
   ON forum_public_page_snapshots (checked_at DESC);
 
+CREATE TABLE IF NOT EXISTS dmo_submissions (
+  id BIGSERIAL PRIMARY KEY,
+  submitted_by BIGINT REFERENCES users(id) ON DELETE SET NULL,
+  submitter_discord_id TEXT,
+  submitter_name TEXT NOT NULL,
+  source TEXT NOT NULL CHECK (source IN ('discord','forum')),
+  tournament TEXT NOT NULL,
+  round_name TEXT NOT NULL,
+  player1 TEXT NOT NULL,
+  player2 TEXT NOT NULL,
+  file_name TEXT,
+  private_blob_pathname TEXT,
+  private_blob_content_type TEXT,
+  external_url TEXT,
+  source_discord_channel_id TEXT,
+  source_discord_message_id TEXT,
+  submission_thread_id TEXT,
+  discord_message_id TEXT,
+  discord_delivery_status TEXT NOT NULL DEFAULT 'pending'
+    CHECK (discord_delivery_status IN ('pending','sent','failed')),
+  discord_delivery_error TEXT,
+  created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+  CONSTRAINT dmo_submissions_discord_source_unique
+    UNIQUE (source_discord_channel_id, source_discord_message_id)
+);
+CREATE INDEX IF NOT EXISTS dmo_submissions_created_idx
+  ON dmo_submissions(created_at DESC);
+

@@ -1,0 +1,96 @@
+<!DOCTYPE html><html lang="en"><head><meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta http-equiv="Content-Security-Policy" content="default-src 'none'; script-src 'unsafe-inline'; style-src 'unsafe-inline'; img-src data:; connect-src 'none'; object-src 'none'; base-uri 'none'; form-action 'none'">
+<title>TE4 Match Viewer</title>
+<style>
+:root{--bg:#f4f6fa;--card:#fff;--tx:#18202c;--mu:#5d6b7e;--ln:#d5dbe5;--w:#2fa866;--l:#d9534f;--ac:#3b82f6;--ct:#cfe0f3;--cl:#fff;box-sizing:border-box;padding-top:env(safe-area-inset-top,0px);padding-bottom:env(safe-area-inset-bottom,0px)}
+@media(prefers-color-scheme:dark){:root:not([data-theme="light"]){--bg:#0e131b;--card:#171e29;--tx:#e6ebf3;--mu:#8d9bb0;--ln:#2a3445;--ct:#1f3a5a;--cl:#e8eef7}}
+:root[data-theme="dark"]{--bg:#0e131b;--card:#171e29;--tx:#e6ebf3;--mu:#8d9bb0;--ln:#2a3445;--ct:#1f3a5a;--cl:#e8eef7}
+html,body{margin:0;background:var(--bg);color:var(--tx);font:14px system-ui,sans-serif}
+main{max-width:1100px;margin:0 auto;padding:12px}
+h1{font-size:20px;margin:4px 0}.mu{color:var(--mu);font-size:12px}
+.card{background:var(--card);border:1px solid var(--ln);border-radius:10px;padding:10px;margin:8px 0}
+select,button{background:var(--card);color:var(--tx);border:1px solid var(--ln);border-radius:6px;padding:4px 8px;font:inherit;cursor:pointer}
+#strip{display:flex;flex-wrap:wrap;gap:2px 10px}.gm{display:flex;flex-wrap:wrap;gap:2px;align-items:center}
+.gm small{width:100%;color:var(--mu);font-size:10px}
+.ch{width:20px;height:20px;border-radius:4px;border:2px solid transparent;color:#fff;font-size:10px;display:flex;align-items:center;justify-content:center;cursor:pointer}
+.ch.on{border-color:var(--tx)}.W{background:var(--w)}.L{background:var(--l)}
+#grid{display:grid;grid-template-columns:minmax(0,1.5fr) minmax(0,1fr);gap:10px}@media(max-width:800px){#grid{grid-template-columns:1fr}}
+canvas{width:100%;display:block;border-radius:8px}
+#ctl{display:flex;gap:6px;align-items:center;margin-top:6px}#ctl input[type=range]{flex:1}
+table{width:100%;border-collapse:collapse;font-size:12px}td,th{padding:3px 4px;border-bottom:1px solid var(--ln);text-align:left}
+tr.s{cursor:pointer}tr.s:hover{background:var(--bg)}.p1{color:#f59e0b}.p2{color:#ef4444}
+</style></head><body><main>
+<h1 id="t"></h1><div class="mu" id="sub"></div>
+<div class="card"><div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap"><b>Point by point</b><span class="mu">You are</span><select id="me"></select><span class="mu">green = you won the point</span></div><div id="strip"></div></div>
+<div id="grid"><div class="card"><canvas id="cv" width="900" height="520"></canvas>
+<div id="ctl"><button id="pl">Pause</button><input type="range" id="sc" min="0" max="1000" value="0"><select id="vw"><option value="t">Top-down</option><option value="p">Behind baseline</option></select><select id="sp"><option value=".25">0.25x</option><option value=".5">0.5x</option><option value="1" selected>1x</option><option value="2">2x</option></select></div>
+<div class="mu">Each player is a figure moving along the recorded path and swinging at each hit (orange = player 1, red = player 2). The ball rises off its shadow. Arrow keys: previous / next point.</div></div>
+<div class="card"><div id="pi"></div><table><thead><tr><th>#</th><th>Player</th><th>km/h</th><th>Height</th><th>Reach</th><th>Landed</th></tr></thead><tbody id="tb"></tbody></table>
+<div class="mu" id="nt"></div></div></div>
+<div class="card"><b>Match numbers</b> <span class="mu">winners / errors are the last shot of a rally; forced vs unforced is not decoded yet</span><table id="nm"></table></div>
+<div class="card"><div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap"><b>Court maps</b><select id="mp"></select><select id="mk"><option value="a">All shots</option><option value="s">Serves</option><option value="r">Rally shots</option><option value="w">Winners</option><option value="e">Errors</option></select><span class="mu">where the first bounce landed, shown from the hitter's end (left to right); dots are single shots</span></div><canvas id="cm" width="760" height="640"></canvas><div class="mu" id="ms"></div></div>
+<script>
+const D=__DATA__;let me=1,cur=0,T=0,play=true,last=0,sp=1;
+const $=i=>document.getElementById(i),cv=$('cv'),cx=cv.getContext('2d'),css=n=>getComputedStyle(document.documentElement).getPropertyValue(n);
+const esc=value=>String(value).replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+D.pts.forEach(p=>{const b=atob(p.d),u=new Uint8Array(b.length);for(let i=0;i<b.length;i++)u[i]=b.charCodeAt(i);p.a=new Int16Array(u.buffer);p.N=p.a.length/7})
+$('t').textContent=D.names[0]+' vs '+D.names[1]+'  '+D.score;$('sub').textContent=D.pts.length+' points, decoded from the replay file';
+$('me').innerHTML=D.names.map((n,i)=>`<option value="${i+1}">${esc(n)}</option>`).join('');$('me').value=2;me=2;
+function strip(){let h='',key='';D.pts.forEach((p,i)=>{const k=p.set+'-'+p.g;if(!p.tb&&k!==key||p.tb&&key!=='tb'+p.set){key=p.tb?'tb'+p.set:k;h+=(i?'</div>':'')+`<div class="gm"><small>Set ${p.set}${p.tb?' tiebreak':' '+esc(p.g)}</small>`}
+h+=`<div class="ch ${p.w==me?'W':'L'}${i==cur?' on':''}" data-i="${i}" title="Point ${p.k}">${p.w==me?'W':'L'}</div>`});$('strip').innerHTML=h+'</div>'}
+$('strip').onclick=e=>{const i=e.target.dataset.i;if(i!=null)go(+i)};$('me').onchange=e=>{me=+e.target.value;strip();info()};
+$('pl').onclick=()=>{play=!play;$('pl').textContent=play?'Pause':'Play';last=performance.now()};$('sp').onchange=e=>sp=+e.target.value;
+$('sc').oninput=e=>{T=e.target.value/1000*(D.pts[cur].N-1)};
+onkeydown=e=>{if(e.key=='ArrowRight')go(Math.min(cur+1,D.pts.length-1));if(e.key=='ArrowLeft')go(Math.max(cur-1,0))};
+function go(i){cur=i;T=0;play=true;$('pl').textContent='Pause';strip();info()}
+addEventListener('message',e=>{if(e.source!==parent||e.data?.type!=='select-point')return;const number=Number(e.data.point);const index=D.pts.findIndex(p=>p.k===number);if(index>=0)go(index)});
+function info(){const p=D.pts[cur],last=p.sh[p.sh.length-1],won=p.w==me,nm=D.names;
+let how;if(p.n==0)how=p.w==p.s?'ace or unreturned serve':'double fault';else how=last.p==p.w?'winner by '+esc(nm[last.p-1]):'error by '+esc(nm[last.p-1]);
+$('pi').innerHTML=`<b>Point ${p.k}</b> <span class="mu">set ${p.set}, games ${esc(p.g)}, ${esc(p.pt)}${p.tb?' (tiebreak)':''}</span><br><span style="color:var(${won?'--w':'--l'})"><b>${won?'You won':'You lost'}</b></span>: ${how}. ${esc(nm[p.s-1])} served${p.f?' (first serve fault)':''}; ${p.n} rally shots.`;
+$('tb').innerHTML=p.sh.map((s,i)=>`<tr class="s" data-t="${s.t}"><td>${i+1}${s.k=='s'?' serve':''}</td><td class="p${s.p}">${esc(nm[s.p-1])}</td><td>${s.v}</td><td>${s.k=='s'?'':s.z+' cm'}</td><td>${s.k=='s'?'':s.d+' cm'}</td><td>${s.bx==null?'':inCourt(s,p)}</td></tr>`).join('');
+$('nt').textContent='Landed is an estimate from the first bounce: in = inside the lines on the far side (serves: the service boxes), with 45 cm of tolerance because a fast ball moves about 80 cm a frame.'}
+function inCourt(s,p){const ok=Math.abs(s.by)<=457&&Math.abs(s.bx)<=1234&&(s.k=='s'?Math.abs(s.bx)<=685:true);return ok?'in':'out'}
+$('tb').onclick=e=>{const r=e.target.closest('tr');if(r){T=+r.dataset.t-20;if(T<0)T=0;play=true}};
+let view='t';$('vw').onchange=e=>view=e.target.value;
+const pr=(x,y,z)=>{if(view=='t')return[450+x*.3,260+y*.3-z*.08,1.3];const d=x+2900,k=700/d;return[450+y*k,70+640000/d-z*k,k*2.2]};
+const poly=(pts,fill,st)=>{cx.beginPath();pts.forEach((q,i)=>{const[a,b]=pr(...q);i?cx.lineTo(a,b):cx.moveTo(a,b)});if(fill){cx.fillStyle=fill;cx.fill()}if(st){cx.strokeStyle=st;cx.stroke()}};
+function court(){cx.clearRect(0,0,900,520);poly([[-1450,-700,0],[1450,-700,0],[1450,700,0],[-1450,700,0]],css('--ct'));cx.lineWidth=2;const c=css('--cl');
+[[ -1189,-549,1189,-549],[-1189,549,1189,549],[-1189,-411,1189,-411],[-1189,411,1189,411],[-1189,-549,-1189,549],[1189,-549,1189,549],[-640,-411,-640,411],[640,-411,640,411],[-640,0,640,0]].forEach(a=>poly([[a[0],a[1],0],[a[2],a[3],0]],null,c));
+poly([[0,-549,0],[0,549,0],[0,549,107],[0,-549,107]],'rgba(255,255,255,.18)',c)}
+const person=(x,y,c,name,sw)=>{const[a,b,k]=pr(x,y,0),[,h]=pr(x,y,150),[hx,hy]=pr(x,y,172);cx.fillStyle='rgba(0,0,0,.3)';cx.beginPath();cx.ellipse(a,b,12*k,4.5*k,0,0,7);cx.fill();cx.lineCap='round';cx.strokeStyle=c;cx.lineWidth=11*k;cx.beginPath();cx.moveTo(a,b-2*k);cx.lineTo(a,h);cx.stroke();cx.fillStyle=c;cx.beginPath();cx.arc(hx,hy-3*k,6.5*k,0,7);cx.fill();
+if(sw){cx.strokeStyle='#fff';cx.lineWidth=3;cx.beginPath();cx.arc(a+14*k,h+8*k,16*k,-1.2,1.2);cx.stroke()}
+cx.fillStyle=c;cx.font=Math.max(10,9*k)+'px system-ui';cx.textAlign='center';cx.fillText(name,a,hy-12*k)};
+function frame(now){const p=D.pts[cur];if(play){T+=(now-last)/1000*30*sp;if(T>=p.N-1){T=p.N-1;play=false;$('pl').textContent='Play'}}last=now;
+court();const i0=Math.floor(T),f=T-i0,i1=Math.min(i0+1,p.N-1),g=(i,j)=>p.a[i*7+j]*(1-f)+p.a[i1*7+j]*f,s0=Math.max(0,i0-45);
+cx.lineWidth=2;cx.strokeStyle='rgba(250,204,21,.55)';cx.beginPath();for(let i=s0;i<=i0;i++){const[a,b]=pr(p.a[i*7],p.a[i*7+1],p.a[i*7+2]);i==s0?cx.moveTo(a,b):cx.lineTo(a,b)}cx.stroke();
+p.sh.forEach(s=>{if(s.bx!=null&&s.bt!=null&&s.bt<=T){const[a,b]=pr(s.bx,s.by,0);cx.fillStyle=s.p==1?'rgba(245,158,11,.85)':'rgba(239,68,68,.85)';cx.beginPath();cx.arc(a,b,4,0,7);cx.fill()}});
+const sw=q=>p.sh.some(s=>s.p==q&&Math.abs(s.t-T)<7);
+[[[g(i0,3),g(i0,4)],'#f59e0b',D.names[0],1],[[g(i0,5),g(i0,6)],'#ef4444',D.names[1],2]].sort((a,b)=>b[0][0]-a[0][0]).forEach(([q,c,n,id])=>person(q[0],q[1],c,n,sw(id)));
+const bx=g(i0,0),by=g(i0,1),bz=g(i0,2),[sx,sy,k]=pr(bx,by,0),[ux,uy]=pr(bx,by,bz);cx.fillStyle='rgba(0,0,0,.3)';cx.beginPath();cx.ellipse(sx,sy,4*k,2.5*k,0,0,7);cx.fill();cx.fillStyle='#e8f84a';cx.strokeStyle='#222';cx.lineWidth=1;cx.beginPath();cx.arc(ux,uy,4*k,0,7);cx.fill();cx.stroke();
+$('sc').value=T/(p.N-1)*1000;requestAnimationFrame(frame)}
+
+function nums(){const P=D.pts,S=[0,1].map(()=>({pw:0,ace:0,df:0,sv:0,f1:0,f1w:0,f2:0,f2w:0,win:0,err:0,bp:0,bpw:0,fast:0}));
+P.forEach(p=>{const s=p.s-1,r=1-s,w=p.w-1,A=S[s];S[w].pw++;A.sv++;if(p.f==0){A.f1++;if(w==s)A.f1w++}else{A.f2++;if(w==s)A.f2w++}
+if(p.n==0){if(w==s)A.ace++;else A.df++}else{const l=p.sh[p.sh.length-1].p-1;if(l==w)S[w].win++;else S[l].err++}
+p.sh.forEach(h=>{if(h.k=='s'&&h.v>S[h.p-1].fast)S[h.p-1].fast=h.v});
+if(!p.tb){const t=p.pt;let bp=false;if(t.startsWith('ad'))bp=t.endsWith(r+1);else if(t!='deuce'){const x=t.split('-').map(Number);bp=x[r]==40&&x[s]<40}if(bp){S[r].bp++;if(w==r)S[r].bpw++}}});
+const pc=(a,b)=>b?Math.round(100*a/b)+'%':'-',nm=D.names,rows=[['Points won',x=>x.pw],['Aces (incl. unreturned serves)',x=>x.ace],['Double faults',x=>x.df],['First serves in',x=>pc(x.f1,x.sv)],['Won behind the first serve',x=>pc(x.f1w,x.f1)],['Won behind the second serve',x=>pc(x.f2w,x.f2)],['Winners',x=>x.win],['Errors',x=>x.err],['Break points won',x=>x.bpw+'/'+x.bp],['Fastest serve',x=>x.fast+' km/h']];
+$('nm').innerHTML='<tr><th class="p1">'+esc(nm[0])+'</th><th></th><th class="p2" style="text-align:right">'+esc(nm[1])+'</th></tr>'+rows.map(([l,f])=>`<tr><td><b>${f(S[0])}</b></td><td class="mu" style="text-align:center">${l}</td><td style="text-align:right"><b>${f(S[1])}</b></td></tr>`).join('')+`<tr><td colspan="3" class="mu">${P.length} points, longest rally ${Math.max(...P.map(p=>p.n+1))} shots</td></tr>`}
+
+function maps(){const pl=+$('mp').value,mk=$('mk').value,c=$('cm').getContext('2d'),X=x=>20+x*.5,Y=y=>320+y*.5,L=[];
+D.pts.forEach(p=>{const n=p.sh.length-1;p.sh.forEach((h,i)=>{if(h.bx==null||pl&&h.p!=pl)return;const last=i==n,win=last&&(p.n==0?p.w==p.s:h.p==p.w),err=last&&!win;
+if(mk=='s'&&h.k!='s'||mk=='r'&&h.k=='s'||mk=='w'&&!win||mk=='e'&&!err)return;const f=h.bx<0?-1:1;L.push({x:h.bx*f,y:h.by*f,s:h.k=='s',p:h.p,sec:p.f>0,v:h.v})})});
+c.clearRect(0,0,760,640);c.fillStyle=css('--ct');c.fillRect(X(-80),Y(-640),X(1460)-X(-80),1280*.5);
+const g={};let mx=1;L.forEach(h=>{const k=Math.floor(h.x/70)+','+Math.floor((h.y+630)/70);g[k]=(g[k]||0)+1;mx=Math.max(mx,g[k])});
+for(const k in g){const[a,b]=k.split(',').map(Number);c.fillStyle=`rgba(239,68,68,${.15+.7*g[k]/mx})`;c.fillRect(X(a*70),Y(b*70-630),35,35)}
+c.strokeStyle=css('--cl');c.lineWidth=2;const l=(a,b,d,e)=>{c.beginPath();c.moveTo(X(a),Y(b));c.lineTo(X(d),Y(e));c.stroke()};
+[[0,-549,1189,-549],[0,549,1189,549],[0,-411,1189,-411],[0,411,1189,411],[1189,-549,1189,549],[640,-411,640,411],[0,0,640,0]].forEach(a=>l(...a));c.lineWidth=4;l(0,-600,0,600);
+if(L.length<400)L.forEach(h=>{c.fillStyle=h.p==1?'#f59e0b':'#fff';c.strokeStyle='#222';c.lineWidth=1;c.beginPath();c.arc(X(h.x),Y(h.y),3.5,0,7);c.fill();c.stroke()});
+const out=L.filter(h=>Math.abs(h.y)>457||h.x>1234||h.s&&h.x>685).length;let t=`${L.length} shots, ${L.length?Math.round(100*(L.length-out)/L.length):0}% landed in (estimate, lines allowed 45 cm because the ball is sampled 60 times a second)`;
+if(mk=='s'||mk=='a'){const sv=L.filter(h=>h.s),a=sv.filter(h=>!h.sec),b=sv.filter(h=>h.sec),av=z=>z.length?Math.round(z.reduce((q,h)=>q+h.v,0)/z.length):'-';t+=`. Serves: first ${a.length} at ${av(a)} km/h on average, second ${b.length} at ${av(b)} km/h`}
+$('ms').textContent=t}
+$('mp').innerHTML='<option value="0">Both players</option>'+D.names.map((n,i)=>`<option value="${i+1}">${esc(n)}</option>`).join('');$('mp').onchange=$('mk').onchange=maps;maps();
+nums();
+strip();info();requestAnimationFrame(frame);
+</script></main></body></html>

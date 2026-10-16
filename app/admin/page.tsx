@@ -27,6 +27,8 @@ export default async function Admin() {
           <div className="admin-card"><h3>Awards</h3><p className="notice">Manage this season&apos;s award nominees, open or close voting, and import Google Form responses.</p><a className="btn btn-sm" href="/admin/awards" style={{ marginTop: 12, display: 'inline-block' }}>Manage awards</a></div>
           <div className="admin-card"><h3>WTSL sync</h3><p className="notice">Players, tournaments and stats sync automatically every hour/day. Use this to force a sync right now.</p><AdminSyncButton /></div>
           <div className="admin-card"><h3>Player verification</h3><p className="notice">{pendingClaims.length} pending request{pendingClaims.length === 1 ? '' : 's'} linking a Discord account to a WTSL player.</p><a className="btn btn-sm" href="/admin/claims" style={{ marginTop: 12, display: 'inline-block' }}>Review requests</a></div>
+          <div className="admin-card"><h3>DMO submissions</h3><p className="notice">Review private match recordings submitted through Discord or the Forum.</p><a className="btn btn-sm" href="/admin/dmo-submissions" style={{ marginTop: 12, display: 'inline-block' }}>Open DMO store</a></div>
+           <div className="admin-card"><h3>DMO analysis</h3><p className="notice">Upload a private TE4 recording, check the reconstructed score, and inspect ranked highlights in the interactive replay.</p><a className="btn btn-sm" href="/admin/dmo-analysis" style={{ marginTop: 12, display: 'inline-block' }}>Analyze a match</a></div>
         </div>
       </main>
     </>
