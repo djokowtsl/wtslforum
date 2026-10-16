@@ -49,41 +49,11 @@ export async function leaderboard(tour='TE4', metric='wins'){
     ? metric
     : 'wins';
 
-  // `matches`/`wins`/`losses` are computed straight from `match_stats` (not `player_stats_summary`,
-  // which only ever holds the last ~10 results the official WTSL site exposes per player) so the
-  // deeper history fed in via the bot's spreadsheet import is actually reflected here.
+  // Career totals must come from the official WTSL profile summary. `match_stats` also contains
+  // bot-imported history, which can include duplicates and a broader source scope.
   return sql`
-    WITH match_counts AS (
-      SELECT player_id, COUNT(*)::int matches, SUM(CASE WHEN winner_id=player_id THEN 1 ELSE 0 END)::int wins
-      FROM (
-        SELECT m.player_one_id player_id, m.winner_id FROM match_stats m
-        WHERE m.tour=${tour} AND (
-          m.tour <> 'TE4_(F)' OR EXISTS (
-            SELECT 1 FROM tournaments t
-            WHERE t.tour='TE4_(F)'
-              AND (
-                t.wtsl_tournament_key=m.tournament_key
-                OR (regexp_match(t.official_url, '[?&]tournament=([^&]+)'))[1]=m.tournament_key
-              )
-          )
-        )
-        UNION ALL
-        SELECT m.player_two_id player_id, m.winner_id FROM match_stats m
-        WHERE m.tour=${tour} AND (
-          m.tour <> 'TE4_(F)' OR EXISTS (
-            SELECT 1 FROM tournaments t
-            WHERE t.tour='TE4_(F)'
-              AND (
-                t.wtsl_tournament_key=m.tournament_key
-                OR (regexp_match(t.official_url, '[?&]tournament=([^&]+)'))[1]=m.tournament_key
-              )
-          )
-        )
-      ) sides
-      GROUP BY player_id
-    )
     SELECT p.*,
-      COALESCE(mc.matches,0) matches,
+      COALESCE(s.matches,0) matches,
       COALESCE(s.wins,0) wins,
       COALESCE(s.losses,0) losses,
       COALESCE(s.aces,0) aces,
@@ -95,11 +65,10 @@ export async function leaderboard(tour='TE4', metric='wins'){
         ELSE 0
       END win_pct
     FROM wtsl_players p
-    LEFT JOIN match_counts mc ON mc.player_id=p.wtsl_player_id
     LEFT JOIN player_stats_summary s
       ON s.player_id=p.wtsl_player_id
       AND s.tour=${tour}
-    WHERE p.tour=${tour} AND COALESCE(mc.matches,0) >= ${LEADERBOARD_MIN_MATCHES}
+    WHERE p.tour=${tour} AND COALESCE(s.matches,0) >= ${LEADERBOARD_MIN_MATCHES}
     ORDER BY
       CASE
         WHEN ${order} = 'win_pct' THEN
