@@ -7,7 +7,7 @@
     "build": "next build",
     "start": "next start",
     "lint": "next lint",
-    "test": "node --test tests/articleContent.test.mjs tests/articleRoutes.test.mjs tests/articleInteractions.test.mjs tests/characterPickPopularity.test.mjs tests/characterProfileDescriptions.test.mjs tests/dashboardCharacterRecommendations.test.mjs tests/characterRosterFilters.test.mjs tests/leaderboardCareerTotals.test.mjs"
+    "test": "node --test tests/articleContent.test.mjs tests/articleRoutes.test.mjs tests/articleInteractions.test.mjs tests/characterPickPopularity.test.mjs tests/characterProfileDescriptions.test.mjs tests/dashboardCharacterRecommendations.test.mjs tests/characterRosterFilters.test.mjs tests/leaderboardCareerTotals.test.mjs tests/desktopForumNavigation.test.mjs"
   },
   "dependencies": {
     "@neondatabase/serverless": "latest",
