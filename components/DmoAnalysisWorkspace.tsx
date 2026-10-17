@@ -275,15 +275,15 @@ export default function DmoAnalysisWorkspace() {
 
           <section className={styles.metricsRail} aria-label="Match metrics">
             <div className={styles.metricCard}><span className={styles.metricIcon}><Trophy size={16} /></span><span className={styles.metricLabel}>FINAL WINNER</span><strong>{result.names[result.meta.finalWinner - 1]}</strong><small>{result.meta.setsToWin} sets to win</small></div>
-            <div className={styles.metricCard}><span className={styles.metricIcon}><Gauge size={16} /></span><span className={styles.metricLabel}>ELO EXPECTED</span><strong>{result.meta.eloMatchProbability === null ? '—' : `${Math.round(result.meta.eloMatchProbability * 100)}%`}</strong><small>pre-match probability</small></div>
-            <div className={styles.metricCard}><span className={styles.metricIcon}><Activity size={16} /></span><span className={styles.metricLabel}>SERVE SHIFT</span><strong>{result.meta.serveShift > 0 ? '+' : ''}{result.meta.serveShift.toFixed(1)}<small className={styles.inlineUnit}>pp</small></strong><small>match momentum swing</small></div>
+            <div className={styles.metricCard}><span className={styles.metricIcon}><Gauge size={16} /></span><span className={styles.metricLabel}>ELO EXPECTED</span><strong>{result.meta.eloMatchProbability === null ? '—' : `${Math.round(result.meta.eloMatchProbability * 100)}%`}</strong><small>{result.meta.eloMatchProbability === null ? 'no pre-match ratings' : 'pre-match probability'}</small></div>
+            <div className={styles.metricCard}><span className={styles.metricIcon}><Activity size={16} /></span><span className={styles.metricLabel}>SERVE SHIFT</span><strong>{typeof result.meta.serveShift !== 'number' ? '—' : <>{result.meta.serveShift > 0 ? '+' : ''}{result.meta.serveShift.toFixed(1)}<small className={styles.inlineUnit}>pp</small></>}</strong><small>{typeof result.meta.serveShift !== 'number' ? 'not calculated' : 'match momentum swing'}</small></div>
             <div className={styles.metricCard}><span className={styles.metricIcon}><Clock3 size={16} /></span><span className={styles.metricLabel}>SERVE WIN RATE</span><strong>{Math.round(result.meta.serveWinRates[1] * 100)}<small className={styles.inlineUnit}>%</small><b className={styles.metricDivider}>/</b>{Math.round(result.meta.serveWinRates[2] * 100)}<small className={styles.inlineUnit}>%</small></strong><small>{result.names[0]} <i /> {result.names[1]}</small></div>
           </section>
 
           <div className={styles.analysisGrid}>
             <section className={styles.viewerPanel} aria-labelledby="viewer-title">
               <div className={styles.sectionHeading}>
-                <div><span className={styles.kicker}>03 / REPLAY</span><h2 id="viewer-title">Point-by-point viewer</h2></div>
+                <div><span className={styles.kicker}>03 / REPLAY</span><h2 id="viewer-title">Match replay</h2></div>
                 <span className={styles.securePill}><span /> INTERACTIVE</span>
               </div>
               {viewerError ? (
@@ -293,7 +293,7 @@ export default function DmoAnalysisWorkspace() {
                   <iframe
                     ref={viewerFrame}
                     className={styles.viewerFrame}
-                    title={`Point-by-point replay: ${result.names[0]} vs ${result.names[1]}`}
+                    title={`Match replay: ${result.names[0]} vs ${result.names[1]}`}
                     srcDoc={viewerHtml}
                     sandbox="allow-scripts"
                     onLoad={() => {
