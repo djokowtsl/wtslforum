@@ -30,6 +30,20 @@ function request(body, headers = {}) {
   });
 }
 
+test('presigned URL retrieval errors recognize the Vercel Blob prefix', () => {
+  const { isPresignedUrlRetrievalFailure } = loadRoute('lib/dmoUploadErrors.ts', {});
+
+  assert.equal(
+    isPresignedUrlRetrievalFailure(new Error('Vercel Blob: Failed to retrieve the presigned URL')),
+    true,
+  );
+  assert.equal(
+    isPresignedUrlRetrievalFailure(new Error('Failed to retrieve the presigned URL')),
+    true,
+  );
+  assert.equal(isPresignedUrlRetrievalFailure(new Error('The file is too large.')), false);
+});
+
 test('DMO upload token generation rejects guests and non-admin members', async () => {
   for (const user of [null, { id: '8', isAdmin: false }]) {
     let signed = false;
