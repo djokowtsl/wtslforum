@@ -3,6 +3,7 @@
 import { uploadPresigned } from '@vercel/blob/client';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { Activity, AlertTriangle, ArrowUpRight, Check, ChevronRight, Clock3, FileAudio2, FileUp, Gauge, LoaderCircle, RotateCcw, ShieldCheck, Trophy, Upload, X } from 'lucide-react';
+import { isPresignedUrlRetrievalFailure } from '@/lib/dmoUploadErrors';
 import type { Te4AnalysisResult, Te4Highlight } from '@/lib/te4DmoTypes';
 import styles from './DmoAnalysisWorkspace.module.css';
 
@@ -154,7 +155,7 @@ export default function DmoAnalysisWorkspace() {
       setSelectedPoint(analysis.highlights[0]?.point ?? null);
     } catch (cause) {
       setPhase('error');
-      if (cause instanceof Error && cause.message === 'Failed to retrieve the presigned URL') {
+      if (isPresignedUrlRetrievalFailure(cause)) {
         setError(`Private upload setup failed before the recording was sent. Reference ${uploadRequestId}; ask a Forum admin to check the Vercel server logs.`);
       } else {
         setError(cause instanceof Error ? cause.message : 'The recording could not be analyzed. Try again.');
