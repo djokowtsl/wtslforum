@@ -4,6 +4,7 @@ import { getSession } from '@/lib/auth';
 import { sendDmoSubmission } from '@/lib/discord';
 import {
   createDmoSubmission,
+  submissionDateInLondon,
   updateDmoDiscordDelivery,
 } from '@/lib/dmo-submissions';
 
@@ -109,6 +110,7 @@ export async function POST(req: NextRequest) {
       privateBlobPathname: privatePathname,
       privateBlobContentType: privateContentType,
       externalUrl: externalUrl || null,
+      submissionDate: submissionDateInLondon(new Date()),
     });
   } catch (error) {
     if (privatePathname && storeId) {
