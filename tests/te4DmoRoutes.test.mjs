@@ -229,3 +229,155 @@ test('admin DMO analysis page has its own gate and member media submission route
   assert.match(page, /if \(!user\.isAdmin\) redirect\('\/'\)/);
   assert.match(mediaPage, /DMO|recording|match/i);
 });
+
+test('DMO submission tag edits are admin-only and validate the full tag set', async () => {
+  const calls = [];
+  const handlers = loadRoute('app/api/admin/dmo-submissions/[id]/route.ts', {
+    'next/server': { NextResponse: { json: (body, init) => Response.json(body, init) } },
+    '@/lib/auth': { getSession: async () => admin },
+    '@/lib/dmo-submissions': {
+      updateDmoSubmissionTags: async (id, tags) => {
+        calls.push({ id, tags });
+        return { id, ...tags };
+      },
+    },
+  });
+  const response = await handlers.PATCH(
+    new Request('https://forum.test/api/admin/dmo-submissions/41', {
+      method: 'PATCH',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        tournament: '  Autumn Cup  ',
+        roundName: 'Final',
+        player1: 'Player One',
+        player2: 'Player Two',
+        submissionDate: '2026-10-16',
+      }),
+    }),
+    { params: Promise.resolve({ id: '41' }) },
+  );
+  assert.equal(response.status, 200);
+  assert.deepEqual(calls, [{
+    id: 41,
+    tags: {
+      tournament: 'Autumn Cup',
+      roundName: 'Final',
+      player1: 'Player One',
+      player2: 'Player Two',
+      submissionDate: '2026-10-16',
+    },
+  }]);
+
+  const invalidDate = await handlers.PATCH(
+    new Request('https://forum.test/api/admin/dmo-submissions/41', {
+      method: 'PATCH',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        tournament: 'Autumn Cup',
+        roundName: 'Final',
+        player1: 'Player One',
+        player2: 'Player Two',
+        submissionDate: '2026-02-30',
+      }),
+    }),
+    { params: Promise.resolve({ id: '41' }) },
+  );
+  assert.equal(invalidDate.status, 400);
+  assert.equal(calls.length, 1);
+});
+
+test('DMO tag edits reject non-admins without updating metadata', async () => {
+  let updated = false;
+  const handlers = loadRoute('app/api/admin/dmo-submissions/[id]/route.ts', {
+    'next/server': { NextResponse: { json: (body, init) => Response.json(body, init) } },
+    '@/lib/auth': { getSession: async () => ({ ...admin, isAdmin: false }) },
+    '@/lib/dmo-submissions': {
+      updateDmoSubmissionTags: async () => {
+        updated = true;
+        return {};
+      },
+    },
+  });
+  const response = await handlers.PATCH(
+    new Request('https://forum.test/api/admin/dmo-submissions/41', { method: 'PATCH' }),
+    { params: Promise.resolve({ id: '41' }) },
+  );
+  assert.equal(response.status, 403);
+  assert.equal(updated, false);
+});
+
+test('Discord DMO sync preserves the original London submission date', async () => {
+  const originalFetch = globalThis.fetch;
+  const originalToken = process.env.DISCORD_BOT_TOKEN;
+  const { submissionDateInLondon } = loadRoute('lib/dmo-submissions.ts', {
+    '@/lib/db': { sql: () => [] },
+  });
+  process.env.DISCORD_BOT_TOKEN = 'test-token';
+  process.env.MODERATION_BLOB_STORE_ID = 'store_private_test';
+  let created = null;
+  globalThis.fetch = async (input) => {
+    const url = String(input);
+    if (url.includes('/api/v10/channels/')) {
+      return new Response(JSON.stringify({
+        timestamp: '2026-10-16T22:30:00.000Z',
+        attachments: [{
+          filename: 'autumn-final.dmo',
+          size: 3,
+          url: 'https://cdn.discordapp.com/attachments/1/autumn-final.dmo',
+          content_type: 'application/octet-stream',
+        }],
+      }), { status: 200, headers: { 'Content-Type': 'application/json' } });
+    }
+    if (url.startsWith('https://cdn.discordapp.com/')) {
+      return new Response(Buffer.from('dmo'), { status: 200 });
+    }
+    throw new Error('Unexpected fetch URL');
+  };
+
+  try {
+    const handlers = loadRoute('app/api/sync/dmo-submissions/route.ts', {
+      '@vercel/blob': {
+        put: async () => ({ pathname: 'dmo/test.dmo' }),
+        del: async () => {},
+      },
+      'next/server': { NextResponse: { json: (body, init) => Response.json(body, init) } },
+      '@/lib/wtslSyncAuth': { isWtslSyncAuthorized: () => true },
+      '@/lib/dmo-submissions': {
+        createDmoSubmission: async (input) => {
+          created = input;
+          return { id: 88, private_blob_pathname: input.privateBlobPathname };
+        },
+        findDmoSubmissionByDiscordMessage: async () => null,
+        submissionDateInLondon,
+      },
+    });
+    const response = await handlers.POST(
+      new Request('https://forum.test/api/sync/dmo-submissions', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          tournament: 'Autumn Cup',
+          round: 'Final',
+          player1: 'Player One',
+          player2: 'Player Two',
+          submitterDiscordId: '123',
+          submitterName: 'Player One',
+          discordChannelId: '1055277431398866995',
+          discordMessageId: '1001',
+        }),
+      }),
+    );
+    assert.equal(response.status, 201);
+    assert.equal(created.submissionDate, '2026-10-16');
+    assert.equal(created.tournament, 'Autumn Cup');
+    assert.equal(created.roundName, 'Final');
+    assert.equal(created.player1, 'Player One');
+    assert.equal(created.player2, 'Player Two');
+  } finally {
+    globalThis.fetch = originalFetch;
+    if (originalToken === undefined) delete process.env.DISCORD_BOT_TOKEN;
+    else process.env.DISCORD_BOT_TOKEN = originalToken;
+    if (originalStoreId === undefined) delete process.env.MODERATION_BLOB_STORE_ID;
+    else process.env.MODERATION_BLOB_STORE_ID = originalStoreId;
+  }
+});
