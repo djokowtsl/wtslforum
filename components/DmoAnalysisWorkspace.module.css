@@ -171,6 +171,25 @@
 .metricDivider { padding: 0 4px; color: var(--dmo-muted); font: 500 15px var(--font-body, sans-serif); }
 .metricCard small i { display: inline-block; width: 5px; height: 5px; margin: 0 4px 1px; border-radius: 50%; background: var(--dmo-cyan, #22c2da); }
 
+.characterPanel { min-width: 0; padding: 17px; border: 1px solid var(--dmo-line); border-radius: 12px; background: var(--dmo-panel); }
+.characterPanel .sectionHeading { display: flex; justify-content: space-between; gap: 12px; }
+.characterGrid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 11px; }
+.characterCard { min-width: 0; padding: 14px; border: 1px solid var(--dmo-line); border-radius: 10px; background: var(--dmo-panel-2); }
+.characterCard > .kicker { display: block; margin-bottom: 5px; font-size: 8px; }
+.characterCard h3 { overflow: hidden; margin: 0; color: var(--dmo-soft); font: 700 13px var(--font-body, sans-serif); text-overflow: ellipsis; white-space: nowrap; }
+.characterName { display: block; margin-top: 8px; color: var(--dmo-lime); font: italic 800 21px/1.05 var(--font-display, sans-serif); overflow-wrap: anywhere; }
+.characterMeta { margin: 7px 0 0; color: var(--dmo-muted); font-size: 10px; }
+.characterBadges { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 9px; }
+.characterBadges span { padding: 4px 7px; border: 1px solid var(--dmo-line); border-radius: 99px; color: var(--dmo-soft); font-size: 9px; }
+.characterRatings { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 7px; margin-top: 11px; }
+.characterRatings > div { display: grid; gap: 3px; padding: 7px 8px; border-left: 1px solid var(--dmo-line-strong); }
+.characterRatings span { color: var(--dmo-muted); font-size: 8px; }
+.characterRatings strong { color: var(--dmo-ink); font: italic 800 14px var(--font-display, sans-serif); }
+.characterEvidence, .characterDescription { margin: 9px 0 0; color: var(--dmo-soft); font-size: 10px; line-height: 1.5; }
+.characterEvidence { color: var(--dmo-muted); }
+.characterAttributionNote { margin: 11px 0 0; color: var(--dmo-muted); font-size: 9px; line-height: 1.5; }
+.characterAttributionStatus { margin: 0; padding: 12px 14px; border: 1px solid var(--dmo-line); border-radius: 9px; background: var(--dmo-panel-2); color: var(--dmo-muted); font-size: 11px; line-height: 1.5; }
+
 .analysisGrid { display: grid; grid-template-columns: minmax(0, 1.55fr) minmax(300px, .9fr); gap: 14px; align-items: start; }
 .viewerPanel, .highlightPanel, .setScorePanel { min-width: 0; overflow: hidden; border: 1px solid var(--dmo-line); border-radius: 12px; background: var(--dmo-panel); }
 .viewerPanel, .highlightPanel { padding: 17px; }
@@ -287,6 +306,9 @@
   .metricCard { min-height: 106px; padding: 12px; }
   .metricCard strong { font-size: 21px; }
   .metricIcon { top: 11px; right: 10px; width: 24px; height: 24px; }
+  .characterPanel { padding: 13px; }
+  .characterGrid { grid-template-columns: minmax(0, 1fr); }
+  .characterName { font-size: 19px; }
   .viewerPanel, .highlightPanel { padding: 13px; }
   .sectionHeading h2 { font-size: 20px; }
   .frameWrap, .viewerLoading { height: 66vh; min-height: 380px; max-height: 560px; }

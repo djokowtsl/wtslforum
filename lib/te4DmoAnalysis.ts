@@ -15,6 +15,7 @@ import {
   type Te4RawPoint,
   type Te4ScoreRow,
 } from './te4DmoParser';
+import { surfaceForDmoTournament } from './te4DmoSurface';
 
 type ScoredPoint = Te4CompletedPoint;
 type MatchModel = {
@@ -522,6 +523,9 @@ export function analyzeDmoBuffer(bytes: Buffer, filename: string): Te4AnalysisRe
     viewer: {
       names,
       score: displayScore,
+      tournament: replay.tournamentName,
+      surface: surfaceForDmoTournament(replay.tournamentName),
+      highlights: topHighlights,
       sets: scoreState.sets as Te4SetScore[],
       final: {
         ss: scoreState.sets.map(([a, b]) => [a, b]),

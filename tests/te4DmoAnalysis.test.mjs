@@ -1,11 +1,26 @@
 import assert from 'node:assert/strict';
+import { readFileSync } from 'node:fs';
 import test from 'node:test';
-import { playScore, Te4DmoAnalysisError, Te4Replay } from '../lib/te4DmoParser.ts';
+import {
+  extractDmoTournamentName,
+  playScore,
+  Te4DmoAnalysisError,
+  Te4Replay,
+} from '../lib/te4DmoParser.ts';
+import {
+  displayDmoTournamentName,
+  surfaceForDmoTournament,
+} from '../lib/te4DmoSurface.ts';
 import {
   buildTe4CoachingSummary,
   defaultTe4CoachingPlayer,
   listTe4CoachingPlayers,
 } from '../lib/te4DmoCoaching.ts';
+
+const viewerShell = readFileSync(
+  new URL('../public/te4-match-viewer-shell.html', import.meta.url),
+  'utf8',
+);
 
 test('TE4 score reconstruction handles a straight-set match', () => {
   const points = [];
@@ -41,6 +56,38 @@ test('unsupported or truncated DMO inputs fail explicitly', () => {
     () => new Te4Replay(Buffer.alloc(0)),
     (error) => error instanceof Te4DmoAnalysisError && /not a supported TE4/i.test(error.message),
   );
+});
+
+test('reads the repeated tournament label from the DMO header alone', () => {
+  const header = Buffer.alloc(0x100);
+  Buffer.from('\x0fDemoTEM2-1.0g.0', 'binary').copy(header);
+  const tournament = Buffer.from('0115 Tokyo ATP 500', 'ascii');
+  let offset = 0x17;
+  header[offset] = tournament.length;
+  tournament.copy(header, offset + 1);
+  offset += tournament.length + 1;
+  header[offset] = tournament.length;
+  tournament.copy(header, offset + 1);
+
+  assert.equal(extractDmoTournamentName(header), '0115 Tokyo ATP 500');
+  assert.equal(displayDmoTournamentName('0115 Tokyo ATP 500'), 'Tokyo ATP 500');
+  assert.equal(extractDmoTournamentName(Buffer.alloc(0x100)), null);
+});
+
+test('maps known embedded event names to court surfaces and leaves unknown events unclassified', () => {
+  assert.equal(surfaceForDmoTournament('0115 Tokyo ATP 500'), 'hard');
+  assert.equal(surfaceForDmoTournament('0112 Laver Cup'), 'hard');
+  assert.equal(surfaceForDmoTournament('0009 AO Rod Laver Day'), 'hard');
+  assert.equal(surfaceForDmoTournament('Roland Garros'), 'clay');
+  assert.equal(surfaceForDmoTournament('Wimbledon Championships'), 'grass');
+  assert.equal(surfaceForDmoTournament('Custom WTSL Event'), 'unknown');
+  assert.equal(surfaceForDmoTournament(null), 'unknown');
+});
+
+test('ranked DMO highlights stay available when only point-level replay frames exist', () => {
+  assert.match(viewerShell, /\$\('highlights'\)\.disabled=highlightSegments\.length===0;/);
+  assert.match(viewerShell, /const highlightSegments=\[\];let highlightFrames=0;/);
+  assert.match(viewerShell, /a=hasMatch\?matchFrames:active\.a/);
 });
 
 test('coaching combines only matches with the selected named player and reports evidence counts', () => {
