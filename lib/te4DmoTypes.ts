@@ -30,8 +30,8 @@ export type Te4ViewerShot = {
 
 export type Te4ViewerPoint = {
   k: number;
-  mf?: number;
-  fc?: number;
+  mf: number;
+  fc: number;
   ss: Te4SetScore[];
   sc: number;
   rs: string;
@@ -46,7 +46,6 @@ export type Te4ViewerPoint = {
   f: number;
   n: number;
   sh: Te4ViewerShot[];
-  d?: string;
 };
 
 export type Te4ViewerMatch = {
@@ -63,7 +62,7 @@ export type Te4ViewerData = {
     ss: Te4SetScore[];
     wp: number;
   };
-  match?: Te4ViewerMatch;
+  match: Te4ViewerMatch;
   pts: Te4ViewerPoint[];
 };
 
