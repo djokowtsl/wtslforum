@@ -314,13 +314,16 @@ function viewerPoint(
   highlight: Te4Highlight | undefined,
 ): Te4ViewerPoint {
   const start = Math.max(0, point.serveFrame - 90);
+  const sampledStart = start - (start % 2);
   const lastHit = Math.max(point.serveFrame, ...point.hitFrames);
   const end = Math.min(point.end, lastHit + 300, replay.frameCount - 8);
-  if (end <= start) {
+  if (end <= sampledStart) {
     throw new Te4DmoAnalysisError(`Point ${pointNumber} has no usable replay frames.`);
   }
   return {
     k: pointNumber,
+    mf: sampledStart / 2,
+    fc: Math.ceil((end - sampledStart) / 2),
     ss: row.sets.map(([a, b]) => [a, b]),
     sc: highlight?.score ?? 0,
     rs: highlight?.reasons ?? '',
@@ -334,8 +337,7 @@ function viewerPoint(
     w: point.winner,
     f: point.faults,
     n: point.hitFrames.length,
-    sh: viewerShots(replay, point, start),
-    d: frameBytes(replay, start, end),
+    sh: viewerShots(replay, point, sampledStart),
   };
 }
 
@@ -492,6 +494,7 @@ export function analyzeDmoBuffer(bytes: Buffer, filename: string): Te4AnalysisRe
   const warnings = [
     'TE4 DMO frame rules are reverse-engineered. Verify the reconstructed score against the recording before relying on the ranking.',
     'Match-win probabilities use this recording’s serve results; no career Elo file was supplied.',
+    'Serve shift is not calculated in this analysis yet.',
   ];
   const displayScore = filenameScore || computedScore;
   if (filenameScore && scoreTokens(filenameScore) !== scoreTokens(computedScore)) {
@@ -509,7 +512,7 @@ export function analyzeDmoBuffer(bytes: Buffer, filename: string): Te4AnalysisRe
     meta: {
       setsToWin,
       eloMatchProbability: null,
-      serveShift: 0,
+      serveShift: null,
       startProbability: round(startProbability, 4),
       finalWinner,
       serveWinRates,
@@ -523,6 +526,11 @@ export function analyzeDmoBuffer(bytes: Buffer, filename: string): Te4AnalysisRe
       final: {
         ss: scoreState.sets.map(([a, b]) => [a, b]),
         wp: finalWinner === 1 ? 1 : 0,
+      },
+      match: {
+        d: frameBytes(replay, 0, replay.frameCount),
+        n: Math.ceil(replay.frameCount / 2),
+        fps: 30,
       },
       pts: viewerPoints,
     },

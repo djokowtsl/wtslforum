@@ -30,6 +30,8 @@ export type Te4ViewerShot = {
 
 export type Te4ViewerPoint = {
   k: number;
+  mf: number;
+  fc: number;
   ss: Te4SetScore[];
   sc: number;
   rs: string;
@@ -44,7 +46,12 @@ export type Te4ViewerPoint = {
   f: number;
   n: number;
   sh: Te4ViewerShot[];
+};
+
+export type Te4ViewerMatch = {
   d: string;
+  n: number;
+  fps: number;
 };
 
 export type Te4ViewerData = {
@@ -55,6 +62,7 @@ export type Te4ViewerData = {
     ss: Te4SetScore[];
     wp: number;
   };
+  match: Te4ViewerMatch;
   pts: Te4ViewerPoint[];
 };
 
@@ -68,7 +76,7 @@ export type Te4AnalysisResult = {
   meta: {
     setsToWin: number;
     eloMatchProbability: number | null;
-    serveShift: number;
+    serveShift: number | null;
     startProbability: number;
     finalWinner: Te4Player;
     serveWinRates: { 1: number; 2: number };

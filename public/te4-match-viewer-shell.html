@@ -11,39 +11,50 @@ main{max-width:1100px;margin:0 auto;padding:12px}
 h1{font-size:20px;margin:4px 0}.mu{color:var(--mu);font-size:12px}
 .card{background:var(--card);border:1px solid var(--ln);border-radius:10px;padding:10px;margin:8px 0}
 select,button{background:var(--card);color:var(--tx);border:1px solid var(--ln);border-radius:6px;padding:4px 8px;font:inherit;cursor:pointer}
-#strip{display:flex;flex-wrap:wrap;gap:2px 10px}.gm{display:flex;flex-wrap:wrap;gap:2px;align-items:center}
+#strip{display:flex;flex-wrap:wrap;gap:2px 10px;max-height:132px;overflow:auto;align-content:flex-start;overscroll-behavior:contain}.gm{display:flex;flex-wrap:wrap;gap:2px;align-items:center}
 .gm small{width:100%;color:var(--mu);font-size:10px}
-.ch{width:20px;height:20px;border-radius:4px;border:2px solid transparent;color:#fff;font-size:10px;display:flex;align-items:center;justify-content:center;cursor:pointer}
+.ch{width:22px;height:22px;padding:0;border-radius:4px;border:2px solid transparent;color:#fff;font-size:10px;display:flex;align-items:center;justify-content:center;cursor:pointer}.ch:focus-visible{outline:2px solid var(--ac);outline-offset:2px}
 .ch.on{border-color:var(--tx)}.W{background:var(--w)}.L{background:var(--l)}
 #grid{display:grid;grid-template-columns:minmax(0,1.5fr) minmax(0,1fr);gap:10px}@media(max-width:800px){#grid{grid-template-columns:1fr}}
 canvas{width:100%;display:block;border-radius:8px}
-#ctl{display:flex;gap:6px;align-items:center;margin-top:6px}#ctl input[type=range]{flex:1}
+#mode{display:flex;gap:6px;align-items:center}#mode button[aria-pressed="true"]{border-color:var(--ac);color:var(--ac);font-weight:600}
+#ctl{display:flex;flex-wrap:wrap;gap:6px;align-items:center;margin-top:6px}#ctl input[type=range]{flex:1;min-width:100px}
 table{width:100%;border-collapse:collapse;font-size:12px}td,th{padding:3px 4px;border-bottom:1px solid var(--ln);text-align:left}
 tr.s{cursor:pointer}tr.s:hover{background:var(--bg)}.p1{color:#f59e0b}.p2{color:#ef4444}
 </style></head><body><main>
 <h1 id="t"></h1><div class="mu" id="sub"></div>
-<div class="card"><div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap"><b>Point by point</b><span class="mu">You are</span><select id="me"></select><span class="mu">green = you won the point</span></div><div id="strip"></div></div>
+<div class="card"><div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap"><b>Replay mode</b><div id="mode"><button id="full" type="button" aria-pressed="false">Full match</button><button id="points" type="button" aria-pressed="true">Point by point</button></div><span class="mu">You are</span><select id="me"></select><span class="mu">green = you won the point</span></div><div id="strip"></div></div>
 <div id="grid"><div class="card"><canvas id="cv" width="900" height="520"></canvas>
-<div id="ctl"><button id="pl">Pause</button><input type="range" id="sc" min="0" max="1000" value="0"><select id="vw"><option value="t">Top-down</option><option value="p">Behind baseline</option></select><select id="sp"><option value=".25">0.25x</option><option value=".5">0.5x</option><option value="1" selected>1x</option><option value="2">2x</option></select></div>
-<div class="mu">Each player is a figure moving along the recorded path and swinging at each hit (orange = player 1, red = player 2). The ball rises off its shadow. Arrow keys: previous / next point.</div></div>
+<div id="ctl"><button id="pl">Pause</button><input type="range" id="sc" min="0" max="1000" value="0"><span class="mu" id="clock" aria-live="off"></span><select id="vw"><option value="t">Top-down</option><option value="p">Behind baseline</option></select><select id="sp"><option value=".25">0.25x</option><option value=".5">0.5x</option><option value="1" selected>1x</option><option value="2">2x</option></select></div>
+<div class="mu">Reconstructed court playback from DMO frame data; no original in-game video or audio. Each player follows the recorded path (orange = player 1, red = player 2). Arrow keys: previous / next point.</div></div>
 <div class="card"><div id="pi"></div><table><thead><tr><th>#</th><th>Player</th><th>km/h</th><th>Height</th><th>Reach</th><th>Landed</th></tr></thead><tbody id="tb"></tbody></table>
 <div class="mu" id="nt"></div></div></div>
 <div class="card"><b>Match numbers</b> <span class="mu">winners / errors are the last shot of a rally; forced vs unforced is not decoded yet</span><table id="nm"></table></div>
 <div class="card"><div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap"><b>Court maps</b><select id="mp"></select><select id="mk"><option value="a">All shots</option><option value="s">Serves</option><option value="r">Rally shots</option><option value="w">Winners</option><option value="e">Errors</option></select><span class="mu">where the first bounce landed, shown from the hitter's end (left to right); dots are single shots</span></div><canvas id="cm" width="760" height="640"></canvas><div class="mu" id="ms"></div></div>
 <script>
-const D=__DATA__;let me=1,cur=0,T=0,play=true,last=0,sp=1;
+const D=__DATA__;let me=2,cur=0,T=0,matchT=0,mode='point',play=true,last=performance.now(),sp=1;
 const $=i=>document.getElementById(i),cv=$('cv'),cx=cv.getContext('2d'),css=n=>getComputedStyle(document.documentElement).getPropertyValue(n);
 const esc=value=>String(value).replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
-D.pts.forEach(p=>{const b=atob(p.d),u=new Uint8Array(b.length);for(let i=0;i<b.length;i++)u[i]=b.charCodeAt(i);p.a=new Int16Array(u.buffer);p.N=p.a.length/7})
-$('t').textContent=D.names[0]+' vs '+D.names[1]+'  '+D.score;$('sub').textContent=D.pts.length+' points, decoded from the replay file';
-$('me').innerHTML=D.names.map((n,i)=>`<option value="${i+1}">${esc(n)}</option>`).join('');$('me').value=2;me=2;
+const decode=encoded=>{const b=atob(encoded),u=new Uint8Array(b.length);for(let i=0;i<b.length;i++)u[i]=b.charCodeAt(i);return new Int16Array(u.buffer)};
+const hasMatch=Boolean(D.match&&typeof D.match.d==='string');
+D.pts.forEach(p=>{if(hasMatch){p.N=p.fc}else if(typeof p.d==='string'){p.a=decode(p.d);p.N=p.a.length/7;p.mf=0}else{p.a=[];p.N=0}});
+const matchFrames=hasMatch?decode(D.match.d):null,matchN=hasMatch?D.match.n:0,fps=hasMatch?D.match.fps:30;
+if(hasMatch&&(matchN<2||matchFrames.length!==matchN*7||fps<=0||D.pts.some(p=>!Number.isInteger(p.mf)||!Number.isInteger(p.fc)||p.fc<1||p.mf<0||p.mf+p.fc>matchN)))throw new Error('Full-match replay data is incomplete.');
+if(!hasMatch&&D.pts.some(p=>p.N<1))throw new Error('Point-by-point replay data is incomplete.');
+$('full').disabled=!hasMatch;
+const clockText=frame=>{const seconds=Math.floor(frame/fps);return `${Math.floor(seconds/60)}:${String(seconds%60).padStart(2,'0')}`};
+$('t').textContent=D.names[0]+' vs '+D.names[1]+'  '+D.score;$('sub').textContent=hasMatch?`${D.pts.length} points · full replay ${clockText(matchN-1)}`:`${D.pts.length} points · point replay only`;
+$('me').innerHTML=D.names.map((n,i)=>`<option value="${i+1}">${esc(n)}</option>`).join('');$('me').value=me;
 function strip(){let h='',key='';D.pts.forEach((p,i)=>{const k=p.set+'-'+p.g;if(!p.tb&&k!==key||p.tb&&key!=='tb'+p.set){key=p.tb?'tb'+p.set:k;h+=(i?'</div>':'')+`<div class="gm"><small>Set ${p.set}${p.tb?' tiebreak':' '+esc(p.g)}</small>`}
-h+=`<div class="ch ${p.w==me?'W':'L'}${i==cur?' on':''}" data-i="${i}" title="Point ${p.k}">${p.w==me?'W':'L'}</div>`});$('strip').innerHTML=h+'</div>'}
-$('strip').onclick=e=>{const i=e.target.dataset.i;if(i!=null)go(+i)};$('me').onchange=e=>{me=+e.target.value;strip();info()};
+h+=`<button type="button" class="ch ${p.w==me?'W':'L'}${i==cur?' on':''}" data-i="${i}" aria-pressed="${i==cur}" aria-label="Point ${p.k}; set ${p.set}, games ${esc(p.g)}, ${esc(p.pt)}, won by ${esc(D.names[p.w-1])}" title="Point ${p.k}">${p.w==me?'W':'L'}</button>`});$('strip').innerHTML=h+'</div>'}
+$('strip').onclick=e=>{const point=e.target.closest('button[data-i]');if(point)go(+point.dataset.i)};$('me').onchange=e=>{me=+e.target.value;strip();info()};
 $('pl').onclick=()=>{play=!play;$('pl').textContent=play?'Pause':'Play';last=performance.now()};$('sp').onchange=e=>sp=+e.target.value;
-$('sc').oninput=e=>{T=e.target.value/1000*(D.pts[cur].N-1)};
-onkeydown=e=>{if(e.key=='ArrowRight')go(Math.min(cur+1,D.pts.length-1));if(e.key=='ArrowLeft')go(Math.max(cur-1,0))};
-function go(i){cur=i;T=0;play=true;$('pl').textContent='Pause';strip();info()}
+$('full').onclick=()=>setMode('full');$('points').onclick=()=>setMode('point');
+$('sc').oninput=e=>{const fraction=e.target.value/1000;if(mode==='full'){matchT=fraction*(matchN-1);syncPointToMatch()}else T=fraction*(D.pts[cur].N-1);last=performance.now()};
+onkeydown=e=>{if(e.key=='ArrowRight'){e.preventDefault();go(Math.min(cur+1,D.pts.length-1))}if(e.key=='ArrowLeft'){e.preventDefault();go(Math.max(cur-1,0))}};
+function setMode(next){if(next==='full'&&!hasMatch)return;mode=next;T=0;if(mode==='full'){matchT=0;syncPointToMatch()}$('full').setAttribute('aria-pressed',mode==='full');$('points').setAttribute('aria-pressed',mode==='point');play=true;$('pl').textContent='Pause';last=performance.now()}
+function syncPointToMatch(){if(!hasMatch)return;let lo=0,hi=D.pts.length;while(lo<hi){const mid=(lo+hi)>>1;if(D.pts[mid].mf<=matchT)lo=mid+1;else hi=mid}const index=Math.max(0,lo-1);if(index!==cur){cur=index;strip();info()}}
+function go(i){cur=i;if(mode==='full')matchT=Math.max(0,Math.min(matchN-1,D.pts[i].mf));else T=0;play=true;$('pl').textContent='Pause';last=performance.now();strip();info()}
 addEventListener('message',e=>{if(e.source!==parent||e.data?.type!=='select-point')return;const number=Number(e.data.point);const index=D.pts.findIndex(p=>p.k===number);if(index>=0)go(index)});
 function info(){const p=D.pts[cur],last=p.sh[p.sh.length-1],won=p.w==me,nm=D.names;
 let how;if(p.n==0)how=p.w==p.s?'ace or unreturned serve':'double fault';else how=last.p==p.w?'winner by '+esc(nm[last.p-1]):'error by '+esc(nm[last.p-1]);
@@ -51,7 +62,7 @@ $('pi').innerHTML=`<b>Point ${p.k}</b> <span class="mu">set ${p.set}, games ${es
 $('tb').innerHTML=p.sh.map((s,i)=>`<tr class="s" data-t="${s.t}"><td>${i+1}${s.k=='s'?' serve':''}</td><td class="p${s.p}">${esc(nm[s.p-1])}</td><td>${s.v}</td><td>${s.k=='s'?'':s.z+' cm'}</td><td>${s.k=='s'?'':s.d+' cm'}</td><td>${s.bx==null?'':inCourt(s,p)}</td></tr>`).join('');
 $('nt').textContent='Landed is an estimate from the first bounce: in = inside the lines on the far side (serves: the service boxes), with 45 cm of tolerance because a fast ball moves about 80 cm a frame.'}
 function inCourt(s,p){const ok=Math.abs(s.by)<=457&&Math.abs(s.bx)<=1234&&(s.k=='s'?Math.abs(s.bx)<=685:true);return ok?'in':'out'}
-$('tb').onclick=e=>{const r=e.target.closest('tr');if(r){T=+r.dataset.t-20;if(T<0)T=0;play=true}};
+$('tb').onclick=e=>{const r=e.target.closest('tr');if(r){const target=+r.dataset.t-20;if(mode==='full')matchT=Math.max(0,Math.min(matchN-1,D.pts[cur].mf+target));else T=Math.max(0,target);play=true;$('pl').textContent='Pause';last=performance.now()}};
 let view='t';$('vw').onchange=e=>view=e.target.value;
 const pr=(x,y,z)=>{if(view=='t')return[450+x*.3,260+y*.3-z*.08,1.3];const d=x+2900,k=700/d;return[450+y*k,70+640000/d-z*k,k*2.2]};
 const poly=(pts,fill,st)=>{cx.beginPath();pts.forEach((q,i)=>{const[a,b]=pr(...q);i?cx.lineTo(a,b):cx.moveTo(a,b)});if(fill){cx.fillStyle=fill;cx.fill()}if(st){cx.strokeStyle=st;cx.stroke()}};
@@ -61,14 +72,16 @@ poly([[0,-549,0],[0,549,0],[0,549,107],[0,-549,107]],'rgba(255,255,255,.18)',c)}
 const person=(x,y,c,name,sw)=>{const[a,b,k]=pr(x,y,0),[,h]=pr(x,y,150),[hx,hy]=pr(x,y,172);cx.fillStyle='rgba(0,0,0,.3)';cx.beginPath();cx.ellipse(a,b,12*k,4.5*k,0,0,7);cx.fill();cx.lineCap='round';cx.strokeStyle=c;cx.lineWidth=11*k;cx.beginPath();cx.moveTo(a,b-2*k);cx.lineTo(a,h);cx.stroke();cx.fillStyle=c;cx.beginPath();cx.arc(hx,hy-3*k,6.5*k,0,7);cx.fill();
 if(sw){cx.strokeStyle='#fff';cx.lineWidth=3;cx.beginPath();cx.arc(a+14*k,h+8*k,16*k,-1.2,1.2);cx.stroke()}
 cx.fillStyle=c;cx.font=Math.max(10,9*k)+'px system-ui';cx.textAlign='center';cx.fillText(name,a,hy-12*k)};
-function frame(now){const p=D.pts[cur];if(play){T+=(now-last)/1000*30*sp;if(T>=p.N-1){T=p.N-1;play=false;$('pl').textContent='Play'}}last=now;
-court();const i0=Math.floor(T),f=T-i0,i1=Math.min(i0+1,p.N-1),g=(i,j)=>p.a[i*7+j]*(1-f)+p.a[i1*7+j]*f,s0=Math.max(0,i0-45);
-cx.lineWidth=2;cx.strokeStyle='rgba(250,204,21,.55)';cx.beginPath();for(let i=s0;i<=i0;i++){const[a,b]=pr(p.a[i*7],p.a[i*7+1],p.a[i*7+2]);i==s0?cx.moveTo(a,b):cx.lineTo(a,b)}cx.stroke();
-p.sh.forEach(s=>{if(s.bx!=null&&s.bt!=null&&s.bt<=T){const[a,b]=pr(s.bx,s.by,0);cx.fillStyle=s.p==1?'rgba(245,158,11,.85)':'rgba(239,68,68,.85)';cx.beginPath();cx.arc(a,b,4,0,7);cx.fill()}});
-const sw=q=>p.sh.some(s=>s.p==q&&Math.abs(s.t-T)<7);
+function frame(now){const p=D.pts[cur],full=mode==='full',count=full?matchN:p.N,base=full?0:(hasMatch?p.mf:0),a=hasMatch?matchFrames:p.a;let time=full?matchT:T;
+if(play){time+=(now-last)/1000*fps*sp;if(time>=count-1){time=count-1;play=false;$('pl').textContent='Play'}if(full){matchT=time;syncPointToMatch()}else T=time}last=now;
+const active=D.pts[cur],offset=full?active.mf:0;time=full?matchT:T;
+court();const i0=Math.min(count-1,Math.floor(time)),f=time-i0,i1=Math.min(i0+1,count-1),g=(i,j)=>a[(base+i)*7+j]*(1-f)+a[(base+i1)*7+j]*(f),s0=Math.max(0,i0-45);
+cx.lineWidth=2;cx.strokeStyle='rgba(250,204,21,.55)';cx.beginPath();for(let i=s0;i<=i0;i++){const[x,y]=pr(a[(base+i)*7],a[(base+i)*7+1],a[(base+i)*7+2]);i==s0?cx.moveTo(x,y):cx.lineTo(x,y)}cx.stroke();
+active.sh.forEach(s=>{if(s.bx!=null&&s.bt!=null&&offset+s.bt<=time){const[x,y]=pr(s.bx,s.by,0);cx.fillStyle=s.p==1?'rgba(245,158,11,.85)':'rgba(239,68,68,.85)';cx.beginPath();cx.arc(x,y,4,0,7);cx.fill()}});
+const sw=q=>active.sh.some(s=>s.p==q&&Math.abs(offset+s.t-time)<7);
 [[[g(i0,3),g(i0,4)],'#f59e0b',D.names[0],1],[[g(i0,5),g(i0,6)],'#ef4444',D.names[1],2]].sort((a,b)=>b[0][0]-a[0][0]).forEach(([q,c,n,id])=>person(q[0],q[1],c,n,sw(id)));
 const bx=g(i0,0),by=g(i0,1),bz=g(i0,2),[sx,sy,k]=pr(bx,by,0),[ux,uy]=pr(bx,by,bz);cx.fillStyle='rgba(0,0,0,.3)';cx.beginPath();cx.ellipse(sx,sy,4*k,2.5*k,0,0,7);cx.fill();cx.fillStyle='#e8f84a';cx.strokeStyle='#222';cx.lineWidth=1;cx.beginPath();cx.arc(ux,uy,4*k,0,7);cx.fill();cx.stroke();
-$('sc').value=T/(p.N-1)*1000;requestAnimationFrame(frame)}
+$('sc').value=count>1?time/(count-1)*1000:0;$('clock').textContent=mode==='full'?`${clockText(time)} / ${clockText(matchN-1)}`:`Point ${active.k} · ${clockText(time)} / ${clockText(active.N-1)}`;requestAnimationFrame(frame)}
 
 function nums(){const P=D.pts,S=[0,1].map(()=>({pw:0,ace:0,df:0,sv:0,f1:0,f1w:0,f2:0,f2w:0,win:0,err:0,bp:0,bpw:0,fast:0}));
 P.forEach(p=>{const s=p.s-1,r=1-s,w=p.w-1,A=S[s];S[w].pw++;A.sv++;if(p.f==0){A.f1++;if(w==s)A.f1w++}else{A.f2++;if(w==s)A.f2w++}
