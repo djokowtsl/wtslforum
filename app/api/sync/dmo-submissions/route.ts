@@ -4,6 +4,7 @@ import { isWtslSyncAuthorized } from '@/lib/wtslSyncAuth';
 import {
   createDmoSubmission,
   findDmoSubmissionByDiscordMessage,
+  submissionDateInLondon,
 } from '@/lib/dmo-submissions';
 
 export const dynamic = 'force-dynamic';
@@ -71,6 +72,10 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ error: 'The Discord admin message could not be verified.' }, { status: 502 });
   }
   const discordMessage = await messageResponse.json();
+  const submissionDate = submissionDateInLondon(discordMessage?.timestamp);
+  if (!submissionDate) {
+    return NextResponse.json({ error: 'The Discord submission date could not be verified.' }, { status: 502 });
+  }
   const attachments = Array.isArray(discordMessage?.attachments) ? discordMessage.attachments : [];
   const attachment = attachments.find(
     (item: any) => String(item?.filename || '').toLowerCase().endsWith('.dmo'),
@@ -145,6 +150,7 @@ export async function POST(req: NextRequest) {
       submissionThreadId,
       discordMessageId: messageId,
       discordDeliveryStatus: 'sent',
+      submissionDate,
     });
     if (privatePathname && storeId && submission.private_blob_pathname !== privatePathname) {
       await del(privatePathname, { storeId }).catch(() => {});

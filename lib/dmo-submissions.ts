@@ -23,6 +23,7 @@ export type DmoSubmission = {
   discord_message_id: string | null;
   discord_delivery_status: DmoDiscordDeliveryStatus;
   discord_delivery_error: string | null;
+  submission_date: string | Date;
   created_at: string | Date;
   account_name?: string | null;
 };
@@ -45,7 +46,29 @@ export type NewDmoSubmission = {
   submissionThreadId?: string | null;
   discordMessageId?: string | null;
   discordDeliveryStatus?: DmoDiscordDeliveryStatus;
+  submissionDate?: string | null;
 };
+
+export type DmoSubmissionTags = {
+  tournament: string;
+  roundName: string;
+  player1: string;
+  player2: string;
+  submissionDate: string;
+};
+
+export function submissionDateInLondon(timestamp: unknown): string | null {
+  const date = new Date(String(timestamp ?? ''));
+  if (Number.isNaN(date.getTime())) return null;
+  const parts = new Intl.DateTimeFormat('en-GB', {
+    timeZone: 'Europe/London',
+    year: 'numeric',
+    month: '2-digit',
+    day: '2-digit',
+  }).formatToParts(date);
+  const values = Object.fromEntries(parts.map((part) => [part.type, part.value]));
+  return `${values.year}-${values.month}-${values.day}`;
+}
 
 let schemaReady: Promise<void> | null = null;
 
@@ -74,10 +97,28 @@ export async function ensureDmoSubmissionSchema() {
           discord_delivery_status TEXT NOT NULL DEFAULT 'pending'
             CHECK (discord_delivery_status IN ('pending','sent','failed')),
           discord_delivery_error TEXT,
+          submission_date DATE NOT NULL DEFAULT CURRENT_DATE,
           created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
           CONSTRAINT dmo_submissions_discord_source_unique
             UNIQUE (source_discord_channel_id, source_discord_message_id)
         )
+      `;
+      await sql`
+        ALTER TABLE dmo_submissions
+        ADD COLUMN IF NOT EXISTS submission_date DATE
+      `;
+      await sql`
+        UPDATE dmo_submissions
+        SET submission_date=(created_at AT TIME ZONE 'Europe/London')::date
+        WHERE submission_date IS NULL
+      `;
+      await sql`
+        ALTER TABLE dmo_submissions
+        ALTER COLUMN submission_date SET DEFAULT CURRENT_DATE
+      `;
+      await sql`
+        ALTER TABLE dmo_submissions
+        ALTER COLUMN submission_date SET NOT NULL
       `;
       await sql`
         CREATE INDEX IF NOT EXISTS dmo_submissions_created_idx
@@ -114,7 +155,7 @@ export async function createDmoSubmission(
       submitted_by,submitter_discord_id,submitter_name,source,tournament,round_name,
       player1,player2,file_name,private_blob_pathname,private_blob_content_type,
       external_url,source_discord_channel_id,source_discord_message_id,
-      submission_thread_id,discord_message_id,discord_delivery_status
+      submission_thread_id,discord_message_id,discord_delivery_status,submission_date
     ) VALUES (
       ${input.submittedBy},${input.submitterDiscordId},${input.submitterName},
       ${input.source},${input.tournament},${input.roundName},${input.player1},
@@ -122,7 +163,8 @@ export async function createDmoSubmission(
       ${input.privateBlobContentType ?? null},${input.externalUrl ?? null},
       ${input.sourceDiscordChannelId ?? null},${input.sourceDiscordMessageId ?? null},
       ${input.submissionThreadId ?? null},${input.discordMessageId ?? null},
-      ${input.discordDeliveryStatus ?? 'pending'}
+      ${input.discordDeliveryStatus ?? 'pending'},
+      COALESCE(${input.submissionDate ?? null}::date, CURRENT_DATE)
     )
     ON CONFLICT (source_discord_channel_id,source_discord_message_id) DO NOTHING
     RETURNING *
@@ -153,6 +195,24 @@ export async function listDmoSubmissions(limit = 100): Promise<DmoSubmission[]> 
     ORDER BY s.created_at DESC
     LIMIT ${safeLimit}
   ` as DmoSubmission[];
+}
+
+export async function updateDmoSubmissionTags(
+  id: number,
+  tags: DmoSubmissionTags,
+): Promise<DmoSubmission | null> {
+  await ensureDmoSubmissionSchema();
+  const rows = await sql`
+    UPDATE dmo_submissions
+    SET tournament=${tags.tournament},
+        round_name=${tags.roundName},
+        player1=${tags.player1},
+        player2=${tags.player2},
+        submission_date=${tags.submissionDate}::date
+    WHERE id=${id}
+    RETURNING *
+  `;
+  return (rows[0] as DmoSubmission | undefined) ?? null;
 }
 
 export async function updateDmoDiscordDelivery(

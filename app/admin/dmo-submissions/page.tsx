@@ -1,6 +1,7 @@
 import { redirect } from 'next/navigation';
 import PageHero from '@/components/PageHero';
 import DmoDeliveryRetryButton from '@/components/DmoDeliveryRetryButton';
+import DmoSubmissionTagEditor from '@/components/DmoSubmissionTagEditor';
 import { getSession } from '@/lib/auth';
 import { listDmoSubmissions } from '@/lib/dmo-submissions';
 
@@ -23,19 +24,18 @@ export default async function AdminDmoSubmissions() {
             <div className="notice">No DMO submissions have been received yet.</div>
           ) : submissions.map((submission) => {
             const id = Number(submission.id);
-            const createdAtValue = submission.created_at instanceof Date
-              ? submission.created_at.getTime()
-              : submission.created_at;
-            const createdAt = new Date(createdAtValue).toLocaleString('en-GB', {
-              timeZone: 'Europe/London',
+            const submissionDate = submission.submission_date instanceof Date
+              ? submission.submission_date.toISOString().slice(0, 10)
+              : String(submission.submission_date).slice(0, 10);
+            const displayDate = new Date(`${submissionDate}T00:00:00Z`).toLocaleDateString('en-GB', {
+              timeZone: 'UTC',
               dateStyle: 'medium',
-              timeStyle: 'short',
             });
             return (
               <article className="admin-card" key={id}>
                 <div style={{ display: 'flex', justifyContent: 'space-between', gap: 12, flexWrap: 'wrap' }}>
                   <h3 style={{ margin: 0 }}>{submission.tournament} — {submission.round_name}</h3>
-                  <span className="notice">{createdAt}</span>
+                  <span className="notice">Submission date: {displayDate}</span>
                 </div>
                 <p style={{ margin: '10px 0 6px' }}>
                   <strong>{submission.player1}</strong> vs <strong>{submission.player2}</strong>
@@ -46,6 +46,14 @@ export default async function AdminDmoSubmissions() {
                   {' · '}Source: {submission.source === 'discord' ? 'Discord' : 'Forum'}
                 </p>
                 <div style={{ display: 'flex', gap: 10, flexWrap: 'wrap', alignItems: 'center' }}>
+                  <DmoSubmissionTagEditor
+                    id={id}
+                    tournament={submission.tournament}
+                    roundName={submission.round_name}
+                    player1={submission.player1}
+                    player2={submission.player2}
+                    submissionDate={submissionDate}
+                  />
                   {submission.private_blob_pathname && (
                     <a className="btn btn-sm" href={`/api/admin/dmo-submissions/${id}/file`}>
                       Download {submission.file_name || '.dmo file'}
