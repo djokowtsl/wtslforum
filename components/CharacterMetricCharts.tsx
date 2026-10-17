@@ -2,6 +2,11 @@
 
 import { useEffect, useId, useMemo, useState } from 'react';
 import styles from './CharacterMetricCharts.module.css';
+import {
+  axisTicks,
+  NORMALIZED_DOMAIN,
+  tooltipPosition,
+} from '@/lib/characterMetricChartGeometry.mjs';
 
 type Tour = 'all' | 'atp' | 'wta';
 
@@ -73,15 +78,6 @@ function rawDomain(values: number[]) {
     ? Math.max(Math.abs(min) * 0.05, 1)
     : (max - min) * 0.05;
   return { min: min - padding, max: max + padding };
-}
-
-function axisTicks(domain: { min: number; max: number }, normalized: boolean) {
-  if (normalized && domain.min === 0 && domain.max === 100) {
-    return [0, 20, 40, 60, 80, 100];
-  }
-  return Array.from({ length: 5 }, (_, index) =>
-    domain.min + ((domain.max - domain.min) * index) / 4,
-  );
 }
 
 function zoomedDomain(
@@ -211,14 +207,14 @@ function PointTooltip({
   const longestLine = Math.max(...lines.map((line) => line.length));
   const tooltipWidth = Math.min(Math.max(longestLine * 7 + 20, 96), 320);
   const tooltipHeight = lines.length * 15 + 14;
-  const left = Math.max(
-    8,
-    Math.min(x - tooltipWidth / 2, WIDTH - tooltipWidth - 8),
-  );
-  const above = y - tooltipHeight - 10;
-  const top = above >= 8
-    ? above
-    : Math.min(y + 10, chartHeight - tooltipHeight - 8);
+  const { left, top } = tooltipPosition({
+    x,
+    y,
+    width: tooltipWidth,
+    height: tooltipHeight,
+    viewportWidth: WIDTH,
+    viewportHeight: chartHeight,
+  });
 
   return (
     <g className={styles.tooltip} pointerEvents="none" aria-hidden="true">
@@ -268,8 +264,8 @@ function ScatterPlot({
   const plotHeight = PAIR_HEIGHT - PAIR_MARGIN.top - PAIR_MARGIN.bottom;
   const xValues = points.map((point) => point.xValue!);
   const yValues = points.map((point) => point.yValue!);
-  const baseXDomain = normalized ? { min: 0, max: 100 } : rawDomain(xValues);
-  const baseYDomain = normalized ? { min: 0, max: 100 } : rawDomain(yValues);
+  const baseXDomain = normalized ? NORMALIZED_DOMAIN : rawDomain(xValues);
+  const baseYDomain = normalized ? NORMALIZED_DOMAIN : rawDomain(yValues);
   const medianX = chartValue(median(xValues), xValues, normalized);
   const medianY = chartValue(median(yValues), yValues, normalized);
   const xDomain = zoomedDomain(baseXDomain, medianX, xZoom);
@@ -379,19 +375,19 @@ function ScatterPlot({
                 </a>
               );
             })}
-            {activePoint && visiblePoints.some((point) => point.character === activePoint.character) && (
-              <PointTooltip
-                x={xPosition(chartValue(activePoint.xValue!, xValues, normalized))}
-                y={yPosition(chartValue(activePoint.yValue!, yValues, normalized))}
-                chartHeight={PAIR_HEIGHT}
-                lines={[
-                  activePoint.character,
-                  `${xMetric}: ${formatValue(activePoint.xValue!, xMetric)}`,
-                  `${yMetric}: ${formatValue(activePoint.yValue!, yMetric)}`,
-                ]}
-              />
-            )}
           </g>
+          {activePoint && visiblePoints.some((point) => point.character === activePoint.character) && (
+            <PointTooltip
+              x={xPosition(chartValue(activePoint.xValue!, xValues, normalized))}
+              y={yPosition(chartValue(activePoint.yValue!, yValues, normalized))}
+              chartHeight={PAIR_HEIGHT}
+              lines={[
+                activePoint.character,
+                `${xMetric}: ${formatValue(activePoint.xValue!, xMetric)}`,
+                `${yMetric}: ${formatValue(activePoint.yValue!, yMetric)}`,
+              ]}
+            />
+          )}
           <text
             className={styles.axisLabel}
             x={PAIR_MARGIN.left + plotWidth / 2}
@@ -552,18 +548,18 @@ function SingleMetricPlot({
                 </a>
               );
             })}
-            {activePoint && visiblePoints.some((point) => point.character === activePoint.character) && (
-              <PointTooltip
-                x={activePoint.x}
-                y={centerY + activePoint.lane * step}
-                chartHeight={height}
-                lines={[
-                  activePoint.character,
-                  `${metric}: ${formatValue(activePoint.value, metric)}`,
-                ]}
-              />
-            )}
           </g>
+          {activePoint && visiblePoints.some((point) => point.character === activePoint.character) && (
+            <PointTooltip
+              x={activePoint.x}
+              y={centerY + activePoint.lane * step}
+              chartHeight={height}
+              lines={[
+                activePoint.character,
+                `${metric}: ${formatValue(activePoint.value, metric)}`,
+              ]}
+            />
+          )}
           <text
             className={styles.axisLabel}
             x={SINGLE_MARGIN.left + plotWidth / 2}
