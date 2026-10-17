@@ -90,6 +90,24 @@ test('ranked DMO highlights stay available when only point-level replay frames e
   assert.match(viewerShell, /a=hasMatch\?matchFrames:active\.a/);
 });
 
+test('DMO viewer exposes multiple camera angles, player framing, and adjustable zoom', () => {
+  assert.match(viewerShell, /option value="t">Overhead/);
+  assert.match(viewerShell, /option value="p">Behind baseline/);
+  assert.match(viewerShell, /option value="s">Sideline/);
+  assert.match(viewerShell, /option value="q">Three-quarter/);
+  assert.match(viewerShell, /id="zm" min="0\.7" max="1\.8" step="0\.1"/);
+  assert.match(viewerShell, /id="focusPlayers" type="button"/);
+  assert.match(viewerShell, /id="resetView" type="button"/);
+  assert.match(viewerShell, /function setZoom\(value\)/);
+  assert.match(viewerShell, /if\(view==='s'\)/);
+  assert.match(viewerShell, /const d=x\+y\*\.45\+3200/);
+  assert.match(viewerShell, /cx\.arc\(a,headY,7\*u,0,7\)/);
+  assert.match(viewerShell, /cx\.fillStyle=shorts/);
+  assert.match(viewerShell, /e\.target\?\.closest\?\.\('input,select,textarea,button'\)/);
+  assert.match(viewerShell, /function setMode\(next\)/);
+  assert.match(viewerShell, /mode==='highlights'/);
+});
+
 test('coaching combines only matches with the selected named player and reports evidence counts', () => {
   const makePoint = (server, winner, { faults = 0, hits = 0, lastShotPlayer = winner } = {}) => ({
     s: server,
