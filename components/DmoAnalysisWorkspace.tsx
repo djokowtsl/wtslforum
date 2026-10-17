@@ -9,7 +9,7 @@ import {
   defaultTe4CoachingPlayer,
   listTe4CoachingPlayers,
 } from '@/lib/te4DmoCoaching';
-import type { Te4AnalysisResult, Te4Highlight } from '@/lib/te4DmoTypes';
+import type { Te4AnalysisResult, Te4CharacterProfile, Te4Highlight } from '@/lib/te4DmoTypes';
 import styles from './DmoAnalysisWorkspace.module.css';
 
 type JobStatus = 'queued' | 'uploading' | 'analyzing' | 'ready' | 'error';
@@ -31,6 +31,14 @@ const formatDuration = (seconds: number) => {
   const minutes = Math.floor(safeSeconds / 60);
   return `${minutes}:${String(safeSeconds % 60).padStart(2, '0')}`;
 };
+
+function characterRating(profile: Te4CharacterProfile | null | undefined, label: string) {
+  const rating = profile?.combined_ratings?.find(
+    (item) => item.attribute.toLowerCase() === label.toLowerCase(),
+  )?.value;
+  if (typeof rating === 'number') return rating.toFixed(1);
+  return typeof rating === 'string' && rating ? rating : '—';
+}
 
 const safeViewerHtml = (html: string, data: Te4AnalysisResult['viewer']) => {
   const json = JSON.stringify(data)
@@ -459,6 +467,84 @@ export default function DmoAnalysisWorkspace() {
             <div className={styles.metricCard}><span className={styles.metricIcon}><Activity size={16} /></span><span className={styles.metricLabel}>SERVE SHIFT</span><strong>{typeof result.meta.serveShift !== 'number' ? '—' : <>{result.meta.serveShift > 0 ? '+' : ''}{result.meta.serveShift.toFixed(1)}<small className={styles.inlineUnit}>pp</small></>}</strong><small>{typeof result.meta.serveShift !== 'number' ? 'not calculated' : 'match momentum swing'}</small></div>
             <div className={styles.metricCard}><span className={styles.metricIcon}><Clock3 size={16} /></span><span className={styles.metricLabel}>SERVE WIN RATE</span><strong>{Math.round(result.meta.serveWinRates[1] * 100)}<small className={styles.inlineUnit}>%</small><b className={styles.metricDivider}>/</b>{Math.round(result.meta.serveWinRates[2] * 100)}<small className={styles.inlineUnit}>%</small></strong><small>{result.names[0]} <i /> {result.names[1]}</small></div>
           </section>
+
+          {result.characterAttribution && (
+            <section className={styles.characterPanel} aria-label="Character attribution">
+              <div className={styles.sectionHeading}>
+                <div><span className={styles.kicker}>ATP / TE4 RESULT MATCH</span><h2>Characters used</h2></div>
+                {result.characterAttribution.status === 'matched' && <span className={styles.securePill}>WTSL RESULT</span>}
+              </div>
+              {result.characterAttribution.status === 'matched' && result.characterAttribution.players ? (
+                <>
+                  <div className={styles.characterGrid}>
+                    {result.characterAttribution.players.map((player, index) => {
+                      const profile = player.profile;
+                      const strengths = profile?.strengths?.slice(0, 2).map((item) => item.attribute).filter(Boolean);
+                      const weaknesses = profile?.weaknesses?.slice(0, 2).map((item) => item.attribute).filter(Boolean);
+                      return (
+                        <article className={styles.characterCard} key={`${index}-${player.character ?? 'unrecorded'}`}>
+                          <span className={styles.kicker}>PLAYER {index + 1}</span>
+                          <h3>{result.names[index]}</h3>
+                          <strong className={styles.characterName}>{player.character || 'No character recorded'}</strong>
+                          {profile ? (
+                            <>
+                              <p className={styles.characterMeta}>
+                                {profile.country_flag || '🎾'} {profile.country || 'Country unavailable'}
+                                {profile.height != null && ` · ${profile.height} cm`}
+                              </p>
+                              <div className={styles.characterBadges}>
+                                {profile.style && <span>{profile.style}</span>}
+                                {profile.acceleration && <span>Acceleration · {profile.acceleration}</span>}
+                              </div>
+                              <div className={styles.characterRatings}>
+                                {['Serve Rating', 'Forehand Rating', 'Backhand Rating'].map((label) => (
+                                  <div key={label}>
+                                    <span>{label.replace(' Rating', '')}</span>
+                                    <strong>{characterRating(profile, label)}</strong>
+                                  </div>
+                                ))}
+                              </div>
+                              {(strengths?.length || weaknesses?.length) ? (
+                                <p className={styles.characterEvidence}>
+                                  {strengths?.length ? <>Strengths: {strengths.join(' · ')}</> : null}
+                                  {strengths?.length && weaknesses?.length ? ' · ' : null}
+                                  {weaknesses?.length ? <>Trade-offs: {weaknesses.join(' · ')}</> : null}
+                                </p>
+                              ) : null}
+                              {profile.style_description && <p className={styles.characterDescription}>{profile.style_description}</p>}
+                            </>
+                          ) : player.character ? (
+                            <p className={styles.characterDescription}>Character matched; roster profile details are temporarily unavailable.</p>
+                          ) : (
+                            <p className={styles.characterDescription}>The result matched, but no character was recorded for this player.</p>
+                          )}
+                        </article>
+                      );
+                    })}
+                  </div>
+                  <p className={styles.characterAttributionNote}>
+                    Matched by player pair, tournament, and set score
+                    {result.characterAttribution.match && ` · ${[
+                      result.characterAttribution.match.tournamentName,
+                      result.characterAttribution.match.round,
+                      result.characterAttribution.match.date,
+                    ].filter(Boolean).join(' · ')}`}
+                    . Character picks come from WTSL results; profile details come from the ATP character roster.
+                  </p>
+                </>
+              ) : (
+                <p className={styles.characterAttributionStatus} role="status">
+                  {result.characterAttribution.status === 'ambiguous'
+                    ? 'More than one ATP/TE4 result matched. No character was assigned.'
+                    : result.characterAttribution.status === 'not_found'
+                      ? 'No ATP/TE4 result matched the player pair, tournament, and set score. No character was assigned.'
+                      : result.characterAttribution.status === 'unavailable'
+                        ? 'The WTSL result feed was unavailable. DMO analysis completed without character attribution.'
+                        : 'Player names, tournament, or a consistent set score were not available for a reliable match.'}
+                </p>
+              )}
+            </section>
+          )}
 
           <div className={styles.analysisGrid}>
             <section className={styles.viewerPanel} aria-labelledby="viewer-title">

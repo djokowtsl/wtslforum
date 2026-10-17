@@ -2,6 +2,30 @@ const HEADER_SIG = Buffer.from('\x0fDemoTEM2-1.0g.0', 'binary');
 
 export const MAX_DMO_BYTES = 64 * 1024 * 1024;
 
+export function extractDmoTournamentName(bytes: Buffer): string | null {
+  if (!bytes.subarray(0, HEADER_SIG.length).equals(HEADER_SIG)) return null;
+
+  // DemoTEM2 stores the tournament label twice as adjacent length-prefixed strings.
+  // Require both copies so unrelated printable bytes cannot be mistaken for an event.
+  const limit = Math.min(bytes.length, 0x400);
+  for (let offset = HEADER_SIG.length; offset < limit; offset += 1) {
+    const length = bytes[offset];
+    if (length < 4 || length > 96) continue;
+    const valueStart = offset + 1;
+    const repeatedLengthOffset = valueStart + length;
+    const repeatedStart = repeatedLengthOffset + 1;
+    if (repeatedStart + length > limit || bytes[repeatedLengthOffset] !== length) continue;
+
+    const value = bytes.subarray(valueStart, repeatedLengthOffset);
+    if (!value.equals(bytes.subarray(repeatedStart, repeatedStart + length))) continue;
+    if (!value.every((character) => character >= 0x20 && character <= 0x7e)) continue;
+
+    const tournament = value.toString('ascii').trim();
+    return /[a-z]/i.test(tournament) ? tournament : null;
+  }
+  return null;
+}
+
 export class Te4DmoAnalysisError extends Error {
   constructor(message: string) {
     super(message);
@@ -52,6 +76,7 @@ function pair<T>(values: T[]): [T, T] {
 
 export class Te4Replay {
   readonly bytes: Buffer;
+  readonly tournamentName: string | null;
   readonly offsets: number[];
   readonly t110: Uint8Array;
   readonly t111: Uint8Array;
@@ -75,6 +100,7 @@ export class Te4Replay {
       throw new Te4DmoAnalysisError('This file is not a supported TE4 DemoTEM2 recording.');
     }
     this.bytes = bytes;
+    this.tournamentName = extractDmoTournamentName(bytes);
     const firstFrame = this.findFirstFrame();
     this.offsets = this.walkFrames(firstFrame);
     if (this.offsets.length < 8) {
