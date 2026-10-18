@@ -592,6 +592,28 @@ test('game plans preserve full character-specific detail without a step cap', ()
     "Vary the serve between body and corner targets, then attack the returner's recovery with the next ball.",
   ]);
 
+  const repeatedTactic =
+    'Approach only after a short or defensive reply; direct the first volley toward the side the opponent has just left open.';
+  assert.deepEqual(
+    buildGamePlanSteps(
+      `Forehand Volley: ${repeatedTactic}\nBackhand Volley: ${repeatedTactic.toUpperCase().replace(/\.$/, '!')}\nTop Spin: Choose Top Spin for added margin on slow courts.`,
+      '',
+      [
+        { attribute: 'Forehand Volley' },
+        { attribute: 'Backhand Volley' },
+        { attribute: 'Top Spin' },
+      ],
+    ),
+    [
+      repeatedTactic,
+      'Choose Top Spin for added margin on slow courts.',
+    ],
+  );
+  assert.deepEqual(
+    buildGamePlanSteps(`${repeatedTactic} ${repeatedTactic}`),
+    [repeatedTactic],
+  );
+
   const completePlan = [
     'Focus: Hold the middle early.',
     'Serve plan: Change location after the first serve.',
