@@ -2,9 +2,9 @@ name: WTSL public data sync
 
 on:
   schedule:
-    # Run every five minutes, offset from the top of the hour to reduce queue delays.
-    - cron: '3-58/5 * * * *'
-    # Keep the hourly tournament sync clear of the five-minute snapshot runs.
+    # Run every 15 minutes, offset from the hour and other syncs to leave Neon idle windows.
+    - cron: '6-51/15 * * * *'
+    # Keep tournament and player refreshes on their existing slower cadences.
     - cron: '17 * * * *'
     - cron: '10,40 * * * *'
 
@@ -33,7 +33,7 @@ jobs:
         id: target
         run: |
           case "$SYNC_SCHEDULE" in
-            '3-58/5 * * * *') route='public-page-snapshots' ;;
+            '6-51/15 * * * *') route='public-page-snapshots' ;;
             '17 * * * *') route='wtsl-tournaments' ;;
             '10,40 * * * *') route='wtsl-players' ;;
             *)
