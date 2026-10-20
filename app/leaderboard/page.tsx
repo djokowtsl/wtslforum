@@ -9,6 +9,7 @@ import LeaderboardMetricPicker from '@/components/LeaderboardMetricPicker';
 import TourTabs from '@/components/TourTabs';
 import PlayerAvatar from '@/components/PlayerAvatar';
 import { DEFAULT_TOUR, isTourCode, type TourCode } from '@/lib/wtsl';
+import { calculateTourAverage } from '@/lib/leaderboardTourAverage.mjs';
 import {
   BOT_METRICS,
   BOT_RATING_METRICS,
@@ -70,6 +71,15 @@ function formatResultMetric(metric: ResultMetric, player: any): string | number 
   return player.tour_elo ?? '—';
 }
 
+function formatTourAverage(metric: ForumMetric, value: number, screenshotMetric: boolean, format: string): string {
+  if (screenshotMetric) return formatBotMetric(value, format);
+  if (metric === 'win_pct') {
+    return `${new Intl.NumberFormat('en-GB', { maximumFractionDigits: 1 }).format(value)}%`;
+  }
+  if (metric === 'first_serve_pct') return formatPercentage(value);
+  return new Intl.NumberFormat('en-GB', { maximumFractionDigits: 1 }).format(value);
+}
+
 export default async function Leaderboard({ searchParams }: { searchParams: Promise<{ tour?: string; metric?: string }> }) {
   const { tour: tourParam, metric: metricParam } = await searchParams;
   const tour: TourCode = isTourCode(tourParam) ? tourParam : DEFAULT_TOUR;
@@ -91,6 +101,7 @@ export default async function Leaderboard({ searchParams }: { searchParams: Prom
         : leaderboard(tour, metric),
     [] as any[],
   );
+  const tourAverage = calculateTourAverage(rows, metric, screenshotMetric);
   const eligibilityLabel = screenshotMetric
     ? `${LEADERBOARD_MIN_MATCHES}+ screenshot matches`
     : `${LEADERBOARD_MIN_MATCHES}+ recorded matches`;
@@ -110,6 +121,26 @@ export default async function Leaderboard({ searchParams }: { searchParams: Prom
           </div>
           <LeaderboardMetricPicker current={metric} tour={tour} metrics={FORUM_METRICS} />
         </div>
+        <aside className="leaderboard-tour-average" aria-label={`${valueLabel} tour average`}>
+          <div className="leaderboard-tour-average__copy">
+            <span className="leaderboard-tour-average__label">Tour average · {valueLabel}</span>
+            <small>
+              {tourAverage
+                ? `Mean across ${tourAverage.playerCount} leaderboard-eligible players (${LEADERBOARD_MIN_MATCHES}+ matches).`
+                : 'No measured average is available for this tour.'}
+            </small>
+          </div>
+          <strong className="leaderboard-tour-average__value">
+            {tourAverage
+              ? formatTourAverage(
+                metric,
+                tourAverage.value,
+                screenshotMetric,
+                botMetric?.valueFormat ?? 'number',
+              )
+              : '—'}
+          </strong>
+        </aside>
         <section className="panel">
           {rows.length === 0 ? <div className="empty"><strong>No stats yet</strong>The leaderboard fills in as more match data is recorded.</div> : (
             <div className="table-scroll">
