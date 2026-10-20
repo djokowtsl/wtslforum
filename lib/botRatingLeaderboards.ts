@@ -2,48 +2,25 @@ import { sql } from './db';
 import { LEADERBOARD_MIN_MATCHES } from './stats';
 import { BOT_RATING_METRICS } from './botRatingMetrics';
 import type { BotRating } from './botRatingMetrics';
+import {
+  BOT_AGGREGATE_METRICS,
+  BOT_METRICS,
+} from './forumLeaderboardMetrics';
+import type { BotAggregateMetric, BotMetric } from './forumLeaderboardMetrics';
 import type { ProfileScreenshotStats } from './profileStatistics';
 export { BOT_RATING_METRICS } from './botRatingMetrics';
 export type { BotRating } from './botRatingMetrics';
+export {
+  BOT_AGGREGATE_METRICS,
+  BOT_METRICS,
+  isBotMetric,
+} from './forumLeaderboardMetrics';
+export type { BotAggregateMetric, BotMetric } from './forumLeaderboardMetrics';
 
 const BOT_RATING_COMPONENT_LABELS = new Set<string>(
   BOT_RATING_METRICS.flatMap((metric) => [...metric.components]),
 );
-
-export const BOT_AGGREGATE_METRICS = [
-  { key: 'bot_1st_serve_pct', label: '1st Serve %', sourceLabel: '1st Serve %', valueFormat: 'percent', direction: 'desc' },
-  { key: 'bot_aces', label: 'Aces', sourceLabel: 'Aces', valueFormat: 'number', direction: 'desc' },
-  { key: 'bot_double_faults', label: 'Double Faults', sourceLabel: 'Double Faults', valueFormat: 'number', direction: 'asc' },
-  { key: 'bot_fastest_serve', label: 'Fastest Serve', sourceLabel: 'Fastest Serve', valueFormat: 'number', direction: 'desc' },
-  { key: 'bot_avg_1st_serve_speed', label: 'Avg 1st Serve Speed', sourceLabel: 'Avg 1st Serve Speed', valueFormat: 'number', direction: 'desc' },
-  { key: 'bot_avg_2nd_serve_speed', label: 'Avg 2nd Serve Speed', sourceLabel: 'Avg 2nd Serve Speed', valueFormat: 'number', direction: 'desc' },
-  { key: 'bot_winners', label: 'Winners', sourceLabel: 'Winners', valueFormat: 'number', direction: 'desc' },
-  { key: 'bot_forced_errors', label: 'Forced Errors', sourceLabel: 'Forced Errors', valueFormat: 'number', direction: 'asc' },
-  { key: 'bot_unforced_errors', label: 'Unforced Errors', sourceLabel: 'Unforced Errors', valueFormat: 'number', direction: 'asc' },
-  { key: 'bot_net_points_won_pct', label: 'Net Points Won %', sourceLabel: 'Net Points Won %', valueFormat: 'percent', direction: 'desc' },
-  { key: 'bot_break_points_won_pct', label: 'Break Points Won %', sourceLabel: 'Break Points Won %', valueFormat: 'percent', direction: 'desc' },
-  { key: 'bot_total_points_won', label: 'Total Points Won', sourceLabel: 'Total Points Won', valueFormat: 'number', direction: 'desc' },
-  { key: 'bot_short_rallies_won_pct', label: 'Short Rallies Won (<5) %', sourceLabel: 'Short Rallies Won (<5) %', valueFormat: 'percent', direction: 'desc' },
-  { key: 'bot_medium_rallies_won_pct', label: 'Medium Rallies Won (5-8) %', sourceLabel: 'Medium Rallies Won (5-8) %', valueFormat: 'percent', direction: 'desc' },
-  { key: 'bot_long_rallies_won_pct', label: 'Long Rallies Won (>8) %', sourceLabel: 'Long Rallies Won (>8) %', valueFormat: 'percent', direction: 'desc' },
-  { key: 'bot_average_rally_length', label: 'Average Rally Length', sourceLabel: 'Average Rally Length', valueFormat: 'number', direction: 'desc' },
-  { key: 'bot_set_points_saved', label: 'Set Points Saved', sourceLabel: 'Set Points Saved', valueFormat: 'number', direction: 'desc' },
-  { key: 'bot_match_points_saved', label: 'Match Points Saved', sourceLabel: 'Match Points Saved', valueFormat: 'number', direction: 'desc' },
-  { key: 'bot_1st_serve_won_pct', label: '1st Serve Won %', sourceLabel: '1st Serve Won %', valueFormat: 'percent', direction: 'desc' },
-  { key: 'bot_2nd_serve_won_pct', label: '2nd Serve Won %', sourceLabel: '2nd Serve Won %', valueFormat: 'percent', direction: 'desc' },
-  { key: 'bot_return_points_won_pct', label: 'Return Points Won %', sourceLabel: 'Return Points Won %', valueFormat: 'percent', direction: 'desc' },
-  { key: 'bot_return_winners', label: 'Return Winners', sourceLabel: 'Return Winners', valueFormat: 'number', direction: 'desc' },
-  { key: 'bot_breaks_games_pct', label: 'Breaks / Games %', sourceLabel: 'Breaks / Games %', valueFormat: 'percent', direction: 'desc' },
-  { key: 'bot_1st_serve_return_points_won_pct', label: '1st Serve Return Points Won %', sourceLabel: '1st Serve Return Points Won %', valueFormat: 'percent', direction: 'desc' },
-  { key: 'bot_2nd_serve_return_points_won_pct', label: '2nd Serve Return Points Won %', sourceLabel: '2nd Serve Return Points Won %', valueFormat: 'percent', direction: 'desc' },
-  { key: 'bot_break_points_saved_pct', label: 'Break Points Saved %', sourceLabel: 'Break Points Saved %', valueFormat: 'percent', direction: 'desc' },
-  { key: 'bot_tie_breaks_won_pct', label: 'Tie-breaks Won %', sourceLabel: 'Tie-breaks Won %', valueFormat: 'percent', direction: 'desc' },
-  { key: 'bot_deciding_sets_won_pct', label: 'Deciding Sets Won %', sourceLabel: 'Deciding Sets Won %', valueFormat: 'percent', direction: 'desc' },
-] as const;
-
-export const BOT_METRICS = [...BOT_RATING_METRICS, ...BOT_AGGREGATE_METRICS] as const;
-export type BotAggregateMetric = typeof BOT_AGGREGATE_METRICS[number]['key'];
-export type BotMetric = BotRating | BotAggregateMetric;
+const botMetricByKey = new Map(BOT_METRICS.map((metric) => [metric.key, metric]));
 
 export type BotLeaderboardRow = {
   player: string;
@@ -59,12 +36,6 @@ export type BotLeaderboardRow = {
   favoriteCharacterCount: number | null;
   favoriteCharacterPercentage: number | null;
 };
-
-const botMetricByKey = new Map(BOT_METRICS.map((metric) => [metric.key, metric]));
-
-export function isBotMetric(metric: string): metric is BotMetric {
-  return botMetricByKey.has(metric as BotMetric);
-}
 
 let tableEnsured = false;
 let comparisonTableEnsured = false;
@@ -189,6 +160,16 @@ function finiteNumber(value: unknown): number | null {
   if (typeof value === 'string' && value.trim() === '') return null;
   const number = Number(value);
   return Number.isFinite(number) ? number : null;
+}
+
+function recordFromDb(value: unknown): Record<string, unknown> {
+  let parsed = value;
+  if (typeof parsed === 'string') {
+    try { parsed = JSON.parse(parsed); } catch { return {}; }
+  }
+  return parsed && typeof parsed === 'object' && !Array.isArray(parsed)
+    ? parsed as Record<string, unknown>
+    : {};
 }
 
 function componentCountsFromDb(value: unknown): Record<string, number> {
@@ -508,4 +489,71 @@ export async function botRatingLeaderboard(
     value: Number(row.value),
     ratingComponentCounts: componentCountsFromDb(row.ratingComponentCounts),
   }));
+}
+
+export type BotLeaderboardStatsRow = {
+  player: string;
+  wtslPlayerId: string | null;
+  matches: number;
+  metricValues: Partial<Record<BotMetric, number>>;
+  metricSampleCounts: Partial<Record<BotAggregateMetric, number>>;
+  ratingComponentCounts: Record<string, number>;
+};
+
+/** Returns every 20+ screenshot-metric value per player in one read for the Statistics page. */
+export async function botLeaderboardStats(tour: string): Promise<BotLeaderboardStatsRow[]> {
+  await ensureTable();
+  const rows = await sql`
+    SELECT
+      b.player_name AS player,
+      p.wtsl_player_id AS "wtslPlayerId",
+      b.screenshots AS matches,
+      b.serve AS "serveRating",
+      b.return_rating AS "returnRating",
+      b.pressure AS "pressureRating",
+      b.metrics,
+      b.metric_sample_counts AS "metricSampleCounts",
+      b.rating_component_counts AS "ratingComponentCounts"
+    FROM bot_rating_leaderboards b
+    LEFT JOIN wtsl_players p ON p.tour=b.tour AND lower(p.name)=lower(b.player_name)
+    WHERE b.tour=${tour} AND b.screenshots >= ${LEADERBOARD_MIN_MATCHES}
+  `;
+
+  return (rows as any[]).map((row) => {
+    const metricData = recordFromDb(row.metrics);
+    const sampleData = recordFromDb(row.metricSampleCounts);
+    const ratingValues: Record<string, unknown> = {
+      serve: row.serveRating,
+      return: row.returnRating,
+      pressure: row.pressureRating,
+    };
+    const metricValues: Partial<Record<BotMetric, number>> = {};
+    for (const metric of BOT_METRICS) {
+      const isRatingMetric = BOT_RATING_METRICS.some((definition) => definition.key === metric.key);
+      const raw = isRatingMetric
+        ? ratingValues[metric.key]
+        : metricData[metric.sourceLabel];
+      const value = finiteNumber(raw);
+      if (value !== null) metricValues[metric.key] = value;
+    }
+
+    const metricSampleCounts: Partial<Record<BotAggregateMetric, number>> = {};
+    for (const metric of BOT_AGGREGATE_METRICS) {
+      const count = finiteNumber(sampleData[metric.sourceLabel]);
+      if (count !== null && Number.isInteger(count) && count > 0) {
+        metricSampleCounts[metric.key] = count;
+      }
+    }
+
+    return {
+      player: String(row.player),
+      wtslPlayerId: row.wtslPlayerId === null || row.wtslPlayerId === undefined
+        ? null
+        : String(row.wtslPlayerId),
+      matches: Number(row.matches),
+      metricValues,
+      metricSampleCounts,
+      ratingComponentCounts: componentCountsFromDb(row.ratingComponentCounts),
+    };
+  });
 }
