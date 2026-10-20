@@ -29,6 +29,7 @@ export const NAV = [
 
 export async function ForumHeader() {
   const u = await getSession();
+  const navItems = u ? [...NAV, { href: '/live-dmo', label: 'Live DMO' }] : NAV;
   const canModerate = canModerateComments(u);
   const status = u ? await safe(() => getUserStatus(u.id), 'offline' as const) : null;
   const unread = u ? await safe(() => unreadMessageCount(u.id), 0) : 0;
@@ -56,7 +57,7 @@ export async function ForumHeader() {
           )}
           <div className="header-theme-toggle"><ThemeToggle /></div>
           <MobileNav
-            items={NAV}
+            items={navItems}
             isAdmin={!!u?.isAdmin}
             canModerate={canModerate}
             username={u?.username}
@@ -69,7 +70,7 @@ export async function ForumHeader() {
       <nav className="desktop-nav" aria-label="Main">
         <div className="desktop-nav-inner">
           <div className="desktop-nav-links">
-            {NAV.map((n) => (
+            {navItems.map((n) => (
               <Link key={n.href} href={n.href}>{n.label}</Link>
             ))}
           </div>
