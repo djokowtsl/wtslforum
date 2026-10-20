@@ -153,6 +153,29 @@
 .summaryStats > div { display: grid; gap: 5px; padding-left: 15px; border-left: 1px solid var(--dmo-line-strong); }
 .summaryStats span { color: var(--dmo-muted); font-size: 9px; font-weight: 800; letter-spacing: .12em; white-space: nowrap; }
 .summaryStats strong { font: italic 800 22px/1 var(--font-display, sans-serif); font-variant-numeric: tabular-nums; }
+.exportActions { display: flex; flex: none; flex-wrap: wrap; gap: 7px; }
+.exportButton { display: inline-flex; align-items: center; justify-content: center; gap: 6px; min-height: 34px; padding: 0 9px; border: 1px solid var(--dmo-line-strong); border-radius: 8px; background: rgba(2,9,22,.2); color: var(--dmo-soft); font: 700 9px var(--font-body, sans-serif); cursor: pointer; }
+.exportButton:hover { border-color: var(--dmo-lime); color: var(--dmo-lime); }
+.exportButton:focus-visible { outline: 2px solid var(--dmo-lime); outline-offset: 3px; }
+.logPanel { display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: 15px 24px; align-items: center; padding: 18px 20px; border: 1px solid var(--dmo-line); border-radius: 12px; background: linear-gradient(105deg, rgba(176,244,59,.045), transparent 45%), var(--dmo-panel); }
+.logPanelIntro { min-width: 0; }
+.logPanelIntro .kicker { margin-bottom: 5px; }
+.logPanelIntro h2 { margin: 0; font: italic 800 17px/1.2 var(--font-display, sans-serif); }
+.logPanelIntro > p:last-child { margin: 6px 0 0; color: var(--dmo-muted); font-size: 10px; line-height: 1.5; }
+.logControls { display: flex; align-items: center; justify-content: flex-end; flex-wrap: wrap; gap: 7px; }
+.logButton, .logClearButton { display: inline-flex; align-items: center; justify-content: center; gap: 6px; min-height: 34px; padding: 0 10px; border: 1px solid var(--dmo-line-strong); border-radius: 8px; background: rgba(2,9,22,.2); color: var(--dmo-soft); font: 700 9px var(--font-body, sans-serif); cursor: pointer; }
+.logButton:hover, .logClearButton:hover { border-color: var(--dmo-lime); color: var(--dmo-lime); }
+.logButton:focus-visible, .logClearButton:focus-visible, .logOffset input:focus-visible { outline: 2px solid var(--dmo-lime); outline-offset: 3px; }
+.logClearButton { color: var(--dmo-muted); }
+.logOffset { display: grid; gap: 4px; min-width: 95px; }
+.logOffset span { color: var(--dmo-muted); font-size: 8px; font-weight: 800; letter-spacing: .1em; }
+.logOffset input { width: 100%; min-height: 30px; padding: 0 8px; border: 1px solid var(--dmo-line-strong); border-radius: 7px; background: rgba(2,9,22,.35); color: var(--dmo-soft); font: 700 10px var(--font-body, sans-serif); }
+.logOffset input::placeholder { color: var(--dmo-muted); }
+.logFileName { grid-column: 1 / -1; overflow: hidden; margin: -7px 0 0; color: var(--dmo-soft); font-size: 9px; text-overflow: ellipsis; white-space: nowrap; }
+.logMessage, .logPrivacy { grid-column: 1 / -1; margin: -7px 0 0; color: var(--dmo-muted); font-size: 10px; line-height: 1.5; }
+.logMessage[data-ready="true"] { color: var(--dmo-lime); }
+.logMessage[role="alert"] { color: #f4b3a8; }
+.logPrivacy { margin-top: -10px; font-size: 9px; }
 .newAnalysis { display: inline-flex; flex: none; align-items: center; gap: 7px; min-height: 35px; padding: 0 11px; border: 1px solid var(--dmo-line-strong); border-radius: 8px; background: transparent; color: var(--dmo-soft); font: 700 10px var(--font-body, sans-serif); cursor: pointer; }
 .newAnalysis:hover { border-color: var(--dmo-lime); color: var(--dmo-lime); }
 .newAnalysis:disabled { opacity: .45; cursor: not-allowed; }
@@ -262,6 +285,8 @@
   .coachingGrid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
   .summaryStats { order: 3; width: 100%; }
   .newAnalysis { margin-left: auto; }
+  .logPanel { grid-template-columns: minmax(0, 1fr); }
+  .logControls { justify-content: flex-start; }
 }
 @media (max-width: 620px) {
   .workspace { padding: 23px 14px 20px; }
@@ -303,6 +328,9 @@
   .summaryStats > div:first-child { padding-left: 0; border-left: 0; }
   .summaryStats span { font-size: 7px; letter-spacing: .08em; }
   .summaryStats strong { font-size: 19px; }
+  .logPanel { gap: 12px; padding: 14px; }
+  .logControls { align-items: stretch; }
+  .logOffset { min-width: 80px; }
   .metricCard { min-height: 106px; padding: 12px; }
   .metricCard strong { font-size: 21px; }
   .metricIcon { top: 11px; right: 10px; width: 24px; height: 24px; }

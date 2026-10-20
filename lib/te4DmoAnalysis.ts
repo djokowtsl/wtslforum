@@ -282,6 +282,8 @@ function viewerShots(replay: Te4Replay, point: ScoredPoint, start: number): Te4V
     const bounce = replay.firstBounceAfter(frame + (kind === 'serve' ? 2 : 0), 300);
     const x = player === 1 ? replay.p1X[frame] : replay.p2X[frame];
     const y = player === 1 ? replay.p1Y[frame] : replay.p2Y[frame];
+    const energy = player === 1 ? replay.p1Energy[frame] : replay.p2Energy[frame];
+    const breath = player === 1 ? replay.p1Breath[frame] : replay.p2Breath[frame];
     let speed = 0;
     if (frame + 6 < replay.frameCount) {
       if (kind === 'serve') {
@@ -303,6 +305,8 @@ function viewerShots(replay: Te4Replay, point: ScoredPoint, start: number): Te4V
       bx: bounce === null ? null : Math.trunc(replay.ballX[bounce]),
       by: bounce === null ? null : Math.trunc(replay.ballY[bounce]),
       bt: bounce === null ? null : Math.round((bounce - start) / 2),
+      en: round(energy, 3),
+      br: round(breath, 3),
     };
   });
 }
@@ -338,6 +342,7 @@ function viewerPoint(
     w: point.winner,
     f: point.faults,
     n: point.hitFrames.length,
+    inferred: point.inferred === true,
     sh: viewerShots(replay, point, sampledStart),
   };
 }
