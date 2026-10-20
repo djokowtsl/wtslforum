@@ -11,34 +11,23 @@ import PlayerAvatar from '@/components/PlayerAvatar';
 import { DEFAULT_TOUR, isTourCode, type TourCode } from '@/lib/wtsl';
 import { calculateTourAverage } from '@/lib/leaderboardTourAverage.mjs';
 import {
-  BOT_METRICS,
   BOT_RATING_METRICS,
   botLeaderboard,
   botRatingLeaderboard,
-  isBotMetric,
-  type BotMetric,
   type BotRating,
 } from '@/lib/botRatingLeaderboards';
+import {
+  BOT_METRICS,
+  FORUM_METRICS,
+  RESULT_METRICS,
+  isBotMetric,
+  type BotMetric,
+  type ForumMetric,
+  type ResultMetric,
+} from '@/lib/forumLeaderboardMetrics';
 
 export const dynamic = 'force-dynamic';
 export const metadata: Metadata = { title: 'Leaderboard' };
-
-type ResultMetric = 'wins' | 'win_pct' | 'elo' | 'aces' | 'winners' | 'break_points' | 'first_serve_pct';
-type ForumMetric = ResultMetric | BotMetric;
-const RESULT_METRICS: { key: ResultMetric; label: string }[] = [
-  { key: 'wins', label: 'Wins' },
-  { key: 'win_pct', label: 'Win %' },
-  { key: 'elo', label: 'Tour Elo' },
-  { key: 'aces', label: 'Aces' },
-  { key: 'winners', label: 'Winners' },
-  { key: 'break_points', label: 'Break points won' },
-  { key: 'first_serve_pct', label: '1st serve %' },
-];
-
-const FORUM_METRICS: { key: ForumMetric; label: string }[] = [
-  ...RESULT_METRICS,
-  ...BOT_METRICS.map((metric) => ({ key: metric.key, label: metric.label })),
-];
 
 function percentagePoints(value: number): number {
   return value >= 0 && value <= 1 ? value * 100 : value;
