@@ -1,0 +1,12 @@
+.page { max-width: 1480px; min-height: 70vh; margin: 0 auto; padding: 34px clamp(16px, 3.3vw, 48px) 44px; color: var(--text, #f1f5fb); }
+.heading { margin-bottom: 22px; }
+.kicker { margin: 0 0 9px; color: var(--lime, #b0f43b); font-size: 9px; font-weight: 800; letter-spacing: .15em; text-transform: uppercase; }
+.heading h1 { margin: 0; font: italic 800 clamp(38px, 6vw, 64px)/.9 var(--font-display, 'Barlow Condensed'), sans-serif; text-transform: uppercase; }
+.heading h1 em { color: var(--lime, #b0f43b); font-style: inherit; }
+.heading > p:last-child { margin: 11px 0 0; color: var(--muted, #8c9db8); font-size: 12px; }
+.error { display: flex; align-items: flex-start; gap: 8px; margin: 12px 0; padding: 11px 13px; border: 1px solid rgba(255,93,108,.3); border-radius: 8px; background: rgba(255,93,108,.07); color: #ffd4d8; font-size: 11px; line-height: 1.45; }
+.error svg { flex: none; color: #ff7c88; }
+.empty { display: grid; justify-items: center; padding: 58px 20px; border: 1px dashed var(--line-2, rgba(150,180,230,.22)); border-radius: 13px; background: var(--panel, #081328); text-align: center; }
+.icon { display: grid; width: 52px; height: 52px; place-items: center; border: 1px solid rgba(176,244,59,.3); border-radius: 12px; background: rgba(176,244,59,.07); color: var(--lime, #b0f43b); }
+.empty h2 { margin: 15px 0 6px; font: italic 800 26px var(--font-display, sans-serif); text-transform: uppercase; }
+.empty p { max-width: 520px; margin: 0; color: var(--muted, #8c9db8); font-size: 11px; line-height: 1.6; }
