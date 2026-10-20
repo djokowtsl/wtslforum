@@ -43,6 +43,7 @@ export type Te4RawPoint = {
   serveFrame: number;
   hitFrames: number[];
   rallyHits: number;
+  inferred?: boolean;
 };
 
 export type Te4CompletedPoint = Te4RawPoint & { winner: 1 | 2 };
@@ -406,6 +407,7 @@ export class Te4Replay {
       serveFrame,
       hitFrames: this.hits().filter((hit) => hit > lastPointEnd),
       rallyHits: 0,
+      inferred: true,
     };
   }
 }
