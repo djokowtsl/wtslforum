@@ -27,6 +27,8 @@ export type Te4ViewerShot = {
   bx: number | null;
   by: number | null;
   bt: number | null;
+  en: number;
+  br: number;
 };
 
 export type Te4ViewerPoint = {
@@ -46,6 +48,7 @@ export type Te4ViewerPoint = {
   w: Te4Player;
   f: number;
   n: number;
+  inferred: boolean;
   sh: Te4ViewerShot[];
 };
 
