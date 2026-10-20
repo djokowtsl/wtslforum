@@ -2,7 +2,7 @@
 
 import { uploadPresigned } from '@vercel/blob/client';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { Activity, AlertTriangle, ArrowUpRight, Check, ChevronRight, Clock3, FileAudio2, FileUp, Gauge, LoaderCircle, RotateCcw, ShieldCheck, Trophy, X } from 'lucide-react';
+import { Activity, AlertTriangle, ArrowUpRight, Check, ChevronRight, Clock3, Download, FileAudio2, FileUp, Gauge, LoaderCircle, RotateCcw, ShieldCheck, Trophy, X } from 'lucide-react';
 import { isPresignedUrlRetrievalFailure } from '@/lib/dmoUploadErrors';
 import {
   buildTe4CoachingSummary,
@@ -10,6 +10,12 @@ import {
   listTe4CoachingPlayers,
 } from '@/lib/te4DmoCoaching';
 import type { Te4AnalysisResult, Te4CharacterProfile, Te4Highlight } from '@/lib/te4DmoTypes';
+import {
+  alignTe4TvLog,
+  TE4TV_POINT_FIELDS,
+  TE4TV_SHOT_FIELDS,
+  type Te4TvLogAlignment,
+} from '@/lib/te4TvLog';
 import styles from './DmoAnalysisWorkspace.module.css';
 
 type JobStatus = 'queued' | 'uploading' | 'analyzing' | 'ready' | 'error';
@@ -20,9 +26,11 @@ type DmoBatchJob = {
   progress: number;
   result?: Te4AnalysisResult;
   error?: string;
+  logFile?: File;
 };
 
 const MAX_DMO_BYTES = 64 * 1024 * 1024;
+const MAX_GAME_LOG_BYTES = 10 * 1024 * 1024;
 const MAX_BATCH_FILES = 5;
 const MAX_CONCURRENT_ANALYSES = 2;
 
@@ -49,6 +57,124 @@ const safeViewerHtml = (html: string, data: Te4AnalysisResult['viewer']) => {
     .replace(/\u2029/g, '\\u2029');
   return html.replace('__DATA__', json);
 };
+
+function csvCell(value: string | number | boolean | null | undefined): string {
+  let text = value == null ? '' : String(value);
+  if (typeof value === 'string' && /^[=+\-@]/.test(text)) text = `'${text}`;
+  return `"${text.replaceAll('"', '""')}"`;
+}
+
+function downloadCsv(filename: string, rows: Array<Array<string | number | boolean | null | undefined>>) {
+  const csv = rows.map((row) => row.map(csvCell).join(',')).join('\r\n');
+  const blob = new Blob([`\uFEFF${csv}`], { type: 'text/csv;charset=utf-8' });
+  const url = URL.createObjectURL(blob);
+  const anchor = document.createElement('a');
+  anchor.href = url;
+  anchor.download = filename;
+  document.body.append(anchor);
+  anchor.click();
+  anchor.remove();
+  window.setTimeout(() => URL.revokeObjectURL(url), 0);
+}
+
+function exportPointTable(result: Te4AnalysisResult, gameLog?: Te4TvLogAlignment | null) {
+  const rows: Array<Array<string | number | boolean | null | undefined>> = [[
+    'point', 'set', 'games_before', 'points_before', 'tiebreak', 'server', 'winner',
+    'winner_name', 'winner_source', 'rally_hits', 'first_serve_faults', 'serve_speed_kmh',
+    'duration_s', 'start_time_s', 'end_time_s',
+    ...TE4TV_POINT_FIELDS.map((field) => `game_${field}`),
+    ...TE4TV_SHOT_FIELDS.map((field) => `last_shot_${field}`),
+    'game_winner_mapped', 'winner_agrees', 'server_agrees', 'game_error_kind', 'game_error',
+  ]];
+  const fps = result.viewer.match.fps || 30;
+  for (const point of result.viewer.pts) {
+    const serve = point.sh.find((shot) => shot.k === 's');
+    const enrichment = gameLog?.reliable ? gameLog.byPoint[point.k] : undefined;
+    rows.push([
+      point.k,
+      point.set,
+      point.g,
+      point.pt,
+      Boolean(point.tb),
+      point.s,
+      point.w,
+      result.names[point.w - 1],
+      point.inferred ? 'inferred from pending score' : 'DMO result marker',
+      point.n,
+      point.f,
+      serve?.v || '',
+      Math.round((point.fc / fps) * 10) / 10,
+      Math.round((point.mf / fps) * 100) / 100,
+      Math.round(((point.mf + point.fc) / fps) * 100) / 100,
+      ...TE4TV_POINT_FIELDS.map((field) => enrichment?.gameStats[field] ?? ''),
+      ...TE4TV_SHOT_FIELDS.map((field) => enrichment?.lastShot[field] ?? ''),
+      enrichment?.gameWinnerMapped ?? '',
+      enrichment?.winnerAgrees ?? '',
+      enrichment?.serverAgrees ?? '',
+      enrichment?.errorKind ?? '',
+      enrichment?.isError ?? '',
+    ]);
+  }
+  const stem = result.filename.replace(/\.[^.]+$/, '').replace(/[^a-zA-Z0-9_-]+/g, '-').slice(0, 90) || 'te4-match';
+  downloadCsv(`${stem}-points.csv`, rows);
+}
+
+function exportShotTable(result: Te4AnalysisResult, gameLog?: Te4TvLogAlignment | null) {
+  const encoded = atob(result.viewer.match.d);
+  const bytes = new Uint8Array(encoded.length);
+  for (let index = 0; index < encoded.length; index += 1) bytes[index] = encoded.charCodeAt(index);
+  const frames = new DataView(bytes.buffer);
+  const fps = result.viewer.match.fps || 30;
+  const rows: Array<Array<string | number | boolean | null | undefined>> = [[
+    'point', 'shot', 'kind', 'player', 'time_s', 'ball_x_cm', 'ball_y_cm', 'ball_z_cm',
+    'player_x_cm', 'player_y_cm', 'distance_to_ball_cm', 'speed_kmh', 'energy', 'breath',
+    'first_bounce_x_cm', 'first_bounce_y_cm', 'first_bounce_time_s',
+    'game_error_kind', 'game_error',
+  ]];
+  for (const point of result.viewer.pts) {
+    for (const [shotIndex, shot] of point.sh.entries()) {
+      const frame = point.mf + shot.t;
+      const offset = frame * 14;
+      const values = offset + 14 <= frames.byteLength
+        ? Array.from({ length: 7 }, (_, index) => frames.getInt16(offset + index * 2, true))
+        : null;
+      const isServe = shot.k === 's';
+      const isLastShot = shotIndex === point.sh.length - 1;
+      const enrichment = gameLog?.reliable && isLastShot ? gameLog.byPoint[point.k] : undefined;
+      const playerX = values ? values[shot.p === 1 ? 3 : 5] : null;
+      const playerY = values ? values[shot.p === 1 ? 4 : 6] : null;
+      const ballX = values ? values[0] : null;
+      const ballY = values ? values[1] : null;
+      const ballZ = values ? values[2] : null;
+      const distance = !isServe && values && playerX !== null && playerY !== null
+        ? Math.round(Math.hypot(playerX - ballX!, playerY - ballY!))
+        : '';
+      rows.push([
+        point.k,
+        shotIndex + 1,
+        isServe ? 'serve' : 'rally',
+        shot.p,
+        Math.round(((frame / fps) * 100)) / 100,
+        isServe ? '' : ballX,
+        isServe ? '' : ballY,
+        isServe ? '' : ballZ,
+        playerX,
+        playerY,
+        distance,
+        shot.v || '',
+        shot.en,
+        shot.br,
+        shot.bx,
+        shot.by,
+        shot.bt === null ? '' : Math.round((((point.mf + shot.bt) / fps) * 100)) / 100,
+        enrichment?.errorKind ?? '',
+        enrichment?.isError ?? '',
+      ]);
+    }
+  }
+  const stem = result.filename.replace(/\.[^.]+$/, '').replace(/[^a-zA-Z0-9_-]+/g, '-').slice(0, 90) || 'te4-match';
+  downloadCsv(`${stem}-shots.csv`, rows);
+}
 
 function HighlightRow({ highlight, index, selected, onSelect }: {
   highlight: Te4Highlight;
@@ -87,8 +213,12 @@ export default function DmoAnalysisWorkspace() {
   const [viewerHtml, setViewerHtml] = useState('');
   const [viewerError, setViewerError] = useState('');
   const [viewerRetryKey, setViewerRetryKey] = useState(0);
+  const [gameLog, setGameLog] = useState<Te4TvLogAlignment | null>(null);
+  const [gameLogError, setGameLogError] = useState('');
+  const [logOffset, setLogOffset] = useState('');
   const running = useRef(false);
   const fileInput = useRef<HTMLInputElement>(null);
+  const gameLogInput = useRef<HTMLInputElement>(null);
   const viewerFrame = useRef<HTMLIFrameElement>(null);
 
   const completedJobs = useMemo(
@@ -99,7 +229,8 @@ export default function DmoAnalysisWorkspace() {
   );
   const completedResults = useMemo(() => completedJobs.map((job) => job.result), [completedJobs]);
   const activeMatchId = selectedMatchId ?? completedJobs[0]?.id ?? null;
-  const result = jobs.find((job) => job.id === activeMatchId)?.result ?? null;
+  const activeJob = jobs.find((job) => job.id === activeMatchId) ?? null;
+  const result = activeJob?.result ?? null;
   const busy = jobs.some((job) => job.status === 'uploading' || job.status === 'analyzing');
   const availablePlayers = useMemo(() => listTe4CoachingPlayers(completedResults), [completedResults]);
   const defaultPlayer = useMemo(() => defaultTe4CoachingPlayer(completedResults), [completedResults]);
@@ -138,6 +269,41 @@ export default function DmoAnalysisWorkspace() {
       });
     return () => { cancelled = true; };
   }, [result, viewerRetryKey]);
+
+  useEffect(() => {
+    const file = activeJob?.logFile;
+    if (!result || !file) {
+      setGameLog(null);
+      setGameLogError('');
+      return;
+    }
+    if (file.size > MAX_GAME_LOG_BYTES) {
+      setGameLog(null);
+      setGameLogError('Choose an engine log no larger than 10 MiB.');
+      return;
+    }
+    const trimmedOffset = logOffset.trim();
+    const offset = trimmedOffset ? Number(trimmedOffset) : undefined;
+    if (trimmedOffset && (offset === undefined || !Number.isInteger(offset) || Math.abs(offset) > 50_000)) {
+      setGameLog(null);
+      setGameLogError('Enter a whole-number offset from -50000 to 50000, or leave it blank for automatic alignment.');
+      return;
+    }
+    let cancelled = false;
+    setGameLog(null);
+    setGameLogError('');
+    file.text().then((text) => {
+      if (cancelled) return;
+      setGameLog(alignTe4TvLog(
+        text,
+        result.viewer.pts.map(({ k, s, w }) => ({ k, s, w })),
+        offset,
+      ));
+    }).catch(() => {
+      if (!cancelled) setGameLogError('The selected engine log could not be read.');
+    });
+    return () => { cancelled = true; };
+  }, [activeJob?.logFile, logOffset, result]);
 
   const selectHighlight = useCallback((highlight: Te4Highlight) => {
     setSelectedPoint(highlight.point);
@@ -240,6 +406,7 @@ export default function DmoAnalysisWorkspace() {
   const selectMatch = (job: DmoBatchJob) => {
     if (!job.result) return;
     setSelectedMatchId(job.id);
+    setLogOffset('');
     const point = job.result.highlights[0]?.point ?? null;
     setSelectedPoint(point);
     if (point !== null) viewerFrame.current?.contentWindow?.postMessage({ type: 'select-point', point }, '*');
@@ -457,6 +624,81 @@ export default function DmoAnalysisWorkspace() {
               <div><span>RUNTIME</span><strong>{formatDuration(result.durationSeconds)}</strong></div>
               <div><span>HIGHLIGHTS</span><strong>{result.highlights.length.toString().padStart(2, '0')}</strong></div>
             </div>
+            <div className={styles.exportActions} aria-label="Download match tables">
+              <button type="button" className={styles.exportButton} onClick={() => exportPointTable(result, gameLog)}><Download size={13} /> Points CSV</button>
+              <button type="button" className={styles.exportButton} onClick={() => exportShotTable(result, gameLog)}><Download size={13} /> Shots CSV</button>
+            </div>
+          </section>
+
+          <section className={styles.logPanel} aria-labelledby="te4tv-log-title">
+            <div className={styles.logPanelIntro}>
+              <p className={styles.kicker}>OPTIONAL GAME-LOG CHECK</p>
+              <h2 id="te4tv-log-title">Cross-check with a TE4TV engine log</h2>
+              <p>Choose the local Director Mode log for this match. It is parsed in your browser and is never uploaded.</p>
+            </div>
+            <div className={styles.logControls}>
+              <input
+                ref={gameLogInput}
+                className={styles.fileInput}
+                type="file"
+                accept=".log,.txt,text/plain"
+                aria-label="Choose a TE4TV engine log"
+                onChange={(event) => {
+                  const file = event.currentTarget.files?.[0];
+                  event.currentTarget.value = '';
+                  if (!file || !activeMatchId) return;
+                  if (!/\.(log|txt)$/i.test(file.name)) {
+                    updateJob(activeMatchId, { logFile: undefined });
+                    setGameLogError('Choose a plain-text .log or .txt engine log.');
+                  } else if (file.size > MAX_GAME_LOG_BYTES) {
+                    updateJob(activeMatchId, { logFile: undefined });
+                    setGameLogError('Choose an engine log no larger than 10 MiB.');
+                  } else {
+                    setGameLogError('');
+                    updateJob(activeMatchId, { logFile: file });
+                  }
+                }}
+              />
+              <button type="button" className={styles.logButton} onClick={() => gameLogInput.current?.click()}>
+                <FileUp size={14} /> {activeJob?.logFile ? 'Replace log' : 'Choose log'}
+              </button>
+              {activeJob?.logFile && (
+                <button
+                  type="button"
+                  className={styles.logClearButton}
+                  onClick={() => {
+                    if (activeMatchId) updateJob(activeMatchId, { logFile: undefined });
+                    setLogOffset('');
+                    if (gameLogInput.current) gameLogInput.current.value = '';
+                  }}
+                >
+                  <X size={13} /> Remove
+                </button>
+              )}
+              <label className={styles.logOffset}>
+                <span>POINT OFFSET</span>
+                <input
+                  type="number"
+                  min={-50000}
+                  max={50000}
+                  step={1}
+                  value={logOffset}
+                  placeholder="Auto"
+                  onChange={(event) => setLogOffset(event.currentTarget.value)}
+                  aria-label="TE4TV log point offset; leave blank for automatic alignment"
+                />
+              </label>
+            </div>
+            {activeJob?.logFile && <p className={styles.logFileName}>{activeJob.logFile.name}</p>}
+            {gameLogError && <p className={styles.logMessage} role="alert">{gameLogError}</p>}
+            {gameLog && (
+              <p className={styles.logMessage} role="status" data-ready={gameLog.reliable}>
+                {gameLog.reliable
+                  ? `${gameLog.matchedPoints} points aligned; ${gameLog.winnerAgreements}/${gameLog.matchedPoints} winners agree${gameLog.flippedPlayers ? ' after matching the game’s player order' : ''}${gameLog.serverComparisons ? `; ${gameLog.serverAgreements}/${gameLog.serverComparisons} servers agree` : ''}. Error tags are included in the CSV exports.`
+                  : 'No reliable point alignment was found. Log data will be left out of the CSV exports; try an offset if the log starts partway through the match.'}
+              </p>
+            )}
+            <p className={styles.logPrivacy}>This is supplemental evidence only; it does not change DMO scoring, replay, or highlights.</p>
           </section>
 
           {result.warnings.length > 0 && <div className={styles.warningBanner}><AlertTriangle size={17} /><div><strong>Analysis notes</strong><ul>{result.warnings.map((warning, index) => <li key={`${index}-${warning}`}>{warning}</li>)}</ul></div></div>}
