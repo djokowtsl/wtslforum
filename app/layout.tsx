@@ -1,4 +1,5 @@
 import './globals.css';
+import './live-broadcast.css';
 import type { Metadata, Viewport } from 'next';
 import { Barlow_Condensed, Inter } from 'next/font/google';
 import { Suspense } from 'react';

@@ -1,27 +1,35 @@
 'use client';
 
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { AlertTriangle, Radio } from 'lucide-react';
 import type { Te4LiveSnapshot } from '@/lib/te4DmoLive';
+import type { LiveStream } from '@/lib/liveBroadcast';
 import DmoLiveDisplay from './DmoLiveDisplay';
+import LiveStreamEmbed from './LiveStreamEmbed';
 import styles from './DmoLiveViewer.module.css';
 
 type Broadcast = {
   id: string;
   status: 'live' | 'ended';
+  ownerName: string;
   snapshot: Te4LiveSnapshot | null;
+  stream: LiveStream | null;
+  players: [string, string] | null;
   updatedAt: string;
   stale: boolean;
 };
 
 export default function DmoLiveViewer() {
-  const [broadcast, setBroadcast] = useState<Broadcast | null>(null);
+  const [broadcasts, setBroadcasts] = useState<Broadcast[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
+  const [focusedBroadcastId, setFocusedBroadcastId] = useState<string | null>(null);
+  const focusedOnce = useRef<string | null>(null);
 
   useEffect(() => {
     let active = true;
     let running = false;
+    setFocusedBroadcastId(new URLSearchParams(window.location.search).get('broadcast'));
     const refresh = async () => {
       if (running || !active) return;
       running = true;
@@ -30,7 +38,7 @@ export default function DmoLiveViewer() {
         const body = await response.json().catch(() => null);
         if (!response.ok) throw new Error(typeof body?.error === 'string' ? body.error : `Live feed unavailable (${response.status}).`);
         if (!active) return;
-        setBroadcast(body?.broadcast ?? null);
+        setBroadcasts(Array.isArray(body?.broadcasts) ? body.broadcasts : []);
         setError('');
       } catch (cause) {
         if (active) setError(cause instanceof Error ? cause.message : 'The live feed could not be loaded.');
@@ -40,37 +48,79 @@ export default function DmoLiveViewer() {
       }
     };
     void refresh();
-    const timer = window.setInterval(() => { void refresh(); }, 1800);
+    const timer = window.setInterval(() => { void refresh(); }, 3000);
     return () => {
       active = false;
       window.clearInterval(timer);
     };
   }, []);
 
+  useEffect(() => {
+    if (!focusedBroadcastId || !broadcasts.length || focusedOnce.current === focusedBroadcastId) return;
+    const timer = window.setTimeout(() => {
+      const target = document.getElementById(`broadcast-${focusedBroadcastId}`);
+      if (!target) return;
+      focusedOnce.current = focusedBroadcastId;
+      target.scrollIntoView({
+        behavior: window.matchMedia('(prefers-reduced-motion: reduce)').matches ? 'auto' : 'smooth',
+        block: 'start',
+      });
+    }, 50);
+    return () => window.clearTimeout(timer);
+  }, [focusedBroadcastId, broadcasts]);
+
   return (
-    <main className={styles.page}>
+    <section className={styles.page} aria-label="Live broadcasts">
       <header className={styles.heading}>
-        <p className={styles.kicker}>WTSL FORUM / TE4</p>
-        <h1>Live <em>DMO</em></h1>
-        <p>Watch the current match broadcast. Only signed-in Forum members can view this page.</p>
+        <p className={styles.kicker}>WTSL FORUM / LIVE</p>
+        <h2>Watching <em>now</em></h2>
+        <p>Every broadcast is shown as a live court reconstruction, an embedded stream, or both.</p>
       </header>
       {error && <p className={styles.error} role="alert"><AlertTriangle size={16} />{error}</p>}
-      {broadcast?.snapshot ? (
-        <DmoLiveDisplay
-          snapshot={broadcast.snapshot}
-          state={broadcast.status}
-          stale={broadcast.stale}
-          updatedAt={broadcast.updatedAt}
-        />
+      {broadcasts.length ? (
+        <div className="live-broadcast-list">
+          {broadcasts.map((broadcast) => {
+            const players = broadcast.snapshot?.players ?? broadcast.players;
+            return (
+              <article className="live-broadcast-card" id={`broadcast-${broadcast.id}`} key={broadcast.id}>
+                <div className="live-broadcast-card-heading">
+                  <span><Radio size={16} />{broadcast.status === 'live' ? 'LIVE' : 'ENDED'} · {broadcast.ownerName}</span>
+                  {players && <strong>{players[0]} <i>vs</i> {players[1]}</strong>}
+                </div>
+                {broadcast.stream && broadcast.status === 'live' && (
+                  <LiveStreamEmbed stream={broadcast.stream} title={`Live stream by ${broadcast.ownerName}`} />
+                )}
+                {broadcast.snapshot ? (
+                  <DmoLiveDisplay
+                    snapshot={broadcast.snapshot}
+                    state={broadcast.status}
+                    stale={broadcast.stale}
+                    updatedAt={broadcast.updatedAt}
+                  />
+                ) : broadcast.stream && broadcast.status === 'live' ? (
+                  <p className="live-broadcast-stream-note">This broadcast is sharing a video stream without DMO court data.</p>
+                ) : (
+                  <div className={styles.empty}>
+                    <span className={styles.icon}><Radio size={23} /></span>
+                    <h3>{broadcast.status === 'live' ? 'Waiting for match data' : 'Broadcast ended'}</h3>
+                    <p>{broadcast.status === 'live'
+                      ? 'The court appears once TE4 writes enough match frames.'
+                      : 'This broadcast ended before DMO court data became available.'}</p>
+                  </div>
+                )}
+              </article>
+            );
+          })}
+        </div>
       ) : (
-        <section className={styles.empty}>
+        <div className={styles.empty}>
           <span className={styles.icon}><Radio size={23} /></span>
-          <h2>{loading ? 'Connecting to live feed' : broadcast ? 'Waiting for match data' : 'No live match right now'}</h2>
-          <p>{broadcast
-            ? 'An admin has started a broadcast. The scoreboard will appear when TE4 writes enough match frames.'
-            : 'An admin can start a broadcast from the private DMO tools. This page refreshes automatically.'}</p>
-        </section>
+          <h3>{loading ? 'Connecting to live broadcasts' : 'No live broadcast right now'}</h3>
+          <p>{loading
+            ? 'Checking for active streams and DMO courts.'
+            : 'Start a broadcast above to share a stream link, a DMO court, or both.'}</p>
+        </div>
       )}
-    </main>
+    </section>
   );
 }

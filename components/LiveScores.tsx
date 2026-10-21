@@ -1,10 +1,12 @@
 'use client';
 
 import { useEffect, useRef, useState } from 'react';
+import Link from 'next/link';
 import PlayerAvatar from '@/components/PlayerAvatar';
 import FeedUpdatedAt from '@/components/FeedUpdatedAt';
 import LivePlayerStatsPopover from '@/components/LivePlayerStatsPopover';
 import { formatLivePlayerElos } from '@/lib/liveScoreModel';
+import { sameLiveMatch } from '@/lib/liveBroadcast';
 
 type LivePlayer = {
   id: string | number;
@@ -34,13 +36,22 @@ export type LiveScoresPayload = { matches: LiveMatch[]; checkedAt: string; updat
 export default function LiveScores({
   initialPayload = null,
   initialSource = null,
+  signedIn = false,
 }: {
   initialPayload?: LiveScoresPayload | null;
   initialSource?: 'snapshot' | 'live' | null;
+  signedIn?: boolean;
 }) {
   const [payload, setPayload] = useState<LiveScoresPayload | null>(initialPayload);
   const [source, setSource] = useState<'snapshot' | 'live' | null>(initialSource);
   const [failed, setFailed] = useState(false);
+  const [broadcasts, setBroadcasts] = useState<Array<{
+    id: string;
+    status: 'live' | 'ended';
+    ownerName: string;
+    players: [string, string] | null;
+    snapshot: { players?: [string, string] } | null;
+  }>>([]);
   const [selectedMatchIndex, setSelectedMatchIndex] = useState(0);
   const trackRef = useRef<HTMLDivElement>(null);
 
@@ -72,6 +83,32 @@ export default function LiveScores({
       window.clearInterval(timer);
     };
   }, []);
+
+  useEffect(() => {
+    if (!signedIn) return;
+    let active = true;
+    let loading = false;
+    const loadBroadcasts = async () => {
+      if (loading || !active) return;
+      loading = true;
+      try {
+        const response = await fetch('/api/live-dmo/current', { cache: 'no-store' });
+        if (!response.ok) return;
+        const body = await response.json();
+        if (active && Array.isArray(body?.broadcasts)) setBroadcasts(body.broadcasts);
+      } catch {
+        // Keep the page usable if the optional broadcast feed is unavailable.
+      } finally {
+        loading = false;
+      }
+    };
+    void loadBroadcasts();
+    const timer = window.setInterval(() => { void loadBroadcasts(); }, 10_000);
+    return () => {
+      active = false;
+      window.clearInterval(timer);
+    };
+  }, [signedIn]);
 
   if (failed && !payload) {
     return <div className="live-score-empty" role="status">Live scores are temporarily unavailable.</div>;
@@ -135,6 +172,11 @@ export default function LiveScores({
           const secondProbability = match.probability === null ? null : 100 - match.probability;
           const firstName = first?.name ?? splitNames[0] ?? match.name;
           const secondName = second?.name ?? splitNames[1] ?? '';
+          const relatedBroadcasts = broadcasts.filter((broadcast) => broadcast.status === 'live'
+            && sameLiveMatch(
+              [firstName, secondName],
+              broadcast.snapshot?.players ?? broadcast.players,
+            ));
           const statsTour = match.tour === 'TE4' || match.tour === 'TE4_(F)' ? match.tour : null;
           const h2hUrl = first && second && match.tour
             ? `https://www.playwtsl.com/TE4/pages/h2h.php?tour=${encodeURIComponent(match.tour)}&pl_one=${encodeURIComponent(String(first.id))}&pl_two=${encodeURIComponent(String(second.id))}`
@@ -206,7 +248,20 @@ export default function LiveScores({
                 {match.probability === null && <small>Probability unavailable</small>}
               </div>
               {renderPlayer(second ?? undefined, secondName || 'Opponent', 'second', match.inGameElo2)}
-              <div className="live-score-meta">{match.mode} · Best of {match.bestOf} · {match.court}</div>
+              <div className="live-score-meta">
+                {match.mode} · Best of {match.bestOf} · {match.court}
+                {relatedBroadcasts.map((broadcast) => (
+                  <Link
+                    className="live-broadcast-match-link"
+                    href={`/live-dmo?broadcast=${encodeURIComponent(broadcast.id)}#broadcast-${encodeURIComponent(broadcast.id)}`}
+                    key={broadcast.id}
+                    title={`Watch ${broadcast.ownerName}'s live broadcast`}
+                    aria-label={`Watch ${broadcast.ownerName}'s live broadcast of ${firstName} vs ${secondName}`}
+                  >
+                    🎥
+                  </Link>
+                ))}
+              </div>
               {h2hUrl && <a className="live-score-h2h" href={h2hUrl} target="_blank" rel="noreferrer">Official H2H ↗</a>}
             </article>
           );
