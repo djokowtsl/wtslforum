@@ -1,0 +1,72 @@
+.scene {
+  overflow: hidden;
+  border: 1px solid rgba(150,180,230,.22);
+  border-radius: 12px;
+  background: #081328;
+  box-shadow: 0 18px 44px rgba(0,0,0,.24);
+}
+
+.sceneToolbar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 14px;
+  min-height: 54px;
+  padding: 9px 13px;
+  border-bottom: 1px solid rgba(150,180,230,.16);
+  background: linear-gradient(100deg, rgba(10,25,49,.98), rgba(6,17,34,.92));
+}
+
+.sceneTitle { display: flex; align-items: center; gap: 10px; min-width: 0; }
+.sceneTitle strong { color: #f1f5fb; font: italic 800 18px/1 var(--font-display, 'Barlow Condensed'), sans-serif; letter-spacing: .04em; }
+.sceneTitle span { padding-left: 10px; border-left: 1px solid rgba(150,180,230,.25); color: #8c9db8; font-size: 8px; font-weight: 800; letter-spacing: .12em; }
+.sceneControls { display: flex; align-items: center; gap: 6px; }
+.sceneControls select, .sceneControls button {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  height: 30px;
+  border: 1px solid rgba(150,180,230,.23);
+  border-radius: 6px;
+  background: rgba(5,15,34,.88);
+  color: #d9e3ef;
+}
+.sceneControls select { max-width: 135px; padding: 0 9px; font: 600 10px var(--font-body, sans-serif); }
+.sceneControls button { width: 30px; padding: 0; cursor: pointer; }
+.sceneControls button:hover { border-color: #b0f43b; color: #b0f43b; }
+.sceneControls input { width: 82px; accent-color: #b0f43b; }
+.sceneControls output { min-width: 34px; color: #9eacc0; font-size: 9px; font-variant-numeric: tabular-nums; text-align: right; }
+
+.viewport { position: relative; overflow: hidden; background: #101923; }
+.viewport canvas { display: block; width: 100%; height: auto; }
+.reconstructionTag {
+  position: absolute;
+  top: 12px;
+  left: 12px;
+  padding: 6px 8px;
+  border: 1px solid rgba(255,255,255,.17);
+  border-radius: 5px;
+  background: rgba(5,12,23,.66);
+  color: rgba(255,255,255,.78);
+  font-size: 7px;
+  font-weight: 800;
+  letter-spacing: .12em;
+  backdrop-filter: blur(6px);
+}
+
+.legend { display: flex; align-items: center; flex-wrap: wrap; gap: 12px 20px; min-height: 38px; padding: 8px 13px; border-top: 1px solid rgba(150,180,230,.13); color: #c4d0e2; font-size: 9px; }
+.legend span { display: inline-flex; align-items: center; gap: 6px; }
+.legend i { width: 8px; height: 8px; border-radius: 50%; }
+.playerOne { background: #f59e0b; }
+.playerTwo { background: #ef4444; }
+.ball { background: #e8f84a; box-shadow: 0 0 7px rgba(232,248,74,.8); }
+.sceneNote { margin-left: auto; color: #8392a8; }
+.visuallyHidden { position: absolute; width: 1px; height: 1px; padding: 0; margin: -1px; overflow: hidden; clip: rect(0,0,0,0); white-space: nowrap; border: 0; }
+
+@media (max-width: 720px) {
+  .sceneToolbar { align-items: flex-start; flex-direction: column; }
+  .sceneControls { width: 100%; }
+  .sceneControls select { flex: 1; max-width: none; }
+  .sceneControls input { flex: 1; }
+  .sceneNote { width: 100%; margin-left: 0; }
+}

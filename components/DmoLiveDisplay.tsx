@@ -1,7 +1,8 @@
 'use client';
 
-import { useEffect, useRef } from 'react';
 import type { Te4LiveSnapshot } from '@/lib/te4DmoLive';
+import { surfaceForDmoTournament } from '@/lib/te4DmoSurface';
+import DmoLiveCourt from './DmoLiveCourt';
 import styles from './DmoLiveDisplay.module.css';
 
 type Props = {
@@ -28,105 +29,6 @@ function timeAgo(value?: string) {
   const seconds = Math.max(0, Math.round((Date.now() - new Date(value).getTime()) / 1000));
   if (seconds < 5) return 'updated just now';
   return `updated ${seconds}s ago`;
-}
-
-function Court({ frames, players }: { frames: number[][]; players: [string, string] }) {
-  const canvasRef = useRef<HTMLCanvasElement>(null);
-
-  useEffect(() => {
-    const canvas = canvasRef.current;
-    const context = canvas?.getContext('2d');
-    if (!canvas || !context) return;
-
-    const width = canvas.width;
-    const height = canvas.height;
-    context.clearRect(0, 0, width, height);
-    context.fillStyle = '#071d31';
-    context.fillRect(0, 0, width, height);
-
-    const mapX = (value: number) => width / 2 + value * 0.21;
-    const mapY = (value: number) => height / 2 + value * 0.25;
-    const line = (x1: number, y1: number, x2: number, y2: number) => {
-      context.beginPath();
-      context.moveTo(mapX(x1), mapY(y1));
-      context.lineTo(mapX(x2), mapY(y2));
-      context.stroke();
-    };
-    const rect = (x1: number, y1: number, x2: number, y2: number) => {
-      context.strokeRect(mapX(x1), mapY(y1), mapX(x2) - mapX(x1), mapY(y2) - mapY(y1));
-    };
-
-    context.strokeStyle = 'rgba(208,231,239,.72)';
-    context.lineWidth = 2;
-    rect(-1450, -700, 1450, 700);
-    context.strokeStyle = 'rgba(208,231,239,.95)';
-    context.lineWidth = 1.5;
-    rect(-1189, -549, 1189, 549);
-    line(0, -700, 0, 700);
-    line(-1189, 0, 1189, 0);
-    line(-1189, -300, 1189, -300);
-    line(-1189, 300, 1189, 300);
-    context.strokeStyle = 'rgba(176,244,59,.4)';
-    context.lineWidth = 3;
-    line(-1450, 0, 1450, 0);
-
-    if (!frames.length) return;
-    context.lineCap = 'round';
-    context.lineJoin = 'round';
-    context.beginPath();
-    frames.forEach((frame, index) => {
-      const x = mapX(frame[0]);
-      const y = mapY(frame[1]) - Math.min(80, frame[2] * 0.12);
-      if (index === 0) context.moveTo(x, y);
-      else context.lineTo(x, y);
-    });
-    context.strokeStyle = 'rgba(255,255,255,.44)';
-    context.lineWidth = 2;
-    context.stroke();
-
-    const latest = frames[frames.length - 1];
-    const playersAtFrame = [
-      { name: players[0], x: latest[3], y: latest[4], color: '#b0f43b', label: '1' },
-      { name: players[1], x: latest[5], y: latest[6], color: '#38c7e6', label: '2' },
-    ];
-    for (const player of playersAtFrame) {
-      const x = mapX(player.x);
-      const y = mapY(player.y);
-      context.beginPath();
-      context.arc(x, y, 13, 0, Math.PI * 2);
-      context.fillStyle = player.color;
-      context.fill();
-      context.lineWidth = 3;
-      context.strokeStyle = '#07111f';
-      context.stroke();
-      context.fillStyle = '#06111f';
-      context.font = '800 12px sans-serif';
-      context.textAlign = 'center';
-      context.textBaseline = 'middle';
-      context.fillText(player.label, x, y + 0.5);
-    }
-
-    const ballX = mapX(latest[0]);
-    const ballY = mapY(latest[1]) - Math.min(80, latest[2] * 0.12);
-    context.beginPath();
-    context.arc(ballX, ballY, 6, 0, Math.PI * 2);
-    context.fillStyle = '#fff';
-    context.shadowColor = '#fff';
-    context.shadowBlur = 12;
-    context.fill();
-    context.shadowBlur = 0;
-  }, [frames, players]);
-
-  return (
-    <div className={styles.courtWrap}>
-      <canvas ref={canvasRef} width={900} height={520} aria-label="Live court positions and ball trail" role="img" />
-      <div className={styles.courtLegend}>
-        <span><i className={styles.playerOneDot} /> {players[0]}</span>
-        <span><i className={styles.playerTwoDot} /> {players[1]}</span>
-        <span><i className={styles.ballDot} /> Ball</span>
-      </div>
-    </div>
-  );
 }
 
 function ChanceChart({ values, players }: { values: number[]; players: [string, string] }) {
@@ -161,6 +63,7 @@ function ChanceChart({ values, players }: { values: number[]; players: [string, 
 export default function DmoLiveDisplay({ snapshot, state, stale = false, updatedAt }: Props) {
   const p1Stats = snapshot.stats[0];
   const p2Stats = snapshot.stats[1];
+  const surface = surfaceForDmoTournament(snapshot.stadium);
   const statusLabel = state === 'ended' ? 'Broadcast ended' : stale ? 'Connection paused' : 'Live';
   const pointScore = snapshot.score.tiebreak
     ? `${snapshot.score.points[0]}–${snapshot.score.points[1]}`
@@ -183,6 +86,15 @@ export default function DmoLiveDisplay({ snapshot, state, stale = false, updated
           <strong>{scoreLabel(snapshot.score.sets)}</strong>
         </div>
       </header>
+
+      <div className={styles.liveCourtStage}>
+        <DmoLiveCourt snapshot={snapshot} surface={surface} />
+        <p className={styles.pointNote}>
+          {snapshot.currentPoint.inProgress
+            ? `Point ${snapshot.currentPoint.number} in progress · ${snapshot.currentPoint.rallyHits} recorded rally shots${snapshot.currentPoint.serveSpeedKmh ? ` · serve ${snapshot.currentPoint.serveSpeedKmh} km/h` : ''}`
+            : `Next point · ${pointScore}${snapshot.score.tiebreak ? ' (tiebreak)' : ''}`}
+        </p>
+      </div>
 
       <div className={styles.mainGrid}>
         <div className={styles.leftColumn}>
@@ -208,12 +120,6 @@ export default function DmoLiveDisplay({ snapshot, state, stale = false, updated
               );
             })}
           </div>
-          <p className={styles.pointNote}>
-            {snapshot.currentPoint.inProgress
-              ? `Point ${snapshot.currentPoint.number} in progress · ${snapshot.currentPoint.rallyHits} recorded rally shots${snapshot.currentPoint.serveSpeedKmh ? ` · serve ${snapshot.currentPoint.serveSpeedKmh} km/h` : ''}`
-              : `Next point · ${pointScore}${snapshot.score.tiebreak ? ' (tiebreak)' : ''}`}
-          </p>
-
           <div className={styles.metrics} aria-label="Match statistics">
             <div><span>Service points won</span><strong>{p1Stats.servicePointsWon}/{p1Stats.servicePoints}</strong><small>{snapshot.players[0]}</small></div>
             <div><span>Service points won</span><strong>{p2Stats.servicePointsWon}/{p2Stats.servicePoints}</strong><small>{snapshot.players[1]}</small></div>
@@ -223,11 +129,6 @@ export default function DmoLiveDisplay({ snapshot, state, stale = false, updated
         </div>
 
         <div className={styles.rightColumn}>
-          <div className={styles.courtHeading}>
-            <strong>COURT TRACKER</strong>
-            <span>{snapshot.currentPoint.inProgress ? 'POINT IN PLAY' : 'LATEST FRAME'}</span>
-          </div>
-          <Court frames={snapshot.court} players={snapshot.players} />
           <div className={styles.recentHeading}>
             <strong>POINT LOG</strong>
             <span>LAST {snapshot.recentPoints.length}</span>
