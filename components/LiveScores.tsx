@@ -253,7 +253,7 @@ export default function LiveScores({
                 {relatedBroadcasts.map((broadcast) => (
                   <Link
                     className="live-broadcast-match-link"
-                    href={`/live-dmo?broadcast=${encodeURIComponent(broadcast.id)}#broadcast-${encodeURIComponent(broadcast.id)}`}
+                    href={`/livestreams?broadcast=${encodeURIComponent(broadcast.id)}#broadcast-${encodeURIComponent(broadcast.id)}`}
                     key={broadcast.id}
                     title={`Watch ${broadcast.ownerName}'s live broadcast`}
                     aria-label={`Watch ${broadcast.ownerName}'s live broadcast of ${firstName} vs ${secondName}`}

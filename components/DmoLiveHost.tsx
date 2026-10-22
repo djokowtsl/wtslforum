@@ -343,7 +343,7 @@ export default function DmoLiveHost({ displayName }: Props) {
           <h1>Live <em>broadcast</em></h1>
           <p>Share a live court reconstructed from a local TE4 recording, a stream link from your Discord post, or both. DMO files stay on your device.</p>
         </div>
-        <Link className={styles.watchLink} href="/live-dmo"><ExternalLink size={15} /> Viewer page</Link>
+        <Link className={styles.watchLink} href="/livestreams"><ExternalLink size={15} /> Viewer page</Link>
       </header>
 
       <section className={styles.controlPanel} aria-label="Broadcast controls">
