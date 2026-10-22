@@ -4,10 +4,10 @@ export type Te4DmoReplaySpeed = 1 | 2 | 4;
 
 export const TE4_DMO_FRAMES_PER_SECOND = 60;
 export const LIVE_DMO_UPDATE_INTERVAL_MS = 1200;
-export const LIVE_DMO_COURT_SAMPLES = 72;
+export const LIVE_DMO_COURT_SAMPLES = 96;
 
 export function replayCourtWindowFrames(speed: Te4DmoReplaySpeed): number {
-  return Math.round(TE4_DMO_FRAMES_PER_SECOND * LIVE_DMO_UPDATE_INTERVAL_MS * speed / 1000);
+  return Math.round(TE4_DMO_FRAMES_PER_SECOND * 3 * speed);
 }
 
 export function replayCourtWindowDurationMs(frameCount: number, speed: Te4DmoReplaySpeed): number {
@@ -89,6 +89,11 @@ export type Te4LiveSnapshot = {
     faults: number;
   }>;
   court: number[][];
+  courtFrameIndices?: number[];
+  trajectoryEvents?: Array<{
+    frame: number;
+    kind: 'shot' | 'point-end';
+  }>;
   soundEvents?: Array<{
     frame: number;
     kind: 'racket' | 'bounce';
@@ -371,6 +376,9 @@ export class Te4DmoLiveParser {
   private truePoints(frameLimit = this.frameCount): {
     points: LivePoint[];
     lastEnd: number;
+    serveFrames: number[];
+    hitFrames: number[];
+    endFrames: number[];
     openServe: number | null;
     openHits: number[];
   } {
@@ -455,6 +463,9 @@ export class Te4DmoLiveParser {
     return {
       points: points.filter((point) => !point.let && point.winner !== null),
       lastEnd,
+      serveFrames: serves,
+      hitFrames: hits,
+      endFrames: ends,
       openServe: openServes.length ? openServes[openServes.length - 1] : null,
       openHits: hits.filter((frame) => frame > lastEnd),
     };
@@ -465,7 +476,7 @@ export class Te4DmoLiveParser {
     bestOf: Te4LiveBestOf,
     frameLimit = this.frameCount,
     courtWindowFrames = replayCourtWindowFrames(1),
-    courtSampleLimit = 25,
+    courtSampleLimit = LIVE_DMO_COURT_SAMPLES,
     includeSoundEvents = false,
   ): Te4LiveSnapshot | null {
     const visibleFrameCount = Math.min(this.frameCount, Math.max(0, Math.floor(frameLimit)));
@@ -534,10 +545,14 @@ export class Te4DmoLiveParser {
         ?? this.rawServeSpeedKmh(parsed.openServe);
     const lastFrame = visibleFrameCount - 1;
     const firstFrame = Math.max(0, visibleFrameCount - Math.max(1, Math.floor(courtWindowFrames)));
-    const maxSamples = Math.max(2, Math.min(360, Math.floor(courtSampleLimit)));
-    const stride = Math.max(1, Math.ceil((lastFrame - firstFrame) / (maxSamples - 1)));
+    const maxSamples = Math.max(2, Math.min(100, Math.floor(courtSampleLimit)));
     const court: number[][] = [];
-    for (let frame = firstFrame; frame <= lastFrame; frame += stride) {
+    const courtFrameIndices: number[] = [];
+    const sampleCount = Math.min(maxSamples, lastFrame - firstFrame + 1);
+    for (let sampleIndex = 0; sampleIndex < sampleCount; sampleIndex += 1) {
+      const frame = sampleCount <= 1
+        ? firstFrame
+        : firstFrame + Math.round(sampleIndex * (lastFrame - firstFrame) / (sampleCount - 1));
       const ballX = this.ballX[frame] > 3000 ? 0 : this.ballX[frame];
       const sample = [
         Math.round(ballX),
@@ -552,7 +567,23 @@ export class Te4DmoLiveParser {
       // coordinates. Keep valid score data and omit only the malformed sample.
       if (sample.some((value, index) => index !== 2 && (value < -5000 || value > 5000))) continue;
       court.push(sample);
+      courtFrameIndices.push(frame);
     }
+
+    const trajectoryEvents: NonNullable<Te4LiveSnapshot['trajectoryEvents']> = [];
+    for (const frame of parsed.serveFrames) {
+      if (frame >= firstFrame && frame <= lastFrame) trajectoryEvents.push({ frame, kind: 'shot' });
+    }
+    for (const frame of parsed.hitFrames) {
+      if (frame >= firstFrame && frame <= lastFrame) trajectoryEvents.push({ frame, kind: 'shot' });
+    }
+    for (const frame of parsed.endFrames) {
+      if (frame >= firstFrame && frame <= lastFrame) trajectoryEvents.push({ frame, kind: 'point-end' });
+    }
+    trajectoryEvents.sort((a, b) =>
+      a.frame - b.frame
+      || (a.kind === b.kind ? 0 : a.kind === 'shot' ? -1 : 1),
+    );
 
     const soundEvents: Te4LiveSoundEvent[] = [];
     if (includeSoundEvents) {
@@ -638,6 +669,8 @@ export class Te4DmoLiveParser {
         faults: point.faults,
       })),
       court,
+      courtFrameIndices,
+      trajectoryEvents: trajectoryEvents.slice(-256),
       ...(soundEvents.length ? { soundEvents } : {}),
     };
   }

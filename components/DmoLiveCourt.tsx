@@ -2,15 +2,23 @@
 
 import { useEffect, useRef, useState } from 'react';
 import { Minus, Plus, Volume2, VolumeX } from 'lucide-react';
-import { replayCourtWindowDurationMs } from '@/lib/te4DmoLive';
+import { TE4_DMO_FRAMES_PER_SECOND } from '@/lib/te4DmoLive';
 import type { Te4DmoReplaySpeed, Te4LiveSnapshot } from '@/lib/te4DmoLive';
 import type { Te4CourtSurface } from '@/lib/te4DmoTypes';
+import {
+  advanceLiveCourtPlayhead,
+  interpolateLiveCourtFrame,
+  latestLiveCourtMotionEvent,
+  mergeLiveCourtEvents,
+  mergeLiveCourtSamples,
+  type LiveCourtCoordinates,
+  type LiveCourtMotionEvent,
+  type LiveCourtSample,
+} from '@/lib/liveCourtMotion';
 import styles from './DmoLiveCourt.module.css';
 
 type CameraView = 't' | 'p' | 's' | 'q';
 type ProjectedPoint = [number, number, number];
-type SceneFrame = [number, number, number, number, number, number, number];
-
 type Props = {
   snapshot: Te4LiveSnapshot;
   surface: Te4CourtSurface;
@@ -24,25 +32,20 @@ const surfacePalette: Record<Te4CourtSurface, { court: string; apron: string }> 
   unknown: { court: '#526b79', apron: '#aebbc2' },
 };
 
-function lerp(a: number, b: number, amount: number) {
-  return a + (b - a) * amount;
-}
-
 function drawScene(
   context: CanvasRenderingContext2D,
-  frames: number[][],
+  samples: LiveCourtSample[],
+  trajectoryEvents: LiveCourtMotionEvent[],
   players: [string, string],
   surface: Te4CourtSurface,
   camera: CameraView,
   zoom: number,
   cursor: number,
+  playbackSpeed: Te4DmoReplaySpeed,
 ) {
   const width = 900;
   const height = 520;
   const palette = surfacePalette[surface];
-  const safeFrames = frames.filter((frame): frame is SceneFrame =>
-    frame.length >= 7 && frame.slice(0, 7).every(Number.isFinite),
-  );
   context.clearRect(0, 0, width, height);
   context.fillStyle = '#101923';
   context.fillRect(0, 0, width, height);
@@ -119,7 +122,7 @@ function drawScene(
   });
   polygon([[0, -549, 0], [0, 549, 0], [0, 549, 107], [0, -549, 107]], 'rgba(255,255,255,.18)', lineColor);
 
-  if (!safeFrames.length) {
+  if (!samples.length) {
     context.fillStyle = 'rgba(8,19,40,.72)';
     context.fillRect(0, 0, width, height);
     context.fillStyle = '#f1f5fb';
@@ -129,31 +132,38 @@ function drawScene(
     return;
   }
 
-  const frameIndex = Math.min(safeFrames.length - 1, Math.max(0, Math.floor(cursor)));
-  const blend = Math.max(0, Math.min(1, cursor - frameIndex));
-  const current = safeFrames[frameIndex];
-  const next = safeFrames[Math.min(frameIndex + 1, safeFrames.length - 1)];
-  const value = (index: number) => lerp(current[index], next[index], blend);
+  const current = interpolateLiveCourtFrame(
+    samples,
+    cursor,
+    TE4_DMO_FRAMES_PER_SECOND * playbackSpeed / 2,
+  );
+  if (!current) return;
+  const value = (index: number) => current[index];
   const ball = { x: value(0), y: value(1), z: Math.max(0, value(2)) };
-  const recentStart = Math.max(0, frameIndex - 8);
-
-  context.beginPath();
-  for (let index = recentStart; index <= frameIndex; index += 1) {
-    const frame = safeFrames[index];
-    const [screenX, screenY] = project(frame[0], frame[1], frame[2]);
-    if (index === recentStart) context.moveTo(screenX, screenY);
-    else context.lineTo(screenX, screenY);
+  const activeTrajectory = latestLiveCourtMotionEvent(trajectoryEvents, cursor);
+  if (activeTrajectory?.kind === 'shot') {
+    const trailStart = Math.max(
+      activeTrajectory.frame,
+      cursor - TE4_DMO_FRAMES_PER_SECOND * 0.25 * playbackSpeed,
+    );
+    const trail = samples
+      .filter((sample) => sample.frame >= trailStart && sample.frame <= cursor)
+      .map((sample) => project(sample.values[0], sample.values[1], sample.values[2]));
+    const lastSample = samples[samples.length - 1];
+    if (cursor > lastSample.frame) trail.push(project(ball.x, ball.y, ball.z));
+    for (let index = 1; index < trail.length; index += 1) {
+      const opacity = 0.1 + 0.48 * index / Math.max(1, trail.length - 1);
+      context.beginPath();
+      context.moveTo(trail[index - 1][0], trail[index - 1][1]);
+      context.lineTo(trail[index][0], trail[index][1]);
+      context.strokeStyle = `rgba(250,204,21,${opacity.toFixed(3)})`;
+      context.lineWidth = 1.4 + opacity;
+      context.shadowColor = 'rgba(250,204,21,.2)';
+      context.shadowBlur = 2;
+      context.stroke();
+    }
+    context.shadowBlur = 0;
   }
-  if (frameIndex < safeFrames.length - 1) {
-    const [screenX, screenY] = project(ball.x, ball.y, ball.z);
-    context.lineTo(screenX, screenY);
-  }
-  context.strokeStyle = 'rgba(250,204,21,.72)';
-  context.lineWidth = 2.5;
-  context.shadowColor = 'rgba(250,204,21,.4)';
-  context.shadowBlur = 7;
-  context.stroke();
-  context.shadowBlur = 0;
 
   const [ballShadowX, ballShadowY, ballScale] = project(ball.x, ball.y, 0);
   const [ballX, ballY] = project(ball.x, ball.y, ball.z);
@@ -344,29 +354,90 @@ function playSynthesizedCue(context: AudioContext, kind: 'racket' | 'bounce') {
 
 export default function DmoLiveCourt({ snapshot, surface, playbackSpeed }: Props) {
   const canvasRef = useRef<HTMLCanvasElement>(null);
+  const sampleBufferRef = useRef<LiveCourtSample[]>([]);
+  const trajectoryEventsRef = useRef<LiveCourtMotionEvent[]>([]);
+  const playheadRef = useRef<number | null>(null);
+  const previousSnapshotRef = useRef({
+    filename: snapshot.filename,
+    players: snapshot.players,
+    frameCount: snapshot.frameCount,
+  });
   const audioContextRef = useRef<AudioContext | null>(null);
   const lastSoundFrameRef = useRef(Math.max(0, snapshot.frameCount - 3));
   const playedSoundEventsRef = useRef(new Set<string>());
   const [soundEnabled, setSoundEnabled] = useState(false);
   const [soundError, setSoundError] = useState('');
   const sceneRef = useRef({
-    frames: snapshot.court,
+    samples: sampleBufferRef.current,
+    trajectoryEvents: trajectoryEventsRef.current,
     players: snapshot.players,
     surface,
-    frameCount: snapshot.frameCount,
-    courtFrameCount: snapshot.courtFrameCount,
     playbackSpeed,
   });
   const [camera, setCamera] = useState<CameraView>('t');
   const [zoom, setZoom] = useState(1);
   sceneRef.current = {
-    frames: snapshot.court,
+    samples: sampleBufferRef.current,
+    trajectoryEvents: trajectoryEventsRef.current,
     players: snapshot.players,
     surface,
-    frameCount: snapshot.frameCount,
-    courtFrameCount: snapshot.courtFrameCount,
     playbackSpeed,
   };
+
+  useEffect(() => {
+    const previousSnapshot = previousSnapshotRef.current;
+    const identityChanged = snapshot.filename !== previousSnapshot.filename
+      || snapshot.players[0] !== previousSnapshot.players[0]
+      || snapshot.players[1] !== previousSnapshot.players[1]
+      || snapshot.frameCount < previousSnapshot.frameCount;
+    if (identityChanged) {
+      sampleBufferRef.current = [];
+      trajectoryEventsRef.current = [];
+      playheadRef.current = null;
+    }
+    previousSnapshotRef.current = {
+      filename: snapshot.filename,
+      players: snapshot.players,
+      frameCount: snapshot.frameCount,
+    };
+
+    const courtFrameCount = Math.max(
+      1,
+      Math.floor(snapshot.courtFrameCount ?? snapshot.court.length),
+    );
+    const firstFrame = Math.max(0, snapshot.frameCount - courtFrameCount);
+    const incomingSamples: LiveCourtSample[] = snapshot.court.flatMap((frame, index) => {
+      if (frame.length < 7 || !frame.slice(0, 7).every(Number.isFinite)) return [];
+      const frameIndex = snapshot.courtFrameIndices?.[index]
+        ?? firstFrame + Math.round(
+          index * Math.max(0, courtFrameCount - 1) / Math.max(1, snapshot.court.length - 1),
+        );
+      const values = frame.slice(0, 7) as LiveCourtCoordinates;
+      return [{ frame: frameIndex, values }];
+    });
+    const maxFrameSpan = TE4_DMO_FRAMES_PER_SECOND * 10 * playbackSpeed;
+    sampleBufferRef.current = mergeLiveCourtSamples(
+      sampleBufferRef.current,
+      incomingSamples,
+      maxFrameSpan,
+    );
+    const earliestFrame = sampleBufferRef.current[0]?.frame ?? firstFrame;
+    trajectoryEventsRef.current = mergeLiveCourtEvents(
+      trajectoryEventsRef.current,
+      snapshot.trajectoryEvents ?? [],
+      earliestFrame,
+    );
+    if (playheadRef.current === null && sampleBufferRef.current.length) {
+      playheadRef.current = sampleBufferRef.current[0].frame;
+    } else if (playheadRef.current !== null && playheadRef.current < earliestFrame) {
+      playheadRef.current = earliestFrame;
+    }
+    sceneRef.current = {
+      ...sceneRef.current,
+      samples: sampleBufferRef.current,
+      trajectoryEvents: trajectoryEventsRef.current,
+    };
+  }, [snapshot, playbackSpeed]);
 
   useEffect(() => {
     const canvas = canvasRef.current;
@@ -375,29 +446,40 @@ export default function DmoLiveCourt({ snapshot, surface, playbackSpeed }: Props
 
     let animation = 0;
     let lastTime = performance.now();
-    let playbackProgress = 0;
     const motionPreference = window.matchMedia('(prefers-reduced-motion: reduce)');
     const tick = (now: number) => {
       const elapsed = Math.min(80, Math.max(0, now - lastTime));
       lastTime = now;
       const current = sceneRef.current;
-      const frames = current.frames;
-      const durationMs = replayCourtWindowDurationMs(
-        current.courtFrameCount ?? Math.min(current.frameCount, 180),
+      const samples = current.samples;
+      if (!motionPreference.matches && samples.length > 1) {
+        playheadRef.current = advanceLiveCourtPlayhead(
+          playheadRef.current,
+          elapsed,
+          current.playbackSpeed,
+          samples,
+          TE4_DMO_FRAMES_PER_SECOND,
+        );
+      }
+      const cursor = motionPreference.matches
+        ? samples[samples.length - 1]?.frame ?? 0
+        : playheadRef.current ?? samples[0]?.frame ?? 0;
+      drawScene(
+        context,
+        samples,
+        current.trajectoryEvents,
+        current.players,
+        current.surface,
+        camera,
+        zoom,
+        cursor,
         current.playbackSpeed,
       );
-      if (!motionPreference.matches && frames.length > 1) {
-        playbackProgress = (playbackProgress + elapsed / durationMs) % 1;
-      } else {
-        playbackProgress = 1;
-      }
-      const cursor = playbackProgress * Math.max(0, frames.length - 1);
-      drawScene(context, frames, current.players, current.surface, camera, zoom, cursor);
       animation = window.requestAnimationFrame(tick);
     };
     animation = window.requestAnimationFrame(tick);
     return () => window.cancelAnimationFrame(animation);
-  }, [camera, zoom, playbackSpeed, snapshot.frameCount, snapshot.courtFrameCount]);
+  }, [camera, zoom, playbackSpeed]);
 
   useEffect(() => {
     if (!soundEnabled) return;
