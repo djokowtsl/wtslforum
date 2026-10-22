@@ -11,7 +11,8 @@
 .live-broadcast-stream > a:hover { color: var(--text-strong, #fff); }
 .live-broadcast-stream-loading { display: grid; aspect-ratio: 16 / 9; place-items: center; color: var(--muted, #8c9db8); font-size: 12px; }
 .live-broadcast-stream-note { margin: 12px 0 0; color: var(--muted, #8c9db8); font-size: 12px; }
-.live-broadcast-match-link { margin-left: 9px; display: inline-flex; align-items: center; text-decoration: none; font-size: 16px; line-height: 1; vertical-align: -1px; }
+.live-broadcast-match-link { margin-left: 9px; display: inline-flex; align-items: center; gap: 4px; text-decoration: none; font-size: 16px; line-height: 1; vertical-align: -1px; }
+.live-broadcast-match-label { color: var(--lime, #b0f43b); font-size: 8px; font-weight: 800; letter-spacing: .05em; }
 .live-broadcast-match-link:focus-visible { outline: 2px solid var(--lime, #c6f36b); outline-offset: 3px; border-radius: 4px; }
 @media (max-width: 600px) {
   .live-broadcast-card { padding: 12px; }
