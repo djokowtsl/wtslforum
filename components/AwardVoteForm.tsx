@@ -10,7 +10,7 @@ export default function AwardVoteForm({ categories, initialVotes }: { categories
   const [choices, setChoices] = useState<Record<number, { nomineeId: number | null; writeIn: string }>>(() =>
     Object.fromEntries(categories.map((c) => [c.id, { nomineeId: initialVotes[c.id]?.nomineeId ?? null, writeIn: initialVotes[c.id]?.writeIn ?? '' }]))
   );
-  const [status, setStatus] = useState<Record<number, 'idle' | 'saving' | 'saved' | 'error'>>({});
+  const [status, setStatus] = useState<Record<number, 'idle' | 'saving' | 'saved' | 'saved-no-sync' | 'saved-sync-error' | 'error'>>({});
 
   async function vote(categoryId: number) {
     const choice = choices[categoryId];
@@ -21,8 +21,15 @@ export default function AwardVoteForm({ categories, initialVotes }: { categories
         headers: { 'content-type': 'application/json' },
         body: JSON.stringify({ categoryId, nomineeId: choice.nomineeId, writeIn: choice.nomineeId ? null : choice.writeIn }),
       });
-      if (!res.ok) throw new Error((await res.json()).error || 'Vote failed');
-      setStatus((s) => ({ ...s, [categoryId]: 'saved' }));
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error || 'Vote failed');
+      if (data.sheetSyncStatus === 'synced') {
+        setStatus((s) => ({ ...s, [categoryId]: 'saved' }));
+      } else if (data.sheetSyncStatus === 'not_configured' || data.sheetSyncStatus === 'misconfigured') {
+        setStatus((s) => ({ ...s, [categoryId]: 'saved-no-sync' }));
+      } else {
+        setStatus((s) => ({ ...s, [categoryId]: 'saved-sync-error' }));
+      }
     } catch {
       setStatus((s) => ({ ...s, [categoryId]: 'error' }));
     }
@@ -75,7 +82,9 @@ export default function AwardVoteForm({ categories, initialVotes }: { categories
           >
             {initialVotes[c.id] ? 'Update vote' : 'Vote'}
           </button>
-          {status[c.id] === 'saved' && <span style={{ marginLeft: 10, color: 'var(--lime)' }}>Saved ✓</span>}
+          {status[c.id] === 'saved' && <span role="status" style={{ marginLeft: 10, color: 'var(--lime)' }}>Saved to the Forum and synced ✓</span>}
+          {status[c.id] === 'saved-no-sync' && <span role="status" style={{ marginLeft: 10, color: 'var(--muted)' }}>Saved to the Forum; spreadsheet sync is not configured yet.</span>}
+          {status[c.id] === 'saved-sync-error' && <span role="status" style={{ marginLeft: 10, color: '#ffb36b' }}>Saved to the Forum, but spreadsheet sync failed. An admin can retry it.</span>}
           {status[c.id] === 'error' && <span style={{ marginLeft: 10, color: '#ff8f9a' }}>Couldn&apos;t save, try again.</span>}
         </div>
       ))}
