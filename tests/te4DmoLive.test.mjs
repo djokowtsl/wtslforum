@@ -1,6 +1,7 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
 import { Te4DmoLiveParser } from '../lib/te4DmoLive.ts';
+import { hasPlayerPositionData } from '../lib/te4LiveSetup.ts';
 import { isSameSiteMutation } from '../lib/liveRequestSecurity.ts';
 
 const UINT32_SCALE = 0x100000000;
@@ -69,6 +70,13 @@ test('invalid DMO signatures are marked instead of yielding a scoreboard', () =>
   parser.append(new Uint8Array(1200));
   assert.equal(parser.header?.bad, true);
   assert.equal(parser.snapshot('invalid.dmo', 5), null);
+});
+
+test('local setup check distinguishes court positions from an empty position payload', () => {
+  assert.equal(hasPlayerPositionData([[12, 4, 8, 0, 0, 0, 0]]), false);
+  assert.equal(hasPlayerPositionData([[12, 4, 8, -403, -169, 1237, -176]]), true);
+  assert.equal(hasPlayerPositionData([[12, 4, 8, Number.NaN, 0, 0, 0]]), false);
+  assert.equal(hasPlayerPositionData([[12, 4, 8]]), false);
 });
 
 test('live writes require a matching same-site Origin and forwarded host', () => {
