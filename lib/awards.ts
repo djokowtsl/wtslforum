@@ -150,7 +150,7 @@ export async function importGoogleFormOptions(cycleId: number, questions: Google
       ON CONFLICT (cycle_id,slug)
       DO UPDATE SET
         position=EXCLUDED.position,
-        allow_write_in=award_categories.allow_write_in OR EXCLUDED.allow_write_in
+        allow_write_in=EXCLUDED.allow_write_in
       RETURNING id
     `;
     const categoryId = categoryRows[0]?.id;

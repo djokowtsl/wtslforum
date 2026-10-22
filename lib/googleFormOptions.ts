@@ -20,6 +20,8 @@ export function googleFormCategorySlug(title: string) {
 
   if (slug === 'fans-favorite-award' || slug === 'fans-favourite-award') return 'fans-favourite';
   if (slug === 'best-dressed') return 'best-dressed-player';
+  if (slug === 'stefan-edberg-sportsmanship-award') return 'stefan-edberg-sportsmanship';
+  if (slug === 'arthur-ashe-humanitarian-award') return 'arthur-ashe-humanitarian';
   return slug;
 }
 

@@ -1,10 +1,13 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
+import { readFileSync } from 'node:fs';
 import {
   googleFormCategorySlug,
   parsePublicGoogleFormOptions,
   validatePublicGoogleFormUrl,
 } from '../lib/googleFormOptions.ts';
+
+const awardsSource = readFileSync(new URL('../lib/awards.ts', import.meta.url), 'utf8');
 
 function choice(value) {
   return [value, null, null, null, 0];
@@ -50,6 +53,13 @@ test('reads single-choice and dropdown award options without treating blank Othe
 test('normalizes category aliases while keeping other category slugs readable', () => {
   assert.equal(googleFormCategorySlug('Fans Favourite Award'), 'fans-favourite');
   assert.equal(googleFormCategorySlug('Comedian/Troll of the Year'), 'comedian-troll-of-the-year');
+  assert.equal(googleFormCategorySlug('Stefan Edberg Sportsmanship Award'), 'stefan-edberg-sportsmanship');
+  assert.equal(googleFormCategorySlug('Arthur Ashe Humanitarian Award'), 'arthur-ashe-humanitarian');
+});
+
+test('imports apply the form write-in setting instead of preserving the database default', () => {
+  assert.match(awardsSource, /allow_write_in=EXCLUDED\.allow_write_in/);
+  assert.doesNotMatch(awardsSource, /allow_write_in=award_categories\.allow_write_in\s+OR/);
 });
 
 test('accepts only public Google Form response links', () => {

@@ -55,7 +55,7 @@ export default function AwardAdminPanel({ cycleId, votingOpen, categories, sheet
         setFormPreview(data as FormPreview);
       } else {
         setFormPreview(null);
-        setFormMessage(`Imported ${data.optionsAdded} new choices across ${data.categoriesImported} award categories. ${data.optionsAlreadyPresent} choices were already present. Existing choices and votes were kept.`);
+        setFormMessage(`Imported ${data.optionsAdded} new choices across ${data.categoriesImported} award categories. ${data.optionsAlreadyPresent} choices were already present. Existing choices and votes were kept; write-in settings now match the form.`);
         router.refresh();
       }
     } catch (e) {
@@ -120,7 +120,7 @@ export default function AwardAdminPanel({ cycleId, votingOpen, categories, sheet
       <section className="forum-list" style={{ marginTop: 20, padding: 16 }} aria-labelledby="award-form-import-title">
         <h4 id="award-form-import-title" style={{ margin: '0 0 6px' }}>Import award choices from a Google Form</h4>
         <p className="muted" style={{ margin: '0 0 12px', fontSize: 13 }}>
-          Paste a public response link to preview its award questions and choices. Import adds missing categories and choices; it does not delete existing choices or votes.
+          Paste a public response link to preview its award questions and choices. Import matches existing categories, adds missing choices, and syncs write-in settings to the form; it keeps existing choices and votes.
         </p>
         <div style={{ display: 'flex', flexWrap: 'wrap', gap: 8 }}>
           <input
