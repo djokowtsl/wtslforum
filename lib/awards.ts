@@ -20,27 +20,6 @@ export async function getNomineesForCategories(categoryIds: number[]) {
   return sql`SELECT * FROM award_nominees WHERE category_id = ANY(${categoryIds}) ORDER BY position,name`;
 }
 
-export async function getTally(categoryId: number) {
-  return sql`
-    SELECT n.id nominee_id, n.name, COUNT(v.id)::int votes
-    FROM award_nominees n
-    LEFT JOIN award_votes v ON v.nominee_id = n.id AND v.category_id = ${categoryId}
-    WHERE n.category_id = ${categoryId}
-    GROUP BY n.id, n.name
-    ORDER BY votes DESC, n.name
-  `;
-}
-
-export async function getWriteInTally(categoryId: number) {
-  return sql`
-    SELECT write_in, COUNT(*)::int votes
-    FROM award_votes
-    WHERE category_id=${categoryId} AND nominee_id IS NULL AND write_in IS NOT NULL AND write_in <> ''
-    GROUP BY write_in
-    ORDER BY votes DESC
-  `;
-}
-
 export async function getUserVotes(cycleId: number, voterKey: string) {
   return sql`
     SELECT v.category_id, v.nominee_id, v.write_in
