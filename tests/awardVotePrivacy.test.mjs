@@ -14,7 +14,7 @@ const [adminPage, adminPanel, adminRoute, publicPage, awardsLibrary, voteForm] =
 
 test('Forum admin awards page does not load or display vote tallies', () => {
   assert.doesNotMatch(adminPage, /getTally|getWriteInTally|tally|write_ins/i);
-  assert.doesNotMatch(adminPanel, /tally|write_ins|vote count|responses/i);
+  assert.doesNotMatch(adminPanel, /tally|write_ins|vote count|responseCount|resultRows/i);
   assert.doesNotMatch(awardsLibrary, /export async function getTally|export async function getWriteInTally/);
 });
 

@@ -2,7 +2,7 @@ import { redirect } from 'next/navigation';
 import { safe } from '@/lib/db';
 import { getSession } from '@/lib/auth';
 import { getActiveCycle, getCategories, getNomineesForCategories } from '@/lib/awards';
-import { awardVoteSheetSyncStatus } from '@/lib/awardVoteSheetSync';
+import { awardFormSyncStatus } from '@/lib/awardVoteFormSync';
 import AwardAdminPanel from '@/components/AwardAdminPanel';
 import PageHero from '@/components/PageHero';
 
@@ -38,7 +38,7 @@ export default async function AdminAwards() {
           cycleId={cycle.id}
           votingOpen={cycle.voting_open}
           categories={categoriesWithNominees}
-          sheetSyncConfigured={awardVoteSheetSyncStatus() === 'ready'}
+          formSyncConfigured={awardFormSyncStatus() === 'ready'}
         />
       </main>
     </>

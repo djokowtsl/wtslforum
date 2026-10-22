@@ -8,18 +8,21 @@ import {
 } from '../lib/googleFormOptions.ts';
 
 const awardsSource = readFileSync(new URL('../lib/awards.ts', import.meta.url), 'utf8');
+const adminRouteSource = readFileSync(new URL('../app/api/admin/awards/route.ts', import.meta.url), 'utf8');
+const requiredMigration = readFileSync(new URL('../migrations/2026-10-22-award-question-required.sql', import.meta.url), 'utf8');
+const responseMigration = readFileSync(new URL('../migrations/2026-10-22-award-native-form-responses.sql', import.meta.url), 'utf8');
 
 function choice(value) {
   return [value, null, null, null, 0];
 }
 
-function question(id, title, type, options = [], shuffleOptions = false) {
+function question(id, title, type, options = [], shuffleOptions = false, isRequired = true) {
   return [
     id,
     title,
     null,
     type,
-    options.length ? [[id + 100, options.map(choice), 1, null, null, null, null, null, shuffleOptions ? 1 : 0]] : null,
+    options.length ? [[id + 100, options.map(choice), isRequired ? 1 : 0, null, null, null, null, null, shuffleOptions ? 1 : 0]] : null,
   ];
 }
 
@@ -30,26 +33,46 @@ function pageFor(questions) {
 test('reads single-choice and dropdown award options without treating blank Other rows as nominees', () => {
   const html = pageFor([
     question(1, 'Fans Favorite Award', 2, ['Debuffy', '', 'Arv', 'arv'], true),
-    question(2, 'Best Dressed', 4, ['qoodL', 'Dunlop']),
+    question(2, 'Best Dressed', 4, ['qoodL', 'Dunlop'], false, false),
     question(3, 'Email address', 0, ['not a choice']),
   ]);
 
   assert.deepEqual(parsePublicGoogleFormOptions(html), [
     {
+      questionId: '1',
       title: 'Fans Favorite Award',
       slug: 'fans-favourite',
       options: ['Debuffy', 'Arv'],
       allowWriteIn: true,
       shuffleOptions: true,
+      isRequired: true,
     },
     {
+      questionId: '2',
       title: 'Best Dressed',
       slug: 'best-dressed-player',
       options: ['qoodL', 'Dunlop'],
       allowWriteIn: false,
       shuffleOptions: false,
+      isRequired: false,
     },
   ]);
+});
+
+test('fails rather than guessing when the public form omits its required setting', () => {
+  const html = pageFor([[
+    1,
+    'Unclear requirement',
+    null,
+    2,
+    [[101, ['A', 'B'].map(choice), null, null, null, null, null, null, 0]],
+  ]]);
+
+  assert.throws(() => parsePublicGoogleFormOptions(html), /could not read whether.*is required/i);
+});
+
+test('the admin preview exposes required and optional question settings before import', () => {
+  assert.match(adminRouteSource, /isRequired:\s*question\.isRequired/);
 });
 
 test('normalizes category aliases while keeping other category slugs readable', () => {
@@ -64,9 +87,21 @@ test('imports apply the form write-in setting instead of preserving the database
   assert.doesNotMatch(awardsSource, /allow_write_in=award_categories\.allow_write_in\s+OR/);
 });
 
+test('stores imported required settings while keeping existing categories required by default', () => {
+  assert.match(awardsSource, /is_required=EXCLUDED\.is_required/);
+  assert.match(requiredMigration, /ADD COLUMN IF NOT EXISTS is_required BOOLEAN NOT NULL DEFAULT TRUE/i);
+});
+
+test('stores Google Form item IDs for stable native response mapping', () => {
+  assert.match(awardsSource, /form_question_id=COALESCE\(EXCLUDED\.form_question_id, award_categories\.form_question_id\)/);
+  assert.match(responseMigration, /ADD COLUMN IF NOT EXISTS form_question_id TEXT/i);
+});
+
 test('re-import adds new questions and choices without removing existing nominees', () => {
   const importFunction = awardsSource.match(/export async function importGoogleFormOptions[\s\S]*?\n}\n/)[0];
   assert.match(importFunction, /INSERT INTO award_categories[\s\S]*ON CONFLICT \(cycle_id,slug\)/);
+  assert.match(importFunction, /is_required=EXCLUDED\.is_required/);
+  assert.match(importFunction, /form_question_id=COALESCE/);
   assert.match(importFunction, /INSERT INTO award_nominees[\s\S]*WHERE NOT EXISTS/);
   assert.doesNotMatch(importFunction, /DELETE FROM/);
 });

@@ -1,9 +1,9 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { getSession } from '@/lib/auth';
 import { sql } from '@/lib/db';
-import { addNominee, removeNominee, setVotingOpen, setVotingClosesAt, setCategoryShuffleOverride, importGoogleFormOptions, importGoogleFormVotes, getSiteAwardVotesForCycle } from '@/lib/awards';
+import { addNominee, removeNominee, setVotingOpen, setVotingClosesAt, setCategoryShuffleOverride, importGoogleFormOptions, importGoogleFormVotes, getSiteAwardBallotBatch, saveAwardFormResponseState } from '@/lib/awards';
 import { fetchPublicGoogleFormOptions } from '@/lib/googleFormOptions';
-import { syncAwardVotesToSheet } from '@/lib/awardVoteSheetSync';
+import { awardFormSyncStatus, syncAwardBallotsToForm } from '@/lib/awardVoteFormSync';
 
 export const dynamic = 'force-dynamic';
 
@@ -53,6 +53,7 @@ export async function POST(req: NextRequest) {
             optionCount: question.options.length,
             allowWriteIn: question.allowWriteIn,
             shuffleOptions: question.shuffleOptions,
+            isRequired: question.isRequired,
             examples: question.options.slice(0, 3),
           })),
         });
@@ -67,32 +68,48 @@ export async function POST(req: NextRequest) {
     }
   }
 
-  if (action === 'sync-sheet-batch') {
+  if (action === 'sync-form-batch') {
     const cycleId = Number(body?.cycleId);
-    const afterVoteId = String(body?.afterVoteId ?? '0');
-    if (!cycleId || !/^\d{1,20}$/.test(afterVoteId)) {
+    const afterBallotCursor = String(body?.afterBallotCursor ?? '0');
+    if (!cycleId || !/^\d{1,20}$/.test(afterBallotCursor)) {
       return NextResponse.json({ error: 'Choose an award cycle and a valid sync position.' }, { status: 400 });
     }
 
     const cycles = await sql`SELECT id FROM award_cycles WHERE id=${cycleId} LIMIT 1`;
     if (!cycles.length) return NextResponse.json({ error: 'Award cycle not found.' }, { status: 404 });
 
-    const votes = await getSiteAwardVotesForCycle(cycleId, afterVoteId, 100);
-    const result = await syncAwardVotesToSheet(votes);
-    if (result.status !== 'synced') {
+    const ballots = await getSiteAwardBallotBatch(cycleId, afterBallotCursor, 20);
+    const completeBallots = ballots.filter((ballot) => ballot.isComplete);
+    const result = completeBallots.length
+      ? await syncAwardBallotsToForm(completeBallots)
+      : { status: 'synced' as const, results: [], failed: 0 };
+
+    for (const synced of result.results) {
+      if (
+        (synced.status === 'synced' || synced.status === 'unchanged')
+        && synced.responseId
+        && synced.fingerprint
+        && synced.updatedAt
+      ) {
+        await saveAwardFormResponseState(cycleId, synced.voterKey, synced.responseId, synced.fingerprint, synced.updatedAt);
+      }
+    }
+
+    if (result.status !== 'synced' || result.results.some((synced) => synced.status === 'failed' || synced.status === 'stale')) {
       const error = result.status === 'not_configured'
-        ? 'Google Sheets sync is not configured yet.'
+        ? 'Native Google Form sync is not configured yet.'
         : result.status === 'misconfigured'
-          ? 'Google Sheets sync settings are incomplete or invalid.'
-          : 'Some Forum votes could not be synced. You can retry this sync.';
+          ? 'Native Google Form sync settings are incomplete or invalid.'
+          : 'Some complete Forum ballots could not be synced. Retry this batch.';
       return NextResponse.json({ error }, { status: 503 });
     }
 
-    const nextAfterVoteId = String(votes.at(-1)?.voteId ?? afterVoteId);
+    const nextAfterBallotCursor = String(ballots.at(-1)?.syncCursor ?? afterBallotCursor);
     return NextResponse.json({
       ok: true,
-      nextAfterVoteId,
-      done: votes.length < 100,
+      nextAfterBallotCursor,
+      done: ballots.length < 20,
+      skippedIncomplete: ballots.some((ballot) => !ballot.isComplete),
     });
   }
 
