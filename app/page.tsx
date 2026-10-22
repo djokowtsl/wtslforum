@@ -76,7 +76,7 @@ export default async function Home({ searchParams }: { searchParams: Promise<{ e
       <section className="live">
         <div className="live-inner">
           <div className="live-head"><span className="live-dot" /><h2 className="display">Happening now</h2><Link href="/matches">All matches →</Link></div>
-          <LiveScores initialPayload={initialScores.payload} initialSource={initialScores.source} />
+          <LiveScores initialPayload={initialScores.payload} initialSource={initialScores.source} signedIn={Boolean(u)} />
           <div className="live-sub" style={{ marginTop: 0 }}>Latest results</div>
           <HomeRecentResults />
           <div className="live-sub">Open fixtures</div>

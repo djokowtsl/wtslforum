@@ -1,0 +1,167 @@
+import assert from 'node:assert/strict';
+import test from 'node:test';
+import { readFileSync } from 'node:fs';
+import { createRequire } from 'node:module';
+
+const require = createRequire(import.meta.url);
+
+function loadRoute(path, mocks) {
+  const source = readFileSync(new URL(`../${path}`, import.meta.url), 'utf8');
+  const { code } = require('next/dist/build/swc').transformSync(source, {
+    jsc: { parser: { syntax: 'typescript' }, target: 'es2022' },
+    module: { type: 'commonjs' },
+  });
+  const module = { exports: {} };
+  new Function('require', 'module', 'exports', code)((name) => {
+    if (name in mocks) return mocks[name];
+    if (name.startsWith('node:')) return require(name);
+    throw new Error(`Unexpected route dependency: ${name}`);
+  }, module, module.exports);
+  return module.exports;
+}
+
+function request(body, path = '/api/live-dmo', method = 'POST') {
+  return new Request(`https://forum.test${path}`, {
+    method,
+    headers: {
+      Origin: 'https://forum.test',
+      'X-Forwarded-Host': 'forum.test',
+      'X-Forwarded-Proto': 'https',
+      'Content-Type': 'application/json',
+    },
+    ...(body === undefined ? {} : { body: JSON.stringify(body) }),
+  });
+}
+
+const nextServer = { NextResponse: { json: (body, init) => Response.json(body, init) } };
+const liveMessageUrl = 'https://discord.com/channels/786583939028090881/1293144531855872074/1561378343230906484';
+const validMessage = {
+  id: '1561378343230906484',
+  channel_id: '1293144531855872074',
+  author: { id: 'linked-member', bot: false },
+  content: 'Live stream: https://youtu.be/dQw4w9WgXcQ',
+  embeds: [],
+};
+
+test('a signed-in member can start multiple broadcasts from their linked Discord stream posts', async () => {
+  const inserts = [];
+  const route = loadRoute('app/api/live-dmo/route.ts', {
+    'next/server': nextServer,
+    'next': { NextResponse: nextServer.NextResponse },
+    'node:crypto': { randomUUID: () => `broadcast-${inserts.length}` },
+    'zod': require('zod'),
+    '@/lib/auth': { getSession: async () => ({ discordId: 'linked-member', isAdmin: false }) },
+    '@/lib/liveRequestSecurity': { isSameSiteMutation: () => true },
+    '@/lib/liveBroadcast': {
+      parseDiscordMessageUrl: (value) => value === liveMessageUrl
+        ? { guildId: '786583939028090881', channelId: '1293144531855872074', messageId: '1561378343230906484' }
+        : null,
+      streamLinksInDiscordMessage: (message) => message.content.includes('youtu.be')
+        ? [{ provider: 'youtube', id: 'dQw4w9WgXcQ', sourceUrl: 'https://youtu.be/dQw4w9WgXcQ' }]
+        : [],
+    },
+    '@/lib/db': {
+      sql: async (strings, ...values) => {
+        inserts.push({ query: strings.join('?'), values });
+        return [];
+      },
+    },
+  });
+  const originalFetch = globalThis.fetch;
+  const originalToken = process.env.DISCORD_BOT_TOKEN;
+  process.env.DISCORD_BOT_TOKEN = 'test-bot-token';
+  globalThis.fetch = async () => Response.json(validMessage);
+  try {
+    const first = await route.POST(request({ hasDmo: false, discordMessageUrl: liveMessageUrl, players: ['Alpha', 'Beta'] }));
+    const second = await route.POST(request({ hasDmo: false, discordMessageUrl: liveMessageUrl, players: ['Alpha', 'Beta'] }));
+    assert.equal(first.status, 201);
+    assert.equal(second.status, 201);
+    assert.equal(inserts.filter((item) => item.query.includes('INSERT INTO dmo_live_broadcasts')).length, 2);
+    assert.equal(inserts.some((item) => item.query.includes("status='live'")), false);
+  } finally {
+    globalThis.fetch = originalFetch;
+    if (originalToken === undefined) delete process.env.DISCORD_BOT_TOKEN;
+    else process.env.DISCORD_BOT_TOKEN = originalToken;
+  }
+});
+
+test('guest broadcast attempts are rejected before database access', async () => {
+  let databaseCalls = 0;
+  const route = loadRoute('app/api/live-dmo/route.ts', {
+    'next/server': nextServer,
+    'node:crypto': require('node:crypto'),
+    'zod': require('zod'),
+    '@/lib/auth': { getSession: async () => null },
+    '@/lib/liveRequestSecurity': { isSameSiteMutation: () => true },
+    '@/lib/liveBroadcast': { parseDiscordMessageUrl: () => null, streamLinksInDiscordMessage: () => [] },
+    '@/lib/db': { sql: async () => { databaseCalls += 1; return []; } },
+  });
+  const response = await route.POST(request({ hasDmo: true }));
+  assert.equal(response.status, 401);
+  assert.equal(databaseCalls, 0);
+});
+
+test('a Discord message from a different linked account cannot be broadcast', async () => {
+  let inserts = 0;
+  const route = loadRoute('app/api/live-dmo/route.ts', {
+    'next/server': nextServer,
+    'node:crypto': require('node:crypto'),
+    'zod': require('zod'),
+    '@/lib/auth': { getSession: async () => ({ discordId: 'another-member', isAdmin: false }) },
+    '@/lib/liveRequestSecurity': { isSameSiteMutation: () => true },
+    '@/lib/liveBroadcast': {
+      parseDiscordMessageUrl: () => ({ guildId: '786583939028090881', channelId: '1293144531855872074', messageId: validMessage.id }),
+      streamLinksInDiscordMessage: () => [{ provider: 'youtube', id: 'dQw4w9WgXcQ', sourceUrl: 'https://youtu.be/dQw4w9WgXcQ' }],
+    },
+    '@/lib/db': { sql: async () => { inserts += 1; return []; } },
+  });
+  const originalFetch = globalThis.fetch;
+  const originalToken = process.env.DISCORD_BOT_TOKEN;
+  process.env.DISCORD_BOT_TOKEN = 'test-bot-token';
+  globalThis.fetch = async () => Response.json(validMessage);
+  try {
+    const response = await route.POST(request({ hasDmo: false, discordMessageUrl: liveMessageUrl }));
+    assert.equal(response.status, 403);
+    assert.equal(inserts, 0);
+  } finally {
+    globalThis.fetch = originalFetch;
+    if (originalToken === undefined) delete process.env.DISCORD_BOT_TOKEN;
+    else process.env.DISCORD_BOT_TOKEN = originalToken;
+  }
+});
+
+test('broadcast owners can heartbeat and end only their own active broadcast', async () => {
+  const id = '7e09e922-44c3-49d7-8211-48f13b8b865a';
+  const queries = [];
+  const route = loadRoute('app/api/live-dmo/[id]/route.ts', {
+    'next/server': nextServer,
+    'zod': require('zod'),
+    '@/lib/auth': { getSession: async () => ({ discordId: 'broadcast-owner', isAdmin: false }) },
+    '@/lib/liveRequestSecurity': { isSameSiteMutation: () => true },
+    '@/lib/db': {
+      sql: async (strings, ...values) => {
+        queries.push({ text: strings.join('?'), values });
+        return [{ id }];
+      },
+    },
+  });
+  const context = { params: Promise.resolve({ id }) };
+  const heartbeat = await route.PATCH(request({ sequence: 1 }, `/api/live-dmo/${id}`, 'PATCH'), context);
+  assert.equal(heartbeat.status, 200);
+  assert.match(queries[0].text, /owner_discord_id=\?/);
+  assert.match(queries[0].text, /sequence < \?/);
+
+  const ended = await route.DELETE(request(undefined, `/api/live-dmo/${id}`, 'DELETE'), context);
+  assert.equal(ended.status, 200);
+  assert.match(queries[1].text, /owner_discord_id=\?.*OR \?/s);
+  assert.match(queries[1].text, /status='live'/);
+});
+
+test('homepage displays video links only when a signed-in viewer has a matching broadcast', () => {
+  const liveScores = readFileSync(new URL('../components/LiveScores.tsx', import.meta.url), 'utf8');
+  const viewer = readFileSync(new URL('../components/DmoLiveViewer.tsx', import.meta.url), 'utf8');
+  assert.match(liveScores, /sameLiveMatch\(/);
+  assert.match(liveScores, /live-broadcast-match-link/);
+  assert.match(liveScores, /if \(!signedIn\) return/);
+  assert.match(viewer, /body\?\.broadcasts/);
+});

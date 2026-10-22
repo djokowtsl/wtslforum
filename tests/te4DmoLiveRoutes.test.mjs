@@ -92,27 +92,53 @@ test('signed-in members can read broadcasts while guests cannot', async () => {
       sql: async (strings) => {
         databaseCalls += 1;
         assert.match(strings.join(' '), /DELETE FROM dmo_live_broadcasts/);
-        return [{
-          id: 'broadcast-id',
-          status: 'live',
-          payload: { players: ['One', 'Two'] },
-          sequence: 4,
-          started_at: startedAt,
-          updated_at: updatedAt,
-          stale: false,
-        }];
+        return [
+          {
+            id: 'broadcast-id',
+            owner_discord_id: 'member',
+            owner_name: 'Member',
+            status: 'live',
+            payload: { snapshot: { players: ['One', 'Two'], version: 1 }, players: ['One', 'Two'] },
+            sequence: 4,
+            started_at: startedAt,
+            updated_at: updatedAt,
+            stale: false,
+          },
+          {
+            id: 'second-broadcast',
+            owner_discord_id: 'other-member',
+            owner_name: 'Other',
+            status: 'live',
+            payload: { stream: { provider: 'youtube', id: 'dQw4w9WgXcQ', sourceUrl: 'https://youtu.be/dQw4w9WgXcQ' } },
+            sequence: 1,
+            started_at: startedAt,
+            updated_at: updatedAt,
+            stale: false,
+          },
+        ];
       },
     },
   });
   const memberResponse = await memberRoute.GET();
   assert.equal(memberResponse.status, 200);
-  assert.deepEqual((await memberResponse.json()).broadcast, {
+  const body = await memberResponse.json();
+  assert.equal(body.broadcasts.length, 2);
+  assert.deepEqual(body.broadcasts[0], {
     id: 'broadcast-id',
     status: 'live',
-    snapshot: { players: ['One', 'Two'] },
+    ownerName: 'Member',
+    snapshot: { players: ['One', 'Two'], version: 1 },
+    stream: null,
+    sourceMessageUrl: null,
+    players: ['One', 'Two'],
     sequence: 4,
     startedAt: startedAt.toISOString(),
     updatedAt: updatedAt.toISOString(),
     stale: false,
+  });
+  assert.deepEqual(body.broadcasts[1].stream, {
+    provider: 'youtube',
+    id: 'dQw4w9WgXcQ',
+    sourceUrl: 'https://youtu.be/dQw4w9WgXcQ',
   });
 });

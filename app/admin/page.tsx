@@ -29,7 +29,7 @@ export default async function Admin() {
           <div className="admin-card"><h3>Player verification</h3><p className="notice">{pendingClaims.length} pending request{pendingClaims.length === 1 ? '' : 's'} linking a Discord account to a WTSL player.</p><a className="btn btn-sm" href="/admin/claims" style={{ marginTop: 12, display: 'inline-block' }}>Review requests</a></div>
           <div className="admin-card"><h3>DMO submissions</h3><p className="notice">Review private match recordings submitted through Discord or the Forum.</p><a className="btn btn-sm" href="/admin/dmo-submissions" style={{ marginTop: 12, display: 'inline-block' }}>Open DMO store</a></div>
            <div className="admin-card"><h3>DMO analysis</h3><p className="notice">Upload a private TE4 recording, check the reconstructed score, and inspect ranked highlights in the interactive replay.</p><a className="btn btn-sm" href="/admin/dmo-analysis" style={{ marginTop: 12, display: 'inline-block' }}>Analyze a match</a></div>
-           <div className="admin-card"><h3>Live DMO broadcast</h3><p className="notice">Read a growing TE4 recording from this browser and share a temporary scoreboard with signed-in Forum members.</p><a className="btn btn-sm" href="/admin/dmo-live" style={{ marginTop: 12, display: 'inline-block' }}>Start a broadcast</a></div>
+           <div className="admin-card"><h3>Live Broadcast</h3><p className="notice">Share a TE4 court reconstruction, a stream from your Discord post, or both.</p><a className="btn btn-sm" href="/live-dmo" style={{ marginTop: 12, display: 'inline-block' }}>Open broadcasts</a></div>
         </div>
       </main>
     </>
