@@ -257,6 +257,39 @@ test('rejects requests without the shared secret before opening the spreadsheet'
   assert.equal(bridge.opened, false);
 });
 
+test('checks an existing managed response without changing the Form or response sheet', () => {
+  const bridge = createBridge();
+  bridge.post({ secret, ballots: [sampleBallot()] });
+  const rowsBefore = JSON.stringify(bridge.rows);
+  const responseCountBefore = bridge.responses.length;
+
+  const found = responseBody(bridge.post({
+    secret,
+    action: 'check-response',
+    voterToken: 'a'.repeat(64),
+  }));
+  assert.deepEqual(found, {
+    ok: true,
+    result: {
+      status: 'found',
+      responseId: 'native_response_1',
+      fingerprint: 'b'.repeat(64),
+      updatedAt: '2026-10-22T10:00:00.000000Z',
+    },
+  });
+  assert.equal(JSON.stringify(bridge.rows), rowsBefore);
+  assert.equal(bridge.responses.length, responseCountBefore);
+
+  const missing = responseBody(bridge.post({
+    secret,
+    action: 'check-response',
+    voterToken: 'c'.repeat(64),
+  }));
+  assert.deepEqual(missing, { ok: true, result: { status: 'not_found' } });
+  assert.equal(JSON.stringify(bridge.rows), rowsBefore);
+  assert.equal(bridge.responses.length, responseCountBefore);
+});
+
 test('submits a native Form response and writes no Forum Votes tab', () => {
   const bridge = createBridge();
   const first = responseBody(bridge.post({ secret, ballots: [sampleBallot()] }));

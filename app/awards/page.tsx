@@ -3,13 +3,12 @@ import { createHmac } from 'node:crypto';
 import { safe } from '@/lib/db';
 import { getAwards } from '@/lib/queries';
 import { getSession } from '@/lib/auth';
-import { getActiveCycle, getCategories, getNomineesForCategories, getSiteAwardBallot, getUserVotes } from '@/lib/awards';
+import { getActiveCycle, getCategories, getNomineesForCategories, getUserVotes } from '@/lib/awards';
 import PageHero from '@/components/PageHero';
 import AwardVoteForm from '@/components/AwardVoteForm';
 import YearTabs from '@/components/YearTabs';
 import PlayerAvatar from '@/components/PlayerAvatar';
 import { CATEGORY_ICONS } from '@/lib/awardIcons';
-import { awardFormBallotFingerprint } from '@/lib/awardVoteFormSync';
 
 export const dynamic = 'force-dynamic';
 export const metadata: Metadata = { title: 'Awards' };
@@ -63,18 +62,10 @@ export default async function Awards({ searchParams }: { searchParams: Promise<{
     name: canonicalAwardCategory(c.name),
     nominees: nominees.filter((n: any) => n.category_id === c.id),
   }));
-  const [userVotes, userBallot] = cycle && user
-    ? await Promise.all([
-        safe(() => getUserVotes(cycle.id, user.discordId), [] as any[]),
-        safe(() => getSiteAwardBallot(cycle.id, user.discordId), null as any),
-      ])
-    : [[] as any[], null as any];
+  const userVotes = cycle && user
+    ? await safe(() => getUserVotes(cycle.id, user.discordId), [] as any[])
+    : [];
   const initialVotes = Object.fromEntries(userVotes.map((v: any) => [v.category_id, { nomineeId: v.nominee_id, writeIn: v.write_in }]));
-  const initialFormSubmitted = Boolean(
-    userBallot?.isComplete
-    && userBallot.responseFingerprint
-    && userBallot.responseFingerprint === awardFormBallotFingerprint(userBallot.season, userBallot.answers),
-  );
   const authSecret = process.env.AUTH_SECRET ?? (process.env.NODE_ENV === 'production' ? '' : 'dev-only-secret');
   const shuffleSeed = cycle && user && authSecret
     ? createHmac('sha256', authSecret).update(`${cycle.id}:${user.discordId}`).digest('hex')
@@ -105,7 +96,7 @@ export default async function Awards({ searchParams }: { searchParams: Promise<{
           ) : !user ? (
             <div className="notice">You need to <a className="btn btn-sm btn-discord" href="/api/auth/discord" style={{ marginLeft: 8 }}>log in with Discord</a> to vote.</div>
           ) : (
-            <AwardVoteForm cycleId={cycle.id} categories={categoriesWithNominees} initialVotes={initialVotes} initialFormSubmitted={initialFormSubmitted} shuffleSeed={shuffleSeed} />
+            <AwardVoteForm categories={categoriesWithNominees} initialVotes={initialVotes} shuffleSeed={shuffleSeed} />
           )}
         </section>
 

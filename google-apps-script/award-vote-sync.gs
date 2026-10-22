@@ -66,6 +66,16 @@ function doPost(event) {
       return jsonResponse({ ok: false, error: 'misconfigured' });
     }
 
+    const action = payload.action || 'sync';
+    if (action === 'check-response') {
+      const voterToken = String(payload.voterToken || '').trim();
+      if (!/^[a-f0-9]{64}$/.test(voterToken)) {
+        return jsonResponse({ ok: false, error: 'invalid_request' });
+      }
+      return checkManagedResponse(spreadsheetId, voterToken);
+    }
+    if (action !== 'sync') return jsonResponse({ ok: false, error: 'invalid_request' });
+
     const ballots = normalizeBallots(payload.ballots);
     if (!ballots || ballots.length < 1 || ballots.length > MAX_BALLOTS_PER_REQUEST) {
       return jsonResponse({ ok: false, error: 'invalid_ballots' });
@@ -126,6 +136,71 @@ function doPost(event) {
     const errorCode = safeSyncErrorCode(error, failureCode);
     console.error('[Awards Form sync] ' + errorCode);
     return jsonResponse({ ok: false, error: errorCode });
+  }
+}
+
+function checkManagedResponse(spreadsheetId, voterToken) {
+  let failureCode = 'sync_lock_failed';
+  const lock = LockService.getScriptLock();
+  try {
+    lock.waitLock(10000);
+    failureCode = 'spreadsheet_access_failed';
+    const spreadsheet = SpreadsheetApp.openById(spreadsheetId);
+    failureCode = 'linked_form_lookup_failed';
+    const formUrl = spreadsheet.getFormUrl();
+    if (!formUrl) return jsonResponse({ ok: false, error: 'missing_linked_form' });
+
+    failureCode = 'form_access_failed';
+    const form = FormApp.openByUrl(formUrl);
+    if (form.getDestinationId() !== spreadsheetId || form.collectsEmail()) {
+      return jsonResponse({ ok: false, error: 'form_access_failed' });
+    }
+    const items = getResponseItems(form);
+    failureCode = 'response_sheet_setup_failed';
+    const responseSheet = findResponseSheet(spreadsheet, items, false);
+    if (!responseSheet.metadataColumns) {
+      return jsonResponse({ ok: true, result: { status: 'unverifiable' } });
+    }
+
+    const managedRows = findManagedRows(responseSheet, voterToken);
+    if (!managedRows.length) {
+      return jsonResponse({ ok: true, result: { status: 'not_found' } });
+    }
+    if (managedRows.length !== 1) {
+      return jsonResponse({ ok: true, result: { status: 'ambiguous' } });
+    }
+
+    const receipt = managedRows[0];
+    if (
+      !/^[A-Za-z0-9_-]{1,200}$/.test(receipt.responseId)
+      || !/^[a-f0-9]{64}$/.test(receipt.fingerprint)
+      || !/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}\.\d{6}Z$/.test(receipt.updatedAt)
+    ) {
+      return jsonResponse({ ok: true, result: { status: 'unverifiable' } });
+    }
+    const responseExists = form.getResponses().some((response) => String(response.getId()) === receipt.responseId);
+    if (!responseExists) {
+      return jsonResponse({ ok: true, result: { status: 'response_missing' } });
+    }
+    return jsonResponse({
+      ok: true,
+      result: {
+        status: 'found',
+        responseId: receipt.responseId,
+        fingerprint: receipt.fingerprint,
+        updatedAt: receipt.updatedAt,
+      },
+    });
+  } catch (error) {
+    const errorCode = safeSyncErrorCode(error, failureCode);
+    console.error('[Awards Form response check] ' + errorCode);
+    return jsonResponse({ ok: false, error: errorCode });
+  } finally {
+    try {
+      lock.releaseLock();
+    } catch (_releaseError) {
+      console.error('[Awards Form response check] sync_lock_release_failed');
+    }
   }
 }
 
@@ -382,7 +457,7 @@ function getResponseItems(form) {
   return form.getItems().filter((item) => decorativeTypes.indexOf(item.getType()) === -1);
 }
 
-function findResponseSheet(spreadsheet, items) {
+function findResponseSheet(spreadsheet, items, createSyncColumns = true) {
   const candidates = [];
   for (const sheet of spreadsheet.getSheets()) {
     const columnCount = sheet.getLastColumn();
@@ -414,9 +489,24 @@ function findResponseSheet(spreadsheet, items) {
   if (candidates.length !== 1) throw new Error('response_sheet_not_found_or_ambiguous');
   const responseSheet = candidates[0];
   responseSheet.columnCount = responseSheet.sheet.getLastColumn();
-  responseSheet.metadataColumns = ensureSyncColumns(responseSheet.sheet);
+  responseSheet.metadataColumns = createSyncColumns
+    ? ensureSyncColumns(responseSheet.sheet)
+    : readSyncColumns(responseSheet.sheet);
   responseSheet.columnCount = responseSheet.sheet.getLastColumn();
   return responseSheet;
+}
+
+function readSyncColumns(sheet) {
+  const columnCount = sheet.getLastColumn();
+  if (columnCount < 1) return null;
+  const headers = sheet.getRange(1, 1, 1, columnCount).getDisplayValues()[0];
+  const columns = {};
+  for (const [key, header] of Object.entries(SYNC_HEADERS)) {
+    const column = headers.indexOf(header) + 1;
+    if (!column) return null;
+    columns[key] = column;
+  }
+  return columns;
 }
 
 function ensureSyncColumns(sheet) {

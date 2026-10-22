@@ -43,7 +43,7 @@ export async function POST(req: NextRequest) {
 
   const ballot = await getSiteAwardBallot(Number(category.cycle_id), user.discordId);
   if (!ballot || !ballot.isComplete) {
-    return NextResponse.json({ ok: true, formSyncStatus: 'incomplete', ballotSubmitted: false });
+    return NextResponse.json({ ok: true });
   }
 
   const fingerprint = awardFormBallotFingerprint(ballot.season, ballot.answers);
@@ -54,7 +54,7 @@ export async function POST(req: NextRequest) {
       fingerprint,
       ballot.updatedAt,
     );
-    return NextResponse.json({ ok: true, formSyncStatus: 'synced', ballotSubmitted: true });
+    return NextResponse.json({ ok: true });
   }
 
   let job: Awaited<ReturnType<typeof enqueueAwardFormSyncJob>>;
@@ -69,11 +69,7 @@ export async function POST(req: NextRequest) {
     console.error('[awards] ballot saved but sync job could not be queued', {
       cycleId: Number(category.cycle_id),
     });
-    return NextResponse.json({
-      ok: true,
-      formSyncStatus: 'needs_review',
-      ballotSubmitted: false,
-    });
+    return NextResponse.json({ ok: true });
   }
 
   if (job.status !== 'needs_review' && job.status !== 'processing') {
@@ -88,9 +84,5 @@ export async function POST(req: NextRequest) {
     });
   }
 
-  return NextResponse.json({
-    ok: true,
-    formSyncStatus: job.status === 'needs_review' ? 'needs_review' : 'queued',
-    ballotSubmitted: false,
-  });
+  return NextResponse.json({ ok: true });
 }
