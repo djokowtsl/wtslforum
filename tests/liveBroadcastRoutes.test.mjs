@@ -431,7 +431,7 @@ test('verified replay openings can be shown before the first point; other DMO br
     },
   ].map((row) => ({
     ...row,
-    owner_discord_id: 'broadcast-owner',
+    owner_discord_id: row.id,
     status: 'live',
     sequence: 1,
     started_at: timestamp,
@@ -461,4 +461,111 @@ test('verified replay openings can be shown before the first point; other DMO br
   assert.match(host, /hasCompletedDmoPoints\(matchedSnapshot\)/);
   assert.match(host, /attemptFullReplayPreparation/);
   assert.match(host, /the score-and-court replay is continuing/);
+});
+
+test('current broadcasts show one latest match per streamer and hide ended matches after one minute', async () => {
+  const now = Date.now();
+  const streamPayload = {
+    hasDmo: false,
+    mode: 'manual',
+    replay: false,
+    stream: { provider: 'youtube', id: 'dQw4w9WgXcQ', sourceUrl: 'https://youtu.be/dQw4w9WgXcQ' },
+  };
+  const rows = [
+    {
+      id: 'latest-live',
+      owner_discord_id: 'streamer-one',
+      status: 'live',
+      payload: streamPayload,
+      started_at: new Date(now - 5_000),
+      updated_at: new Date(now - 300),
+      owner_name: 'Streamer One',
+      stale: false,
+    },
+    {
+      id: 'older-live',
+      owner_discord_id: 'streamer-one',
+      status: 'live',
+      payload: streamPayload,
+      started_at: new Date(now - 60_000),
+      updated_at: new Date(now - 300),
+      owner_name: 'Streamer One',
+      stale: false,
+    },
+    {
+      id: 'old-ended',
+      owner_discord_id: 'streamer-two',
+      status: 'ended',
+      payload: streamPayload,
+      started_at: new Date(now - 10 * 60_000),
+      updated_at: new Date(now - 5 * 60_000),
+      owner_name: 'Streamer Two',
+      stale: false,
+    },
+    {
+      id: 'recent-ended',
+      owner_discord_id: 'streamer-three',
+      status: 'ended',
+      payload: streamPayload,
+      started_at: new Date(now - 20_000),
+      updated_at: new Date(now - 30_000),
+      owner_name: 'Streamer Three',
+      stale: false,
+    },
+  ];
+  let queryText = '';
+  const route = loadRoute('app/api/live-dmo/current/route.ts', {
+    'next/server': nextServer,
+    '@/lib/auth': { getSession: async () => ({ id: 'viewer' }) },
+    '@/lib/db': {
+      sql: async (strings) => {
+        queryText = strings.join('?');
+        return rows;
+      },
+    },
+    '@/lib/te4DmoLive': { hasCompletedDmoPoints: () => false },
+  });
+
+  const response = await route.GET(request(undefined, '/api/live-dmo/current', 'GET'));
+  assert.equal(response.status, 200);
+  assert.deepEqual((await response.json()).broadcasts.map((broadcast) => broadcast.id), [
+    'latest-live',
+    'recent-ended',
+  ]);
+  assert.match(queryText, /PARTITION BY b\.owner_discord_id/);
+  assert.match(queryText, /INTERVAL '60 seconds'/);
+  assert.match(queryText, /INTERVAL '3 seconds'/);
+});
+
+test('signed-in viewers get the official pre-match estimate for a broadcast pair in stored order', async () => {
+  const broadcastId = 'ad407a42-df03-4f70-9a8c-11e755683f74';
+  let resolvedPair = null;
+  const route = loadRoute('app/api/live-dmo/[id]/pre-match/route.ts', {
+    'next/server': nextServer,
+    'zod': require('zod'),
+    '@/lib/auth': { getSession: async () => ({ discordId: 'viewer', isAdmin: false }) },
+    '@/lib/db': {
+      sql: async () => [{
+        payload: { players: ['Squeaky', 'Player Two'], bestOf: 5 },
+      }],
+    },
+    '@/lib/liveScores': {
+      getRankedPairPreMatchProbability: async (players, bestOf) => {
+        resolvedPair = { players, bestOf };
+        return { probability: 64, source: 'official', tour: 'TE4' };
+      },
+    },
+  });
+
+  const response = await route.GET(
+    new Request(`https://forum.test/api/live-dmo/${broadcastId}/pre-match`),
+    { params: Promise.resolve({ id: broadcastId }) },
+  );
+  assert.equal(response.status, 200);
+  assert.deepEqual(resolvedPair, { players: ['Squeaky', 'Player Two'], bestOf: 5 });
+  assert.deepEqual((await response.json()).prediction, {
+    probability: 64,
+    source: 'official',
+    tour: 'TE4',
+  });
 });

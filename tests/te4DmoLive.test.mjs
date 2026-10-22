@@ -8,6 +8,7 @@ import {
   formatLivePointScore,
   Te4DmoLiveParser,
 } from '../lib/te4DmoLive.ts';
+import { findCourtRacketContact, projectCourtPoint } from '../lib/liveCourtProjection.ts';
 import { hasPlayerPositionData } from '../lib/te4LiveSetup.ts';
 import { isSameSiteMutation } from '../lib/liveRequestSecurity.ts';
 
@@ -130,6 +131,39 @@ test('point log labels use game and tennis point scores, including tiebreak scor
   assert.equal(formatLivePointScore({ games: [1, 4], points: [1, 3], tiebreak: false }), '1-4(15-40)');
   assert.equal(formatLivePointScore({ games: [6, 6], points: [6, 7], tiebreak: true }), '6-6(6-7)');
   assert.equal(formatLivePointScore({ games: [3, 2], points: [4, 3], tiebreak: false }), '3-2(AD-40)');
+});
+
+test('court projection remains stable around every azimuth and view elevation', () => {
+  const views = [0, 90, 180, 270].map((azimuth) =>
+    projectCourtPoint([320, -170, 185], { azimuth, elevation: 46 }),
+  );
+  for (const [x, y, scale, depth] of views) {
+    assert.ok(Number.isFinite(x));
+    assert.ok(Number.isFinite(y));
+    assert.ok(scale > 0);
+    assert.ok(depth > 0);
+  }
+  assert.equal(new Set(views.map(([x, y]) => `${Math.round(x)}:${Math.round(y)}`)).size, 4);
+
+  const low = projectCourtPoint([320, -170, 185], { azimuth: 46, elevation: 5 });
+  const high = projectCourtPoint([320, -170, 185], { azimuth: 46, elevation: 90 });
+  assert.notEqual(Math.round(low[1]), Math.round(high[1]));
+});
+
+test('racket contact pose follows recorded shot events and selects the nearest player', () => {
+  const players = [
+    { id: 1, x: 0, y: 0 },
+    { id: 2, x: 900, y: 0 },
+  ];
+  const ball = { x: 12, y: 0, z: 145 };
+  assert.equal(findCourtRacketContact(ball, players, { frame: 100, kind: 'shot' }, 100), 1);
+  assert.equal(findCourtRacketContact(ball, players, { frame: 100, kind: 'shot' }, 104), null);
+  assert.equal(findCourtRacketContact(ball, players, { frame: 100, kind: 'point-end' }, 100), null);
+  assert.equal(findCourtRacketContact(ball, [], { frame: 100, kind: 'shot' }, 100), null);
+  assert.equal(
+    findCourtRacketContact({ x: 500, y: 0, z: 145 }, players, { frame: 100, kind: 'shot' }, 100),
+    null,
+  );
 });
 
 test('live court snapshots include frame-indexed rally boundaries and optional sound cues', () => {

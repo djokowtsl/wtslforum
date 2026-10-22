@@ -4,7 +4,7 @@ import { useEffect, useRef, useState } from 'react';
 import { AlertTriangle, Radio } from 'lucide-react';
 import { LIVE_DMO_UPDATE_INTERVAL_MS } from '@/lib/te4DmoLive';
 import type { Te4LiveSnapshot } from '@/lib/te4DmoLive';
-import type { LiveStream } from '@/lib/liveBroadcast';
+import type { LivePreMatchProbability, LiveStream } from '@/lib/liveBroadcast';
 import DmoLiveDisplay from './DmoLiveDisplay';
 import LiveBroadcastComments from './LiveBroadcastComments';
 import LiveStreamEmbed from './LiveStreamEmbed';
@@ -32,10 +32,13 @@ type Broadcast = {
 
 export default function DmoLiveViewer({ canWatch }: Props) {
   const [broadcasts, setBroadcasts] = useState<Broadcast[]>([]);
+  const [preMatchPredictions, setPreMatchPredictions] = useState<Record<string, LivePreMatchProbability | null>>({});
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
   const [focusedBroadcastId, setFocusedBroadcastId] = useState<string | null>(null);
   const focusedOnce = useRef<string | null>(null);
+  const preMatchResolved = useRef(new Set<string>());
+  const preMatchAttempts = useRef(new Map<string, number>());
   const hasActiveDmo = broadcasts.some((broadcast) => broadcast.status === 'live' && Boolean(broadcast.snapshot));
 
   useEffect(() => {
@@ -54,7 +57,56 @@ export default function DmoLiveViewer({ canWatch }: Props) {
         const body = await response.json().catch(() => null);
         if (!response.ok) throw new Error(typeof body?.error === 'string' ? body.error : `Live feed unavailable (${response.status}).`);
         if (!active) return;
-        setBroadcasts(Array.isArray(body?.broadcasts) ? body.broadcasts : []);
+        const nextBroadcasts = Array.isArray(body?.broadcasts) ? body.broadcasts as Broadcast[] : [];
+        setBroadcasts((current) => {
+          const currentById = new Map(current.map((broadcast) => [broadcast.id, broadcast]));
+          return nextBroadcasts.map((broadcast) => {
+            const previousSnapshot = currentById.get(broadcast.id)?.snapshot;
+            const nextSnapshot = broadcast.snapshot;
+            if (
+              previousSnapshot
+              && nextSnapshot
+              && previousSnapshot.filename === nextSnapshot.filename
+              && previousSnapshot.version === nextSnapshot.version
+              && previousSnapshot.frameCount === nextSnapshot.frameCount
+              && previousSnapshot.pointCount === nextSnapshot.pointCount
+              && previousSnapshot.bestOf === nextSnapshot.bestOf
+              && previousSnapshot.players[0] === nextSnapshot.players[0]
+              && previousSnapshot.players[1] === nextSnapshot.players[1]
+            ) {
+              return { ...broadcast, snapshot: previousSnapshot };
+            }
+            return broadcast;
+          });
+        });
+        for (const broadcast of nextBroadcasts) {
+          if (
+            broadcast.status !== 'live'
+            || broadcast.replay
+            || !broadcast.snapshot
+            || !(broadcast.snapshot.players ?? broadcast.players)
+            || preMatchResolved.current.has(broadcast.id)
+          ) continue;
+          const lastAttempt = preMatchAttempts.current.get(broadcast.id) ?? 0;
+          if (Date.now() - lastAttempt < 60_000) continue;
+          preMatchAttempts.current.set(broadcast.id, Date.now());
+          void fetch(`/api/live-dmo/${encodeURIComponent(broadcast.id)}/pre-match`, { cache: 'no-store' })
+            .then(async (predictionResponse) => {
+              const predictionBody = await predictionResponse.json().catch(() => null);
+              if (!predictionResponse.ok) throw new Error('Pre-match estimate unavailable.');
+              const value = predictionBody?.prediction;
+              const prediction: LivePreMatchProbability | null = value
+                && typeof value.probability === 'number'
+                && ['official', 'all-results', 'no-history'].includes(value.source)
+                && ['TE4', 'TE4_(F)'].includes(value.tour)
+                ? value as LivePreMatchProbability
+                : null;
+              if (!active) return;
+              if (prediction) preMatchResolved.current.add(broadcast.id);
+              setPreMatchPredictions((current) => ({ ...current, [broadcast.id]: prediction }));
+            })
+            .catch(() => undefined);
+        }
         setError('');
       } catch (cause) {
         if (active) setError(cause instanceof Error ? cause.message : 'The live feed could not be loaded.');
@@ -93,7 +145,7 @@ export default function DmoLiveViewer({ canWatch }: Props) {
       <header className={styles.heading}>
         <p className={styles.kicker}>WTSL FORUM / LIVE</p>
         {canWatch ? <h2>Watching <em>now</em></h2> : <h1>Live Streams</h1>}
-        <p>Live matches and DMO replays appear as court reconstructions, embedded streams, or both.</p>
+        <p>Live matches and replays appear with a court view, video stream, or both.</p>
       </header>
       {!canWatch ? (
         <div className={styles.empty}>
@@ -143,6 +195,7 @@ export default function DmoLiveViewer({ canWatch }: Props) {
                           playbackSpeed={broadcast.replaySpeed}
                           stale={broadcast.stale}
                           updatedAt={broadcast.updatedAt}
+                          preMatchPrediction={preMatchPredictions[broadcast.id]}
                         />
                       )}
                     />
@@ -153,6 +206,7 @@ export default function DmoLiveViewer({ canWatch }: Props) {
                       playbackSpeed={broadcast.replay ? broadcast.replaySpeed : 1}
                       stale={broadcast.stale}
                       updatedAt={broadcast.updatedAt}
+                      preMatchPrediction={preMatchPredictions[broadcast.id]}
                     />
                   )
                 ) : broadcast.stream && broadcast.status === 'live' ? (
@@ -162,7 +216,7 @@ export default function DmoLiveViewer({ canWatch }: Props) {
                     <span className={styles.icon}><Radio size={23} /></span>
                     <h3>{broadcast.status === 'live' ? 'Waiting for match data' : 'Broadcast ended'}</h3>
                     <p>{broadcast.status === 'live'
-                      ? 'The court appears once TE4 writes enough match frames.'
+                      ? 'The live court view will appear shortly.'
                       : 'This broadcast ended before DMO court data became available.'}</p>
                   </div>
                 )}

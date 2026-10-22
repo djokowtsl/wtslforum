@@ -94,6 +94,11 @@ test('automatic broadcasts require one unambiguous match in the WTSL live feed',
 test('fake-name prefixes resolve only when the cleaned name is ranked for that live match', () => {
   assert.equal(resolveFakePrefixForRankedPlayer('[Fake] Squeaky', ['Squeaky']), 'Squeaky');
   assert.equal(resolveFakePrefixForRankedPlayer('[Fake] Unranked', ['Squeaky']), '[Fake] Unranked');
+  assert.equal(resolveFakePrefixForRankedPlayer('[.Squeaky', ['Squeaky']), 'Squeaky');
+  assert.equal(
+    resolveFakePrefixForRankedPlayer('[.Squeaky', ['Squeaky', 'Squea-ky']),
+    '[.Squeaky',
+  );
 
   const rankedMatch = {
     name: 'Squeaky vs Player Two',
@@ -106,6 +111,7 @@ test('fake-name prefixes resolve only when the cleaned name is ranked for that l
     rankedPlayers: [null, 'Player Two'],
   };
   assert.equal(findMatchingWtslLiveMatch(['[Fake] Squeaky', 'Player Two'], [rankedMatch]), rankedMatch);
+  assert.equal(findMatchingWtslLiveMatch(['[.Squeaky', 'Player Two'], [rankedMatch]), rankedMatch);
   assert.equal(findMatchingWtslLiveMatch(['[Fake] Squeaky', 'Player Two'], [unrankedMatch]), null);
 });
 

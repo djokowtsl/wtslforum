@@ -7,6 +7,12 @@ export type LiveStream = {
   sourceUrl: string;
 };
 
+export type LivePreMatchProbability = {
+  probability: number;
+  source: 'official' | 'all-results' | 'no-history';
+  tour: 'TE4' | 'TE4_(F)';
+};
+
 export type DiscordMessageReference = {
   guildId: string;
   channelId: string;
@@ -110,15 +116,19 @@ export function resolveFakePrefixForRankedPlayer(
   rankedNames: readonly string[],
 ): string {
   const fakePrefix = value.trim().match(/^\[Fake\]\s*(.+?)\s*$/i);
-  if (!fakePrefix?.[1]) return value;
+  const candidates = [fakePrefix?.[1]?.trim(), value.trim()].filter(
+    (candidate): candidate is string => Boolean(candidate),
+  );
 
-  const cleanedName = fakePrefix[1].trim();
-  const normalizedCleanedName = normalizeLivePlayerName(cleanedName);
-  if (!normalizedCleanedName) return value;
-  const matches = [...new Set(rankedNames
-    .filter((name) => normalizeLivePlayerName(name) === normalizedCleanedName)
-    .map((name) => name.trim()))];
-  return matches.length === 1 ? matches[0] : value;
+  for (const candidate of candidates) {
+    const normalizedCandidate = normalizeLivePlayerName(candidate);
+    if (!normalizedCandidate) continue;
+    const matches = [...new Set(rankedNames
+      .filter((name) => normalizeLivePlayerName(name) === normalizedCandidate)
+      .map((name) => name.trim()))];
+    if (matches.length === 1) return matches[0];
+  }
+  return value;
 }
 
 export function sameLiveMatch(

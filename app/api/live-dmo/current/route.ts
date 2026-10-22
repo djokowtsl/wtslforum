@@ -19,17 +19,41 @@ export async function GET() {
   try {
     await cleanupExpiredLiveDmoBroadcasts();
     const rows = await sql`
-      SELECT b.id, b.owner_discord_id, b.status, b.payload, b.sequence,
-        b.started_at, b.updated_at, u.display_name AS owner_name,
-        (b.status='live' AND b.updated_at < NOW() - INTERVAL '10 seconds') AS stale
-      FROM dmo_live_broadcasts b
-      LEFT JOIN users u ON u.discord_id=b.owner_discord_id
-      WHERE (b.status='live' AND b.expires_at > NOW())
-        OR (b.status='ended' AND b.expires_at > NOW())
-      ORDER BY (b.status='live') DESC, b.started_at DESC
+      WITH ranked_broadcasts AS (
+        SELECT b.id, b.owner_discord_id, b.status, b.payload, b.sequence,
+          b.started_at, b.updated_at, u.display_name AS owner_name,
+          (b.status='live' AND b.updated_at < NOW() - INTERVAL '3 seconds') AS stale,
+          ROW_NUMBER() OVER (
+            PARTITION BY b.owner_discord_id
+            ORDER BY b.started_at DESC, b.updated_at DESC, (b.status='live') DESC
+          ) AS owner_rank
+        FROM dmo_live_broadcasts b
+        LEFT JOIN users u ON u.discord_id=b.owner_discord_id
+        WHERE (b.status='live' AND b.expires_at > NOW())
+          OR (b.status='ended' AND b.expires_at > NOW())
+      )
+      SELECT id, owner_discord_id, status, payload, sequence,
+        started_at, updated_at, owner_name, stale
+      FROM ranked_broadcasts
+      WHERE owner_rank=1
+        AND (status='live' OR updated_at >= NOW() - INTERVAL '60 seconds')
+      ORDER BY (status='live') DESC, started_at DESC
       LIMIT 50
     `;
-    const broadcasts = rows.flatMap((row: any) => {
+    const seenOwners = new Set<string>();
+    const orderedRows = [...rows].sort((first: any, second: any) =>
+      Date.parse(second.started_at) - Date.parse(first.started_at)
+      || Date.parse(second.updated_at) - Date.parse(first.updated_at),
+    );
+    const broadcasts = orderedRows.flatMap((row: any) => {
+      const ownerId = String(row.owner_discord_id ?? row.id);
+      if (seenOwners.has(ownerId)) return [];
+      seenOwners.add(ownerId);
+      if (
+        row.status === 'ended'
+        && Date.now() - Date.parse(row.updated_at) > 60_000
+      ) return [];
+
       const stored = row.payload && typeof row.payload === 'object' && !Array.isArray(row.payload)
         ? row.payload as Record<string, any>
         : {};

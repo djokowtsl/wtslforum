@@ -49,11 +49,13 @@
 .serveCell i { margin-right: 4px; color: var(--live-lime); font-size: 8px; font-style: normal; }
 .pointNote { min-height: 17px; margin: 9px 2px 0; color: var(--live-muted); font-size: 10px; }
 
-.metrics { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 7px; margin-top: 13px; }
-.metrics > div { min-width: 0; display: grid; gap: 5px; padding: 11px; border: 1px solid rgba(150, 180, 230, .14); border-radius: 9px; background: var(--live-panel-2); }
-.metrics span { color: var(--live-muted); font-size: 8px; font-weight: 800; letter-spacing: .07em; text-transform: uppercase; }
-.metrics strong { font: italic 800 18px var(--font-display, sans-serif); font-variant-numeric: tabular-nums; }
-.metrics small { overflow: hidden; color: var(--live-muted); font-size: 9px; text-overflow: ellipsis; white-space: nowrap; }
+.metrics { overflow: hidden; margin-top: 13px; border: 1px solid rgba(150, 180, 230, .14); border-radius: 9px; background: var(--live-panel-2); }
+.metricsHeading, .metricRow { display: grid; grid-template-columns: minmax(105px, 1.2fr) repeat(2, minmax(54px, .8fr)); align-items: center; gap: 8px; padding: 9px 11px; }
+.metricsHeading { color: var(--live-muted); font-size: 8px; font-weight: 800; letter-spacing: .07em; text-transform: uppercase; }
+.metricsHeading > :not(:first-child) { overflow: hidden; text-align: right; text-overflow: ellipsis; white-space: nowrap; }
+.metricRow { border-top: 1px solid rgba(150, 180, 230, .1); font-size: 10px; }
+.metricRow > :first-child { color: var(--live-muted); }
+.metricRow strong { color: var(--live-soft); font: italic 700 14px var(--font-display, sans-serif); font-variant-numeric: tabular-nums; text-align: right; }
 
 .chanceChart { margin-top: 13px; padding: 12px 13px 9px; border: 1px solid rgba(150, 180, 230, .14); border-radius: 9px; background: rgba(2, 9, 22, .25); }
 .chanceHead, .chanceValues { display: flex; align-items: center; justify-content: space-between; gap: 10px; }
@@ -66,6 +68,15 @@
 .chanceValues strong { color: var(--live-lime); font: italic 800 17px var(--font-display, sans-serif); }
 .chanceValues strong:last-child { color: #38c7e6; }
 .chanceChart p { margin: 5px 0 0; color: var(--live-muted); font-size: 9px; line-height: 1.4; }
+.preMatchChance { margin-top: 9px; padding: 9px 10px; border: 1px solid rgba(150, 180, 230, .14); border-radius: 7px; background: rgba(150, 180, 230, .04); }
+.preMatchHead, .preMatchValues, .preMatchValues > div { display: flex; align-items: center; justify-content: space-between; gap: 8px; }
+.preMatchHead strong { color: var(--live-soft); font-size: 8px; letter-spacing: .1em; }
+.preMatchHead span { overflow: hidden; color: var(--live-muted); font-size: 8px; text-align: right; text-overflow: ellipsis; white-space: nowrap; }
+.preMatchValues { margin-top: 7px; }
+.preMatchValues > div { min-width: 0; flex: 1; }
+.preMatchValues span { overflow: hidden; color: var(--live-muted); font-size: 9px; text-overflow: ellipsis; white-space: nowrap; }
+.preMatchValues strong { flex: none; color: var(--live-soft); font: italic 700 14px var(--font-display, sans-serif); font-variant-numeric: tabular-nums; }
+.preMatchChance p { margin: 4px 0 0; color: var(--live-muted); font-size: 8px; line-height: 1.35; }
 
 .recentHeading { display: flex; align-items: center; justify-content: space-between; gap: 8px; margin: 1px 2px 9px; }
 .recentHeading strong { font-size: 9px; font-weight: 800; letter-spacing: .13em; }
@@ -79,8 +90,7 @@
 .pointList small { color: var(--live-muted); font-size: 8px; }
 .pointServer { flex: none; color: var(--live-muted); font-size: 8px; }
 .emptyLog { margin: 0; padding: 12px 0; color: var(--live-muted); font-size: 10px; }
-.footer { display: flex; justify-content: space-between; gap: 12px; padding: 12px 18px; border-top: 1px solid var(--live-line); color: var(--live-muted); font-size: 9px; }
-.footer > span:first-child { max-width: 700px; }
+.footer { display: flex; justify-content: flex-end; gap: 12px; padding: 12px 18px; border-top: 1px solid var(--live-line); color: var(--live-muted); font-size: 9px; }
 .footer > span:last-child { flex: none; }
 
 @media (max-width: 850px) {
@@ -91,7 +101,9 @@
   .finalScore { justify-items: start; text-align: left; }
   .liveCourtStage { padding: 12px 12px 0; }
   .mainGrid { gap: 15px; padding: 12px; }
-  .metrics { grid-template-columns: 1fr 1fr; }
-  .metrics > div:last-child { grid-column: 1 / -1; }
-  .footer { align-items: flex-start; flex-direction: column; }
+  .metricsHeading, .metricRow { grid-template-columns: minmax(94px, 1.2fr) repeat(2, minmax(48px, .8fr)); gap: 5px; padding: 8px; }
+  .metricsHeading { font-size: 7px; }
+  .metricRow { font-size: 9px; }
+  .metricRow strong { font-size: 12px; }
+  .footer { align-items: flex-end; flex-direction: column; }
 }
