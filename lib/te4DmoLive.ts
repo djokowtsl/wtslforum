@@ -4,6 +4,7 @@ export type Te4DmoReplaySpeed = 1 | 2 | 4;
 
 export const TE4_DMO_FRAMES_PER_SECOND = 60;
 export const LIVE_DMO_UPDATE_INTERVAL_MS = 1200;
+export const LIVE_DMO_COURT_SAMPLES = 72;
 
 export function replayCourtWindowFrames(speed: Te4DmoReplaySpeed): number {
   return Math.round(TE4_DMO_FRAMES_PER_SECOND * LIVE_DMO_UPDATE_INTERVAL_MS * speed / 1000);
@@ -88,7 +89,13 @@ export type Te4LiveSnapshot = {
     faults: number;
   }>;
   court: number[][];
+  soundEvents?: Array<{
+    frame: number;
+    kind: 'racket' | 'bounce';
+  }>;
 };
+
+export type Te4LiveSoundEvent = NonNullable<Te4LiveSnapshot['soundEvents']>[number];
 
 export function hasCompletedDmoPoints(
   snapshot: Pick<Te4LiveSnapshot, 'pointCount'> | null | undefined,
@@ -458,6 +465,8 @@ export class Te4DmoLiveParser {
     bestOf: Te4LiveBestOf,
     frameLimit = this.frameCount,
     courtWindowFrames = replayCourtWindowFrames(1),
+    courtSampleLimit = 25,
+    includeSoundEvents = false,
   ): Te4LiveSnapshot | null {
     const visibleFrameCount = Math.min(this.frameCount, Math.max(0, Math.floor(frameLimit)));
     if (!this.header || this.header.bad || visibleFrameCount < 10) return null;
@@ -525,7 +534,8 @@ export class Te4DmoLiveParser {
         ?? this.rawServeSpeedKmh(parsed.openServe);
     const lastFrame = visibleFrameCount - 1;
     const firstFrame = Math.max(0, visibleFrameCount - Math.max(1, Math.floor(courtWindowFrames)));
-    const stride = Math.max(1, Math.ceil((lastFrame - firstFrame) / 24));
+    const maxSamples = Math.max(2, Math.min(360, Math.floor(courtSampleLimit)));
+    const stride = Math.max(1, Math.ceil((lastFrame - firstFrame) / (maxSamples - 1)));
     const court: number[][] = [];
     for (let frame = firstFrame; frame <= lastFrame; frame += stride) {
       const ballX = this.ballX[frame] > 3000 ? 0 : this.ballX[frame];
@@ -542,6 +552,52 @@ export class Te4DmoLiveParser {
       // coordinates. Keep valid score data and omit only the malformed sample.
       if (sample.some((value, index) => index !== 2 && (value < -5000 || value > 5000))) continue;
       court.push(sample);
+    }
+
+    const soundEvents: Te4LiveSoundEvent[] = [];
+    if (includeSoundEvents) {
+      const seenSoundEvents = new Set<string>();
+      const addShotSounds = (frame: number, serve: boolean) => {
+        if (!Number.isInteger(frame) || frame < 0 || frame >= visibleFrameCount) return;
+        if (frame >= firstFrame && frame <= lastFrame) {
+          const key = `${frame}:racket`;
+          if (!seenSoundEvents.has(key)) {
+            soundEvents.push({ frame, kind: 'racket' });
+            seenSoundEvents.add(key);
+          }
+        }
+
+        const bounceSearchFrom = frame + (serve ? 2 : 0);
+        const bounceSearchEnd = Math.min(bounceSearchFrom + 300, visibleFrameCount - 2);
+        for (let bounceFrame = bounceSearchFrom + 3; bounceFrame < bounceSearchEnd; bounceFrame += 1) {
+          const z = this.ballZ[bounceFrame];
+          if (
+            z < 25
+            && z <= this.ballZ[bounceFrame - 1]
+            && z <= this.ballZ[bounceFrame + 1]
+            && this.ballZ[bounceFrame - 1] > z - 1e-9
+          ) {
+            if (bounceFrame >= firstFrame && bounceFrame <= lastFrame) {
+              const key = `${bounceFrame}:bounce`;
+              if (!seenSoundEvents.has(key)) {
+                soundEvents.push({ frame: bounceFrame, kind: 'bounce' });
+                seenSoundEvents.add(key);
+              }
+            }
+            break;
+          }
+        }
+      };
+
+      for (let pointIndex = points.length - 1; pointIndex >= 0; pointIndex -= 1) {
+        const point = points[pointIndex];
+        if (point.end < firstFrame - 300) break;
+        addShotSounds(point.serveFrame, true);
+        for (const hit of point.hits) addShotSounds(hit, false);
+      }
+      if (parsed.openServe !== null) addShotSounds(parsed.openServe, true);
+      for (const hit of liveHits) addShotSounds(hit, false);
+      soundEvents.sort((a, b) => a.frame - b.frame || a.kind.localeCompare(b.kind));
     }
 
     return {
@@ -582,6 +638,7 @@ export class Te4DmoLiveParser {
         faults: point.faults,
       })),
       court,
+      ...(soundEvents.length ? { soundEvents } : {}),
     };
   }
 }

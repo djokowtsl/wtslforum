@@ -6,6 +6,7 @@ import { isSameSiteMutation } from '@/lib/liveRequestSecurity';
 import { sql } from '@/lib/db';
 import { canonicalizeRankedDmoPlayers, getLiveWtslMatchForPlayers } from '@/lib/liveScores';
 import { readSiteSnapshot } from '@/lib/siteSnapshots';
+import { cleanupExpiredLiveDmoBroadcasts } from '@/lib/liveDmoStorage';
 import type { PublicFixturePayload } from '@/lib/liveFeedTypes';
 import {
   isLikelyOfficialWtslMatch,
@@ -203,12 +204,13 @@ export async function POST(request: Request) {
   };
   const id = randomUUID();
   try {
-    await sql`DELETE FROM dmo_live_broadcasts WHERE expires_at <= NOW()`;
+    await cleanupExpiredLiveDmoBroadcasts();
     await sql`
       INSERT INTO dmo_live_broadcasts
         (id, owner_discord_id, status, sequence, payload, started_at, updated_at, expires_at)
       VALUES
-        (${id}::uuid, ${user.discordId}, 'live', 0, ${JSON.stringify(payload)}::jsonb, NOW(), NOW(), NOW() + INTERVAL '45 seconds')
+        (${id}::uuid, ${user.discordId}, 'live', 0, ${JSON.stringify(payload)}::jsonb, NOW(), NOW(),
+          NOW() + CASE WHEN ${body.replay} THEN INTERVAL '15 minutes' ELSE INTERVAL '45 seconds' END)
     `;
     return NextResponse.json({
       id,

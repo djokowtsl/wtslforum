@@ -1,6 +1,8 @@
-import { del, get } from '@vercel/blob';
+import { del, get, put } from '@vercel/blob';
+import { randomUUID } from 'node:crypto';
 import { NextResponse } from 'next/server';
 import { getSession } from '@/lib/auth';
+import { sql } from '@/lib/db';
 import { removeUnsupportedCharacterProjections } from '@/lib/characterProfileSafety.mjs';
 import { resolveDmoCharacterMatch } from '@/lib/te4DmoCharacterMatch';
 import { analyzeDmoBuffer } from '@/lib/te4DmoAnalysis';
@@ -136,15 +138,44 @@ export async function POST(request: Request) {
   }
   const pathname = typeof body.pathname === 'string' ? body.pathname : '';
   const filename = typeof body.filename === 'string' ? body.filename.trim().slice(0, 160) : '';
+  const liveBroadcastId = body.liveBroadcastId === undefined ? null : body.liveBroadcastId;
   if (!isAllowedPath(pathname) || !filename.toLowerCase().endsWith('.dmo')) {
     return NextResponse.json(
       { error: 'Choose a valid uploaded .dmo recording.' },
       { status: 400, headers: { 'Cache-Control': 'private, no-store' } },
     );
   }
+  if (liveBroadcastId !== null && (
+    typeof liveBroadcastId !== 'string'
+    || !/^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(liveBroadcastId)
+  )) {
+    return NextResponse.json(
+      { error: 'The replay broadcast could not be verified.' },
+      { status: 400, headers: { 'Cache-Control': 'private, no-store' } },
+    );
+  }
 
   let uploaded = false;
+  let unattachedReplayPath: string | null = null;
   try {
+    if (liveBroadcastId) {
+      const ownedBroadcast = await sql`
+        SELECT id
+        FROM dmo_live_broadcasts
+        WHERE id=${liveBroadcastId}::uuid
+          AND owner_discord_id=${user.discordId}
+          AND status='live'
+          AND payload->>'mode'='manual'
+          AND payload->>'replay'='true'
+      `;
+      if (!ownedBroadcast.length) {
+        return NextResponse.json(
+          { error: 'The replay broadcast could not be verified.' },
+          { status: 404, headers: { 'Cache-Control': 'private, no-store' } },
+        );
+      }
+    }
+
     const blob = await get(pathname, { access: 'private', storeId, useCache: false });
     if (!blob || blob.statusCode !== 200 || !blob.stream) {
       return NextResponse.json(
@@ -168,9 +199,56 @@ export async function POST(request: Request) {
       );
     }
     const analysis = analyzeDmoBuffer(bytes, filename);
+    if (liveBroadcastId) {
+      const replayJson = JSON.stringify({ viewer: analysis.viewer });
+      if (Buffer.byteLength(replayJson) > MAX_DMO_BYTES) {
+        return NextResponse.json(
+          { error: 'The full replay data is larger than the 64 MiB storage limit.' },
+          { status: 413, headers: { 'Cache-Control': 'private, no-store' } },
+        );
+      }
+      const replayPath = `dmo-live-replays/${liveBroadcastId}-${randomUUID()}.json`;
+      const replayBlob = await put(replayPath, replayJson, {
+        access: 'private',
+        storeId,
+        addRandomSuffix: false,
+        contentType: 'application/json',
+      });
+      unattachedReplayPath = replayBlob.pathname;
+      const attached = await sql`
+        UPDATE dmo_live_broadcasts
+        SET payload=COALESCE(payload, '{}'::jsonb)
+              || jsonb_build_object('replayDataPath', ${replayBlob.pathname}),
+            updated_at=NOW()
+        WHERE id=${liveBroadcastId}::uuid
+          AND owner_discord_id=${user.discordId}
+          AND status='live'
+          AND payload->>'mode'='manual'
+          AND payload->>'replay'='true'
+        RETURNING id
+      `;
+      if (!attached.length) {
+        await del(replayBlob.pathname, { storeId }).catch(() => undefined);
+        unattachedReplayPath = null;
+        return NextResponse.json(
+          { error: 'The replay broadcast ended before its playback data was ready.' },
+          { status: 409, headers: { 'Cache-Control': 'private, no-store' } },
+        );
+      }
+      unattachedReplayPath = null;
+      return NextResponse.json(
+        { replayDataReady: true },
+        { headers: { 'Cache-Control': 'private, no-store' } },
+      );
+    }
     analysis.characterAttribution = await findCharacterAttribution(analysis);
     return streamedJson(analysis);
   } catch (error) {
+    if (unattachedReplayPath) {
+      await del(unattachedReplayPath, { storeId }).catch(() => {
+        console.error('[dmo-analysis] unattached replay cleanup failed');
+      });
+    }
     if (error instanceof Te4DmoAnalysisError) {
       return NextResponse.json(
         { error: error.message },

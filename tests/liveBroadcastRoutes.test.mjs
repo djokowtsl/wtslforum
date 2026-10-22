@@ -22,6 +22,12 @@ function loadRoute(path, mocks) {
       };
     }
     if (name === '@/lib/siteSnapshots') return { readSiteSnapshot: async () => null };
+    if (name === '@/lib/liveDmoStorage') {
+      return {
+        cleanupExpiredLiveDmoBroadcasts: async () => {},
+        isLiveDmoReplayPath: (value) => typeof value === 'string' && value.startsWith('dmo-live-replays/'),
+      };
+    }
     throw new Error(`Unexpected route dependency: ${name}`);
   }, module, module.exports);
   return module.exports;

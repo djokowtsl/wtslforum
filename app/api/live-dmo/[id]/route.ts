@@ -54,6 +54,10 @@ const snapshotSchema = z.object({
     rallyHits: z.number().int().min(0).max(200),
     faults: z.number().int().min(0).max(10),
   }).strict()).max(12),
+  soundEvents: z.array(z.object({
+    frame: z.number().int().min(0).max(1_000_000),
+    kind: z.enum(['racket', 'bounce']),
+  }).strict()).max(256).optional(),
   court: z.array(z.tuple([
     z.number().int().min(-5000).max(5000),
     z.number().int().min(-5000).max(5000),
@@ -62,7 +66,7 @@ const snapshotSchema = z.object({
     z.number().int().min(-5000).max(5000),
     z.number().int().min(-5000).max(5000),
     z.number().int().min(-5000).max(5000),
-  ])).max(25),
+  ])).max(100),
 }).strict();
 const updateSchema = z.object({
   sequence: z.number().int().positive(),

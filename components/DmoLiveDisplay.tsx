@@ -156,7 +156,7 @@ export default function DmoLiveDisplay({
         </div>
       </div>
       <footer className={styles.footer}>
-        <span>DMO data is parsed in the broadcaster&apos;s browser. The Forum stores only this temporary scoreboard snapshot.</span>
+        <span>The original DMO stays on the broadcaster&apos;s device. Active updates contain only recent court positions and parsed point events.</span>
         <span>Best of {snapshot.bestOf}</span>
       </footer>
     </section>

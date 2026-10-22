@@ -10,7 +10,7 @@ export default async function LivestreamsPage() {
   const user = await getSession();
   return (
     <main className="live-broadcast-page">
-      {user && <DmoLiveHost displayName={user.username} />}
+      {user && <DmoLiveHost displayName={user.username} canPrepareFullReplay={user.isAdmin} />}
       <DmoLiveViewer canWatch={Boolean(user)} />
     </main>
   );

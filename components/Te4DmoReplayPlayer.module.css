@@ -1,0 +1,35 @@
+.frameWrap {
+  overflow: hidden;
+  width: 100%;
+  border: 1px solid rgba(135, 158, 179, 0.28);
+  border-radius: 16px;
+  background: #101923;
+}
+
+.frame {
+  display: block;
+  width: 100%;
+  height: min(76vh, 820px);
+  min-height: 560px;
+  border: 0;
+  background: #101923;
+}
+
+.loading,
+.fallback > p {
+  margin: 0;
+  padding: 14px 16px;
+  color: #b5c2cc;
+  font-size: 0.9rem;
+}
+
+.fallback > p {
+  color: #f2c27a;
+}
+
+@media (max-width: 680px) {
+  .frame {
+    height: 74vh;
+    min-height: 460px;
+  }
+}
