@@ -1,6 +1,6 @@
 'use client';
 
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import { useRouter } from 'next/navigation';
 
 type Nominee = { id: number; name: string; note: string };
@@ -20,8 +20,31 @@ type FormPreview = {
   optionCount: number;
   questions: { title: string; slug: string; optionCount: number; allowWriteIn: boolean; shuffleOptions: boolean; isRequired: boolean; examples: string[] }[];
 };
+type SyncSummary = {
+  counts: {
+    queued: number;
+    processing: number;
+    waiting_required: number;
+    synced: number;
+    retryable: number;
+    needs_review: number;
+  };
+  recentIssues: Array<{
+    reference: string;
+    status: 'retryable' | 'needs_review';
+    attempts: number;
+    lastAttemptAt: string | null;
+    errorCode: string | null;
+  }>;
+};
 
-export default function AwardAdminPanel({ cycleId, votingOpen, categories, formSyncConfigured = false }: { cycleId: number; votingOpen: boolean; categories: Category[]; formSyncConfigured?: boolean }) {
+export default function AwardAdminPanel({ cycleId, votingOpen, categories, formSyncConfigured = false, initialSyncSummary }: {
+  cycleId: number;
+  votingOpen: boolean;
+  categories: Category[];
+  formSyncConfigured?: boolean;
+  initialSyncSummary?: SyncSummary;
+}) {
   const router = useRouter();
   const [busy, setBusy] = useState(false);
   const [newNominee, setNewNominee] = useState<Record<number, string>>({});
@@ -31,6 +54,25 @@ export default function AwardAdminPanel({ cycleId, votingOpen, categories, formS
   const [formUrl, setFormUrl] = useState('');
   const [formPreview, setFormPreview] = useState<FormPreview | null>(null);
   const [formMessage, setFormMessage] = useState('');
+  const [syncSummary, setSyncSummary] = useState<SyncSummary | undefined>(initialSyncSummary);
+
+  async function refreshSyncSummary() {
+    try {
+      const res = await fetch(`/api/admin/awards?cycleId=${cycleId}`, { cache: 'no-store' });
+      if (!res.ok) return;
+      const data = await res.json();
+      if (data.syncSummary) setSyncSummary(data.syncSummary as SyncSummary);
+    } catch {
+      // Keep the last known admin status visible if a refresh is temporarily unavailable.
+    }
+  }
+
+  const hasActiveSyncJobs = Boolean(syncSummary?.counts.queued || syncSummary?.counts.processing);
+  useEffect(() => {
+    if (!hasActiveSyncJobs) return;
+    const timer = window.setInterval(() => { void refreshSyncSummary(); }, 3000);
+    return () => window.clearInterval(timer);
+  }, [cycleId, hasActiveSyncJobs]);
 
   async function call(body: Record<string, unknown>) {
     setBusy(true);
@@ -84,6 +126,7 @@ export default function AwardAdminPanel({ cycleId, votingOpen, categories, formS
     setFormSyncMessage('');
     let afterBallotCursor = '0';
     let skippedIncomplete = false;
+    let skippedNeedsReview = 0;
     try {
       while (true) {
         const res = await fetch('/api/admin/awards', {
@@ -95,15 +138,42 @@ export default function AwardAdminPanel({ cycleId, votingOpen, categories, formS
         if (!res.ok) throw new Error(data.error || 'Could not submit Forum ballots to Google Forms.');
         afterBallotCursor = String(data.nextAfterBallotCursor ?? afterBallotCursor);
         skippedIncomplete ||= data.skippedIncomplete === true;
+      skippedNeedsReview += Number(data.skippedNeedsReview ?? 0);
         setFormSyncMessage('Syncing complete Forum ballots to the linked Google Form…');
         if (data.done) break;
       }
-      setFormSyncMessage(skippedIncomplete
-        ? 'Backfill completed. Ballots missing required answers remain saved in the Forum and were not submitted.'
-        : 'Forum ballot backfill completed. The previous “Forum Votes” tab was left untouched.');
+      setFormSyncMessage([
+        skippedIncomplete
+          ? 'Ballots missing required answers remain saved in the Forum and were not submitted.'
+          : 'Forum ballot backfill completed. The previous “Forum Votes” tab was left untouched.',
+        skippedNeedsReview
+          ? `${skippedNeedsReview} ballot${skippedNeedsReview === 1 ? '' : 's'} needing review were skipped to avoid duplicate submissions.`
+          : '',
+      ].filter(Boolean).join(' '));
       router.refresh();
     } catch (e) {
       setErr(e instanceof Error ? e.message : 'Could not submit Forum ballots to Google Forms.');
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  async function retrySafeSyncJobs() {
+    setBusy(true);
+    setErr('');
+    setFormSyncMessage('');
+    try {
+      const res = await fetch('/api/admin/awards', {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({ action: 'retry-safe-form-sync-jobs', cycleId }),
+      });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error || 'Could not retry safe sync jobs.');
+      setFormSyncMessage(`Queued ${Number(data.queued ?? 0)} safe sync retr${Number(data.queued ?? 0) === 1 ? 'y' : 'ies'}. Ballots needing review are not retried automatically.`);
+      await refreshSyncSummary();
+    } catch (e) {
+      setErr(e instanceof Error ? e.message : 'Could not retry safe sync jobs.');
     } finally {
       setBusy(false);
     }
@@ -131,7 +201,33 @@ export default function AwardAdminPanel({ cycleId, votingOpen, categories, formS
         <button className="btn btn-sm" disabled={busy || !formSyncConfigured} onClick={syncForumBallotsToForm}>
           {busy ? 'Syncing…' : 'Backfill Forum ballots to Google Form'}
         </button>
+        <button className="btn btn-sm" disabled={busy || !formSyncConfigured} onClick={retrySafeSyncJobs} style={{ marginLeft: 8 }}>
+          Retry safe failures
+        </button>
         {formSyncMessage && <p role="status" style={{ margin: '10px 0 0', fontSize: 13 }}>{formSyncMessage}</p>}
+        {syncSummary && (
+          <div aria-live="polite" style={{ marginTop: 14, fontSize: 13 }}>
+            <strong>Sync status</strong>
+            <p style={{ margin: '6px 0', color: 'var(--muted)' }}>
+              Queued: {syncSummary.counts.queued} · Processing: {syncSummary.counts.processing} · Waiting for required answers: {syncSummary.counts.waiting_required} · Synced: {syncSummary.counts.synced} · Retryable: {syncSummary.counts.retryable} · Needs review: {syncSummary.counts.needs_review}
+            </p>
+            {syncSummary.counts.needs_review > 0 && (
+              <p style={{ margin: '6px 0', color: '#ffb36b' }}>
+                Jobs needing review are not retried automatically because a response may already exist.
+              </p>
+            )}
+            {syncSummary.recentIssues.length > 0 && (
+              <ul style={{ margin: '8px 0 0', paddingLeft: 20, color: 'var(--muted)' }}>
+                {syncSummary.recentIssues.map((issue) => (
+                  <li key={issue.reference}>
+                    Job {issue.reference}: {issue.status.replace('_', ' ')}; {issue.attempts} attempt{issue.attempts === 1 ? '' : 's'}
+                    {issue.errorCode ? ` (${issue.errorCode})` : ''}
+                  </li>
+                ))}
+              </ul>
+            )}
+          </div>
+        )}
       </section>
 
       <section className="forum-list" style={{ marginTop: 20, padding: 16 }} aria-labelledby="award-form-import-title">
