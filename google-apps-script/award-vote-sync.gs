@@ -29,6 +29,7 @@ const SAFE_SYNC_ERROR_CODES = [
   'unmatched_or_unsupported_question',
   'unsupported_required_question',
   'missing_required_answer',
+  'form_response_preflight_failed',
   'form_response_creation_failed',
   'form_item_response_failed',
   'form_response_submission_failed',
@@ -298,33 +299,39 @@ function ballotResult(ballot, status, responseId, fingerprint, updatedAt) {
 }
 
 function submitBallot(form, items, ballot) {
-  const answersByCategory = new Map(ballot.answers.map((answer) => [answer.category, answer.answer]));
-  const answerByQuestionId = new Map(ballot.answers.filter((answer) => answer.questionId).map((answer) => [answer.questionId, answer.answer]));
-  const itemByTitle = new Map();
-  const itemById = new Map(items.map((item) => [String(item.getId()), item]));
-  for (const item of items) {
-    const title = String(item.getTitle() || '').trim();
-    if (!itemByTitle.has(title)) itemByTitle.set(title, []);
-    itemByTitle.get(title).push(item);
-  }
+  let answersByCategory;
+  let answerByQuestionId;
+  try {
+    answersByCategory = new Map(ballot.answers.map((answer) => [answer.category, answer.answer]));
+    answerByQuestionId = new Map(ballot.answers.filter((answer) => answer.questionId).map((answer) => [answer.questionId, answer.answer]));
+    const itemByTitle = new Map();
+    const itemById = new Map(items.map((item) => [String(item.getId()), item]));
+    for (const item of items) {
+      const title = String(item.getTitle() || '').trim();
+      if (!itemByTitle.has(title)) itemByTitle.set(title, []);
+      itemByTitle.get(title).push(item);
+    }
 
-  for (const answer of ballot.answers) {
-    const matches = getMatchingItems(answer, itemByTitle, itemById);
-    if (matches.length !== 1 || !isSupportedChoiceItem(matches[0])) {
-      throw new Error('unmatched_or_unsupported_question');
+    for (const answer of ballot.answers) {
+      const matches = getMatchingItems(answer, itemByTitle, itemById);
+      if (matches.length !== 1 || !isSupportedChoiceItem(matches[0])) {
+        throw new Error('unmatched_or_unsupported_question');
+      }
     }
-  }
-  for (const item of items) {
-    if (item.isRequired() && !isSupportedChoiceItem(item)) {
-      throw new Error('unsupported_required_question');
+    for (const item of items) {
+      if (item.isRequired() && !isSupportedChoiceItem(item)) {
+        throw new Error('unsupported_required_question');
+      }
+      const title = String(item.getTitle() || '').trim();
+      const answer = answerByQuestionId.has(String(item.getId()))
+        ? answerByQuestionId.get(String(item.getId()))
+        : answersByCategory.get(title);
+      if (item.isRequired() && !answer) {
+        throw new Error('missing_required_answer');
+      }
     }
-    const title = String(item.getTitle() || '').trim();
-    const answer = answerByQuestionId.has(String(item.getId()))
-      ? answerByQuestionId.get(String(item.getId()))
-      : answersByCategory.get(title);
-    if (item.isRequired() && !answer) {
-      throw new Error('missing_required_answer');
-    }
+  } catch (error) {
+    throw new Error(safeSyncErrorCode(error, 'form_response_preflight_failed'));
   }
 
   let response;
