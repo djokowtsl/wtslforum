@@ -1,7 +1,7 @@
 import { redirect } from 'next/navigation';
 import { safe } from '@/lib/db';
 import { getSession } from '@/lib/auth';
-import { getActiveCycle, getCategories, getNomineesForCategories, getTally, getWriteInTally } from '@/lib/awards';
+import { getActiveCycle, getCategories, getNomineesForCategories } from '@/lib/awards';
 import { awardVoteSheetSyncStatus } from '@/lib/awardVoteSheetSync';
 import AwardAdminPanel from '@/components/AwardAdminPanel';
 import PageHero from '@/components/PageHero';
@@ -25,14 +25,10 @@ export default async function AdminAwards() {
 
   const categories = await safe(() => getCategories(cycle.id), [] as any[]);
   const nominees = categories.length ? await safe(() => getNomineesForCategories(categories.map((c: any) => c.id)), [] as any[]) : [];
-  const categoriesWithData = await Promise.all(
-    categories.map(async (c: any) => ({
-      ...c,
-      nominees: nominees.filter((n: any) => n.category_id === c.id),
-      tally: await safe(() => getTally(c.id), [] as any[]),
-      write_ins: await safe(() => getWriteInTally(c.id), [] as any[]),
-    }))
-  );
+  const categoriesWithNominees = categories.map((c: any) => ({
+    ...c,
+    nominees: nominees.filter((n: any) => n.category_id === c.id),
+  }));
 
   return (
     <>
@@ -41,7 +37,7 @@ export default async function AdminAwards() {
         <AwardAdminPanel
           cycleId={cycle.id}
           votingOpen={cycle.voting_open}
-          categories={categoriesWithData}
+          categories={categoriesWithNominees}
           sheetSyncConfigured={awardVoteSheetSyncStatus() === 'ready'}
         />
       </main>
