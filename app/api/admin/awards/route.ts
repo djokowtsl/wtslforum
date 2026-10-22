@@ -84,13 +84,12 @@ export async function POST(req: NextRequest) {
         : result.status === 'misconfigured'
           ? 'Google Sheets sync settings are incomplete or invalid.'
           : 'Some Forum votes could not be synced. You can retry this sync.';
-      return NextResponse.json({ error, ...result }, { status: 503 });
+      return NextResponse.json({ error }, { status: 503 });
     }
 
     const nextAfterVoteId = String(votes.at(-1)?.voteId ?? afterVoteId);
     return NextResponse.json({
       ok: true,
-      ...result,
       nextAfterVoteId,
       done: votes.length < 100,
     });
@@ -132,8 +131,8 @@ export async function POST(req: NextRequest) {
       const matchedId = nomineeName ? byName.get(nomineeName.toLowerCase()) : undefined;
       return { voterKey, nomineeId: matchedId ?? null, writeIn: matchedId ? null : (nomineeName || writeIn || null) };
     });
-    const imported = await importGoogleFormVotes(categoryId, rows);
-    return NextResponse.json({ ok: true, imported });
+    await importGoogleFormVotes(categoryId, rows);
+    return NextResponse.json({ ok: true });
   }
 
   return NextResponse.json({ error: 'Unknown action.' }, { status: 400 });
