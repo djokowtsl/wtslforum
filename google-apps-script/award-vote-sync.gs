@@ -394,14 +394,15 @@ function submitBallot(form, items, ballot) {
       }
     }
     for (const item of items) {
-      if (item.isRequired() && !isSupportedChoiceItem(item)) {
+      const required = isRequiredResponseItem(item);
+      if (required && !isSupportedChoiceItem(item)) {
         throw new Error('unsupported_required_question');
       }
       const title = String(item.getTitle() || '').trim();
       const answer = answerByQuestionId.has(String(item.getId()))
         ? answerByQuestionId.get(String(item.getId()))
         : answersByCategory.get(title);
-      if (item.isRequired() && !answer) {
+      if (required && !answer) {
         throw new Error('missing_required_answer');
       }
     }
@@ -445,6 +446,35 @@ function getMatchingItems(answer, itemByTitle, itemById) {
 function isSupportedChoiceItem(item) {
   const type = item.getType();
   return type === FormApp.ItemType.MULTIPLE_CHOICE || type === FormApp.ItemType.LIST;
+}
+
+function isRequiredResponseItem(item) {
+  // Form.getItems() returns generic Item objects, which have no isRequired().
+  // Only the type-specific question interface exposes the required flag.
+  const castMethods = {
+    CHECKBOX: 'asCheckboxItem',
+    CHECKBOX_GRID: 'asCheckboxGridItem',
+    DATE: 'asDateItem',
+    DATETIME: 'asDateTimeItem',
+    DURATION: 'asDurationItem',
+    GRID: 'asGridItem',
+    LIST: 'asListItem',
+    MULTIPLE_CHOICE: 'asMultipleChoiceItem',
+    PARAGRAPH_TEXT: 'asParagraphTextItem',
+    RATING: 'asRatingItem',
+    SCALE: 'asScaleItem',
+    TEXT: 'asTextItem',
+    TIME: 'asTimeItem',
+  };
+  const castMethod = castMethods[String(item.getType())];
+  if (!castMethod || typeof item[castMethod] !== 'function') {
+    throw new Error('unsupported_required_question');
+  }
+  const question = item[castMethod]();
+  if (!question || typeof question.isRequired !== 'function') {
+    throw new Error('form_inspection_failed');
+  }
+  return question.isRequired();
 }
 
 function getResponseItems(form) {
