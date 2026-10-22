@@ -15,6 +15,8 @@ function loadRoute(path, mocks) {
   new Function('require', 'module', 'exports', code)((name) => {
     if (name in mocks) return mocks[name];
     if (name.startsWith('node:')) return require(name);
+    if (name === '@/lib/liveScores') return { getLiveWtslMatchForPlayers: async () => null };
+    if (name === '@/lib/siteSnapshots') return { readSiteSnapshot: async () => null };
     throw new Error(`Unexpected route dependency: ${name}`);
   }, module, module.exports);
   return module.exports;
@@ -83,6 +85,77 @@ test('a signed-in member can start multiple broadcasts from their linked Discord
     if (originalToken === undefined) delete process.env.DISCORD_BOT_TOKEN;
     else process.env.DISCORD_BOT_TOKEN = originalToken;
   }
+});
+
+test('automatic broadcasts require a confirmed WTSL live match and retain its official labels', async () => {
+  const inserts = [];
+  const route = loadRoute('app/api/live-dmo/route.ts', {
+    'next/server': nextServer,
+    'node:crypto': { randomUUID: () => 'automatic-broadcast' },
+    'zod': require('zod'),
+    '@/lib/auth': { getSession: async () => ({ discordId: 'linked-member', isAdmin: false }) },
+    '@/lib/liveRequestSecurity': { isSameSiteMutation: () => true },
+    '@/lib/liveScores': {
+      getLiveWtslMatchForPlayers: async (players) => (
+        players[0] === 'Alpha' && players[1] === 'Beta'
+          ? { name: 'Alpha vs Beta', bestOf: 3 }
+          : null
+      ),
+    },
+    '@/lib/siteSnapshots': {
+      readSiteSnapshot: async () => ({
+        checkedAt: new Date().toISOString(),
+        payload: { publicOpen: [{ tour: 'TE4', first_name: 'Beta', second_name: 'Alpha' }] },
+      }),
+    },
+    '@/lib/liveBroadcast': {
+      isLikelyOfficialWtslMatch: () => true,
+      parseDiscordMessageUrl: () => null,
+      streamLinksInDiscordMessage: () => [],
+    },
+    '@/lib/db': {
+      sql: async (strings, ...values) => {
+        inserts.push({ query: strings.join('?'), values });
+        return [];
+      },
+    },
+  });
+  const response = await route.POST(request({
+    hasDmo: true,
+    players: ['Alpha', 'Beta'],
+    mode: 'auto',
+    bestOf: 3,
+    officialByBroadcaster: true,
+  }));
+  assert.equal(response.status, 201);
+  const insertedBroadcast = inserts.find((item) => item.query.includes('INSERT INTO dmo_live_broadcasts'));
+  const storedPayload = insertedBroadcast?.values.find((value) => typeof value === 'string' && value.includes('"mode":"auto"'));
+  assert.ok(storedPayload);
+  assert.equal(JSON.parse(storedPayload).bestOf, 3);
+  assert.equal(JSON.parse(storedPayload).officialByBroadcaster, true);
+  assert.equal(JSON.parse(storedPayload).likelyOfficial, true);
+});
+
+test('automatic broadcasts are rejected when the exact player pair is not live', async () => {
+  let databaseCalls = 0;
+  const route = loadRoute('app/api/live-dmo/route.ts', {
+    'next/server': nextServer,
+    'node:crypto': require('node:crypto'),
+    'zod': require('zod'),
+    '@/lib/auth': { getSession: async () => ({ discordId: 'linked-member', isAdmin: false }) },
+    '@/lib/liveRequestSecurity': { isSameSiteMutation: () => true },
+    '@/lib/liveScores': { getLiveWtslMatchForPlayers: async () => null },
+    '@/lib/liveBroadcast': { parseDiscordMessageUrl: () => null, streamLinksInDiscordMessage: () => [] },
+    '@/lib/db': { sql: async () => { databaseCalls += 1; return []; } },
+  });
+  const response = await route.POST(request({
+    hasDmo: true,
+    players: ['Offline One', 'Offline Two'],
+    mode: 'auto',
+    bestOf: 3,
+  }));
+  assert.equal(response.status, 409);
+  assert.equal(databaseCalls, 0);
 });
 
 test('guest broadcast attempts are rejected before database access', async () => {

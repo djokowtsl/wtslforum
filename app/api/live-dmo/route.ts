@@ -4,7 +4,11 @@ import { z } from 'zod';
 import { getSession } from '@/lib/auth';
 import { isSameSiteMutation } from '@/lib/liveRequestSecurity';
 import { sql } from '@/lib/db';
+import { getLiveWtslMatchForPlayers } from '@/lib/liveScores';
+import { readSiteSnapshot } from '@/lib/siteSnapshots';
+import type { PublicFixturePayload } from '@/lib/liveFeedTypes';
 import {
+  isLikelyOfficialWtslMatch,
   parseDiscordMessageUrl,
   streamLinksInDiscordMessage,
 } from '@/lib/liveBroadcast';
@@ -19,6 +23,9 @@ const startSchema = z.object({
   hasDmo: z.boolean(),
   discordMessageUrl: z.string().trim().max(500).optional().default(''),
   players: z.tuple([z.string().trim().min(1).max(80), z.string().trim().min(1).max(80)]).optional(),
+  mode: z.enum(['manual', 'auto']).optional().default('manual'),
+  bestOf: z.union([z.literal(1), z.literal(3), z.literal(5)]).optional(),
+  officialByBroadcaster: z.boolean().optional().default(false),
 }).strict();
 const MAX_BODY_BYTES = 4_000;
 
@@ -55,6 +62,47 @@ export async function POST(request: Request) {
   }
 
   const messageUrl = body.discordMessageUrl.trim();
+  if (body.mode === 'auto' && (
+    !body.hasDmo
+    || !body.players
+    || !body.bestOf
+    || messageUrl
+  )) {
+    return NextResponse.json(
+      { error: 'Automatic broadcasts need a DMO folder and a matching WTSL online match.' },
+      { status: 400, headers: PRIVATE_HEADERS },
+    );
+  }
+  if (body.officialByBroadcaster && (
+    !body.players
+    || (body.bestOf !== 3 && body.bestOf !== 5)
+  )) {
+    return NextResponse.json(
+      { error: 'Broadcaster-tagged official matches must have named players and be best of 3 or best of 5.' },
+      { status: 400, headers: PRIVATE_HEADERS },
+    );
+  }
+
+  let broadcastBestOf = body.bestOf ?? 3;
+  if (body.mode === 'auto' && body.players) {
+    let liveMatch;
+    try {
+      liveMatch = await getLiveWtslMatchForPlayers(body.players);
+    } catch {
+      return NextResponse.json(
+        { error: 'The WTSL live-match feed is unavailable; automatic broadcasting is paused.' },
+        { status: 503, headers: PRIVATE_HEADERS },
+      );
+    }
+    if (!liveMatch || liveMatch.bestOf !== body.bestOf) {
+      return NextResponse.json(
+        { error: 'That player pair is not currently confirmed in the WTSL live-match feed.' },
+        { status: 409, headers: PRIVATE_HEADERS },
+      );
+    }
+    broadcastBestOf = liveMatch.bestOf;
+  }
+
   if (!body.hasDmo && !messageUrl) {
     return NextResponse.json(
       { error: 'Choose a TE4 recording folder or add a link to your stream message in the WTSL Discord channel.' },
@@ -119,6 +167,10 @@ export async function POST(request: Request) {
   }
 
   const payload = {
+    mode: body.mode,
+    bestOf: broadcastBestOf,
+    officialByBroadcaster: body.officialByBroadcaster,
+    likelyOfficial: await likelyOfficialFromSnapshot(body.players, broadcastBestOf),
     stream,
     sourceMessageUrl: verifiedMessageUrl,
     ...(body.players ? { players: body.players } : {}),
@@ -139,5 +191,19 @@ export async function POST(request: Request) {
       { error: 'Live broadcasting is temporarily unavailable. The Forum database migration may be pending.' },
       { status: 503, headers: PRIVATE_HEADERS },
     );
+  }
+}
+
+async function likelyOfficialFromSnapshot(
+  players: [string, string] | undefined,
+  bestOf: 1 | 3 | 5,
+) {
+  if (!players || (bestOf !== 3 && bestOf !== 5)) return false;
+  try {
+    const snapshot = await readSiteSnapshot<PublicFixturePayload>('live-fixtures');
+    if (!snapshot || Date.now() - Date.parse(snapshot.checkedAt) > 24 * 60 * 60 * 1000) return false;
+    return isLikelyOfficialWtslMatch(players, bestOf, snapshot.payload.publicOpen ?? []);
+  } catch {
+    return false;
   }
 }

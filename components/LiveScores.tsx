@@ -49,6 +49,8 @@ export default function LiveScores({
     id: string;
     status: 'live' | 'ended';
     ownerName: string;
+    officialByBroadcaster: boolean;
+    likelyOfficial: boolean;
     players: [string, string] | null;
     snapshot: { players?: [string, string] } | null;
   }>>([]);
@@ -255,10 +257,15 @@ export default function LiveScores({
                     className="live-broadcast-match-link"
                     href={`/livestreams?broadcast=${encodeURIComponent(broadcast.id)}#broadcast-${encodeURIComponent(broadcast.id)}`}
                     key={broadcast.id}
-                    title={`Watch ${broadcast.ownerName}'s live broadcast`}
-                    aria-label={`Watch ${broadcast.ownerName}'s live broadcast of ${firstName} vs ${secondName}`}
+                    title={`Watch ${broadcast.ownerName}'s live broadcast${broadcast.officialByBroadcaster ? ' · official match tagged by broadcaster' : broadcast.likelyOfficial ? ' · likely official match' : ''}`}
+                    aria-label={`Watch ${broadcast.ownerName}'s live broadcast of ${firstName} vs ${secondName}${broadcast.officialByBroadcaster ? ', official match tagged by broadcaster' : broadcast.likelyOfficial ? ', likely official match' : ''}`}
                   >
                     🎥
+                    {(broadcast.officialByBroadcaster || broadcast.likelyOfficial) && (
+                      <small className="live-broadcast-match-label">
+                        {broadcast.officialByBroadcaster ? 'OFFICIAL' : 'LIKELY OFFICIAL'}
+                      </small>
+                    )}
                   </Link>
                 ))}
               </div>

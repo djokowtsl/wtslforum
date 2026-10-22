@@ -15,6 +15,9 @@ type Broadcast = {
   snapshot: Te4LiveSnapshot | null;
   stream: LiveStream | null;
   players: [string, string] | null;
+  broadcastMode: 'manual' | 'auto';
+  officialByBroadcaster: boolean;
+  likelyOfficial: boolean;
   updatedAt: string;
   stale: boolean;
 };
@@ -87,6 +90,14 @@ export default function DmoLiveViewer() {
                   <span><Radio size={16} />{broadcast.status === 'live' ? 'LIVE' : 'ENDED'} · {broadcast.ownerName}</span>
                   {players && <strong>{players[0]} <i>vs</i> {players[1]}</strong>}
                 </div>
+                {(broadcast.broadcastMode === 'auto' || broadcast.officialByBroadcaster || broadcast.likelyOfficial) && (
+                  <div className={styles.broadcastTags}>
+                    {broadcast.broadcastMode === 'auto' && <small className={styles.broadcastTag}>AUTO · WTSL LIVE</small>}
+                    {broadcast.officialByBroadcaster
+                      ? <small className={styles.broadcastTag}>OFFICIAL · BROADCASTER TAG</small>
+                      : broadcast.likelyOfficial && <small className={styles.broadcastTag}>LIKELY OFFICIAL</small>}
+                  </div>
+                )}
                 {broadcast.stream && broadcast.status === 'live' && (
                   <LiveStreamEmbed stream={broadcast.stream} title={`Live stream by ${broadcast.ownerName}`} />
                 )}

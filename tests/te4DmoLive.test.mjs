@@ -63,6 +63,7 @@ test('incremental DMO parsing waits for frames, then emits a compact live snapsh
   assert.equal(snapshot.stats.length, 2);
   assert.ok(snapshot.court.length > 0 && snapshot.court.length <= 25);
   assert.equal(snapshot.filename, 'match.dmo');
+  assert.equal(parser.snapshot('match.dmo', 1)?.bestOf, 1);
 });
 
 test('invalid DMO signatures are marked instead of yielding a scoreboard', () => {

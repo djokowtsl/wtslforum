@@ -9,6 +9,7 @@ import {
   resolveLivePlayer,
   type ParsedLiveMatch,
 } from './liveScoreModel';
+import { findMatchingWtslLiveMatch } from './liveBroadcast';
 import { fetchWTSLAllResults, type WTSLAllResultRow } from './wtsl';
 
 const SERVER_LIST_URL = 'https://www.managames.com/tennis/online/TE4_ServerList.php?Poll=1';
@@ -20,6 +21,7 @@ type H2HProbability = { percent: number | null; source: ProbabilitySource | null
 const h2hCache = new Map<string, { at: number; result: H2HProbability }>();
 let allResultsCache: { at: number; rows: WTSLAllResultRow[] } | null = null;
 let allResultsRequest: Promise<WTSLAllResultRow[]> | null = null;
+let liveMatchesRequest: Promise<ParsedLiveMatch[]> | null = null;
 
 type PlayerRow = {
   wtsl_player_id: string | number;
@@ -178,13 +180,7 @@ async function enrichMatch(
 }
 
 export async function getLiveWtslMatches() {
-  const response = await fetch(SERVER_LIST_URL, {
-    headers: { 'user-agent': 'WTSL Forum live scoreboard' },
-    cache: 'no-store',
-    signal: AbortSignal.timeout(12_000),
-  });
-  if (!response.ok) throw new Error(`TE4 server list returned ${response.status}`);
-  const matches = parseLiveWtslMatches(await response.text()).slice(0, 12);
+  const matches = await getParsedLiveWtslMatches();
   if (matches.length === 0) return { matches: [], checkedAt: new Date().toISOString() };
 
   let rows: PlayerRow[] = [];
@@ -212,4 +208,28 @@ export async function getLiveWtslMatches() {
     matches: await Promise.all(matches.map((match) => enrichMatch(match, playersByTour))),
     checkedAt: new Date().toISOString(),
   };
+}
+
+export async function getLiveWtslMatchForPlayers(players: [string, string]) {
+  return findMatchingWtslLiveMatch(players, await getParsedLiveWtslMatches());
+}
+
+async function getParsedLiveWtslMatches() {
+  if (liveMatchesRequest) return liveMatchesRequest;
+
+  const request = (async () => {
+    const response = await fetch(SERVER_LIST_URL, {
+      headers: { 'user-agent': 'WTSL Forum live scoreboard' },
+      cache: 'no-store',
+      signal: AbortSignal.timeout(12_000),
+    });
+    if (!response.ok) throw new Error(`TE4 server list returned ${response.status}`);
+    return parseLiveWtslMatches(await response.text()).slice(0, 12);
+  })();
+  liveMatchesRequest = request;
+  try {
+    return await request;
+  } finally {
+    if (liveMatchesRequest === request) liveMatchesRequest = null;
+  }
 }
