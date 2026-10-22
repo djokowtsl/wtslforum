@@ -12,7 +12,13 @@ test('Apps Script request limit uses syntax accepted by its editor', () => {
   assert.match(script, /^const MAX_REQUEST_BYTES = 1000000;$/m);
 });
 
-function createBridge({ collectsEmail = false, unsupportedRequired = false } = {}) {
+function createBridge({
+  collectsEmail = false,
+  unsupportedRequired = false,
+  failFinalFlush = false,
+  failSuccessResponse = false,
+  releaseLockFails = false,
+} = {}) {
   const itemType = {
     MULTIPLE_CHOICE: 'MULTIPLE_CHOICE',
     LIST: 'LIST',
@@ -23,6 +29,7 @@ function createBridge({ collectsEmail = false, unsupportedRequired = false } = {
     TEXT: 'TEXT',
   };
   let responseSequence = 0;
+  let flushCount = 0;
   const rows = [['Timestamp', 'Fans Favourite Award', 'Best Dressed']];
   const items = [
     makeItem(101, 'Fans Favourite Award', itemType.MULTIPLE_CHOICE, true),
@@ -142,10 +149,18 @@ function createBridge({ collectsEmail = false, unsupportedRequired = false } = {
         assert.equal(id, spreadsheetId);
         return spreadsheet;
       },
-      flush() {},
+      flush() {
+        flushCount += 1;
+        if (failFinalFlush && flushCount === 3) throw new Error('private spreadsheet failure');
+      },
     },
     LockService: {
-      getScriptLock: () => ({ waitLock() {}, releaseLock() {} }),
+      getScriptLock: () => ({
+        waitLock() {},
+        releaseLock() {
+          if (releaseLockFails) throw new Error('private lock failure');
+        },
+      }),
     },
     Utilities: {
       DigestAlgorithm: { SHA_256: 'SHA_256' },
@@ -158,6 +173,9 @@ function createBridge({ collectsEmail = false, unsupportedRequired = false } = {
     ContentService: {
       MimeType: { JSON: 'application/json' },
       createTextOutput(content) {
+        if (failSuccessResponse && content.includes('"ok":true')) {
+          throw new Error('private response construction failure');
+        }
         return {
           content,
           setMimeType() { return this; },
@@ -316,4 +334,25 @@ test('returns fixed diagnostic codes without exposing raw Form error text', () =
   const inspectionResult = responseBody(inspectionBridge.post({ secret, ballots: [sampleBallot()] }));
   assert.equal(inspectionResult.error, 'form_inspection_failed');
   assert.equal(JSON.stringify(inspectionResult).includes('private response data'), false);
+});
+
+test('distinguishes final flush, response, and lock failures safely', () => {
+  const flushBridge = createBridge({ failFinalFlush: true });
+  const flushResult = responseBody(flushBridge.post({ secret, ballots: [sampleBallot()] }));
+  assert.deepEqual(flushResult, { ok: false, error: 'final_spreadsheet_flush_failed' });
+  assert.equal(flushBridge.responses.length, 1);
+  const retryResult = responseBody(flushBridge.post({ secret, ballots: [sampleBallot()] }));
+  assert.equal(retryResult.ok, true);
+  assert.equal(retryResult.results[0].status, 'unchanged');
+  assert.equal(flushBridge.responses.length, 1);
+
+  const responseBridge = createBridge({ failSuccessResponse: true });
+  const responseResult = responseBody(responseBridge.post({ secret, ballots: [sampleBallot()] }));
+  assert.deepEqual(responseResult, { ok: false, error: 'bridge_response_build_failed' });
+  assert.equal(JSON.stringify(responseResult).includes('private response'), false);
+
+  const lockBridge = createBridge({ releaseLockFails: true });
+  const lockResult = responseBody(lockBridge.post({ secret, ballots: [sampleBallot()] }));
+  assert.deepEqual(lockResult, { ok: false, error: 'sync_lock_release_failed' });
+  assert.equal(JSON.stringify(lockResult).includes('private lock'), false);
 });
