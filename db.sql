@@ -259,6 +259,7 @@ ON CONFLICT (season,category) DO UPDATE SET
 -- Awards nomination/voting system (admin gated: nominees must be added and voting opened before members can vote).
 CREATE TABLE IF NOT EXISTS award_cycles (
   id BIGSERIAL PRIMARY KEY, season TEXT NOT NULL UNIQUE, voting_open BOOLEAN NOT NULL DEFAULT FALSE,
+  voting_closes_at TIMESTAMPTZ,
   created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );
 CREATE TABLE IF NOT EXISTS award_categories (
