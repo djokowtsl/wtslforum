@@ -32,6 +32,10 @@ const SAFE_SYNC_ERROR_CODES = [
   'form_response_failed',
   'new_response_row_missing',
   'response_metadata_write_failed',
+  'ballot_batch_execution_failed',
+  'final_spreadsheet_flush_failed',
+  'bridge_response_build_failed',
+  'sync_lock_release_failed',
   'ballot_sync_failed',
   'sync_failed',
 ];
@@ -86,7 +90,7 @@ function doPost(event) {
       const items = getResponseItems(form);
       failureCode = 'response_sheet_setup_failed';
       const responseSheet = findResponseSheet(spreadsheet, items);
-      failureCode = 'sync_failed';
+      failureCode = 'ballot_batch_execution_failed';
       const results = ballots.map((ballot) => {
         try {
           return syncBallot(form, responseSheet, items, ballot);
@@ -103,10 +107,16 @@ function doPost(event) {
           };
         }
       });
+      failureCode = 'final_spreadsheet_flush_failed';
       SpreadsheetApp.flush();
+      failureCode = 'bridge_response_build_failed';
       return jsonResponse({ ok: true, results: results });
     } finally {
-      lock.releaseLock();
+      try {
+        lock.releaseLock();
+      } catch (_releaseError) {
+        throw new Error('sync_lock_release_failed');
+      }
     }
   } catch (error) {
     const errorCode = safeSyncErrorCode(error, failureCode);
