@@ -7,7 +7,7 @@
     "build": "next build",
     "start": "next start",
     "lint": "next lint",
-    "test": "node --test tests/articleContent.test.mjs tests/articleRoutes.test.mjs tests/articleInteractions.test.mjs tests/characterPickPopularity.test.mjs tests/characterProfileDescriptions.test.mjs tests/dashboardCharacterRecommendations.test.mjs tests/characterRosterFilters.test.mjs tests/leaderboardCareerTotals.test.mjs tests/leaderboardTourAverage.test.mjs tests/desktopForumNavigation.test.mjs tests/te4DmoAnalysis.test.mjs tests/te4DmoRoutes.test.mjs tests/te4DmoLive.test.mjs tests/te4DmoLiveRoutes.test.mjs tests/liveBroadcast.test.mjs tests/liveBroadcastRoutes.test.mjs tests/te4TvLog.test.mjs tests/characterMetricChartGeometry.test.mjs tests/googleFormOptions.test.mjs tests/awardVoteSheetSync.test.mjs tests/googleAppsScriptBridge.test.mjs tests/awardVotePrivacy.test.mjs"
+    "test": "node --test tests/articleContent.test.mjs tests/articleRoutes.test.mjs tests/articleInteractions.test.mjs tests/characterPickPopularity.test.mjs tests/characterProfileDescriptions.test.mjs tests/dashboardCharacterRecommendations.test.mjs tests/characterRosterFilters.test.mjs tests/leaderboardCareerTotals.test.mjs tests/leaderboardTourAverage.test.mjs tests/desktopForumNavigation.test.mjs tests/te4DmoAnalysis.test.mjs tests/te4DmoRoutes.test.mjs tests/te4DmoLive.test.mjs tests/te4DmoLiveRoutes.test.mjs tests/liveBroadcast.test.mjs tests/liveBroadcastRoutes.test.mjs tests/te4TvLog.test.mjs tests/characterMetricChartGeometry.test.mjs tests/googleFormOptions.test.mjs tests/awardVoteSheetSync.test.mjs tests/googleAppsScriptBridge.test.mjs tests/awardVotePrivacy.test.mjs tests/awardVotingClose.test.mjs"
   },
   "dependencies": {
     "@neondatabase/serverless": "latest",
