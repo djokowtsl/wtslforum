@@ -55,6 +55,8 @@ export default function AwardAdminPanel({ cycleId, votingOpen, categories, formS
   const [formPreview, setFormPreview] = useState<FormPreview | null>(null);
   const [formMessage, setFormMessage] = useState('');
   const [syncSummary, setSyncSummary] = useState<SyncSummary | undefined>(initialSyncSummary);
+  const [checkingIssue, setCheckingIssue] = useState<string | null>(null);
+  const [issueCheckMessages, setIssueCheckMessages] = useState<Record<string, string>>({});
 
   async function refreshSyncSummary() {
     try {
@@ -179,6 +181,47 @@ export default function AwardAdminPanel({ cycleId, votingOpen, categories, formS
     }
   }
 
+  async function checkExistingFormResponse(jobId: string) {
+    setBusy(true);
+    setErr('');
+    setCheckingIssue(jobId);
+    setIssueCheckMessages((current) => ({ ...current, [jobId]: '' }));
+    try {
+      const res = await fetch('/api/admin/awards', {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({ action: 'check-form-sync-job', cycleId, jobId }),
+      });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error || 'Could not check the existing Form response.');
+
+      const messages: Record<string, string> = {
+        confirmed: 'Matching Form response confirmed; this job is marked synced.',
+        not_found: 'No managed receipt was found. This does not prove the Form rejected it; check the linked Form response list before any retry.',
+        ambiguous: 'Multiple managed receipts were found. This job remains in review.',
+        response_missing: 'A receipt row exists, but its Form response is missing. This job remains in review.',
+        unverifiable: 'The response could not be verified from sync metadata. This job remains in review.',
+        ballot_changed: 'The saved ballot changed since this job was created. This job remains in review.',
+        response_mismatch: 'A Form response exists but does not match the current saved ballot. This job remains in review.',
+        receipt_conflict: 'A newer receipt is already stored. This job remains in review.',
+        unavailable: 'The Form could not be checked now. This job remains in review.',
+      };
+      setIssueCheckMessages((current) => ({
+        ...current,
+        [jobId]: messages[String(data.result)] ?? 'The response check did not finish. This job remains in review.',
+      }));
+      if (data.result === 'confirmed') await refreshSyncSummary();
+    } catch (e) {
+      setIssueCheckMessages((current) => ({
+        ...current,
+        [jobId]: e instanceof Error ? e.message : 'Could not check the existing Form response.',
+      }));
+    } finally {
+      setCheckingIssue(null);
+      setBusy(false);
+    }
+  }
+
   return (
     <div className="admin-card">
       <h3>Awards voting</h3>
@@ -213,7 +256,7 @@ export default function AwardAdminPanel({ cycleId, votingOpen, categories, formS
             </p>
             {syncSummary.counts.needs_review > 0 && (
               <p style={{ margin: '6px 0', color: '#ffb36b' }}>
-                Jobs needing review are not retried automatically because a response may already exist.
+                Jobs needing review are not retried automatically because a response may already exist. The response check is read-only; if no managed receipt is found, verify the linked Form response list before any retry.
               </p>
             )}
             {syncSummary.recentIssues.length > 0 && (
@@ -222,6 +265,20 @@ export default function AwardAdminPanel({ cycleId, votingOpen, categories, formS
                   <li key={issue.reference}>
                     Job {issue.reference}: {issue.status.replace('_', ' ')}; {issue.attempts} attempt{issue.attempts === 1 ? '' : 's'}
                     {issue.errorCode ? ` (${issue.errorCode})` : ''}
+                    {issue.status === 'needs_review' && (
+                      <div style={{ marginTop: 6 }}>
+                        <button
+                          className="btn btn-sm"
+                          disabled={busy || !formSyncConfigured}
+                          onClick={() => { void checkExistingFormResponse(issue.reference); }}
+                        >
+                          {checkingIssue === issue.reference ? 'Checking…' : 'Check existing response'}
+                        </button>
+                        {issueCheckMessages[issue.reference] && (
+                          <p role="status" style={{ margin: '6px 0 0' }}>{issueCheckMessages[issue.reference]}</p>
+                        )}
+                      </div>
+                    )}
                   </li>
                 ))}
               </ul>
