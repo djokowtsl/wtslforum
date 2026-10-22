@@ -3,6 +3,7 @@ export type GoogleFormOptionQuestion = {
   slug: string;
   options: string[];
   allowWriteIn: boolean;
+  shuffleOptions: boolean;
 };
 
 const MAX_FORM_BYTES = 2_000_000;
@@ -97,6 +98,12 @@ export function parsePublicGoogleFormOptions(html: string): GoogleFormOptionQues
       const choices = arrayAt(group, 1);
       return Array.isArray(choices) ? choices.map((choice) => arrayAt(choice, 0)) : [];
     });
+    // Google Forms' public-load-data choice group stores "Shuffle option order"
+    // at index 8 as an integer flag.
+    const shuffleOptions = optionGroups.some((group) => {
+      const value = arrayAt(group, 8);
+      return value === true || value === 1;
+    });
     const allowWriteIn = rawOptions.some((option) => typeof option === 'string' && !option.trim());
     const seen = new Set<string>();
     const options = rawOptions
@@ -120,6 +127,7 @@ export function parsePublicGoogleFormOptions(html: string): GoogleFormOptionQues
       slug,
       options,
       allowWriteIn,
+      shuffleOptions,
     });
   }
 

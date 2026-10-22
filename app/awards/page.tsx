@@ -1,4 +1,5 @@
 import type { Metadata } from 'next';
+import { createHmac } from 'node:crypto';
 import { safe } from '@/lib/db';
 import { getAwards } from '@/lib/queries';
 import { getSession } from '@/lib/auth';
@@ -63,6 +64,10 @@ export default async function Awards({ searchParams }: { searchParams: Promise<{
   }));
   const userVotes = cycle && user ? await safe(() => getUserVotes(cycle.id, user.discordId), [] as any[]) : [];
   const initialVotes = Object.fromEntries(userVotes.map((v: any) => [v.category_id, { nomineeId: v.nominee_id, writeIn: v.write_in }]));
+  const authSecret = process.env.AUTH_SECRET ?? (process.env.NODE_ENV === 'production' ? '' : 'dev-only-secret');
+  const shuffleSeed = cycle && user && authSecret
+    ? createHmac('sha256', authSecret).update(`${cycle.id}:${user.discordId}`).digest('hex')
+    : '';
 
   return (
     <>
@@ -89,7 +94,7 @@ export default async function Awards({ searchParams }: { searchParams: Promise<{
           ) : !user ? (
             <div className="notice">You need to <a className="btn btn-sm btn-discord" href="/api/auth/discord" style={{ marginLeft: 8 }}>log in with Discord</a> to vote.</div>
           ) : (
-            <AwardVoteForm categories={categoriesWithNominees} initialVotes={initialVotes} />
+            <AwardVoteForm categories={categoriesWithNominees} initialVotes={initialVotes} shuffleSeed={shuffleSeed} />
           )}
         </section>
 

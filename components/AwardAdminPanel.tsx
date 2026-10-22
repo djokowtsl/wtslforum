@@ -4,12 +4,20 @@ import { useState } from 'react';
 import { useRouter } from 'next/navigation';
 
 type Nominee = { id: number; name: string; note: string };
-type Category = { id: number; name: string; slug: string; allow_write_in: boolean; nominees: Nominee[] };
+type Category = {
+  id: number;
+  name: string;
+  slug: string;
+  allow_write_in: boolean;
+  shuffle_options: boolean;
+  shuffle_options_override: boolean | null;
+  nominees: Nominee[];
+};
 type FormPreview = {
   sourceUrl: string;
   questionCount: number;
   optionCount: number;
-  questions: { title: string; slug: string; optionCount: number; allowWriteIn: boolean; examples: string[] }[];
+  questions: { title: string; slug: string; optionCount: number; allowWriteIn: boolean; shuffleOptions: boolean; examples: string[] }[];
 };
 
 export default function AwardAdminPanel({ cycleId, votingOpen, categories, sheetSyncConfigured = false }: { cycleId: number; votingOpen: boolean; categories: Category[]; sheetSyncConfigured?: boolean }) {
@@ -55,7 +63,11 @@ export default function AwardAdminPanel({ cycleId, votingOpen, categories, sheet
         setFormPreview(data as FormPreview);
       } else {
         setFormPreview(null);
-        setFormMessage(`Imported ${data.optionsAdded} new choices across ${data.categoriesImported} award categories. ${data.optionsAlreadyPresent} choices were already present. Existing choices and votes were kept; write-in settings now match the form.`);
+        const renamedOptions = Array.isArray(data.renamedOptions) ? data.renamedOptions : [];
+        const renameSummary = renamedOptions.length
+          ? ` Updated ${renamedOptions.length} existing choice label${renamedOptions.length === 1 ? '' : 's'}: ${renamedOptions.map((option: { from: string; to: string }) => `“${option.from}” → “${option.to}”`).join('; ')}.`
+          : '';
+        setFormMessage(`Imported ${data.optionsAdded} new choices across ${data.categoriesImported} award categories.${renameSummary} ${data.shuffleCategoriesImported} categories have Google Form option shuffling enabled. ${data.optionsAlreadyPresent} choices were already present. Existing votes were kept.`);
         router.refresh();
       }
     } catch (e) {
@@ -144,6 +156,7 @@ export default function AwardAdminPanel({ cycleId, votingOpen, categories, sheet
               {formPreview.questions.map((question) => (
                 <li key={question.slug}>
                   <b>{question.title}</b> — {question.optionCount} choices
+                  {question.shuffleOptions ? ' · shuffled for voters' : ''}
                   {question.allowWriteIn ? ' · includes write-in' : ''}
                   {question.examples.length > 0 && <span className="muted"> · {question.examples.join(', ')}{question.optionCount > question.examples.length ? ', …' : ''}</span>}
                 </li>
@@ -160,6 +173,35 @@ export default function AwardAdminPanel({ cycleId, votingOpen, categories, sheet
         {categories.map((c) => (
           <div key={c.id} className="forum-list" style={{ padding: 16 }}>
             <strong>{c.name}</strong>
+            <div style={{ display: 'flex', flexWrap: 'wrap', alignItems: 'center', gap: 10, marginTop: 10 }}>
+              <label style={{ display: 'inline-flex', alignItems: 'center', gap: 8, fontSize: 13.5 }}>
+                <input
+                  type="checkbox"
+                  checked={c.shuffle_options_override ?? c.shuffle_options}
+                  disabled={busy}
+                  onChange={(event) => call({
+                    action: 'set-category-shuffle-override',
+                    cycleId,
+                    categoryId: c.id,
+                    shuffleOptions: event.target.checked,
+                  })}
+                />
+                Shuffle nominee options for voters
+              </label>
+              <span className="muted" style={{ fontSize: 12.5 }}>
+                Google Form setting: {c.shuffle_options ? 'shuffle on' : 'shuffle off'}
+                {c.shuffle_options_override !== null ? ' · admin override active' : ''}
+              </span>
+              {c.shuffle_options_override !== null && (
+                <button
+                  className="btn btn-sm btn-ghost"
+                  disabled={busy}
+                  onClick={() => call({ action: 'set-category-shuffle-override', cycleId, categoryId: c.id, shuffleOptions: null })}
+                >
+                  Use Google Form setting
+                </button>
+              )}
+            </div>
             <ul style={{ margin: '10px 0', paddingLeft: 18 }}>
               {c.nominees.map((n) => (
                 <li key={n.id} style={{ marginBottom: 4 }}>
