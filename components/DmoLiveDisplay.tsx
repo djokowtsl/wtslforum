@@ -144,7 +144,7 @@ export default function DmoLiveDisplay({
             <ol className={styles.pointList}>
               {[...snapshot.recentPoints].reverse().map((point) => (
                 <li key={point.number}>
-                  <span className={styles.pointNumber}>{String(point.number).padStart(2, '0')}</span>
+                  <span className={styles.pointScore}>{point.scoreLabel ?? '—'}</span>
                   <span><b>{snapshot.players[point.winner - 1]}</b><small>{point.rallyHits ? `${point.rallyHits + 1} shots` : 'Unreturned serve'}{point.faults ? ` · ${point.faults} fault` : ''}</small></span>
                   <span className={styles.pointServer}>{point.server === 1 ? 'P1 serve' : 'P2 serve'}</span>
                 </li>
