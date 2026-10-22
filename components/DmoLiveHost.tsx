@@ -5,6 +5,7 @@ import Link from 'next/link';
 import { AlertTriangle, ExternalLink, FolderOpen, Radio, Square } from 'lucide-react';
 import { Te4DmoLiveParser, type Te4LiveBestOf, type Te4LiveSnapshot } from '@/lib/te4DmoLive';
 import { findMatchingWtslLiveMatch } from '@/lib/liveBroadcast';
+import { consumePendingDmoReaderReset } from '@/lib/dmoReaderState';
 import { hasPlayerPositionData } from '@/lib/te4LiveSetup';
 import {
   loadDmoDirectory,
@@ -85,6 +86,7 @@ export default function DmoLiveHost({ displayName }: Props) {
   const sequence = useRef(0);
   const polling = useRef(false);
   const liveDmoGrowthDetected = useRef(false);
+  const resetDmoReaderOnNextPoll = useRef(false);
   const liveMatchesRef = useRef<LiveWtslMatch[]>([]);
   const liveFeedReadyRef = useRef(false);
   const autoWatchingRef = useRef(false);
@@ -298,6 +300,7 @@ export default function DmoLiveHost({ displayName }: Props) {
       if (!response.ok) throw new Error(await responseError(response));
       const body = await response.json() as { id?: string };
       if (!body.id) throw new Error('The broadcast could not be started.');
+      if (mode === 'manual' && directory) resetDmoReaderOnNextPoll.current = true;
       sequence.current = 0;
       lastSentVersion.current = -1;
       lastHeartbeat.current = 0;
@@ -381,6 +384,12 @@ export default function DmoLiveHost({ displayName }: Props) {
       if (polling.current || cancelled) return;
       polling.current = true;
       try {
+        consumePendingDmoReaderReset(resetDmoReaderOnNextPoll, {
+          parser,
+          activeFilename,
+          readBytes,
+          lastSentVersion,
+        });
         if (!directory) {
           if (broadcastId && Date.now() - lastHeartbeat.current >= 10_000) await sendUpdate();
           return;
@@ -427,6 +436,7 @@ export default function DmoLiveHost({ displayName }: Props) {
         if (newest.file.size > readBytes.current) {
           const hadReadThisFile = activeFilename.current === newest.name && readBytes.current > 0;
           const chunk = new Uint8Array(await newest.file.slice(readBytes.current).arrayBuffer());
+          if (cancelled) return;
           parser.current!.append(chunk);
           readBytes.current = newest.file.size;
           if (hadReadThisFile) {
@@ -504,7 +514,7 @@ export default function DmoLiveHost({ displayName }: Props) {
     return () => {
       cancelled = true;
       window.clearInterval(interval);
-      polling.current = false;
+      // Keep the shared lock until an in-flight poll reaches its `finally`.
     };
   }, [directory, broadcastId, bestOf, autoWatching]);
 
