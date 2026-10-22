@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { getSession } from '@/lib/auth';
 import { sql } from '@/lib/db';
-import { addNominee, removeNominee, setVotingOpen, importGoogleFormOptions, importGoogleFormVotes, getSiteAwardVotesForCycle } from '@/lib/awards';
+import { addNominee, removeNominee, setVotingOpen, setVotingClosesAt, importGoogleFormOptions, importGoogleFormVotes, getSiteAwardVotesForCycle } from '@/lib/awards';
 import { fetchPublicGoogleFormOptions } from '@/lib/googleFormOptions';
 import { syncAwardVotesToSheet } from '@/lib/awardVoteSheetSync';
 
@@ -97,9 +97,44 @@ export async function POST(req: NextRequest) {
 
   if (action === 'toggle-voting') {
     const cycleId = Number(body?.cycleId);
-    const open = Boolean(body?.open);
+    const open = body?.open;
+    if (typeof open !== 'boolean') return NextResponse.json({ error: 'Choose whether voting should be open or closed.' }, { status: 400 });
     if (!cycleId) return NextResponse.json({ error: 'Missing cycleId.' }, { status: 400 });
-    await setVotingOpen(cycleId, open);
+    const cycles = await sql`SELECT id FROM award_cycles WHERE id=${cycleId} LIMIT 1`;
+    if (!cycles.length) return NextResponse.json({ error: 'Award cycle not found.' }, { status: 404 });
+    const updated = await setVotingOpen(cycleId, open);
+    if (!updated) {
+      return NextResponse.json({ error: 'The saved end date has passed. Set a future end date or clear it before reopening voting.' }, { status: 409 });
+    }
+    return NextResponse.json({ ok: true });
+  }
+
+  if (action === 'set-voting-close-date') {
+    const cycleId = Number(body?.cycleId);
+    if (!cycleId) return NextResponse.json({ error: 'Missing cycleId.' }, { status: 400 });
+    if (!body || !Object.prototype.hasOwnProperty.call(body, 'closesAt')) {
+      return NextResponse.json({ error: 'Provide an end date or clear the saved end date.' }, { status: 400 });
+    }
+
+    const rawCloseAt = body.closesAt;
+    let closesAt: string | null = null;
+    if (rawCloseAt !== null) {
+      if (
+        typeof rawCloseAt !== 'string'
+        || rawCloseAt.length > 50
+        || !/(?:Z|[+-]\d{2}:\d{2})$/i.test(rawCloseAt)
+      ) {
+        return NextResponse.json({ error: 'Choose a valid end date and time.' }, { status: 400 });
+      }
+      const parsed = new Date(rawCloseAt);
+      if (!Number.isFinite(parsed.getTime())) {
+        return NextResponse.json({ error: 'Choose a valid end date and time.' }, { status: 400 });
+      }
+      closesAt = parsed.toISOString();
+    }
+
+    const updated = await setVotingClosesAt(cycleId, closesAt);
+    if (!updated) return NextResponse.json({ error: 'Award cycle not found.' }, { status: 404 });
     return NextResponse.json({ ok: true });
   }
 
