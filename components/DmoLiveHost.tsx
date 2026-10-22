@@ -19,6 +19,7 @@ import { findMatchingWtslLiveMatch } from '@/lib/liveBroadcast';
 import { consumePendingDmoReaderReset } from '@/lib/dmoReaderState';
 import { hasPlayerPositionData } from '@/lib/te4LiveSetup';
 import { isPresignedUrlRetrievalFailure } from '@/lib/dmoUploadErrors';
+import { attemptFullReplayPreparation } from '@/lib/liveReplayPreparation';
 import {
   loadDmoDirectory,
   saveDmoDirectory,
@@ -382,6 +383,7 @@ export default function DmoLiveHost({ displayName, canPrepareFullReplay }: Props
       parser: Te4DmoLiveParser;
       snapshot: Te4LiveSnapshot;
     } | null = null;
+    let fullReplayPrepared = false;
     try {
       if (mode === 'manual' && directory) {
         if (!selectedDmoName) throw new Error('Choose a DMO file to replay first.');
@@ -434,48 +436,51 @@ export default function DmoLiveHost({ displayName, canPrepareFullReplay }: Props
       lastHeartbeat.current = 0;
 
       if (replaySource) {
+        const replayForPreparation = replaySource;
         if (canPrepareFullReplay) {
           setNotice('Preparing full replay modes and sound…');
-          const uploadRequestId = crypto.randomUUID();
-          const safeName = replaySource.name.replace(/[^a-zA-Z0-9._-]/g, '-').slice(-100) || 'match.dmo';
-          let uploadedReplay;
-          try {
-            uploadedReplay = await uploadPresigned(
-              `dmo-analysis/${crypto.randomUUID()}-${safeName}`,
-              replaySource.file,
-              {
-                access: 'private',
-                handleUploadUrl: '/api/admin/dmo-analysis/upload',
-                contentType: 'application/octet-stream',
-                multipart: true,
-                headers: { 'x-dmo-upload-id': uploadRequestId },
-              },
-            );
-          } catch (cause) {
-            if (isPresignedUrlRetrievalFailure(cause)) {
-              throw new Error(`Secure replay upload could not be prepared. Reference ${uploadRequestId} for the Forum admin.`);
+          fullReplayPrepared = await attemptFullReplayPreparation(async () => {
+            const uploadRequestId = crypto.randomUUID();
+            const safeName = replayForPreparation.name.replace(/[^a-zA-Z0-9._-]/g, '-').slice(-100) || 'match.dmo';
+            let uploadedReplay;
+            try {
+              uploadedReplay = await uploadPresigned(
+                `dmo-analysis/${crypto.randomUUID()}-${safeName}`,
+                replayForPreparation.file,
+                {
+                  access: 'private',
+                  handleUploadUrl: '/api/admin/dmo-analysis/upload',
+                  contentType: 'application/octet-stream',
+                  multipart: true,
+                  headers: { 'x-dmo-upload-id': uploadRequestId },
+                },
+              );
+            } catch (cause) {
+              if (isPresignedUrlRetrievalFailure(cause)) {
+                throw new Error(`Secure replay upload could not be prepared. Reference ${uploadRequestId} for the Forum admin.`);
+              }
+              throw cause;
             }
-            throw cause;
-          }
-          const analysisResponse = await fetch('/api/admin/dmo-analysis/analyze', {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({
-              pathname: uploadedReplay.pathname,
-              filename: replaySource.name,
-              liveBroadcastId: body.id,
-            }),
+            const analysisResponse = await fetch('/api/admin/dmo-analysis/analyze', {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify({
+                pathname: uploadedReplay.pathname,
+                filename: replayForPreparation.name,
+                liveBroadcastId: body.id,
+              }),
+            });
+            if (!analysisResponse.ok) {
+              const result = await analysisResponse.json().catch(() => null);
+              throw new Error(typeof result?.error === 'string'
+                ? result.error
+                : `Full replay preparation failed (${analysisResponse.status}).`);
+            }
+            const analysisResult = await analysisResponse.json().catch(() => null);
+            if (analysisResult?.replayDataReady !== true) {
+              throw new Error('The full replay data could not be attached to this broadcast.');
+            }
           });
-          if (!analysisResponse.ok) {
-            const result = await analysisResponse.json().catch(() => null);
-            throw new Error(typeof result?.error === 'string'
-              ? result.error
-              : `Full replay preparation failed (${analysisResponse.status}).`);
-          }
-          const analysisResult = await analysisResponse.json().catch(() => null);
-          if (analysisResult?.replayDataReady !== true) {
-            throw new Error('The full replay data could not be attached to this broadcast.');
-          }
         }
 
         parser.current = replaySource.parser;
@@ -516,11 +521,16 @@ export default function DmoLiveHost({ displayName, canPrepareFullReplay }: Props
       setBroadcastMode(mode);
       broadcastModeRef.current = mode;
       automaticPlayers.current = mode === 'auto' ? players ?? null : null;
-      setNotice(directory
+      const replayNotice = directory
         ? mode === 'auto'
           ? 'WTSL live match confirmed. Automatic DMO broadcast started.'
           : `Replaying ${replaySource?.name ?? 'the selected DMO'} from the beginning at ${replaySpeed}×.${replaySource && !canPrepareFullReplay ? ' Full analyzer playback is currently available for admin-hosted replays.' : ''}`
-        : 'Broadcast started. The Discord stream will appear in the viewer list below.');
+        : 'Broadcast started. The Discord stream will appear in the viewer list below.';
+      setNotice(
+        replaySource && canPrepareFullReplay && !fullReplayPrepared
+          ? `${replayNotice} Full analyzer playback could not be prepared; the score-and-court replay is continuing.`
+          : replayNotice,
+      );
     } catch (cause) {
       replay.current = null;
       parser.current = null;

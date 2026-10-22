@@ -459,4 +459,6 @@ test('verified replay openings can be shown before the first point; other DMO br
   const host = readFileSync(new URL('../components/DmoLiveHost.tsx', import.meta.url), 'utf8');
   assert.match(host, /hasCompletedDmoPoints\(current\)/);
   assert.match(host, /hasCompletedDmoPoints\(matchedSnapshot\)/);
+  assert.match(host, /attemptFullReplayPreparation/);
+  assert.match(host, /the score-and-court replay is continuing/);
 });
