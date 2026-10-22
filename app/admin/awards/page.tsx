@@ -3,6 +3,7 @@ import { safe } from '@/lib/db';
 import { getSession } from '@/lib/auth';
 import { getActiveCycle, getCategories, getNomineesForCategories } from '@/lib/awards';
 import { awardFormSyncStatus } from '@/lib/awardVoteFormSync';
+import { getAwardFormSyncSummary } from '@/lib/awardFormSyncJobs';
 import AwardAdminPanel from '@/components/AwardAdminPanel';
 import PageHero from '@/components/PageHero';
 
@@ -25,6 +26,7 @@ export default async function AdminAwards() {
 
   const categories = await safe(() => getCategories(cycle.id), [] as any[]);
   const nominees = categories.length ? await safe(() => getNomineesForCategories(categories.map((c: any) => c.id)), [] as any[]) : [];
+  const syncSummary = await safe(() => getAwardFormSyncSummary(cycle.id), undefined as any);
   const categoriesWithNominees = categories.map((c: any) => ({
     ...c,
     nominees: nominees.filter((n: any) => n.category_id === c.id),
@@ -39,6 +41,7 @@ export default async function AdminAwards() {
           votingOpen={cycle.voting_open}
           categories={categoriesWithNominees}
           formSyncConfigured={awardFormSyncStatus() === 'ready'}
+          initialSyncSummary={syncSummary}
         />
       </main>
     </>
