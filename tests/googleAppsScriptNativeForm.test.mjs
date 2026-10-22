@@ -7,6 +7,7 @@ import vm from 'node:vm';
 const script = readFileSync(new URL('../google-apps-script/award-vote-sync.gs', import.meta.url), 'utf8');
 const secret = 'script-bridge-secret-for-tests-with-32-chars';
 const spreadsheetId = '0123456789abcdefghijklmnopqrstuvwx';
+const requiredByItem = new WeakMap();
 
 test('Apps Script request limit uses syntax accepted by its editor', () => {
   assert.match(script, /^const MAX_REQUEST_BYTES = 1000000;$/m);
@@ -20,6 +21,9 @@ function createBridge({
   releaseLockFails = false,
   failItemResponse = false,
   failSubmit = false,
+  listRequired = false,
+  unsupportedOptional = false,
+  unknownQuestionType = false,
 } = {}) {
   const itemType = {
     MULTIPLE_CHOICE: 'MULTIPLE_CHOICE',
@@ -35,11 +39,19 @@ function createBridge({
   const rows = [['Timestamp', 'Fans Favourite Award', 'Best Dressed']];
   const items = [
     makeItem(101, 'Fans Favourite Award', itemType.MULTIPLE_CHOICE, true, failItemResponse),
-    makeItem(102, 'Best Dressed', itemType.LIST, false),
+    makeItem(102, 'Best Dressed', itemType.LIST, listRequired),
   ];
   if (unsupportedRequired) {
     items.push(makeItem(103, 'Required text', itemType.TEXT, true));
     rows[0].push('Required text');
+  }
+  if (unsupportedOptional) {
+    items.push(makeItem(104, 'Optional text', itemType.TEXT, false));
+    rows[0].push('Optional text');
+  }
+  if (unknownQuestionType) {
+    items.push(makeItem(105, 'Uninspectable question', 'FILE_UPLOAD', false));
+    rows[0].push('Uninspectable question');
   }
   const responses = [];
   const sheet = {
@@ -103,7 +115,7 @@ function createBridge({
         submit() {
           if (failSubmit) throw new Error('private response submission failure');
           for (const item of items) {
-            if (item.isRequired() && !answerByItemId.has(String(item.getId()))) {
+            if (requiredByItem.get(item) && !answerByItemId.has(String(item.getId()))) {
               throw new Error('Missing required item response');
             }
           }
@@ -200,13 +212,14 @@ function createBridge({
 }
 
 function makeItem(id, title, type, required, failResponseCreation = false) {
-  return {
+  const item = {
     getId: () => id,
     getTitle: () => title,
     getType: () => type,
-    isRequired: () => required,
     asMultipleChoiceItem() {
+      assert.equal(type, 'MULTIPLE_CHOICE');
       return {
+        isRequired: () => required,
         createResponse: (answer) => {
           if (failResponseCreation) throw new Error('private item response failure');
           return { item: this, answer };
@@ -214,9 +227,16 @@ function makeItem(id, title, type, required, failResponseCreation = false) {
       };
     },
     asListItem() {
-      return { createResponse: (answer) => ({ item: this, answer }) };
+      assert.equal(type, 'LIST');
+      return { isRequired: () => required, createResponse: (answer) => ({ item: this, answer }) };
+    },
+    asTextItem() {
+      assert.equal(type, 'TEXT');
+      return { isRequired: () => required };
     },
   };
+  requiredByItem.set(item, required);
+  return item;
 }
 
 function createResponseObject(id, timestamp, items, answerByItemId) {
@@ -288,6 +308,48 @@ test('checks an existing managed response without changing the Form or response 
   assert.deepEqual(missing, { ok: true, result: { status: 'not_found' } });
   assert.equal(JSON.stringify(bridge.rows), rowsBefore);
   assert.equal(bridge.responses.length, responseCountBefore);
+});
+
+test('generic Form items expose required status only after casting to the question type', () => {
+  const bridge = createBridge();
+  for (const item of bridge.form.getItems()) {
+    assert.equal(typeof item.isRequired, 'undefined');
+  }
+  const result = responseBody(bridge.post({ secret, ballots: [sampleBallot()] }));
+  assert.equal(result.results[0].status, 'synced');
+  assert.equal(bridge.responses.length, 1);
+});
+
+test('typed dropdown required flags block missing answers and accept complete ballots', () => {
+  const bridge = createBridge({ listRequired: true });
+  const missing = responseBody(bridge.post({ secret, ballots: [sampleBallot()] }));
+  assert.equal(missing.results[0].errorCode, 'missing_required_answer');
+  assert.equal(bridge.responses.length, 0);
+  const complete = responseBody(bridge.post({
+    secret,
+    ballots: [sampleBallot({
+      answers: [
+        { questionId: '101', category: 'Fans Favourite Award', answer: 'Dunlop' },
+        { questionId: '102', category: 'Best Dressed', answer: 'Arv' },
+      ],
+    })],
+  }));
+  assert.equal(complete.results[0].status, 'synced');
+  assert.equal(bridge.responses.length, 1);
+});
+
+test('typed optional unsupported questions can remain unanswered', () => {
+  const bridge = createBridge({ unsupportedOptional: true });
+  const result = responseBody(bridge.post({ secret, ballots: [sampleBallot()] }));
+  assert.equal(result.results[0].status, 'synced');
+  assert.equal(bridge.responses.length, 1);
+});
+
+test('questions whose required flag cannot be inspected fail before submission', () => {
+  const bridge = createBridge({ unknownQuestionType: true });
+  const result = responseBody(bridge.post({ secret, ballots: [sampleBallot()] }));
+  assert.equal(result.results[0].errorCode, 'unsupported_required_question');
+  assert.equal(bridge.responses.length, 0);
 });
 
 test('submits a native Form response and writes no Forum Votes tab', () => {
