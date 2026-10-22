@@ -1,9 +1,16 @@
-import { NextRequest, NextResponse } from 'next/server';
+import { after, NextRequest, NextResponse } from 'next/server';
 import { getSession } from '@/lib/auth';
 import { sql } from '@/lib/db';
 import { addNominee, removeNominee, setVotingOpen, setVotingClosesAt, setCategoryShuffleOverride, importGoogleFormOptions, importGoogleFormVotes, getSiteAwardBallotBatch, saveAwardFormResponseState } from '@/lib/awards';
 import { fetchPublicGoogleFormOptions } from '@/lib/googleFormOptions';
 import { awardFormSyncStatus, syncAwardBallotsToForm } from '@/lib/awardVoteFormSync';
+import {
+  getAwardFormSyncJobStatuses,
+  getAwardFormSyncSummary,
+  markAwardFormSyncJobSynced,
+  processAwardFormSyncQueue,
+  retrySafeAwardFormSyncJobs,
+} from '@/lib/awardFormSyncJobs';
 
 export const dynamic = 'force-dynamic';
 
@@ -11,6 +18,16 @@ async function requireAdmin() {
   const user = await getSession();
   if (!user?.isAdmin) return null;
   return user;
+}
+
+export async function GET(req: NextRequest) {
+  const admin = await requireAdmin();
+  if (!admin) return NextResponse.json({ error: 'Admins only.' }, { status: 403 });
+  const cycleId = Number(req.nextUrl.searchParams.get('cycleId'));
+  if (!Number.isSafeInteger(cycleId) || cycleId < 1) {
+    return NextResponse.json({ error: 'Choose a valid award cycle.' }, { status: 400 });
+  }
+  return NextResponse.json({ ok: true, syncSummary: await getAwardFormSyncSummary(cycleId) });
 }
 
 /** Very small CSV reader: one Google Form export line per voter — handle, nominee name (optional), write-in (optional). */
@@ -28,6 +45,22 @@ export async function POST(req: NextRequest) {
 
   const body = await req.json().catch(() => null);
   const action = body?.action;
+
+  if (action === 'retry-safe-form-sync-jobs') {
+    const cycleId = Number(body?.cycleId);
+    if (!cycleId) return NextResponse.json({ error: 'Choose an award cycle.' }, { status: 400 });
+    const cycles = await sql`SELECT id FROM award_cycles WHERE id=${cycleId} LIMIT 1`;
+    if (!cycles.length) return NextResponse.json({ error: 'Award cycle not found.' }, { status: 404 });
+    const queuedIds = await retrySafeAwardFormSyncJobs(cycleId);
+    after(async () => {
+      try {
+        await processAwardFormSyncQueue(cycleId, 20);
+      } catch {
+        console.error('[awards] admin retry worker failed', { cycleId });
+      }
+    });
+    return NextResponse.json({ ok: true, queued: queuedIds.length });
+  }
 
   if (action === 'preview-form-options' || action === 'import-form-options') {
     const cycleId = Number(body?.cycleId);
@@ -79,7 +112,16 @@ export async function POST(req: NextRequest) {
     if (!cycles.length) return NextResponse.json({ error: 'Award cycle not found.' }, { status: 404 });
 
     const ballots = await getSiteAwardBallotBatch(cycleId, afterBallotCursor, 20);
-    const completeBallots = ballots.filter((ballot) => ballot.isComplete);
+    const jobStatuses = await getAwardFormSyncJobStatuses(
+      cycleId,
+      ballots.map((ballot) => ballot.voterKey),
+    );
+    const completeBallots = ballots.filter((ballot) =>
+      ballot.isComplete && jobStatuses.get(ballot.voterKey) !== 'needs_review',
+    );
+    const skippedNeedsReview = ballots.filter((ballot) =>
+      ballot.isComplete && jobStatuses.get(ballot.voterKey) === 'needs_review',
+    ).length;
     const result = completeBallots.length
       ? await syncAwardBallotsToForm(completeBallots)
       : { status: 'synced' as const, results: [], failed: 0 };
@@ -91,7 +133,21 @@ export async function POST(req: NextRequest) {
         && synced.fingerprint
         && synced.updatedAt
       ) {
-        await saveAwardFormResponseState(cycleId, synced.voterKey, synced.responseId, synced.fingerprint, synced.updatedAt);
+        const saved = await saveAwardFormResponseState(
+          cycleId,
+          synced.voterKey,
+          synced.responseId,
+          synced.fingerprint,
+          synced.updatedAt,
+        );
+        if (saved.length) {
+          await markAwardFormSyncJobSynced(
+            cycleId,
+            synced.voterKey,
+            synced.fingerprint,
+            synced.updatedAt,
+          );
+        }
       }
     }
 
@@ -114,6 +170,7 @@ export async function POST(req: NextRequest) {
       nextAfterBallotCursor,
       done: ballots.length < 20,
       skippedIncomplete: ballots.some((ballot) => !ballot.isComplete),
+      skippedNeedsReview,
     });
   }
 
