@@ -5,7 +5,9 @@ import Link from 'next/link';
 import { AlertTriangle, ExternalLink, FolderOpen, Radio, Square } from 'lucide-react';
 import {
   hasCompletedDmoPoints,
+  LIVE_DMO_UPDATE_INTERVAL_MS,
   replayFrameAtElapsedTime,
+  replayCourtWindowFrames,
   Te4DmoLiveParser,
   type Te4DmoReplaySpeed,
   type Te4LiveBestOf,
@@ -432,7 +434,12 @@ export default function DmoLiveHost({ displayName }: Props) {
         parser.current = replaySource.parser;
         activeFilename.current = replaySource.name;
         readBytes.current = replaySource.file.size;
-        const firstFrame = replaySource.parser.snapshot(replaySource.name, broadcastBestOf, 10);
+        const firstFrame = replaySource.parser.snapshot(
+          replaySource.name,
+          broadcastBestOf,
+          10,
+          replayCourtWindowFrames(replaySpeed),
+        );
         if (!firstFrame) throw new Error('The selected DMO could not produce its opening replay snapshot.');
         const initialResponse = await fetch(`/api/live-dmo/${body.id}`, {
           method: 'PATCH',
@@ -566,7 +573,12 @@ export default function DmoLiveHost({ displayName }: Props) {
             playback.speed,
           );
           if (frame > playback.lastFrame) {
-            const current = parser.current?.snapshot(playback.filename, playback.bestOf, frame);
+            const current = parser.current?.snapshot(
+              playback.filename,
+              playback.bestOf,
+              frame,
+              replayCourtWindowFrames(playback.speed),
+            );
             if (!current) throw new Error('The selected DMO could not produce the next replay snapshot.');
             replay.current = { ...playback, lastFrame: frame };
             await sendUpdate(current);
@@ -698,7 +710,7 @@ export default function DmoLiveHost({ displayName }: Props) {
     };
 
     void pollFolder();
-    const interval = window.setInterval(() => { void pollFolder(); }, 1200);
+    const interval = window.setInterval(() => { void pollFolder(); }, LIVE_DMO_UPDATE_INTERVAL_MS);
     return () => {
       cancelled = true;
       window.clearInterval(interval);

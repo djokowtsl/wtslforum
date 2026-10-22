@@ -2,6 +2,7 @@
 
 import { useEffect, useRef, useState } from 'react';
 import { AlertTriangle, Radio } from 'lucide-react';
+import { LIVE_DMO_UPDATE_INTERVAL_MS } from '@/lib/te4DmoLive';
 import type { Te4LiveSnapshot } from '@/lib/te4DmoLive';
 import type { LiveStream } from '@/lib/liveBroadcast';
 import DmoLiveDisplay from './DmoLiveDisplay';
@@ -33,6 +34,7 @@ export default function DmoLiveViewer({ canWatch }: Props) {
   const [error, setError] = useState('');
   const [focusedBroadcastId, setFocusedBroadcastId] = useState<string | null>(null);
   const focusedOnce = useRef<string | null>(null);
+  const hasActiveDmo = broadcasts.some((broadcast) => broadcast.status === 'live' && Boolean(broadcast.snapshot));
 
   useEffect(() => {
     if (!canWatch) {
@@ -60,12 +62,15 @@ export default function DmoLiveViewer({ canWatch }: Props) {
       }
     };
     void refresh();
-    const timer = window.setInterval(() => { void refresh(); }, 3000);
+    const timer = window.setInterval(
+      () => { void refresh(); },
+      hasActiveDmo ? LIVE_DMO_UPDATE_INTERVAL_MS : 3000,
+    );
     return () => {
       active = false;
       window.clearInterval(timer);
     };
-  }, [canWatch]);
+  }, [canWatch, hasActiveDmo]);
 
   useEffect(() => {
     if (!focusedBroadcastId || !broadcasts.length || focusedOnce.current === focusedBroadcastId) return;
@@ -128,6 +133,7 @@ export default function DmoLiveViewer({ canWatch }: Props) {
                   <DmoLiveDisplay
                     snapshot={broadcast.snapshot}
                     state={broadcast.status}
+                    playbackSpeed={broadcast.replay ? broadcast.replaySpeed : 1}
                     stale={broadcast.stale}
                     updatedAt={broadcast.updatedAt}
                   />

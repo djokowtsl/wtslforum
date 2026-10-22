@@ -2,6 +2,21 @@ export type Te4LivePlayer = 1 | 2;
 export type Te4LiveBestOf = 1 | 3 | 5;
 export type Te4DmoReplaySpeed = 1 | 2 | 4;
 
+export const TE4_DMO_FRAMES_PER_SECOND = 60;
+export const LIVE_DMO_UPDATE_INTERVAL_MS = 1200;
+
+export function replayCourtWindowFrames(speed: Te4DmoReplaySpeed): number {
+  return Math.round(TE4_DMO_FRAMES_PER_SECOND * LIVE_DMO_UPDATE_INTERVAL_MS * speed / 1000);
+}
+
+export function replayCourtWindowDurationMs(frameCount: number, speed: Te4DmoReplaySpeed): number {
+  const safeFrameCount = Number.isFinite(frameCount) ? Math.max(0, Math.floor(frameCount)) : 0;
+  return Math.max(
+    LIVE_DMO_UPDATE_INTERVAL_MS,
+    safeFrameCount * 1000 / (TE4_DMO_FRAMES_PER_SECOND * speed),
+  );
+}
+
 type Header = {
   bad?: boolean;
   stadium?: string | null;
@@ -37,6 +52,7 @@ export type Te4LiveSnapshot = {
   stadium: string | null;
   players: [string, string];
   frameCount: number;
+  courtFrameCount?: number;
   pointCount: number;
   bestOf: Te4LiveBestOf;
   score: {
@@ -86,7 +102,7 @@ export function replayFrameAtElapsedTime(
   speed: Te4DmoReplaySpeed,
 ): number {
   if (!Number.isFinite(totalFrames) || totalFrames < 10) return 0;
-  const elapsedFrames = Math.floor(Math.max(0, elapsedMs) * 60 * speed / 1000);
+  const elapsedFrames = Math.floor(Math.max(0, elapsedMs) * TE4_DMO_FRAMES_PER_SECOND * speed / 1000);
   return Math.min(Math.floor(totalFrames), 10 + elapsedFrames);
 }
 
@@ -441,6 +457,7 @@ export class Te4DmoLiveParser {
     filename: string,
     bestOf: Te4LiveBestOf,
     frameLimit = this.frameCount,
+    courtWindowFrames = replayCourtWindowFrames(1),
   ): Te4LiveSnapshot | null {
     const visibleFrameCount = Math.min(this.frameCount, Math.max(0, Math.floor(frameLimit)));
     if (!this.header || this.header.bad || visibleFrameCount < 10) return null;
@@ -507,7 +524,7 @@ export class Te4DmoLiveParser {
       : this.serveRecord(parsed.openServe).speed
         ?? this.rawServeSpeedKmh(parsed.openServe);
     const lastFrame = visibleFrameCount - 1;
-    const firstFrame = Math.max(0, lastFrame - 3 * 60);
+    const firstFrame = Math.max(0, visibleFrameCount - Math.max(1, Math.floor(courtWindowFrames)));
     const stride = Math.max(1, Math.ceil((lastFrame - firstFrame) / 24));
     const court: number[][] = [];
     for (let frame = firstFrame; frame <= lastFrame; frame += stride) {
@@ -533,6 +550,7 @@ export class Te4DmoLiveParser {
       stadium: this.header.stadium?.slice(0, 80) || null,
       players,
       frameCount: visibleFrameCount,
+      courtFrameCount: visibleFrameCount - firstFrame,
       pointCount: points.length,
       bestOf,
       score: {

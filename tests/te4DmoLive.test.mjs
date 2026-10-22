@@ -1,6 +1,8 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
 import {
+  replayCourtWindowDurationMs,
+  replayCourtWindowFrames,
   hasCompletedDmoPoints,
   replayFrameAtElapsedTime,
   Te4DmoLiveParser,
@@ -66,12 +68,18 @@ test('incremental DMO parsing waits for frames, then emits a compact live snapsh
   assert.deepEqual(snapshot.winChance, [0.5, 0.5]);
   assert.equal(snapshot.stats.length, 2);
   assert.ok(snapshot.court.length > 0 && snapshot.court.length <= 25);
+  assert.equal(snapshot.courtFrameCount, snapshot.frameCount);
   assert.equal(snapshot.filename, 'match.dmo');
   assert.equal(parser.snapshot('match.dmo', 1)?.bestOf, 1);
 
   const replayOpening = parser.snapshot('match.dmo', 3, 24);
   assert.equal(replayOpening?.frameCount, 24);
+  assert.equal(replayOpening?.courtFrameCount, 24);
   assert.equal(replayOpening?.pointCount, 0);
+
+  const shortMotionWindow = parser.snapshot('match.dmo', 3, 24, 12);
+  assert.equal(shortMotionWindow?.courtFrameCount, 12);
+  assert.ok(shortMotionWindow?.court.length <= 25);
 });
 
 test('opening DMO snapshots omit impossible court samples without rejecting valid match data', () => {
@@ -100,6 +108,14 @@ test('DMO replay eligibility requires parsed completed points and advances at th
   assert.equal(replayFrameAtElapsedTime(1_000, 1_000, 1), 70);
   assert.equal(replayFrameAtElapsedTime(1_000, 1_000, 4), 250);
   assert.equal(replayFrameAtElapsedTime(50, 100_000, 1), 50);
+});
+
+test('court motion windows stay in sync with replay speed and the live update cadence', () => {
+  for (const speed of [1, 2, 4]) {
+    const windowFrames = replayCourtWindowFrames(speed);
+    assert.equal(windowFrames, 72 * speed);
+    assert.equal(replayCourtWindowDurationMs(windowFrames, speed), 1200);
+  }
 });
 
 test('invalid DMO signatures are marked instead of yielding a scoreboard', () => {

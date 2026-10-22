@@ -1,6 +1,6 @@
 'use client';
 
-import type { Te4LiveSnapshot } from '@/lib/te4DmoLive';
+import type { Te4DmoReplaySpeed, Te4LiveSnapshot } from '@/lib/te4DmoLive';
 import { surfaceForDmoTournament } from '@/lib/te4DmoSurface';
 import DmoLiveCourt from './DmoLiveCourt';
 import styles from './DmoLiveDisplay.module.css';
@@ -8,6 +8,7 @@ import styles from './DmoLiveDisplay.module.css';
 type Props = {
   snapshot: Te4LiveSnapshot;
   state: 'live' | 'ended';
+  playbackSpeed?: Te4DmoReplaySpeed;
   stale?: boolean;
   updatedAt?: string;
 };
@@ -60,7 +61,13 @@ function ChanceChart({ values, players }: { values: number[]; players: [string, 
   );
 }
 
-export default function DmoLiveDisplay({ snapshot, state, stale = false, updatedAt }: Props) {
+export default function DmoLiveDisplay({
+  snapshot,
+  state,
+  playbackSpeed = 1,
+  stale = false,
+  updatedAt,
+}: Props) {
   const p1Stats = snapshot.stats[0];
   const p2Stats = snapshot.stats[1];
   const surface = surfaceForDmoTournament(snapshot.stadium);
@@ -88,7 +95,7 @@ export default function DmoLiveDisplay({ snapshot, state, stale = false, updated
       </header>
 
       <div className={styles.liveCourtStage}>
-        <DmoLiveCourt snapshot={snapshot} surface={surface} />
+        <DmoLiveCourt snapshot={snapshot} surface={surface} playbackSpeed={playbackSpeed} />
         <p className={styles.pointNote}>
           {snapshot.currentPoint.inProgress
             ? `Point ${snapshot.currentPoint.number} in progress · ${snapshot.currentPoint.rallyHits} recorded rally shots${snapshot.currentPoint.serveSpeedKmh ? ` · serve ${snapshot.currentPoint.serveSpeedKmh} km/h` : ''}`
