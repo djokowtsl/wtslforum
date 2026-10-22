@@ -10,8 +10,13 @@ test('the vote action says that a selection must be explicitly saved', () => {
   assert.match(source, /Update my vote/);
 });
 
-test('the voter sees required and optional question labels and a completion message', () => {
-  assert.match(source, /c\.is_required \? 'Required' : 'Optional'/);
+test('the voter sees overall progress, subtle required markers, and a completion message', () => {
+  assert.match(source, /savedQuestionCount/);
+  assert.match(source, /c\.is_required &&/);
+  assert.match(source, /getNextUnansweredRequiredCategoryId/);
+  assert.match(source, /scrollIntoView/);
+  assert.match(source, /Questions marked \*/);
   assert.match(source, /Ballot submitted/);
-  assert.match(source, /Optional questions can be left blank/);
+  assert.doesNotMatch(source, /'Required'|'Optional'/);
+  assert.doesNotMatch(source, /Google Forms?/i);
 });
