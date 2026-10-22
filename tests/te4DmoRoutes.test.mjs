@@ -27,8 +27,10 @@ function loadRoute(path, mocks) {
   });
   const module = { exports: {} };
   new Function('require', 'module', 'exports', code)((name) => {
-    if (!(name in mocks)) throw new Error(`Unexpected route dependency: ${name}`);
-    return mocks[name];
+    if (name in mocks) return mocks[name];
+    if (name.startsWith('node:')) return require(name);
+    if (name === '@/lib/db') return { sql: async () => [] };
+    throw new Error(`Unexpected route dependency: ${name}`);
   }, module, module.exports);
   return module.exports;
 }
@@ -89,7 +91,7 @@ test('DMO upload token is scoped to the private store, DMO path and size limit',
         },
       },
       'next/server': { NextResponse: { json: (body, init) => Response.json(body, init) } },
-      '@/lib/auth': { getSession: async () => admin },
+      '@/lib/auth': { getSession: async () => ({ ...admin, discordId: 'admin-discord' }) },
       '@/lib/te4DmoParser': { MAX_DMO_BYTES: 64 * 1024 * 1024 },
     });
     const response = await handlers.POST(request({ type: 'blob.generate-presigned-url' }));
@@ -239,6 +241,80 @@ test('analysis API reads only private uploads and deletes them after use', async
     }]]);
     assert.deepEqual(calls.analyzed, [['test demo', 'test-match.dmo']]);
     assert.deepEqual(calls.del, [['dmo-analysis/test-match.dmo', { storeId: 'store_private_test' }]]);
+  } finally {
+    if (originalStoreId === undefined) delete process.env.MODERATION_BLOB_STORE_ID;
+    else process.env.MODERATION_BLOB_STORE_ID = originalStoreId;
+  }
+});
+
+test('admin replay analysis stores only the viewer payload on its owning live broadcast', async () => {
+  const originalStoreId = process.env.MODERATION_BLOB_STORE_ID;
+  const liveBroadcastId = '7e09e922-44c3-49d7-8211-48f13b8b865a';
+  const calls = { get: [], put: [], del: [], queries: [] };
+  process.env.MODERATION_BLOB_STORE_ID = 'store_private_test';
+  try {
+    const handlers = loadRoute('app/api/admin/dmo-analysis/analyze/route.ts', {
+      ...characterLookupMocks,
+      '@vercel/blob': {
+        get: async (...args) => {
+          calls.get.push(args);
+          return {
+            statusCode: 200,
+            stream: new Response(Buffer.from('test demo')).body,
+            blob: { size: 9 },
+          };
+        },
+        put: async (...args) => {
+          calls.put.push(args);
+          return { pathname: args[0] };
+        },
+        del: async (...args) => calls.del.push(args),
+      },
+      'next/server': { NextResponse: { json: (body, init) => Response.json(body, init) } },
+      '@/lib/auth': { getSession: async () => ({ ...admin, discordId: 'admin-discord' }) },
+      '@/lib/db': {
+        sql: async (strings, ...values) => {
+          const query = strings.join('?');
+          calls.queries.push({ query, values });
+          return [{ id: liveBroadcastId }];
+        },
+      },
+      '@/lib/te4DmoAnalysis': {
+        analyzeDmoBuffer: () => ({
+          filename: 'full-match.dmo',
+          pointsAnalyzed: 4,
+          viewer: { names: ['Alpha', 'Beta'], frames: [{ frame: 10 }] },
+          privateAnalysis: { notForViewer: true },
+        }),
+      },
+      '@/lib/te4DmoParser': { MAX_DMO_BYTES: 64 * 1024 * 1024, Te4DmoAnalysisError: class extends Error {} },
+    });
+    const response = await handlers.POST(request({
+      pathname: 'dmo-analysis/uploaded-match.dmo',
+      filename: 'full-match.dmo',
+      liveBroadcastId,
+    }));
+    const responsePayload = await response.json();
+    assert.equal(response.status, 200, JSON.stringify(responsePayload));
+    assert.deepEqual(responsePayload, { replayDataReady: true });
+    assert.deepEqual(calls.get, [['dmo-analysis/uploaded-match.dmo', {
+      access: 'private',
+      storeId: 'store_private_test',
+      useCache: false,
+    }]]);
+    assert.match(calls.put[0][0], new RegExp(`^dmo-live-replays/${liveBroadcastId}-`));
+    assert.deepEqual(JSON.parse(calls.put[0][1]), {
+      viewer: { names: ['Alpha', 'Beta'], frames: [{ frame: 10 }] },
+    });
+    assert.deepEqual(calls.put[0][2], {
+      access: 'private',
+      storeId: 'store_private_test',
+      addRandomSuffix: false,
+      contentType: 'application/json',
+    });
+    assert.match(calls.queries[0].query, /owner_discord_id=\?/);
+    assert.match(calls.queries[1].query, /UPDATE dmo_live_broadcasts/);
+    assert.deepEqual(calls.del, [['dmo-analysis/uploaded-match.dmo', { storeId: 'store_private_test' }]]);
   } finally {
     if (originalStoreId === undefined) delete process.env.MODERATION_BLOB_STORE_ID;
     else process.env.MODERATION_BLOB_STORE_ID = originalStoreId;

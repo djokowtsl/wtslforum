@@ -1,7 +1,7 @@
 'use client';
 
 import { useEffect, useRef, useState } from 'react';
-import { Minus, Plus } from 'lucide-react';
+import { Minus, Plus, Volume2, VolumeX } from 'lucide-react';
 import { replayCourtWindowDurationMs } from '@/lib/te4DmoLive';
 import type { Te4DmoReplaySpeed, Te4LiveSnapshot } from '@/lib/te4DmoLive';
 import type { Te4CourtSurface } from '@/lib/te4DmoTypes';
@@ -326,8 +326,29 @@ function drawScene(
   context.stroke();
 }
 
+function playSynthesizedCue(context: AudioContext, kind: 'racket' | 'bounce') {
+  const now = context.currentTime;
+  const oscillator = context.createOscillator();
+  const gain = context.createGain();
+  const racket = kind === 'racket';
+  oscillator.type = racket ? 'triangle' : 'sine';
+  oscillator.frequency.setValueAtTime(racket ? 720 : 390, now);
+  oscillator.frequency.exponentialRampToValueAtTime(racket ? 260 : 150, now + (racket ? 0.055 : 0.09));
+  gain.gain.setValueAtTime(racket ? 0.035 : 0.028, now);
+  gain.gain.exponentialRampToValueAtTime(0.0001, now + (racket ? 0.06 : 0.1));
+  oscillator.connect(gain);
+  gain.connect(context.destination);
+  oscillator.start(now);
+  oscillator.stop(now + (racket ? 0.06 : 0.1));
+}
+
 export default function DmoLiveCourt({ snapshot, surface, playbackSpeed }: Props) {
   const canvasRef = useRef<HTMLCanvasElement>(null);
+  const audioContextRef = useRef<AudioContext | null>(null);
+  const lastSoundFrameRef = useRef(Math.max(0, snapshot.frameCount - 3));
+  const playedSoundEventsRef = useRef(new Set<string>());
+  const [soundEnabled, setSoundEnabled] = useState(false);
+  const [soundError, setSoundError] = useState('');
   const sceneRef = useRef({
     frames: snapshot.court,
     players: snapshot.players,
@@ -378,6 +399,52 @@ export default function DmoLiveCourt({ snapshot, surface, playbackSpeed }: Props
     return () => window.cancelAnimationFrame(animation);
   }, [camera, zoom, playbackSpeed, snapshot.frameCount, snapshot.courtFrameCount]);
 
+  useEffect(() => {
+    if (!soundEnabled) return;
+    const context = audioContextRef.current;
+    if (!context || context.state !== 'running') return;
+    if (snapshot.frameCount < lastSoundFrameRef.current) {
+      playedSoundEventsRef.current.clear();
+      lastSoundFrameRef.current = Math.max(0, snapshot.frameCount - 3);
+    }
+
+    for (const event of snapshot.soundEvents ?? []) {
+      const key = `${event.frame}:${event.kind}`;
+      if (event.frame < lastSoundFrameRef.current || playedSoundEventsRef.current.has(key)) continue;
+      playSynthesizedCue(context, event.kind);
+      playedSoundEventsRef.current.add(key);
+    }
+    lastSoundFrameRef.current = Math.max(lastSoundFrameRef.current, snapshot.frameCount - 3);
+
+    const oldestRetainedFrame = snapshot.frameCount - 600;
+    for (const key of playedSoundEventsRef.current) {
+      if (Number(key.slice(0, key.indexOf(':'))) < oldestRetainedFrame) {
+        playedSoundEventsRef.current.delete(key);
+      }
+    }
+  }, [snapshot.frameCount, snapshot.soundEvents, soundEnabled]);
+
+  useEffect(() => () => {
+    void audioContextRef.current?.close();
+    audioContextRef.current = null;
+  }, []);
+
+  const toggleSound = async () => {
+    if (soundEnabled) {
+      setSoundEnabled(false);
+      return;
+    }
+    try {
+      if (!audioContextRef.current) audioContextRef.current = new AudioContext();
+      await audioContextRef.current.resume();
+      lastSoundFrameRef.current = Math.max(0, snapshot.frameCount - 3);
+      setSoundError('');
+      setSoundEnabled(true);
+    } catch {
+      setSoundError('Sound could not be enabled in this browser.');
+    }
+  };
+
   return (
     <section className={styles.scene} aria-label="Reconstructed live court">
       <div className={styles.sceneToolbar}>
@@ -411,6 +478,15 @@ export default function DmoLiveCourt({ snapshot, surface, playbackSpeed }: Props
             <Plus size={15} />
           </button>
           <output>{Math.round(zoom * 100)}%</output>
+          <button
+            type="button"
+            aria-label={soundEnabled ? 'Mute synthesized court sounds' : 'Enable synthesized court sounds'}
+            aria-pressed={soundEnabled}
+            title={soundEnabled ? 'Mute synthesized court sounds' : 'Enable synthesized court sounds'}
+            onClick={() => void toggleSound()}
+          >
+            {soundEnabled ? <Volume2 size={15} /> : <VolumeX size={15} />}
+          </button>
         </div>
       </div>
       <div className={styles.viewport}>
@@ -429,6 +505,7 @@ export default function DmoLiveCourt({ snapshot, surface, playbackSpeed }: Props
         <span><i className={styles.ball} />Ball</span>
         <span className={styles.sceneNote}>Reconstructed from recent DMO frames</span>
       </div>
+      {soundError && <p role="status">{soundError}</p>}
     </section>
   );
 }

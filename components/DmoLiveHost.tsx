@@ -1,10 +1,12 @@
 'use client';
 
 import { useEffect, useRef, useState } from 'react';
+import { uploadPresigned } from '@vercel/blob/client';
 import Link from 'next/link';
 import { AlertTriangle, ExternalLink, FolderOpen, Radio, Square } from 'lucide-react';
 import {
   hasCompletedDmoPoints,
+  LIVE_DMO_COURT_SAMPLES,
   LIVE_DMO_UPDATE_INTERVAL_MS,
   replayFrameAtElapsedTime,
   replayCourtWindowFrames,
@@ -16,6 +18,7 @@ import {
 import { findMatchingWtslLiveMatch } from '@/lib/liveBroadcast';
 import { consumePendingDmoReaderReset } from '@/lib/dmoReaderState';
 import { hasPlayerPositionData } from '@/lib/te4LiveSetup';
+import { isPresignedUrlRetrievalFailure } from '@/lib/dmoUploadErrors';
 import {
   loadDmoDirectory,
   saveDmoDirectory,
@@ -27,7 +30,7 @@ type FolderPickerWindow = Window & {
   showDirectoryPicker?: (options: { mode: 'read' }) => Promise<LocalDmoDirectoryHandle>;
 };
 
-type Props = { displayName: string };
+type Props = { displayName: string; canPrepareFullReplay: boolean };
 type LiveWtslMatch = {
   name: string;
   bestOf: Te4LiveBestOf;
@@ -112,7 +115,7 @@ async function responseError(response: Response): Promise<string> {
   return typeof body?.error === 'string' ? body.error : `Request failed (${response.status}).`;
 }
 
-export default function DmoLiveHost({ displayName }: Props) {
+export default function DmoLiveHost({ displayName, canPrepareFullReplay }: Props) {
   const [directory, setDirectory] = useState<LocalDmoDirectoryHandle | null>(null);
   const [savedDirectory, setSavedDirectory] = useState<LocalDmoDirectoryHandle | null>(null);
   const [folderLabel, setFolderLabel] = useState('');
@@ -431,6 +434,50 @@ export default function DmoLiveHost({ displayName }: Props) {
       lastHeartbeat.current = 0;
 
       if (replaySource) {
+        if (canPrepareFullReplay) {
+          setNotice('Preparing full replay modes and sound…');
+          const uploadRequestId = crypto.randomUUID();
+          const safeName = replaySource.name.replace(/[^a-zA-Z0-9._-]/g, '-').slice(-100) || 'match.dmo';
+          let uploadedReplay;
+          try {
+            uploadedReplay = await uploadPresigned(
+              `dmo-analysis/${crypto.randomUUID()}-${safeName}`,
+              replaySource.file,
+              {
+                access: 'private',
+                handleUploadUrl: '/api/admin/dmo-analysis/upload',
+                contentType: 'application/octet-stream',
+                multipart: true,
+                headers: { 'x-dmo-upload-id': uploadRequestId },
+              },
+            );
+          } catch (cause) {
+            if (isPresignedUrlRetrievalFailure(cause)) {
+              throw new Error(`Secure replay upload could not be prepared. Reference ${uploadRequestId} for the Forum admin.`);
+            }
+            throw cause;
+          }
+          const analysisResponse = await fetch('/api/admin/dmo-analysis/analyze', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+              pathname: uploadedReplay.pathname,
+              filename: replaySource.name,
+              liveBroadcastId: body.id,
+            }),
+          });
+          if (!analysisResponse.ok) {
+            const result = await analysisResponse.json().catch(() => null);
+            throw new Error(typeof result?.error === 'string'
+              ? result.error
+              : `Full replay preparation failed (${analysisResponse.status}).`);
+          }
+          const analysisResult = await analysisResponse.json().catch(() => null);
+          if (analysisResult?.replayDataReady !== true) {
+            throw new Error('The full replay data could not be attached to this broadcast.');
+          }
+        }
+
         parser.current = replaySource.parser;
         activeFilename.current = replaySource.name;
         readBytes.current = replaySource.file.size;
@@ -470,7 +517,7 @@ export default function DmoLiveHost({ displayName }: Props) {
       setNotice(directory
         ? mode === 'auto'
           ? 'WTSL live match confirmed. Automatic DMO broadcast started.'
-          : `Replaying ${replaySource?.name ?? 'the selected DMO'} from the beginning at ${replaySpeed}×.`
+          : `Replaying ${replaySource?.name ?? 'the selected DMO'} from the beginning at ${replaySpeed}×.${replaySource && !canPrepareFullReplay ? ' Full analyzer playback is currently available for admin-hosted replays.' : ''}`
         : 'Broadcast started. The Discord stream will appear in the viewer list below.');
     } catch (cause) {
       replay.current = null;
@@ -655,7 +702,14 @@ export default function DmoLiveHost({ displayName }: Props) {
             );
             return;
           }
-          current = parser.current!.snapshot(newest.name, activeMatch.bestOf);
+          current = parser.current!.snapshot(
+            newest.name,
+            activeMatch.bestOf,
+            parser.current!.frameCount,
+            replayCourtWindowFrames(1),
+            LIVE_DMO_COURT_SAMPLES,
+            true,
+          );
         }
         if (!current) {
           if (parser.current!.header?.bad) {

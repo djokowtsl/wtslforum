@@ -2,6 +2,7 @@ import { NextResponse } from 'next/server';
 import { getSession } from '@/lib/auth';
 import { sql } from '@/lib/db';
 import { hasCompletedDmoPoints } from '@/lib/te4DmoLive';
+import { cleanupExpiredLiveDmoBroadcasts, isLiveDmoReplayPath } from '@/lib/liveDmoStorage';
 
 export const dynamic = 'force-dynamic';
 
@@ -16,12 +17,8 @@ export async function GET() {
     return NextResponse.json({ error: 'Sign in to watch live broadcasts.' }, { status: 401, headers: PRIVATE_HEADERS });
   }
   try {
+    await cleanupExpiredLiveDmoBroadcasts();
     const rows = await sql`
-      WITH expired_rows AS (
-        DELETE FROM dmo_live_broadcasts
-        WHERE expires_at <= NOW()
-        RETURNING id
-      )
       SELECT b.id, b.owner_discord_id, b.status, b.payload, b.sequence,
         b.started_at, b.updated_at, u.display_name AS owner_name,
         (b.status='live' AND b.updated_at < NOW() - INTERVAL '10 seconds') AS stale
@@ -77,6 +74,7 @@ export async function GET() {
         sourceMessageUrl: typeof stored.sourceMessageUrl === 'string' ? stored.sourceMessageUrl : null,
         broadcastMode: stored.mode === 'auto' ? 'auto' : 'manual',
         replay: stored.replay === true,
+        replayDataReady: isLiveDmoReplayPath(stored.replayDataPath),
         replaySpeed: [1, 2, 4].includes(Number(stored.replaySpeed))
           ? Number(stored.replaySpeed)
           : 1,

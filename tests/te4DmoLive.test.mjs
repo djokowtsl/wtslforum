@@ -118,6 +118,28 @@ test('court motion windows stay in sync with replay speed and the live update ca
   }
 });
 
+test('live court snapshots keep a 72-frame window and add synthesized sound cues only when requested', () => {
+  const bytes = syntheticDmo();
+  const locator = new Te4DmoLiveParser();
+  locator.append(bytes);
+  const serveOffset = locator.offsets[20];
+  bytes[serveOffset + 110] = 2;
+  const parser = new Te4DmoLiveParser();
+  parser.append(bytes);
+
+  const silent = parser.snapshot('match.dmo', 3, 48, 72, 72);
+  const sounding = parser.snapshot('match.dmo', 3, 48, 72, 72, true);
+  assert.ok(silent);
+  assert.ok(sounding);
+  assert.equal(silent.courtFrameCount, 48);
+  assert.equal(silent.court.length, 48);
+  assert.equal(silent.soundEvents, undefined);
+  assert.deepEqual(sounding.soundEvents, [
+    { frame: 20, kind: 'racket' },
+    { frame: 25, kind: 'bounce' },
+  ]);
+});
+
 test('invalid DMO signatures are marked instead of yielding a scoreboard', () => {
   const parser = new Te4DmoLiveParser();
   parser.append(new Uint8Array(1200));

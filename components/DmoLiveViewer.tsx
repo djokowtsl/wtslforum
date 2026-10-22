@@ -8,6 +8,7 @@ import type { LiveStream } from '@/lib/liveBroadcast';
 import DmoLiveDisplay from './DmoLiveDisplay';
 import LiveBroadcastComments from './LiveBroadcastComments';
 import LiveStreamEmbed from './LiveStreamEmbed';
+import Te4DmoReplayPlayer from './Te4DmoReplayPlayer';
 import styles from './DmoLiveViewer.module.css';
 
 type Props = { canWatch: boolean };
@@ -21,6 +22,7 @@ type Broadcast = {
   players: [string, string] | null;
   broadcastMode: 'manual' | 'auto';
   replay: boolean;
+  replayDataReady: boolean;
   replaySpeed: 1 | 2 | 4;
   officialByBroadcaster: boolean;
   likelyOfficial: boolean;
@@ -130,13 +132,29 @@ export default function DmoLiveViewer({ canWatch }: Props) {
                   <LiveStreamEmbed stream={broadcast.stream} title={`Live stream by ${broadcast.ownerName}`} />
                 )}
                 {broadcast.snapshot ? (
-                  <DmoLiveDisplay
-                    snapshot={broadcast.snapshot}
-                    state={broadcast.status}
-                    playbackSpeed={broadcast.replay ? broadcast.replaySpeed : 1}
-                    stale={broadcast.stale}
-                    updatedAt={broadcast.updatedAt}
-                  />
+                  broadcast.replay && broadcast.replayDataReady ? (
+                    <Te4DmoReplayPlayer
+                      broadcastId={broadcast.id}
+                      initialSpeed={broadcast.replaySpeed}
+                      fallback={(
+                        <DmoLiveDisplay
+                          snapshot={broadcast.snapshot}
+                          state={broadcast.status}
+                          playbackSpeed={broadcast.replaySpeed}
+                          stale={broadcast.stale}
+                          updatedAt={broadcast.updatedAt}
+                        />
+                      )}
+                    />
+                  ) : (
+                    <DmoLiveDisplay
+                      snapshot={broadcast.snapshot}
+                      state={broadcast.status}
+                      playbackSpeed={broadcast.replay ? broadcast.replaySpeed : 1}
+                      stale={broadcast.stale}
+                      updatedAt={broadcast.updatedAt}
+                    />
+                  )
                 ) : broadcast.stream && broadcast.status === 'live' ? (
                   <p className="live-broadcast-stream-note">This broadcast is sharing a video stream without DMO court data.</p>
                 ) : (
