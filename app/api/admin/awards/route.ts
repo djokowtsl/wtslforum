@@ -1,10 +1,11 @@
 import { after, NextRequest, NextResponse } from 'next/server';
 import { getSession } from '@/lib/auth';
 import { sql } from '@/lib/db';
-import { addNominee, removeNominee, setVotingOpen, setVotingClosesAt, setCategoryShuffleOverride, importGoogleFormOptions, importGoogleFormVotes, getSiteAwardBallotBatch, saveAwardFormResponseState } from '@/lib/awards';
+import { addNominee, removeNominee, setVotingOpen, setVotingClosesAt, setCategoryShuffleOverride, importGoogleFormOptions, importGoogleFormVotes, getSiteAwardBallot, getSiteAwardBallotBatch, saveAwardFormResponseState } from '@/lib/awards';
 import { fetchPublicGoogleFormOptions } from '@/lib/googleFormOptions';
-import { awardFormSyncStatus, syncAwardBallotsToForm } from '@/lib/awardVoteFormSync';
+import { awardFormBallotFingerprint, awardFormSyncStatus, checkAwardBallotFormResponse, syncAwardBallotsToForm } from '@/lib/awardVoteFormSync';
 import {
+  getAwardFormSyncJobById,
   getAwardFormSyncJobStatuses,
   getAwardFormSyncSummary,
   markAwardFormSyncJobSynced,
@@ -45,6 +46,48 @@ export async function POST(req: NextRequest) {
 
   const body = await req.json().catch(() => null);
   const action = body?.action;
+
+  if (action === 'check-form-sync-job') {
+    const cycleId = Number(body?.cycleId);
+    const jobId = String(body?.jobId ?? '');
+    if (!Number.isSafeInteger(cycleId) || cycleId < 1 || !/^\d{1,20}$/.test(jobId)) {
+      return NextResponse.json({ error: 'Choose a valid sync job.' }, { status: 400 });
+    }
+
+    const job = await getAwardFormSyncJobById(cycleId, jobId);
+    if (!job) return NextResponse.json({ error: 'Sync job not found.' }, { status: 404 });
+    if (job.status !== 'needs_review') {
+      return NextResponse.json({ error: 'Only jobs needing review can be checked.' }, { status: 409 });
+    }
+
+    const ballot = await getSiteAwardBallot(cycleId, job.voterKey);
+    if (!ballot?.isComplete) return NextResponse.json({ ok: true, result: 'ballot_changed' });
+    const fingerprint = awardFormBallotFingerprint(ballot.season, ballot.answers);
+    if (fingerprint !== job.desiredFingerprint) {
+      return NextResponse.json({ ok: true, result: 'ballot_changed' });
+    }
+
+    const check = await checkAwardBallotFormResponse(ballot);
+    if (check.status !== 'found') {
+      return NextResponse.json({ ok: true, result: check.status });
+    }
+    if (check.fingerprint !== fingerprint || !check.responseId || !check.updatedAt) {
+      return NextResponse.json({ ok: true, result: 'response_mismatch' });
+    }
+
+    const receiptSaved = await saveAwardFormResponseState(
+      cycleId,
+      job.voterKey,
+      check.responseId,
+      check.fingerprint,
+      check.updatedAt,
+    );
+    if (!receiptSaved.length) {
+      return NextResponse.json({ ok: true, result: 'receipt_conflict' });
+    }
+    await markAwardFormSyncJobSynced(cycleId, job.voterKey, check.fingerprint, check.updatedAt);
+    return NextResponse.json({ ok: true, result: 'confirmed' });
+  }
 
   if (action === 'retry-safe-form-sync-jobs') {
     const cycleId = Number(body?.cycleId);
