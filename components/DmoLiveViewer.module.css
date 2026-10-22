@@ -10,3 +10,5 @@
 .icon { display: grid; width: 52px; height: 52px; place-items: center; border: 1px solid rgba(176,244,59,.3); border-radius: 12px; background: rgba(176,244,59,.07); color: var(--lime, #b0f43b); }
 .empty h2, .empty h3 { margin: 15px 0 6px; font: italic 800 26px var(--font-display, sans-serif); text-transform: uppercase; }
 .empty p { max-width: 520px; margin: 0; color: var(--muted, #8c9db8); font-size: 11px; line-height: 1.6; }
+.broadcastTags { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 8px; }
+.broadcastTag { padding: 4px 6px; border-radius: 5px; background: rgba(176,244,59,.1); color: var(--lime, #b0f43b); font-size: 8px; font-weight: 800; letter-spacing: .08em; }
