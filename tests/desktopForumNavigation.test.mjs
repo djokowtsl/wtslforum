@@ -17,7 +17,8 @@ const liveStreamsPage = readFileSync(
 
 test('desktop navigation exposes every primary destination in its own row', () => {
   assert.match(header, /<nav className="desktop-nav" aria-label="Main">/);
-  assert.match(header, /const navItems = u \? \[\.\.\.NAV, \{ href: '\/livestreams', label: 'Live Broadcast' \}\] : NAV;/);
+  assert.match(header, /const navItems = NAV;/);
+  assert.match(header, /href: '\/livestreams', label: 'Live Streams'/);
   assert.match(header, /<div className="desktop-nav-links">\s*\{navItems\.map/);
   assert.match(css, /\.desktop-nav-inner\s*\{[^}]*display:\s*flex/);
   assert.match(css, /\.desktop-nav-links\s*\{[^}]*flex-wrap:\s*wrap/);

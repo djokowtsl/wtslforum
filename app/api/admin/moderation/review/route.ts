@@ -4,7 +4,7 @@ import { canModerateComments, getSession } from '@/lib/auth';
 import { sql } from '@/lib/db';
 import { announceTopic } from '@/lib/discord';
 
-const contentKinds = ['topic', 'reply', 'media', 'note', 'article_comment'] as const;
+const contentKinds = ['topic', 'reply', 'media', 'note', 'article_comment', 'live_comment'] as const;
 type ContentKind = typeof contentKinds[number];
 
 export async function POST(req: Request) {
@@ -50,6 +50,14 @@ export async function POST(req: Request) {
       RETURNING id
     `;
     if (!rows[0]) return NextResponse.json({ error: 'This article comment is no longer awaiting review.' }, { status: 409 });
+  } else if (kind === 'live_comment') {
+    const rows = await sql`
+      UPDATE dmo_live_broadcast_comments
+      SET moderation_status=${nextStatus},moderation_reason=NULL,moderated_by=${Number(user!.id)},moderated_at=NOW(),updated_at=NOW()
+      WHERE id=${id} AND moderation_status='pending'
+      RETURNING id
+    `;
+    if (!rows[0]) return NextResponse.json({ error: 'This live stream comment is no longer awaiting review.' }, { status: 409 });
   } else if (kind === 'note') {
     const rows = action === 'approve'
       ? await sql`

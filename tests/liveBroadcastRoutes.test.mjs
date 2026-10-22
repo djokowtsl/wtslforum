@@ -15,7 +15,12 @@ function loadRoute(path, mocks) {
   new Function('require', 'module', 'exports', code)((name) => {
     if (name in mocks) return mocks[name];
     if (name.startsWith('node:')) return require(name);
-    if (name === '@/lib/liveScores') return { getLiveWtslMatchForPlayers: async () => null };
+    if (name === '@/lib/liveScores') {
+      return {
+        getLiveWtslMatchForPlayers: async () => null,
+        canonicalizeRankedDmoPlayers: async (players) => players,
+      };
+    }
     if (name === '@/lib/siteSnapshots') return { readSiteSnapshot: async () => null };
     throw new Error(`Unexpected route dependency: ${name}`);
   }, module, module.exports);
@@ -155,6 +160,96 @@ test('automatic broadcasts are rejected when the exact player pair is not live',
     bestOf: 3,
   }));
   assert.equal(response.status, 409);
+  assert.equal(databaseCalls, 0);
+});
+
+test('manual DMO replay stores ranked player names without requiring a current live match', async () => {
+  const inserts = [];
+  let liveFeedLookups = 0;
+  const route = loadRoute('app/api/live-dmo/route.ts', {
+    'next/server': nextServer,
+    'node:crypto': { randomUUID: () => 'historical-replay' },
+    'zod': require('zod'),
+    '@/lib/auth': { getSession: async () => ({ discordId: 'linked-member', isAdmin: false }) },
+    '@/lib/liveRequestSecurity': { isSameSiteMutation: () => true },
+    '@/lib/liveScores': {
+      getLiveWtslMatchForPlayers: async () => {
+        liveFeedLookups += 1;
+        return null;
+      },
+      canonicalizeRankedDmoPlayers: async () => ['Squeaky', 'Player Two'],
+    },
+    '@/lib/siteSnapshots': {
+      readSiteSnapshot: async () => ({
+        checkedAt: new Date().toISOString(),
+        payload: { publicOpen: [{ tour: 'TE4', first_name: 'Player Two', second_name: 'Squeaky' }] },
+      }),
+    },
+    '@/lib/liveBroadcast': {
+      isLikelyOfficialWtslMatch: (players) => players[0] === 'Squeaky',
+      parseDiscordMessageUrl: () => null,
+      streamLinksInDiscordMessage: () => [],
+    },
+    '@/lib/db': {
+      sql: async (strings, ...values) => {
+        inserts.push({ query: strings.join('?'), values });
+        return [];
+      },
+    },
+  });
+  const response = await route.POST(request({
+    hasDmo: true,
+    replay: true,
+    replaySpeed: 2,
+    players: ['[Fake] Squeaky', 'Player Two'],
+    mode: 'manual',
+    bestOf: 3,
+  }));
+  const body = await response.json();
+  assert.equal(response.status, 201);
+  assert.deepEqual(body.players, ['Squeaky', 'Player Two']);
+  assert.equal(body.replay, true);
+  assert.equal(body.replaySpeed, 2);
+  assert.equal(liveFeedLookups, 0);
+  const insertedBroadcast = inserts.find((item) => item.query.includes('INSERT INTO dmo_live_broadcasts'));
+  const storedPayload = insertedBroadcast?.values.find((value) => typeof value === 'string' && value.includes('"mode":"manual"'));
+  assert.ok(storedPayload);
+  assert.deepEqual(JSON.parse(storedPayload).players, ['Squeaky', 'Player Two']);
+  assert.equal(JSON.parse(storedPayload).replay, true);
+  assert.equal(JSON.parse(storedPayload).replaySpeed, 2);
+  assert.equal(JSON.parse(storedPayload).likelyOfficial, true);
+});
+
+test('a replay cannot be started without a DMO and parsed player names', async () => {
+  let databaseCalls = 0;
+  const route = loadRoute('app/api/live-dmo/route.ts', {
+    'next/server': nextServer,
+    'node:crypto': require('node:crypto'),
+    'zod': require('zod'),
+    '@/lib/auth': { getSession: async () => ({ discordId: 'linked-member', isAdmin: false }) },
+    '@/lib/liveRequestSecurity': { isSameSiteMutation: () => true },
+    '@/lib/liveBroadcast': {
+      isLikelyOfficialWtslMatch: () => false,
+      parseDiscordMessageUrl: () => null,
+      streamLinksInDiscordMessage: () => [],
+    },
+    '@/lib/db': { sql: async () => { databaseCalls += 1; return []; } },
+  });
+  const response = await route.POST(request({
+    hasDmo: false,
+    replay: true,
+    mode: 'manual',
+  }));
+  assert.equal(response.status, 400);
+  assert.equal(databaseCalls, 0);
+
+  const manualDmoResponse = await route.POST(request({
+    hasDmo: true,
+    replay: false,
+    mode: 'manual',
+    players: ['Squeaky', 'Player Two'],
+  }));
+  assert.equal(manualDmoResponse.status, 400);
   assert.equal(databaseCalls, 0);
 });
 

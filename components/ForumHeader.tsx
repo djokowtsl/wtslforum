@@ -18,6 +18,7 @@ export const NAV = [
   { href: '/characters', label: 'Characters' },
   { href: '/articles', label: 'Articles' },
   { href: '/media', label: 'Media' },
+  { href: '/livestreams', label: 'Live Streams' },
   { href: '/awards', label: 'Awards' },
   { href: '/stats', label: 'Statistics' },
   { href: '/screenshot-stats', label: 'Screenshot Data' },
@@ -29,7 +30,7 @@ export const NAV = [
 
 export async function ForumHeader() {
   const u = await getSession();
-  const navItems = u ? [...NAV, { href: '/livestreams', label: 'Live Broadcast' }] : NAV;
+  const navItems = NAV;
   const canModerate = canModerateComments(u);
   const status = u ? await safe(() => getUserStatus(u.id), 'offline' as const) : null;
   const unread = u ? await safe(() => unreadMessageCount(u.id), 0) : 0;

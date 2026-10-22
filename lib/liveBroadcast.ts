@@ -105,16 +105,40 @@ export function normalizeLivePlayerName(value: string): string {
     .replace(/[^\p{Letter}\p{Number}]+/gu, '');
 }
 
-export function sameLiveMatch(first: [string, string] | null, second: [string, string] | null): boolean {
+export function resolveFakePrefixForRankedPlayer(
+  value: string,
+  rankedNames: readonly string[],
+): string {
+  const fakePrefix = value.trim().match(/^\[Fake\]\s*(.+?)\s*$/i);
+  if (!fakePrefix?.[1]) return value;
+
+  const cleanedName = fakePrefix[1].trim();
+  const normalizedCleanedName = normalizeLivePlayerName(cleanedName);
+  if (!normalizedCleanedName) return value;
+  const matches = [...new Set(rankedNames
+    .filter((name) => normalizeLivePlayerName(name) === normalizedCleanedName)
+    .map((name) => name.trim()))];
+  return matches.length === 1 ? matches[0] : value;
+}
+
+export function sameLiveMatch(
+  first: [string, string] | null,
+  second: [string, string] | null,
+  rankedNames: readonly string[] = [],
+): boolean {
   if (!first || !second) return false;
-  const left = first.map(normalizeLivePlayerName).sort();
-  const right = second.map(normalizeLivePlayerName).sort();
+  const normalizeRankedName = (name: string) => normalizeLivePlayerName(
+    resolveFakePrefixForRankedPlayer(name, rankedNames),
+  );
+  const left = first.map(normalizeRankedName).sort();
+  const right = second.map(normalizeRankedName).sort();
   return Boolean(left[0] && left[1] && left[0] === right[0] && left[1] === right[1]);
 }
 
 export type WtslLiveMatchIdentity = {
   name: string;
   bestOf: 1 | 3 | 5;
+  rankedPlayers?: [string | null, string | null];
 };
 
 export function liveMatchPlayers(name: string): [string, string] | null {
@@ -128,7 +152,11 @@ export function findMatchingWtslLiveMatch<T extends WtslLiveMatchIdentity>(
   players: [string, string],
   matches: T[],
 ): T | null {
-  const matchesForPair = matches.filter((match) => sameLiveMatch(players, liveMatchPlayers(match.name)));
+  const matchesForPair = matches.filter((match) => sameLiveMatch(
+    players,
+    liveMatchPlayers(match.name),
+    match.rankedPlayers?.filter((name): name is string => Boolean(name)) ?? [],
+  ));
   return matchesForPair.length === 1 ? matchesForPair[0] : null;
 }
 

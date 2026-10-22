@@ -109,7 +109,11 @@ test('signed-in members can read broadcasts while guests cannot', async () => {
             owner_discord_id: 'other-member',
             owner_name: 'Other',
             status: 'live',
-            payload: { stream: { provider: 'youtube', id: 'dQw4w9WgXcQ', sourceUrl: 'https://youtu.be/dQw4w9WgXcQ' } },
+            payload: {
+              stream: { provider: 'youtube', id: 'dQw4w9WgXcQ', sourceUrl: 'https://youtu.be/dQw4w9WgXcQ' },
+              replay: true,
+              replaySpeed: 4,
+            },
             sequence: 1,
             started_at: startedAt,
             updated_at: updatedAt,
@@ -131,6 +135,8 @@ test('signed-in members can read broadcasts while guests cannot', async () => {
     stream: null,
     sourceMessageUrl: null,
     broadcastMode: 'manual',
+    replay: false,
+    replaySpeed: 1,
     officialByBroadcaster: false,
     likelyOfficial: false,
     players: ['One', 'Two'],
@@ -144,4 +150,6 @@ test('signed-in members can read broadcasts while guests cannot', async () => {
     id: 'dQw4w9WgXcQ',
     sourceUrl: 'https://youtu.be/dQw4w9WgXcQ',
   });
+  assert.equal(body.broadcasts[1].replay, true);
+  assert.equal(body.broadcasts[1].replaySpeed, 4);
 });

@@ -58,6 +58,10 @@ export async function GET() {
         stream,
         sourceMessageUrl: typeof stored.sourceMessageUrl === 'string' ? stored.sourceMessageUrl : null,
         broadcastMode: stored.mode === 'auto' ? 'auto' : 'manual',
+        replay: stored.replay === true,
+        replaySpeed: [1, 2, 4].includes(Number(stored.replaySpeed))
+          ? Number(stored.replaySpeed)
+          : 1,
         officialByBroadcaster: stored.officialByBroadcaster === true,
         likelyOfficial: stored.likelyOfficial === true,
         players: rawPlayers,
