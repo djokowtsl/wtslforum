@@ -1,5 +1,5 @@
 export type Te4LivePlayer = 1 | 2;
-export type Te4LiveBestOf = 3 | 5;
+export type Te4LiveBestOf = 1 | 3 | 5;
 
 type Header = {
   bad?: boolean;
@@ -433,7 +433,7 @@ export class Te4DmoLiveParser {
       ? (points[points.length - 1]?.server ?? null)
       : this.serverForServe(parsed.openServe);
     const rates = serviceWinRates(points);
-    const model = createMatchModel(rates, bestOf === 3 ? 2 : 3);
+    const model = createMatchModel(rates, bestOf === 1 ? 1 : bestOf === 3 ? 2 : 3);
     const history = score.rows.map((row) => model.point(
       countSets(row.sets, 1),
       countSets(row.sets, 2),
