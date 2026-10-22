@@ -100,7 +100,7 @@ async function parseCompleteDmo(file: File, bestOf: Te4LiveBestOf) {
   const snapshot = parser.snapshot(file.name, bestOf);
   if (!snapshot) throw new Error('This DMO does not contain enough readable TE4 match frames to replay.');
   if (!hasCompletedDmoPoints(snapshot)) {
-    throw new Error('No completed point events could be parsed from this DMO, so it cannot be replayed.');
+    throw new Error('Failed to parse this DMO. Please select an online match.');
   }
   return { parser, snapshot };
 }
