@@ -1,7 +1,9 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { getSession } from '@/lib/auth';
 import { sql } from '@/lib/db';
-import { addNominee, removeNominee, setVotingOpen, importGoogleFormVotes } from '@/lib/awards';
+import { addNominee, removeNominee, setVotingOpen, importGoogleFormOptions, importGoogleFormVotes, getSiteAwardVotesForCycle } from '@/lib/awards';
+import { fetchPublicGoogleFormOptions } from '@/lib/googleFormOptions';
+import { syncAwardVotesToSheet } from '@/lib/awardVoteSheetSync';
 
 export const dynamic = 'force-dynamic';
 
@@ -26,6 +28,72 @@ export async function POST(req: NextRequest) {
 
   const body = await req.json().catch(() => null);
   const action = body?.action;
+
+  if (action === 'preview-form-options' || action === 'import-form-options') {
+    const cycleId = Number(body?.cycleId);
+    const formUrl = String(body?.formUrl ?? '').trim();
+    if (!cycleId || !formUrl) return NextResponse.json({ error: 'Choose an award cycle and enter a public Google Form link.' }, { status: 400 });
+    if (formUrl.length > 500) return NextResponse.json({ error: 'The Google Form link is too long.' }, { status: 400 });
+
+    const cycles = await sql`SELECT id FROM award_cycles WHERE id=${cycleId} LIMIT 1`;
+    if (!cycles.length) return NextResponse.json({ error: 'Award cycle not found.' }, { status: 404 });
+
+    try {
+      const form = await fetchPublicGoogleFormOptions(formUrl);
+      if (action === 'preview-form-options') {
+        const optionCount = form.questions.reduce((total, question) => total + question.options.length, 0);
+        return NextResponse.json({
+          ok: true,
+          sourceUrl: form.sourceUrl,
+          questionCount: form.questions.length,
+          optionCount,
+          questions: form.questions.map((question) => ({
+            title: question.title,
+            slug: question.slug,
+            optionCount: question.options.length,
+            allowWriteIn: question.allowWriteIn,
+            examples: question.options.slice(0, 3),
+          })),
+        });
+      }
+
+      const imported = await importGoogleFormOptions(cycleId, form.questions);
+      return NextResponse.json({ ok: true, sourceUrl: form.sourceUrl, ...imported });
+    } catch (error) {
+      return NextResponse.json({
+        error: error instanceof Error ? error.message : 'Could not import Google Form choices.',
+      }, { status: 400 });
+    }
+  }
+
+  if (action === 'sync-sheet-batch') {
+    const cycleId = Number(body?.cycleId);
+    const afterVoteId = String(body?.afterVoteId ?? '0');
+    if (!cycleId || !/^\d{1,20}$/.test(afterVoteId)) {
+      return NextResponse.json({ error: 'Choose an award cycle and a valid sync position.' }, { status: 400 });
+    }
+
+    const cycles = await sql`SELECT id FROM award_cycles WHERE id=${cycleId} LIMIT 1`;
+    if (!cycles.length) return NextResponse.json({ error: 'Award cycle not found.' }, { status: 404 });
+
+    const votes = await getSiteAwardVotesForCycle(cycleId, afterVoteId, 100);
+    const result = await syncAwardVotesToSheet(votes);
+    if (result.status !== 'synced') {
+      const error = result.status === 'not_configured'
+        ? 'Google Sheets sync is not configured yet.'
+        : result.status === 'misconfigured'
+          ? 'Google Sheets sync settings are incomplete or invalid.'
+          : 'Some Forum votes could not be synced. You can retry this sync.';
+      return NextResponse.json({ error }, { status: 503 });
+    }
+
+    const nextAfterVoteId = String(votes.at(-1)?.voteId ?? afterVoteId);
+    return NextResponse.json({
+      ok: true,
+      nextAfterVoteId,
+      done: votes.length < 100,
+    });
+  }
 
   if (action === 'toggle-voting') {
     const cycleId = Number(body?.cycleId);
@@ -63,8 +131,8 @@ export async function POST(req: NextRequest) {
       const matchedId = nomineeName ? byName.get(nomineeName.toLowerCase()) : undefined;
       return { voterKey, nomineeId: matchedId ?? null, writeIn: matchedId ? null : (nomineeName || writeIn || null) };
     });
-    const imported = await importGoogleFormVotes(categoryId, rows);
-    return NextResponse.json({ ok: true, imported });
+    await importGoogleFormVotes(categoryId, rows);
+    return NextResponse.json({ ok: true });
   }
 
   return NextResponse.json({ error: 'Unknown action.' }, { status: 400 });

@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from 'next/server';
 import { getSession } from '@/lib/auth';
 import { sql } from '@/lib/db';
 import { castVote } from '@/lib/awards';
+import { syncAwardVotesToSheet } from '@/lib/awardVoteSheetSync';
 
 export const dynamic = 'force-dynamic';
 
@@ -21,6 +22,12 @@ export async function POST(req: NextRequest) {
   if (!category.voting_open) return NextResponse.json({ error: 'Voting is not open for this award yet.' }, { status: 403 });
   if (writeIn && !nomineeId && !category.allow_write_in) return NextResponse.json({ error: 'Write-in votes are not allowed for this award.' }, { status: 403 });
 
-  await castVote(categoryId, user.discordId, nomineeId, nomineeId ? null : writeIn);
-  return NextResponse.json({ ok: true });
+  const vote = await castVote(categoryId, user.discordId, nomineeId, nomineeId ? null : writeIn);
+  if (!vote) return NextResponse.json({ error: 'Your vote could not be saved.' }, { status: 500 });
+
+  const sheetSync = await syncAwardVotesToSheet([vote]);
+  if (sheetSync.status === 'failed') {
+    console.warn('[awards] vote saved but spreadsheet sync failed', { voteId: vote.voteId });
+  }
+  return NextResponse.json({ ok: true, sheetSyncStatus: sheetSync.status });
 }
