@@ -99,6 +99,25 @@ export async function getAwardFormSyncJob(cycleId: number, voterKey: string) {
   } | undefined;
 }
 
+export async function getAwardFormSyncJobById(cycleId: number, jobId: string) {
+  const rows = await sql`
+    SELECT
+      id::text AS id,
+      voter_key AS "voterKey",
+      status,
+      desired_fingerprint AS "desiredFingerprint"
+    FROM award_form_sync_jobs
+    WHERE cycle_id=${cycleId} AND id=${jobId}::bigint
+    LIMIT 1
+  `;
+  return rows[0] as {
+    id: string;
+    voterKey: string;
+    status: AwardFormSyncJobStatus;
+    desiredFingerprint: string;
+  } | undefined;
+}
+
 export async function getAwardFormSyncJobStatuses(cycleId: number, voterKeys: string[]) {
   if (!voterKeys.length) return new Map<string, AwardFormSyncJobStatus>();
   const rows = await sql`
