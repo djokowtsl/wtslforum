@@ -7,6 +7,10 @@ const script = readFileSync(new URL('../google-apps-script/award-vote-sync.gs', 
 const secret = 'script-bridge-secret-for-tests-with-32-chars';
 const spreadsheetId = '0123456789abcdefghijklmnopqrstuvwx';
 
+test('Apps Script request limit uses syntax accepted by its editor', () => {
+  assert.match(script, /^const MAX_REQUEST_BYTES = 1000000;$/m);
+});
+
 function createBridge() {
   const rows = [];
   let created = false;
