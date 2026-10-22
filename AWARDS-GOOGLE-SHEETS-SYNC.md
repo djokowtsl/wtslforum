@@ -4,6 +4,8 @@ The Forum remains the voting interface. When configured, it sends each saved For
 
 The sync is disabled until the Apps Script web app and Vercel environment variables are configured. Votes remain saved in the Forum while it is disabled or unavailable. An administrator can retry a full sync from `/admin/awards`; rows are upserted by Forum vote ID, so retries do not create duplicates.
 
+The Forum does not show poll responses or result totals to administrators or visitors. Its admin API exposes only whether a sync succeeded, not vote counts or response contents. Review results through the linked Google account; Forum votes are written to the separate `Forum Votes` spreadsheet tab, not submitted as native Google Form responses.
+
 ## One-time Apps Script setup
 
 1. Open the response spreadsheet and choose **Extensions → Apps Script**.
