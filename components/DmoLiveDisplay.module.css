@@ -73,7 +73,7 @@
 .recentHeading { margin-top: 15px; }
 .pointList { display: grid; gap: 0; margin: 0; padding: 0; list-style: none; }
 .pointList li { display: flex; align-items: center; gap: 10px; min-height: 43px; border-top: 1px solid rgba(150, 180, 230, .1); }
-.pointNumber { color: var(--live-lime); font: italic 700 14px var(--font-display, sans-serif); }
+.pointScore { flex: 0 0 auto; min-width: 76px; color: var(--live-lime); font: 700 10px var(--font-mono, monospace); font-variant-numeric: tabular-nums; white-space: nowrap; }
 .pointList li > span:nth-child(2) { display: grid; flex: 1; min-width: 0; gap: 2px; }
 .pointList b { overflow: hidden; font-size: 10px; text-overflow: ellipsis; white-space: nowrap; }
 .pointList small { color: var(--live-muted); font-size: 8px; }

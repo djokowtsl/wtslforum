@@ -361,7 +361,7 @@ test('broadcast owners can heartbeat and end only their own active broadcast', a
     winChance: [0.5, 0.5],
     winHistory: [0.5],
     stats: [zeroStats, zeroStats],
-    recentPoints: [{ number: 1, server: 1, winner: 1, rallyHits: 0, faults: 0 }],
+    recentPoints: [{ number: 1, scoreLabel: '0-0(15-0)', server: 1, winner: 1, rallyHits: 0, faults: 0 }],
     courtFrameIndices: [8, 9],
     trajectoryEvents: [
       { frame: 8, kind: 'shot' },

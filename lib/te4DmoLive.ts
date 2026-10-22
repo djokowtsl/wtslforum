@@ -83,6 +83,7 @@ export type Te4LiveSnapshot = {
   }>;
   recentPoints: Array<{
     number: number;
+    scoreLabel?: string;
     server: Te4LivePlayer;
     winner: Te4LivePlayer;
     rallyHits: number;
@@ -631,6 +632,20 @@ export class Te4DmoLiveParser {
       soundEvents.sort((a, b) => a.frame - b.frame || a.kind.localeCompare(b.kind));
     }
 
+    const recentStart = Math.max(0, points.length - 12);
+    const recentPoints = points.slice(recentStart).map((point, index) => {
+      const pointIndex = recentStart + index;
+      const scoreAfterPoint = score.rows[pointIndex + 1] ?? score.current;
+      return {
+        number: pointIndex + 1,
+        scoreLabel: formatLivePointScore(scoreAfterPoint),
+        server: point.server,
+        winner: point.winner as Te4LivePlayer,
+        rallyHits: point.hits.length,
+        faults: point.faults,
+      };
+    });
+
     return {
       version: 1,
       filename: filename.replace(/[\\/]/g, '').slice(0, 120),
@@ -661,13 +676,7 @@ export class Te4DmoLiveParser {
       winChance: [chance, 1 - chance],
       winHistory: downsample(history, 120),
       stats,
-      recentPoints: points.slice(-12).map((point, index) => ({
-        number: points.length - Math.min(points.length, 12) + index + 1,
-        server: point.server,
-        winner: point.winner as Te4LivePlayer,
-        rallyHits: point.hits.length,
-        faults: point.faults,
-      })),
+      recentPoints,
       court,
       courtFrameIndices,
       trajectoryEvents: trajectoryEvents.slice(-256),
@@ -741,6 +750,15 @@ function formatTennisPoint(points: [number, number], playerIndex: 0 | 1, tiebrea
     return points[playerIndex] > points[1 - playerIndex] ? 'AD' : '40';
   }
   return ['0', '15', '30', '40'][Math.min(points[playerIndex], 3)];
+}
+
+export function formatLivePointScore(score: {
+  games: [number, number];
+  points: [number, number];
+  tiebreak: boolean;
+}): string {
+  const pointScore = `${formatTennisPoint(score.points, 0, score.tiebreak)}-${formatTennisPoint(score.points, 1, score.tiebreak)}`;
+  return `${score.games[0]}-${score.games[1]}(${pointScore})`;
 }
 
 function serviceWinRates(points: LivePoint[]): { 1: number; 2: number } {

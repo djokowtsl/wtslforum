@@ -5,6 +5,7 @@ import {
   replayCourtWindowFrames,
   hasCompletedDmoPoints,
   replayFrameAtElapsedTime,
+  formatLivePointScore,
   Te4DmoLiveParser,
 } from '../lib/te4DmoLive.ts';
 import { hasPlayerPositionData } from '../lib/te4LiveSetup.ts';
@@ -121,6 +122,14 @@ test('court motion windows overlap successive updates at every replay speed', ()
     assert.equal(windowFrames, 180 * speed);
     assert.equal(replayCourtWindowDurationMs(windowFrames, speed), 3000);
   }
+});
+
+test('point log labels use game and tennis point scores, including tiebreak scores', () => {
+  assert.equal(formatLivePointScore({ games: [0, 0], points: [1, 0], tiebreak: false }), '0-0(15-0)');
+  assert.equal(formatLivePointScore({ games: [3, 2], points: [1, 1], tiebreak: false }), '3-2(15-15)');
+  assert.equal(formatLivePointScore({ games: [1, 4], points: [1, 3], tiebreak: false }), '1-4(15-40)');
+  assert.equal(formatLivePointScore({ games: [6, 6], points: [6, 7], tiebreak: true }), '6-6(6-7)');
+  assert.equal(formatLivePointScore({ games: [3, 2], points: [4, 3], tiebreak: false }), '3-2(AD-40)');
 });
 
 test('live court snapshots include frame-indexed rally boundaries and optional sound cues', () => {
