@@ -1,5 +1,6 @@
 import { sql } from './db';
 import type { GoogleFormOptionQuestion } from './googleFormOptions';
+import { findRenamedAwardOptions } from './awardOptionMatching';
 import type { AwardVoteSheetRow } from './awardVoteSheetSync';
 
 export async function getActiveCycle() {
@@ -129,6 +130,16 @@ export async function setVotingClosesAt(cycleId: number, closesAt: string | null
   return rows[0] ?? null;
 }
 
+export async function setCategoryShuffleOverride(cycleId: number, categoryId: number, shuffleOptions: boolean | null) {
+  const rows = await sql`
+    UPDATE award_categories
+    SET shuffle_options_override=${shuffleOptions}
+    WHERE cycle_id=${cycleId} AND id=${categoryId}
+    RETURNING id
+  `;
+  return rows[0] ?? null;
+}
+
 export async function addNominee(categoryId: number, name: string, note: string) {
   const rows = await sql`INSERT INTO award_nominees(category_id,name,note) VALUES (${categoryId},${name},${note}) RETURNING *`;
   return rows[0];
@@ -142,19 +153,40 @@ export async function removeNominee(nomineeId: number) {
 export async function importGoogleFormOptions(cycleId: number, questions: GoogleFormOptionQuestion[]) {
   let optionsAdded = 0;
   let optionsAlreadyPresent = 0;
+  const renamedOptions: { category: string; from: string; to: string }[] = [];
 
   for (const [categoryPosition, question] of questions.entries()) {
     const categoryRows = await sql`
-      INSERT INTO award_categories(cycle_id,name,slug,position,allow_write_in)
-      VALUES (${cycleId},${question.title},${question.slug},${categoryPosition + 1},${question.allowWriteIn})
+      INSERT INTO award_categories(cycle_id,name,slug,position,allow_write_in,shuffle_options)
+      VALUES (${cycleId},${question.title},${question.slug},${categoryPosition + 1},${question.allowWriteIn},${question.shuffleOptions})
       ON CONFLICT (cycle_id,slug)
       DO UPDATE SET
         position=EXCLUDED.position,
-        allow_write_in=EXCLUDED.allow_write_in
+        allow_write_in=EXCLUDED.allow_write_in,
+        shuffle_options=EXCLUDED.shuffle_options
       RETURNING id
     `;
     const categoryId = categoryRows[0]?.id;
     if (!categoryId) throw new Error(`Could not create the “${question.title}” award category.`);
+
+    const existingNominees = await sql`
+      SELECT id, name
+      FROM award_nominees
+      WHERE category_id=${categoryId}
+      ORDER BY position, id
+    `;
+    const renames = findRenamedAwardOptions(
+      existingNominees as { id: number | string; name: string }[],
+      question.options,
+    );
+    for (const rename of renames) {
+      await sql`
+        UPDATE award_nominees
+        SET name=${rename.to}, position=${rename.position}
+        WHERE id=${rename.id} AND category_id=${categoryId}
+      `;
+      renamedOptions.push({ category: question.title, from: rename.from, to: rename.to });
+    }
 
     const optionsJson = JSON.stringify(question.options.map((name, index) => ({
       name,
@@ -195,6 +227,8 @@ export async function importGoogleFormOptions(cycleId: number, questions: Google
     categoriesImported: questions.length,
     optionsAdded,
     optionsAlreadyPresent,
+    shuffleCategoriesImported: questions.filter((question) => question.shuffleOptions).length,
+    renamedOptions,
   };
 }
 

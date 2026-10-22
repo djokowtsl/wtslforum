@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { getSession } from '@/lib/auth';
 import { sql } from '@/lib/db';
-import { addNominee, removeNominee, setVotingOpen, setVotingClosesAt, importGoogleFormOptions, importGoogleFormVotes, getSiteAwardVotesForCycle } from '@/lib/awards';
+import { addNominee, removeNominee, setVotingOpen, setVotingClosesAt, setCategoryShuffleOverride, importGoogleFormOptions, importGoogleFormVotes, getSiteAwardVotesForCycle } from '@/lib/awards';
 import { fetchPublicGoogleFormOptions } from '@/lib/googleFormOptions';
 import { syncAwardVotesToSheet } from '@/lib/awardVoteSheetSync';
 
@@ -52,6 +52,7 @@ export async function POST(req: NextRequest) {
             slug: question.slug,
             optionCount: question.options.length,
             allowWriteIn: question.allowWriteIn,
+            shuffleOptions: question.shuffleOptions,
             examples: question.options.slice(0, 3),
           })),
         });
@@ -135,6 +136,19 @@ export async function POST(req: NextRequest) {
 
     const updated = await setVotingClosesAt(cycleId, closesAt);
     if (!updated) return NextResponse.json({ error: 'Award cycle not found.' }, { status: 404 });
+    return NextResponse.json({ ok: true });
+  }
+
+  if (action === 'set-category-shuffle-override') {
+    const cycleId = Number(body?.cycleId);
+    const categoryId = Number(body?.categoryId);
+    const shuffleOptions = body?.shuffleOptions;
+    if (!cycleId || !categoryId) return NextResponse.json({ error: 'Choose an award cycle and category.' }, { status: 400 });
+    if (shuffleOptions !== null && typeof shuffleOptions !== 'boolean') {
+      return NextResponse.json({ error: 'Choose whether to shuffle this category or use its imported setting.' }, { status: 400 });
+    }
+    const updated = await setCategoryShuffleOverride(cycleId, categoryId, shuffleOptions);
+    if (!updated) return NextResponse.json({ error: 'Award category not found.' }, { status: 404 });
     return NextResponse.json({ ok: true });
   }
 

@@ -1,12 +1,31 @@
 'use client';
 
-import { useState } from 'react';
+import { useMemo, useState } from 'react';
 import { CATEGORY_ICONS } from '@/lib/awardIcons';
+import { getAwardShuffleSetting, shuffleAwardOptions } from '@/lib/awardOptionShuffle';
 
 type Nominee = { id: number; name: string };
-type Category = { id: number; name: string; description: string; allow_write_in: boolean; nominees: Nominee[] };
+type Category = {
+  id: number;
+  name: string;
+  description: string;
+  allow_write_in: boolean;
+  shuffle_options: boolean;
+  shuffle_options_override: boolean | null;
+  nominees: Nominee[];
+};
 
-export default function AwardVoteForm({ categories, initialVotes }: { categories: Category[]; initialVotes: Record<number, { nomineeId: number | null; writeIn: string | null }> }) {
+export default function AwardVoteForm({ categories, initialVotes, shuffleSeed }: {
+  categories: Category[];
+  initialVotes: Record<number, { nomineeId: number | null; writeIn: string | null }>;
+  shuffleSeed: string;
+}) {
+  const displayCategories = useMemo(() => categories.map((category) => ({
+    ...category,
+    nominees: getAwardShuffleSetting(category)
+      ? shuffleAwardOptions(category.nominees, `${shuffleSeed}:${category.id}`)
+      : category.nominees,
+  })), [categories, shuffleSeed]);
   const [choices, setChoices] = useState<Record<number, { nomineeId: number | null; writeIn: string }>>(() =>
     Object.fromEntries(categories.map((c) => [c.id, { nomineeId: initialVotes[c.id]?.nomineeId ?? null, writeIn: initialVotes[c.id]?.writeIn ?? '' }]))
   );
@@ -37,7 +56,7 @@ export default function AwardVoteForm({ categories, initialVotes }: { categories
 
   return (
     <div style={{ display: 'grid', gap: 18 }}>
-      {categories.map((c) => (
+      {displayCategories.map((c) => (
         <div className="forum-list" key={c.id} style={{ padding: 16 }}>
           <div className="award-category-title">
             <span className="award-category-icon" aria-hidden="true">{CATEGORY_ICONS[c.name] ?? '★'}</span>

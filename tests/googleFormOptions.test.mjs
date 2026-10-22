@@ -13,13 +13,13 @@ function choice(value) {
   return [value, null, null, null, 0];
 }
 
-function question(id, title, type, options = []) {
+function question(id, title, type, options = [], shuffleOptions = false) {
   return [
     id,
     title,
     null,
     type,
-    options.length ? [[id + 100, options.map(choice), 1, null, null]] : null,
+    options.length ? [[id + 100, options.map(choice), 1, null, null, null, null, null, shuffleOptions ? 1 : 0]] : null,
   ];
 }
 
@@ -29,7 +29,7 @@ function pageFor(questions) {
 
 test('reads single-choice and dropdown award options without treating blank Other rows as nominees', () => {
   const html = pageFor([
-    question(1, 'Fans Favorite Award', 2, ['Debuffy', '', 'Arv', 'arv']),
+    question(1, 'Fans Favorite Award', 2, ['Debuffy', '', 'Arv', 'arv'], true),
     question(2, 'Best Dressed', 4, ['qoodL', 'Dunlop']),
     question(3, 'Email address', 0, ['not a choice']),
   ]);
@@ -40,12 +40,14 @@ test('reads single-choice and dropdown award options without treating blank Othe
       slug: 'fans-favourite',
       options: ['Debuffy', 'Arv'],
       allowWriteIn: true,
+      shuffleOptions: true,
     },
     {
       title: 'Best Dressed',
       slug: 'best-dressed-player',
       options: ['qoodL', 'Dunlop'],
       allowWriteIn: false,
+      shuffleOptions: false,
     },
   ]);
 });
@@ -60,6 +62,17 @@ test('normalizes category aliases while keeping other category slugs readable', 
 test('imports apply the form write-in setting instead of preserving the database default', () => {
   assert.match(awardsSource, /allow_write_in=EXCLUDED\.allow_write_in/);
   assert.doesNotMatch(awardsSource, /allow_write_in=award_categories\.allow_write_in\s+OR/);
+});
+
+test('re-import adds new questions and choices without removing existing nominees', () => {
+  const importFunction = awardsSource.match(/export async function importGoogleFormOptions[\s\S]*?\n}\n/)[0];
+  assert.match(importFunction, /INSERT INTO award_categories[\s\S]*ON CONFLICT \(cycle_id,slug\)/);
+  assert.match(importFunction, /INSERT INTO award_nominees[\s\S]*WHERE NOT EXISTS/);
+  assert.doesNotMatch(importFunction, /DELETE FROM/);
+});
+
+test('voters can still update their existing vote after a form re-import', () => {
+  assert.match(awardsSource, /ON CONFLICT \(category_id,source,voter_key\)\s*DO UPDATE SET nominee_id=EXCLUDED\.nominee_id/s);
 });
 
 test('accepts only public Google Form response links', () => {

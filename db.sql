@@ -266,6 +266,7 @@ CREATE TABLE IF NOT EXISTS award_categories (
   id BIGSERIAL PRIMARY KEY, cycle_id BIGINT NOT NULL REFERENCES award_cycles(id) ON DELETE CASCADE,
   name TEXT NOT NULL, slug TEXT NOT NULL, description TEXT NOT NULL DEFAULT '',
   allow_write_in BOOLEAN NOT NULL DEFAULT TRUE, position INT NOT NULL DEFAULT 0,
+  shuffle_options BOOLEAN NOT NULL DEFAULT FALSE, shuffle_options_override BOOLEAN,
   UNIQUE(cycle_id,slug)
 );
 CREATE TABLE IF NOT EXISTS award_nominees (

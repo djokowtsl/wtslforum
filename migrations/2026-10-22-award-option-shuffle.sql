@@ -1,0 +1,3 @@
+ALTER TABLE award_categories
+  ADD COLUMN IF NOT EXISTS shuffle_options BOOLEAN NOT NULL DEFAULT FALSE,
+  ADD COLUMN IF NOT EXISTS shuffle_options_override BOOLEAN;
