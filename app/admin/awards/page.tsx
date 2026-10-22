@@ -2,6 +2,7 @@ import { redirect } from 'next/navigation';
 import { safe } from '@/lib/db';
 import { getSession } from '@/lib/auth';
 import { getActiveCycle, getCategories, getNomineesForCategories, getTally, getWriteInTally } from '@/lib/awards';
+import { awardVoteSheetSyncStatus } from '@/lib/awardVoteSheetSync';
 import AwardAdminPanel from '@/components/AwardAdminPanel';
 import PageHero from '@/components/PageHero';
 
@@ -37,7 +38,12 @@ export default async function AdminAwards() {
     <>
       <PageHero eyebrow="Staff" title="Awards admin">Manage {cycle.season}&apos;s nominees and voting.</PageHero>
       <main className="container">
-        <AwardAdminPanel cycleId={cycle.id} votingOpen={cycle.voting_open} categories={categoriesWithData} />
+        <AwardAdminPanel
+          cycleId={cycle.id}
+          votingOpen={cycle.voting_open}
+          categories={categoriesWithData}
+          sheetSyncConfigured={awardVoteSheetSyncStatus() === 'ready'}
+        />
       </main>
     </>
   );
