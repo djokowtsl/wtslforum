@@ -4,7 +4,7 @@ import { useMemo, useState } from 'react';
 import { CheckCircle2, CircleAlert, LoaderCircle, Send } from 'lucide-react';
 import { CATEGORY_ICONS } from '@/lib/awardIcons';
 import { getAwardShuffleSetting, shuffleAwardOptions } from '@/lib/awardOptionShuffle';
-import { getAwardVoteProgress } from '@/lib/awardVoteProgress';
+import { getAwardVoteProgress, getNextUnansweredRequiredCategoryId } from '@/lib/awardVoteProgress';
 
 type Nominee = { id: number; name: string };
 type Category = {
@@ -72,20 +72,32 @@ export default function AwardVoteForm({ categories, initialVotes, initialFormSub
       setSavedVotes((current) => ({ ...current, [categoryId]: true }));
       setDirty((current) => ({ ...current, [categoryId]: false }));
       setBallotSubmitted(data.ballotSubmitted === true);
+      if (data.formSyncStatus === 'incomplete') {
+        const nextRequiredCategoryId = getNextUnansweredRequiredCategoryId(categories, savedVotes, dirty, categoryId);
+        if (nextRequiredCategoryId !== null) {
+          window.requestAnimationFrame(() => {
+            const nextQuestion = document.getElementById(`award-category-${nextRequiredCategoryId}`);
+            nextQuestion?.scrollIntoView({
+              behavior: window.matchMedia('(prefers-reduced-motion: reduce)').matches ? 'auto' : 'smooth',
+              block: 'start',
+            });
+          });
+        }
+      }
     } catch {
       setStatus((current) => ({ ...current, [categoryId]: 'error' }));
     }
   }
 
-  const requiredCategories = categories.filter((category) => category.is_required);
-  const optionalCategories = categories.filter((category) => !category.is_required);
   const showSubmitted = progress.isSubmitted && ballotSubmitted;
   const showSyncPending = progress.isSubmitted && !ballotSubmitted && !Object.values(dirty).some(Boolean);
   const completionText = progress.allQuestionsSaved
-    ? 'Every question has a saved vote. You can change any choice below and save it again.'
+    ? 'Every question has a saved answer. You can change any choice below.'
     : Object.values(dirty).some(Boolean)
-      ? 'Your required votes are saved. Save any changes below to update your ballot.'
-      : 'Your required votes are saved. Optional questions can be left blank or answered later; saved edits replace your current Form response.';
+      ? 'Your edits are not saved yet. Save your choices below to update your ballot.'
+      : progress.isSubmitted
+        ? 'Your ballot is submitted. You can answer remaining questions or update saved choices below.'
+        : 'Answer as many questions as you can. Questions marked * must be answered before your ballot can be submitted.';
 
   return (
     <div style={{ display: 'grid', gap: 18 }}>
@@ -104,23 +116,16 @@ export default function AwardVoteForm({ categories, initialVotes, initialFormSub
               Awards ballot
             </div>
             <div style={{ marginTop: 5, fontSize: 16, fontWeight: 700 }}>
-              {requiredCategories.length > 0
-                ? `${progress.requiredSavedCount} of ${requiredCategories.length} required questions saved`
-                : `${progress.optionalSavedCount} of ${optionalCategories.length} optional questions answered`}
+              {progress.savedQuestionCount} of {progress.questionCount} questions answered
             </div>
           </div>
-          {optionalCategories.length > 0 && (
-            <span style={{ color: 'var(--muted)', fontSize: 13 }}>
-              {progress.optionalSavedCount} of {optionalCategories.length} optional answered
-            </span>
-          )}
         </div>
         <div
           role="progressbar"
-          aria-label={requiredCategories.length > 0 ? 'Required award questions saved' : 'Optional award questions answered'}
+          aria-label="Award questions answered"
           aria-valuemin={0}
-          aria-valuemax={Math.max(1, requiredCategories.length || optionalCategories.length)}
-          aria-valuenow={requiredCategories.length > 0 ? progress.requiredSavedCount : progress.optionalSavedCount}
+          aria-valuemax={Math.max(1, progress.questionCount)}
+          aria-valuenow={progress.savedQuestionCount}
           style={{ height: 6, marginTop: 14, overflow: 'hidden', borderRadius: 10, background: 'var(--panel-3)' }}
         >
           <div style={{
@@ -132,13 +137,13 @@ export default function AwardVoteForm({ categories, initialVotes, initialFormSub
           }} />
         </div>
         <p style={{ margin: '12px 0 0', color: 'var(--soft)', fontSize: 13 }}>
-          Choose an option, then press <b>Save my vote</b>. Your choice is not saved until you press the button. Once required votes are saved, the full ballot is submitted to Google Forms.
+          Choose an option, then press <b>Save my vote</b>. Your choice is not saved until you press the button. Answer as many questions as you can; questions marked * must be answered before your ballot can be submitted.
         </p>
       </section>
 
       {showSyncPending && (
         <div role="status" className="notice" style={{ borderColor: '#ffb36b' }}>
-          All required votes are saved in the Forum, but the ballot has not been confirmed in Google Forms yet. Your choices remain saved, and an admin can retry the sync.
+          Your choices are saved, but we couldn&apos;t finish submitting your ballot yet. Please try again later.
         </div>
       )}
 
@@ -171,25 +176,19 @@ export default function AwardVoteForm({ categories, initialVotes, initialFormSub
         const buttonText = savedVotes[c.id] ? 'Update my vote' : 'Save my vote';
 
         return (
-          <section className="forum-list" key={c.id} style={{ padding: 18 }}>
+          <section
+            className="forum-list"
+            id={`award-category-${c.id}`}
+            key={c.id}
+            style={{ padding: 18, scrollMarginTop: 96 }}
+          >
             <div className="award-category-title">
               <span className="award-category-icon" aria-hidden="true">{CATEGORY_ICONS[c.name] ?? '★'}</span>
               <div style={{ flex: 1, minWidth: 0 }}>
-                <strong>{c.name}</strong>
-                <div style={{
-                  display: 'inline-flex',
-                  marginTop: 7,
-                  padding: '4px 8px',
-                  border: `1px solid ${c.is_required ? 'rgba(34,194,218,.35)' : 'var(--line-2)'}`,
-                  borderRadius: 999,
-                  color: c.is_required ? 'var(--cyan)' : 'var(--muted)',
-                  fontSize: 10.5,
-                  fontWeight: 800,
-                  letterSpacing: '.08em',
-                  textTransform: 'uppercase',
-                }}>
-                  {c.is_required ? 'Required' : 'Optional'}
-                </div>
+                <strong>
+                  {c.name}
+                  {c.is_required && <span aria-label="Must answer before submitting" title="Must answer before submitting" style={{ marginLeft: 3, color: 'var(--muted)', fontSize: 13, fontWeight: 500 }}>*</span>}
+                </strong>
               </div>
               {voteIsSaved && <CheckCircle2 size={20} color="var(--lime)" aria-label="Vote saved" style={{ flex: 'none' }} />}
             </div>
@@ -283,12 +282,12 @@ export default function AwardVoteForm({ categories, initialVotes, initialFormSub
               <span id={`award-save-help-${c.id}`} style={{ color: 'var(--muted)', fontSize: 13 }}>
                 {hasChoice
                   ? dirty[c.id] ? 'This selection is not saved yet.' : 'Your current vote is saved.'
-                  : c.is_required ? 'Choose an option to save your required vote.' : 'Choose an option to answer, or leave this optional question blank.'}
+                  : 'Choose an option to add your answer.'}
               </span>
-              {categoryStatus === 'saved' && <span role="status" style={{ color: 'var(--lime)', fontSize: 13, fontWeight: 700 }}>Vote saved; ballot submitted to Google Forms.</span>}
-              {categoryStatus === 'saved-incomplete' && <span role="status" style={{ color: 'var(--muted)', fontSize: 13 }}>Vote saved in the Forum. Finish required questions to submit the ballot.</span>}
-              {categoryStatus === 'saved-no-sync' && <span role="status" style={{ color: 'var(--muted)', fontSize: 13 }}>Vote saved in the Forum, but Google Form sync is not configured.</span>}
-              {categoryStatus === 'saved-sync-error' && <span role="status" style={{ color: '#ffb36b', fontSize: 13 }}>Vote saved in the Forum, but Google Forms sync failed. An admin can retry it.</span>}
+              {categoryStatus === 'saved' && <span role="status" style={{ color: 'var(--lime)', fontSize: 13, fontWeight: 700 }}>Vote saved; ballot submitted.</span>}
+              {categoryStatus === 'saved-incomplete' && <span role="status" style={{ color: 'var(--muted)', fontSize: 13 }}>Vote saved. Answer every question marked * to submit the ballot.</span>}
+              {categoryStatus === 'saved-no-sync' && <span role="status" style={{ color: 'var(--muted)', fontSize: 13 }}>Vote saved.</span>}
+              {categoryStatus === 'saved-sync-error' && <span role="status" style={{ color: '#ffb36b', fontSize: 13 }}>Vote saved.</span>}
               {categoryStatus === 'error' && (
                 <span role="alert" style={{ display: 'inline-flex', alignItems: 'center', gap: 6, color: '#ff8f9a', fontSize: 13 }}>
                   <CircleAlert size={16} aria-hidden="true" /> Couldn&apos;t save your vote. Please try again.

@@ -25,6 +25,7 @@ test('Forum public awards page does not display poll totals', () => {
 test('successful award votes show a concise confirmation', () => {
   assert.match(voteForm, /<span role="status"[^>]*>Saved<\/span>/);
   assert.doesNotMatch(voteForm, /Saved to the Forum and synced/);
+  assert.doesNotMatch(voteForm, /Google Forms?/i);
 });
 
 test('admin sync and CSV import endpoints do not return vote counts or response rows', () => {
