@@ -21,13 +21,13 @@ type FormPreview = {
   questions: { title: string; slug: string; optionCount: number; allowWriteIn: boolean; shuffleOptions: boolean; isRequired: boolean; examples: string[] }[];
 };
 
-export default function AwardAdminPanel({ cycleId, votingOpen, categories, sheetSyncConfigured = false }: { cycleId: number; votingOpen: boolean; categories: Category[]; sheetSyncConfigured?: boolean }) {
+export default function AwardAdminPanel({ cycleId, votingOpen, categories, formSyncConfigured = false }: { cycleId: number; votingOpen: boolean; categories: Category[]; formSyncConfigured?: boolean }) {
   const router = useRouter();
   const [busy, setBusy] = useState(false);
   const [newNominee, setNewNominee] = useState<Record<number, string>>({});
   const [csv, setCsv] = useState<Record<number, string>>({});
   const [err, setErr] = useState('');
-  const [sheetSyncMessage, setSheetSyncMessage] = useState('');
+  const [formSyncMessage, setFormSyncMessage] = useState('');
   const [formUrl, setFormUrl] = useState('');
   const [formPreview, setFormPreview] = useState<FormPreview | null>(null);
   const [formMessage, setFormMessage] = useState('');
@@ -78,28 +78,32 @@ export default function AwardAdminPanel({ cycleId, votingOpen, categories, sheet
     }
   }
 
-  async function syncVotesToSheet() {
+  async function syncForumBallotsToForm() {
     setBusy(true);
     setErr('');
-    setSheetSyncMessage('');
-    let afterVoteId = '0';
+    setFormSyncMessage('');
+    let afterBallotCursor = '0';
+    let skippedIncomplete = false;
     try {
       while (true) {
         const res = await fetch('/api/admin/awards', {
           method: 'POST',
           headers: { 'content-type': 'application/json' },
-          body: JSON.stringify({ action: 'sync-sheet-batch', cycleId, afterVoteId }),
+          body: JSON.stringify({ action: 'sync-form-batch', cycleId, afterBallotCursor }),
         });
         const data = await res.json();
-        if (!res.ok) throw new Error(data.error || 'Could not sync Forum votes.');
-        afterVoteId = String(data.nextAfterVoteId ?? afterVoteId);
-        setSheetSyncMessage('Syncing Forum votes to Google Sheets…');
+        if (!res.ok) throw new Error(data.error || 'Could not submit Forum ballots to Google Forms.');
+        afterBallotCursor = String(data.nextAfterBallotCursor ?? afterBallotCursor);
+        skippedIncomplete ||= data.skippedIncomplete === true;
+        setFormSyncMessage('Syncing complete Forum ballots to the linked Google Form…');
         if (data.done) break;
       }
-      setSheetSyncMessage('Forum vote sync completed.');
+      setFormSyncMessage(skippedIncomplete
+        ? 'Backfill completed. Ballots missing required answers remain saved in the Forum and were not submitted.'
+        : 'Forum ballot backfill completed. The previous “Forum Votes” tab was left untouched.');
       router.refresh();
     } catch (e) {
-      setErr(e instanceof Error ? e.message : 'Could not sync Forum votes.');
+      setErr(e instanceof Error ? e.message : 'Could not submit Forum ballots to Google Forms.');
     } finally {
       setBusy(false);
     }
@@ -118,16 +122,16 @@ export default function AwardAdminPanel({ cycleId, votingOpen, categories, sheet
       </button>
 
       <section className="forum-list" style={{ marginTop: 20, padding: 16 }} aria-labelledby="award-sheet-sync-title">
-        <h4 id="award-sheet-sync-title" style={{ margin: '0 0 6px' }}>Google Sheets vote sync</h4>
+        <h4 id="award-sheet-sync-title" style={{ margin: '0 0 6px' }}>Native Google Form response sync</h4>
         <p className="muted" style={{ margin: '0 0 12px', fontSize: 13 }}>
-          {sheetSyncConfigured
-            ? 'Forum votes are copied without Discord IDs to a separate “Forum Votes” tab. Use this to backfill votes or retry a failed sync.'
-            : 'The Apps Script bridge and Vercel settings are not configured yet. Forum voting remains available; votes will not reach the spreadsheet until setup is complete.'}
+          {formSyncConfigured
+            ? 'Complete Forum ballots are submitted as native responses to the linked Google Form. Later edits replace the previous Forum-managed response. Existing rows in the old “Forum Votes” tab are not changed.'
+            : 'The Apps Script bridge and server settings are not configured yet. Forum voting remains available; ballots will not reach Google Forms until setup is complete.'}
         </p>
-        <button className="btn btn-sm" disabled={busy || !sheetSyncConfigured} onClick={syncVotesToSheet}>
-          {busy ? 'Syncing…' : 'Sync Forum votes now'}
+        <button className="btn btn-sm" disabled={busy || !formSyncConfigured} onClick={syncForumBallotsToForm}>
+          {busy ? 'Syncing…' : 'Backfill Forum ballots to Google Form'}
         </button>
-        {sheetSyncMessage && <p role="status" style={{ margin: '10px 0 0', fontSize: 13 }}>{sheetSyncMessage}</p>}
+        {formSyncMessage && <p role="status" style={{ margin: '10px 0 0', fontSize: 13 }}>{formSyncMessage}</p>}
       </section>
 
       <section className="forum-list" style={{ marginTop: 20, padding: 16 }} aria-labelledby="award-form-import-title">

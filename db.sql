@@ -268,6 +268,7 @@ CREATE TABLE IF NOT EXISTS award_categories (
   allow_write_in BOOLEAN NOT NULL DEFAULT TRUE, position INT NOT NULL DEFAULT 0,
   shuffle_options BOOLEAN NOT NULL DEFAULT FALSE, shuffle_options_override BOOLEAN,
   is_required BOOLEAN NOT NULL DEFAULT TRUE,
+  form_question_id TEXT,
   UNIQUE(cycle_id,slug)
 );
 CREATE TABLE IF NOT EXISTS award_nominees (
@@ -286,6 +287,15 @@ CREATE TABLE IF NOT EXISTS award_votes (
 );
 CREATE INDEX IF NOT EXISTS award_categories_cycle_idx ON award_categories(cycle_id);
 CREATE INDEX IF NOT EXISTS award_votes_category_idx ON award_votes(category_id);
+CREATE TABLE IF NOT EXISTS award_form_response_state (
+  cycle_id BIGINT NOT NULL REFERENCES award_cycles(id) ON DELETE CASCADE,
+  voter_key TEXT NOT NULL,
+  response_id TEXT NOT NULL,
+  response_fingerprint CHAR(64) NOT NULL,
+  response_updated_at TIMESTAMPTZ NOT NULL,
+  synced_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+  PRIMARY KEY (cycle_id, voter_key)
+);
 
 -- Seed this season's award categories (voting stays closed until an admin opens it).
 DO $$

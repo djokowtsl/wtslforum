@@ -17,11 +17,12 @@ type Category = {
   is_required: boolean;
   nominees: Nominee[];
 };
-type SaveStatus = 'idle' | 'saving' | 'saved' | 'saved-no-sync' | 'saved-sync-error' | 'error';
+type SaveStatus = 'idle' | 'saving' | 'saved' | 'saved-incomplete' | 'saved-no-sync' | 'saved-sync-error' | 'error';
 
-export default function AwardVoteForm({ categories, initialVotes, shuffleSeed }: {
+export default function AwardVoteForm({ categories, initialVotes, initialFormSubmitted, shuffleSeed }: {
   categories: Category[];
   initialVotes: Record<number, { nomineeId: number | null; writeIn: string | null }>;
+  initialFormSubmitted: boolean;
   shuffleSeed: string;
 }) {
   const displayCategories = useMemo(() => categories.map((category) => ({
@@ -38,12 +39,14 @@ export default function AwardVoteForm({ categories, initialVotes, shuffleSeed }:
     Object.fromEntries(categories.map((c) => [c.id, Boolean(initialVotes[c.id])]))
   );
   const [dirty, setDirty] = useState<Record<number, boolean>>({});
+  const [ballotSubmitted, setBallotSubmitted] = useState(initialFormSubmitted);
   const progress = getAwardVoteProgress(categories, savedVotes, dirty);
 
   function updateChoice(categoryId: number, choice: { nomineeId: number | null; writeIn: string }) {
     setChoices((current) => ({ ...current, [categoryId]: choice }));
     setDirty((current) => ({ ...current, [categoryId]: true }));
     setStatus((current) => ({ ...current, [categoryId]: 'idle' }));
+    setBallotSubmitted(false);
   }
 
   async function vote(categoryId: number) {
@@ -58,14 +61,17 @@ export default function AwardVoteForm({ categories, initialVotes, shuffleSeed }:
       const data = await res.json();
       if (!res.ok) throw new Error(data.error || 'Vote failed');
 
-      const nextStatus: SaveStatus = data.sheetSyncStatus === 'synced'
+      const nextStatus: SaveStatus = data.formSyncStatus === 'synced'
         ? 'saved'
-        : data.sheetSyncStatus === 'not_configured' || data.sheetSyncStatus === 'misconfigured'
-          ? 'saved-no-sync'
-          : 'saved-sync-error';
+        : data.formSyncStatus === 'incomplete'
+          ? 'saved-incomplete'
+          : data.formSyncStatus === 'not_configured' || data.formSyncStatus === 'misconfigured'
+            ? 'saved-no-sync'
+            : 'saved-sync-error';
       setStatus((current) => ({ ...current, [categoryId]: nextStatus }));
       setSavedVotes((current) => ({ ...current, [categoryId]: true }));
       setDirty((current) => ({ ...current, [categoryId]: false }));
+      setBallotSubmitted(data.ballotSubmitted === true);
     } catch {
       setStatus((current) => ({ ...current, [categoryId]: 'error' }));
     }
@@ -73,12 +79,13 @@ export default function AwardVoteForm({ categories, initialVotes, shuffleSeed }:
 
   const requiredCategories = categories.filter((category) => category.is_required);
   const optionalCategories = categories.filter((category) => !category.is_required);
-  const showSubmitted = progress.isSubmitted;
+  const showSubmitted = progress.isSubmitted && ballotSubmitted;
+  const showSyncPending = progress.isSubmitted && !ballotSubmitted && !Object.values(dirty).some(Boolean);
   const completionText = progress.allQuestionsSaved
     ? 'Every question has a saved vote. You can change any choice below and save it again.'
     : Object.values(dirty).some(Boolean)
       ? 'Your required votes are saved. Save any changes below to update your ballot.'
-      : 'Your required votes are saved. Optional questions can be left blank or answered later.';
+      : 'Your required votes are saved. Optional questions can be left blank or answered later; saved edits replace your current Form response.';
 
   return (
     <div style={{ display: 'grid', gap: 18 }}>
@@ -125,9 +132,15 @@ export default function AwardVoteForm({ categories, initialVotes, shuffleSeed }:
           }} />
         </div>
         <p style={{ margin: '12px 0 0', color: 'var(--soft)', fontSize: 13 }}>
-          Choose an option, then press <b>Save my vote</b>. Your choice is not saved until you press the button.
+          Choose an option, then press <b>Save my vote</b>. Your choice is not saved until you press the button. Once required votes are saved, the full ballot is submitted to Google Forms.
         </p>
       </section>
+
+      {showSyncPending && (
+        <div role="status" className="notice" style={{ borderColor: '#ffb36b' }}>
+          All required votes are saved in the Forum, but the ballot has not been confirmed in Google Forms yet. Your choices remain saved, and an admin can retry the sync.
+        </div>
+      )}
 
       {showSubmitted && (
         <div
@@ -272,9 +285,10 @@ export default function AwardVoteForm({ categories, initialVotes, shuffleSeed }:
                   ? dirty[c.id] ? 'This selection is not saved yet.' : 'Your current vote is saved.'
                   : c.is_required ? 'Choose an option to save your required vote.' : 'Choose an option to answer, or leave this optional question blank.'}
               </span>
-              {categoryStatus === 'saved' && <span role="status" style={{ color: 'var(--lime)', fontSize: 13, fontWeight: 700 }}>Vote saved</span>}
-              {categoryStatus === 'saved-no-sync' && <span role="status" style={{ color: 'var(--muted)', fontSize: 13 }}>Vote saved to the Forum. Spreadsheet sync is not configured yet.</span>}
-              {categoryStatus === 'saved-sync-error' && <span role="status" style={{ color: '#ffb36b', fontSize: 13 }}>Vote saved to the Forum, but spreadsheet sync failed. An admin can retry it.</span>}
+              {categoryStatus === 'saved' && <span role="status" style={{ color: 'var(--lime)', fontSize: 13, fontWeight: 700 }}>Vote saved; ballot submitted to Google Forms.</span>}
+              {categoryStatus === 'saved-incomplete' && <span role="status" style={{ color: 'var(--muted)', fontSize: 13 }}>Vote saved in the Forum. Finish required questions to submit the ballot.</span>}
+              {categoryStatus === 'saved-no-sync' && <span role="status" style={{ color: 'var(--muted)', fontSize: 13 }}>Vote saved in the Forum, but Google Form sync is not configured.</span>}
+              {categoryStatus === 'saved-sync-error' && <span role="status" style={{ color: '#ffb36b', fontSize: 13 }}>Vote saved in the Forum, but Google Forms sync failed. An admin can retry it.</span>}
               {categoryStatus === 'error' && (
                 <span role="alert" style={{ display: 'inline-flex', alignItems: 'center', gap: 6, color: '#ff8f9a', fontSize: 13 }}>
                   <CircleAlert size={16} aria-hidden="true" /> Couldn&apos;t save your vote. Please try again.

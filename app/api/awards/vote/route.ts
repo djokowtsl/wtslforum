@@ -1,9 +1,9 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { getSession } from '@/lib/auth';
 import { sql } from '@/lib/db';
-import { castVote, closeExpiredAwardCycles } from '@/lib/awards';
+import { castVote, closeExpiredAwardCycles, getSiteAwardBallot, saveAwardFormResponseState } from '@/lib/awards';
 import { isAwardVotingOpen } from '@/lib/awardVoting';
-import { syncAwardVotesToSheet } from '@/lib/awardVoteSheetSync';
+import { awardFormBallotFingerprint, syncAwardBallotsToForm } from '@/lib/awardVoteFormSync';
 
 export const dynamic = 'force-dynamic';
 
@@ -19,7 +19,7 @@ export async function POST(req: NextRequest) {
 
   await closeExpiredAwardCycles();
   const rows = await sql`
-    SELECT c.id, c.allow_write_in, cy.voting_open, cy.voting_closes_at
+    SELECT c.id, c.cycle_id, c.allow_write_in, cy.voting_open, cy.voting_closes_at
     FROM award_categories c
     JOIN award_cycles cy ON cy.id = c.cycle_id
     WHERE c.id = ${categoryId}
@@ -35,9 +35,37 @@ export async function POST(req: NextRequest) {
   const vote = await castVote(categoryId, user.discordId, nomineeId, nomineeId ? null : writeIn);
   if (!vote) return NextResponse.json({ error: 'Voting is closed for this award.' }, { status: 403 });
 
-  const sheetSync = await syncAwardVotesToSheet([vote]);
-  if (sheetSync.status === 'failed') {
-    console.warn('[awards] vote saved but spreadsheet sync failed', { voteId: vote.voteId });
+  const ballot = await getSiteAwardBallot(Number(category.cycle_id), user.discordId);
+  if (!ballot || !ballot.isComplete) {
+    return NextResponse.json({ ok: true, formSyncStatus: 'incomplete', ballotSubmitted: false });
   }
-  return NextResponse.json({ ok: true, sheetSyncStatus: sheetSync.status });
+
+  const fingerprint = awardFormBallotFingerprint(ballot.season, ballot.answers);
+  if (ballot.responseFingerprint === fingerprint && ballot.previousResponseId) {
+    return NextResponse.json({ ok: true, formSyncStatus: 'synced', ballotSubmitted: true });
+  }
+
+  const sync = await syncAwardBallotsToForm([ballot]);
+  const result = sync.results[0];
+  if (sync.status !== 'synced' || !result || result.status === 'failed' || result.status === 'stale' || !result.responseId) {
+    console.warn('[awards] vote saved but native Google Form submission failed', { voteId: vote.voteId });
+    return NextResponse.json({
+      ok: true,
+      formSyncStatus: sync.status === 'not_configured' || sync.status === 'misconfigured' ? sync.status : 'failed',
+      ballotSubmitted: false,
+    });
+  }
+
+  const saved = await saveAwardFormResponseState(
+    Number(category.cycle_id),
+    user.discordId,
+    result.responseId,
+    result.fingerprint ?? fingerprint,
+    result.updatedAt ?? ballot.updatedAt,
+  );
+  if (!saved.length) {
+    return NextResponse.json({ ok: true, formSyncStatus: 'failed', ballotSubmitted: false });
+  }
+
+  return NextResponse.json({ ok: true, formSyncStatus: 'synced', ballotSubmitted: true });
 }

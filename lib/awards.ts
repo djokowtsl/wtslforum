@@ -1,7 +1,61 @@
 import { sql } from './db';
 import type { GoogleFormOptionQuestion } from './googleFormOptions';
 import { findRenamedAwardOptions } from './awardOptionMatching';
-import type { AwardVoteSheetRow } from './awardVoteSheetSync';
+import type { AwardFormBallot, AwardFormAnswer } from './awardVoteFormSync';
+
+export type SiteAwardBallot = AwardFormBallot & {
+  syncCursor: string;
+  isComplete: boolean;
+  responseFingerprint: string | null;
+  responseUpdatedAt: string | null;
+};
+
+type AwardBallotRow = {
+  voterKey: string;
+  syncCursor: string;
+  season: string;
+  category: string;
+  questionId: string | null;
+  isRequired: boolean;
+  answer: string | null;
+  updatedAt: string | null;
+  previousResponseId: string | null;
+  responseFingerprint: string | null;
+  responseUpdatedAt: string | null;
+};
+
+function groupAwardBallotRows(rows: AwardBallotRow[]): SiteAwardBallot[] {
+  const byVoter = new Map<string, SiteAwardBallot>();
+  const requiredMissing = new Set<string>();
+
+  for (const row of rows) {
+    let ballot = byVoter.get(row.voterKey);
+    if (!ballot) {
+      ballot = {
+        voterKey: row.voterKey,
+        season: row.season,
+        updatedAt: row.updatedAt ?? '',
+        answers: [],
+        previousResponseId: row.previousResponseId,
+        previousResponseFingerprint: row.responseFingerprint,
+        previousResponseUpdatedAt: row.responseUpdatedAt,
+        responseFingerprint: row.responseFingerprint,
+        responseUpdatedAt: row.responseUpdatedAt,
+        syncCursor: row.syncCursor,
+        isComplete: true,
+      };
+      byVoter.set(row.voterKey, ballot);
+    }
+    if (row.isRequired && !row.answer) requiredMissing.add(row.voterKey);
+    if (row.answer) ballot.answers.push({ category: row.category, answer: row.answer, questionId: row.questionId });
+    if (row.updatedAt && row.updatedAt > ballot.updatedAt) ballot.updatedAt = row.updatedAt;
+  }
+
+  return Array.from(byVoter.values(), (ballot) => ({
+    ...ballot,
+    isComplete: ballot.isComplete && !requiredMissing.has(ballot.voterKey) && ballot.answers.length > 0,
+  }));
+}
 
 export async function getActiveCycle() {
   await closeExpiredAwardCycles();
@@ -41,7 +95,94 @@ export async function getUserVotes(cycleId: number, voterKey: string) {
   `;
 }
 
-export async function castVote(categoryId: number, voterKey: string, nomineeId: number | null, writeIn: string | null): Promise<AwardVoteSheetRow | null> {
+export async function getSiteAwardBallot(cycleId: number, voterKey: string): Promise<SiteAwardBallot | null> {
+  const rows = await sql`
+    SELECT
+      vote.voter_key AS "voterKey",
+      MIN(vote.id) OVER (PARTITION BY vote.voter_key)::text AS "syncCursor",
+      cycle.season,
+      category.name AS category,
+      category.form_question_id AS "questionId",
+      category.is_required AS "isRequired",
+      COALESCE(nominee.name, NULLIF(vote.write_in, '')) AS answer,
+      to_char(MAX(vote.created_at) OVER (PARTITION BY vote.voter_key) AT TIME ZONE 'UTC', 'YYYY-MM-DD"T"HH24:MI:SS.US"Z"') AS "updatedAt",
+      response_state.response_id AS "previousResponseId",
+      response_state.response_fingerprint AS "responseFingerprint",
+      to_char(response_state.response_updated_at AT TIME ZONE 'UTC', 'YYYY-MM-DD"T"HH24:MI:SS.US"Z"') AS "responseUpdatedAt"
+    FROM award_votes AS vote
+    JOIN award_categories AS category ON category.id=vote.category_id
+    JOIN award_cycles AS cycle ON cycle.id=category.cycle_id
+    LEFT JOIN award_nominees AS nominee ON nominee.id=vote.nominee_id
+    LEFT JOIN award_form_response_state AS response_state
+      ON response_state.cycle_id=cycle.id AND response_state.voter_key=vote.voter_key
+    WHERE category.cycle_id=${cycleId}
+      AND vote.source='site'
+      AND vote.voter_key=${voterKey}
+    ORDER BY category.position, category.name
+  `;
+  const ballots = groupAwardBallotRows(rows as unknown as AwardBallotRow[]);
+  return ballots[0] ?? null;
+}
+
+export async function getSiteAwardBallotBatch(cycleId: number, afterCursor: string, limit = 20): Promise<SiteAwardBallot[]> {
+  const rows = await sql`
+    WITH voter_cursors AS (
+      SELECT vote.voter_key, MIN(vote.id) AS sync_cursor
+      FROM award_votes AS vote
+      JOIN award_categories AS category ON category.id=vote.category_id
+      WHERE category.cycle_id=${cycleId} AND vote.source='site'
+      GROUP BY vote.voter_key
+    ),
+    voter_page AS (
+      SELECT voter_key, sync_cursor
+      FROM voter_cursors
+      WHERE sync_cursor > ${afterCursor}::bigint
+      ORDER BY sync_cursor
+      LIMIT ${limit}
+    )
+    SELECT
+      voter_page.voter_key AS "voterKey",
+      voter_page.sync_cursor::text AS "syncCursor",
+      cycle.season,
+      category.name AS category,
+      category.form_question_id AS "questionId",
+      category.is_required AS "isRequired",
+      COALESCE(nominee.name, NULLIF(vote.write_in, '')) AS answer,
+      to_char(MAX(vote.created_at) OVER (PARTITION BY voter_page.voter_key) AT TIME ZONE 'UTC', 'YYYY-MM-DD"T"HH24:MI:SS.US"Z"') AS "updatedAt",
+      response_state.response_id AS "previousResponseId",
+      response_state.response_fingerprint AS "responseFingerprint",
+      to_char(response_state.response_updated_at AT TIME ZONE 'UTC', 'YYYY-MM-DD"T"HH24:MI:SS.US"Z"') AS "responseUpdatedAt"
+    FROM voter_page
+    JOIN award_cycles AS cycle ON cycle.id=${cycleId}
+    JOIN award_categories AS category ON category.cycle_id=cycle.id
+    LEFT JOIN award_votes AS vote
+      ON vote.category_id=category.id AND vote.source='site' AND vote.voter_key=voter_page.voter_key
+    LEFT JOIN award_nominees AS nominee ON nominee.id=vote.nominee_id
+    LEFT JOIN award_form_response_state AS response_state
+      ON response_state.cycle_id=cycle.id AND response_state.voter_key=voter_page.voter_key
+    ORDER BY voter_page.sync_cursor, category.position, category.name
+  `;
+  return groupAwardBallotRows(rows as unknown as AwardBallotRow[]);
+}
+
+export async function saveAwardFormResponseState(cycleId: number, voterKey: string, responseId: string, fingerprint: string, updatedAt: string) {
+  return sql`
+    INSERT INTO award_form_response_state (
+      cycle_id, voter_key, response_id, response_fingerprint, response_updated_at, synced_at
+    )
+    VALUES (${cycleId}, ${voterKey}, ${responseId}, ${fingerprint}, ${updatedAt}::timestamptz, NOW())
+    ON CONFLICT (cycle_id, voter_key)
+    DO UPDATE SET
+      response_id=EXCLUDED.response_id,
+      response_fingerprint=EXCLUDED.response_fingerprint,
+      response_updated_at=EXCLUDED.response_updated_at,
+      synced_at=NOW()
+    WHERE award_form_response_state.response_updated_at <= EXCLUDED.response_updated_at
+    RETURNING response_id
+  `;
+}
+
+export async function castVote(categoryId: number, voterKey: string, nomineeId: number | null, writeIn: string | null): Promise<{ voteId: string } | null> {
   const rows = await sql`
     WITH active_category AS (
       SELECT category.id
@@ -60,40 +201,10 @@ export async function castVote(categoryId: number, voterKey: string, nomineeId: 
       RETURNING id, category_id, nominee_id, write_in, created_at
     )
     SELECT
-      saved_vote.id::text AS "voteId",
-      cycle.season,
-      category.name AS category,
-      nominee.name AS nominee,
-      saved_vote.write_in AS "writeIn",
-      to_char(saved_vote.created_at AT TIME ZONE 'UTC', 'YYYY-MM-DD"T"HH24:MI:SS.US"Z"') AS "castAt"
+      saved_vote.id::text AS "voteId"
     FROM saved_vote
-    JOIN award_categories AS category ON category.id=saved_vote.category_id
-    JOIN award_cycles AS cycle ON cycle.id=category.cycle_id
-    LEFT JOIN award_nominees AS nominee ON nominee.id=saved_vote.nominee_id
   `;
-  return (rows[0] as unknown as AwardVoteSheetRow | undefined) ?? null;
-}
-
-export async function getSiteAwardVotesForCycle(cycleId: number, afterVoteId: string, limit = 100): Promise<AwardVoteSheetRow[]> {
-  const rows = await sql`
-    SELECT
-      vote.id::text AS "voteId",
-      cycle.season,
-      category.name AS category,
-      nominee.name AS nominee,
-      vote.write_in AS "writeIn",
-      to_char(vote.created_at AT TIME ZONE 'UTC', 'YYYY-MM-DD"T"HH24:MI:SS.US"Z"') AS "castAt"
-    FROM award_votes AS vote
-    JOIN award_categories AS category ON category.id=vote.category_id
-    JOIN award_cycles AS cycle ON cycle.id=category.cycle_id
-    LEFT JOIN award_nominees AS nominee ON nominee.id=vote.nominee_id
-    WHERE category.cycle_id=${cycleId}
-      AND vote.source='site'
-      AND vote.id > ${afterVoteId}::bigint
-    ORDER BY vote.id
-    LIMIT ${limit}
-  `;
-  return rows as unknown as AwardVoteSheetRow[];
+  return (rows[0] as { voteId: string } | undefined) ?? null;
 }
 
 export async function setVotingOpen(cycleId: number, open: boolean) {
@@ -157,14 +268,16 @@ export async function importGoogleFormOptions(cycleId: number, questions: Google
 
   for (const [categoryPosition, question] of questions.entries()) {
     const categoryRows = await sql`
-      INSERT INTO award_categories(cycle_id,name,slug,position,allow_write_in,shuffle_options,is_required)
-      VALUES (${cycleId},${question.title},${question.slug},${categoryPosition + 1},${question.allowWriteIn},${question.shuffleOptions},${question.isRequired})
+      INSERT INTO award_categories(cycle_id,name,slug,position,allow_write_in,shuffle_options,is_required,form_question_id)
+      VALUES (${cycleId},${question.title},${question.slug},${categoryPosition + 1},${question.allowWriteIn},${question.shuffleOptions},${question.isRequired},${question.questionId})
       ON CONFLICT (cycle_id,slug)
       DO UPDATE SET
+        name=EXCLUDED.name,
         position=EXCLUDED.position,
         allow_write_in=EXCLUDED.allow_write_in,
         shuffle_options=EXCLUDED.shuffle_options,
-        is_required=EXCLUDED.is_required
+        is_required=EXCLUDED.is_required,
+        form_question_id=COALESCE(EXCLUDED.form_question_id, award_categories.form_question_id)
       RETURNING id
     `;
     const categoryId = categoryRows[0]?.id;

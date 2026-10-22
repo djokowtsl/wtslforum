@@ -1,0 +1,300 @@
+import test from 'node:test';
+import assert from 'node:assert/strict';
+import { createHash } from 'node:crypto';
+import { readFileSync } from 'node:fs';
+import vm from 'node:vm';
+
+const script = readFileSync(new URL('../google-apps-script/award-vote-sync.gs', import.meta.url), 'utf8');
+const secret = 'script-bridge-secret-for-tests-with-32-chars';
+const spreadsheetId = '0123456789abcdefghijklmnopqrstuvwx';
+
+test('Apps Script request limit uses syntax accepted by its editor', () => {
+  assert.match(script, /^const MAX_REQUEST_BYTES = 1000000;$/m);
+});
+
+function createBridge({ collectsEmail = false, unsupportedRequired = false } = {}) {
+  const itemType = {
+    MULTIPLE_CHOICE: 'MULTIPLE_CHOICE',
+    LIST: 'LIST',
+    PAGE_BREAK: 'PAGE_BREAK',
+    SECTION_HEADER: 'SECTION_HEADER',
+    IMAGE: 'IMAGE',
+    VIDEO: 'VIDEO',
+    TEXT: 'TEXT',
+  };
+  let responseSequence = 0;
+  const rows = [['Timestamp', 'Fans Favourite Award', 'Best Dressed']];
+  const items = [
+    makeItem(101, 'Fans Favourite Award', itemType.MULTIPLE_CHOICE, true),
+    makeItem(102, 'Best Dressed', itemType.LIST, false),
+  ];
+  if (unsupportedRequired) {
+    items.push(makeItem(103, 'Required text', itemType.TEXT, true));
+    rows[0].push('Required text');
+  }
+  const responses = [];
+  const sheet = {
+    getLastRow: () => rows.length,
+    getLastColumn: () => rows[0].length,
+    getRange(firstRow, firstColumn, rowCount, columnCount) {
+      rowCount ??= 1;
+      columnCount ??= 1;
+      return {
+        getDisplayValues() {
+          return Array.from({ length: rowCount }, (_, rowOffset) =>
+            Array.from({ length: columnCount }, (_, columnOffset) =>
+              rows[firstRow - 1 + rowOffset]?.[firstColumn - 1 + columnOffset] ?? '',
+            ),
+          );
+        },
+        getValues() {
+          return Array.from({ length: rowCount }, (_, rowOffset) =>
+            Array.from({ length: columnCount }, (_, columnOffset) =>
+              rows[firstRow - 1 + rowOffset]?.[firstColumn - 1 + columnOffset] ?? '',
+            ),
+          );
+        },
+        setValue(value) {
+          rows[firstRow - 1] ??= [];
+          rows[firstRow - 1][firstColumn - 1] = value;
+        },
+        setValues(values) {
+          values.forEach((valuesRow, rowOffset) => {
+            const rowIndex = firstRow - 1 + rowOffset;
+            rows[rowIndex] ??= [];
+            valuesRow.forEach((value, columnOffset) => {
+              rows[rowIndex][firstColumn - 1 + columnOffset] = value;
+            });
+          });
+        },
+      };
+    },
+    deleteRow(rowNumber) {
+      rows.splice(rowNumber - 1, 1);
+    },
+    hideColumns() {},
+  };
+  const form = {
+    getDestinationId: () => spreadsheetId,
+    collectsEmail: () => collectsEmail,
+    getItems: () => items,
+    getResponses: () => [...responses],
+    deleteResponse(responseId) {
+      const index = responses.findIndex((response) => response.getId() === responseId);
+      if (index >= 0) responses.splice(index, 1);
+      // Deliberately does not remove its linked-sheet copy, matching Forms behavior.
+    },
+    createResponse() {
+      const answerByItemId = new Map();
+      return {
+        withItemResponse(itemResponse) {
+          answerByItemId.set(String(itemResponse.item.getId()), itemResponse.answer);
+          return this;
+        },
+        submit() {
+          for (const item of items) {
+            if (item.isRequired() && !answerByItemId.has(String(item.getId()))) {
+              throw new Error('Missing required item response');
+            }
+          }
+          responseSequence += 1;
+          const timestamp = new Date(Date.UTC(2026, 9, 22, 10, 0, responseSequence));
+          const id = `native_response_${responseSequence}`;
+          const response = createResponseObject(id, timestamp, items, answerByItemId);
+          responses.push(response);
+          rows.push([
+            new Date(timestamp.getTime() + 500),
+            answerByItemId.get('101') ?? '',
+            answerByItemId.get('102') ?? '',
+          ]);
+          return response;
+        },
+      };
+    },
+  };
+  const spreadsheet = {
+    getFormUrl: () => 'https://docs.google.com/forms/d/test-form/edit',
+    getSheets: () => [sheet],
+  };
+  const properties = new Map([
+    ['SYNC_SECRET', secret],
+    ['SPREADSHEET_ID', spreadsheetId],
+  ]);
+  let opened = false;
+  const context = {
+    Date,
+    FormApp: {
+      ItemType: itemType,
+      openByUrl(url) {
+        assert.equal(url, 'https://docs.google.com/forms/d/test-form/edit');
+        return form;
+      },
+    },
+    PropertiesService: {
+      getScriptProperties: () => ({
+        getProperty: (key) => properties.get(key) ?? null,
+        setProperty: (key, value) => properties.set(key, value),
+      }),
+    },
+    SpreadsheetApp: {
+      openById(id) {
+        opened = true;
+        assert.equal(id, spreadsheetId);
+        return spreadsheet;
+      },
+      flush() {},
+    },
+    LockService: {
+      getScriptLock: () => ({ waitLock() {}, releaseLock() {} }),
+    },
+    Utilities: {
+      DigestAlgorithm: { SHA_256: 'SHA_256' },
+      Charset: { UTF_8: 'UTF_8' },
+      computeDigest(_algorithm, value) {
+        return Array.from(createHash('sha256').update(value).digest());
+      },
+      sleep() {},
+    },
+    ContentService: {
+      MimeType: { JSON: 'application/json' },
+      createTextOutput(content) {
+        return {
+          content,
+          setMimeType() { return this; },
+        };
+      },
+    },
+    console: { error() {} },
+  };
+  vm.createContext(context);
+  vm.runInContext(script, context);
+  return {
+    post: (payload) => context.doPost({ postData: { contents: JSON.stringify(payload) } }),
+    rows,
+    responses,
+    get opened() { return opened; },
+    form,
+  };
+}
+
+function makeItem(id, title, type, required) {
+  return {
+    getId: () => id,
+    getTitle: () => title,
+    getType: () => type,
+    isRequired: () => required,
+    asMultipleChoiceItem() {
+      return { createResponse: (answer) => ({ item: this, answer }) };
+    },
+    asListItem() {
+      return { createResponse: (answer) => ({ item: this, answer }) };
+    },
+  };
+}
+
+function createResponseObject(id, timestamp, items, answerByItemId) {
+  return {
+    getId: () => id,
+    getTimestamp: () => timestamp,
+    getResponseForItem(item) {
+      if (!answerByItemId.has(String(item.getId()))) return null;
+      const answer = answerByItemId.get(String(item.getId()));
+      return { getResponse: () => answer };
+    },
+  };
+}
+
+function sampleBallot(overrides = {}) {
+  return {
+    voterToken: 'a'.repeat(64),
+    season: '2026',
+    updatedAt: '2026-10-22T10:00:00.000000Z',
+    fingerprint: 'b'.repeat(64),
+    answers: [
+      { questionId: '101', category: 'Fans Favourite Award', answer: 'Dunlop' },
+    ],
+    ...overrides,
+  };
+}
+
+function responseBody(response) {
+  return JSON.parse(response.content);
+}
+
+test('rejects requests without the shared secret before opening the spreadsheet', () => {
+  const bridge = createBridge();
+  assert.deepEqual(responseBody(bridge.post({ secret: 'wrong', ballots: [sampleBallot()] })), {
+    ok: false,
+    error: 'unauthorized',
+  });
+  assert.equal(bridge.opened, false);
+});
+
+test('submits a native Form response and writes no Forum Votes tab', () => {
+  const bridge = createBridge();
+  const first = responseBody(bridge.post({ secret, ballots: [sampleBallot()] }));
+  assert.equal(first.ok, true);
+  assert.equal(first.results[0].status, 'synced');
+  assert.equal(first.results[0].responseId, 'native_response_1');
+  assert.equal(bridge.responses.length, 1);
+  assert.equal(bridge.rows.length, 2);
+  assert.deepEqual(bridge.rows[1].slice(1, 3), ['Dunlop', '']);
+  assert.equal(bridge.rows[1][3], 'a'.repeat(64));
+  assert.equal(bridge.rows[1][4], 'native_response_1');
+
+  const second = responseBody(bridge.post({ secret, ballots: [sampleBallot()] }));
+  assert.equal(second.results[0].status, 'unchanged');
+  assert.equal(bridge.responses.length, 1);
+  assert.equal(bridge.rows.length, 2);
+});
+
+test('replaces only that Forum ballot and removes its linked response row', () => {
+  const bridge = createBridge();
+  const first = responseBody(bridge.post({ secret, ballots: [sampleBallot()] }));
+  const editedBallot = sampleBallot({
+    updatedAt: '2026-10-22T10:02:00.000000Z',
+    fingerprint: 'c'.repeat(64),
+    previousResponseId: first.results[0].responseId,
+    previousResponseFingerprint: 'b'.repeat(64),
+    previousResponseUpdatedAt: '2026-10-22T10:00:00.000000Z',
+    answers: [
+      { questionId: '101', category: 'Fans Favourite Award', answer: 'Arv' },
+      { questionId: '102', category: 'Best Dressed', answer: 'Dunlop' },
+    ],
+  });
+
+  const updated = responseBody(bridge.post({ secret, ballots: [editedBallot] }));
+  assert.equal(updated.results[0].status, 'synced');
+  assert.equal(bridge.responses.length, 1);
+  assert.equal(bridge.responses[0].getId(), updated.results[0].responseId);
+  assert.equal(bridge.rows.length, 2);
+  assert.deepEqual(bridge.rows[1].slice(1, 3), ['Arv', 'Dunlop']);
+});
+
+test('does not let a delayed older ballot replace the latest response', () => {
+  const bridge = createBridge();
+  const first = responseBody(bridge.post({ secret, ballots: [sampleBallot()] }));
+  const latest = sampleBallot({
+    updatedAt: '2026-10-22T10:02:00.000000Z',
+    fingerprint: 'c'.repeat(64),
+    answers: [{ questionId: '101', category: 'Fans Favourite Award', answer: 'Arv' }],
+    previousResponseId: first.results[0].responseId,
+  });
+  bridge.post({ secret, ballots: [latest] });
+
+  const stale = responseBody(bridge.post({ secret, ballots: [sampleBallot()] }));
+  assert.equal(stale.results[0].status, 'stale');
+  assert.equal(bridge.responses.length, 1);
+  assert.deepEqual(bridge.rows[1].slice(1, 3), ['Arv', '']);
+});
+
+test('fails closed for required question types and email collection the Forum cannot answer', () => {
+  const emailBridge = createBridge({ collectsEmail: true });
+  assert.equal(responseBody(emailBridge.post({ secret, ballots: [sampleBallot()] })).error, 'email_collection_unsupported');
+  assert.equal(emailBridge.responses.length, 0);
+
+  const requiredTextBridge = createBridge({ unsupportedRequired: true });
+  const result = responseBody(requiredTextBridge.post({ secret, ballots: [sampleBallot()] }));
+  assert.equal(result.results[0].status, 'failed');
+  assert.equal(requiredTextBridge.responses.length, 0);
+});

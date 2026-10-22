@@ -1,4 +1,5 @@
 export type GoogleFormOptionQuestion = {
+  questionId: string | null;
   title: string;
   slug: string;
   options: string[];
@@ -88,6 +89,10 @@ export function parsePublicGoogleFormOptions(html: string): GoogleFormOptionQues
 
   const questions: GoogleFormOptionQuestion[] = [];
   for (const row of questionRows) {
+    const questionIdValue = arrayAt(row, 0);
+    const questionId = typeof questionIdValue === 'string' || typeof questionIdValue === 'number'
+      ? String(questionIdValue).trim().slice(0, 100)
+      : null;
     const title = arrayAt(row, 1);
     const questionType = arrayAt(row, 3);
     const optionGroups = arrayAt(row, 4);
@@ -132,6 +137,7 @@ export function parsePublicGoogleFormOptions(html: string): GoogleFormOptionQues
     }
 
     questions.push({
+      questionId,
       title: title.trim().slice(0, 120),
       slug,
       options,

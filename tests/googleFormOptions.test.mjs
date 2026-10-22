@@ -10,6 +10,7 @@ import {
 const awardsSource = readFileSync(new URL('../lib/awards.ts', import.meta.url), 'utf8');
 const adminRouteSource = readFileSync(new URL('../app/api/admin/awards/route.ts', import.meta.url), 'utf8');
 const requiredMigration = readFileSync(new URL('../migrations/2026-10-22-award-question-required.sql', import.meta.url), 'utf8');
+const responseMigration = readFileSync(new URL('../migrations/2026-10-22-award-native-form-responses.sql', import.meta.url), 'utf8');
 
 function choice(value) {
   return [value, null, null, null, 0];
@@ -38,6 +39,7 @@ test('reads single-choice and dropdown award options without treating blank Othe
 
   assert.deepEqual(parsePublicGoogleFormOptions(html), [
     {
+      questionId: '1',
       title: 'Fans Favorite Award',
       slug: 'fans-favourite',
       options: ['Debuffy', 'Arv'],
@@ -46,6 +48,7 @@ test('reads single-choice and dropdown award options without treating blank Othe
       isRequired: true,
     },
     {
+      questionId: '2',
       title: 'Best Dressed',
       slug: 'best-dressed-player',
       options: ['qoodL', 'Dunlop'],
@@ -89,10 +92,16 @@ test('stores imported required settings while keeping existing categories requir
   assert.match(requiredMigration, /ADD COLUMN IF NOT EXISTS is_required BOOLEAN NOT NULL DEFAULT TRUE/i);
 });
 
+test('stores Google Form item IDs for stable native response mapping', () => {
+  assert.match(awardsSource, /form_question_id=COALESCE\(EXCLUDED\.form_question_id, award_categories\.form_question_id\)/);
+  assert.match(responseMigration, /ADD COLUMN IF NOT EXISTS form_question_id TEXT/i);
+});
+
 test('re-import adds new questions and choices without removing existing nominees', () => {
   const importFunction = awardsSource.match(/export async function importGoogleFormOptions[\s\S]*?\n}\n/)[0];
   assert.match(importFunction, /INSERT INTO award_categories[\s\S]*ON CONFLICT \(cycle_id,slug\)/);
   assert.match(importFunction, /is_required=EXCLUDED\.is_required/);
+  assert.match(importFunction, /form_question_id=COALESCE/);
   assert.match(importFunction, /INSERT INTO award_nominees[\s\S]*WHERE NOT EXISTS/);
   assert.doesNotMatch(importFunction, /DELETE FROM/);
 });
