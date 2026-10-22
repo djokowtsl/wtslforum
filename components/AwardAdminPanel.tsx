@@ -4,7 +4,7 @@ import { useState } from 'react';
 import { useRouter } from 'next/navigation';
 
 type Nominee = { id: number; name: string; note: string };
-type Category = { id: number; name: string; slug: string; allow_write_in: boolean; nominees: Nominee[]; tally: { name: string; votes: number }[]; write_ins: { write_in: string; votes: number }[] };
+type Category = { id: number; name: string; slug: string; allow_write_in: boolean; nominees: Nominee[] };
 type FormPreview = {
   sourceUrl: string;
   questionCount: number;
@@ -70,7 +70,6 @@ export default function AwardAdminPanel({ cycleId, votingOpen, categories, sheet
     setErr('');
     setSheetSyncMessage('');
     let afterVoteId = '0';
-    let synced = 0;
     try {
       while (true) {
         const res = await fetch('/api/admin/awards', {
@@ -80,12 +79,11 @@ export default function AwardAdminPanel({ cycleId, votingOpen, categories, sheet
         });
         const data = await res.json();
         if (!res.ok) throw new Error(data.error || 'Could not sync Forum votes.');
-        synced += Number(data.synced ?? 0);
         afterVoteId = String(data.nextAfterVoteId ?? afterVoteId);
-        setSheetSyncMessage(`Synced ${synced} Forum votes…`);
+        setSheetSyncMessage('Syncing Forum votes to Google Sheets…');
         if (data.done) break;
       }
-      setSheetSyncMessage(`Synced ${synced} Forum votes to the “Forum Votes” tab.`);
+      setSheetSyncMessage('Forum vote sync completed.');
       router.refresh();
     } catch (e) {
       setErr(e instanceof Error ? e.message : 'Could not sync Forum votes.');
@@ -181,10 +179,8 @@ export default function AwardAdminPanel({ cycleId, votingOpen, categories, sheet
               <button className="btn btn-sm" disabled={busy || !newNominee[c.id]?.trim()} onClick={() => { call({ action: 'add-nominee', categoryId: c.id, name: newNominee[c.id] }); setNewNominee((s) => ({ ...s, [c.id]: '' })); }}>Add</button>
             </div>
             <details>
-              <summary style={{ cursor: 'pointer', color: 'var(--soft)', fontSize: 13 }}>Import Google Form CSV / view tally ({c.tally.reduce((a, t) => a + t.votes, 0) + c.write_ins.reduce((a, w) => a + w.votes, 0)} votes)</summary>
+              <summary style={{ cursor: 'pointer', color: 'var(--soft)', fontSize: 13 }}>Import previous Google Form votes from CSV</summary>
               <div style={{ marginTop: 10 }}>
-                {c.tally.filter((t) => t.votes > 0).map((t) => <div key={t.name}>{t.name}: <b>{t.votes}</b></div>)}
-                {c.write_ins.map((w) => <div key={w.write_in}>“{w.write_in}” (write-in): <b>{w.votes}</b></div>)}
                 <textarea
                   placeholder="handle,nominee name"
                   value={csv[c.id] ?? ''}
