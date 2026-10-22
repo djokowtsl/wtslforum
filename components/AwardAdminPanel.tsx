@@ -5,13 +5,23 @@ import { useRouter } from 'next/navigation';
 
 type Nominee = { id: number; name: string; note: string };
 type Category = { id: number; name: string; slug: string; allow_write_in: boolean; nominees: Nominee[]; tally: { name: string; votes: number }[]; write_ins: { write_in: string; votes: number }[] };
+type FormPreview = {
+  sourceUrl: string;
+  questionCount: number;
+  optionCount: number;
+  questions: { title: string; slug: string; optionCount: number; allowWriteIn: boolean; examples: string[] }[];
+};
 
-export default function AwardAdminPanel({ cycleId, votingOpen, categories }: { cycleId: number; votingOpen: boolean; categories: Category[] }) {
+export default function AwardAdminPanel({ cycleId, votingOpen, categories, sheetSyncConfigured = false }: { cycleId: number; votingOpen: boolean; categories: Category[]; sheetSyncConfigured?: boolean }) {
   const router = useRouter();
   const [busy, setBusy] = useState(false);
   const [newNominee, setNewNominee] = useState<Record<number, string>>({});
   const [csv, setCsv] = useState<Record<number, string>>({});
   const [err, setErr] = useState('');
+  const [sheetSyncMessage, setSheetSyncMessage] = useState('');
+  const [formUrl, setFormUrl] = useState('');
+  const [formPreview, setFormPreview] = useState<FormPreview | null>(null);
+  const [formMessage, setFormMessage] = useState('');
 
   async function call(body: Record<string, unknown>) {
     setBusy(true);
@@ -28,16 +38,125 @@ export default function AwardAdminPanel({ cycleId, votingOpen, categories }: { c
     }
   }
 
+  async function handleFormOptions(action: 'preview-form-options' | 'import-form-options') {
+    setBusy(true);
+    setErr('');
+    setFormMessage('');
+    try {
+      const res = await fetch('/api/admin/awards', {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({ action, cycleId, formUrl }),
+      });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error || 'Could not load Google Form choices.');
+
+      if (action === 'preview-form-options') {
+        setFormPreview(data as FormPreview);
+      } else {
+        setFormPreview(null);
+        setFormMessage(`Imported ${data.optionsAdded} new choices across ${data.categoriesImported} award categories. ${data.optionsAlreadyPresent} choices were already present. Existing choices and votes were kept.`);
+        router.refresh();
+      }
+    } catch (e) {
+      setErr(e instanceof Error ? e.message : 'Could not load Google Form choices.');
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  async function syncVotesToSheet() {
+    setBusy(true);
+    setErr('');
+    setSheetSyncMessage('');
+    let afterVoteId = '0';
+    let synced = 0;
+    try {
+      while (true) {
+        const res = await fetch('/api/admin/awards', {
+          method: 'POST',
+          headers: { 'content-type': 'application/json' },
+          body: JSON.stringify({ action: 'sync-sheet-batch', cycleId, afterVoteId }),
+        });
+        const data = await res.json();
+        if (!res.ok) throw new Error(data.error || 'Could not sync Forum votes.');
+        synced += Number(data.synced ?? 0);
+        afterVoteId = String(data.nextAfterVoteId ?? afterVoteId);
+        setSheetSyncMessage(`Synced ${synced} Forum votes…`);
+        if (data.done) break;
+      }
+      setSheetSyncMessage(`Synced ${synced} Forum votes to the “Forum Votes” tab.`);
+      router.refresh();
+    } catch (e) {
+      setErr(e instanceof Error ? e.message : 'Could not sync Forum votes.');
+    } finally {
+      setBusy(false);
+    }
+  }
+
   return (
     <div className="admin-card">
       <h3>Awards voting</h3>
       <p className="notice" style={{ marginBottom: 14 }}>
-        Voting is currently <b>{votingOpen ? 'OPEN' : 'closed'}</b>. Add nominees for each award below, then open voting when you&apos;re ready. Google Form rows can be imported as one-vote-per-line CSV: <code>handle,nominee name</code> (or a write-in instead of a nominee name).
+        Voting is currently <b>{votingOpen ? 'OPEN' : 'closed'}</b>. Import award choices from a public Google Form below or manage nominees here. Previous Google Form votes can still be imported from a simplified CSV.
       </p>
       {err && <div className="notice" style={{ borderColor: '#ffb3bb', marginBottom: 14 }}>{err}</div>}
+      {formMessage && <div className="notice" role="status" style={{ marginBottom: 14 }}>{formMessage}</div>}
       <button className="btn btn-sm" disabled={busy} onClick={() => call({ action: 'toggle-voting', cycleId, open: !votingOpen })}>
         {votingOpen ? 'Close voting' : 'Open voting'}
       </button>
+
+      <section className="forum-list" style={{ marginTop: 20, padding: 16 }} aria-labelledby="award-sheet-sync-title">
+        <h4 id="award-sheet-sync-title" style={{ margin: '0 0 6px' }}>Google Sheets vote sync</h4>
+        <p className="muted" style={{ margin: '0 0 12px', fontSize: 13 }}>
+          {sheetSyncConfigured
+            ? 'Forum votes are copied without Discord IDs to a separate “Forum Votes” tab. Use this to backfill votes or retry a failed sync.'
+            : 'The Apps Script bridge and Vercel settings are not configured yet. Forum voting remains available; votes will not reach the spreadsheet until setup is complete.'}
+        </p>
+        <button className="btn btn-sm" disabled={busy || !sheetSyncConfigured} onClick={syncVotesToSheet}>
+          {busy ? 'Syncing…' : 'Sync Forum votes now'}
+        </button>
+        {sheetSyncMessage && <p role="status" style={{ margin: '10px 0 0', fontSize: 13 }}>{sheetSyncMessage}</p>}
+      </section>
+
+      <section className="forum-list" style={{ marginTop: 20, padding: 16 }} aria-labelledby="award-form-import-title">
+        <h4 id="award-form-import-title" style={{ margin: '0 0 6px' }}>Import award choices from a Google Form</h4>
+        <p className="muted" style={{ margin: '0 0 12px', fontSize: 13 }}>
+          Paste a public response link to preview its award questions and choices. Import adds missing categories and choices; it does not delete existing choices or votes.
+        </p>
+        <div style={{ display: 'flex', flexWrap: 'wrap', gap: 8 }}>
+          <input
+            type="url"
+            value={formUrl}
+            onChange={(event) => { setFormUrl(event.target.value); setFormPreview(null); }}
+            placeholder="https://forms.gle/…"
+            aria-label="Public Google Form link"
+            style={{ flex: '1 1 320px', minWidth: 0, padding: '8px 10px', borderRadius: 8, border: '1px solid var(--line-2)', background: 'var(--bg-2)', color: 'var(--text)' }}
+          />
+          <button className="btn btn-sm" disabled={busy || !formUrl.trim()} onClick={() => handleFormOptions('preview-form-options')}>
+            {busy ? 'Loading…' : 'Preview choices'}
+          </button>
+        </div>
+        {formPreview && (
+          <div style={{ marginTop: 14 }}>
+            <p style={{ margin: '0 0 10px', fontSize: 13 }}>
+              Found <b>{formPreview.questionCount}</b> award categories and <b>{formPreview.optionCount}</b> choices.
+            </p>
+            <ul style={{ margin: '0 0 12px', paddingLeft: 20, display: 'grid', gap: 5 }}>
+              {formPreview.questions.map((question) => (
+                <li key={question.slug}>
+                  <b>{question.title}</b> — {question.optionCount} choices
+                  {question.allowWriteIn ? ' · includes write-in' : ''}
+                  {question.examples.length > 0 && <span className="muted"> · {question.examples.join(', ')}{question.optionCount > question.examples.length ? ', …' : ''}</span>}
+                </li>
+              ))}
+            </ul>
+            <button className="btn btn-sm" disabled={busy} onClick={() => handleFormOptions('import-form-options')}>
+              Import these choices
+            </button>
+          </div>
+        )}
+      </section>
 
       <div style={{ display: 'grid', gap: 18, marginTop: 20 }}>
         {categories.map((c) => (
