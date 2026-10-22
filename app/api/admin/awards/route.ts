@@ -53,6 +53,7 @@ export async function POST(req: NextRequest) {
             optionCount: question.options.length,
             allowWriteIn: question.allowWriteIn,
             shuffleOptions: question.shuffleOptions,
+            isRequired: question.isRequired,
             examples: question.options.slice(0, 3),
           })),
         });

@@ -157,13 +157,14 @@ export async function importGoogleFormOptions(cycleId: number, questions: Google
 
   for (const [categoryPosition, question] of questions.entries()) {
     const categoryRows = await sql`
-      INSERT INTO award_categories(cycle_id,name,slug,position,allow_write_in,shuffle_options)
-      VALUES (${cycleId},${question.title},${question.slug},${categoryPosition + 1},${question.allowWriteIn},${question.shuffleOptions})
+      INSERT INTO award_categories(cycle_id,name,slug,position,allow_write_in,shuffle_options,is_required)
+      VALUES (${cycleId},${question.title},${question.slug},${categoryPosition + 1},${question.allowWriteIn},${question.shuffleOptions},${question.isRequired})
       ON CONFLICT (cycle_id,slug)
       DO UPDATE SET
         position=EXCLUDED.position,
         allow_write_in=EXCLUDED.allow_write_in,
-        shuffle_options=EXCLUDED.shuffle_options
+        shuffle_options=EXCLUDED.shuffle_options,
+        is_required=EXCLUDED.is_required
       RETURNING id
     `;
     const categoryId = categoryRows[0]?.id;
@@ -228,6 +229,8 @@ export async function importGoogleFormOptions(cycleId: number, questions: Google
     optionsAdded,
     optionsAlreadyPresent,
     shuffleCategoriesImported: questions.filter((question) => question.shuffleOptions).length,
+    requiredQuestionsImported: questions.filter((question) => question.isRequired).length,
+    optionalQuestionsImported: questions.filter((question) => !question.isRequired).length,
     renamedOptions,
   };
 }

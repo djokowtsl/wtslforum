@@ -4,6 +4,7 @@ export type GoogleFormOptionQuestion = {
   options: string[];
   allowWriteIn: boolean;
   shuffleOptions: boolean;
+  isRequired: boolean;
 };
 
 const MAX_FORM_BYTES = 2_000_000;
@@ -98,6 +99,14 @@ export function parsePublicGoogleFormOptions(html: string): GoogleFormOptionQues
       const choices = arrayAt(group, 1);
       return Array.isArray(choices) ? choices.map((choice) => arrayAt(choice, 0)) : [];
     });
+    const requiredFlags = optionGroups.map((group) => arrayAt(group, 2));
+    if (requiredFlags.some((value) => value !== 0 && value !== 1)) {
+      throw new Error(`Could not read whether “${title.trim()}” is required in this Google Form. Try again or report this form.`);
+    }
+    if (requiredFlags.some((value) => value !== requiredFlags[0])) {
+      throw new Error(`Google Form question “${title.trim()}” has inconsistent required settings.`);
+    }
+    const isRequired = requiredFlags[0] === 1;
     // Google Forms' public-load-data choice group stores "Shuffle option order"
     // at index 8 as an integer flag.
     const shuffleOptions = optionGroups.some((group) => {
@@ -128,6 +137,7 @@ export function parsePublicGoogleFormOptions(html: string): GoogleFormOptionQues
       options,
       allowWriteIn,
       shuffleOptions,
+      isRequired,
     });
   }
 

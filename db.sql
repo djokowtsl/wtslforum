@@ -267,6 +267,7 @@ CREATE TABLE IF NOT EXISTS award_categories (
   name TEXT NOT NULL, slug TEXT NOT NULL, description TEXT NOT NULL DEFAULT '',
   allow_write_in BOOLEAN NOT NULL DEFAULT TRUE, position INT NOT NULL DEFAULT 0,
   shuffle_options BOOLEAN NOT NULL DEFAULT FALSE, shuffle_options_override BOOLEAN,
+  is_required BOOLEAN NOT NULL DEFAULT TRUE,
   UNIQUE(cycle_id,slug)
 );
 CREATE TABLE IF NOT EXISTS award_nominees (
