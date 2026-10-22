@@ -436,16 +436,17 @@ export default function DmoLiveHost({ displayName, canPrepareFullReplay }: Props
       lastHeartbeat.current = 0;
 
       if (replaySource) {
+        const replayForPreparation = replaySource;
         if (canPrepareFullReplay) {
           setNotice('Preparing full replay modes and sound…');
           fullReplayPrepared = await attemptFullReplayPreparation(async () => {
             const uploadRequestId = crypto.randomUUID();
-            const safeName = replaySource.name.replace(/[^a-zA-Z0-9._-]/g, '-').slice(-100) || 'match.dmo';
+            const safeName = replayForPreparation.name.replace(/[^a-zA-Z0-9._-]/g, '-').slice(-100) || 'match.dmo';
             let uploadedReplay;
             try {
               uploadedReplay = await uploadPresigned(
                 `dmo-analysis/${crypto.randomUUID()}-${safeName}`,
-                replaySource.file,
+                replayForPreparation.file,
                 {
                   access: 'private',
                   handleUploadUrl: '/api/admin/dmo-analysis/upload',
@@ -465,7 +466,7 @@ export default function DmoLiveHost({ displayName, canPrepareFullReplay }: Props
               headers: { 'Content-Type': 'application/json' },
               body: JSON.stringify({
                 pathname: uploadedReplay.pathname,
-                filename: replaySource.name,
+                filename: replayForPreparation.name,
                 liveBroadcastId: body.id,
               }),
             });
