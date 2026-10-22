@@ -335,12 +335,29 @@ test('homepage displays video links only when a signed-in viewer has a matching 
   assert.match(viewer, /body\?\.broadcasts/);
 });
 
-test('viewers only receive DMO broadcasts after a completed point parses; stream-only broadcasts remain visible', async () => {
+test('verified replay openings can be shown before the first point; other DMO broadcasts still require one', async () => {
   const timestamp = new Date('2026-10-22T10:00:00Z');
   const rows = [
     { id: 'auto-no-snapshot', payload: { hasDmo: true, mode: 'auto' } },
     { id: 'auto-no-point', payload: { hasDmo: true, mode: 'auto', snapshot: { pointCount: 0 } } },
-    { id: 'replay-no-point', payload: { hasDmo: true, mode: 'manual', replay: true, snapshot: { pointCount: 0 } } },
+    {
+      id: 'replay-no-point',
+      payload: {
+        hasDmo: true,
+        mode: 'manual',
+        replay: true,
+        snapshot: { version: 1, frameCount: 10, pointCount: 0, players: ['Replay One', 'Replay Two'], court: [] },
+      },
+    },
+    {
+      id: 'replay-no-opening-frame',
+      payload: {
+        hasDmo: true,
+        mode: 'manual',
+        replay: true,
+        snapshot: { version: 1, frameCount: 9, pointCount: 0, players: ['Replay One', 'Replay Two'], court: [] },
+      },
+    },
     { id: 'legacy-no-point', payload: { version: 1, pointCount: 0, players: ['Old One', 'Old Two'] } },
     { id: 'auto-parsed', payload: { hasDmo: true, mode: 'auto', snapshot: { pointCount: 1, players: ['Alpha', 'Beta'] } } },
     { id: 'replay-parsed', payload: { hasDmo: true, mode: 'manual', replay: true, snapshot: { pointCount: 1, players: ['Gamma', 'Delta'] } } },
@@ -374,7 +391,12 @@ test('viewers only receive DMO broadcasts after a completed point parses; stream
   const response = await route.GET(request(undefined, '/api/live-dmo/current', 'GET'));
   assert.equal(response.status, 200);
   const body = await response.json();
-  assert.deepEqual(body.broadcasts.map((broadcast) => broadcast.id), ['auto-parsed', 'replay-parsed', 'stream-only']);
+  assert.deepEqual(body.broadcasts.map((broadcast) => broadcast.id), [
+    'replay-no-point',
+    'auto-parsed',
+    'replay-parsed',
+    'stream-only',
+  ]);
   const host = readFileSync(new URL('../components/DmoLiveHost.tsx', import.meta.url), 'utf8');
   assert.match(host, /hasCompletedDmoPoints\(current\)/);
   assert.match(host, /hasCompletedDmoPoints\(matchedSnapshot\)/);

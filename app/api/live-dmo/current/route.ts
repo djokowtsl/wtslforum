@@ -44,7 +44,18 @@ export async function GET() {
         || stored.replay === true
         || legacySnapshot !== null
         || Boolean(stored.snapshot);
-      if (hasDmo && !hasCompletedDmoPoints(snapshot)) return [];
+      // The host fully parses and validates historical replay files before
+      // starting them, so their opening snapshot can legitimately have 0 points.
+      const validatedReplayOpening = stored.mode === 'manual'
+        && stored.replay === true
+        && snapshot?.version === 1
+        && Number.isInteger(snapshot.frameCount)
+        && snapshot.frameCount >= 10
+        && snapshot.pointCount === 0
+        && Array.isArray(snapshot.players)
+        && snapshot.players.length === 2
+        && Array.isArray(snapshot.court);
+      if (hasDmo && !hasCompletedDmoPoints(snapshot) && !validatedReplayOpening) return [];
       const rawPlayers = Array.isArray(stored.players) && stored.players.length === 2
         ? stored.players
         : Array.isArray(snapshot?.players) && snapshot.players.length === 2

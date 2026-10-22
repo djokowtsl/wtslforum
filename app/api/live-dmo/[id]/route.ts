@@ -19,6 +19,7 @@ const snapshotSchema = z.object({
   stadium: z.string().max(80).nullable(),
   players: z.tuple([z.string().min(1).max(80), z.string().min(1).max(80)]),
   frameCount: z.number().int().min(0).max(1_000_000),
+  courtFrameCount: z.number().int().min(0).max(1_000).optional(),
   pointCount: z.number().int().min(0).max(20_000),
   bestOf: z.union([z.literal(1), z.literal(3), z.literal(5)]),
   score: z.object({

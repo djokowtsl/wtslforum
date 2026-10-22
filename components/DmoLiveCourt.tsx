@@ -2,7 +2,8 @@
 
 import { useEffect, useRef, useState } from 'react';
 import { Minus, Plus } from 'lucide-react';
-import type { Te4LiveSnapshot } from '@/lib/te4DmoLive';
+import { replayCourtWindowDurationMs } from '@/lib/te4DmoLive';
+import type { Te4DmoReplaySpeed, Te4LiveSnapshot } from '@/lib/te4DmoLive';
 import type { Te4CourtSurface } from '@/lib/te4DmoTypes';
 import styles from './DmoLiveCourt.module.css';
 
@@ -13,6 +14,7 @@ type SceneFrame = [number, number, number, number, number, number, number];
 type Props = {
   snapshot: Te4LiveSnapshot;
   surface: Te4CourtSurface;
+  playbackSpeed: Te4DmoReplaySpeed;
 };
 
 const surfacePalette: Record<Te4CourtSurface, { court: string; apron: string }> = {
@@ -324,9 +326,16 @@ function drawScene(
   context.stroke();
 }
 
-export default function DmoLiveCourt({ snapshot, surface }: Props) {
+export default function DmoLiveCourt({ snapshot, surface, playbackSpeed }: Props) {
   const canvasRef = useRef<HTMLCanvasElement>(null);
-  const sceneRef = useRef({ frames: snapshot.court, players: snapshot.players, surface, frameCount: snapshot.frameCount });
+  const sceneRef = useRef({
+    frames: snapshot.court,
+    players: snapshot.players,
+    surface,
+    frameCount: snapshot.frameCount,
+    courtFrameCount: snapshot.courtFrameCount,
+    playbackSpeed,
+  });
   const [camera, setCamera] = useState<CameraView>('t');
   const [zoom, setZoom] = useState(1);
   sceneRef.current = {
@@ -334,6 +343,8 @@ export default function DmoLiveCourt({ snapshot, surface }: Props) {
     players: snapshot.players,
     surface,
     frameCount: snapshot.frameCount,
+    courtFrameCount: snapshot.courtFrameCount,
+    playbackSpeed,
   };
 
   useEffect(() => {
@@ -350,7 +361,10 @@ export default function DmoLiveCourt({ snapshot, surface }: Props) {
       lastTime = now;
       const current = sceneRef.current;
       const frames = current.frames;
-      const durationMs = Math.min(6000, Math.max(900, Math.min(current.frameCount, 180) / 30 * 1000));
+      const durationMs = replayCourtWindowDurationMs(
+        current.courtFrameCount ?? Math.min(current.frameCount, 180),
+        current.playbackSpeed,
+      );
       if (!motionPreference.matches && frames.length > 1) {
         playbackProgress = (playbackProgress + elapsed / durationMs) % 1;
       } else {
@@ -362,7 +376,7 @@ export default function DmoLiveCourt({ snapshot, surface }: Props) {
     };
     animation = window.requestAnimationFrame(tick);
     return () => window.cancelAnimationFrame(animation);
-  }, [camera, zoom]);
+  }, [camera, zoom, playbackSpeed, snapshot.frameCount, snapshot.courtFrameCount]);
 
   return (
     <section className={styles.scene} aria-label="Reconstructed live court">
