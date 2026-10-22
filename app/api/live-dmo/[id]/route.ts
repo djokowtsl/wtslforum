@@ -20,7 +20,7 @@ const snapshotSchema = z.object({
   players: z.tuple([z.string().min(1).max(80), z.string().min(1).max(80)]),
   frameCount: z.number().int().min(0).max(1_000_000),
   pointCount: z.number().int().min(0).max(20_000),
-  bestOf: z.union([z.literal(3), z.literal(5)]),
+  bestOf: z.union([z.literal(1), z.literal(3), z.literal(5)]),
   score: z.object({
     sets: z.array(pair).max(5),
     games: z.tuple([z.number().int().min(0).max(7), z.number().int().min(0).max(7)]),
