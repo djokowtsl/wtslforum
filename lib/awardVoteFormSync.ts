@@ -40,6 +40,7 @@ const AWARD_FORM_SYNC_DIAGNOSTIC_CODES = [
   'unmatched_or_unsupported_question',
   'unsupported_required_question',
   'missing_required_answer',
+  'form_response_preflight_failed',
   'form_response_creation_failed',
   'form_item_response_failed',
   'form_response_submission_failed',

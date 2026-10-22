@@ -172,6 +172,17 @@ test('shows allowlisted Apps Script failure codes and hides unknown error text',
       const unknownResult = await syncAwardBallotsToForm([ballot]);
       assert.equal(unknownResult.diagnosticCode, 'ballot_sync_failed');
       assert.equal(JSON.stringify(unknownResult).includes('private answer text'), false);
+
+      globalThis.fetch = async () => new Response(JSON.stringify({
+        ok: true,
+        results: [{
+          status: 'failed',
+          errorCode: 'form_response_preflight_failed',
+        }],
+      }), { status: 200 });
+      const preflightResult = await syncAwardBallotsToForm([ballot]);
+      assert.equal(preflightResult.diagnosticCode, 'form_response_preflight_failed');
+      assert.equal(preflightResult.results[0].diagnosticCode, 'form_response_preflight_failed');
     } finally {
       globalThis.fetch = originalFetch;
     }

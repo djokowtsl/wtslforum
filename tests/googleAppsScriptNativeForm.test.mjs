@@ -191,6 +191,7 @@ function createBridge({
   vm.runInContext(script, context);
   return {
     post: (payload) => context.doPost({ postData: { contents: JSON.stringify(payload) } }),
+    submitBallot: (formToUse, itemsToUse, ballot) => context.submitBallot(formToUse, itemsToUse, ballot),
     rows,
     responses,
     get opened() { return opened; },
@@ -354,6 +355,22 @@ test('separates Form answer construction and submission failures without exposin
   const submitResult = responseBody(submitBridge.post({ secret, ballots: [sampleBallot()] }));
   assert.equal(submitResult.results[0].errorCode, 'form_response_submission_failed');
   assert.equal(JSON.stringify(submitResult).includes('private response submission failure'), false);
+});
+
+test('uses a safe code for unexpected Form preflight failures', () => {
+  const bridge = createBridge();
+  let error;
+  try {
+    bridge.submitBallot(null, [{
+      getId() {
+        throw new Error('private question metadata');
+      },
+    }], sampleBallot());
+  } catch (caught) {
+    error = caught;
+  }
+  assert.equal(error?.message, 'form_response_preflight_failed');
+  assert.equal(error?.message.includes('private'), false);
 });
 
 test('distinguishes final flush, response, and lock failures safely', () => {
