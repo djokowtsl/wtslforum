@@ -1,5 +1,6 @@
 export type Te4LivePlayer = 1 | 2;
 export type Te4LiveBestOf = 1 | 3 | 5;
+export type Te4DmoReplaySpeed = 1 | 2 | 4;
 
 type Header = {
   bad?: boolean;
@@ -72,6 +73,22 @@ export type Te4LiveSnapshot = {
   }>;
   court: number[][];
 };
+
+export function hasCompletedDmoPoints(
+  snapshot: Pick<Te4LiveSnapshot, 'pointCount'> | null | undefined,
+): boolean {
+  return Boolean(snapshot && Number.isInteger(snapshot.pointCount) && snapshot.pointCount > 0);
+}
+
+export function replayFrameAtElapsedTime(
+  totalFrames: number,
+  elapsedMs: number,
+  speed: Te4DmoReplaySpeed,
+): number {
+  if (!Number.isFinite(totalFrames) || totalFrames < 10) return 0;
+  const elapsedFrames = Math.floor(Math.max(0, elapsedMs) * 60 * speed / 1000);
+  return Math.min(Math.floor(totalFrames), 10 + elapsedFrames);
+}
 
 const SIGNATURE = [0x0f, ...Array.from('DemoTEM2-1.0g.0').map((character) => character.charCodeAt(0))];
 const UINT32_SCALE = 4_294_967_296;
@@ -328,7 +345,7 @@ export class Te4DmoLiveParser {
       && this.ballZ[frame] < 350;
   }
 
-  private truePoints(): {
+  private truePoints(frameLimit = this.frameCount): {
     points: LivePoint[];
     lastEnd: number;
     openServe: number | null;
@@ -337,7 +354,8 @@ export class Te4DmoLiveParser {
     const ends: number[] = [];
     const serves: number[] = [];
     const hits: number[] = [];
-    for (let frame = 0; frame < this.frameCount; frame += 1) {
+    const visibleFrameCount = Math.min(this.frameCount, Math.max(0, Math.floor(frameLimit)));
+    for (let frame = 0; frame < visibleFrameCount; frame += 1) {
       if (this.type110[frame] === 5) ends.push(frame);
       else if (this.type110[frame] === 2) serves.push(frame);
       if (
@@ -419,9 +437,14 @@ export class Te4DmoLiveParser {
     };
   }
 
-  snapshot(filename: string, bestOf: Te4LiveBestOf): Te4LiveSnapshot | null {
-    if (!this.header || this.header.bad || this.frameCount < 10) return null;
-    const parsed = this.truePoints();
+  snapshot(
+    filename: string,
+    bestOf: Te4LiveBestOf,
+    frameLimit = this.frameCount,
+  ): Te4LiveSnapshot | null {
+    const visibleFrameCount = Math.min(this.frameCount, Math.max(0, Math.floor(frameLimit)));
+    if (!this.header || this.header.bad || visibleFrameCount < 10) return null;
+    const parsed = this.truePoints(visibleFrameCount);
     const points = parsed.points;
     const players: [string, string] = [
       this.header.p1?.trim().slice(0, 80) || 'Player 1',
@@ -483,7 +506,7 @@ export class Te4DmoLiveParser {
       ? null
       : this.serveRecord(parsed.openServe).speed
         ?? this.rawServeSpeedKmh(parsed.openServe);
-    const lastFrame = this.frameCount - 1;
+    const lastFrame = visibleFrameCount - 1;
     const firstFrame = Math.max(0, lastFrame - 3 * 60);
     const stride = Math.max(1, Math.ceil((lastFrame - firstFrame) / 24));
     const court: number[][] = [];
@@ -505,7 +528,7 @@ export class Te4DmoLiveParser {
       filename: filename.replace(/[\\/]/g, '').slice(0, 120),
       stadium: this.header.stadium?.slice(0, 80) || null,
       players,
-      frameCount: this.frameCount,
+      frameCount: visibleFrameCount,
       pointCount: points.length,
       bestOf,
       score: {

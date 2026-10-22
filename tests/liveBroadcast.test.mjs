@@ -21,6 +21,7 @@ const {
   findMatchingWtslLiveMatch,
   isLikelyOfficialWtslMatch,
   liveMatchPlayers,
+  resolveFakePrefixForRankedPlayer,
 } = module.exports;
 
 test('accepts Discord permalinks only from the configured WTSL stream channel', () => {
@@ -88,6 +89,24 @@ test('automatic broadcasts require one unambiguous match in the WTSL live feed',
     findMatchingWtslLiveMatch(['Player Two', 'Elodie'], [...matches, matches[0]]),
     null,
   );
+});
+
+test('fake-name prefixes resolve only when the cleaned name is ranked for that live match', () => {
+  assert.equal(resolveFakePrefixForRankedPlayer('[Fake] Squeaky', ['Squeaky']), 'Squeaky');
+  assert.equal(resolveFakePrefixForRankedPlayer('[Fake] Unranked', ['Squeaky']), '[Fake] Unranked');
+
+  const rankedMatch = {
+    name: 'Squeaky vs Player Two',
+    bestOf: 3,
+    rankedPlayers: ['Squeaky', 'Player Two'],
+  };
+  const unrankedMatch = {
+    name: 'Squeaky vs Player Two',
+    bestOf: 3,
+    rankedPlayers: [null, 'Player Two'],
+  };
+  assert.equal(findMatchingWtslLiveMatch(['[Fake] Squeaky', 'Player Two'], [rankedMatch]), rankedMatch);
+  assert.equal(findMatchingWtslLiveMatch(['[Fake] Squeaky', 'Player Two'], [unrankedMatch]), null);
 });
 
 test('likely-official labels require one matching TE4 draw fixture and best of 3 or 5', () => {

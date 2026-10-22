@@ -15,6 +15,11 @@ function loadRoute(path, mocks) {
   new Function('require', 'module', 'exports', code)((name) => {
     if (name in mocks) return mocks[name];
     if (name.startsWith('node:')) return require(name);
+    if (name === '@/lib/te4DmoLive') {
+      return {
+        hasCompletedDmoPoints: (snapshot) => Boolean(snapshot && Number.isInteger(snapshot.pointCount) && snapshot.pointCount > 0),
+      };
+    }
     throw new Error(`Unexpected route dependency: ${name}`);
   }, module, module.exports);
   return module.exports;
@@ -98,7 +103,7 @@ test('signed-in members can read broadcasts while guests cannot', async () => {
             owner_discord_id: 'member',
             owner_name: 'Member',
             status: 'live',
-            payload: { snapshot: { players: ['One', 'Two'], version: 1 }, players: ['One', 'Two'] },
+            payload: { snapshot: { players: ['One', 'Two'], version: 1, pointCount: 1 }, players: ['One', 'Two'] },
             sequence: 4,
             started_at: startedAt,
             updated_at: updatedAt,
@@ -109,7 +114,12 @@ test('signed-in members can read broadcasts while guests cannot', async () => {
             owner_discord_id: 'other-member',
             owner_name: 'Other',
             status: 'live',
-            payload: { stream: { provider: 'youtube', id: 'dQw4w9WgXcQ', sourceUrl: 'https://youtu.be/dQw4w9WgXcQ' } },
+            payload: {
+              stream: { provider: 'youtube', id: 'dQw4w9WgXcQ', sourceUrl: 'https://youtu.be/dQw4w9WgXcQ' },
+              snapshot: { players: ['Three', 'Four'], version: 1, pointCount: 1 },
+              replay: true,
+              replaySpeed: 4,
+            },
             sequence: 1,
             started_at: startedAt,
             updated_at: updatedAt,
@@ -127,10 +137,12 @@ test('signed-in members can read broadcasts while guests cannot', async () => {
     id: 'broadcast-id',
     status: 'live',
     ownerName: 'Member',
-    snapshot: { players: ['One', 'Two'], version: 1 },
+    snapshot: { players: ['One', 'Two'], version: 1, pointCount: 1 },
     stream: null,
     sourceMessageUrl: null,
     broadcastMode: 'manual',
+    replay: false,
+    replaySpeed: 1,
     officialByBroadcaster: false,
     likelyOfficial: false,
     players: ['One', 'Two'],
@@ -144,4 +156,6 @@ test('signed-in members can read broadcasts while guests cannot', async () => {
     id: 'dQw4w9WgXcQ',
     sourceUrl: 'https://youtu.be/dQw4w9WgXcQ',
   });
+  assert.equal(body.broadcasts[1].replay, true);
+  assert.equal(body.broadcasts[1].replaySpeed, 4);
 });

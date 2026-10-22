@@ -1,17 +1,17 @@
-import { redirect } from 'next/navigation';
 import { getSession } from '@/lib/auth';
 import DmoLiveHost from '@/components/DmoLiveHost';
 import DmoLiveViewer from '@/components/DmoLiveViewer';
+import type { Metadata } from 'next';
 
 export const dynamic = 'force-dynamic';
+export const metadata: Metadata = { title: { absolute: 'Live Streams' } };
 
 export default async function LivestreamsPage() {
   const user = await getSession();
-  if (!user) redirect('/api/auth/discord');
   return (
     <main className="live-broadcast-page">
-      <DmoLiveHost displayName={user.username} />
-      <DmoLiveViewer />
+      {user && <DmoLiveHost displayName={user.username} />}
+      <DmoLiveViewer canWatch={Boolean(user)} />
     </main>
   );
 }

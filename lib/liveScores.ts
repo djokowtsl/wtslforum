@@ -9,7 +9,7 @@ import {
   resolveLivePlayer,
   type ParsedLiveMatch,
 } from './liveScoreModel';
-import { findMatchingWtslLiveMatch } from './liveBroadcast';
+import { findMatchingWtslLiveMatch, resolveFakePrefixForRankedPlayer } from './liveBroadcast';
 import { fetchWTSLAllResults, type WTSLAllResultRow } from './wtsl';
 
 const SERVER_LIST_URL = 'https://www.managames.com/tennis/online/TE4_ServerList.php?Poll=1';
@@ -36,20 +36,73 @@ type PlayerRow = {
 function findPlayers(match: ParsedLiveMatch, playersByTour: Map<string, Map<string, PlayerRow>>) {
   const pair = match.name.split(/\s+vs\s+/i);
   if (pair.length !== 2) return null;
-  const names = pair.map(normalizePlayerName);
-  if (names.some((name) => !name)) return null;
   const tours = match.tourHint
     ? [match.tourHint]
     : ['TE4', 'TE4_(F)'];
   const candidates = tours.flatMap((tour) => {
     const players = playersByTour.get(tour);
-    const first = players ? resolveLivePlayer(names[0], players) : null;
-    const second = players ? resolveLivePlayer(names[1], players) : null;
+    const resolve = (name: string) => {
+      if (!players) return null;
+      const rankedNames = [...players.values()].map((player) => player.name);
+      const candidate = normalizePlayerName(resolveFakePrefixForRankedPlayer(name, rankedNames));
+      return candidate ? resolveLivePlayer(candidate, players) : null;
+    };
+    const first = resolve(pair[0]);
+    const second = resolve(pair[1]);
     return first && second && String(first.wtsl_player_id) !== String(second.wtsl_player_id)
       ? [{ tour, first, second }]
       : [];
   });
   return candidates.length === 1 ? candidates[0] : null;
+}
+
+function rankedPlayersForMatch(
+  match: ParsedLiveMatch,
+  playersByTour: Map<string, Map<string, PlayerRow>>,
+): [string | null, string | null] {
+  const pair = match.name.split(/\s+vs\s+/i);
+  if (pair.length !== 2) return [null, null];
+  const tours = match.tourHint
+    ? [match.tourHint]
+    : ['TE4', 'TE4_(F)'];
+  return pair.map((name) => {
+    const candidates = tours.flatMap((tour) => {
+      const players = playersByTour.get(tour);
+      if (!players) return [];
+      const rankedNames = [...players.values()].map((player) => player.name);
+      const normalized = normalizePlayerName(resolveFakePrefixForRankedPlayer(name, rankedNames));
+      const player = normalized ? resolveLivePlayer(normalized, players) : null;
+      return player ? [player] : [];
+    });
+    const canonicalNames = [...new Set(candidates.map((player) => player.name))];
+    return canonicalNames.length === 1 ? canonicalNames[0] : null;
+  }) as [string | null, string | null];
+}
+
+function createPlayersByTour(rows: PlayerRow[]) {
+  const playersByTour = new Map<string, Map<string, PlayerRow>>();
+  for (const row of rows) {
+    const name = normalizePlayerName(row.name);
+    if (!name) continue;
+    const map = playersByTour.get(row.tour) ?? new Map<string, PlayerRow>();
+    if (!map.has(name)) map.set(name, row);
+    playersByTour.set(row.tour, map);
+  }
+  return playersByTour;
+}
+
+async function getRankedPlayerRows(): Promise<PlayerRow[]> {
+  try {
+    return await sql`
+      SELECT wtsl_player_id, tour, name, tour_elo, avatar_url, flag_url, country
+      FROM wtsl_players
+      WHERE tour IN ('TE4','TE4_(F)')
+      ORDER BY synced_at DESC
+    ` as PlayerRow[];
+  } catch (error) {
+    console.warn('[live-scores] player rankings unavailable', error instanceof Error ? error.message : 'Unknown error');
+    return [];
+  }
 }
 
 async function getAllResults() {
@@ -131,9 +184,24 @@ async function enrichMatch(
   match: ParsedLiveMatch,
   playersByTour: Map<string, Map<string, PlayerRow>>,
 ) {
+  const rankedPlayers = rankedPlayersForMatch(match, playersByTour);
+  const pair = match.name.split(/\s+vs\s+/i);
+  const displayName = pair.length === 2
+    ? pair.map((name, index) => (
+      /^\s*\[Fake\]/i.test(name) && rankedPlayers[index] ? rankedPlayers[index] : name
+    )).join(' vs ')
+    : match.name;
   const entry = findPlayers(match, playersByTour);
   if (!entry) {
-    return { ...match, tour: match.tourHint, players: null, probability: null, probabilitySource: null };
+    return {
+      ...match,
+      name: displayName,
+      rankedPlayers,
+      tour: match.tourHint,
+      players: null,
+      probability: null,
+      probabilitySource: null,
+    };
   }
 
   let probability: number | null = null;
@@ -155,6 +223,8 @@ async function enrichMatch(
 
   return {
     ...match,
+    name: displayName,
+    rankedPlayers,
     tour: entry.tour,
     players: {
       first: {
@@ -183,26 +253,7 @@ export async function getLiveWtslMatches() {
   const matches = await getParsedLiveWtslMatches();
   if (matches.length === 0) return { matches: [], checkedAt: new Date().toISOString() };
 
-  let rows: PlayerRow[] = [];
-  try {
-    rows = await sql`
-      SELECT wtsl_player_id, tour, name, tour_elo, avatar_url, flag_url, country
-      FROM wtsl_players
-      WHERE tour IN ('TE4','TE4_(F)')
-      ORDER BY synced_at DESC
-    ` as PlayerRow[];
-  } catch (error) {
-    console.warn('[live-scores] player rankings unavailable', error instanceof Error ? error.message : 'Unknown error');
-  }
-
-  const playersByTour = new Map<string, Map<string, PlayerRow>>();
-  for (const row of rows) {
-    const name = normalizePlayerName(row.name);
-    if (!name) continue;
-    const map = playersByTour.get(row.tour) ?? new Map<string, PlayerRow>();
-    if (!map.has(name)) map.set(name, row);
-    playersByTour.set(row.tour, map);
-  }
+  const playersByTour = createPlayersByTour(await getRankedPlayerRows());
 
   return {
     matches: await Promise.all(matches.map((match) => enrichMatch(match, playersByTour))),
@@ -211,7 +262,32 @@ export async function getLiveWtslMatches() {
 }
 
 export async function getLiveWtslMatchForPlayers(players: [string, string]) {
-  return findMatchingWtslLiveMatch(players, await getParsedLiveWtslMatches());
+  const [matches, rows] = await Promise.all([
+    getParsedLiveWtslMatches(),
+    getRankedPlayerRows(),
+  ]);
+  const playersByTour = createPlayersByTour(rows);
+  const rankedMatches = matches.map((match) => ({
+    ...match,
+    rankedPlayers: rankedPlayersForMatch(match, playersByTour),
+  }));
+  const match = findMatchingWtslLiveMatch(players, rankedMatches);
+  if (!match) return null;
+  const rankedNames = rows.map((row) => row.name);
+  const canonicalPlayers: [string, string] = [
+    resolveFakePrefixForRankedPlayer(players[0], rankedNames),
+    resolveFakePrefixForRankedPlayer(players[1], rankedNames),
+  ];
+  return {
+    ...match,
+    canonicalPlayers,
+  };
+}
+
+export async function canonicalizeRankedDmoPlayers(players: [string, string]): Promise<[string, string]> {
+  const rows = await getRankedPlayerRows();
+  const rankedNames = rows.map((row) => row.name);
+  return players.map((name) => resolveFakePrefixForRankedPlayer(name, rankedNames)) as [string, string];
 }
 
 async function getParsedLiveWtslMatches() {

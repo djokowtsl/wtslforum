@@ -5,8 +5,11 @@ import { AlertTriangle, Radio } from 'lucide-react';
 import type { Te4LiveSnapshot } from '@/lib/te4DmoLive';
 import type { LiveStream } from '@/lib/liveBroadcast';
 import DmoLiveDisplay from './DmoLiveDisplay';
+import LiveBroadcastComments from './LiveBroadcastComments';
 import LiveStreamEmbed from './LiveStreamEmbed';
 import styles from './DmoLiveViewer.module.css';
+
+type Props = { canWatch: boolean };
 
 type Broadcast = {
   id: string;
@@ -16,13 +19,15 @@ type Broadcast = {
   stream: LiveStream | null;
   players: [string, string] | null;
   broadcastMode: 'manual' | 'auto';
+  replay: boolean;
+  replaySpeed: 1 | 2 | 4;
   officialByBroadcaster: boolean;
   likelyOfficial: boolean;
   updatedAt: string;
   stale: boolean;
 };
 
-export default function DmoLiveViewer() {
+export default function DmoLiveViewer({ canWatch }: Props) {
   const [broadcasts, setBroadcasts] = useState<Broadcast[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
@@ -30,6 +35,10 @@ export default function DmoLiveViewer() {
   const focusedOnce = useRef<string | null>(null);
 
   useEffect(() => {
+    if (!canWatch) {
+      setLoading(false);
+      return;
+    }
     let active = true;
     let running = false;
     setFocusedBroadcastId(new URLSearchParams(window.location.search).get('broadcast'));
@@ -56,7 +65,7 @@ export default function DmoLiveViewer() {
       active = false;
       window.clearInterval(timer);
     };
-  }, []);
+  }, [canWatch]);
 
   useEffect(() => {
     if (!focusedBroadcastId || !broadcasts.length || focusedOnce.current === focusedBroadcastId) return;
@@ -73,12 +82,21 @@ export default function DmoLiveViewer() {
   }, [focusedBroadcastId, broadcasts]);
 
   return (
-    <section className={styles.page} aria-label="Live broadcasts">
+    <section className={styles.page} aria-label="Live Streams">
       <header className={styles.heading}>
         <p className={styles.kicker}>WTSL FORUM / LIVE</p>
-        <h2>Watching <em>now</em></h2>
-        <p>Every broadcast is shown as a live court reconstruction, an embedded stream, or both.</p>
+        {canWatch ? <h2>Watching <em>now</em></h2> : <h1>Live Streams</h1>}
+        <p>Live matches and DMO replays appear as court reconstructions, embedded streams, or both.</p>
       </header>
+      {!canWatch ? (
+        <div className={styles.empty}>
+          <span className={styles.icon}><Radio size={23} /></span>
+          <h3>Sign in to watch live streams</h3>
+          <p>Anyone signed in to the Forum can watch live matches and DMO replays.</p>
+          <a className="btn btn-discord btn-sm" href="/api/auth/discord">Log in with Discord</a>
+        </div>
+      ) : (
+        <>
       {error && <p className={styles.error} role="alert"><AlertTriangle size={16} />{error}</p>}
       {broadcasts.length ? (
         <div className="live-broadcast-list">
@@ -87,7 +105,12 @@ export default function DmoLiveViewer() {
             return (
               <article className="live-broadcast-card" id={`broadcast-${broadcast.id}`} key={broadcast.id}>
                 <div className="live-broadcast-card-heading">
-                  <span><Radio size={16} />{broadcast.status === 'live' ? 'LIVE' : 'ENDED'} · {broadcast.ownerName}</span>
+                  <span><Radio size={16} />
+                    {broadcast.replay
+                      ? `REPLAY ${broadcast.replaySpeed}× · ${broadcast.status === 'live' ? 'PLAYING' : 'ENDED'}`
+                      : broadcast.status === 'live' ? 'LIVE' : 'ENDED'}
+                    {' · '}{broadcast.ownerName}
+                  </span>
                   {players && <strong>{players[0]} <i>vs</i> {players[1]}</strong>}
                 </div>
                 {(broadcast.broadcastMode === 'auto' || broadcast.officialByBroadcaster || broadcast.likelyOfficial) && (
@@ -119,6 +142,7 @@ export default function DmoLiveViewer() {
                       : 'This broadcast ended before DMO court data became available.'}</p>
                   </div>
                 )}
+                <LiveBroadcastComments broadcastId={broadcast.id} />
               </article>
             );
           })}
@@ -131,6 +155,8 @@ export default function DmoLiveViewer() {
             ? 'Checking for active streams and DMO courts.'
             : 'Start a broadcast above to share a stream link, a DMO court, or both.'}</p>
         </div>
+      )}
+        </>
       )}
     </section>
   );

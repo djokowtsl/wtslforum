@@ -4,7 +4,7 @@ import { z } from 'zod';
 import { getSession } from '@/lib/auth';
 import { isSameSiteMutation } from '@/lib/liveRequestSecurity';
 import { sql } from '@/lib/db';
-import { getLiveWtslMatchForPlayers } from '@/lib/liveScores';
+import { canonicalizeRankedDmoPlayers, getLiveWtslMatchForPlayers } from '@/lib/liveScores';
 import { readSiteSnapshot } from '@/lib/siteSnapshots';
 import type { PublicFixturePayload } from '@/lib/liveFeedTypes';
 import {
@@ -24,6 +24,8 @@ const startSchema = z.object({
   discordMessageUrl: z.string().trim().max(500).optional().default(''),
   players: z.tuple([z.string().trim().min(1).max(80), z.string().trim().min(1).max(80)]).optional(),
   mode: z.enum(['manual', 'auto']).optional().default('manual'),
+  replay: z.boolean().optional().default(false),
+  replaySpeed: z.union([z.literal(1), z.literal(2), z.literal(4)]).optional().default(1),
   bestOf: z.union([z.literal(1), z.literal(3), z.literal(5)]).optional(),
   officialByBroadcaster: z.boolean().optional().default(false),
 }).strict();
@@ -73,6 +75,18 @@ export async function POST(request: Request) {
       { status: 400, headers: PRIVATE_HEADERS },
     );
   }
+  if (body.replay && (!body.hasDmo || body.mode !== 'manual' || !body.players)) {
+    return NextResponse.json(
+      { error: 'A DMO replay needs a selected recording and its parsed player names.' },
+      { status: 400, headers: PRIVATE_HEADERS },
+    );
+  }
+  if (body.hasDmo && body.mode === 'manual' && !body.replay) {
+    return NextResponse.json(
+      { error: 'Manual DMO broadcasts must start from a replayable selected recording.' },
+      { status: 400, headers: PRIVATE_HEADERS },
+    );
+  }
   if (body.officialByBroadcaster && (
     !body.players
     || (body.bestOf !== 3 && body.bestOf !== 5)
@@ -84,6 +98,14 @@ export async function POST(request: Request) {
   }
 
   let broadcastBestOf = body.bestOf ?? 3;
+  let broadcastPlayers = body.players;
+  if (body.players) {
+    try {
+      broadcastPlayers = await canonicalizeRankedDmoPlayers(body.players);
+    } catch {
+      // Ranking lookup is optional for a replay; keep the parsed DMO names if it is unavailable.
+    }
+  }
   if (body.mode === 'auto' && body.players) {
     let liveMatch;
     try {
@@ -101,6 +123,7 @@ export async function POST(request: Request) {
       );
     }
     broadcastBestOf = liveMatch.bestOf;
+    broadcastPlayers = liveMatch.canonicalPlayers ?? broadcastPlayers;
   }
 
   if (!body.hasDmo && !messageUrl) {
@@ -167,13 +190,16 @@ export async function POST(request: Request) {
   }
 
   const payload = {
+    hasDmo: body.hasDmo,
     mode: body.mode,
+    replay: body.replay,
+    replaySpeed: body.replay ? body.replaySpeed : 1,
     bestOf: broadcastBestOf,
     officialByBroadcaster: body.officialByBroadcaster,
-    likelyOfficial: await likelyOfficialFromSnapshot(body.players, broadcastBestOf),
+    likelyOfficial: await likelyOfficialFromSnapshot(broadcastPlayers, broadcastBestOf),
     stream,
     sourceMessageUrl: verifiedMessageUrl,
-    ...(body.players ? { players: body.players } : {}),
+    ...(broadcastPlayers ? { players: broadcastPlayers } : {}),
   };
   const id = randomUUID();
   try {
@@ -184,7 +210,13 @@ export async function POST(request: Request) {
       VALUES
         (${id}::uuid, ${user.discordId}, 'live', 0, ${JSON.stringify(payload)}::jsonb, NOW(), NOW(), NOW() + INTERVAL '45 seconds')
     `;
-    return NextResponse.json({ id, stream }, { status: 201, headers: PRIVATE_HEADERS });
+    return NextResponse.json({
+      id,
+      stream,
+      ...(broadcastPlayers ? { players: broadcastPlayers } : {}),
+      replay: body.replay,
+      replaySpeed: body.replay ? body.replaySpeed : 1,
+    }, { status: 201, headers: PRIVATE_HEADERS });
   } catch (error) {
     console.error('[live-broadcast] start failed', error instanceof Error ? error.name : 'UnknownError');
     return NextResponse.json(

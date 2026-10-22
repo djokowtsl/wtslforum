@@ -1,9 +1,16 @@
 'use client';
 
-import { useEffect, useRef, useState, type ReactNode } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import Link from 'next/link';
 import { AlertTriangle, ExternalLink, FolderOpen, Radio, Square } from 'lucide-react';
-import { Te4DmoLiveParser, type Te4LiveBestOf, type Te4LiveSnapshot } from '@/lib/te4DmoLive';
+import {
+  hasCompletedDmoPoints,
+  replayFrameAtElapsedTime,
+  Te4DmoLiveParser,
+  type Te4DmoReplaySpeed,
+  type Te4LiveBestOf,
+  type Te4LiveSnapshot,
+} from '@/lib/te4DmoLive';
 import { findMatchingWtslLiveMatch } from '@/lib/liveBroadcast';
 import { consumePendingDmoReaderReset } from '@/lib/dmoReaderState';
 import { hasPlayerPositionData } from '@/lib/te4LiveSetup';
@@ -19,21 +26,23 @@ type FolderPickerWindow = Window & {
 };
 
 type Props = { displayName: string };
-type CheckTone = 'ready' | 'waiting' | 'action';
-type LiveWtslMatch = { name: string; bestOf: Te4LiveBestOf };
+type LiveWtslMatch = {
+  name: string;
+  bestOf: Te4LiveBestOf;
+  rankedPlayers?: [string | null, string | null];
+};
+type DmoFileOption = { name: string; size: number; lastModified: number };
+type DmoReplay = {
+  filename: string;
+  totalFrames: number;
+  bestOf: Te4LiveBestOf;
+  speed: Te4DmoReplaySpeed;
+  startedAt: number;
+  lastFrame: number;
+};
 
-function SetupCheck({ title, tone, children }: { title: string; tone: CheckTone; children: ReactNode }) {
-  const label = tone === 'ready' ? 'Ready' : tone === 'action' ? 'Check' : 'Waiting';
-  return (
-    <li className={styles.setupCheck} data-state={tone}>
-      <div className={styles.setupCheckHeading}>
-        <strong>{title}</strong>
-        <span>{label}</span>
-      </div>
-      <p>{children}</p>
-    </li>
-  );
-}
+const MAX_REPLAY_FILE_BYTES = 64 * 1024 * 1024;
+const DMO_READ_CHUNK_BYTES = 1 << 20;
 
 async function newestDmoIn(directory: LocalDmoDirectoryHandle): Promise<{ name: string; file: File } | null> {
   let newest: { name: string; file: File } | null = null;
@@ -50,6 +59,52 @@ async function newestDmoIn(directory: LocalDmoDirectoryHandle): Promise<{ name: 
   return newest;
 }
 
+async function dmoFilesIn(directory: LocalDmoDirectoryHandle): Promise<DmoFileOption[]> {
+  const files: DmoFileOption[] = [];
+  for await (const handle of directory.values()) {
+    if (handle.kind !== 'file') continue;
+    const file = await handle.getFile();
+    if (!file.name.toLowerCase().endsWith('.dmo') || !file.size) continue;
+    files.push({ name: file.name, size: file.size, lastModified: file.lastModified });
+  }
+  return files.sort((first, second) =>
+    second.lastModified - first.lastModified
+    || second.size - first.size
+    || first.name.localeCompare(second.name));
+}
+
+async function dmoNamedIn(
+  directory: LocalDmoDirectoryHandle,
+  name: string,
+): Promise<{ name: string; file: File } | null> {
+  for await (const handle of directory.values()) {
+    if (handle.kind !== 'file') continue;
+    const file = await handle.getFile();
+    if (file.name === name && file.name.toLowerCase().endsWith('.dmo') && file.size) {
+      return { name: file.name, file };
+    }
+  }
+  return null;
+}
+
+async function parseCompleteDmo(file: File, bestOf: Te4LiveBestOf) {
+  if (file.size > MAX_REPLAY_FILE_BYTES) {
+    throw new Error('This DMO is larger than the 64 MiB replay limit.');
+  }
+  const parser = new Te4DmoLiveParser();
+  for (let offset = 0; offset < file.size; offset += DMO_READ_CHUNK_BYTES) {
+    const chunk = new Uint8Array(await file.slice(offset, offset + DMO_READ_CHUNK_BYTES).arrayBuffer());
+    parser.append(chunk);
+  }
+  if (parser.header?.bad) throw new Error('This file does not have a recognized TE4 DMO header.');
+  const snapshot = parser.snapshot(file.name, bestOf);
+  if (!snapshot) throw new Error('This DMO does not contain enough readable TE4 match frames to replay.');
+  if (!hasCompletedDmoPoints(snapshot)) {
+    throw new Error('No completed point events could be parsed from this DMO, so it cannot be replayed.');
+  }
+  return { parser, snapshot };
+}
+
 async function responseError(response: Response): Promise<string> {
   const body = await response.json().catch(() => null);
   return typeof body?.error === 'string' ? body.error : `Request failed (${response.status}).`;
@@ -63,6 +118,9 @@ export default function DmoLiveHost({ displayName }: Props) {
   const [browserSupported, setBrowserSupported] = useState<boolean | null>(null);
   const [autoWatching, setAutoWatching] = useState(false);
   const [liveMatches, setLiveMatches] = useState<LiveWtslMatch[]>([]);
+  const [dmoFiles, setDmoFiles] = useState<DmoFileOption[]>([]);
+  const [selectedDmoName, setSelectedDmoName] = useState('');
+  const [replaySpeed, setReplaySpeed] = useState<Te4DmoReplaySpeed>(1);
   const [liveFeedReady, setLiveFeedReady] = useState(false);
   const [fileFound, setFileFound] = useState(false);
   const [dmoRecognized, setDmoRecognized] = useState<boolean | null>(null);
@@ -92,6 +150,8 @@ export default function DmoLiveHost({ displayName }: Props) {
   const autoWatchingRef = useRef(false);
   const broadcastModeRef = useRef<'manual' | 'auto' | null>(null);
   const automaticPlayers = useRef<[string, string] | null>(null);
+  const replay = useRef<DmoReplay | null>(null);
+  const canonicalBroadcastPlayers = useRef<[string, string] | null>(null);
   const lastAutomaticAttemptAt = useRef(0);
 
   useEffect(() => {
@@ -124,6 +184,39 @@ export default function DmoLiveHost({ displayName }: Props) {
   useEffect(() => {
     autoWatchingRef.current = autoWatching;
   }, [autoWatching]);
+
+  useEffect(() => {
+    if (!directory) {
+      setDmoFiles([]);
+      setSelectedDmoName('');
+      return;
+    }
+    let cancelled = false;
+    let requestInFlight = false;
+    const refreshDmoFiles = async () => {
+      if (requestInFlight || cancelled) return;
+      requestInFlight = true;
+      try {
+        const files = await dmoFilesIn(directory);
+        if (cancelled) return;
+        setDmoFiles(files);
+        setSelectedDmoName((current) =>
+          current && files.some((file) => file.name === current)
+            ? current
+            : files[0]?.name ?? '');
+      } catch {
+        if (!cancelled) setDmoFiles([]);
+      } finally {
+        requestInFlight = false;
+      }
+    };
+    void refreshDmoFiles();
+    const interval = window.setInterval(() => { void refreshDmoFiles(); }, 5_000);
+    return () => {
+      cancelled = true;
+      window.clearInterval(interval);
+    };
+  }, [directory]);
 
   useEffect(() => {
     if (!directory || !autoWatching) {
@@ -191,6 +284,7 @@ export default function DmoLiveHost({ displayName }: Props) {
       setSavedDirectory(demosFolder);
       setFolderLabel(selectedLabel);
       setFolderKind(selectedKind);
+      setSelectedDmoName('');
       setAutoWatching(true);
       autoWatchingRef.current = true;
       setFileFound(false);
@@ -213,6 +307,7 @@ export default function DmoLiveHost({ displayName }: Props) {
           setNotice(`Folder selected: ${selectedLabel}. No .dmo file was found yet.`);
           return;
         }
+        setSelectedDmoName(newest.name);
         setFileFound(true);
         const checkParser = new Te4DmoLiveParser();
         checkParser.append(new Uint8Array(await newest.file.slice(0, 1 << 20).arrayBuffer()));
@@ -225,7 +320,7 @@ export default function DmoLiveHost({ displayName }: Props) {
         if (snapshot) {
           setDmoRecognized(true);
           setPositionsPresent(hasPlayerPositionData(snapshot.court));
-          setNotice('Local preflight found a readable TE4 recording. Start a match to check real-time updates.');
+          setNotice('Local preflight found a readable TE4 recording. Choose a DMO below to replay a completed match, or keep automatic detection on for live WTSL matches.');
         } else {
           setNotice('A .dmo file was found. Start a match to check for readable frames and real-time updates.');
         }
@@ -263,20 +358,11 @@ export default function DmoLiveHost({ displayName }: Props) {
   ) => {
     if ((!directory && !discordMessageUrl.trim()) || busy || broadcastId) return;
     if (mode === 'auto' && (!directory || !liveFeedReadyRef.current)) return;
-    if (mode === 'manual' && Boolean(playerOne.trim()) !== Boolean(playerTwo.trim())) {
+    if (mode === 'manual' && !directory && Boolean(playerOne.trim()) !== Boolean(playerTwo.trim())) {
       setError('Enter both player names or leave both blank.');
       return;
     }
-    const players = automaticMatch?.players ?? (playerOne.trim() && playerTwo.trim()
-      ? [playerOne.trim(), playerTwo.trim()] as [string, string]
-      : undefined);
     const broadcastBestOf = automaticMatch?.bestOf ?? bestOf;
-    if (mode === 'manual' && officialByBroadcaster && broadcastBestOf === 1) {
-      setOfficialByBroadcaster(false);
-    } else if (mode === 'manual' && officialByBroadcaster && (!players || (broadcastBestOf !== 3 && broadcastBestOf !== 5))) {
-      setError('To tag this as official, enter both players and choose best of 3 or best of 5.');
-      return;
-    }
     setBusy(true);
     setError('');
     if (mode === 'manual') {
@@ -284,12 +370,42 @@ export default function DmoLiveHost({ displayName }: Props) {
       setRealTimeObserved(false);
     }
     setPositionsPresent(null);
+    let createdBroadcastId: string | null = null;
+    let replaySource: {
+      name: string;
+      file: File;
+      parser: Te4DmoLiveParser;
+      snapshot: Te4LiveSnapshot;
+    } | null = null;
     try {
+      if (mode === 'manual' && directory) {
+        if (!selectedDmoName) throw new Error('Choose a DMO file to replay first.');
+        const selected = await dmoNamedIn(directory, selectedDmoName);
+        if (!selected) throw new Error('The selected DMO is no longer in the connected folder. Choose another file.');
+        const parsed = await parseCompleteDmo(selected.file, broadcastBestOf);
+        replaySource = { ...selected, ...parsed };
+        setFileFound(true);
+        setDmoRecognized(true);
+        setPositionsPresent(hasPlayerPositionData(parsed.snapshot.court));
+      }
+
+      const typedPlayers = !directory && playerOne.trim() && playerTwo.trim()
+        ? [playerOne.trim(), playerTwo.trim()] as [string, string]
+        : undefined;
+      const players = automaticMatch?.players ?? replaySource?.snapshot.players ?? typedPlayers;
+      if (mode === 'manual' && officialByBroadcaster && broadcastBestOf === 1) {
+        setOfficialByBroadcaster(false);
+      } else if (mode === 'manual' && officialByBroadcaster && (!players || (broadcastBestOf !== 3 && broadcastBestOf !== 5))) {
+        throw new Error('To tag this as official, a DMO replay needs player names and the match format must be best of 3 or best of 5.');
+      }
+
       const response = await fetch('/api/live-dmo', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           hasDmo: Boolean(directory),
+          replay: Boolean(replaySource),
+          replaySpeed: replaySource ? replaySpeed : 1,
           discordMessageUrl: mode === 'manual' ? discordMessageUrl.trim() : '',
           players,
           mode,
@@ -298,12 +414,48 @@ export default function DmoLiveHost({ displayName }: Props) {
         }),
       });
       if (!response.ok) throw new Error(await responseError(response));
-      const body = await response.json() as { id?: string };
+      const body = await response.json() as {
+        id?: string;
+        players?: [string, string];
+      };
       if (!body.id) throw new Error('The broadcast could not be started.');
-      if (mode === 'manual' && directory) resetDmoReaderOnNextPoll.current = true;
+      createdBroadcastId = body.id;
+      const canonicalPlayers = body.players ?? players ?? null;
+      canonicalBroadcastPlayers.current = canonicalPlayers;
+      replay.current = null;
+      resetDmoReaderOnNextPoll.current = false;
       sequence.current = 0;
       lastSentVersion.current = -1;
       lastHeartbeat.current = 0;
+
+      if (replaySource) {
+        parser.current = replaySource.parser;
+        activeFilename.current = replaySource.name;
+        readBytes.current = replaySource.file.size;
+        const firstFrame = replaySource.parser.snapshot(replaySource.name, broadcastBestOf, 10);
+        if (!firstFrame) throw new Error('The selected DMO could not produce its opening replay snapshot.');
+        const initialResponse = await fetch(`/api/live-dmo/${body.id}`, {
+          method: 'PATCH',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            sequence: 1,
+            snapshot: { ...firstFrame, players: canonicalPlayers ?? firstFrame.players },
+          }),
+        });
+        if (!initialResponse.ok) throw new Error(await responseError(initialResponse));
+        sequence.current = 1;
+        lastSentVersion.current = replaySource.parser.version;
+        lastHeartbeat.current = Date.now();
+        replay.current = {
+          filename: replaySource.name,
+          totalFrames: replaySource.parser.frameCount,
+          bestOf: broadcastBestOf,
+          speed: replaySpeed,
+          startedAt: Date.now(),
+          lastFrame: 10,
+        };
+      }
+
       setBroadcastId(body.id);
       setBroadcastMode(mode);
       broadcastModeRef.current = mode;
@@ -311,9 +463,14 @@ export default function DmoLiveHost({ displayName }: Props) {
       setNotice(directory
         ? mode === 'auto'
           ? 'WTSL live match confirmed. Automatic DMO broadcast started.'
-          : 'Manual broadcast started. Waiting for TE4 to write readable match frames.'
+          : `Replaying ${replaySource?.name ?? 'the selected DMO'} from the beginning at ${replaySpeed}×.`
         : 'Broadcast started. The Discord stream will appear in the viewer list below.');
     } catch (cause) {
+      replay.current = null;
+      parser.current = null;
+      if (createdBroadcastId) {
+        await fetch(`/api/live-dmo/${createdBroadcastId}`, { method: 'DELETE' }).catch(() => undefined);
+      }
       setError(cause instanceof Error ? cause.message : 'The broadcast could not be started.');
     } finally {
       setBusy(false);
@@ -332,6 +489,8 @@ export default function DmoLiveHost({ displayName }: Props) {
       setBroadcastMode(null);
       broadcastModeRef.current = null;
       automaticPlayers.current = null;
+      replay.current = null;
+      canonicalBroadcastPlayers.current = null;
       if (broadcastMode === 'auto') {
         setAutoWatching(false);
         autoWatchingRef.current = false;
@@ -351,12 +510,15 @@ export default function DmoLiveHost({ displayName }: Props) {
     const sendUpdate = async (current?: Te4LiveSnapshot) => {
       if (!broadcastId) return;
       const nextSequence = sequence.current + 1;
+      const snapshot = current
+        ? { ...current, players: canonicalBroadcastPlayers.current ?? current.players }
+        : undefined;
       const response = await fetch(`/api/live-dmo/${broadcastId}`, {
         method: 'PATCH',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           sequence: nextSequence,
-          ...(current ? { snapshot: current } : {}),
+          ...(snapshot ? { snapshot } : {}),
         }),
       });
       if (!response.ok) throw new Error(await responseError(response));
@@ -368,7 +530,7 @@ export default function DmoLiveHost({ displayName }: Props) {
       else if (!directory) setNotice('Stream broadcast is live for signed-in viewers.');
     };
 
-    const endAutomaticBroadcast = async (message: string) => {
+    const endActiveBroadcast = async (message: string) => {
       if (!broadcastId) return;
       const response = await fetch(`/api/live-dmo/${broadcastId}`, { method: 'DELETE' });
       if (!response.ok && response.status !== 404) throw new Error(await responseError(response));
@@ -377,6 +539,8 @@ export default function DmoLiveHost({ displayName }: Props) {
       setBroadcastMode(null);
       broadcastModeRef.current = null;
       automaticPlayers.current = null;
+      canonicalBroadcastPlayers.current = null;
+      replay.current = null;
       setNotice(message);
     };
 
@@ -394,6 +558,26 @@ export default function DmoLiveHost({ displayName }: Props) {
           if (broadcastId && Date.now() - lastHeartbeat.current >= 10_000) await sendUpdate();
           return;
         }
+        if (broadcastId && replay.current) {
+          const playback = replay.current;
+          const frame = replayFrameAtElapsedTime(
+            playback.totalFrames,
+            Date.now() - playback.startedAt,
+            playback.speed,
+          );
+          if (frame > playback.lastFrame) {
+            const current = parser.current?.snapshot(playback.filename, playback.bestOf, frame);
+            if (!current) throw new Error('The selected DMO could not produce the next replay snapshot.');
+            replay.current = { ...playback, lastFrame: frame };
+            await sendUpdate(current);
+            if (frame >= playback.totalFrames) {
+              await endActiveBroadcast('DMO replay complete. Its final match board remains visible for 15 minutes.');
+            }
+          } else if (Date.now() - lastHeartbeat.current >= 10_000) {
+            await sendUpdate();
+          }
+          return;
+        }
         const newest = await newestDmoIn(directory);
         if (cancelled) return;
         if (!newest) {
@@ -403,7 +587,7 @@ export default function DmoLiveHost({ displayName }: Props) {
               ? findMatchingWtslLiveMatch(pair, liveMatchesRef.current)
               : null;
             if (!activeMatch || activeMatch.bestOf !== bestOf) {
-              await endAutomaticBroadcast('The WTSL live feed no longer confirms this pair. Automatic broadcast ended; monitoring for the next match.');
+              await endActiveBroadcast('The WTSL live feed no longer confirms this pair. Automatic broadcast ended; monitoring for the next match.');
               return;
             }
           }
@@ -452,7 +636,7 @@ export default function DmoLiveHost({ displayName }: Props) {
             ? findMatchingWtslLiveMatch(pair, liveMatchesRef.current)
             : null;
           if (!activeMatch || activeMatch.bestOf !== bestOf) {
-            await endAutomaticBroadcast(
+            await endActiveBroadcast(
               liveFeedReadyRef.current
                 ? 'The WTSL feed no longer confirms this player pair as live. Automatic broadcast ended; monitoring for the next match.'
                 : 'The WTSL live-match feed could not be verified. Automatic broadcast ended; monitoring will resume when the feed returns.',
@@ -485,6 +669,10 @@ export default function DmoLiveHost({ displayName }: Props) {
             setNotice('Automatic detection is waiting for a verified WTSL live-match feed.');
             return;
           }
+          if (!hasCompletedDmoPoints(current)) {
+            setNotice('Waiting for a completed point to be parsed before broadcasting this DMO.');
+            return;
+          }
           const activeMatch = findMatchingWtslLiveMatch(current.players, liveMatchesRef.current);
           if (!activeMatch) {
             setNotice(`Live DMO detected for ${current.players[0]} vs ${current.players[1]}. Waiting for the same pair in the WTSL live feed.`);
@@ -492,7 +680,7 @@ export default function DmoLiveHost({ displayName }: Props) {
           }
           if (Date.now() - lastAutomaticAttemptAt.current < 15_000) return;
           const matchedSnapshot = parser.current!.snapshot(newest.name, activeMatch.bestOf);
-          if (!matchedSnapshot) return;
+          if (!matchedSnapshot || !hasCompletedDmoPoints(matchedSnapshot)) return;
           lastAutomaticAttemptAt.current = Date.now();
           setBestOf(activeMatch.bestOf);
           await startBroadcast('auto', { players: matchedSnapshot.players, bestOf: activeMatch.bestOf });
@@ -518,21 +706,51 @@ export default function DmoLiveHost({ displayName }: Props) {
     };
   }, [directory, broadcastId, bestOf, autoWatching]);
 
-  const folderTone: CheckTone = !directory
-    ? 'waiting'
-    : dmoRecognized === false || (folderKind === 'other' && !fileFound)
-      ? 'action'
-      : fileFound
-        ? 'ready'
-        : 'waiting';
+  const localPreflight = (() => {
+    const unresolved: Array<{ tone: 'waiting' | 'action'; message: string }> = [];
+    if (browserSupported === null) {
+      unresolved.push({ tone: 'waiting', message: 'Checking browser access' });
+    } else if (!browserSupported) {
+      unresolved.push({ tone: 'action', message: 'Use Chrome or Edge for local DMO access' });
+    }
+    if (!directory) {
+      unresolved.push({
+        tone: 'action',
+        message: savedDirectory ? 'Reconnect the saved folder' : 'Select a TE4 DMO folder',
+      });
+    } else if (!fileFound) {
+      unresolved.push({
+        tone: folderKind === 'other' ? 'action' : 'waiting',
+        message: folderKind === 'other' ? 'No DMO found; choose a TE4 recording folder' : 'Waiting for a DMO file',
+      });
+    } else if (dmoRecognized === null) {
+      unresolved.push({ tone: 'waiting', message: 'Checking the selected DMO' });
+    } else if (dmoRecognized === false) {
+      unresolved.push({ tone: 'action', message: 'No valid TE4 DMO found' });
+    } else {
+      if (positionsPresent === null) {
+        unresolved.push({ tone: 'waiting', message: 'Checking court data' });
+      } else if (positionsPresent === false) {
+        unresolved.push({ tone: 'action', message: 'Court data missing; enable RecordDebugInfo and record again' });
+      }
+      if (!realTimeObserved && !replay.current) {
+        unresolved.push({ tone: 'waiting', message: 'Select a completed DMO to replay or wait for live file growth' });
+      }
+    }
+    if (!unresolved.length) return { tone: 'ready', message: 'Ready for broadcast — all local checks passed.' };
+    return {
+      tone: unresolved.some((item) => item.tone === 'action') ? 'action' : 'waiting',
+      message: unresolved.map((item) => item.message).join(' · '),
+    };
+  })();
 
   return (
     <section className={styles.page}>
       <header className={styles.heading}>
         <div>
         <p className={styles.kicker}>WTSL FORUM / LIVE</p>
-          <h1>Live <em>broadcast</em></h1>
-          <p>Share a live court reconstructed from a local TE4 recording, a stream link from your Discord post, or both. DMO files stay on your device.</p>
+          <h1>Live <em>Streams</em></h1>
+          <p>Share a live court, replay a completed DMO from the start, or add a stream link from your Discord post. DMO files stay on your device.</p>
         </div>
         <Link className={styles.watchLink} href="/livestreams"><ExternalLink size={15} /> Viewer page</Link>
       </header>
@@ -561,6 +779,40 @@ export default function DmoLiveHost({ displayName }: Props) {
         <button type="button" className={styles.secondaryButton} onClick={chooseFolder} disabled={busy || Boolean(broadcastId)}>
           <FolderOpen size={16} /> {directory ? 'Change folder' : 'Choose TE4 folder'}
         </button>
+        {directory && (
+          <label className={styles.bestOf}>
+            <span>DMO to replay</span>
+            <select
+              value={selectedDmoName}
+              onChange={(event) => setSelectedDmoName(event.currentTarget.value)}
+              disabled={busy || Boolean(broadcastId)}
+              aria-label="Select a DMO recording to replay"
+            >
+              {!dmoFiles.length
+                ? <option value="">{fileFound ? 'Scanning DMO folder…' : 'No DMO files found'}</option>
+                : dmoFiles.map((file) => (
+                  <option key={file.name} value={file.name}>
+                    {file.name} · {(file.size / (1024 * 1024)).toFixed(1)} MB
+                  </option>
+                ))}
+            </select>
+          </label>
+        )}
+        {directory && (
+          <label className={styles.bestOf}>
+            <span>Replay speed</span>
+            <select
+              value={replaySpeed}
+              onChange={(event) => setReplaySpeed(Number(event.currentTarget.value) as Te4DmoReplaySpeed)}
+              disabled={busy || Boolean(broadcastId)}
+              aria-label="DMO replay speed"
+            >
+              <option value={1}>1× · real time</option>
+              <option value={2}>2×</option>
+              <option value={4}>4×</option>
+            </select>
+          </label>
+        )}
         {savedDirectory && !directory && (
           <button type="button" className={styles.secondaryButton} onClick={reconnectSavedFolder} disabled={busy || Boolean(broadcastId)}>
             <FolderOpen size={16} /> Reconnect saved folder
@@ -594,7 +846,7 @@ export default function DmoLiveHost({ displayName }: Props) {
             aria-label="Link to your stream message in the WTSL Discord channel"
           />
         </label>
-        <label className={styles.bestOf}>
+        {!directory && <label className={styles.bestOf}>
           <span>Match players (optional; needed for match tags)</span>
           <input
             type="text"
@@ -614,7 +866,7 @@ export default function DmoLiveHost({ displayName }: Props) {
             disabled={busy || Boolean(broadcastId)}
             aria-label="Second player"
           />
-        </label>
+        </label>}
         <label style={{ display: 'flex', alignItems: 'center', gap: 8, maxWidth: 310, color: 'var(--soft, #c4d0e2)', fontSize: 11 }}>
           <input
             type="checkbox"
@@ -626,7 +878,7 @@ export default function DmoLiveHost({ displayName }: Props) {
         </label>
         {!broadcastId ? (
           <button type="button" className={styles.primaryButton} onClick={() => void startBroadcast('manual')} disabled={(!directory && !discordMessageUrl.trim()) || busy}>
-            <Radio size={16} /> {busy ? 'Starting…' : 'Start broadcast manually'}
+            <Radio size={16} /> {busy ? 'Starting…' : directory ? 'Replay selected DMO' : 'Start broadcast manually'}
           </button>
         ) : (
           <button type="button" className={styles.stopButton} onClick={stopBroadcast} disabled={busy}>
@@ -637,7 +889,7 @@ export default function DmoLiveHost({ displayName }: Props) {
 
       <div className={styles.audienceNote}>
         <span className={styles.accessTag}>SIGNED-IN VIEWERS</span>
-        <span>Anyone signed in to the Forum can watch below. Keep this page open on the computer running TE4; automatic detection reads the local DMO folder here and stops when the browser closes. Manual broadcasts remain available.</span>
+          <span>Anyone signed in to the Forum can watch below. Keep this page open while a live match is detected or a selected DMO is replayed; the recording stays on this device and only score/court snapshots are shared.</span>
       </div>
       {directory && (
         <p className={styles.statusLine} role="status">
@@ -649,61 +901,13 @@ export default function DmoLiveHost({ displayName }: Props) {
         </p>
       )}
 
-      <section className={styles.setupChecks} aria-label="TE4 broadcast setup checks">
-        <div className={styles.setupIntro}>
-          <div>
-            <p className={styles.setupKicker}>LOCAL PREFLIGHT</p>
-            <h2>TE4 setup checks</h2>
-          </div>
-          <p>The checks read the selected DMO in this browser. The recording and profile .ini are not uploaded; only derived live snapshots are shared.</p>
-        </div>
-        <ul className={styles.setupList}>
-          <SetupCheck
-            title="Browser support"
-            tone={browserSupported === false ? 'action' : directory ? 'ready' : 'waiting'}
-          >
-            {browserSupported === false
-              ? 'Use a recent Chrome or Edge browser on the PC running TE4. Folder access is not available in this browser.'
-              : browserSupported === true
-                ? 'This browser can read a folder you select. The DMO itself stays in this browser.'
-                : 'Checking whether this browser supports local folder access.'}
-          </SetupCheck>
-          <SetupCheck title="Folder and DMO" tone={folderTone}>
-            {!directory
-              ? 'Choose the TE4 Profiles folder or its Demos subfolder. A custom folder containing .dmo files also works.'
-              : dmoRecognized === false
-                ? 'A .dmo file was found, but its header is not recognized. Choose the TE4 Demos folder and check the game is writing a match replay.'
-                : dmoRecognized === true
-                  ? `A readable TE4 recording was found in ${folderLabel}.`
-                  : fileFound
-                    ? `A .dmo file was found in ${folderLabel}; waiting for enough match frames to confirm it.`
-                    : folderKind === 'other'
-                      ? `${folderLabel} has no readable .dmo file yet. Choose Profiles or Demos, or a custom folder that contains .dmo files.`
-                      : `Reading ${folderLabel}; no .dmo file has been found yet.`}
-          </SetupCheck>
-          <SetupCheck
-            title="Real-time recording"
-            tone={realTimeObserved ? 'ready' : fileFound ? 'waiting' : directory ? 'action' : 'waiting'}
-          >
-            {realTimeObserved
-              ? 'The selected .dmo grew during this broadcast, so live recording is being detected.'
-              : fileFound
-                ? 'A DMO was found. Start a match and this check will confirm when its file grows. If it stays unchanged during play, set TE4 Options → Recordings to Real time.'
-                : directory
-                  ? 'No .dmo file found yet. In TE4 Options → Recordings, choose Real time, then start a match.'
-                  : 'After you select a folder, this check looks for a DMO that updates while a match is being played.'}
-          </SetupCheck>
-          <SetupCheck
-            title="Court-position data"
-            tone={positionsPresent === true ? 'ready' : positionsPresent === false ? 'action' : 'waiting'}
-          >
-            {positionsPresent === true
-              ? 'Player positions were found in the local DMO; the Forum can reconstruct the live court.'
-              : positionsPresent === false
-                ? 'No player positions were detected. Close TE4, open the profile .ini in your TE4 data folder, set RecordDebugInfo = 1 under [Record], save, restart TE4, and start a new recording.'
-                : 'Waiting for enough readable match frames to check for player positions. If the court stays empty, set RecordDebugInfo = 1 under [Record] in your profile .ini, then restart TE4 and record a new match.'}
-          </SetupCheck>
-        </ul>
+      <section
+        className={styles.preflightStatus}
+        data-state={localPreflight.tone}
+        aria-label="Local broadcast status"
+      >
+        <p className={styles.preflightKicker}>LOCAL PREFLIGHT</p>
+        <p className={styles.preflightMessage} role="status" aria-live="polite">{localPreflight.message}</p>
       </section>
 
       {notice && <p className={styles.statusLine} role="status">{notice}</p>}
@@ -712,8 +916,10 @@ export default function DmoLiveHost({ displayName }: Props) {
         <span className={styles.emptyIcon}><Radio size={22} /></span>
         <h2>{broadcastId ? 'Broadcast running' : 'Ready to go live'}</h2>
         <p>{broadcastId
-          ? 'Your broadcast appears in the viewer list below. Other signed-in members can watch it there too.'
-          : 'Choose a TE4 folder, add a stream message link, or use both. Your live broadcast appears in the viewer list below.'}</p>
+          ? replay.current
+            ? 'Your replay appears in the viewer list below. Signed-in members can watch the match progress there.'
+            : 'Your broadcast appears in the viewer list below. Other signed-in members can watch it there too.'
+          : 'Choose a TE4 folder to replay a completed DMO, add a stream message link, or use both. Multiple broadcasts appear in the viewer list.'}</p>
       </div>
     </section>
   );

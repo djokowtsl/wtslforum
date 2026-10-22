@@ -1,6 +1,10 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
-import { Te4DmoLiveParser } from '../lib/te4DmoLive.ts';
+import {
+  hasCompletedDmoPoints,
+  replayFrameAtElapsedTime,
+  Te4DmoLiveParser,
+} from '../lib/te4DmoLive.ts';
 import { hasPlayerPositionData } from '../lib/te4LiveSetup.ts';
 import { isSameSiteMutation } from '../lib/liveRequestSecurity.ts';
 
@@ -64,6 +68,20 @@ test('incremental DMO parsing waits for frames, then emits a compact live snapsh
   assert.ok(snapshot.court.length > 0 && snapshot.court.length <= 25);
   assert.equal(snapshot.filename, 'match.dmo');
   assert.equal(parser.snapshot('match.dmo', 1)?.bestOf, 1);
+
+  const replayOpening = parser.snapshot('match.dmo', 3, 24);
+  assert.equal(replayOpening?.frameCount, 24);
+  assert.equal(replayOpening?.pointCount, 0);
+});
+
+test('DMO replay eligibility requires parsed completed points and advances at the chosen speed', () => {
+  assert.equal(hasCompletedDmoPoints(null), false);
+  assert.equal(hasCompletedDmoPoints({ pointCount: 0 }), false);
+  assert.equal(hasCompletedDmoPoints({ pointCount: 1 }), true);
+  assert.equal(replayFrameAtElapsedTime(1_000, 0, 1), 10);
+  assert.equal(replayFrameAtElapsedTime(1_000, 1_000, 1), 70);
+  assert.equal(replayFrameAtElapsedTime(1_000, 1_000, 4), 250);
+  assert.equal(replayFrameAtElapsedTime(50, 100_000, 1), 50);
 });
 
 test('invalid DMO signatures are marked instead of yielding a scoreboard', () => {
