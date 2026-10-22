@@ -12,7 +12,7 @@ export default async function AdminDmoAnalysis() {
   return (
     <>
       <div className="container" style={{ paddingTop: 16 }}>
-        <Link className="btn btn-sm btn-ghost" href="/live-dmo">Open Live Broadcast</Link>
+        <Link className="btn btn-sm btn-ghost" href="/livestreams">Open Live Broadcast</Link>
       </div>
       <DmoAnalysisWorkspace />
     </>

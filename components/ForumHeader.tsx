@@ -29,7 +29,7 @@ export const NAV = [
 
 export async function ForumHeader() {
   const u = await getSession();
-  const navItems = u ? [...NAV, { href: '/live-dmo', label: 'Live Broadcast' }] : NAV;
+  const navItems = u ? [...NAV, { href: '/livestreams', label: 'Live Broadcast' }] : NAV;
   const canModerate = canModerateComments(u);
   const status = u ? await safe(() => getUserStatus(u.id), 'offline' as const) : null;
   const unread = u ? await safe(() => unreadMessageCount(u.id), 0) : 0;

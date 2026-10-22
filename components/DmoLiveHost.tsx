@@ -1,9 +1,10 @@
 'use client';
 
-import { useEffect, useRef, useState } from 'react';
+import { useEffect, useRef, useState, type ReactNode } from 'react';
 import Link from 'next/link';
 import { AlertTriangle, ExternalLink, FolderOpen, Radio, Square } from 'lucide-react';
 import { Te4DmoLiveParser, type Te4LiveBestOf, type Te4LiveSnapshot } from '@/lib/te4DmoLive';
+import { hasPlayerPositionData } from '@/lib/te4LiveSetup';
 import styles from './DmoLiveHost.module.css';
 
 type LocalFileHandle = {
@@ -14,6 +15,7 @@ type LocalFileHandle = {
 type LocalDirectoryHandle = {
   name: string;
   values(): AsyncIterableIterator<LocalFileHandle>;
+  getDirectoryHandle?(name: string): Promise<LocalDirectoryHandle>;
 };
 
 type FolderPickerWindow = Window & {
@@ -21,6 +23,35 @@ type FolderPickerWindow = Window & {
 };
 
 type Props = { displayName: string };
+type CheckTone = 'ready' | 'waiting' | 'action';
+
+function SetupCheck({ title, tone, children }: { title: string; tone: CheckTone; children: ReactNode }) {
+  const label = tone === 'ready' ? 'Ready' : tone === 'action' ? 'Check' : 'Waiting';
+  return (
+    <li className={styles.setupCheck} data-state={tone}>
+      <div className={styles.setupCheckHeading}>
+        <strong>{title}</strong>
+        <span>{label}</span>
+      </div>
+      <p>{children}</p>
+    </li>
+  );
+}
+
+async function newestDmoIn(directory: LocalDirectoryHandle): Promise<{ name: string; file: File } | null> {
+  let newest: { name: string; file: File } | null = null;
+  for await (const handle of directory.values()) {
+    if (handle.kind !== 'file') continue;
+    const file = await handle.getFile();
+    if (!file.name.toLowerCase().endsWith('.dmo') || !file.size) continue;
+    if (
+      !newest
+      || file.lastModified > newest.file.lastModified
+      || (file.lastModified === newest.file.lastModified && file.size > newest.file.size)
+    ) newest = { name: file.name, file };
+  }
+  return newest;
+}
 
 async function responseError(response: Response): Promise<string> {
   const body = await response.json().catch(() => null);
@@ -29,6 +60,13 @@ async function responseError(response: Response): Promise<string> {
 
 export default function DmoLiveHost({ displayName }: Props) {
   const [directory, setDirectory] = useState<LocalDirectoryHandle | null>(null);
+  const [folderLabel, setFolderLabel] = useState('');
+  const [folderKind, setFolderKind] = useState<'profiles' | 'demos' | 'other' | null>(null);
+  const [browserSupported, setBrowserSupported] = useState<boolean | null>(null);
+  const [fileFound, setFileFound] = useState(false);
+  const [dmoRecognized, setDmoRecognized] = useState<boolean | null>(null);
+  const [realTimeObserved, setRealTimeObserved] = useState(false);
+  const [positionsPresent, setPositionsPresent] = useState<boolean | null>(null);
   const [bestOf, setBestOf] = useState<Te4LiveBestOf>(3);
   const [broadcastId, setBroadcastId] = useState<string | null>(null);
   const [discordMessageUrl, setDiscordMessageUrl] = useState('');
@@ -44,6 +82,11 @@ export default function DmoLiveHost({ displayName }: Props) {
   const lastHeartbeat = useRef(0);
   const sequence = useRef(0);
   const polling = useRef(false);
+  const liveDmoGrowthDetected = useRef(false);
+
+  useEffect(() => {
+    setBrowserSupported(Boolean((window as FolderPickerWindow).showDirectoryPicker));
+  }, []);
 
   const chooseFolder = async () => {
     setError('');
@@ -54,11 +97,57 @@ export default function DmoLiveHost({ displayName }: Props) {
     }
     try {
       const selected = await picker.call(window, { mode: 'read' });
-      setDirectory(selected);
+      let demosFolder = selected;
+      let selectedKind: 'profiles' | 'demos' | 'other' = 'other';
+      let selectedLabel = selected.name;
+      if (selected.name.toLowerCase() === 'demos') {
+        selectedKind = 'demos';
+      } else if (selected.getDirectoryHandle) {
+        try {
+          demosFolder = await selected.getDirectoryHandle('Demos');
+          selectedKind = 'profiles';
+          selectedLabel = `${selected.name}\\Demos`;
+        } catch {
+          // A directly selected custom DMO folder is also valid.
+        }
+      }
+      setDirectory(demosFolder);
+      setFolderLabel(selectedLabel);
+      setFolderKind(selectedKind);
+      setFileFound(false);
+      setDmoRecognized(null);
+      setRealTimeObserved(false);
+      setPositionsPresent(null);
+      liveDmoGrowthDetected.current = false;
       parser.current = null;
       activeFilename.current = '';
       readBytes.current = 0;
-      setNotice(`Folder selected: ${selected.name}. Start the broadcast when TE4 is recording.`);
+      setNotice(`Checking ${selectedLabel} locally.`);
+      try {
+        const newest = await newestDmoIn(demosFolder);
+        if (!newest) {
+          setNotice(`Folder selected: ${selectedLabel}. No .dmo file was found yet.`);
+          return;
+        }
+        setFileFound(true);
+        const checkParser = new Te4DmoLiveParser();
+        checkParser.append(new Uint8Array(await newest.file.slice(0, 1 << 20).arrayBuffer()));
+        if (checkParser.header?.bad) {
+          setDmoRecognized(false);
+          setNotice('A .dmo file was found, but it does not have a recognized TE4 header.');
+          return;
+        }
+        const snapshot = checkParser.snapshot(newest.name, bestOf);
+        if (snapshot) {
+          setDmoRecognized(true);
+          setPositionsPresent(hasPlayerPositionData(snapshot.court));
+          setNotice('Local preflight found a readable TE4 recording. Start a match to check real-time updates.');
+        } else {
+          setNotice('A .dmo file was found. Start a match to check for readable frames and real-time updates.');
+        }
+      } catch {
+        setNotice(`Folder selected: ${selectedLabel}. The local DMO preflight could not read the folder; try choosing it again.`);
+      }
     } catch (cause) {
       if (cause instanceof DOMException && cause.name === 'AbortError') return;
       setError(cause instanceof Error ? cause.message : 'The TE4 recording folder could not be opened.');
@@ -73,6 +162,9 @@ export default function DmoLiveHost({ displayName }: Props) {
     }
     setBusy(true);
     setError('');
+    liveDmoGrowthDetected.current = false;
+    setRealTimeObserved(false);
+    setPositionsPresent(null);
     try {
       const players = playerOne.trim() && playerTwo.trim()
         ? [playerOne.trim(), playerTwo.trim()]
@@ -113,6 +205,13 @@ export default function DmoLiveHost({ displayName }: Props) {
       setNotice('Broadcast ended. Its final card remains visible to signed-in viewers for 15 minutes.');
       setBroadcastId(null);
       setDirectory(null);
+      setFolderLabel('');
+      setFolderKind(null);
+      setFileFound(false);
+      setDmoRecognized(null);
+      setRealTimeObserved(false);
+      setPositionsPresent(null);
+      liveDmoGrowthDetected.current = false;
     } catch (cause) {
       setError(cause instanceof Error ? cause.message : 'The broadcast could not be stopped.');
     } finally {
@@ -151,19 +250,12 @@ export default function DmoLiveHost({ displayName }: Props) {
           if (Date.now() - lastHeartbeat.current >= 10_000) await sendUpdate();
           return;
         }
-        let newest: { name: string; file: File } | null = null;
-        for await (const handle of directory.values()) {
-          if (handle.kind !== 'file') continue;
-          const file = await handle.getFile();
-          if (!file.name.toLowerCase().endsWith('.dmo') || !file.size) continue;
-          if (
-            !newest
-            || file.lastModified > newest.file.lastModified
-            || (file.lastModified === newest.file.lastModified && file.size > newest.file.size)
-          ) newest = { name: file.name, file };
-        }
+        const newest = await newestDmoIn(directory);
         if (cancelled) return;
         if (!newest) {
+          setFileFound(false);
+          setDmoRecognized(null);
+          setPositionsPresent(null);
           setNotice('Broadcast active. Waiting for a .dmo file in the selected folder.');
           if (Date.now() - lastHeartbeat.current >= 10_000) await sendUpdate();
           return;
@@ -178,22 +270,40 @@ export default function DmoLiveHost({ displayName }: Props) {
           activeFilename.current = newest.name;
           readBytes.current = 0;
           lastSentVersion.current = -1;
+          liveDmoGrowthDetected.current = false;
+          setRealTimeObserved(false);
+          setPositionsPresent(null);
           setNotice(`Reading ${newest.name}.`);
         }
 
+        setFileFound(true);
         if (newest.file.size > readBytes.current) {
+          const hadReadThisFile = activeFilename.current === newest.name && readBytes.current > 0;
           const chunk = new Uint8Array(await newest.file.slice(readBytes.current).arrayBuffer());
           parser.current!.append(chunk);
           readBytes.current = newest.file.size;
+          if (hadReadThisFile) {
+            liveDmoGrowthDetected.current = true;
+            setRealTimeObserved(true);
+          }
         }
 
         const current = parser.current!.snapshot(newest.name, bestOf);
         if (!current) {
           if (parser.current!.header?.bad) {
+            setDmoRecognized(false);
+            setPositionsPresent(null);
             setError('The newest .dmo file does not have a recognized TE4 recording header.');
           } else {
             setNotice(`Reading ${newest.name}. Waiting for enough match frames to publish a scoreboard.`);
           }
+          if (Date.now() - lastHeartbeat.current >= 10_000) await sendUpdate();
+          return;
+        }
+        setDmoRecognized(true);
+        setPositionsPresent(hasPlayerPositionData(current.court));
+        if (!liveDmoGrowthDetected.current) {
+          setNotice('Waiting for the selected .dmo to grow during play. Scoreboard snapshots are not shared until a live update is detected.');
           if (Date.now() - lastHeartbeat.current >= 10_000) await sendUpdate();
           return;
         }
@@ -217,6 +327,14 @@ export default function DmoLiveHost({ displayName }: Props) {
     };
   }, [directory, broadcastId, bestOf]);
 
+  const folderTone: CheckTone = !directory
+    ? 'waiting'
+    : dmoRecognized === false || (folderKind === 'other' && !fileFound)
+      ? 'action'
+      : fileFound
+        ? 'ready'
+        : 'waiting';
+
   return (
     <section className={styles.page}>
       <header className={styles.heading}>
@@ -225,7 +343,7 @@ export default function DmoLiveHost({ displayName }: Props) {
           <h1>Live <em>broadcast</em></h1>
           <p>Share a live court reconstructed from a local TE4 recording, a stream link from your Discord post, or both. DMO files stay on your device.</p>
         </div>
-        <Link className={styles.watchLink} href="/live-dmo"><ExternalLink size={15} /> Viewer page</Link>
+        <Link className={styles.watchLink} href="/livestreams"><ExternalLink size={15} /> Viewer page</Link>
       </header>
 
       <section className={styles.controlPanel} aria-label="Broadcast controls">
@@ -290,6 +408,63 @@ export default function DmoLiveHost({ displayName }: Props) {
         <span className={styles.accessTag}>SIGNED-IN VIEWERS</span>
         <span>Anyone signed in to the Forum can watch below. A broadcast expires automatically if its browser stops sending updates.</span>
       </div>
+
+      <section className={styles.setupChecks} aria-label="TE4 broadcast setup checks">
+        <div className={styles.setupIntro}>
+          <div>
+            <p className={styles.setupKicker}>LOCAL PREFLIGHT</p>
+            <h2>TE4 setup checks</h2>
+          </div>
+          <p>The checks read the selected DMO in this browser. The recording and profile .ini are not uploaded; only derived live snapshots are shared.</p>
+        </div>
+        <ul className={styles.setupList}>
+          <SetupCheck
+            title="Browser support"
+            tone={browserSupported === false ? 'action' : directory ? 'ready' : 'waiting'}
+          >
+            {browserSupported === false
+              ? 'Use a recent Chrome or Edge browser on the PC running TE4. Folder access is not available in this browser.'
+              : browserSupported === true
+                ? 'This browser can read a folder you select. The DMO itself stays in this browser.'
+                : 'Checking whether this browser supports local folder access.'}
+          </SetupCheck>
+          <SetupCheck title="Folder and DMO" tone={folderTone}>
+            {!directory
+              ? 'Choose the TE4 Profiles folder or its Demos subfolder. A custom folder containing .dmo files also works.'
+              : dmoRecognized === false
+                ? 'A .dmo file was found, but its header is not recognized. Choose the TE4 Demos folder and check the game is writing a match replay.'
+                : dmoRecognized === true
+                  ? `A readable TE4 recording was found in ${folderLabel}.`
+                  : fileFound
+                    ? `A .dmo file was found in ${folderLabel}; waiting for enough match frames to confirm it.`
+                    : folderKind === 'other'
+                      ? `${folderLabel} has no readable .dmo file yet. Choose Profiles or Demos, or a custom folder that contains .dmo files.`
+                      : `Reading ${folderLabel}; no .dmo file has been found yet.`}
+          </SetupCheck>
+          <SetupCheck
+            title="Real-time recording"
+            tone={realTimeObserved ? 'ready' : fileFound ? 'waiting' : directory ? 'action' : 'waiting'}
+          >
+            {realTimeObserved
+              ? 'The selected .dmo grew during this broadcast, so live recording is being detected.'
+              : fileFound
+                ? 'A DMO was found. Start a match and this check will confirm when its file grows. If it stays unchanged during play, set TE4 Options → Recordings to Real time.'
+                : directory
+                  ? 'No .dmo file found yet. In TE4 Options → Recordings, choose Real time, then start a match.'
+                  : 'After you select a folder, this check looks for a DMO that updates while a match is being played.'}
+          </SetupCheck>
+          <SetupCheck
+            title="Court-position data"
+            tone={positionsPresent === true ? 'ready' : positionsPresent === false ? 'action' : 'waiting'}
+          >
+            {positionsPresent === true
+              ? 'Player positions were found in the local DMO; the Forum can reconstruct the live court.'
+              : positionsPresent === false
+                ? 'No player positions were detected. Close TE4 and set RecordDebugInfo = 1 under [Record] in your profile .ini, then start a new recording.'
+                : 'Waiting for enough readable match frames to check for player positions. If the court stays empty, verify RecordDebugInfo = 1 under [Record] in your profile .ini.'}
+          </SetupCheck>
+        </ul>
+      </section>
 
       {notice && <p className={styles.statusLine} role="status">{notice}</p>}
       {error && <p className={styles.errorLine} role="alert"><AlertTriangle size={16} />{error}</p>}
