@@ -8,8 +8,41 @@ const SYNC_HEADERS = {
   fingerprint: '__Forum ballot fingerprint__',
   updatedAt: '__Forum ballot updated at__',
 };
+const SAFE_SYNC_ERROR_CODES = [
+  'invalid_request',
+  'unauthorized',
+  'misconfigured',
+  'invalid_ballots',
+  'missing_linked_form',
+  'linked_form_lookup_failed',
+  'unexpected_form_destination',
+  'email_collection_unsupported',
+  'sync_lock_failed',
+  'spreadsheet_access_failed',
+  'form_access_failed',
+  'form_inspection_failed',
+  'response_sheet_not_found_or_ambiguous',
+  'response_sheet_setup_failed',
+  'previous_response_missing',
+  'previous_response_row_missing',
+  'incomplete_response_metadata',
+  'unmatched_or_unsupported_question',
+  'unsupported_required_question',
+  'missing_required_answer',
+  'form_response_failed',
+  'new_response_row_missing',
+  'response_metadata_write_failed',
+  'ballot_sync_failed',
+  'sync_failed',
+];
+
+function safeSyncErrorCode(error, fallback) {
+  const message = error && typeof error.message === 'string' ? error.message : '';
+  return SAFE_SYNC_ERROR_CODES.indexOf(message) >= 0 ? message : fallback;
+}
 
 function doPost(event) {
+  let failureCode = 'invalid_request';
   try {
     const bodyText = event && event.postData && event.postData.contents;
     if (!bodyText || bodyText.length > MAX_REQUEST_BYTES) return jsonResponse({ ok: false, error: 'invalid_request' });
@@ -30,14 +63,19 @@ function doPost(event) {
       return jsonResponse({ ok: false, error: 'invalid_ballots' });
     }
 
+    failureCode = 'sync_lock_failed';
     const lock = LockService.getScriptLock();
     lock.waitLock(10000);
     try {
+      failureCode = 'spreadsheet_access_failed';
       const spreadsheet = SpreadsheetApp.openById(spreadsheetId);
+      failureCode = 'linked_form_lookup_failed';
       const formUrl = spreadsheet.getFormUrl();
       if (!formUrl) return jsonResponse({ ok: false, error: 'missing_linked_form' });
 
+      failureCode = 'form_access_failed';
       const form = FormApp.openByUrl(formUrl);
+      failureCode = 'form_inspection_failed';
       if (form.getDestinationId() !== spreadsheetId) {
         return jsonResponse({ ok: false, error: 'unexpected_form_destination' });
       }
@@ -46,17 +84,22 @@ function doPost(event) {
       }
 
       const items = getResponseItems(form);
+      failureCode = 'response_sheet_setup_failed';
       const responseSheet = findResponseSheet(spreadsheet, items);
+      failureCode = 'sync_failed';
       const results = ballots.map((ballot) => {
         try {
           return syncBallot(form, responseSheet, items, ballot);
-        } catch (_error) {
+        } catch (error) {
+          const errorCode = safeSyncErrorCode(error, 'ballot_sync_failed');
+          console.error('[Awards Form sync] ballot_failed:' + errorCode);
           return {
             voterToken: ballot.voterToken,
             status: 'failed',
             responseId: '',
             fingerprint: ballot.fingerprint,
             updatedAt: ballot.updatedAt,
+            errorCode: errorCode,
           };
         }
       });
@@ -65,9 +108,10 @@ function doPost(event) {
     } finally {
       lock.releaseLock();
     }
-  } catch (_error) {
-    console.error('[Awards Form sync] Native response operation failed.');
-    return jsonResponse({ ok: false, error: 'sync_failed' });
+  } catch (error) {
+    const errorCode = safeSyncErrorCode(error, failureCode);
+    console.error('[Awards Form sync] ' + errorCode);
+    return jsonResponse({ ok: false, error: errorCode });
   }
 }
 
@@ -166,7 +210,12 @@ function syncBallot(form, responseSheet, items, ballot) {
     return ballotResult(ballot, 'unchanged', current.responseId, current.fingerprint, current.updatedAt);
   }
 
-  const newResponse = submitBallot(form, items, ballot);
+  let newResponse;
+  try {
+    newResponse = submitBallot(form, items, ballot);
+  } catch (error) {
+    throw new Error(safeSyncErrorCode(error, 'form_response_failed'));
+  }
   SpreadsheetApp.flush();
   const newRow = findRowByResponseWithRetry(responseSheet, items, newResponse);
   if (!newRow) {

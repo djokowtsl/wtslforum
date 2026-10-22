@@ -19,12 +19,56 @@ export type AwardFormBallot = {
 export type AwardFormSyncStatus = 'ready' | 'not_configured' | 'misconfigured';
 export type AwardFormBallotSyncStatus = 'synced' | 'unchanged' | 'stale' | 'failed';
 
+const AWARD_FORM_SYNC_DIAGNOSTIC_CODES = [
+  'invalid_request',
+  'unauthorized',
+  'misconfigured',
+  'invalid_ballots',
+  'missing_linked_form',
+  'linked_form_lookup_failed',
+  'unexpected_form_destination',
+  'email_collection_unsupported',
+  'sync_lock_failed',
+  'spreadsheet_access_failed',
+  'form_access_failed',
+  'form_inspection_failed',
+  'response_sheet_not_found_or_ambiguous',
+  'response_sheet_setup_failed',
+  'previous_response_missing',
+  'previous_response_row_missing',
+  'incomplete_response_metadata',
+  'unmatched_or_unsupported_question',
+  'unsupported_required_question',
+  'missing_required_answer',
+  'form_response_failed',
+  'new_response_row_missing',
+  'response_metadata_write_failed',
+  'ballot_sync_failed',
+  'sync_failed',
+  'bridge_unreachable',
+  'bridge_http_error',
+  'invalid_bridge_response',
+  'stale_response',
+  'invalid_ballot_payload',
+] as const;
+
+export type AwardFormSyncDiagnosticCode = typeof AWARD_FORM_SYNC_DIAGNOSTIC_CODES[number];
+
+const awardFormSyncDiagnosticCodeSet = new Set<string>(AWARD_FORM_SYNC_DIAGNOSTIC_CODES);
+
+function safeDiagnosticCode(value: unknown): AwardFormSyncDiagnosticCode | undefined {
+  return typeof value === 'string' && awardFormSyncDiagnosticCodeSet.has(value)
+    ? value as AwardFormSyncDiagnosticCode
+    : undefined;
+}
+
 export type AwardFormBallotSyncResult = {
   voterKey: string;
   status: AwardFormBallotSyncStatus;
   responseId?: string;
   fingerprint?: string;
   updatedAt?: string;
+  diagnosticCode?: AwardFormSyncDiagnosticCode;
 };
 
 const MAX_SYNC_BATCH_SIZE = 20;
@@ -135,7 +179,10 @@ async function postBatch(
   endpoint: string,
   secret: string,
   ballots: NonNullable<ReturnType<typeof normalizeBallot>>[],
-): Promise<AwardFormBallotSyncResult[] | null> {
+): Promise<{
+  results: AwardFormBallotSyncResult[] | null;
+  diagnosticCode?: AwardFormSyncDiagnosticCode;
+}> {
   try {
     const response = await fetch(endpoint, {
       method: 'POST',
@@ -143,14 +190,30 @@ async function postBatch(
       body: JSON.stringify({ secret, ballots: ballots.map(({ request }) => request) }),
       signal: AbortSignal.timeout(20_000),
     });
-    const result = await response.json().catch(() => null);
+    const result = await response.json().catch(() => null) as Record<string, unknown> | null;
     if (!response.ok || result?.ok !== true || !Array.isArray(result.results) || result.results.length !== ballots.length) {
-      return null;
+      const fallbackCode = !response.ok
+        ? 'bridge_http_error'
+        : result?.ok === false
+          ? 'sync_failed'
+          : 'invalid_bridge_response';
+      return {
+        results: null,
+        diagnosticCode: safeDiagnosticCode(result?.error)
+          ?? fallbackCode,
+      };
     }
 
-    return result.results.map((item: unknown, index: number): AwardFormBallotSyncResult => {
-      const value = item as Record<string, unknown> | null;
+    const results = result.results.map((item: unknown, index: number): AwardFormBallotSyncResult => {
+      const value = item && typeof item === 'object' ? item as Record<string, unknown> : null;
       const status = value?.status;
+      if (status === 'failed') {
+        return {
+          voterKey: ballots[index].voterKey,
+          status: 'failed',
+          diagnosticCode: safeDiagnosticCode(value?.errorCode) ?? 'ballot_sync_failed',
+        };
+      }
       const responseId = typeof value?.responseId === 'string' ? value.responseId : undefined;
       const fingerprint = typeof value?.fingerprint === 'string' ? value.fingerprint : undefined;
       const updatedAt = typeof value?.updatedAt === 'string' ? value.updatedAt : undefined;
@@ -165,7 +228,11 @@ async function postBatch(
         || !updatedAt
         || !/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}\.\d{6}Z$/.test(updatedAt)
       ) {
-        return { voterKey: ballots[index].voterKey, status: 'failed' };
+        return {
+          voterKey: ballots[index].voterKey,
+          status: 'failed',
+          diagnosticCode: 'invalid_bridge_response',
+        };
       }
       return {
         voterKey: ballots[index].voterKey,
@@ -173,10 +240,13 @@ async function postBatch(
         responseId,
         fingerprint,
         updatedAt,
+        ...(status === 'stale' ? { diagnosticCode: 'stale_response' as const } : {}),
       };
     });
+    const diagnosticCode = results.find((item) => item.diagnosticCode)?.diagnosticCode;
+    return { results, ...(diagnosticCode ? { diagnosticCode } : {}) };
   } catch {
-    return null;
+    return { results: null, diagnosticCode: 'bridge_unreachable' };
   }
 }
 
@@ -193,26 +263,39 @@ export async function syncAwardBallotsToForm(ballots: AwardFormBallot[]) {
 
   const normalized = ballots.map((ballot) => normalizeBallot(ballot, configuration.secret));
   if (normalized.some((ballot) => ballot === null)) {
-    return { status: 'failed' as const, results: [] as AwardFormBallotSyncResult[], failed: ballots.length };
+    return {
+      status: 'failed' as const,
+      results: [] as AwardFormBallotSyncResult[],
+      failed: ballots.length,
+      diagnosticCode: 'invalid_ballot_payload' as const,
+    };
   }
 
   const results: AwardFormBallotSyncResult[] = [];
   let failed = 0;
+  let diagnosticCode: AwardFormSyncDiagnosticCode | undefined;
   for (let index = 0; index < normalized.length; index += MAX_SYNC_BATCH_SIZE) {
     const batch = normalized.slice(index, index + MAX_SYNC_BATCH_SIZE) as NonNullable<typeof normalized[number]>[];
     const batchResults = await postBatch(configuration.endpoint, configuration.secret, batch);
-    if (!batchResults) {
+    if (!batchResults.results) {
       failed += batch.length;
-      results.push(...batch.map(({ voterKey }) => ({ voterKey, status: 'failed' as const })));
+      diagnosticCode ??= batchResults.diagnosticCode ?? 'invalid_bridge_response';
+      results.push(...batch.map(({ voterKey }) => ({
+        voterKey,
+        status: 'failed' as const,
+        diagnosticCode: batchResults.diagnosticCode ?? 'invalid_bridge_response',
+      })));
       continue;
     }
-    failed += batchResults.filter((result) => result.status === 'failed').length;
-    results.push(...batchResults);
+    failed += batchResults.results.filter((result) => result.status === 'failed').length;
+    diagnosticCode ??= batchResults.diagnosticCode;
+    results.push(...batchResults.results);
   }
 
   return {
     status: failed ? 'failed' as const : 'synced' as const,
     results,
     failed,
+    ...(diagnosticCode ? { diagnosticCode } : {}),
   };
 }

@@ -132,9 +132,68 @@ test('reports bridge rejection without discarding the Forum ballot', async () =>
     try {
       assert.deepEqual(await syncAwardBallotsToForm([ballot]), {
         status: 'failed',
-        results: [{ voterKey: ballot.voterKey, status: 'failed' }],
+        results: [{ voterKey: ballot.voterKey, status: 'failed', diagnosticCode: 'sync_failed' }],
         failed: 1,
+        diagnosticCode: 'sync_failed',
       });
+    } finally {
+      globalThis.fetch = originalFetch;
+    }
+  });
+});
+
+test('shows allowlisted Apps Script failure codes and hides unknown error text', async () => {
+  await withEnvironment({
+    AWARDS_SHEET_WEB_APP_URL: 'https://script.google.com/macros/s/test-deployment/exec',
+    AWARDS_SHEET_SYNC_SECRET: secret,
+  }, async () => {
+    const originalFetch = globalThis.fetch;
+    globalThis.fetch = async () => new Response(JSON.stringify({
+      ok: true,
+      results: [{
+        status: 'failed',
+        errorCode: 'unsupported_required_question',
+        details: 'private answer text must not be surfaced',
+      }],
+    }), { status: 200 });
+    try {
+      const result = await syncAwardBallotsToForm([ballot]);
+      assert.equal(result.diagnosticCode, 'unsupported_required_question');
+      assert.equal(result.results[0].diagnosticCode, 'unsupported_required_question');
+      assert.equal(JSON.stringify(result).includes('private answer text'), false);
+
+      globalThis.fetch = async () => new Response(JSON.stringify({
+        ok: true,
+        results: [{
+          status: 'failed',
+          errorCode: 'private answer text must not be surfaced',
+        }],
+      }), { status: 200 });
+      const unknownResult = await syncAwardBallotsToForm([ballot]);
+      assert.equal(unknownResult.diagnosticCode, 'ballot_sync_failed');
+      assert.equal(JSON.stringify(unknownResult).includes('private answer text'), false);
+    } finally {
+      globalThis.fetch = originalFetch;
+    }
+  });
+});
+
+test('surfaces allowlisted top-level Apps Script rejection codes', async () => {
+  await withEnvironment({
+    AWARDS_SHEET_WEB_APP_URL: 'https://script.google.com/macros/s/test-deployment/exec',
+    AWARDS_SHEET_SYNC_SECRET: secret,
+  }, async () => {
+    const originalFetch = globalThis.fetch;
+    globalThis.fetch = async () => new Response(JSON.stringify({
+      ok: false,
+      error: 'unauthorized',
+      details: 'secret or ballot details must not be surfaced',
+    }), { status: 200 });
+    try {
+      const result = await syncAwardBallotsToForm([ballot]);
+      assert.equal(result.diagnosticCode, 'unauthorized');
+      assert.equal(result.results[0].diagnosticCode, 'unauthorized');
+      assert.equal(JSON.stringify(result).includes('secret or ballot details'), false);
     } finally {
       globalThis.fetch = originalFetch;
     }
