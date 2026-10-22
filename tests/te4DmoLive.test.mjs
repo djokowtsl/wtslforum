@@ -74,6 +74,24 @@ test('incremental DMO parsing waits for frames, then emits a compact live snapsh
   assert.equal(replayOpening?.pointCount, 0);
 });
 
+test('opening DMO snapshots omit impossible court samples without rejecting valid match data', () => {
+  const bytes = syntheticDmo();
+  const frameLocator = new Te4DmoLiveParser();
+  frameLocator.append(bytes);
+  writeFixed(bytes, frameLocator.offsets[9] + 112, 16_777_472);
+
+  const parser = new Te4DmoLiveParser();
+  parser.append(bytes);
+
+  const snapshot = parser.snapshot('match.dmo', 3, 10);
+  assert.ok(snapshot);
+  assert.equal(snapshot.frameCount, 10);
+  assert.equal(snapshot.court.length, 9);
+  assert.ok(snapshot.court.every((sample) => sample.every((value, index) => (
+    index === 2 ? value >= 0 && value <= 600 : value >= -5000 && value <= 5000
+  ))));
+});
+
 test('DMO replay eligibility requires parsed completed points and advances at the chosen speed', () => {
   assert.equal(hasCompletedDmoPoints(null), false);
   assert.equal(hasCompletedDmoPoints({ pointCount: 0 }), false);

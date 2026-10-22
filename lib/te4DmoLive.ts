@@ -512,7 +512,7 @@ export class Te4DmoLiveParser {
     const court: number[][] = [];
     for (let frame = firstFrame; frame <= lastFrame; frame += stride) {
       const ballX = this.ballX[frame] > 3000 ? 0 : this.ballX[frame];
-      court.push([
+      const sample = [
         Math.round(ballX),
         Math.round(this.ballY[frame]),
         Math.round(Math.max(0, Math.min(600, this.ballZ[frame]))),
@@ -520,7 +520,11 @@ export class Te4DmoLiveParser {
         Math.round(this.player1Y[frame]),
         Math.round(this.player2X[frame]),
         Math.round(this.player2Y[frame]),
-      ]);
+      ];
+      // A few recordings contain false-positive frames with impossible court
+      // coordinates. Keep valid score data and omit only the malformed sample.
+      if (sample.some((value, index) => index !== 2 && (value < -5000 || value > 5000))) continue;
+      court.push(sample);
     }
 
     return {
