@@ -190,6 +190,7 @@ export async function POST(request: Request) {
   }
 
   const payload = {
+    hasDmo: body.hasDmo,
     mode: body.mode,
     replay: body.replay,
     replaySpeed: body.replay ? body.replaySpeed : 1,

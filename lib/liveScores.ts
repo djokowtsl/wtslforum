@@ -274,9 +274,13 @@ export async function getLiveWtslMatchForPlayers(players: [string, string]) {
   const match = findMatchingWtslLiveMatch(players, rankedMatches);
   if (!match) return null;
   const rankedNames = rows.map((row) => row.name);
+  const canonicalPlayers: [string, string] = [
+    resolveFakePrefixForRankedPlayer(players[0], rankedNames),
+    resolveFakePrefixForRankedPlayer(players[1], rankedNames),
+  ];
   return {
     ...match,
-    canonicalPlayers: players.map((name) => resolveFakePrefixForRankedPlayer(name, rankedNames)),
+    canonicalPlayers,
   };
 }
 

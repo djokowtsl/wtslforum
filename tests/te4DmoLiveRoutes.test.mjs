@@ -15,6 +15,11 @@ function loadRoute(path, mocks) {
   new Function('require', 'module', 'exports', code)((name) => {
     if (name in mocks) return mocks[name];
     if (name.startsWith('node:')) return require(name);
+    if (name === '@/lib/te4DmoLive') {
+      return {
+        hasCompletedDmoPoints: (snapshot) => Boolean(snapshot && Number.isInteger(snapshot.pointCount) && snapshot.pointCount > 0),
+      };
+    }
     throw new Error(`Unexpected route dependency: ${name}`);
   }, module, module.exports);
   return module.exports;
@@ -98,7 +103,7 @@ test('signed-in members can read broadcasts while guests cannot', async () => {
             owner_discord_id: 'member',
             owner_name: 'Member',
             status: 'live',
-            payload: { snapshot: { players: ['One', 'Two'], version: 1 }, players: ['One', 'Two'] },
+            payload: { snapshot: { players: ['One', 'Two'], version: 1, pointCount: 1 }, players: ['One', 'Two'] },
             sequence: 4,
             started_at: startedAt,
             updated_at: updatedAt,
@@ -111,6 +116,7 @@ test('signed-in members can read broadcasts while guests cannot', async () => {
             status: 'live',
             payload: {
               stream: { provider: 'youtube', id: 'dQw4w9WgXcQ', sourceUrl: 'https://youtu.be/dQw4w9WgXcQ' },
+              snapshot: { players: ['Three', 'Four'], version: 1, pointCount: 1 },
               replay: true,
               replaySpeed: 4,
             },
@@ -131,7 +137,7 @@ test('signed-in members can read broadcasts while guests cannot', async () => {
     id: 'broadcast-id',
     status: 'live',
     ownerName: 'Member',
-    snapshot: { players: ['One', 'Two'], version: 1 },
+    snapshot: { players: ['One', 'Two'], version: 1, pointCount: 1 },
     stream: null,
     sourceMessageUrl: null,
     broadcastMode: 'manual',

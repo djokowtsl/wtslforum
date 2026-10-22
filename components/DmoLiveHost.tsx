@@ -669,6 +669,10 @@ export default function DmoLiveHost({ displayName }: Props) {
             setNotice('Automatic detection is waiting for a verified WTSL live-match feed.');
             return;
           }
+          if (!hasCompletedDmoPoints(current)) {
+            setNotice('Waiting for a completed point to be parsed before broadcasting this DMO.');
+            return;
+          }
           const activeMatch = findMatchingWtslLiveMatch(current.players, liveMatchesRef.current);
           if (!activeMatch) {
             setNotice(`Live DMO detected for ${current.players[0]} vs ${current.players[1]}. Waiting for the same pair in the WTSL live feed.`);
@@ -676,7 +680,7 @@ export default function DmoLiveHost({ displayName }: Props) {
           }
           if (Date.now() - lastAutomaticAttemptAt.current < 15_000) return;
           const matchedSnapshot = parser.current!.snapshot(newest.name, activeMatch.bestOf);
-          if (!matchedSnapshot) return;
+          if (!matchedSnapshot || !hasCompletedDmoPoints(matchedSnapshot)) return;
           lastAutomaticAttemptAt.current = Date.now();
           setBestOf(activeMatch.bestOf);
           await startBroadcast('auto', { players: matchedSnapshot.players, bestOf: activeMatch.bestOf });

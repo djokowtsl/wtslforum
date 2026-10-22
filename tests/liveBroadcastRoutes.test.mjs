@@ -137,6 +137,7 @@ test('automatic broadcasts require a confirmed WTSL live match and retain its of
   const storedPayload = insertedBroadcast?.values.find((value) => typeof value === 'string' && value.includes('"mode":"auto"'));
   assert.ok(storedPayload);
   assert.equal(JSON.parse(storedPayload).bestOf, 3);
+  assert.equal(JSON.parse(storedPayload).hasDmo, true);
   assert.equal(JSON.parse(storedPayload).officialByBroadcaster, true);
   assert.equal(JSON.parse(storedPayload).likelyOfficial, true);
 });
@@ -332,4 +333,49 @@ test('homepage displays video links only when a signed-in viewer has a matching 
   assert.match(liveScores, /live-broadcast-match-link/);
   assert.match(liveScores, /if \(!signedIn\) return/);
   assert.match(viewer, /body\?\.broadcasts/);
+});
+
+test('viewers only receive DMO broadcasts after a completed point parses; stream-only broadcasts remain visible', async () => {
+  const timestamp = new Date('2026-10-22T10:00:00Z');
+  const rows = [
+    { id: 'auto-no-snapshot', payload: { hasDmo: true, mode: 'auto' } },
+    { id: 'auto-no-point', payload: { hasDmo: true, mode: 'auto', snapshot: { pointCount: 0 } } },
+    { id: 'replay-no-point', payload: { hasDmo: true, mode: 'manual', replay: true, snapshot: { pointCount: 0 } } },
+    { id: 'legacy-no-point', payload: { version: 1, pointCount: 0, players: ['Old One', 'Old Two'] } },
+    { id: 'auto-parsed', payload: { hasDmo: true, mode: 'auto', snapshot: { pointCount: 1, players: ['Alpha', 'Beta'] } } },
+    { id: 'replay-parsed', payload: { hasDmo: true, mode: 'manual', replay: true, snapshot: { pointCount: 1, players: ['Gamma', 'Delta'] } } },
+    {
+      id: 'stream-only',
+      payload: {
+        hasDmo: false,
+        mode: 'manual',
+        replay: false,
+        stream: { provider: 'youtube', id: 'dQw4w9WgXcQ', sourceUrl: 'https://youtu.be/dQw4w9WgXcQ' },
+      },
+    },
+  ].map((row) => ({
+    ...row,
+    owner_discord_id: 'broadcast-owner',
+    status: 'live',
+    sequence: 1,
+    started_at: timestamp,
+    updated_at: timestamp,
+    owner_name: 'Tennis fan',
+    stale: false,
+  }));
+  const route = loadRoute('app/api/live-dmo/current/route.ts', {
+    'next/server': nextServer,
+    '@/lib/auth': { getSession: async () => ({ id: '22' }) },
+    '@/lib/db': { sql: async () => rows },
+    '@/lib/te4DmoLive': {
+      hasCompletedDmoPoints: (snapshot) => Boolean(snapshot && Number.isInteger(snapshot.pointCount) && snapshot.pointCount > 0),
+    },
+  });
+  const response = await route.GET(request(undefined, '/api/live-dmo/current', 'GET'));
+  assert.equal(response.status, 200);
+  const body = await response.json();
+  assert.deepEqual(body.broadcasts.map((broadcast) => broadcast.id), ['auto-parsed', 'replay-parsed', 'stream-only']);
+  const host = readFileSync(new URL('../components/DmoLiveHost.tsx', import.meta.url), 'utf8');
+  assert.match(host, /hasCompletedDmoPoints\(current\)/);
+  assert.match(host, /hasCompletedDmoPoints\(matchedSnapshot\)/);
 });

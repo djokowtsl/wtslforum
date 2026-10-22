@@ -1,6 +1,7 @@
 import { NextResponse } from 'next/server';
 import { getSession } from '@/lib/auth';
 import { sql } from '@/lib/db';
+import { hasCompletedDmoPoints } from '@/lib/te4DmoLive';
 
 export const dynamic = 'force-dynamic';
 
@@ -31,13 +32,19 @@ export async function GET() {
       ORDER BY (b.status='live') DESC, b.started_at DESC
       LIMIT 50
     `;
-    const broadcasts = rows.map((row: any) => {
+    const broadcasts = rows.flatMap((row: any) => {
       const stored = row.payload && typeof row.payload === 'object' && !Array.isArray(row.payload)
         ? row.payload as Record<string, any>
         : {};
       // Preserve reads from older single-snapshot rows created before the payload envelope.
       const legacySnapshot = stored.version === 1 ? stored : null;
       const snapshot = stored.snapshot && typeof stored.snapshot === 'object' ? stored.snapshot : legacySnapshot;
+      const hasDmo = stored.hasDmo === true
+        || stored.mode === 'auto'
+        || stored.replay === true
+        || legacySnapshot !== null
+        || Boolean(stored.snapshot);
+      if (hasDmo && !hasCompletedDmoPoints(snapshot)) return [];
       const rawPlayers = Array.isArray(stored.players) && stored.players.length === 2
         ? stored.players
         : Array.isArray(snapshot?.players) && snapshot.players.length === 2
@@ -50,7 +57,7 @@ export async function GET() {
         && typeof stored.stream.sourceUrl === 'string'
         ? stored.stream
         : null;
-      return {
+      return [{
         id: row.id,
         status: row.status,
         ownerName: row.owner_name || 'Forum member',
@@ -69,7 +76,7 @@ export async function GET() {
         startedAt: new Date(row.started_at).toISOString(),
         updatedAt: new Date(row.updated_at).toISOString(),
         stale: Boolean(row.stale),
-      };
+      }];
     });
     return NextResponse.json({
       broadcasts,
