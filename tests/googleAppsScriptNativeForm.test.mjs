@@ -296,5 +296,24 @@ test('fails closed for required question types and email collection the Forum ca
   const requiredTextBridge = createBridge({ unsupportedRequired: true });
   const result = responseBody(requiredTextBridge.post({ secret, ballots: [sampleBallot()] }));
   assert.equal(result.results[0].status, 'failed');
+  assert.equal(result.results[0].errorCode, 'unsupported_required_question');
   assert.equal(requiredTextBridge.responses.length, 0);
+});
+
+test('returns fixed diagnostic codes without exposing raw Form error text', () => {
+  const ballotBridge = createBridge();
+  ballotBridge.form.createResponse = () => {
+    throw new Error('private voter answer must not be returned');
+  };
+  const ballotResult = responseBody(ballotBridge.post({ secret, ballots: [sampleBallot()] }));
+  assert.equal(ballotResult.results[0].errorCode, 'form_response_failed');
+  assert.equal(JSON.stringify(ballotResult).includes('private voter answer'), false);
+
+  const inspectionBridge = createBridge();
+  inspectionBridge.form.getDestinationId = () => {
+    throw new Error('private response data must not be returned');
+  };
+  const inspectionResult = responseBody(inspectionBridge.post({ secret, ballots: [sampleBallot()] }));
+  assert.equal(inspectionResult.error, 'form_inspection_failed');
+  assert.equal(JSON.stringify(inspectionResult).includes('private response data'), false);
 });

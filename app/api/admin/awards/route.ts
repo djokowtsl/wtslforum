@@ -101,7 +101,11 @@ export async function POST(req: NextRequest) {
         : result.status === 'misconfigured'
           ? 'Native Google Form sync settings are incomplete or invalid.'
           : 'Some complete Forum ballots could not be synced. Retry this batch.';
-      return NextResponse.json({ error }, { status: 503 });
+      const diagnosticCode = ('diagnosticCode' in result ? result.diagnosticCode : undefined)
+        ?? result.results.find((synced) => synced.diagnosticCode)?.diagnosticCode;
+      return NextResponse.json({
+        error: diagnosticCode ? `${error} (diagnostic code: ${diagnosticCode})` : error,
+      }, { status: 503 });
     }
 
     const nextAfterBallotCursor = String(ballots.at(-1)?.syncCursor ?? afterBallotCursor);
