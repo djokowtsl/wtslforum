@@ -1,7 +1,7 @@
 'use client';
 
-import { useMemo, useState } from 'react';
-import { CheckCircle2, CircleAlert, LoaderCircle, Send } from 'lucide-react';
+import { useCallback, useEffect, useMemo, useState } from 'react';
+import { CheckCircle2, CircleAlert, LoaderCircle } from 'lucide-react';
 import { CATEGORY_ICONS } from '@/lib/awardIcons';
 import { getAwardShuffleSetting, shuffleAwardOptions } from '@/lib/awardOptionShuffle';
 import { getAwardVoteProgress, getNextUnansweredRequiredCategoryId } from '@/lib/awardVoteProgress';
@@ -17,9 +17,10 @@ type Category = {
   is_required: boolean;
   nominees: Nominee[];
 };
-type SaveStatus = 'idle' | 'saving' | 'saved' | 'saved-incomplete' | 'saved-no-sync' | 'saved-sync-error' | 'error';
+type SaveStatus = 'idle' | 'saving' | 'saved' | 'saved-incomplete' | 'saved-no-sync' | 'saved-pending' | 'saved-review' | 'saved-sync-error' | 'error';
 
-export default function AwardVoteForm({ categories, initialVotes, initialFormSubmitted, shuffleSeed }: {
+export default function AwardVoteForm({ cycleId, categories, initialVotes, initialFormSubmitted, shuffleSeed }: {
+  cycleId: number;
   categories: Category[];
   initialVotes: Record<number, { nomineeId: number | null; writeIn: string | null }>;
   initialFormSubmitted: boolean;
@@ -40,13 +41,57 @@ export default function AwardVoteForm({ categories, initialVotes, initialFormSub
   );
   const [dirty, setDirty] = useState<Record<number, boolean>>({});
   const [ballotSubmitted, setBallotSubmitted] = useState(initialFormSubmitted);
+  const [syncNeedsReview, setSyncNeedsReview] = useState(false);
   const progress = getAwardVoteProgress(categories, savedVotes, dirty);
+
+  const pollSyncStatus = useCallback(async () => {
+    for (let attempt = 0; attempt < 20; attempt += 1) {
+      await new Promise((resolve) => window.setTimeout(resolve, 1000));
+      try {
+        const res = await fetch(`/api/awards/vote-status?cycleId=${cycleId}`, { cache: 'no-store' });
+        if (!res.ok) continue;
+        const data = await res.json();
+        if (data.formSyncStatus === 'synced') {
+          setBallotSubmitted(true);
+          setSyncNeedsReview(false);
+          setStatus((current) => {
+            const next = { ...current };
+            for (const [id, value] of Object.entries(next)) {
+              if (value === 'saved-pending' || value === 'saved-review' || value === 'saved-sync-error') {
+                next[Number(id)] = 'saved';
+              }
+            }
+            return next;
+          });
+          return;
+        }
+        if (data.formSyncStatus === 'needs_review' || data.formSyncStatus === 'retryable') {
+          setSyncNeedsReview(true);
+          setStatus((current) => Object.fromEntries(Object.entries(current).map(([id, value]) => [
+            id,
+            value === 'saved-pending' || value === 'saved-sync-error' ? 'saved-review' : value,
+          ])) as Record<number, SaveStatus>);
+          return;
+        }
+        if (data.formSyncStatus === 'incomplete') return;
+      } catch {
+        // A temporary status read failure should leave the saved ballot in its pending state.
+      }
+    }
+  }, [cycleId]);
+
+  useEffect(() => {
+    if (progress.isSubmitted && !ballotSubmitted && !Object.values(dirty).some(Boolean)) {
+      void pollSyncStatus();
+    }
+  }, [pollSyncStatus, progress.isSubmitted, ballotSubmitted, dirty]);
 
   function updateChoice(categoryId: number, choice: { nomineeId: number | null; writeIn: string }) {
     setChoices((current) => ({ ...current, [categoryId]: choice }));
     setDirty((current) => ({ ...current, [categoryId]: true }));
     setStatus((current) => ({ ...current, [categoryId]: 'idle' }));
     setBallotSubmitted(false);
+    setSyncNeedsReview(false);
   }
 
   async function vote(categoryId: number) {
@@ -67,11 +112,16 @@ export default function AwardVoteForm({ categories, initialVotes, initialFormSub
           ? 'saved-incomplete'
           : data.formSyncStatus === 'not_configured' || data.formSyncStatus === 'misconfigured'
             ? 'saved-no-sync'
+            : data.formSyncStatus === 'needs_review'
+              ? 'saved-review'
+              : data.formSyncStatus === 'queued' || data.formSyncStatus === 'processing' || data.formSyncStatus === 'retryable'
+                ? 'saved-pending'
             : 'saved-sync-error';
       setStatus((current) => ({ ...current, [categoryId]: nextStatus }));
       setSavedVotes((current) => ({ ...current, [categoryId]: true }));
       setDirty((current) => ({ ...current, [categoryId]: false }));
       setBallotSubmitted(data.ballotSubmitted === true);
+      setSyncNeedsReview(data.formSyncStatus === 'needs_review');
       if (data.formSyncStatus === 'incomplete') {
         const nextRequiredCategoryId = getNextUnansweredRequiredCategoryId(categories, savedVotes, dirty, categoryId);
         if (nextRequiredCategoryId !== null) {
@@ -137,13 +187,15 @@ export default function AwardVoteForm({ categories, initialVotes, initialFormSub
           }} />
         </div>
         <p style={{ margin: '12px 0 0', color: 'var(--soft)', fontSize: 13 }}>
-          Choose an option, then press <b>Save my vote</b>. Your choice is not saved until you press the button. Answer as many questions as you can; questions marked * must be answered before your ballot can be submitted.
+          Choose an option, then press <b>Save my vote</b>. Questions marked * must be answered before your ballot can be submitted.
         </p>
       </section>
 
       {showSyncPending && (
         <div role="status" className="notice" style={{ borderColor: '#ffb36b' }}>
-          Your choices are saved, but we couldn&apos;t finish submitting your ballot yet. Please try again later.
+          {syncNeedsReview || Object.values(status).includes('saved-review')
+            ? 'Your choices are saved, but submission could not be confirmed. Please don’t resubmit; the saved ballot is retained for follow-up.'
+            : 'Your choices are saved. Final submission is processing; this page will update when it is confirmed.'}
         </div>
       )}
 
@@ -277,7 +329,7 @@ export default function AwardVoteForm({ categories, initialVotes, initialFormSub
               >
                 {categoryStatus === 'saving'
                   ? <><LoaderCircle size={17} className="animate-spin" /> Saving…</>
-                  : <><Send size={16} aria-hidden="true" /> {buttonText}</>}
+                  : buttonText}
               </button>
               <span id={`award-save-help-${c.id}`} style={{ color: 'var(--muted)', fontSize: 13 }}>
                 {hasChoice
@@ -287,7 +339,9 @@ export default function AwardVoteForm({ categories, initialVotes, initialFormSub
               {categoryStatus === 'saved' && <span role="status" style={{ color: 'var(--lime)', fontSize: 13, fontWeight: 700 }}>Vote saved; ballot submitted.</span>}
               {categoryStatus === 'saved-incomplete' && <span role="status" style={{ color: 'var(--muted)', fontSize: 13 }}>Vote saved. Answer every question marked * to submit the ballot.</span>}
               {categoryStatus === 'saved-no-sync' && <span role="status" style={{ color: 'var(--muted)', fontSize: 13 }}>Vote saved.</span>}
-              {categoryStatus === 'saved-sync-error' && <span role="status" style={{ color: '#ffb36b', fontSize: 13 }}>Vote saved.</span>}
+              {categoryStatus === 'saved-pending' && <span role="status" style={{ color: 'var(--muted)', fontSize: 13 }}>Vote saved; submission is processing.</span>}
+              {categoryStatus === 'saved-review' && <span role="status" style={{ color: '#ffb36b', fontSize: 13 }}>Vote saved; submission is being checked.</span>}
+              {categoryStatus === 'saved-sync-error' && <span role="status" style={{ color: '#ffb36b', fontSize: 13 }}>Vote saved; submission is not confirmed.</span>}
               {categoryStatus === 'error' && (
                 <span role="alert" style={{ display: 'inline-flex', alignItems: 'center', gap: 6, color: '#ff8f9a', fontSize: 13 }}>
                   <CircleAlert size={16} aria-hidden="true" /> Couldn&apos;t save your vote. Please try again.
