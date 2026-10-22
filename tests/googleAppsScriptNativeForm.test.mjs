@@ -18,6 +18,8 @@ function createBridge({
   failFinalFlush = false,
   failSuccessResponse = false,
   releaseLockFails = false,
+  failItemResponse = false,
+  failSubmit = false,
 } = {}) {
   const itemType = {
     MULTIPLE_CHOICE: 'MULTIPLE_CHOICE',
@@ -32,7 +34,7 @@ function createBridge({
   let flushCount = 0;
   const rows = [['Timestamp', 'Fans Favourite Award', 'Best Dressed']];
   const items = [
-    makeItem(101, 'Fans Favourite Award', itemType.MULTIPLE_CHOICE, true),
+    makeItem(101, 'Fans Favourite Award', itemType.MULTIPLE_CHOICE, true, failItemResponse),
     makeItem(102, 'Best Dressed', itemType.LIST, false),
   ];
   if (unsupportedRequired) {
@@ -99,6 +101,7 @@ function createBridge({
           return this;
         },
         submit() {
+          if (failSubmit) throw new Error('private response submission failure');
           for (const item of items) {
             if (item.isRequired() && !answerByItemId.has(String(item.getId()))) {
               throw new Error('Missing required item response');
@@ -195,14 +198,19 @@ function createBridge({
   };
 }
 
-function makeItem(id, title, type, required) {
+function makeItem(id, title, type, required, failResponseCreation = false) {
   return {
     getId: () => id,
     getTitle: () => title,
     getType: () => type,
     isRequired: () => required,
     asMultipleChoiceItem() {
-      return { createResponse: (answer) => ({ item: this, answer }) };
+      return {
+        createResponse: (answer) => {
+          if (failResponseCreation) throw new Error('private item response failure');
+          return { item: this, answer };
+        },
+      };
     },
     asListItem() {
       return { createResponse: (answer) => ({ item: this, answer }) };
@@ -324,7 +332,7 @@ test('returns fixed diagnostic codes without exposing raw Form error text', () =
     throw new Error('private voter answer must not be returned');
   };
   const ballotResult = responseBody(ballotBridge.post({ secret, ballots: [sampleBallot()] }));
-  assert.equal(ballotResult.results[0].errorCode, 'form_response_failed');
+  assert.equal(ballotResult.results[0].errorCode, 'form_response_creation_failed');
   assert.equal(JSON.stringify(ballotResult).includes('private voter answer'), false);
 
   const inspectionBridge = createBridge();
@@ -334,6 +342,18 @@ test('returns fixed diagnostic codes without exposing raw Form error text', () =
   const inspectionResult = responseBody(inspectionBridge.post({ secret, ballots: [sampleBallot()] }));
   assert.equal(inspectionResult.error, 'form_inspection_failed');
   assert.equal(JSON.stringify(inspectionResult).includes('private response data'), false);
+});
+
+test('separates Form answer construction and submission failures without exposing errors', () => {
+  const itemBridge = createBridge({ failItemResponse: true });
+  const itemResult = responseBody(itemBridge.post({ secret, ballots: [sampleBallot()] }));
+  assert.equal(itemResult.results[0].errorCode, 'form_item_response_failed');
+  assert.equal(JSON.stringify(itemResult).includes('private item response failure'), false);
+
+  const submitBridge = createBridge({ failSubmit: true });
+  const submitResult = responseBody(submitBridge.post({ secret, ballots: [sampleBallot()] }));
+  assert.equal(submitResult.results[0].errorCode, 'form_response_submission_failed');
+  assert.equal(JSON.stringify(submitResult).includes('private response submission failure'), false);
 });
 
 test('distinguishes final flush, response, and lock failures safely', () => {

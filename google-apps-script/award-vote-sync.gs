@@ -29,6 +29,9 @@ const SAFE_SYNC_ERROR_CODES = [
   'unmatched_or_unsupported_question',
   'unsupported_required_question',
   'missing_required_answer',
+  'form_response_creation_failed',
+  'form_item_response_failed',
+  'form_response_submission_failed',
   'form_response_failed',
   'new_response_row_missing',
   'response_metadata_write_failed',
@@ -324,19 +327,32 @@ function submitBallot(form, items, ballot) {
     }
   }
 
-  let response = form.createResponse();
-  for (const item of items) {
-    const title = String(item.getTitle() || '').trim();
-    const answer = answerByQuestionId.has(String(item.getId()))
-      ? answerByQuestionId.get(String(item.getId()))
-      : answersByCategory.get(title);
-    if (!answer) continue;
-    const itemResponse = item.getType() === FormApp.ItemType.MULTIPLE_CHOICE
-      ? item.asMultipleChoiceItem().createResponse(answer)
-      : item.asListItem().createResponse(answer);
-    response = response.withItemResponse(itemResponse);
+  let response;
+  try {
+    response = form.createResponse();
+  } catch (error) {
+    throw new Error(safeSyncErrorCode(error, 'form_response_creation_failed'));
   }
-  return response.submit();
+  try {
+    for (const item of items) {
+      const title = String(item.getTitle() || '').trim();
+      const answer = answerByQuestionId.has(String(item.getId()))
+        ? answerByQuestionId.get(String(item.getId()))
+        : answersByCategory.get(title);
+      if (!answer) continue;
+      const itemResponse = item.getType() === FormApp.ItemType.MULTIPLE_CHOICE
+        ? item.asMultipleChoiceItem().createResponse(answer)
+        : item.asListItem().createResponse(answer);
+      response = response.withItemResponse(itemResponse);
+    }
+  } catch (error) {
+    throw new Error(safeSyncErrorCode(error, 'form_item_response_failed'));
+  }
+  try {
+    return response.submit();
+  } catch (error) {
+    throw new Error(safeSyncErrorCode(error, 'form_response_submission_failed'));
+  }
 }
 
 function getMatchingItems(answer, itemByTitle, itemById) {
