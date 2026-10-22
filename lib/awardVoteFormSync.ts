@@ -307,3 +307,66 @@ export async function syncAwardBallotsToForm(ballots: AwardFormBallot[]) {
     ...(diagnosticCode ? { diagnosticCode } : {}),
   };
 }
+
+export type AwardFormResponseCheckStatus =
+  | 'found'
+  | 'not_found'
+  | 'ambiguous'
+  | 'response_missing'
+  | 'unverifiable'
+  | 'unavailable';
+
+export type AwardFormResponseCheck = {
+  status: AwardFormResponseCheckStatus;
+  responseId?: string;
+  fingerprint?: string;
+  updatedAt?: string;
+};
+
+/** Read-only lookup for an admin review; sends only a pseudonymous token, never ballot answers. */
+export async function checkAwardBallotFormResponse(ballot: AwardFormBallot): Promise<AwardFormResponseCheck> {
+  const configuration = getConfiguration();
+  if (configuration.status !== 'ready') return { status: 'unavailable' };
+
+  const normalized = normalizeBallot(ballot, configuration.secret);
+  if (!normalized) return { status: 'unavailable' };
+
+  try {
+    const response = await fetch(configuration.endpoint, {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({
+        action: 'check-response',
+        secret: configuration.secret,
+        voterToken: normalized.request.voterToken,
+      }),
+      signal: AbortSignal.timeout(20_000),
+    });
+    const payload = await response.json().catch(() => null) as Record<string, unknown> | null;
+    const result = payload?.result && typeof payload.result === 'object'
+      ? payload.result as Record<string, unknown>
+      : null;
+    if (!response.ok || payload?.ok !== true || !result) return { status: 'unavailable' };
+
+    const status = result.status;
+    if (status === 'found') {
+      const responseId = typeof result.responseId === 'string' ? result.responseId : '';
+      const fingerprint = typeof result.fingerprint === 'string' ? result.fingerprint : '';
+      const updatedAt = typeof result.updatedAt === 'string' ? result.updatedAt : '';
+      if (
+        !/^[A-Za-z0-9_-]{1,200}$/.test(responseId)
+        || !/^[a-f0-9]{64}$/.test(fingerprint)
+        || !/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}\.\d{6}Z$/.test(updatedAt)
+      ) {
+        return { status: 'unavailable' };
+      }
+      return { status, responseId, fingerprint, updatedAt };
+    }
+    if (status === 'not_found' || status === 'ambiguous' || status === 'response_missing' || status === 'unverifiable') {
+      return { status };
+    }
+    return { status: 'unavailable' };
+  } catch {
+    return { status: 'unavailable' };
+  }
+}
