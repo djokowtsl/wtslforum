@@ -3,8 +3,19 @@ import type { GoogleFormOptionQuestion } from './googleFormOptions';
 import type { AwardVoteSheetRow } from './awardVoteSheetSync';
 
 export async function getActiveCycle() {
+  await closeExpiredAwardCycles();
   const rows = await sql`SELECT * FROM award_cycles ORDER BY created_at DESC LIMIT 1`;
   return rows[0] ?? null;
+}
+
+export async function closeExpiredAwardCycles() {
+  return sql`
+    UPDATE award_cycles
+    SET voting_open=FALSE
+    WHERE voting_open=TRUE
+      AND voting_closes_at IS NOT NULL
+      AND voting_closes_at <= NOW()
+  `;
 }
 
 export async function getCategories(cycleId: number) {
@@ -31,9 +42,18 @@ export async function getUserVotes(cycleId: number, voterKey: string) {
 
 export async function castVote(categoryId: number, voterKey: string, nomineeId: number | null, writeIn: string | null): Promise<AwardVoteSheetRow | null> {
   const rows = await sql`
-    WITH saved_vote AS (
+    WITH active_category AS (
+      SELECT category.id
+      FROM award_categories AS category
+      JOIN award_cycles AS cycle ON cycle.id=category.cycle_id
+      WHERE category.id=${categoryId}
+        AND cycle.voting_open=TRUE
+        AND (cycle.voting_closes_at IS NULL OR cycle.voting_closes_at > CLOCK_TIMESTAMP())
+    ),
+    saved_vote AS (
       INSERT INTO award_votes(category_id,source,voter_key,nominee_id,write_in)
-      VALUES (${categoryId},'site',${voterKey},${nomineeId},${writeIn})
+      SELECT active_category.id,'site',${voterKey},${nomineeId},${writeIn}
+      FROM active_category
       ON CONFLICT (category_id,source,voter_key)
       DO UPDATE SET nominee_id=EXCLUDED.nominee_id, write_in=EXCLUDED.write_in, created_at=CLOCK_TIMESTAMP()
       RETURNING id, category_id, nominee_id, write_in, created_at
@@ -76,7 +96,37 @@ export async function getSiteAwardVotesForCycle(cycleId: number, afterVoteId: st
 }
 
 export async function setVotingOpen(cycleId: number, open: boolean) {
-  return sql`UPDATE award_cycles SET voting_open=${open} WHERE id=${cycleId}`;
+  const rows = open
+    ? await sql`
+        UPDATE award_cycles
+        SET voting_open=TRUE
+        WHERE id=${cycleId}
+          AND (voting_closes_at IS NULL OR voting_closes_at > NOW())
+        RETURNING id
+      `
+    : await sql`
+        UPDATE award_cycles
+        SET voting_open=FALSE
+        WHERE id=${cycleId}
+        RETURNING id
+      `;
+  return rows[0] ?? null;
+}
+
+export async function setVotingClosesAt(cycleId: number, closesAt: string | null) {
+  const rows = await sql`
+    UPDATE award_cycles
+    SET voting_closes_at=${closesAt}::timestamptz,
+        voting_open=CASE
+          WHEN ${closesAt}::timestamptz IS NOT NULL
+            AND ${closesAt}::timestamptz <= NOW()
+          THEN FALSE
+          ELSE voting_open
+        END
+    WHERE id=${cycleId}
+    RETURNING id, voting_open, voting_closes_at
+  `;
+  return rows[0] ?? null;
 }
 
 export async function addNominee(categoryId: number, name: string, note: string) {
