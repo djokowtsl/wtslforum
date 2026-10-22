@@ -1,6 +1,7 @@
 'use client';
 
 import type { Te4DmoReplaySpeed, Te4LiveSnapshot } from '@/lib/te4DmoLive';
+import type { LivePreMatchProbability } from '@/lib/liveBroadcast';
 import { surfaceForDmoTournament } from '@/lib/te4DmoSurface';
 import DmoLiveCourt from './DmoLiveCourt';
 import styles from './DmoLiveDisplay.module.css';
@@ -11,6 +12,7 @@ type Props = {
   playbackSpeed?: Te4DmoReplaySpeed;
   stale?: boolean;
   updatedAt?: string;
+  preMatchPrediction?: LivePreMatchProbability | null;
 };
 
 function scoreLabel(sets: [number, number][]) {
@@ -27,13 +29,32 @@ function pointText(value: number) {
 
 function timeAgo(value?: string) {
   if (!value) return '';
-  const seconds = Math.max(0, Math.round((Date.now() - new Date(value).getTime()) / 1000));
-  if (seconds < 5) return 'updated just now';
-  return `updated ${seconds}s ago`;
+  const milliseconds = Math.max(0, Date.now() - new Date(value).getTime());
+  if (milliseconds < 1_500) return 'updated just now';
+  return `updated ${Math.ceil(milliseconds / 1000)}s ago`;
 }
 
-function ChanceChart({ values, players }: { values: number[]; players: [string, string] }) {
+function ChanceChart({
+  values,
+  players,
+  preMatchPrediction,
+}: {
+  values: number[];
+  players: [string, string];
+  preMatchPrediction?: LivePreMatchProbability | null;
+}) {
   const safeValues = values.length ? values : [0.5, 0.5];
+  const secondPreMatchProbability = preMatchPrediction
+    ? 100 - preMatchPrediction.probability
+    : null;
+  const tourLabel = preMatchPrediction?.tour === 'TE4_(F)' ? 'WTA' : 'ATP';
+  const preMatchSource = preMatchPrediction?.source === 'official'
+    ? `Official WTSL ${tourLabel} Elo/H2H`
+    : preMatchPrediction?.source === 'all-results'
+      ? `WTSL ${tourLabel} H2H results`
+      : preMatchPrediction
+        ? `Official WTSL ${tourLabel} · no H2H record`
+        : '';
   const path = safeValues.map((value, index) => {
     const x = safeValues.length === 1 ? 0 : (index / (safeValues.length - 1)) * 100;
     const y = 38 - Math.max(0, Math.min(1, value)) * 34;
@@ -44,7 +65,7 @@ function ChanceChart({ values, players }: { values: number[]; players: [string, 
     <div className={styles.chanceChart}>
       <div className={styles.chanceHead}>
         <span>{players[0]}</span>
-        <strong>WIN CHANCE</strong>
+        <strong>LIVE WIN CHANCE</strong>
         <span>{players[1]}</span>
       </div>
       <svg viewBox="0 0 100 42" preserveAspectRatio="none" role="img" aria-label={`${players[0]} live match win chance`}>
@@ -56,7 +77,24 @@ function ChanceChart({ values, players }: { values: number[]; players: [string, 
         <strong>{Math.round(safeValues[safeValues.length - 1] * 100)}%</strong>
         <strong>{Math.round((1 - safeValues[safeValues.length - 1]) * 100)}%</strong>
       </div>
-      <p>Estimate from recorded serve results so far. No pre-match rating is included.</p>
+      <p>Live estimate from the DMO score and recorded serve results.</p>
+      {preMatchPrediction && secondPreMatchProbability !== null && (
+        <div
+          className={styles.preMatchChance}
+          role="group"
+          aria-label={`Official pre-match probabilities: ${players[0]} ${preMatchPrediction.probability}%, ${players[1]} ${secondPreMatchProbability}%`}
+        >
+          <div className={styles.preMatchHead}>
+            <strong>PRE-MATCH</strong>
+            <span>{preMatchSource}</span>
+          </div>
+          <div className={styles.preMatchValues}>
+            <div><span>{players[0]}</span><strong>{preMatchPrediction.probability}%</strong></div>
+            <div><span>{players[1]}</span><strong>{secondPreMatchProbability}%</strong></div>
+          </div>
+          <p>Shown separately; it does not change the live estimate.</p>
+        </div>
+      )}
     </div>
   );
 }
@@ -67,6 +105,7 @@ export default function DmoLiveDisplay({
   playbackSpeed = 1,
   stale = false,
   updatedAt,
+  preMatchPrediction,
 }: Props) {
   const p1Stats = snapshot.stats[0];
   const p2Stats = snapshot.stats[1];
@@ -86,7 +125,7 @@ export default function DmoLiveDisplay({
             {updatedAt && <small>{timeAgo(updatedAt)}</small>}
           </div>
           <h2>{snapshot.players[0]} <i>vs</i> {snapshot.players[1]}</h2>
-          <p>{snapshot.stadium || 'TE4 match'} <span>·</span> {snapshot.frameCount.toLocaleString()} frames <span>·</span> {snapshot.pointCount} completed points</p>
+          <p>{snapshot.stadium || 'TE4 match'} <span>·</span> {snapshot.pointCount} completed points</p>
         </div>
         <div className={styles.finalScore}>
           <small>SETS</small>
@@ -127,12 +166,43 @@ export default function DmoLiveDisplay({
               );
             })}
           </div>
-          <div className={styles.metrics} aria-label="Match statistics">
-            <div><span>Service points won</span><strong>{p1Stats.servicePointsWon}/{p1Stats.servicePoints}</strong><small>{snapshot.players[0]}</small></div>
-            <div><span>Service points won</span><strong>{p2Stats.servicePointsWon}/{p2Stats.servicePoints}</strong><small>{snapshot.players[1]}</small></div>
-            <div><span>Unreturned serves</span><strong>{p1Stats.acesOrUnreturned} / {p2Stats.acesOrUnreturned}</strong><small>{snapshot.players[0]} / {snapshot.players[1]}</small></div>
+          <div className={styles.metrics} role="table" aria-label="Match statistics">
+            <div className={styles.metricsHeading} role="row">
+              <span role="columnheader">Statistic</span>
+              <span role="columnheader" title={snapshot.players[0]}>{snapshot.players[0]}</span>
+              <span role="columnheader" title={snapshot.players[1]}>{snapshot.players[1]}</span>
+            </div>
+            <div className={styles.metricRow} role="row">
+              <span role="rowheader">Points won</span>
+              <strong role="cell">{p1Stats.pointsWon}</strong>
+              <strong role="cell">{p2Stats.pointsWon}</strong>
+            </div>
+            <div className={styles.metricRow} role="row">
+              <span role="rowheader">Service points won</span>
+              <strong role="cell">{p1Stats.servicePointsWon}/{p1Stats.servicePoints}</strong>
+              <strong role="cell">{p2Stats.servicePointsWon}/{p2Stats.servicePoints}</strong>
+            </div>
+            <div className={styles.metricRow} role="row">
+              <span role="rowheader">Return points won</span>
+              <strong role="cell">{p1Stats.pointsWon - p1Stats.servicePointsWon}/{p2Stats.servicePoints}</strong>
+              <strong role="cell">{p2Stats.pointsWon - p2Stats.servicePointsWon}/{p1Stats.servicePoints}</strong>
+            </div>
+            <div className={styles.metricRow} role="row">
+              <span role="rowheader">Unreturned serves</span>
+              <strong role="cell">{p1Stats.acesOrUnreturned}</strong>
+              <strong role="cell">{p2Stats.acesOrUnreturned}</strong>
+            </div>
+            <div className={styles.metricRow} role="row">
+              <span role="rowheader">Serve faults</span>
+              <strong role="cell">{p1Stats.firstServeFaults}</strong>
+              <strong role="cell">{p2Stats.firstServeFaults}</strong>
+            </div>
           </div>
-          <ChanceChart values={snapshot.winHistory} players={snapshot.players} />
+          <ChanceChart
+            values={snapshot.winHistory}
+            players={snapshot.players}
+            preMatchPrediction={preMatchPrediction}
+          />
         </div>
 
         <div className={styles.rightColumn}>
@@ -156,7 +226,6 @@ export default function DmoLiveDisplay({
         </div>
       </div>
       <footer className={styles.footer}>
-        <span>The original DMO stays on the broadcaster&apos;s device. Active updates contain only recent court positions and parsed point events.</span>
         <span>Best of {snapshot.bestOf}</span>
       </footer>
     </section>

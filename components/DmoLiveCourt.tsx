@@ -1,10 +1,17 @@
 'use client';
 
-import { useEffect, useRef, useState } from 'react';
-import { Minus, Plus, Volume2, VolumeX } from 'lucide-react';
+import { memo, useEffect, useRef, useState } from 'react';
+import { Minus, Plus, RotateCcw, Volume2, VolumeX } from 'lucide-react';
 import { TE4_DMO_FRAMES_PER_SECOND } from '@/lib/te4DmoLive';
 import type { Te4DmoReplaySpeed, Te4LiveSnapshot } from '@/lib/te4DmoLive';
 import type { Te4CourtSurface } from '@/lib/te4DmoTypes';
+import {
+  createCourtProjector,
+  findCourtRacketContact,
+  type LiveCourtCamera,
+  type LiveCourtProjectedPoint,
+  type LiveCourtWorldPoint,
+} from '@/lib/liveCourtProjection';
 import {
   advanceLiveCourtPlayhead,
   interpolateLiveCourtFrame,
@@ -17,8 +24,8 @@ import {
 } from '@/lib/liveCourtMotion';
 import styles from './DmoLiveCourt.module.css';
 
-type CameraView = 't' | 'p' | 's' | 'q';
-type ProjectedPoint = [number, number, number];
+type WorldPoint = LiveCourtWorldPoint;
+type ProjectedPoint = LiveCourtProjectedPoint;
 type Props = {
   snapshot: Te4LiveSnapshot;
   surface: Te4CourtSurface;
@@ -32,13 +39,18 @@ const surfacePalette: Record<Te4CourtSurface, { court: string; apron: string }> 
   unknown: { court: '#526b79', apron: '#aebbc2' },
 };
 
+function normalize3(vector: WorldPoint): WorldPoint {
+  const length = Math.hypot(...vector) || 1;
+  return [vector[0] / length, vector[1] / length, vector[2] / length];
+}
+
 function drawScene(
   context: CanvasRenderingContext2D,
   samples: LiveCourtSample[],
   trajectoryEvents: LiveCourtMotionEvent[],
   players: [string, string],
   surface: Te4CourtSurface,
-  camera: CameraView,
+  camera: LiveCourtCamera,
   zoom: number,
   cursor: number,
   playbackSpeed: Te4DmoReplaySpeed,
@@ -47,35 +59,16 @@ function drawScene(
   const height = 520;
   const palette = surfacePalette[surface];
   context.clearRect(0, 0, width, height);
-  context.fillStyle = '#101923';
+  const backdrop = context.createLinearGradient(0, 0, 0, height);
+  backdrop.addColorStop(0, '#0a1524');
+  backdrop.addColorStop(1, '#192430');
+  context.fillStyle = backdrop;
   context.fillRect(0, 0, width, height);
 
-  const rawProject = (x: number, y: number, z: number): ProjectedPoint => {
-    if (camera === 't') return [450 + x * 0.3, 260 + y * 0.3 - z * 0.08, 1.3];
-    if (camera === 'p') {
-      const depth = x + 2900;
-      const scale = 700 / depth;
-      return [450 + y * scale, 70 + 640000 / depth - z * scale, scale * 2.2];
-    }
-    if (camera === 's') {
-      const depth = y + 1850;
-      const scale = 430 / depth;
-      return [450 + x * scale, 50 + 580000 / depth - z * scale, scale * 2.2];
-    }
-    const depth = x + y * 0.45 + 3200;
-    const scale = 650 / depth;
-    return [450 + (y - x * 0.3) * scale, 40 + 610000 / depth - z * scale, scale * 2.2];
-  };
-  const project = (x: number, y: number, z: number): ProjectedPoint => {
-    const [screenX, screenY, scale] = rawProject(x, y, z);
-    return [
-      450 + (screenX - 450) * zoom,
-      260 + (screenY - 260) * zoom,
-      scale * zoom,
-    ];
-  };
+  const rawProject = createCourtProjector(camera, zoom);
+  const project = (x: number, y: number, z: number): ProjectedPoint => rawProject([x, y, z]);
   const polygon = (
-    points: Array<[number, number, number]>,
+    points: WorldPoint[],
     fill: string | null,
     stroke: string | null,
   ) => {
@@ -94,6 +87,90 @@ function drawScene(
       context.stroke();
     }
   };
+
+  const line = (points: WorldPoint[], color: string, widthValue: number) => {
+    if (points.length < 2) return;
+    context.beginPath();
+    points.forEach(([x, y, z], index) => {
+      const [screenX, screenY] = project(x, y, z);
+      if (index === 0) context.moveTo(screenX, screenY);
+      else context.lineTo(screenX, screenY);
+    });
+    context.strokeStyle = color;
+    context.lineWidth = widthValue;
+    context.lineCap = 'round';
+    context.lineJoin = 'round';
+    context.stroke();
+  };
+
+  const drawFigure = (
+    x: number,
+    y: number,
+    z: number,
+    figureHeight: number,
+    color: string,
+    across: 'x' | 'y',
+    wave = false,
+  ) => {
+    const acrossPoint = (offset: number, at: number): WorldPoint => (
+      across === 'x' ? [x + offset, y, z + at] : [x, y + offset, z + at]
+    );
+    const widthValue = figureHeight * 0.26;
+    const skin = '#d6a77e';
+    const shoulderLeft = acrossPoint(-widthValue * 0.38, figureHeight * 0.72);
+    const shoulderRight = acrossPoint(widthValue * 0.38, figureHeight * 0.72);
+    const hipLeft = acrossPoint(-widthValue * 0.25, figureHeight * 0.4);
+    const hipRight = acrossPoint(widthValue * 0.25, figureHeight * 0.4);
+    const footLeft = acrossPoint(-widthValue * 0.2, 0);
+    const footRight = acrossPoint(widthValue * 0.2, 0);
+    const kneeLeft = acrossPoint(-widthValue * 0.2, figureHeight * 0.2);
+    const kneeRight = acrossPoint(widthValue * 0.2, figureHeight * 0.2);
+    const [, , scale] = project(x, y, z);
+    const limbWidth = Math.max(1.2, figureHeight * scale * 0.07);
+    polygon([shoulderLeft, shoulderRight, hipRight, hipLeft], color, '#16202b');
+    line([hipLeft, kneeLeft, footLeft], skin, limbWidth);
+    line([hipRight, kneeRight, footRight], skin, limbWidth);
+    line([shoulderLeft, acrossPoint(-widthValue * 0.65, figureHeight * (wave ? 1.02 : 0.48))], skin, limbWidth);
+    line([shoulderRight, acrossPoint(widthValue * 0.65, figureHeight * 0.55)], skin, limbWidth);
+    const [headX, headY, headScale] = project(x, y, z + figureHeight * 0.88);
+    const headRadius = Math.max(1.5, figureHeight * headScale * 0.09);
+    context.fillStyle = skin;
+    context.beginPath();
+    context.arc(headX, headY, headRadius, 0, Math.PI * 2);
+    context.fill();
+    context.fillStyle = '#26323f';
+    context.beginPath();
+    context.arc(headX, headY - Math.max(1, figureHeight * headScale * 0.025), headRadius, Math.PI, Math.PI * 2);
+    context.fill();
+  };
+
+  const crowdColors = ['#d1d7dc', '#e29b62', '#8ca9c0', '#b7c984', '#9e91c8', '#d77f78', '#e0d4b6'];
+  polygon([[-1650, 700, 0], [1650, 700, 0], [1650, 1080, 320], [-1650, 1080, 320]], '#263646', '#526579');
+  polygon([[-1650, -700, 0], [1650, -700, 0], [1650, -1080, 320], [-1650, -1080, 320]], '#263646', '#526579');
+  polygon([[1450, -760, 0], [1450, 760, 0], [1850, 760, 300], [1850, -760, 300]], '#202f40', '#526579');
+  polygon([[-1450, -760, 0], [-1450, 760, 0], [-1850, 760, 300], [-1850, -760, 300]], '#202f40', '#526579');
+  for (let row = 1; row <= 3; row += 1) {
+    const offset = 700 + row * 95;
+    const railHeight = row * 80;
+    line([[-1580, offset, railHeight], [1580, offset, railHeight]], 'rgba(201,216,232,.23)', 1.4);
+    line([[-1580, -offset, railHeight], [1580, -offset, railHeight]], 'rgba(201,216,232,.23)', 1.4);
+  }
+  for (let row = 0; row < 3; row += 1) {
+    for (let seat = 0; seat < 23; seat += 1) {
+      const x = -1430 + seat * 130 + (row % 2) * 30;
+      const z = 22 + row * 58;
+      const y = 760 + row * 94;
+      drawFigure(x, y, z, 76, crowdColors[(seat * 3 + row * 5) % crowdColors.length], 'x', (seat + row * 4) % 11 === 0);
+      drawFigure(x, -y, z, 76, crowdColors[(seat * 5 + row * 2 + 1) % crowdColors.length], 'x', (seat + row * 3) % 13 === 0);
+    }
+    for (let seat = 0; seat < 12; seat += 1) {
+      const y = -640 + seat * 116;
+      const z = 22 + row * 58;
+      const x = 1485 + row * 95;
+      drawFigure(x, y, z, 76, crowdColors[(seat * 2 + row * 3) % crowdColors.length], 'y', (seat + row) % 10 === 0);
+      drawFigure(-x, y, z, 76, crowdColors[(seat * 4 + row + 2) % crowdColors.length], 'y', (seat + row * 2) % 12 === 0);
+    }
+  }
 
   polygon([[-1450, -700, 0], [1450, -700, 0], [1450, 700, 0], [-1450, 700, 0]], palette.apron, null);
   polygon([[-1275, -590, 0], [1275, -590, 0], [1275, 590, 0], [-1275, 590, 0]], palette.court, null);
@@ -121,6 +198,22 @@ function drawScene(
     polygon([[x1, y1, 0], [x2, y2, 0]], null, lineColor);
   });
   polygon([[0, -549, 0], [0, 549, 0], [0, 549, 107], [0, -549, 107]], 'rgba(255,255,255,.18)', lineColor);
+  for (let y = -540; y <= 540; y += 54) {
+    line([[0, y, 8], [0, y, 100]], 'rgba(241,246,250,.34)', 0.8);
+  }
+  for (let z = 16; z <= 96; z += 16) {
+    line([[0, -549, z], [0, 549, z]], 'rgba(241,246,250,.3)', 0.8);
+  }
+  line([[0, -560, 0], [0, -560, 120]], '#edf3f7', 3);
+  line([[0, 560, 0], [0, 560, 120]], '#edf3f7', 3);
+
+  line([[0, 610, 0], [0, 610, 290]], '#d9e1e9', 5);
+  polygon([[-42, 590, 250], [42, 590, 250], [42, 630, 250], [-42, 630, 250]], '#e4e9ee', '#17212b');
+  drawFigure(0, 610, 275, 118, '#edf2f6', 'x');
+  for (const x of [-1_240, 1_240]) {
+    for (const y of [-570, 570]) drawFigure(x, y, 0, 126, '#f2f0df', 'y');
+  }
+  for (const y of [-575, 575]) drawFigure(0, y, 0, 108, '#d9e7f2', 'x');
 
   if (!samples.length) {
     context.fillStyle = 'rgba(8,19,40,.72)';
@@ -173,167 +266,166 @@ function drawScene(
   context.fill();
 
   const playerActors = [
-    { x: value(3), y: value(4), color: '#f59e0b', name: players[0], id: 1 as const },
-    { x: value(5), y: value(6), color: '#ef4444', name: players[1], id: 2 as const },
-  ].sort((a, b) => b.x - a.x);
+    { x: value(3), y: value(4), color: '#eaa134', name: players[0], id: 1 as const },
+    { x: value(5), y: value(6), color: '#e05d64', name: players[1], id: 2 as const },
+  ];
+  const contactPlayer = findCourtRacketContact(ball, playerActors, activeTrajectory, cursor);
 
-  const drawPlayer = (x: number, y: number, color: string, name: string, id: 1 | 2) => {
-    const [screenX, screenY, rawScale] = project(x, y, 0);
-    const scale = Math.max(0.68, rawScale);
-    const skin = '#f0c7a6';
-    const outline = '#17212b';
-    const shorts = id === 1 ? '#15566d' : '#742f42';
-    const top = screenY - 38 * scale;
-    const hip = screenY - 16 * scale;
-    const headY = screenY - 49 * scale;
-    context.fillStyle = 'rgba(0,0,0,.32)';
-    context.beginPath();
-    context.ellipse(screenX, screenY, 12 * scale, 4.5 * scale, 0, 0, Math.PI * 2);
-    context.fill();
-
-    const limb = (x1: number, y1: number, x2: number, y2: number, thickness: number, colorValue: string) => {
-      context.lineCap = 'round';
-      context.strokeStyle = outline;
-      context.lineWidth = thickness + 2 * scale;
-      context.beginPath();
-      context.moveTo(x1, y1);
-      context.lineTo(x2, y2);
-      context.stroke();
-      context.strokeStyle = colorValue;
-      context.lineWidth = thickness;
-      context.beginPath();
-      context.moveTo(x1, y1);
-      context.lineTo(x2, y2);
-      context.stroke();
+  const drawPlayer = (player: typeof playerActors[number]) => {
+    const { x, y, color, name, id } = player;
+    const towardBall = normalize3([ball.x - x, ball.y - y, 0]);
+    const facing: WorldPoint = Math.hypot(ball.x - x, ball.y - y) > 1
+      ? towardBall
+      : [id === 1 ? 1 : -1, 0, 0];
+    const across: WorldPoint = [-facing[1], facing[0], 0];
+    const point = (acrossOffset: number, forwardOffset: number, z: number): WorldPoint => [
+      x + across[0] * acrossOffset + facing[0] * forwardOffset,
+      y + across[1] * acrossOffset + facing[1] * forwardOffset,
+      z,
+    ];
+    const limb = (start: WorldPoint, end: WorldPoint, limbColor: string, thickness: number) => {
+      const scale = (project(...start)[2] + project(...end)[2]) / 2;
+      line([start, end], '#17212b', Math.max(2, thickness * scale + 2));
+      line([start, end], limbColor, Math.max(1, thickness * scale));
     };
-
-    limb(screenX - 4 * scale, hip, screenX - 6 * scale, screenY - 4 * scale, 4 * scale, skin);
-    limb(screenX + 4 * scale, hip, screenX + 6 * scale, screenY - 4 * scale, 4 * scale, skin);
-    limb(screenX - 8 * scale, top + 7 * scale, screenX - 14 * scale, top + 16 * scale, 3.5 * scale, skin);
-    limb(screenX - 14 * scale, top + 16 * scale, screenX - 12 * scale, top + 23 * scale, 3.5 * scale, skin);
-    const handX = screenX + 17 * scale;
-    const handY = top + 17 * scale;
-    limb(screenX + 8 * scale, top + 7 * scale, screenX + 13 * scale, top + 12 * scale, 4 * scale, skin);
-    limb(screenX + 13 * scale, top + 12 * scale, handX, handY, 3.5 * scale, skin);
-
+    const shoulderLeft = point(-24, 0, 132);
+    const shoulderRight = point(24, 0, 132);
+    const hipLeft = point(-17, -2, 77);
+    const hipRight = point(17, -2, 77);
+    const kneeLeft = point(-20, 12, 40);
+    const kneeRight = point(20, -8, 40);
+    const footLeft = point(-22, 18, 5);
+    const footRight = point(22, -14, 5);
+    const skin = '#d9ad8e';
+    const shorts = id === 1 ? '#16566b' : '#743747';
+    const torso = [
+      shoulderLeft,
+      shoulderRight,
+      point(20, 0, 86),
+      point(-20, 0, 86),
+    ];
+    const [groundX, groundY, groundScale] = project(x, y, 0);
+    context.fillStyle = 'rgba(0,0,0,.28)';
     context.beginPath();
-    context.moveTo(screenX - 8 * scale, top + 3 * scale);
-    context.lineTo(screenX + 8 * scale, top + 3 * scale);
-    context.lineTo(screenX + 11 * scale, top + 11 * scale);
-    context.lineTo(screenX + 7 * scale, hip);
-    context.lineTo(screenX - 7 * scale, hip);
-    context.lineTo(screenX - 11 * scale, top + 11 * scale);
-    context.closePath();
-    context.fillStyle = color;
-    context.strokeStyle = outline;
-    context.lineWidth = 1.4 * scale;
+    context.ellipse(groundX, groundY, 35 * groundScale, 18 * groundScale, 0, 0, Math.PI * 2);
     context.fill();
-    context.stroke();
-    context.strokeStyle = 'rgba(255,255,255,.55)';
-    context.lineWidth = 1.5 * scale;
-    context.beginPath();
-    context.moveTo(screenX - 5 * scale, top + 7 * scale);
-    context.lineTo(screenX + 5 * scale, top + 7 * scale);
-    context.stroke();
+    limb(hipLeft, kneeLeft, skin, 18);
+    limb(kneeLeft, footLeft, skin, 15);
+    limb(hipRight, kneeRight, skin, 18);
+    limb(kneeRight, footRight, skin, 15);
+    limb(footLeft, point(-22, 40, 3), '#f2f4f7', 18);
+    limb(footRight, point(22, 8, 3), '#f2f4f7', 18);
+    polygon(torso, color, '#17212b');
+    line([point(-8, 0, 119), point(9, 0, 119)], 'rgba(255,255,255,.52)', 2);
+    polygon([hipLeft, hipRight, point(13, 8, 55), point(-13, 8, 55)], shorts, '#17212b');
 
-    context.beginPath();
-    context.moveTo(screenX - 7 * scale, hip);
-    context.lineTo(screenX + 7 * scale, hip);
-    context.lineTo(screenX + 9 * scale, screenY - 7 * scale);
-    context.lineTo(screenX + scale, screenY - 7 * scale);
-    context.lineTo(screenX, screenY - 11 * scale);
-    context.lineTo(screenX - scale, screenY - 7 * scale);
-    context.lineTo(screenX - 9 * scale, screenY - 7 * scale);
-    context.closePath();
-    context.fillStyle = shorts;
-    context.strokeStyle = outline;
-    context.lineWidth = 1.2 * scale;
-    context.fill();
-    context.stroke();
-
-    context.fillStyle = '#f5f7fa';
-    context.strokeStyle = outline;
-    context.lineWidth = scale;
-    [[screenX - 7 * scale, screenY - 3 * scale], [screenX + 7 * scale, screenY - 3 * scale]].forEach(([shoeX, shoeY]) => {
-      context.beginPath();
-      context.ellipse(shoeX, shoeY, 5 * scale, 2.6 * scale, 0, 0, Math.PI * 2);
-      context.fill();
-      context.stroke();
-    });
+    const head = point(0, 9, 162);
+    const [headX, headY, headScale] = project(...head);
+    const headRadius = Math.max(4.2, 10 * headScale);
+    const neck = point(0, 4, 139);
+    limb(point(-4, 0, 145), neck, skin, 9);
     context.fillStyle = skin;
     context.beginPath();
-    context.arc(screenX, headY, 7 * scale, 0, Math.PI * 2);
+    context.arc(headX, headY, headRadius, 0, Math.PI * 2);
     context.fill();
-    context.strokeStyle = outline;
-    context.lineWidth = 1.2 * scale;
+    context.strokeStyle = '#17212b';
+    context.lineWidth = Math.max(1, headScale * 3);
     context.stroke();
-    context.fillStyle = '#26323f';
+    const [hairX, hairY] = project(head[0], head[1], head[2] + 3);
+    context.fillStyle = '#26313c';
     context.beginPath();
-    context.arc(screenX, headY - 1.8 * scale, 7.1 * scale, Math.PI, Math.PI * 2);
-    context.lineTo(screenX + 7.1 * scale, headY + 0.5 * scale);
-    context.quadraticCurveTo(screenX, headY - 2 * scale, screenX - 7.1 * scale, headY + 0.5 * scale);
-    context.closePath();
+    context.ellipse(hairX, hairY, headRadius * 0.92, headRadius * 0.48, 0, Math.PI, Math.PI * 2);
     context.fill();
-    context.strokeStyle = '#f7f8fb';
-    context.lineWidth = 1.4 * scale;
-    context.beginPath();
-    context.moveTo(screenX - 7 * scale, headY + scale);
-    context.lineTo(screenX + 7 * scale, headY + scale);
-    context.stroke();
 
-    const aim = Math.atan2(ballY - handY, ballX - handX) + Math.PI / 2;
-    context.save();
-    context.translate(handX, handY);
-    context.rotate(aim);
-    context.lineCap = 'round';
-    context.strokeStyle = '#f2f5f8';
-    context.lineWidth = Math.max(1.2, 1.8 * scale);
-    context.shadowColor = color;
-    context.shadowBlur = 3 * scale;
-    context.beginPath();
-    context.moveTo(0, 0);
-    context.lineTo(0, -10 * scale);
-    context.stroke();
-    context.beginPath();
-    context.ellipse(0, -20 * scale, 6.5 * scale, 9 * scale, 0, 0, Math.PI * 2);
-    context.stroke();
-    context.shadowBlur = 0;
-    context.strokeStyle = 'rgba(20,30,38,.55)';
-    context.lineWidth = Math.max(0.7, 0.8 * scale);
-    for (let y = -26 * scale; y <= -14 * scale; y += 4 * scale) {
-      const dy = (y + 20 * scale) / (9 * scale);
-      if (Math.abs(dy) >= 1) continue;
-      const span = 6.5 * scale * Math.sqrt(1 - dy * dy);
+    const isHitting = contactPlayer === id;
+    const racketDirection: WorldPoint = isHitting
+      ? normalize3([ball.x - shoulderRight[0], ball.y - shoulderRight[1], ball.z - shoulderRight[2]])
+      : normalize3([facing[0] + across[0] * 0.2, facing[1] + across[1] * 0.2, 0.28]);
+    const racketLength = 56;
+    const racketCenter: WorldPoint = isHitting
+      ? [ball.x, ball.y, ball.z]
+      : [
+        shoulderRight[0] + facing[0] * 82 + across[0] * 16,
+        shoulderRight[1] + facing[1] * 82 + across[1] * 16,
+        108,
+      ];
+    const hand: WorldPoint = isHitting
+      ? [
+        racketCenter[0] - racketDirection[0] * racketLength,
+        racketCenter[1] - racketDirection[1] * racketLength,
+        racketCenter[2] - racketDirection[2] * racketLength,
+      ]
+      : [
+        shoulderRight[0] + facing[0] * 27 + across[0] * 13,
+        shoulderRight[1] + facing[1] * 27 + across[1] * 13,
+        105,
+      ];
+    const elbow: WorldPoint = [
+      (shoulderRight[0] + hand[0]) / 2 + across[0] * 12,
+      (shoulderRight[1] + hand[1]) / 2 + across[1] * 12,
+      (shoulderRight[2] + hand[2]) / 2 - 6,
+    ];
+    const freeElbow = point(-39, 18, 105);
+    const freeHand = point(-51, 26, 89);
+    limb(shoulderLeft, freeElbow, skin, 13);
+    limb(freeElbow, freeHand, skin, 11);
+    limb(shoulderRight, elbow, skin, 13);
+    limb(elbow, hand, skin, 11);
+    line([hand, racketCenter], '#dce4eb', Math.max(1.2, racketLength * headScale * 0.045));
+
+    const racketAcross: WorldPoint = across;
+    const racketRadius = 14;
+    const racketHalfHeight = 20;
+    const framePoints: WorldPoint[] = [];
+    for (let step = 0; step <= 20; step += 1) {
+      const angle = step * Math.PI * 2 / 20;
+      framePoints.push([
+        racketCenter[0] + racketAcross[0] * racketRadius * Math.cos(angle),
+        racketCenter[1] + racketAcross[1] * racketRadius * Math.cos(angle),
+        racketCenter[2] + racketHalfHeight * Math.sin(angle),
+      ]);
+    }
+    line(framePoints, '#e9eef4', Math.max(1.2, racketRadius * headScale * 0.08));
+    for (let strand = -2; strand <= 2; strand += 1) {
+      const offset = strand * 4.5;
+      const halfSpan = racketRadius * Math.sqrt(Math.max(0, 1 - (offset / racketRadius) ** 2));
+      line([
+        [racketCenter[0] - racketAcross[0] * halfSpan, racketCenter[1] - racketAcross[1] * halfSpan, racketCenter[2] + offset],
+        [racketCenter[0] + racketAcross[0] * halfSpan, racketCenter[1] + racketAcross[1] * halfSpan, racketCenter[2] + offset],
+      ], 'rgba(31,43,54,.72)', Math.max(0.7, headScale * 2));
+    }
+    if (isHitting) {
+      const [contactX, contactY] = project(ball.x, ball.y, ball.z);
       context.beginPath();
-      context.moveTo(-span, y);
-      context.lineTo(span, y);
+      context.arc(contactX, contactY, Math.max(5, 16 * headScale), 0, Math.PI * 2);
+      context.strokeStyle = 'rgba(245,216,91,.82)';
+      context.lineWidth = 1.5;
       context.stroke();
     }
-    for (let x = -4 * scale; x <= 4 * scale; x += 4 * scale) {
-      context.beginPath();
-      context.moveTo(x, -28 * scale);
-      context.lineTo(x, -12 * scale);
-      context.stroke();
-    }
-    context.restore();
 
-    context.font = `700 ${Math.max(10, 9 * scale)}px system-ui, sans-serif`;
+    context.font = `700 ${Math.max(9, 8 + headScale * 8)}px system-ui, sans-serif`;
     context.textAlign = 'center';
-    context.lineWidth = 3 * scale;
+    context.lineWidth = 3;
     context.strokeStyle = 'rgba(12,20,29,.82)';
-    context.strokeText(name, screenX, headY - 11 * scale);
+    context.strokeText(name, headX, headY - headRadius - 4);
     context.fillStyle = '#ffffff';
-    context.fillText(name, screenX, headY - 11 * scale);
+    context.fillText(name, headX, headY - headRadius - 4);
   };
 
-  playerActors.forEach((player) => drawPlayer(player.x, player.y, player.color, player.name, player.id));
+  playerActors
+    .sort((a, b) => project(b.x, b.y, 0)[3] - project(a.x, a.y, 0)[3])
+    .forEach(drawPlayer);
+  const ballRadius = Math.max(1.8, 3.4 * ballScale);
   context.fillStyle = '#e8f84a';
-  context.strokeStyle = '#222';
+  context.strokeStyle = '#f6ff9c';
   context.lineWidth = 1;
+  context.shadowColor = 'rgba(232,248,74,.65)';
+  context.shadowBlur = contactPlayer ? 8 : 3;
   context.beginPath();
-  context.arc(ballX, ballY, Math.max(3, 4 * ballScale), 0, Math.PI * 2);
+  context.arc(ballX, ballY, ballRadius, 0, Math.PI * 2);
   context.fill();
   context.stroke();
+  context.shadowBlur = 0;
 }
 
 function playSynthesizedCue(context: AudioContext, kind: 'racket' | 'bounce') {
@@ -352,8 +444,9 @@ function playSynthesizedCue(context: AudioContext, kind: 'racket' | 'bounce') {
   oscillator.stop(now + (racket ? 0.06 : 0.1));
 }
 
-export default function DmoLiveCourt({ snapshot, surface, playbackSpeed }: Props) {
+function DmoLiveCourt({ snapshot, surface, playbackSpeed }: Props) {
   const canvasRef = useRef<HTMLCanvasElement>(null);
+  const cameraDragRef = useRef<{ x: number; y: number } | null>(null);
   const sampleBufferRef = useRef<LiveCourtSample[]>([]);
   const trajectoryEventsRef = useRef<LiveCourtMotionEvent[]>([]);
   const playheadRef = useRef<number | null>(null);
@@ -373,8 +466,11 @@ export default function DmoLiveCourt({ snapshot, surface, playbackSpeed }: Props
     players: snapshot.players,
     surface,
     playbackSpeed,
+    camera: { azimuth: 42, elevation: 38 },
+    zoom: 1,
   });
-  const [camera, setCamera] = useState<CameraView>('t');
+  const [cameraAzimuth, setCameraAzimuth] = useState(42);
+  const [cameraElevation, setCameraElevation] = useState(38);
   const [zoom, setZoom] = useState(1);
   sceneRef.current = {
     samples: sampleBufferRef.current,
@@ -382,6 +478,8 @@ export default function DmoLiveCourt({ snapshot, surface, playbackSpeed }: Props
     players: snapshot.players,
     surface,
     playbackSpeed,
+    camera: { azimuth: cameraAzimuth, elevation: cameraElevation },
+    zoom,
   };
 
   useEffect(() => {
@@ -470,8 +568,8 @@ export default function DmoLiveCourt({ snapshot, surface, playbackSpeed }: Props
         current.trajectoryEvents,
         current.players,
         current.surface,
-        camera,
-        zoom,
+        current.camera,
+        current.zoom,
         cursor,
         current.playbackSpeed,
       );
@@ -479,7 +577,7 @@ export default function DmoLiveCourt({ snapshot, surface, playbackSpeed }: Props
     };
     animation = window.requestAnimationFrame(tick);
     return () => window.cancelAnimationFrame(animation);
-  }, [camera, zoom, playbackSpeed]);
+  }, []);
 
   useEffect(() => {
     if (!soundEnabled) return;
@@ -528,26 +626,55 @@ export default function DmoLiveCourt({ snapshot, surface, playbackSpeed }: Props
   };
 
   return (
-    <section className={styles.scene} aria-label="Reconstructed live court">
+    <section className={styles.scene} aria-label="Live court view">
       <div className={styles.sceneToolbar}>
         <div className={styles.sceneTitle}>
           <strong>LIVE COURT</strong>
-          <span>RECENT DMO MOTION</span>
         </div>
         <div className={styles.sceneControls}>
-          <label>
-            <span className={styles.visuallyHidden}>Camera angle</span>
-            <select value={camera} onChange={(event) => setCamera(event.currentTarget.value as CameraView)}>
-              <option value="t">Overhead</option>
-              <option value="p">Baseline</option>
-              <option value="s">Sideline</option>
-              <option value="q">Three-quarter</option>
-            </select>
+          <label className={styles.cameraControl}>
+            <span>ORBIT</span>
+            <input
+              aria-label="Camera orbit angle"
+              type="range"
+              min="0"
+              max="359"
+              step="1"
+              value={cameraAzimuth}
+              onChange={(event) => setCameraAzimuth(Number(event.currentTarget.value))}
+            />
+            <output>{Math.round(cameraAzimuth)}°</output>
           </label>
+          <label className={styles.cameraControl}>
+            <span>ELEVATION</span>
+            <input
+              aria-label="Camera elevation"
+              type="range"
+              min="5"
+              max="90"
+              step="1"
+              value={cameraElevation}
+              onChange={(event) => setCameraElevation(Number(event.currentTarget.value))}
+            />
+            <output>{cameraElevation}°</output>
+          </label>
+          <button
+            type="button"
+            aria-label="Reset court camera"
+            title="Reset court camera"
+            onClick={() => {
+              setCameraAzimuth(42);
+              setCameraElevation(38);
+              setZoom(1);
+            }}
+          >
+            <RotateCcw size={14} />
+          </button>
           <button type="button" aria-label="Zoom out" onClick={() => setZoom((value) => Math.max(0.7, Math.round((value - 0.1) * 10) / 10))}>
             <Minus size={15} />
           </button>
           <input
+            className={styles.zoomRange}
             aria-label="Court zoom"
             type="range"
             min="0.7"
@@ -577,17 +704,37 @@ export default function DmoLiveCourt({ snapshot, surface, playbackSpeed }: Props
           width={900}
           height={520}
           role="img"
-          aria-label={`Reconstructed tennis court with ${snapshot.players[0]} and ${snapshot.players[1]} moving to the ball`}
+          aria-label={`Interactive tennis court with ${snapshot.players[0]} and ${snapshot.players[1]}; drag to orbit the camera`}
+          title="Drag to rotate the camera"
+          onPointerDown={(event) => {
+            cameraDragRef.current = { x: event.clientX, y: event.clientY };
+            event.currentTarget.setPointerCapture(event.pointerId);
+          }}
+          onPointerMove={(event) => {
+            const previous = cameraDragRef.current;
+            if (!previous) return;
+            const deltaX = event.clientX - previous.x;
+            const deltaY = event.clientY - previous.y;
+            setCameraAzimuth((value) => {
+              const next = (value + deltaX * 0.55) % 360;
+              return Math.round((next + 360) % 360);
+            });
+            setCameraElevation((value) => Math.max(5, Math.min(90, Math.round(value - deltaY * 0.35))));
+            cameraDragRef.current = { x: event.clientX, y: event.clientY };
+          }}
+          onPointerUp={() => { cameraDragRef.current = null; }}
+          onPointerCancel={() => { cameraDragRef.current = null; }}
         />
-        <span className={styles.reconstructionTag}>POSITION DATA · NOT GAME VIDEO</span>
       </div>
       <div className={styles.legend}>
         <span><i className={styles.playerOne} />{snapshot.players[0]}</span>
         <span><i className={styles.playerTwo} />{snapshot.players[1]}</span>
         <span><i className={styles.ball} />Ball</span>
-        <span className={styles.sceneNote}>Reconstructed from recent DMO frames</span>
+        <span className={styles.sceneNote}>Drag to orbit · adjust angle and elevation</span>
       </div>
       {soundError && <p role="status">{soundError}</p>}
     </section>
   );
 }
+
+export default memo(DmoLiveCourt);

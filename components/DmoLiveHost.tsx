@@ -7,6 +7,7 @@ import { AlertTriangle, ExternalLink, FolderOpen, Radio, Square } from 'lucide-r
 import {
   hasCompletedDmoPoints,
   LIVE_DMO_COURT_SAMPLES,
+  LIVE_DMO_HEARTBEAT_INTERVAL_MS,
   LIVE_DMO_UPDATE_INTERVAL_MS,
   replayFrameAtElapsedTime,
   replayCourtWindowFrames,
@@ -550,7 +551,7 @@ export default function DmoLiveHost({ displayName, canPrepareFullReplay }: Props
     try {
       const response = await fetch(`/api/live-dmo/${broadcastId}`, { method: 'DELETE' });
       if (!response.ok && response.status !== 404) throw new Error(await responseError(response));
-      setNotice('Broadcast ended. Its final card remains visible to signed-in viewers for 15 minutes.');
+      setNotice('Broadcast ended. Its final card remains visible to signed-in viewers for about one minute.');
       setBroadcastId(null);
       setBroadcastMode(null);
       broadcastModeRef.current = null;
@@ -621,7 +622,7 @@ export default function DmoLiveHost({ displayName, canPrepareFullReplay }: Props
           lastSentVersion,
         });
         if (!directory) {
-          if (broadcastId && Date.now() - lastHeartbeat.current >= 10_000) await sendUpdate();
+          if (broadcastId && Date.now() - lastHeartbeat.current >= LIVE_DMO_HEARTBEAT_INTERVAL_MS) await sendUpdate();
           return;
         }
         if (broadcastId && replay.current) {
@@ -644,9 +645,9 @@ export default function DmoLiveHost({ displayName, canPrepareFullReplay }: Props
             replay.current = { ...playback, lastFrame: frame };
             await sendUpdate(current);
             if (frame >= playback.totalFrames) {
-              await endActiveBroadcast('DMO replay complete. Its final match board remains visible for 15 minutes.');
+              await endActiveBroadcast('DMO replay complete. Its final match board remains visible for about one minute.');
             }
-          } else if (Date.now() - lastHeartbeat.current >= 10_000) {
+          } else if (Date.now() - lastHeartbeat.current >= LIVE_DMO_HEARTBEAT_INTERVAL_MS) {
             await sendUpdate();
           }
           return;
@@ -670,7 +671,7 @@ export default function DmoLiveHost({ displayName, canPrepareFullReplay }: Props
           setNotice(autoWatchingRef.current && !broadcastId
             ? 'Automatic detection is on. Waiting for a .dmo file in the selected folder.'
             : 'Broadcast active. Waiting for a .dmo file in the selected folder.');
-          if (broadcastId && Date.now() - lastHeartbeat.current >= 10_000) await sendUpdate();
+          if (broadcastId && Date.now() - lastHeartbeat.current >= LIVE_DMO_HEARTBEAT_INTERVAL_MS) await sendUpdate();
           return;
         }
 
@@ -740,14 +741,14 @@ export default function DmoLiveHost({ displayName, canPrepareFullReplay }: Props
           } else {
             setNotice(`Reading ${newest.name}. Waiting for enough match frames to publish a scoreboard.`);
           }
-          if (Date.now() - lastHeartbeat.current >= 10_000) await sendUpdate();
+          if (Date.now() - lastHeartbeat.current >= LIVE_DMO_HEARTBEAT_INTERVAL_MS) await sendUpdate();
           return;
         }
         setDmoRecognized(true);
         setPositionsPresent(hasPlayerPositionData(current.court));
         if (!liveDmoGrowthDetected.current) {
           setNotice('Waiting for the selected .dmo to grow during play. Scoreboard snapshots are not shared until a live update is detected.');
-          if (broadcastId && Date.now() - lastHeartbeat.current >= 10_000) await sendUpdate();
+          if (broadcastId && Date.now() - lastHeartbeat.current >= LIVE_DMO_HEARTBEAT_INTERVAL_MS) await sendUpdate();
           return;
         }
         if (!broadcastId) {
@@ -774,7 +775,7 @@ export default function DmoLiveHost({ displayName, canPrepareFullReplay }: Props
           return;
         }
         const hasNewSnapshot = parser.current!.version !== lastSentVersion.current;
-        const shouldSend = hasNewSnapshot || Date.now() - lastHeartbeat.current >= 10_000;
+        const shouldSend = hasNewSnapshot || Date.now() - lastHeartbeat.current >= LIVE_DMO_HEARTBEAT_INTERVAL_MS;
         if (!shouldSend) return;
         await sendUpdate(hasNewSnapshot ? current : undefined);
       } catch (cause) {

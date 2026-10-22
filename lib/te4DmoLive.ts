@@ -3,7 +3,8 @@ export type Te4LiveBestOf = 1 | 3 | 5;
 export type Te4DmoReplaySpeed = 1 | 2 | 4;
 
 export const TE4_DMO_FRAMES_PER_SECOND = 60;
-export const LIVE_DMO_UPDATE_INTERVAL_MS = 1200;
+export const LIVE_DMO_UPDATE_INTERVAL_MS = 1_200;
+export const LIVE_DMO_HEARTBEAT_INTERVAL_MS = LIVE_DMO_UPDATE_INTERVAL_MS;
 export const LIVE_DMO_COURT_SAMPLES = 96;
 
 export function replayCourtWindowFrames(speed: Te4DmoReplaySpeed): number {
