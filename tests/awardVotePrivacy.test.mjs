@@ -23,7 +23,8 @@ test('Forum public awards page does not display poll totals', () => {
 });
 
 test('successful award votes show a concise confirmation', () => {
-  assert.match(voteForm, /<span role="status"[^>]*>Saved<\/span>/);
+  assert.match(voteForm, /Your current vote is saved\./);
+  assert.doesNotMatch(voteForm, /Ballot submitted|submission is being checked|submission is processing/);
   assert.doesNotMatch(voteForm, /Saved to the Forum and synced/);
   assert.doesNotMatch(voteForm, /Google Forms?/i);
 });
