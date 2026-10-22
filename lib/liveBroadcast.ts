@@ -111,3 +111,46 @@ export function sameLiveMatch(first: [string, string] | null, second: [string, s
   const right = second.map(normalizeLivePlayerName).sort();
   return Boolean(left[0] && left[1] && left[0] === right[0] && left[1] === right[1]);
 }
+
+export type WtslLiveMatchIdentity = {
+  name: string;
+  bestOf: 1 | 3 | 5;
+};
+
+export function liveMatchPlayers(name: string): [string, string] | null {
+  const players = name.split(/\s+vs\s+/i).map((player) => player.trim());
+  return players.length === 2 && players[0] && players[1]
+    ? [players[0], players[1]]
+    : null;
+}
+
+export function findMatchingWtslLiveMatch<T extends WtslLiveMatchIdentity>(
+  players: [string, string],
+  matches: T[],
+): T | null {
+  const matchesForPair = matches.filter((match) => sameLiveMatch(players, liveMatchPlayers(match.name)));
+  return matchesForPair.length === 1 ? matchesForPair[0] : null;
+}
+
+export type WtslUpcomingFixtureIdentity = {
+  tour?: string;
+  first_name?: string;
+  second_name?: string;
+};
+
+export function isLikelyOfficialWtslMatch(
+  players: [string, string],
+  bestOf: 1 | 3 | 5,
+  fixtures: WtslUpcomingFixtureIdentity[],
+): boolean {
+  if (bestOf !== 3 && bestOf !== 5) return false;
+  const matches = fixtures.filter((fixture) =>
+    ['TE4', 'TE4_(F)'].includes(String(fixture.tour ?? '').trim())
+    && sameLiveMatch(
+      players,
+      fixture.first_name && fixture.second_name
+        ? [fixture.first_name, fixture.second_name]
+        : null,
+    ));
+  return matches.length === 1;
+}
