@@ -105,7 +105,7 @@ export default async function Awards({ searchParams }: { searchParams: Promise<{
           ) : !user ? (
             <div className="notice">You need to <a className="btn btn-sm btn-discord" href="/api/auth/discord" style={{ marginLeft: 8 }}>log in with Discord</a> to vote.</div>
           ) : (
-            <AwardVoteForm categories={categoriesWithNominees} initialVotes={initialVotes} initialFormSubmitted={initialFormSubmitted} shuffleSeed={shuffleSeed} />
+            <AwardVoteForm cycleId={cycle.id} categories={categoriesWithNominees} initialVotes={initialVotes} initialFormSubmitted={initialFormSubmitted} shuffleSeed={shuffleSeed} />
           )}
         </section>
 
