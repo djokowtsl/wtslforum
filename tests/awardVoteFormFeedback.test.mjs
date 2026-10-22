@@ -11,13 +11,14 @@ test('the vote action says that a selection must be explicitly saved', () => {
   assert.doesNotMatch(source, /<Send|import .*Send/);
 });
 
-test('the voter sees overall progress, subtle required markers, and a completion message', () => {
+test('the voter sees progress and required markers without Form submission status', () => {
   assert.match(source, /savedQuestionCount/);
   assert.match(source, /c\.is_required &&/);
   assert.match(source, /getNextUnansweredRequiredCategoryId/);
   assert.match(source, /scrollIntoView/);
   assert.match(source, /Questions marked \*/);
-  assert.match(source, /Ballot submitted/);
+  assert.match(source, /Your current vote is saved\./);
+  assert.doesNotMatch(source, /Ballot submitted|submission is being checked|submission is processing|Please don’t resubmit/);
   assert.doesNotMatch(source, /'Required'|'Optional'/);
   assert.doesNotMatch(source, /Google Forms?/i);
 });
