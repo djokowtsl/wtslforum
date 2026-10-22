@@ -67,7 +67,12 @@ test('incremental DMO parsing waits for frames, then emits a compact live snapsh
   assert.equal(snapshot.pointCount, 0);
   assert.deepEqual(snapshot.winChance, [0.5, 0.5]);
   assert.equal(snapshot.stats.length, 2);
-  assert.ok(snapshot.court.length > 0 && snapshot.court.length <= 25);
+  assert.ok(snapshot.court.length > 0 && snapshot.court.length <= 96);
+  assert.equal(snapshot.courtFrameIndices.length, snapshot.court.length);
+  assert.deepEqual(
+    snapshot.courtFrameIndices,
+    Array.from({ length: snapshot.frameCount }, (_, index) => index),
+  );
   assert.equal(snapshot.courtFrameCount, snapshot.frameCount);
   assert.equal(snapshot.filename, 'match.dmo');
   assert.equal(parser.snapshot('match.dmo', 1)?.bestOf, 1);
@@ -79,7 +84,7 @@ test('incremental DMO parsing waits for frames, then emits a compact live snapsh
 
   const shortMotionWindow = parser.snapshot('match.dmo', 3, 24, 12);
   assert.equal(shortMotionWindow?.courtFrameCount, 12);
-  assert.ok(shortMotionWindow?.court.length <= 25);
+  assert.ok(shortMotionWindow?.court.length <= 96);
 });
 
 test('opening DMO snapshots omit impossible court samples without rejecting valid match data', () => {
@@ -110,15 +115,15 @@ test('DMO replay eligibility requires parsed completed points and advances at th
   assert.equal(replayFrameAtElapsedTime(50, 100_000, 1), 50);
 });
 
-test('court motion windows stay in sync with replay speed and the live update cadence', () => {
+test('court motion windows overlap successive updates at every replay speed', () => {
   for (const speed of [1, 2, 4]) {
     const windowFrames = replayCourtWindowFrames(speed);
-    assert.equal(windowFrames, 72 * speed);
-    assert.equal(replayCourtWindowDurationMs(windowFrames, speed), 1200);
+    assert.equal(windowFrames, 180 * speed);
+    assert.equal(replayCourtWindowDurationMs(windowFrames, speed), 3000);
   }
 });
 
-test('live court snapshots keep a 72-frame window and add synthesized sound cues only when requested', () => {
+test('live court snapshots include frame-indexed rally boundaries and optional sound cues', () => {
   const bytes = syntheticDmo();
   const locator = new Te4DmoLiveParser();
   locator.append(bytes);
@@ -131,12 +136,31 @@ test('live court snapshots keep a 72-frame window and add synthesized sound cues
   const sounding = parser.snapshot('match.dmo', 3, 48, 72, 72, true);
   assert.ok(silent);
   assert.ok(sounding);
-  assert.equal(silent.courtFrameCount, 48);
-  assert.equal(silent.court.length, 48);
+  assert.equal(silent.courtFrameCount, silent.frameCount);
+  assert.equal(silent.court.length, silent.frameCount);
+  assert.equal(silent.courtFrameIndices.length, silent.frameCount);
   assert.equal(silent.soundEvents, undefined);
+  assert.deepEqual(silent.trajectoryEvents, [{ frame: 20, kind: 'shot' }]);
   assert.deepEqual(sounding.soundEvents, [
     { frame: 20, kind: 'racket' },
     { frame: 25, kind: 'bounce' },
+  ]);
+});
+
+test('point-end markers reset the reconstructed court trajectory', () => {
+  const bytes = syntheticDmo();
+  const locator = new Te4DmoLiveParser();
+  locator.append(bytes);
+  bytes[locator.offsets[20] + 110] = 2;
+  bytes[locator.offsets[25] + 110] = 5;
+
+  const parser = new Te4DmoLiveParser();
+  parser.append(bytes);
+  const snapshot = parser.snapshot('match.dmo', 3, parser.frameCount, 72, 72);
+
+  assert.deepEqual(snapshot?.trajectoryEvents, [
+    { frame: 20, kind: 'shot' },
+    { frame: 25, kind: 'point-end' },
   ]);
 });
 

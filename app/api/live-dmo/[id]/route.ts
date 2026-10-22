@@ -54,6 +54,11 @@ const snapshotSchema = z.object({
     rallyHits: z.number().int().min(0).max(200),
     faults: z.number().int().min(0).max(10),
   }).strict()).max(12),
+  courtFrameIndices: z.array(z.number().int().min(0).max(1_000_000)).max(100).optional(),
+  trajectoryEvents: z.array(z.object({
+    frame: z.number().int().min(0).max(1_000_000),
+    kind: z.enum(['shot', 'point-end']),
+  }).strict()).max(256).optional(),
   soundEvents: z.array(z.object({
     frame: z.number().int().min(0).max(1_000_000),
     kind: z.enum(['racket', 'bounce']),
@@ -67,7 +72,18 @@ const snapshotSchema = z.object({
     z.number().int().min(-5000).max(5000),
     z.number().int().min(-5000).max(5000),
   ])).max(100),
-}).strict();
+}).strict().superRefine((snapshot, context) => {
+  if (
+    snapshot.courtFrameIndices
+    && snapshot.courtFrameIndices.length !== snapshot.court.length
+  ) {
+    context.addIssue({
+      code: z.ZodIssueCode.custom,
+      path: ['courtFrameIndices'],
+      message: 'Court frame indices must match the court samples.',
+    });
+  }
+});
 const updateSchema = z.object({
   sequence: z.number().int().positive(),
   snapshot: snapshotSchema.optional(),

@@ -326,10 +326,63 @@ test('broadcast owners can heartbeat and end only their own active broadcast', a
   assert.match(queries[0].text, /owner_discord_id=\?/);
   assert.match(queries[0].text, /sequence < \?/);
 
+  const zeroStats = {
+    servicePoints: 0,
+    servicePointsWon: 0,
+    serviceWinRate: null,
+    pointsWon: 0,
+    firstServeFaults: 0,
+    acesOrUnreturned: 0,
+  };
+  const snapshot = {
+    version: 1,
+    filename: 'match.dmo',
+    stadium: null,
+    players: ['One', 'Two'],
+    frameCount: 10,
+    courtFrameCount: 10,
+    pointCount: 1,
+    bestOf: 3,
+    score: {
+      sets: [],
+      games: [0, 0],
+      points: [0, 0],
+      pointText: ['0', '0'],
+      tiebreak: false,
+      server: null,
+    },
+    currentPoint: {
+      number: 2,
+      server: null,
+      rallyHits: 1,
+      serveSpeedKmh: null,
+      inProgress: true,
+    },
+    winChance: [0.5, 0.5],
+    winHistory: [0.5],
+    stats: [zeroStats, zeroStats],
+    recentPoints: [{ number: 1, server: 1, winner: 1, rallyHits: 0, faults: 0 }],
+    courtFrameIndices: [8, 9],
+    trajectoryEvents: [
+      { frame: 8, kind: 'shot' },
+      { frame: 9, kind: 'point-end' },
+    ],
+    soundEvents: [{ frame: 8, kind: 'racket' }],
+    court: [[0, 0, 0, 0, 0, 0, 0], [1, 1, 0, 0, 0, 0, 0]],
+  };
+  const snapshotUpdate = await route.PATCH(
+    request({ sequence: 2, snapshot }, `/api/live-dmo/${id}`, 'PATCH'),
+    context,
+  );
+  assert.equal(snapshotUpdate.status, 200);
+  const savedSnapshot = JSON.parse(queries[1].values[0]);
+  assert.deepEqual(savedSnapshot.courtFrameIndices, [8, 9]);
+  assert.equal(savedSnapshot.trajectoryEvents[1].kind, 'point-end');
+
   const ended = await route.DELETE(request(undefined, `/api/live-dmo/${id}`, 'DELETE'), context);
   assert.equal(ended.status, 200);
-  assert.match(queries[1].text, /owner_discord_id=\?.*OR \?/s);
-  assert.match(queries[1].text, /status='live'/);
+  assert.match(queries[2].text, /owner_discord_id=\?.*OR \?/s);
+  assert.match(queries[2].text, /status='live'/);
 });
 
 test('homepage displays video links only when a signed-in viewer has a matching broadcast', () => {

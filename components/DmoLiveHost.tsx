@@ -486,6 +486,8 @@ export default function DmoLiveHost({ displayName, canPrepareFullReplay }: Props
           broadcastBestOf,
           10,
           replayCourtWindowFrames(replaySpeed),
+          LIVE_DMO_COURT_SAMPLES,
+          true,
         );
         if (!firstFrame) throw new Error('The selected DMO could not produce its opening replay snapshot.');
         const initialResponse = await fetch(`/api/live-dmo/${body.id}`, {
@@ -625,6 +627,8 @@ export default function DmoLiveHost({ displayName, canPrepareFullReplay }: Props
               playback.bestOf,
               frame,
               replayCourtWindowFrames(playback.speed),
+              LIVE_DMO_COURT_SAMPLES,
+              true,
             );
             if (!current) throw new Error('The selected DMO could not produce the next replay snapshot.');
             replay.current = { ...playback, lastFrame: frame };
@@ -688,7 +692,14 @@ export default function DmoLiveHost({ displayName, canPrepareFullReplay }: Props
           }
         }
 
-        let current = parser.current!.snapshot(newest.name, bestOf);
+        let current = parser.current!.snapshot(
+          newest.name,
+          bestOf,
+          parser.current!.frameCount,
+          replayCourtWindowFrames(1),
+          LIVE_DMO_COURT_SAMPLES,
+          true,
+        );
         if (broadcastId && broadcastModeRef.current === 'auto') {
           const pair = current?.players ?? automaticPlayers.current;
           const activeMatch = pair && liveFeedReadyRef.current
