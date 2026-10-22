@@ -82,7 +82,7 @@ export default function AwardVoteForm({ categories, initialVotes }: { categories
           >
             {initialVotes[c.id] ? 'Update vote' : 'Vote'}
           </button>
-          {status[c.id] === 'saved' && <span role="status" style={{ marginLeft: 10, color: 'var(--lime)' }}>Saved to the Forum and synced ✓</span>}
+          {status[c.id] === 'saved' && <span role="status" style={{ marginLeft: 10, color: 'var(--lime)' }}>Saved</span>}
           {status[c.id] === 'saved-no-sync' && <span role="status" style={{ marginLeft: 10, color: 'var(--muted)' }}>Saved to the Forum; spreadsheet sync is not configured yet.</span>}
           {status[c.id] === 'saved-sync-error' && <span role="status" style={{ marginLeft: 10, color: '#ffb36b' }}>Saved to the Forum, but spreadsheet sync failed. An admin can retry it.</span>}
           {status[c.id] === 'error' && <span style={{ marginLeft: 10, color: '#ff8f9a' }}>Couldn&apos;t save, try again.</span>}
