@@ -1,11 +1,17 @@
-import { NextRequest, NextResponse } from 'next/server';
+import { after, NextRequest, NextResponse } from 'next/server';
 import { getSession } from '@/lib/auth';
 import { sql } from '@/lib/db';
-import { castVote, closeExpiredAwardCycles, getSiteAwardBallot, saveAwardFormResponseState } from '@/lib/awards';
+import { castVote, closeExpiredAwardCycles, getSiteAwardBallot } from '@/lib/awards';
 import { isAwardVotingOpen } from '@/lib/awardVoting';
-import { awardFormBallotFingerprint, syncAwardBallotsToForm } from '@/lib/awardVoteFormSync';
+import { awardFormBallotFingerprint } from '@/lib/awardVoteFormSync';
+import {
+  enqueueAwardFormSyncJob,
+  markAwardFormSyncJobSynced,
+  processAwardFormSyncJob,
+} from '@/lib/awardFormSyncJobs';
 
 export const dynamic = 'force-dynamic';
+export const maxDuration = 60;
 
 export async function POST(req: NextRequest) {
   const user = await getSession();
@@ -42,30 +48,49 @@ export async function POST(req: NextRequest) {
 
   const fingerprint = awardFormBallotFingerprint(ballot.season, ballot.answers);
   if (ballot.responseFingerprint === fingerprint && ballot.previousResponseId) {
+    await markAwardFormSyncJobSynced(
+      Number(category.cycle_id),
+      user.discordId,
+      fingerprint,
+      ballot.updatedAt,
+    );
     return NextResponse.json({ ok: true, formSyncStatus: 'synced', ballotSubmitted: true });
   }
 
-  const sync = await syncAwardBallotsToForm([ballot]);
-  const result = sync.results[0];
-  if (sync.status !== 'synced' || !result || result.status === 'failed' || result.status === 'stale' || !result.responseId) {
-    console.warn('[awards] vote saved but native Google Form submission failed', { voteId: vote.voteId });
+  let job: Awaited<ReturnType<typeof enqueueAwardFormSyncJob>>;
+  try {
+    job = await enqueueAwardFormSyncJob(
+      Number(category.cycle_id),
+      user.discordId,
+      fingerprint,
+      ballot.updatedAt,
+    );
+  } catch {
+    console.error('[awards] ballot saved but sync job could not be queued', {
+      cycleId: Number(category.cycle_id),
+    });
     return NextResponse.json({
       ok: true,
-      formSyncStatus: sync.status === 'not_configured' || sync.status === 'misconfigured' ? sync.status : 'failed',
+      formSyncStatus: 'needs_review',
       ballotSubmitted: false,
     });
   }
 
-  const saved = await saveAwardFormResponseState(
-    Number(category.cycle_id),
-    user.discordId,
-    result.responseId,
-    result.fingerprint ?? fingerprint,
-    result.updatedAt ?? ballot.updatedAt,
-  );
-  if (!saved.length) {
-    return NextResponse.json({ ok: true, formSyncStatus: 'failed', ballotSubmitted: false });
+  if (job.status !== 'needs_review' && job.status !== 'processing') {
+    after(async () => {
+      try {
+        await processAwardFormSyncJob(job.id);
+      } catch {
+        console.error('[awards] background ballot sync worker failed', {
+          cycleId: Number(category.cycle_id),
+        });
+      }
+    });
   }
 
-  return NextResponse.json({ ok: true, formSyncStatus: 'synced', ballotSubmitted: true });
+  return NextResponse.json({
+    ok: true,
+    formSyncStatus: job.status === 'needs_review' ? 'needs_review' : 'queued',
+    ballotSubmitted: false,
+  });
 }
