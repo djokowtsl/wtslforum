@@ -3,12 +3,13 @@ import { readFile } from 'node:fs/promises';
 import test from 'node:test';
 
 const read = (path) => readFile(new URL(path, import.meta.url), 'utf8');
-const [adminPage, adminPanel, adminRoute, publicPage, awardsLibrary] = await Promise.all([
+const [adminPage, adminPanel, adminRoute, publicPage, awardsLibrary, voteForm] = await Promise.all([
   read('../app/admin/awards/page.tsx'),
   read('../components/AwardAdminPanel.tsx'),
   read('../app/api/admin/awards/route.ts'),
   read('../app/awards/page.tsx'),
   read('../lib/awards.ts'),
+  read('../components/AwardVoteForm.tsx'),
 ]);
 
 test('Forum admin awards page does not load or display vote tallies', () => {
@@ -19,6 +20,11 @@ test('Forum admin awards page does not load or display vote tallies', () => {
 
 test('Forum public awards page does not display poll totals', () => {
   assert.doesNotMatch(publicPage, /getTally|getWriteInTally|tally|voteCount|responseCount/i);
+});
+
+test('successful award votes show a concise confirmation', () => {
+  assert.match(voteForm, /<span role="status"[^>]*>Saved<\/span>/);
+  assert.doesNotMatch(voteForm, /Saved to the Forum and synced/);
 });
 
 test('admin sync and CSV import endpoints do not return vote counts or response rows', () => {
