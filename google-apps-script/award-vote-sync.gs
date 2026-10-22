@@ -1,7 +1,7 @@
 const SHEET_NAME = 'Forum Votes';
 const HEADERS = ['Forum vote ID', 'Season', 'Award category', 'Nominee', 'Write-in', 'Last updated (UTC)'];
 const MAX_VOTES_PER_REQUEST = 100;
-const MAX_REQUEST_BYTES = 1_000_000;
+const MAX_REQUEST_BYTES = 1000000;
 
 function doPost(event) {
   try {
