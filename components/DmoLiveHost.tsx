@@ -4,26 +4,22 @@ import { useEffect, useRef, useState, type ReactNode } from 'react';
 import Link from 'next/link';
 import { AlertTriangle, ExternalLink, FolderOpen, Radio, Square } from 'lucide-react';
 import { Te4DmoLiveParser, type Te4LiveBestOf, type Te4LiveSnapshot } from '@/lib/te4DmoLive';
+import { findMatchingWtslLiveMatch } from '@/lib/liveBroadcast';
 import { hasPlayerPositionData } from '@/lib/te4LiveSetup';
+import {
+  loadDmoDirectory,
+  saveDmoDirectory,
+  type LocalDmoDirectoryHandle,
+} from '@/lib/dmoDirectoryPersistence';
 import styles from './DmoLiveHost.module.css';
 
-type LocalFileHandle = {
-  kind: 'file';
-  getFile(): Promise<File>;
-};
-
-type LocalDirectoryHandle = {
-  name: string;
-  values(): AsyncIterableIterator<LocalFileHandle>;
-  getDirectoryHandle?(name: string): Promise<LocalDirectoryHandle>;
-};
-
 type FolderPickerWindow = Window & {
-  showDirectoryPicker?: (options: { mode: 'read' }) => Promise<LocalDirectoryHandle>;
+  showDirectoryPicker?: (options: { mode: 'read' }) => Promise<LocalDmoDirectoryHandle>;
 };
 
 type Props = { displayName: string };
 type CheckTone = 'ready' | 'waiting' | 'action';
+type LiveWtslMatch = { name: string; bestOf: Te4LiveBestOf };
 
 function SetupCheck({ title, tone, children }: { title: string; tone: CheckTone; children: ReactNode }) {
   const label = tone === 'ready' ? 'Ready' : tone === 'action' ? 'Check' : 'Waiting';
@@ -38,7 +34,7 @@ function SetupCheck({ title, tone, children }: { title: string; tone: CheckTone;
   );
 }
 
-async function newestDmoIn(directory: LocalDirectoryHandle): Promise<{ name: string; file: File } | null> {
+async function newestDmoIn(directory: LocalDmoDirectoryHandle): Promise<{ name: string; file: File } | null> {
   let newest: { name: string; file: File } | null = null;
   for await (const handle of directory.values()) {
     if (handle.kind !== 'file') continue;
@@ -59,16 +55,22 @@ async function responseError(response: Response): Promise<string> {
 }
 
 export default function DmoLiveHost({ displayName }: Props) {
-  const [directory, setDirectory] = useState<LocalDirectoryHandle | null>(null);
+  const [directory, setDirectory] = useState<LocalDmoDirectoryHandle | null>(null);
+  const [savedDirectory, setSavedDirectory] = useState<LocalDmoDirectoryHandle | null>(null);
   const [folderLabel, setFolderLabel] = useState('');
   const [folderKind, setFolderKind] = useState<'profiles' | 'demos' | 'other' | null>(null);
   const [browserSupported, setBrowserSupported] = useState<boolean | null>(null);
+  const [autoWatching, setAutoWatching] = useState(false);
+  const [liveMatches, setLiveMatches] = useState<LiveWtslMatch[]>([]);
+  const [liveFeedReady, setLiveFeedReady] = useState(false);
   const [fileFound, setFileFound] = useState(false);
   const [dmoRecognized, setDmoRecognized] = useState<boolean | null>(null);
   const [realTimeObserved, setRealTimeObserved] = useState(false);
   const [positionsPresent, setPositionsPresent] = useState<boolean | null>(null);
   const [bestOf, setBestOf] = useState<Te4LiveBestOf>(3);
   const [broadcastId, setBroadcastId] = useState<string | null>(null);
+  const [broadcastMode, setBroadcastMode] = useState<'manual' | 'auto' | null>(null);
+  const [officialByBroadcaster, setOfficialByBroadcaster] = useState(false);
   const [discordMessageUrl, setDiscordMessageUrl] = useState('');
   const [playerOne, setPlayerOne] = useState('');
   const [playerTwo, setPlayerTwo] = useState('');
@@ -83,10 +85,82 @@ export default function DmoLiveHost({ displayName }: Props) {
   const sequence = useRef(0);
   const polling = useRef(false);
   const liveDmoGrowthDetected = useRef(false);
+  const liveMatchesRef = useRef<LiveWtslMatch[]>([]);
+  const liveFeedReadyRef = useRef(false);
+  const autoWatchingRef = useRef(false);
+  const broadcastModeRef = useRef<'manual' | 'auto' | null>(null);
+  const automaticPlayers = useRef<[string, string] | null>(null);
+  const lastAutomaticAttemptAt = useRef(0);
 
   useEffect(() => {
     setBrowserSupported(Boolean((window as FolderPickerWindow).showDirectoryPicker));
   }, []);
+
+  useEffect(() => {
+    let active = true;
+    void loadDmoDirectory().then(async (saved) => {
+      if (!active || !saved) return;
+      setSavedDirectory(saved);
+      setFolderLabel(saved.name);
+      const permission = await saved.queryPermission?.({ mode: 'read' }).catch(() => 'prompt');
+      if (!active) return;
+      if (permission === 'granted') {
+        setDirectory(saved);
+        setFolderKind(saved.name.toLowerCase() === 'demos' ? 'demos' : 'other');
+        setAutoWatching(true);
+        autoWatchingRef.current = true;
+        setNotice(`Saved folder access restored for ${saved.name}. Automatic WTSL detection is on.`);
+      } else {
+        setNotice(`Saved folder ${saved.name} is ready. Reconnect its access to resume automatic WTSL detection.`);
+      }
+    }).catch(() => {
+      if (active) setNotice('The saved DMO folder could not be restored. Choose it again to enable automatic detection.');
+    });
+    return () => { active = false; };
+  }, []);
+
+  useEffect(() => {
+    autoWatchingRef.current = autoWatching;
+  }, [autoWatching]);
+
+  useEffect(() => {
+    if (!directory || !autoWatching) {
+      liveFeedReadyRef.current = false;
+      setLiveFeedReady(false);
+      return;
+    }
+    let cancelled = false;
+    let requestInFlight = false;
+    const refreshMatches = async () => {
+      if (requestInFlight || cancelled) return;
+      requestInFlight = true;
+      try {
+        const response = await fetch('/api/live-scores', { cache: 'no-store' });
+        if (!response.ok) throw new Error('The WTSL live-match feed could not be refreshed.');
+        const body = await response.json() as { matches?: LiveWtslMatch[] };
+        const matches = Array.isArray(body.matches) ? body.matches : [];
+        if (cancelled) return;
+        liveMatchesRef.current = matches;
+        liveFeedReadyRef.current = true;
+        lastAutomaticAttemptAt.current = 0;
+        setLiveMatches(matches);
+        setLiveFeedReady(true);
+      } catch {
+        if (!cancelled) {
+          liveFeedReadyRef.current = false;
+          setLiveFeedReady(false);
+        }
+      } finally {
+        requestInFlight = false;
+      }
+    };
+    void refreshMatches();
+    const interval = window.setInterval(() => { void refreshMatches(); }, 15_000);
+    return () => {
+      cancelled = true;
+      window.clearInterval(interval);
+    };
+  }, [directory, autoWatching]);
 
   const chooseFolder = async () => {
     setError('');
@@ -112,8 +186,11 @@ export default function DmoLiveHost({ displayName }: Props) {
         }
       }
       setDirectory(demosFolder);
+      setSavedDirectory(demosFolder);
       setFolderLabel(selectedLabel);
       setFolderKind(selectedKind);
+      setAutoWatching(true);
+      autoWatchingRef.current = true;
       setFileFound(false);
       setDmoRecognized(null);
       setRealTimeObserved(false);
@@ -122,7 +199,12 @@ export default function DmoLiveHost({ displayName }: Props) {
       parser.current = null;
       activeFilename.current = '';
       readBytes.current = 0;
-      setNotice(`Checking ${selectedLabel} locally.`);
+      setNotice(`Checking ${selectedLabel} locally. Automatic WTSL detection is on while this page stays open.`);
+      try {
+        await saveDmoDirectory(demosFolder);
+      } catch {
+        setError('The folder is available now, but this browser could not save its access for next time.');
+      }
       try {
         const newest = await newestDmoIn(demosFolder);
         if (!newest) {
@@ -154,28 +236,63 @@ export default function DmoLiveHost({ displayName }: Props) {
     }
   };
 
-  const startBroadcast = async () => {
+  const reconnectSavedFolder = async () => {
+    if (!savedDirectory) return;
+    setError('');
+    try {
+      const permission = await savedDirectory.requestPermission?.({ mode: 'read' });
+      if (permission !== 'granted') {
+        setError('Folder access was not granted. Choose the TE4 folder again to reconnect it.');
+        return;
+      }
+      setDirectory(savedDirectory);
+      setFolderKind(savedDirectory.name.toLowerCase() === 'demos' ? 'demos' : 'other');
+      setAutoWatching(true);
+      autoWatchingRef.current = true;
+      setNotice(`Folder access restored for ${savedDirectory.name}. Automatic WTSL detection is on.`);
+    } catch (cause) {
+      setError(cause instanceof Error ? cause.message : 'Saved folder access could not be restored.');
+    }
+  };
+
+  const startBroadcast = async (
+    mode: 'manual' | 'auto' = 'manual',
+    automaticMatch?: { players: [string, string]; bestOf: Te4LiveBestOf },
+  ) => {
     if ((!directory && !discordMessageUrl.trim()) || busy || broadcastId) return;
-    if (Boolean(playerOne.trim()) !== Boolean(playerTwo.trim())) {
+    if (mode === 'auto' && (!directory || !liveFeedReadyRef.current)) return;
+    if (mode === 'manual' && Boolean(playerOne.trim()) !== Boolean(playerTwo.trim())) {
       setError('Enter both player names or leave both blank.');
+      return;
+    }
+    const players = automaticMatch?.players ?? (playerOne.trim() && playerTwo.trim()
+      ? [playerOne.trim(), playerTwo.trim()] as [string, string]
+      : undefined);
+    const broadcastBestOf = automaticMatch?.bestOf ?? bestOf;
+    if (mode === 'manual' && officialByBroadcaster && broadcastBestOf === 1) {
+      setOfficialByBroadcaster(false);
+    } else if (mode === 'manual' && officialByBroadcaster && (!players || (broadcastBestOf !== 3 && broadcastBestOf !== 5))) {
+      setError('To tag this as official, enter both players and choose best of 3 or best of 5.');
       return;
     }
     setBusy(true);
     setError('');
-    liveDmoGrowthDetected.current = false;
-    setRealTimeObserved(false);
+    if (mode === 'manual') {
+      liveDmoGrowthDetected.current = false;
+      setRealTimeObserved(false);
+    }
     setPositionsPresent(null);
     try {
-      const players = playerOne.trim() && playerTwo.trim()
-        ? [playerOne.trim(), playerTwo.trim()]
-        : undefined;
       const response = await fetch('/api/live-dmo', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           hasDmo: Boolean(directory),
-          discordMessageUrl: discordMessageUrl.trim(),
+          discordMessageUrl: mode === 'manual' ? discordMessageUrl.trim() : '',
           players,
+          mode,
+          bestOf: broadcastBestOf,
+          officialByBroadcaster: officialByBroadcaster && broadcastBestOf !== 1,
         }),
       });
       if (!response.ok) throw new Error(await responseError(response));
@@ -185,8 +302,13 @@ export default function DmoLiveHost({ displayName }: Props) {
       lastSentVersion.current = -1;
       lastHeartbeat.current = 0;
       setBroadcastId(body.id);
+      setBroadcastMode(mode);
+      broadcastModeRef.current = mode;
+      automaticPlayers.current = mode === 'auto' ? players ?? null : null;
       setNotice(directory
-        ? 'Broadcast started. Waiting for TE4 to write readable match frames.'
+        ? mode === 'auto'
+          ? 'WTSL live match confirmed. Automatic DMO broadcast started.'
+          : 'Manual broadcast started. Waiting for TE4 to write readable match frames.'
         : 'Broadcast started. The Discord stream will appear in the viewer list below.');
     } catch (cause) {
       setError(cause instanceof Error ? cause.message : 'The broadcast could not be started.');
@@ -201,17 +323,17 @@ export default function DmoLiveHost({ displayName }: Props) {
     setError('');
     try {
       const response = await fetch(`/api/live-dmo/${broadcastId}`, { method: 'DELETE' });
-      if (!response.ok) throw new Error(await responseError(response));
+      if (!response.ok && response.status !== 404) throw new Error(await responseError(response));
       setNotice('Broadcast ended. Its final card remains visible to signed-in viewers for 15 minutes.');
       setBroadcastId(null);
-      setDirectory(null);
-      setFolderLabel('');
-      setFolderKind(null);
-      setFileFound(false);
-      setDmoRecognized(null);
-      setRealTimeObserved(false);
-      setPositionsPresent(null);
-      liveDmoGrowthDetected.current = false;
+      setBroadcastMode(null);
+      broadcastModeRef.current = null;
+      automaticPlayers.current = null;
+      if (broadcastMode === 'auto') {
+        setAutoWatching(false);
+        autoWatchingRef.current = false;
+        setNotice('Broadcast ended and automatic WTSL detection is paused. Your saved folder remains connected.');
+      }
     } catch (cause) {
       setError(cause instanceof Error ? cause.message : 'The broadcast could not be stopped.');
     } finally {
@@ -220,10 +342,11 @@ export default function DmoLiveHost({ displayName }: Props) {
   };
 
   useEffect(() => {
-    if (!broadcastId) return;
+    if (!broadcastId && (!directory || !autoWatching)) return;
     let cancelled = false;
 
     const sendUpdate = async (current?: Te4LiveSnapshot) => {
+      if (!broadcastId) return;
       const nextSequence = sequence.current + 1;
       const response = await fetch(`/api/live-dmo/${broadcastId}`, {
         method: 'PATCH',
@@ -242,22 +365,46 @@ export default function DmoLiveHost({ displayName }: Props) {
       else if (!directory) setNotice('Stream broadcast is live for signed-in viewers.');
     };
 
+    const endAutomaticBroadcast = async (message: string) => {
+      if (!broadcastId) return;
+      const response = await fetch(`/api/live-dmo/${broadcastId}`, { method: 'DELETE' });
+      if (!response.ok && response.status !== 404) throw new Error(await responseError(response));
+      if (cancelled) return;
+      setBroadcastId(null);
+      setBroadcastMode(null);
+      broadcastModeRef.current = null;
+      automaticPlayers.current = null;
+      setNotice(message);
+    };
+
     const pollFolder = async () => {
       if (polling.current || cancelled) return;
       polling.current = true;
       try {
         if (!directory) {
-          if (Date.now() - lastHeartbeat.current >= 10_000) await sendUpdate();
+          if (broadcastId && Date.now() - lastHeartbeat.current >= 10_000) await sendUpdate();
           return;
         }
         const newest = await newestDmoIn(directory);
         if (cancelled) return;
         if (!newest) {
+          if (broadcastId && broadcastModeRef.current === 'auto') {
+            const pair = automaticPlayers.current;
+            const activeMatch = pair && liveFeedReadyRef.current
+              ? findMatchingWtslLiveMatch(pair, liveMatchesRef.current)
+              : null;
+            if (!activeMatch || activeMatch.bestOf !== bestOf) {
+              await endAutomaticBroadcast('The WTSL live feed no longer confirms this pair. Automatic broadcast ended; monitoring for the next match.');
+              return;
+            }
+          }
           setFileFound(false);
           setDmoRecognized(null);
           setPositionsPresent(null);
-          setNotice('Broadcast active. Waiting for a .dmo file in the selected folder.');
-          if (Date.now() - lastHeartbeat.current >= 10_000) await sendUpdate();
+          setNotice(autoWatchingRef.current && !broadcastId
+            ? 'Automatic detection is on. Waiting for a .dmo file in the selected folder.'
+            : 'Broadcast active. Waiting for a .dmo file in the selected folder.');
+          if (broadcastId && Date.now() - lastHeartbeat.current >= 10_000) await sendUpdate();
           return;
         }
 
@@ -288,7 +435,22 @@ export default function DmoLiveHost({ displayName }: Props) {
           }
         }
 
-        const current = parser.current!.snapshot(newest.name, bestOf);
+        let current = parser.current!.snapshot(newest.name, bestOf);
+        if (broadcastId && broadcastModeRef.current === 'auto') {
+          const pair = current?.players ?? automaticPlayers.current;
+          const activeMatch = pair && liveFeedReadyRef.current
+            ? findMatchingWtslLiveMatch(pair, liveMatchesRef.current)
+            : null;
+          if (!activeMatch || activeMatch.bestOf !== bestOf) {
+            await endAutomaticBroadcast(
+              liveFeedReadyRef.current
+                ? 'The WTSL feed no longer confirms this player pair as live. Automatic broadcast ended; monitoring for the next match.'
+                : 'The WTSL live-match feed could not be verified. Automatic broadcast ended; monitoring will resume when the feed returns.',
+            );
+            return;
+          }
+          current = parser.current!.snapshot(newest.name, activeMatch.bestOf);
+        }
         if (!current) {
           if (parser.current!.header?.bad) {
             setDmoRecognized(false);
@@ -304,7 +466,26 @@ export default function DmoLiveHost({ displayName }: Props) {
         setPositionsPresent(hasPlayerPositionData(current.court));
         if (!liveDmoGrowthDetected.current) {
           setNotice('Waiting for the selected .dmo to grow during play. Scoreboard snapshots are not shared until a live update is detected.');
-          if (Date.now() - lastHeartbeat.current >= 10_000) await sendUpdate();
+          if (broadcastId && Date.now() - lastHeartbeat.current >= 10_000) await sendUpdate();
+          return;
+        }
+        if (!broadcastId) {
+          if (!autoWatchingRef.current) return;
+          if (!liveFeedReadyRef.current) {
+            setNotice('Automatic detection is waiting for a verified WTSL live-match feed.');
+            return;
+          }
+          const activeMatch = findMatchingWtslLiveMatch(current.players, liveMatchesRef.current);
+          if (!activeMatch) {
+            setNotice(`Live DMO detected for ${current.players[0]} vs ${current.players[1]}. Waiting for the same pair in the WTSL live feed.`);
+            return;
+          }
+          if (Date.now() - lastAutomaticAttemptAt.current < 15_000) return;
+          const matchedSnapshot = parser.current!.snapshot(newest.name, activeMatch.bestOf);
+          if (!matchedSnapshot) return;
+          lastAutomaticAttemptAt.current = Date.now();
+          setBestOf(activeMatch.bestOf);
+          await startBroadcast('auto', { players: matchedSnapshot.players, bestOf: activeMatch.bestOf });
           return;
         }
         const hasNewSnapshot = parser.current!.version !== lastSentVersion.current;
@@ -325,7 +506,7 @@ export default function DmoLiveHost({ displayName }: Props) {
       window.clearInterval(interval);
       polling.current = false;
     };
-  }, [directory, broadcastId, bestOf]);
+  }, [directory, broadcastId, bestOf, autoWatching]);
 
   const folderTone: CheckTone = !directory
     ? 'waiting'
@@ -353,7 +534,16 @@ export default function DmoLiveHost({ displayName }: Props) {
         </div>
         <label className={styles.bestOf}>
           <span>Match format</span>
-          <select value={bestOf} onChange={(event) => setBestOf(Number(event.currentTarget.value) as Te4LiveBestOf)} disabled={Boolean(broadcastId)}>
+          <select
+            value={bestOf}
+            onChange={(event) => {
+              const next = Number(event.currentTarget.value) as Te4LiveBestOf;
+              setBestOf(next);
+              if (next === 1) setOfficialByBroadcaster(false);
+            }}
+            disabled={Boolean(broadcastId)}
+          >
+            <option value={1}>Best of 1 set</option>
             <option value={3}>Best of 3 sets</option>
             <option value={5}>Best of 5 sets</option>
           </select>
@@ -361,6 +551,28 @@ export default function DmoLiveHost({ displayName }: Props) {
         <button type="button" className={styles.secondaryButton} onClick={chooseFolder} disabled={busy || Boolean(broadcastId)}>
           <FolderOpen size={16} /> {directory ? 'Change folder' : 'Choose TE4 folder'}
         </button>
+        {savedDirectory && !directory && (
+          <button type="button" className={styles.secondaryButton} onClick={reconnectSavedFolder} disabled={busy || Boolean(broadcastId)}>
+            <FolderOpen size={16} /> Reconnect saved folder
+          </button>
+        )}
+        {directory && !broadcastId && (
+          <button
+            type="button"
+            className={styles.secondaryButton}
+            onClick={() => {
+              const next = !autoWatching;
+              setAutoWatching(next);
+              autoWatchingRef.current = next;
+              setNotice(next
+                ? 'Automatic WTSL detection is on while this page stays open.'
+                : 'Automatic WTSL detection is paused. Manual broadcasts remain available.');
+            }}
+            disabled={busy}
+          >
+            {autoWatching ? 'Pause automatic detection' : 'Resume automatic detection'}
+          </button>
+        )}
         <label className={styles.bestOf}>
           <span>Discord stream message (optional)</span>
           <input
@@ -373,7 +585,7 @@ export default function DmoLiveHost({ displayName }: Props) {
           />
         </label>
         <label className={styles.bestOf}>
-          <span>Match players (optional)</span>
+          <span>Match players (optional; needed for match tags)</span>
           <input
             type="text"
             value={playerOne}
@@ -393,21 +605,39 @@ export default function DmoLiveHost({ displayName }: Props) {
             aria-label="Second player"
           />
         </label>
+        <label style={{ display: 'flex', alignItems: 'center', gap: 8, maxWidth: 310, color: 'var(--soft, #c4d0e2)', fontSize: 11 }}>
+          <input
+            type="checkbox"
+            checked={officialByBroadcaster}
+            onChange={(event) => setOfficialByBroadcaster(event.currentTarget.checked)}
+            disabled={busy || Boolean(broadcastId) || bestOf === 1}
+          />
+          Broadcaster tags this as an official match (best of 3 or 5)
+        </label>
         {!broadcastId ? (
-          <button type="button" className={styles.primaryButton} onClick={startBroadcast} disabled={(!directory && !discordMessageUrl.trim()) || busy}>
-            <Radio size={16} /> {busy ? 'Starting…' : 'Start broadcast'}
+          <button type="button" className={styles.primaryButton} onClick={() => void startBroadcast('manual')} disabled={(!directory && !discordMessageUrl.trim()) || busy}>
+            <Radio size={16} /> {busy ? 'Starting…' : 'Start broadcast manually'}
           </button>
         ) : (
           <button type="button" className={styles.stopButton} onClick={stopBroadcast} disabled={busy}>
-            <Square size={15} /> {busy ? 'Stopping…' : 'Stop broadcast'}
+            <Square size={15} /> {busy ? 'Stopping…' : broadcastMode === 'auto' ? 'Stop and pause auto' : 'Stop broadcast'}
           </button>
         )}
       </section>
 
       <div className={styles.audienceNote}>
         <span className={styles.accessTag}>SIGNED-IN VIEWERS</span>
-        <span>Anyone signed in to the Forum can watch below. A broadcast expires automatically if its browser stops sending updates.</span>
+        <span>Anyone signed in to the Forum can watch below. Keep this page open on the computer running TE4; automatic detection reads the local DMO folder here and stops when the browser closes. Manual broadcasts remain available.</span>
       </div>
+      {directory && (
+        <p className={styles.statusLine} role="status">
+          {autoWatching
+            ? (liveFeedReady
+              ? `Automatic detection is on · ${liveMatches.length} WTSL live ${liveMatches.length === 1 ? 'match' : 'matches'} checked`
+              : 'Automatic detection is on · waiting for the WTSL live-match feed')
+            : 'Automatic detection is paused · manual broadcast controls remain available'}
+        </p>
+      )}
 
       <section className={styles.setupChecks} aria-label="TE4 broadcast setup checks">
         <div className={styles.setupIntro}>
@@ -460,8 +690,8 @@ export default function DmoLiveHost({ displayName }: Props) {
             {positionsPresent === true
               ? 'Player positions were found in the local DMO; the Forum can reconstruct the live court.'
               : positionsPresent === false
-                ? 'No player positions were detected. Close TE4 and set RecordDebugInfo = 1 under [Record] in your profile .ini, then start a new recording.'
-                : 'Waiting for enough readable match frames to check for player positions. If the court stays empty, verify RecordDebugInfo = 1 under [Record] in your profile .ini.'}
+                ? 'No player positions were detected. Close TE4, open the profile .ini in your TE4 data folder, set RecordDebugInfo = 1 under [Record], save, restart TE4, and start a new recording.'
+                : 'Waiting for enough readable match frames to check for player positions. If the court stays empty, set RecordDebugInfo = 1 under [Record] in your profile .ini, then restart TE4 and record a new match.'}
           </SetupCheck>
         </ul>
       </section>
