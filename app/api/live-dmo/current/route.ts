@@ -3,10 +3,14 @@ import { getSession } from '@/lib/auth';
 import { sql } from '@/lib/db';
 import { hasCompletedDmoPoints } from '@/lib/te4DmoLive';
 import { cleanupExpiredLiveDmoBroadcasts, isLiveDmoReplayPath } from '@/lib/liveDmoStorage';
+import { isSameSiteMutation } from '@/lib/liveRequestSecurity';
 import { getLiveBroadcastScoreFeed } from '@/lib/liveScores';
 import { scoreForLiveBroadcast } from '@/lib/liveBroadcastScore';
+import { z } from 'zod';
 
 export const dynamic = 'force-dynamic';
+const viewerHeartbeatSchema = z.object({ broadcastId: z.string().uuid() }).strict();
+const MAX_HEARTBEAT_BYTES = 512;
 
 const PRIVATE_HEADERS = {
   'Cache-Control': 'private, no-store',
@@ -137,5 +141,73 @@ export async function GET() {
       { error: 'Live broadcasts are temporarily unavailable.' },
       { status: 503, headers: PRIVATE_HEADERS },
     );
+  }
+}
+
+export async function POST(request: Request) {
+  if (!isSameSiteMutation(request)) {
+    return NextResponse.json({ error: 'Request origin could not be verified.' }, { status: 403, headers: PRIVATE_HEADERS });
+  }
+  const user = await getSession();
+  if (!user) {
+    return NextResponse.json({ error: 'Sign in to update viewer presence.' }, { status: 401, headers: PRIVATE_HEADERS });
+  }
+  const contentLength = Number(request.headers.get('content-length') || 0);
+  if (contentLength > MAX_HEARTBEAT_BYTES) {
+    return NextResponse.json({ error: 'Viewer heartbeat is too large.' }, { status: 413, headers: PRIVATE_HEADERS });
+  }
+  let input: unknown;
+  try {
+    const body = await request.text();
+    if (new TextEncoder().encode(body).byteLength > MAX_HEARTBEAT_BYTES) {
+      return NextResponse.json({ error: 'Viewer heartbeat is too large.' }, { status: 413, headers: PRIVATE_HEADERS });
+    }
+    input = JSON.parse(body);
+  } catch {
+    return NextResponse.json({ error: 'Invalid viewer heartbeat.' }, { status: 400, headers: PRIVATE_HEADERS });
+  }
+  const parsed = viewerHeartbeatSchema.safeParse(input);
+  if (!parsed.success) {
+    return NextResponse.json({ error: 'Invalid viewer heartbeat.' }, { status: 400, headers: PRIVATE_HEADERS });
+  }
+
+  try {
+    const rows = await sql`
+      WITH eligible AS (
+        SELECT id FROM dmo_live_broadcasts
+        WHERE id=${parsed.data.broadcastId}::uuid AND status='live' AND expires_at > NOW()
+      ),
+      active_viewer AS (
+        INSERT INTO dmo_live_broadcast_viewers (broadcast_id, viewer_discord_id, last_seen_at)
+        SELECT id, ${user.discordId}, NOW() FROM eligible
+        ON CONFLICT (broadcast_id, viewer_discord_id)
+        DO UPDATE SET last_seen_at=NOW()
+        RETURNING broadcast_id, viewer_discord_id
+      )
+      SELECT COUNT(*) OVER()::int AS viewer_count,
+        COALESCE(u.display_name, 'Forum member') AS display_name,
+        CASE
+          WHEN u.avatar_url LIKE 'https://cdn.discordapp.com/avatars/%' THEN u.avatar_url
+          ELSE NULL
+        END AS avatar_url
+      FROM dmo_live_broadcast_viewers v
+      JOIN active_viewer ON active_viewer.broadcast_id=v.broadcast_id
+      LEFT JOIN users u ON u.discord_id=v.viewer_discord_id
+      WHERE v.last_seen_at > NOW() - INTERVAL '45 seconds'
+      ORDER BY display_name
+    `;
+    if (!rows.length) {
+      return NextResponse.json({ error: 'This broadcast is no longer live.' }, { status: 404, headers: PRIVATE_HEADERS });
+    }
+    return NextResponse.json({
+      viewerCount: Number(rows[0].viewer_count),
+      viewers: rows.map((row: any) => ({
+        displayName: row.display_name || 'Forum member',
+        avatarUrl: row.avatar_url || null,
+      })),
+    }, { headers: PRIVATE_HEADERS });
+  } catch (error) {
+    console.error('[live-broadcast] viewer heartbeat failed', error instanceof Error ? error.name : 'UnknownError');
+    return NextResponse.json({ error: 'Viewer counts are temporarily unavailable.' }, { status: 503, headers: PRIVATE_HEADERS });
   }
 }

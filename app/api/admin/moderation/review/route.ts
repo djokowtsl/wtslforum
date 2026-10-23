@@ -57,7 +57,7 @@ export async function POST(req: Request) {
       WHERE id=${id} AND moderation_status='pending'
       RETURNING id
     `;
-    if (!rows[0]) return NextResponse.json({ error: 'This live stream comment is no longer awaiting review.' }, { status: 409 });
+    if (!rows[0]) return NextResponse.json({ error: 'This live chat message is no longer awaiting review.' }, { status: 409 });
   } else if (kind === 'note') {
     const rows = action === 'approve'
       ? await sql`

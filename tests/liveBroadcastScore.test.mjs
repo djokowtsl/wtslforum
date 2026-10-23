@@ -19,6 +19,7 @@ function load(path, mocks = {}) {
     if (name in mocks) return mocks[name];
     if (name === './liveBroadcast') return load('lib/liveBroadcast.ts');
     if (name === './liveScoreModel') return load('lib/liveScoreModel.ts');
+    if (name === 'zod') return require('zod');
     return require(name);
   }, module, module.exports);
   return module.exports;
@@ -129,6 +130,7 @@ function currentRoute(payload, { feedValue = feed(), signedIn = true } = {}) {
       sequence: 1, stale: false, payload,
     }] },
     '@/lib/liveDmoStorage': { cleanupExpiredLiveDmoBroadcasts: async () => {}, isLiveDmoReplayPath: () => false },
+    '@/lib/liveRequestSecurity': { isSameSiteMutation: (request) => request.headers.get('origin') === 'https://forum.test' },
     '@/lib/te4DmoLive': { hasCompletedDmoPoints: (value) => Boolean(value?.pointCount) },
     '@/lib/liveScores': { getLiveBroadcastScoreFeed: async () => { feedCalls++; return feedValue; } },
     '@/lib/liveBroadcastScore': helpers,

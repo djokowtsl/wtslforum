@@ -50,7 +50,11 @@ function request(method, body, origin = 'https://forum.test') {
   });
 }
 
-function routeMocks({ user = { id: '22', username: 'Fan' }, decision = 'approved', sql } = {}) {
+function routeMocks({
+  user = { id: '22', username: 'Fan', avatar: 'https://cdn.discordapp.com/avatars/123/a.png' },
+  decision = 'approved',
+  sql,
+} = {}) {
   class ModerationUnavailableError extends Error {}
   return {
     'next/server': nextServer,
@@ -83,17 +87,24 @@ test('signed-in viewers receive only approved comments for a non-expired broadca
       queries.push(query);
       if (query.includes('SELECT id FROM dmo_live_broadcasts')) return [{ id: broadcastId }];
       if (query.includes('SELECT c.id, c.body')) {
-        return [{ id: 9, body: 'Good match', author_name: 'Fan', created_at: new Date('2026-10-22T10:00:00Z') }];
+        return [{
+          id: 9,
+          body: 'Good match',
+          author_name: 'Fan',
+          author_avatar: 'https://cdn.discordapp.com/avatars/123/a.png',
+          created_at: new Date('2026-10-22T10:00:00Z'),
+        }];
       }
       return [];
     },
   }));
   const response = await route.GET(request('GET'), { params: Promise.resolve({ id: broadcastId }) });
   assert.equal(response.status, 200);
-  assert.deepEqual((await response.json()).comments, [{
+  assert.deepEqual((await response.json()).messages, [{
     id: '9',
     body: 'Good match',
     authorName: 'Fan',
+    authorAvatar: 'https://cdn.discordapp.com/avatars/123/a.png',
     createdAt: '2026-10-22T10:00:00.000Z',
   }]);
   assert.match(queries[0], /expires_at > NOW/);
@@ -140,7 +151,9 @@ test('approved comments are returned immediately and rate-limited after eight in
   }));
   const first = await route.POST(request('POST', { body: 'Nice rally' }), { params: Promise.resolve({ id: broadcastId }) });
   assert.equal(first.status, 201);
-  assert.equal((await first.json()).comment.authorName, 'Fan');
+  const firstBody = await first.json();
+  assert.equal(firstBody.message.authorName, 'Fan');
+  assert.equal(firstBody.message.authorAvatar, 'https://cdn.discordapp.com/avatars/123/a.png');
   const limited = await route.POST(request('POST', { body: 'One more' }), { params: Promise.resolve({ id: broadcastId }) });
   assert.equal(limited.status, 429);
   assert.equal(inserted.length, 1);
@@ -211,7 +224,8 @@ test('guests can reach the Live Streams page but only signed-in viewers receive 
 test('the host Viewer page link opens a dedicated viewer-only route', () => {
   const host = readFileSync(new URL('../components/DmoLiveHost.tsx', import.meta.url), 'utf8');
   const viewerPage = readFileSync(new URL('../app/livestreams/viewer/page.tsx', import.meta.url), 'utf8');
-  assert.match(host, /href="\/livestreams\/viewer"[^>]*>.*Viewer page/);
+  assert.match(host, /href="\/livestreams\/viewer"/);
+  assert.match(host, /Watch Matches/);
   assert.match(viewerPage, /<DmoLiveViewer canWatch={Boolean\(user\)} \/>/);
   assert.doesNotMatch(viewerPage, /DmoLiveHost/);
 });

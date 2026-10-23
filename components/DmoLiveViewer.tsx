@@ -1,13 +1,13 @@
 'use client';
 
 import { useCallback, useEffect, useRef, useState } from 'react';
-import { AlertTriangle, ChevronLeft, ChevronRight, Radio } from 'lucide-react';
+import { AlertTriangle, ChevronLeft, ChevronRight, Eye, Radio } from 'lucide-react';
 import { LIVE_DMO_UPDATE_INTERVAL_MS } from '@/lib/te4DmoLive';
 import type { Te4LivePoint, Te4LiveSnapshot } from '@/lib/te4DmoLive';
 import type { LivePreMatchProbability, LiveStream } from '@/lib/liveBroadcast';
 import type { LiveBroadcastScore } from '@/lib/liveBroadcastScore';
 import DmoLiveDisplay from './DmoLiveDisplay';
-import LiveBroadcastComments from './LiveBroadcastComments';
+import LiveBroadcastChat from './LiveBroadcastComments';
 import LiveStreamEmbed from './LiveStreamEmbed';
 import Te4DmoReplayPlayer from './Te4DmoReplayPlayer';
 import styles from './DmoLiveViewer.module.css';
@@ -30,6 +30,8 @@ type Broadcast = {
   updatedAt: string;
   stale: boolean;
   liveScore?: LiveBroadcastScore | null;
+  viewerCount?: number | null;
+  viewers?: Array<{ displayName: string; avatarUrl: string | null }>;
 };
 
 type PointLogState = {
@@ -110,9 +112,19 @@ export default function DmoLiveViewer({ canWatch }: Props) {
               && previousSnapshot.players[0] === nextSnapshot.players[0]
               && previousSnapshot.players[1] === nextSnapshot.players[1]
             ) {
-              return { ...broadcast, snapshot: previousSnapshot };
+              return {
+                ...broadcast,
+                snapshot: previousSnapshot,
+                viewerCount: currentById.get(broadcast.id)?.viewerCount,
+                viewers: currentById.get(broadcast.id)?.viewers,
+              };
             }
-            return broadcast;
+            const previous = currentById.get(broadcast.id);
+            return {
+              ...broadcast,
+              viewerCount: previous?.viewerCount,
+              viewers: previous?.viewers,
+            };
           });
         });
         setPointLogs((current) => {
@@ -225,6 +237,61 @@ export default function DmoLiveViewer({ canWatch }: Props) {
     };
   }, [canWatch, hasActiveDmo]);
 
+  const activeStreamId = broadcasts[activeBroadcastIndex]?.status === 'live'
+    && !broadcasts[activeBroadcastIndex]?.replay
+    ? broadcasts[activeBroadcastIndex].id
+    : null;
+
+  useEffect(() => {
+    if (!canWatch || !activeStreamId) return;
+    let cancelled = false;
+    let inFlight = false;
+    const sendHeartbeat = async () => {
+      if (cancelled || inFlight || document.visibilityState !== 'visible') return;
+      inFlight = true;
+      try {
+        const response = await fetch('/api/live-dmo/current', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          cache: 'no-store',
+          body: JSON.stringify({ broadcastId: activeStreamId }),
+        });
+        const body = await response.json().catch(() => null);
+        if (!response.ok || !Number.isInteger(body?.viewerCount) || body.viewerCount < 1) {
+          throw new Error('Viewer count unavailable.');
+        }
+        if (!cancelled) {
+          setBroadcasts((current) => current.map((broadcast) =>
+            broadcast.id === activeStreamId
+              ? { ...broadcast, viewerCount: body.viewerCount, viewers: body.viewers }
+              : broadcast,
+          ));
+        }
+      } catch {
+        if (!cancelled) {
+          setBroadcasts((current) => current.map((broadcast) =>
+            broadcast.id === activeStreamId
+              ? { ...broadcast, viewerCount: null, viewers: undefined }
+              : broadcast,
+          ));
+        }
+      } finally {
+        inFlight = false;
+      }
+    };
+    const onVisibilityChange = () => {
+      if (document.visibilityState === 'visible') void sendHeartbeat();
+    };
+    void sendHeartbeat();
+    const timer = window.setInterval(() => { void sendHeartbeat(); }, 15_000);
+    document.addEventListener('visibilitychange', onVisibilityChange);
+    return () => {
+      cancelled = true;
+      window.clearInterval(timer);
+      document.removeEventListener('visibilitychange', onVisibilityChange);
+    };
+  }, [activeStreamId, canWatch]);
+
   const scrollToBroadcast = useCallback((index: number) => {
     const track = broadcastTrackRef.current;
     const target = track?.children.item(index);
@@ -328,12 +395,56 @@ export default function DmoLiveViewer({ canWatch }: Props) {
                 aria-label={broadcasts.length > 1 ? `${broadcast.replay ? 'Replay' : 'Broadcast'}: ${players?.join(' vs ') ?? broadcast.ownerName}` : undefined}
               >
                 <div className="live-broadcast-card-heading">
+                  <div className={styles.cardStatus}>
                   <span><Radio size={16} />
                     {broadcast.replay
                       ? `REPLAY ${broadcast.replaySpeed}× · ${broadcast.status === 'live' ? 'PLAYING' : 'ENDED'}`
                       : broadcast.status === 'live' ? 'LIVE' : 'ENDED'}
                     {' · '}{broadcast.ownerName}
                   </span>
+                  {broadcast.status === 'live' && !broadcast.replay && (
+                    <small
+                      className={styles.viewerCount}
+                      aria-label={broadcast.viewerCount === undefined
+                        ? 'Checking the live viewer count'
+                        : broadcast.viewerCount === null
+                          ? 'Live viewer count temporarily unavailable'
+                          : `${broadcast.viewerCount} active ${broadcast.viewerCount === 1 ? 'viewer' : 'viewers'}`}
+                      title="Signed-in viewers active in the last 45 seconds"
+                    >
+                      <Eye size={13} aria-hidden="true" />
+                      {broadcast.viewerCount === undefined
+                        ? 'Checking…'
+                        : broadcast.viewerCount === null
+                          ? 'Viewers unavailable'
+                          : `${broadcast.viewerCount} watching`}
+                    </small>
+                  )}
+                  {broadcast.status === 'live' && !broadcast.replay && (broadcast.viewers?.length ?? 0) > 0 && (
+                    <div className={styles.viewerRoster} aria-label="Signed-in viewers">
+                      {broadcast.viewers?.map((viewer, index) => (
+                        <span
+                          className={styles.viewerIdentity}
+                          key={`${viewer.displayName}-${viewer.avatarUrl ?? ''}-${index}`}
+                          title={viewer.displayName}
+                        >
+                          <span className={styles.viewerAvatar} aria-hidden="true">
+                            <span>{viewer.displayName.trim().charAt(0).toUpperCase() || '?'}</span>
+                            {viewer.avatarUrl && (
+                              <img
+                                src={viewer.avatarUrl}
+                                alt=""
+                                loading="lazy"
+                                onError={(event) => { event.currentTarget.style.display = 'none'; }}
+                              />
+                            )}
+                          </span>
+                          <span>{viewer.displayName}</span>
+                        </span>
+                      ))}
+                    </div>
+                  )}
+                  </div>
                   {players && <strong>{players[0]} <i>vs</i> {players[1]}</strong>}
                 </div>
                 {(broadcast.broadcastMode === 'auto' || broadcast.officialByBroadcaster || broadcast.likelyOfficial) && (
@@ -392,7 +503,7 @@ export default function DmoLiveViewer({ canWatch }: Props) {
                       : 'This broadcast ended before DMO court data became available.'}</p>
                   </div>
                 )}
-                <LiveBroadcastComments broadcastId={broadcast.id} />
+                <LiveBroadcastChat broadcastId={broadcast.id} />
               </article>
             );
           })}

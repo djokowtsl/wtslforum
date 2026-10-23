@@ -17,6 +17,9 @@ function loadRoute(path, mocks) {
     if (name.startsWith('node:')) return require(name);
     if (name === '@/lib/liveScores') return { getLiveBroadcastScoreFeed: async () => null };
     if (name === '@/lib/liveBroadcastScore') return { scoreForLiveBroadcast: () => null };
+    if (name === '@/lib/liveRequestSecurity') {
+      return { isSameSiteMutation: (request) => request.headers.get('origin') === 'https://forum.test' };
+    }
     if (name === '@/lib/te4DmoLive') {
       return {
         hasCompletedDmoPoints: (snapshot) => Boolean(snapshot && Number.isInteger(snapshot.pointCount) && snapshot.pointCount > 0),
