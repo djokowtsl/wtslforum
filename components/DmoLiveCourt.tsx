@@ -384,16 +384,16 @@ function playSynthesizedCue(context: AudioContext, kind: SynthesizedCue) {
   const filter = kind === 'grunt' ? context.createBiquadFilter() : null;
   const racket = kind === 'racket';
   const grunt = kind === 'grunt';
-  const duration = racket ? 0.06 : grunt ? 0.16 : 0.1;
+  const duration = racket ? 0.075 : grunt ? 0.22 : 0.12;
   oscillator.type = grunt ? 'sawtooth' : racket ? 'triangle' : 'sine';
   oscillator.frequency.setValueAtTime(grunt ? 150 : racket ? 720 : 390, now);
   oscillator.frequency.exponentialRampToValueAtTime(grunt ? 82 : racket ? 260 : 150, now + duration);
-  gain.gain.setValueAtTime(grunt ? 0.018 : racket ? 0.035 : 0.028, now);
+  gain.gain.setValueAtTime(grunt ? 0.045 : racket ? 0.085 : 0.072, now);
   gain.gain.exponentialRampToValueAtTime(0.0001, now + duration);
   if (filter) {
     filter.type = 'bandpass';
-    filter.frequency.value = 610;
-    filter.Q.value = 1;
+    filter.frequency.value = 340;
+    filter.Q.value = 0.85;
     oscillator.connect(filter);
     filter.connect(gain);
   } else {
@@ -613,11 +613,7 @@ function DmoLiveCourt({
       playedSoundEventsRef.current.add(key);
     }
     for (const event of snapshot.trajectoryEvents ?? []) {
-      const cue = event.kind === 'point-end'
-        ? 'cheer'
-        : event.frame % 2 === 0
-          ? 'grunt'
-          : null;
+      const cue = event.kind === 'point-end' ? 'cheer' : 'grunt';
       const key = `${event.frame}:${event.kind}`;
       if (!cue || event.frame < lastSoundFrameRef.current || playedSoundEventsRef.current.has(key)) continue;
       playSynthesizedCue(context, cue);

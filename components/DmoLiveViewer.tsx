@@ -1,7 +1,7 @@
 'use client';
 
-import { useEffect, useRef, useState } from 'react';
-import { AlertTriangle, Radio } from 'lucide-react';
+import { useCallback, useEffect, useRef, useState } from 'react';
+import { AlertTriangle, ChevronLeft, ChevronRight, Radio } from 'lucide-react';
 import { LIVE_DMO_UPDATE_INTERVAL_MS } from '@/lib/te4DmoLive';
 import type { Te4LivePoint, Te4LiveSnapshot } from '@/lib/te4DmoLive';
 import type { LivePreMatchProbability, LiveStream } from '@/lib/liveBroadcast';
@@ -61,6 +61,8 @@ export default function DmoLiveViewer({ canWatch }: Props) {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
   const [focusedBroadcastId, setFocusedBroadcastId] = useState<string | null>(null);
+  const [activeBroadcastIndex, setActiveBroadcastIndex] = useState(0);
+  const broadcastTrackRef = useRef<HTMLDivElement>(null);
   const focusedOnce = useRef<string | null>(null);
   const preMatchResolved = useRef(new Set<string>());
   const preMatchAttempts = useRef(new Map<string, number>());
@@ -76,7 +78,11 @@ export default function DmoLiveViewer({ canWatch }: Props) {
     }
     let active = true;
     let running = false;
-    setFocusedBroadcastId(new URLSearchParams(window.location.search).get('broadcast'));
+    const params = new URLSearchParams(window.location.search);
+    const hashId = window.location.hash.startsWith('#broadcast-')
+      ? decodeURIComponent(window.location.hash.slice('#broadcast-'.length))
+      : null;
+    setFocusedBroadcastId(params.get('broadcast') ?? hashId);
     const refresh = async () => {
       if (running || !active) return;
       running = true;
@@ -217,19 +223,45 @@ export default function DmoLiveViewer({ canWatch }: Props) {
     };
   }, [canWatch, hasActiveDmo]);
 
+  const scrollToBroadcast = useCallback((index: number) => {
+    const track = broadcastTrackRef.current;
+    const target = track?.children.item(index);
+    if (!track || !target) return;
+    const trackLeft = track.getBoundingClientRect().left;
+    const targetLeft = target.getBoundingClientRect().left;
+    const behavior: ScrollBehavior = window.matchMedia('(prefers-reduced-motion: reduce)').matches ? 'auto' : 'smooth';
+    track.scrollTo({ left: track.scrollLeft + targetLeft - trackLeft, behavior });
+  }, []);
+
+  const updateActiveBroadcast = () => {
+    const track = broadcastTrackRef.current;
+    if (!track || !track.children.length) return;
+    const trackLeft = track.getBoundingClientRect().left;
+    let nearestIndex = 0;
+    let nearestDistance = Number.POSITIVE_INFINITY;
+    Array.from(track.children).forEach((slide, index) => {
+      const distance = Math.abs(slide.getBoundingClientRect().left - trackLeft);
+      if (distance < nearestDistance) {
+        nearestIndex = index;
+        nearestDistance = distance;
+      }
+    });
+    setActiveBroadcastIndex((current) => current === nearestIndex ? current : nearestIndex);
+  };
+
   useEffect(() => {
     if (!focusedBroadcastId || !broadcasts.length || focusedOnce.current === focusedBroadcastId) return;
+    const targetIndex = broadcasts.findIndex((broadcast) => broadcast.id === focusedBroadcastId);
+    if (targetIndex < 0) return;
     const timer = window.setTimeout(() => {
       const target = document.getElementById(`broadcast-${focusedBroadcastId}`);
       if (!target) return;
       focusedOnce.current = focusedBroadcastId;
-      target.scrollIntoView({
-        behavior: window.matchMedia('(prefers-reduced-motion: reduce)').matches ? 'auto' : 'smooth',
-        block: 'start',
-      });
+      scrollToBroadcast(targetIndex);
+      target.scrollIntoView({ behavior: window.matchMedia('(prefers-reduced-motion: reduce)').matches ? 'auto' : 'smooth', block: 'start' });
     }, 50);
     return () => window.clearTimeout(timer);
-  }, [focusedBroadcastId, broadcasts]);
+  }, [focusedBroadcastId, broadcasts, scrollToBroadcast]);
 
   return (
     <section className={styles.page} aria-label="Live Streams">
@@ -249,11 +281,50 @@ export default function DmoLiveViewer({ canWatch }: Props) {
         <>
       {error && <p className={styles.error} role="alert"><AlertTriangle size={16} />{error}</p>}
       {broadcasts.length ? (
-        <div className="live-broadcast-list">
+        <div className="live-broadcast-carousel">
+          {broadcasts.length > 1 && (
+            <div className={styles.carouselControls}>
+              <span aria-live="polite" aria-atomic="true">
+                Broadcast {Math.min(activeBroadcastIndex + 1, broadcasts.length)} of {broadcasts.length}
+              </span>
+              <button
+                type="button"
+                aria-label="Previous broadcast"
+                onClick={() => scrollToBroadcast(activeBroadcastIndex - 1)}
+                disabled={activeBroadcastIndex === 0}
+              >
+                <ChevronLeft size={18} aria-hidden="true" />
+              </button>
+              <button
+                type="button"
+                aria-label="Next broadcast"
+                onClick={() => scrollToBroadcast(activeBroadcastIndex + 1)}
+                disabled={activeBroadcastIndex >= broadcasts.length - 1}
+              >
+                <ChevronRight size={18} aria-hidden="true" />
+              </button>
+            </div>
+          )}
+        <div
+          className="live-broadcast-list"
+          ref={broadcastTrackRef}
+          role={broadcasts.length > 1 ? 'region' : undefined}
+          aria-label={broadcasts.length > 1 ? 'Live broadcasts and replays' : undefined}
+          aria-roledescription={broadcasts.length > 1 ? 'carousel' : undefined}
+          tabIndex={broadcasts.length > 1 ? 0 : undefined}
+          onScroll={updateActiveBroadcast}
+        >
           {broadcasts.map((broadcast) => {
             const players = broadcast.snapshot?.players ?? broadcast.players;
             return (
-              <article className="live-broadcast-card" id={`broadcast-${broadcast.id}`} key={broadcast.id}>
+              <article
+                className="live-broadcast-card"
+                id={`broadcast-${broadcast.id}`}
+                key={broadcast.id}
+                role={broadcasts.length > 1 ? 'group' : undefined}
+                aria-roledescription={broadcasts.length > 1 ? 'slide' : undefined}
+                aria-label={broadcasts.length > 1 ? `${broadcast.replay ? 'Replay' : 'Broadcast'}: ${players?.join(' vs ') ?? broadcast.ownerName}` : undefined}
+              >
                 <div className="live-broadcast-card-heading">
                   <span><Radio size={16} />
                     {broadcast.replay
@@ -319,6 +390,7 @@ export default function DmoLiveViewer({ canWatch }: Props) {
               </article>
             );
           })}
+        </div>
         </div>
       ) : (
         <div className={styles.empty}>
