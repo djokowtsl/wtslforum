@@ -40,28 +40,8 @@ type Props = {
 };
 
 type CameraView = 'court' | 'aerial' | 'tv' | 'custom';
-type CrowdBed = { source: AudioBufferSourceNode; gain: GainNode };
 
 const DEFAULT_CAMERA = new THREE.Vector3(-21, 22, 25);
-function createCrowdBed(context: AudioContext): CrowdBed {
-  const buffer = context.createBuffer(1, context.sampleRate * 2, context.sampleRate);
-  const samples = buffer.getChannelData(0);
-  for (let index = 0; index < samples.length; index += 1) samples[index] = (Math.random() * 2 - 1) * 0.24;
-  const source = context.createBufferSource();
-  source.buffer = buffer;
-  source.loop = true;
-  const filter = context.createBiquadFilter();
-  filter.type = 'bandpass';
-  filter.frequency.value = 540;
-  filter.Q.value = 0.65;
-  const gain = context.createGain();
-  gain.gain.value = 0.0001;
-  source.connect(filter);
-  filter.connect(gain);
-  gain.connect(context.destination);
-  source.start();
-  return { source, gain };
-}
 
 function playCue(context: AudioContext, kind: 'racket' | 'bounce' | 'grunt' | 'cheer') {
   const now = context.currentTime;
@@ -121,7 +101,7 @@ function ThreeCourt({
   const viewportRef = useRef<HTMLDivElement>(null);
   const canvasHostRef = useRef<HTMLDivElement>(null);
   const audioContextRef = useRef<AudioContext | null>(null);
-  const crowdBedRef = useRef<CrowdBed | null>(null);
+  const crowdAudioRef = useRef<HTMLAudioElement | null>(null);
   const sampleBufferRef = useRef<LiveCourtSample[]>([]);
   const trajectoryEventsRef = useRef<LiveCourtMotionEvent[]>([]);
   const playheadRef = useRef<number | null>(null);
@@ -138,7 +118,7 @@ function ThreeCourt({
   const [cameraView, setCameraView] = useState<CameraView>('court');
   const [soundEnabled, setSoundEnabled] = useState(false);
   const [soundError, setSoundError] = useState('');
-  const [crowdVolume, setCrowdVolume] = useState(0.17);
+  const [crowdVolume, setCrowdVolume] = useState(0.62);
   const [hasCourtData, setHasCourtData] = useState(snapshot.court.length > 0);
 
   useEffect(() => {
@@ -220,14 +200,11 @@ function ThreeCourt({
   }, [snapshot.frameCount, snapshot.soundEvents, snapshot.trajectoryEvents, soundEnabled]);
 
   useEffect(() => () => {
-    try {
-      crowdBedRef.current?.source.stop();
-      crowdBedRef.current?.source.disconnect();
-      crowdBedRef.current?.gain.disconnect();
-    } catch {
-      // Closing the audio context stops any remaining generated sound.
-    }
-    crowdBedRef.current = null;
+    const crowdAudio = crowdAudioRef.current;
+    crowdAudio?.pause();
+    crowdAudio?.removeAttribute('src');
+    crowdAudio?.load();
+    crowdAudioRef.current = null;
     soundOnRef.current = false;
     void audioContextRef.current?.close();
     audioContextRef.current = null;
@@ -262,8 +239,8 @@ function ThreeCourt({
     host.appendChild(renderer.domElement);
 
     const scene = new THREE.Scene();
-    scene.background = new THREE.Color(0x142f2e);
-    scene.fog = new THREE.Fog(0x142f2e, 42, 95);
+    scene.background = new THREE.Color(0x707670);
+    scene.fog = new THREE.Fog(0x707670, 42, 95);
     const camera = new THREE.PerspectiveCamera(34, 1, 0.1, 260);
     camera.position.copy(DEFAULT_CAMERA);
     camera.lookAt(0, 0.3, 0);
@@ -375,19 +352,45 @@ function ThreeCourt({
       const facing = Math.atan2(ballX - position.x, ballZ - position.z);
       const event = events.find((item) => item.kind === 'shot' && Math.abs(item.frame - frame) < 1.5);
       const phase = frame * 0.22 + index * Math.PI;
-      const stride = Math.sin(phase) * (0.12 + speed * 0.29);
-      const lift = Math.abs(Math.cos(phase)) * speed * 0.085;
+      const gaitSpeed = speed > 0.12 ? speed : 0;
+      const leftCycle = Math.sin(phase);
+      const rightCycle = Math.sin(phase + Math.PI);
+      const stride = gaitSpeed * 0.19;
+      const leftLift = Math.max(0, leftCycle) * gaitSpeed * 0.13;
+      const rightLift = Math.max(0, rightCycle) * gaitSpeed * 0.13;
+      const bodyBounce = gaitSpeed * Math.abs(Math.sin(phase * 2)) * 0.035;
       rig.root.position.set(position.x, 0, position.z);
       rig.root.rotation.y = facing;
-      rig.body.position.set(Math.sin(phase * 0.5) * speed * 0.035, 1.18 + lift, 0);
+      rig.body.position.set(Math.sin(phase * 0.5) * gaitSpeed * 0.02, 1.22 + bodyBounce, 0);
       rig.body.rotation.z = THREE.MathUtils.clamp(-velocityX * 0.18, -0.22, 0.22);
-      rig.head.position.set(0, 1.75 + lift * 0.6, 0);
-      const legStep = stride + (event ? 0.1 : 0);
-      poseLimb(rig.leftLeg, new THREE.Vector3(-0.15, 0.77, 0), new THREE.Vector3(-0.18 + legStep, 0.37 + lift, 0));
-      poseLimb(rig.rightLeg, new THREE.Vector3(0.15, 0.77, 0), new THREE.Vector3(0.18 - legStep, 0.36 + lift * 0.4, 0));
-      const swing = event ? 0.72 : Math.sin(phase * 0.55) * speed * 0.18;
-      poseLimb(rig.leftArm, new THREE.Vector3(-0.23, 1.42 + lift, 0), new THREE.Vector3(-0.38, 1.08 + swing * 0.25, 0.05));
-      poseLimb(rig.rightArm, new THREE.Vector3(0.23, 1.4 + lift, 0), new THREE.Vector3(0.39, 1.1 + swing, 0.04));
+      rig.hip.position.y = 0.79 + bodyBounce;
+      rig.head.position.set(0, 1.78 + bodyBounce * 0.8, 0);
+      const leftHip = new THREE.Vector3(-0.15, 0.79 + bodyBounce, 0);
+      const rightHip = new THREE.Vector3(0.15, 0.79 + bodyBounce, 0);
+      const leftFoot = new THREE.Vector3(
+        -0.15 + leftCycle * stride,
+        0.1 + leftLift,
+        Math.max(0, leftCycle) * 0.05,
+      );
+      const rightFoot = new THREE.Vector3(
+        0.15 + rightCycle * stride,
+        0.1 + rightLift,
+        Math.max(0, rightCycle) * 0.05,
+      );
+      poseLimb(rig.leftLeg, leftHip, leftFoot);
+      poseLimb(rig.rightLeg, rightHip, rightFoot);
+      rig.leftShoe.position.set(leftFoot.x, 0.032 + leftLift, leftFoot.z + 0.05);
+      rig.rightShoe.position.set(rightFoot.x, 0.032 + rightLift, rightFoot.z + 0.05);
+      rig.leftShoe.rotation.y = leftCycle * gaitSpeed * 0.12;
+      rig.rightShoe.rotation.y = rightCycle * gaitSpeed * 0.12;
+      const swing = event ? 0.72 : Math.sin(phase * 0.55) * gaitSpeed * 0.2;
+      const leftHand = new THREE.Vector3(-0.38, 1.08 + bodyBounce + swing * 0.2, 0.05);
+      const rightHand = new THREE.Vector3(0.39, 1.1 + bodyBounce + swing, 0.04);
+      poseLimb(rig.leftArm, new THREE.Vector3(-0.23, 1.42 + bodyBounce, 0), leftHand);
+      poseLimb(rig.rightArm, new THREE.Vector3(0.23, 1.4 + bodyBounce, 0), rightHand);
+      rig.leftHand.position.copy(leftHand);
+      rig.rightHand.position.copy(rightHand);
+      rig.racket.position.set(rightHand.x, rightHand.y + 0.1, rightHand.z);
       rig.racket.rotation.z = event ? -0.8 : -0.12 + Math.sin(phase * 0.55) * speed * 0.14;
     };
 
@@ -502,13 +505,7 @@ function ThreeCourt({
 
   const toggleSound = async () => {
     if (soundEnabled) {
-      const context = audioContextRef.current;
-      const crowdBed = crowdBedRef.current;
-      if (context && crowdBed) {
-        crowdBed.gain.gain.setTargetAtTime(0.0001, context.currentTime, 0.12);
-        crowdBed.source.stop(context.currentTime + 0.45);
-        crowdBedRef.current = null;
-      }
+      crowdAudioRef.current?.pause();
       soundOnRef.current = false;
       setSoundEnabled(false);
       return;
@@ -517,29 +514,29 @@ function ThreeCourt({
       if (!audioContextRef.current) audioContextRef.current = new AudioContext();
       const context = audioContextRef.current;
       await context.resume();
-      if (!crowdBedRef.current) crowdBedRef.current = createCrowdBed(context);
-      crowdBedRef.current.gain.gain.setTargetAtTime(
-        stadiumAtmosphere ? Math.max(0.0001, crowdVolume * 0.052) : 0.0001,
-        context.currentTime,
-        0.45,
-      );
+      if (stadiumAtmosphere) {
+        if (!crowdAudioRef.current) {
+          const crowdAudio = new Audio('/audio/te4-crowd-ambience.mp3');
+          crowdAudio.loop = true;
+          crowdAudio.preload = 'auto';
+          crowdAudioRef.current = crowdAudio;
+        }
+        crowdAudioRef.current.volume = crowdVolume;
+        await crowdAudioRef.current.play();
+      }
       lastSoundFrameRef.current = Math.max(0, snapshot.frameCount - 3);
       soundOnRef.current = true;
       setSoundError('');
       setSoundEnabled(true);
     } catch {
+      crowdAudioRef.current?.pause();
       setSoundError('Sound could not be enabled in this browser.');
     }
   };
   const changeCrowdVolume = (volume: number) => {
     setCrowdVolume(volume);
-    const context = audioContextRef.current;
-    if (soundOnRef.current && context && crowdBedRef.current) {
-      crowdBedRef.current.gain.gain.setTargetAtTime(
-        stadiumAtmosphere ? Math.max(0.0001, volume * 0.052) : 0.0001,
-        context.currentTime,
-        0.12,
-      );
+    if (soundOnRef.current && stadiumAtmosphere && crowdAudioRef.current) {
+      crowdAudioRef.current.volume = volume;
     }
   };
 
@@ -576,7 +573,7 @@ function ThreeCourt({
               <input
                 type="range"
                 min="0"
-                max="0.5"
+                max="1"
                 step="0.01"
                 value={crowdVolume}
                 aria-label="Crowd volume"
