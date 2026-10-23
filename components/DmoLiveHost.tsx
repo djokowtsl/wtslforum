@@ -149,6 +149,7 @@ export default function DmoLiveHost({ displayName, canPrepareFullReplay }: Props
   const lastSentVersion = useRef(-1);
   const lastHeartbeat = useRef(0);
   const sequence = useRef(0);
+  const pointLogSeeded = useRef(new Set<string>());
   const polling = useRef(false);
   const liveDmoGrowthDetected = useRef(false);
   const resetDmoReaderOnNextPoll = useRef(false);
@@ -577,9 +578,35 @@ export default function DmoLiveHost({ displayName, canPrepareFullReplay }: Props
     const sendUpdate = async (current?: Te4LiveSnapshot) => {
       if (!broadcastId) return;
       const nextSequence = sequence.current + 1;
-      const snapshot = current
-        ? { ...current, players: canonicalBroadcastPlayers.current ?? current.players }
+      const pointHistory = current && !pointLogSeeded.current.has(broadcastId)
+        ? parser.current?.snapshot(
+          current.filename,
+          current.bestOf,
+          current.frameCount,
+          undefined,
+          undefined,
+          false,
+          true,
+        )?.pointHistory
         : undefined;
+      const snapshot = current
+        ? {
+          ...current,
+          pointHistory: undefined,
+          players: canonicalBroadcastPlayers.current ?? current.players,
+        }
+        : undefined;
+      if (pointHistory?.length) {
+        for (let offset = 0; offset < pointHistory.length; offset += 100) {
+          const response = await fetch(`/api/live-dmo/${broadcastId}/points`, {
+            method: 'PATCH',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ points: pointHistory.slice(offset, offset + 100) }),
+          });
+          if (!response.ok) throw new Error(await responseError(response));
+        }
+        pointLogSeeded.current.add(broadcastId);
+      }
       const response = await fetch(`/api/live-dmo/${broadcastId}`, {
         method: 'PATCH',
         headers: { 'Content-Type': 'application/json' },
@@ -840,7 +867,7 @@ export default function DmoLiveHost({ displayName, canPrepareFullReplay }: Props
           <h1>Live <em>Streams</em></h1>
           <p>Share a live court, replay a completed DMO from the start, or add a stream link from your Discord post. DMO files stay on your device.</p>
         </div>
-        <Link className={styles.watchLink} href="/livestreams"><ExternalLink size={15} /> Viewer page</Link>
+        <Link className={styles.watchLink} href="/livestreams/viewer"><ExternalLink size={15} /> Viewer page</Link>
       </header>
 
       <section className={styles.controlPanel} aria-label="Broadcast controls">
@@ -974,6 +1001,16 @@ export default function DmoLiveHost({ displayName, canPrepareFullReplay }: Props
           </button>
         )}
       </section>
+
+      <aside className={styles.folderHelp} aria-label="Find the TE4 DMO directory">
+        <strong>General DMO directory: Profiles\Demos</strong>
+        <span>
+          File Explorer: <code>%USERPROFILE%\AppData\LocalLow\Mana Games\Tennis Elbow 4\Profiles\Demos</code>.
+          Or, in TE4, open Settings → Profiles → Show Data Folder, then open <code>Profiles\Demos</code>.
+          Use <b>Choose TE4 folder</b> above to select <code>Demos</code> (or its <code>Profiles</code> parent).
+          If you changed where TE4 saves recordings, select that custom folder instead.
+        </span>
+      </aside>
 
       <div className={styles.audienceNote}>
         <span className={styles.accessTag}>SIGNED-IN VIEWERS</span>
