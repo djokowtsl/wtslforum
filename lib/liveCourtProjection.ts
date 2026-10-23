@@ -5,7 +5,13 @@ export type LiveCourtRacketPlayer = { id: 1 | 2; x: number; y: number };
 export type LiveCourtBall = { x: number; y: number; z: number };
 export type LiveCourtShotEvent = { frame: number; kind: 'shot' | 'point-end' };
 
+export const DEFAULT_LIVE_COURT_CAMERA: LiveCourtCamera = { azimuth: -42, elevation: 38 };
+
 type Vector3 = LiveCourtWorldPoint;
+
+export function playerRightVector(facing: LiveCourtWorldPoint): LiveCourtWorldPoint {
+  return [facing[1], -facing[0], 0];
+}
 
 function dot(a: Vector3, b: Vector3): number {
   return a[0] * b[0] + a[1] * b[1] + a[2] * b[2];
@@ -25,8 +31,11 @@ function cross(a: Vector3, b: Vector3): Vector3 {
 }
 
 export function createCourtProjector(camera: LiveCourtCamera, zoom = 1) {
-  const azimuth = (Number.isFinite(camera.azimuth) ? camera.azimuth : 42) * Math.PI / 180;
-  const elevation = Math.max(5, Math.min(90, Number.isFinite(camera.elevation) ? camera.elevation : 38)) * Math.PI / 180;
+  const azimuth = (Number.isFinite(camera.azimuth) ? camera.azimuth : DEFAULT_LIVE_COURT_CAMERA.azimuth) * Math.PI / 180;
+  const elevation = Math.max(
+    5,
+    Math.min(90, Number.isFinite(camera.elevation) ? camera.elevation : DEFAULT_LIVE_COURT_CAMERA.elevation),
+  ) * Math.PI / 180;
   const distance = 4_300;
   const target: Vector3 = [0, 0, 110];
   const eye: Vector3 = [
