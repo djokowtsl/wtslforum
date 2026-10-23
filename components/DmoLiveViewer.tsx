@@ -7,7 +7,7 @@ import type { Te4LivePoint, Te4LiveSnapshot } from '@/lib/te4DmoLive';
 import type { LivePreMatchProbability, LiveStream } from '@/lib/liveBroadcast';
 import type { LiveBroadcastScore } from '@/lib/liveBroadcastScore';
 import DmoLiveDisplay from './DmoLiveDisplay';
-import LiveBroadcastComments from './LiveBroadcastComments';
+import LiveBroadcastChat from './LiveBroadcastComments';
 import LiveStreamEmbed from './LiveStreamEmbed';
 import Te4DmoReplayPlayer from './Te4DmoReplayPlayer';
 import styles from './DmoLiveViewer.module.css';
@@ -31,6 +31,7 @@ type Broadcast = {
   stale: boolean;
   liveScore?: LiveBroadcastScore | null;
   viewerCount?: number | null;
+  viewers?: Array<{ displayName: string; avatarUrl: string | null }>;
 };
 
 type PointLogState = {
@@ -115,9 +116,15 @@ export default function DmoLiveViewer({ canWatch }: Props) {
                 ...broadcast,
                 snapshot: previousSnapshot,
                 viewerCount: currentById.get(broadcast.id)?.viewerCount,
+                viewers: currentById.get(broadcast.id)?.viewers,
               };
             }
-            return broadcast;
+            const previous = currentById.get(broadcast.id);
+            return {
+              ...broadcast,
+              viewerCount: previous?.viewerCount,
+              viewers: previous?.viewers,
+            };
           });
         });
         setPointLogs((current) => {
@@ -256,7 +263,7 @@ export default function DmoLiveViewer({ canWatch }: Props) {
         if (!cancelled) {
           setBroadcasts((current) => current.map((broadcast) =>
             broadcast.id === activeStreamId
-              ? { ...broadcast, viewerCount: body.viewerCount }
+              ? { ...broadcast, viewerCount: body.viewerCount, viewers: body.viewers }
               : broadcast,
           ));
         }
@@ -264,7 +271,7 @@ export default function DmoLiveViewer({ canWatch }: Props) {
         if (!cancelled) {
           setBroadcasts((current) => current.map((broadcast) =>
             broadcast.id === activeStreamId
-              ? { ...broadcast, viewerCount: null }
+              ? { ...broadcast, viewerCount: null, viewers: undefined }
               : broadcast,
           ));
         }
@@ -413,6 +420,30 @@ export default function DmoLiveViewer({ canWatch }: Props) {
                           : `${broadcast.viewerCount} watching`}
                     </small>
                   )}
+                  {broadcast.status === 'live' && !broadcast.replay && (broadcast.viewers?.length ?? 0) > 0 && (
+                    <div className={styles.viewerRoster} aria-label="Signed-in viewers">
+                      {broadcast.viewers?.map((viewer, index) => (
+                        <span
+                          className={styles.viewerIdentity}
+                          key={`${viewer.displayName}-${viewer.avatarUrl ?? ''}-${index}`}
+                          title={viewer.displayName}
+                        >
+                          <span className={styles.viewerAvatar} aria-hidden="true">
+                            <span>{viewer.displayName.trim().charAt(0).toUpperCase() || '?'}</span>
+                            {viewer.avatarUrl && (
+                              <img
+                                src={viewer.avatarUrl}
+                                alt=""
+                                loading="lazy"
+                                onError={(event) => { event.currentTarget.style.display = 'none'; }}
+                              />
+                            )}
+                          </span>
+                          <span>{viewer.displayName}</span>
+                        </span>
+                      ))}
+                    </div>
+                  )}
                   </div>
                   {players && <strong>{players[0]} <i>vs</i> {players[1]}</strong>}
                 </div>
@@ -472,7 +503,7 @@ export default function DmoLiveViewer({ canWatch }: Props) {
                       : 'This broadcast ended before DMO court data became available.'}</p>
                   </div>
                 )}
-                <LiveBroadcastComments broadcastId={broadcast.id} />
+                <LiveBroadcastChat broadcastId={broadcast.id} />
               </article>
             );
           })}

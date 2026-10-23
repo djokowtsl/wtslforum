@@ -26,12 +26,12 @@ export default async function AdminModeration() {
     ...media.map((row) => ({ id: Number(row.id), kind: 'media' as const, title: row.title, body: row.description, author: row.author, createdAt: new Date(row.created_at).toISOString(), reason: row.moderation_reason, externalUrl: row.url || null, privateFile: Boolean(row.private_blob_pathname), privateContentType: row.private_blob_content_type })),
     ...notes.map((row) => ({ id: Number(row.id), kind: 'note' as const, title: `Community note on: ${row.context || 'discussion'}`, body: row.body, author: 'Anonymous', createdAt: new Date(row.created_at).toISOString(), reason: row.moderation_reason })),
     ...articleComments.map((row) => ({ id: Number(row.id), kind: 'article_comment' as const, title: `Comment on: ${row.title}`, body: row.body, author: row.author, createdAt: new Date(row.created_at).toISOString(), reason: row.moderation_reason })),
-    ...liveComments.map((row) => ({ id: Number(row.id), kind: 'live_comment' as const, title: 'Comment on a live stream', body: row.body, author: row.author, createdAt: new Date(row.created_at).toISOString(), reason: row.moderation_reason })),
+    ...liveComments.map((row) => ({ id: Number(row.id), kind: 'live_comment' as const, title: 'Live chat message', body: row.body, author: row.author, createdAt: new Date(row.created_at).toISOString(), reason: row.moderation_reason })),
   ].sort((a, b) => Date.parse(b.createdAt) - Date.parse(a.createdAt));
 
   return (
     <>
-      <PageHero eyebrow="Staff" title="Moderation queue">Review uncertain posts, replies, live stream and article comments, media and community notes before they appear.</PageHero>
+      <PageHero eyebrow="Staff" title="Moderation queue">Review uncertain posts, replies, live chat and article comments, media and community notes before they appear.</PageHero>
       <main className="container">
         <AdminModerationQueue items={items} />
       </main>

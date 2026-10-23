@@ -184,18 +184,28 @@ export async function POST(request: Request) {
         DO UPDATE SET last_seen_at=NOW()
         RETURNING broadcast_id, viewer_discord_id
       )
-      SELECT
-        (SELECT COUNT(*)::int
-         FROM dmo_live_broadcast_viewers v
-         WHERE v.broadcast_id=active_viewer.broadcast_id
-           AND v.viewer_discord_id <> active_viewer.viewer_discord_id
-           AND v.last_seen_at > NOW() - INTERVAL '45 seconds') + 1 AS viewer_count
-      FROM active_viewer
+      SELECT COUNT(*) OVER()::int AS viewer_count,
+        COALESCE(u.display_name, 'Forum member') AS display_name,
+        CASE
+          WHEN u.avatar_url LIKE 'https://cdn.discordapp.com/avatars/%' THEN u.avatar_url
+          ELSE NULL
+        END AS avatar_url
+      FROM dmo_live_broadcast_viewers v
+      JOIN active_viewer ON active_viewer.broadcast_id=v.broadcast_id
+      LEFT JOIN users u ON u.discord_id=v.viewer_discord_id
+      WHERE v.last_seen_at > NOW() - INTERVAL '45 seconds'
+      ORDER BY display_name
     `;
     if (!rows.length) {
       return NextResponse.json({ error: 'This broadcast is no longer live.' }, { status: 404, headers: PRIVATE_HEADERS });
     }
-    return NextResponse.json({ viewerCount: Number(rows[0].viewer_count) }, { headers: PRIVATE_HEADERS });
+    return NextResponse.json({
+      viewerCount: Number(rows[0].viewer_count),
+      viewers: rows.map((row: any) => ({
+        displayName: row.display_name || 'Forum member',
+        avatarUrl: row.avatar_url || null,
+      })),
+    }, { headers: PRIVATE_HEADERS });
   } catch (error) {
     console.error('[live-broadcast] viewer heartbeat failed', error instanceof Error ? error.name : 'UnknownError');
     return NextResponse.json({ error: 'Viewer counts are temporarily unavailable.' }, { status: 503, headers: PRIVATE_HEADERS });

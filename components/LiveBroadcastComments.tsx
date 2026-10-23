@@ -4,17 +4,18 @@ import { useEffect, useState, type FormEvent } from 'react';
 import RichText from './RichText';
 import styles from './LiveBroadcastComments.module.css';
 
-type BroadcastComment = {
+type ChatMessage = {
   id: string;
   body: string;
   authorName: string;
+  authorAvatar: string | null;
   createdAt: string;
 };
 
 type Props = { broadcastId: string };
 
-export default function LiveBroadcastComments({ broadcastId }: Props) {
-  const [comments, setComments] = useState<BroadcastComment[]>([]);
+export default function LiveBroadcastChat({ broadcastId }: Props) {
+  const [messages, setMessages] = useState<ChatMessage[]>([]);
   const [draft, setDraft] = useState('');
   const [loading, setLoading] = useState(true);
   const [submitting, setSubmitting] = useState(false);
@@ -25,27 +26,32 @@ export default function LiveBroadcastComments({ broadcastId }: Props) {
     let active = true;
     let running = false;
     const refresh = async () => {
-      if (!active || running) return;
+      if (!active || running || document.visibilityState !== 'visible') return;
       running = true;
       try {
         const response = await fetch(`/api/live-dmo/${encodeURIComponent(broadcastId)}/comments`, { cache: 'no-store' });
         const body = await response.json().catch(() => null);
-        if (!response.ok) throw new Error(typeof body?.error === 'string' ? body.error : 'Comments could not be loaded.');
+        if (!response.ok) throw new Error(typeof body?.error === 'string' ? body.error : 'Live chat could not be loaded.');
         if (!active) return;
-        setComments(Array.isArray(body?.comments) ? body.comments : []);
+        setMessages(Array.isArray(body?.messages) ? body.messages : []);
         setError('');
       } catch (cause) {
-        if (active) setError(cause instanceof Error ? cause.message : 'Comments could not be loaded.');
+        if (active) setError(cause instanceof Error ? cause.message : 'Live chat could not be loaded.');
       } finally {
         if (active) setLoading(false);
         running = false;
       }
     };
+    const onVisibilityChange = () => {
+      if (document.visibilityState === 'visible') void refresh();
+    };
     void refresh();
-    const timer = window.setInterval(() => { void refresh(); }, 8_000);
+    const timer = window.setInterval(() => { void refresh(); }, 5_000);
+    document.addEventListener('visibilitychange', onVisibilityChange);
     return () => {
       active = false;
       window.clearInterval(timer);
+      document.removeEventListener('visibilitychange', onVisibilityChange);
     };
   }, [broadcastId]);
 
@@ -64,27 +70,27 @@ export default function LiveBroadcastComments({ broadcastId }: Props) {
       });
       const body = await response.json().catch(() => null);
       if (!response.ok && response.status !== 202) {
-        throw new Error(typeof body?.error === 'string' ? body.error : 'Your comment could not be posted.');
+        throw new Error(typeof body?.error === 'string' ? body.error : 'Your message could not be sent.');
       }
       setDraft('');
       if (response.status === 202) {
-        setNotice('Your comment is waiting for moderator review.');
-      } else if (body?.comment) {
-        setComments((current) => [...current.filter((comment) => comment.id !== body.comment.id), body.comment]);
-        setNotice('Comment posted.');
+        setNotice('Your message is waiting for moderator review.');
+      } else if (body?.message) {
+        setMessages((current) => [...current.filter((message) => message.id !== body.message.id), body.message]);
+        setNotice('Message sent.');
       }
     } catch (cause) {
-      setError(cause instanceof Error ? cause.message : 'Your comment could not be posted.');
+      setError(cause instanceof Error ? cause.message : 'Your message could not be sent.');
     } finally {
       setSubmitting(false);
     }
   };
 
   return (
-    <section className={styles.comments} aria-label="Live stream comments">
-      <h3>Comments</h3>
+    <section className={styles.comments} aria-label="Live chat">
+      <h3>Live chat</h3>
       <form className={styles.form} onSubmit={submit}>
-        <label htmlFor={`live-comment-${broadcastId}`}>Add a comment</label>
+        <label htmlFor={`live-comment-${broadcastId}`}>Send a message</label>
         <textarea
           id={`live-comment-${broadcastId}`}
           value={draft}
@@ -97,24 +103,37 @@ export default function LiveBroadcastComments({ broadcastId }: Props) {
         <div className={styles.formFooter}>
           <span>{draft.length}/500</span>
           <button type="submit" className="btn btn-sm btn-primary" disabled={submitting || !draft.trim()}>
-            {submitting ? 'Posting…' : 'Post comment'}
+            {submitting ? 'Sending…' : 'Send'}
           </button>
         </div>
       </form>
       {error && <p className={styles.error} role="alert">{error}</p>}
       {notice && <p className={styles.notice} role="status" aria-live="polite">{notice}</p>}
       <div className={styles.list} aria-live="polite">
-        {comments.map((comment) => (
-          <article className={styles.comment} key={comment.id}>
-            <div className={styles.meta}>
-              <strong>{comment.authorName}</strong>
-              <time dateTime={comment.createdAt}>{new Date(comment.createdAt).toLocaleTimeString()}</time>
+        {messages.map((message) => (
+          <article className={styles.comment} key={message.id}>
+            <div className={styles.identity}>
+              <span className={styles.avatar} aria-hidden="true">
+                <span>{message.authorName.trim().charAt(0).toUpperCase() || '?'}</span>
+                {message.authorAvatar && (
+                  <img
+                    src={message.authorAvatar}
+                    alt=""
+                    loading="lazy"
+                    onError={(event) => { event.currentTarget.style.display = 'none'; }}
+                  />
+                )}
+              </span>
+              <div className={styles.meta}>
+                <strong>{message.authorName}</strong>
+                <time dateTime={message.createdAt}>{new Date(message.createdAt).toLocaleTimeString()}</time>
+              </div>
             </div>
-            <div className={styles.body}><RichText text={comment.body} /></div>
+            <div className={styles.body}><RichText text={message.body} /></div>
           </article>
         ))}
-        {!loading && !error && !comments.length && <p className={styles.empty}>No comments yet.</p>}
-        {loading && <p className={styles.empty}>Loading comments…</p>}
+        {!loading && !error && !messages.length && <p className={styles.empty}>No messages yet.</p>}
+        {loading && <p className={styles.empty}>Loading live chat…</p>}
       </div>
     </section>
   );

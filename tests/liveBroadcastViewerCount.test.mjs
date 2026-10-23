@@ -6,7 +6,11 @@ import { createRequire } from 'node:module';
 const require = createRequire(import.meta.url);
 const nextServer = { NextResponse: { json: (body, init) => Response.json(body, init) } };
 
-function loadRoute({ user = { discordId: 'trusted-member' }, rows = [{ viewer_count: '3' }] } = {}) {
+function loadRoute({ user = { discordId: 'trusted-member' }, rows = [
+  { viewer_count: 3, display_name: 'Ada Fan', avatar_url: 'https://cdn.discordapp.com/avatars/123/a.png' },
+  { viewer_count: 3, display_name: 'Lee Rally', avatar_url: null },
+  { viewer_count: 3, display_name: 'Sam Serve', avatar_url: null },
+] } = {}) {
   const source = readFileSync(new URL('../app/api/live-dmo/current/route.ts', import.meta.url), 'utf8');
   const { code } = require('next/dist/build/swc').transformSync(source, {
     jsc: { parser: { syntax: 'typescript' }, target: 'es2022' },
@@ -56,12 +60,20 @@ test('a same-site signed-in heartbeat registers one account and returns only the
   const broadcastId = 'f50f6da6-271e-4a02-aac9-ae18c084443f';
   const response = await POST(heartbeatRequest(JSON.stringify({ broadcastId })));
   assert.equal(response.status, 200);
-  assert.deepEqual(await response.json(), { viewerCount: 3 });
+  assert.deepEqual(await response.json(), {
+    viewerCount: 3,
+    viewers: [
+      { displayName: 'Ada Fan', avatarUrl: 'https://cdn.discordapp.com/avatars/123/a.png' },
+      { displayName: 'Lee Rally', avatarUrl: null },
+      { displayName: 'Sam Serve', avatarUrl: null },
+    ],
+  });
   assert.equal(queries.length, 1);
   assert.match(queries[0].text, /INSERT INTO dmo_live_broadcast_viewers/);
   assert.match(queries[0].text, /ON CONFLICT \(broadcast_id, viewer_discord_id\)/);
   assert.match(queries[0].text, /status='live' AND expires_at > NOW\(\)/);
   assert.match(queries[0].text, /last_seen_at > NOW\(\) - INTERVAL '45 seconds'/);
+  assert.match(queries[0].text, /LEFT JOIN users u ON u.discord_id=v.viewer_discord_id/);
   assert.ok(queries[0].values.includes(broadcastId));
   assert.ok(queries[0].values.includes('trusted-member'));
   const serialized = JSON.stringify(await (await POST(heartbeatRequest(JSON.stringify({ broadcastId })))).json());
@@ -117,6 +129,14 @@ test('the UI shows live counts for the active non-replay card with clear unavail
   assert.match(viewer, /Signed-in viewers active in the last 45 seconds/);
   assert.match(viewer, /Viewers unavailable/);
   assert.match(viewer, /Checking…/);
+  assert.match(viewer, /broadcast\.viewers\?\.map/);
+  assert.match(viewer, /Signed-in viewers/);
   assert.match(viewer, /<Eye size=\{13\} aria-hidden="true" \/>/);
   assert.match(styles, /\.viewerCount \{/);
+  assert.match(styles, /\.viewerRoster \{/);
+
+  const chat = readFileSync(new URL('../components/LiveBroadcastComments.tsx', import.meta.url), 'utf8');
+  assert.match(chat, /<h3>Live chat<\/h3>/);
+  assert.match(chat, /authorAvatar/);
+  assert.match(chat, /5_000/);
 });

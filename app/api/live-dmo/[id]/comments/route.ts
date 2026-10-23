@@ -9,12 +9,12 @@ import { isSameSiteMutation } from '@/lib/liveRequestSecurity';
 export const dynamic = 'force-dynamic';
 
 const MAX_BODY_BYTES = 8 * 1024;
-const COMMENT_RATE_LIMIT = 8;
+const CHAT_MESSAGE_RATE_LIMIT = 8;
 const PRIVATE_HEADERS = {
   'Cache-Control': 'private, no-store',
   'X-Content-Type-Options': 'nosniff',
 };
-const commentSchema = z.object({ body: z.string().trim().min(1).max(500) }).strict();
+const messageSchema = z.object({ body: z.string().trim().min(1).max(500) }).strict();
 type RouteContext = { params: Promise<{ id: string }> };
 
 async function broadcastIdFromParams(params: RouteContext['params']) {
@@ -31,13 +31,13 @@ async function broadcastExists(id: string) {
   return Boolean(rows[0]);
 }
 
-async function readComment(request: Request) {
+async function readMessage(request: Request) {
   const contentLength = Number(request.headers.get('content-length') || 0);
   if (contentLength > MAX_BODY_BYTES) return { error: 'too_large' as const };
   const text = await request.text();
   if (new TextEncoder().encode(text).byteLength > MAX_BODY_BYTES) return { error: 'too_large' as const };
   try {
-    const parsed = commentSchema.safeParse(JSON.parse(text));
+    const parsed = messageSchema.safeParse(JSON.parse(text));
     return parsed.success ? { data: parsed.data } : { error: 'invalid' as const };
   } catch {
     return { error: 'invalid' as const };
@@ -47,7 +47,7 @@ async function readComment(request: Request) {
 export async function GET(_request: Request, context: RouteContext) {
   const user = await getSession();
   if (!user) {
-    return NextResponse.json({ error: 'Sign in to read live stream comments.' }, { status: 401, headers: PRIVATE_HEADERS });
+    return NextResponse.json({ error: 'Sign in to read live chat.' }, { status: 401, headers: PRIVATE_HEADERS });
   }
   const id = await broadcastIdFromParams(context.params);
   if (!id) return NextResponse.json({ error: 'Broadcast not found.' }, { status: 404, headers: PRIVATE_HEADERS });
@@ -57,23 +57,28 @@ export async function GET(_request: Request, context: RouteContext) {
       return NextResponse.json({ error: 'Broadcast not found.' }, { status: 404, headers: PRIVATE_HEADERS });
     }
     const rows = await sql`
-      SELECT c.id, c.body, c.created_at, COALESCE(u.display_name, 'Forum member') AS author_name
+      SELECT c.id, c.body, c.created_at, COALESCE(u.display_name, 'Forum member') AS author_name,
+        CASE
+          WHEN u.avatar_url LIKE 'https://cdn.discordapp.com/avatars/%' THEN u.avatar_url
+          ELSE NULL
+        END AS author_avatar
       FROM dmo_live_broadcast_comments c
       LEFT JOIN users u ON u.id=c.author_id
       WHERE c.broadcast_id=${id}::uuid AND c.moderation_status='approved'
       ORDER BY c.created_at DESC
       LIMIT 100
     `;
-    const comments = rows.reverse().map((row: any) => ({
+    const messages = rows.reverse().map((row: any) => ({
       id: String(row.id),
       body: row.body,
       authorName: row.author_name || 'Forum member',
+      authorAvatar: row.author_avatar || null,
       createdAt: new Date(row.created_at).toISOString(),
     }));
-    return NextResponse.json({ comments }, { headers: PRIVATE_HEADERS });
+    return NextResponse.json({ messages }, { headers: PRIVATE_HEADERS });
   } catch (error) {
-    console.error('[live-broadcast-comments] read failed', error instanceof Error ? error.name : 'UnknownError');
-    return NextResponse.json({ error: 'Live stream comments are temporarily unavailable.' }, { status: 503, headers: PRIVATE_HEADERS });
+    console.error('[live-broadcast-chat] read failed', error instanceof Error ? error.name : 'UnknownError');
+    return NextResponse.json({ error: 'Live chat is temporarily unavailable.' }, { status: 503, headers: PRIVATE_HEADERS });
   }
 }
 
@@ -83,16 +88,16 @@ export async function POST(request: Request, context: RouteContext) {
   }
   const user = await getSession();
   if (!user) {
-    return NextResponse.json({ error: 'Sign in to comment on live streams.' }, { status: 401, headers: PRIVATE_HEADERS });
+    return NextResponse.json({ error: 'Sign in to send a live chat message.' }, { status: 401, headers: PRIVATE_HEADERS });
   }
   const id = await broadcastIdFromParams(context.params);
   if (!id) return NextResponse.json({ error: 'Broadcast not found.' }, { status: 404, headers: PRIVATE_HEADERS });
 
-  const parsed = await readComment(request);
+  const parsed = await readMessage(request);
   if ('error' in parsed) {
     const tooLarge = parsed.error === 'too_large';
     return NextResponse.json(
-      { error: tooLarge ? 'Comment request is too large.' : 'Enter a comment of 1 to 500 characters.' },
+      { error: tooLarge ? 'Message request is too large.' : 'Enter a message of 1 to 500 characters.' },
       { status: tooLarge ? 413 : 400, headers: PRIVATE_HEADERS },
     );
   }
@@ -110,9 +115,9 @@ export async function POST(request: Request, context: RouteContext) {
       WHERE author_id=${Number(user.id)}
         AND created_at > NOW() - INTERVAL '1 minute'
     `;
-    if (Number(recent[0]?.count || 0) >= COMMENT_RATE_LIMIT) {
+    if (Number(recent[0]?.count || 0) >= CHAT_MESSAGE_RATE_LIMIT) {
       return NextResponse.json(
-        { error: 'You are commenting too quickly. Wait a minute and try again.' },
+        { error: 'You are sending messages too quickly. Wait a minute and try again.' },
         { status: 429, headers: PRIVATE_HEADERS },
       );
     }
@@ -128,7 +133,7 @@ export async function POST(request: Request, context: RouteContext) {
     }
     if (decision.status === 'rejected') {
       return NextResponse.json(
-        { error: 'This comment appears to contain prohibited explicit sexual content or graphic gore.' },
+        { error: 'This message appears to contain prohibited explicit sexual content or graphic gore.' },
         { status: 422, headers: PRIVATE_HEADERS },
       );
     }
@@ -142,20 +147,21 @@ export async function POST(request: Request, context: RouteContext) {
     `;
     if (decision.status === 'pending') {
       return NextResponse.json(
-        { pending: true, message: 'Your comment is waiting for moderator review.' },
+        { pending: true, message: 'Your message is waiting for moderator review.' },
         { status: 202, headers: PRIVATE_HEADERS },
       );
     }
     return NextResponse.json({
-      comment: {
+      message: {
         id: String(rows[0].id),
         body: text,
         authorName: user.username,
+        authorAvatar: user.avatar || null,
         createdAt: new Date(rows[0].created_at).toISOString(),
       },
     }, { status: 201, headers: PRIVATE_HEADERS });
   } catch (error) {
-    console.error('[live-broadcast-comments] create failed', error instanceof Error ? error.name : 'UnknownError');
-    return NextResponse.json({ error: 'Live stream comments are temporarily unavailable.' }, { status: 503, headers: PRIVATE_HEADERS });
+    console.error('[live-broadcast-chat] create failed', error instanceof Error ? error.name : 'UnknownError');
+    return NextResponse.json({ error: 'Live chat is temporarily unavailable.' }, { status: 503, headers: PRIVATE_HEADERS });
   }
 }
