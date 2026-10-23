@@ -4,8 +4,11 @@
 .heading h1 { margin: 0; font: italic 800 clamp(38px, 6vw, 64px)/.9 var(--font-display, 'Barlow Condensed'), sans-serif; text-transform: uppercase; }
 .heading h1 em { color: var(--lime, #b0f43b); font-style: inherit; }
 .heading p { max-width: 760px; margin: 12px 0 0; color: var(--muted, #8c9db8); font-size: 13px; line-height: 1.6; }
-.watchLink { display: inline-flex; flex: none; align-items: center; gap: 7px; min-height: 38px; padding: 0 12px; border: 1px solid var(--line-2, rgba(150,180,230,.22)); border-radius: 8px; color: var(--soft, #c4d0e2); font-size: 11px; font-weight: 700; text-decoration: none; }
-.watchLink:hover { border-color: var(--lime, #b0f43b); color: var(--lime, #b0f43b); }
+.watchLink { display: inline-flex; flex: none; align-items: center; justify-content: center; gap: 9px; min-height: 46px; padding: 0 17px; border: 1px solid rgba(176,244,59,.72); border-radius: 10px; background: var(--lime, #b0f43b); color: #07110b; font-size: 13px; font-weight: 800; letter-spacing: .01em; text-decoration: none; box-shadow: 0 8px 20px rgba(176,244,59,.16); transition: transform 160ms ease, filter 160ms ease, box-shadow 160ms ease; }
+.watchLink:hover { transform: translateY(-1px); filter: brightness(1.06); box-shadow: 0 11px 24px rgba(176,244,59,.24); }
+.watchLink:focus-visible { outline: 3px solid var(--text, #f1f5fb); outline-offset: 3px; }
+.watchLink:active { transform: translateY(0); }
+@media (prefers-reduced-motion: reduce) { .watchLink { transition: none; } .watchLink:hover { transform: none; } }
 .controlPanel { display: flex; align-items: center; flex-wrap: wrap; gap: 12px; padding: 16px; border: 1px solid var(--line-2, rgba(150,180,230,.22)); border-radius: 12px; background: var(--panel, #081328); }
 .adminInfo { display: flex; flex: 1 1 230px; align-items: center; gap: 11px; min-width: 180px; }
 .icon, .emptyIcon { display: grid; flex: none; width: 40px; height: 40px; place-items: center; border: 1px solid rgba(176,244,59,.3); border-radius: 10px; background: rgba(176,244,59,.07); color: var(--lime, #b0f43b); }
