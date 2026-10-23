@@ -15,6 +15,7 @@ function loadRoute(path, mocks) {
   new Function('require', 'module', 'exports', code)((name) => {
     if (name in mocks) return mocks[name];
     if (name.startsWith('node:')) return require(name);
+    if (name === 'zod') return require('zod');
     if (name === '@/lib/liveScores') {
       return {
         getLiveBroadcastScoreFeed: async () => null,
@@ -23,6 +24,9 @@ function loadRoute(path, mocks) {
       };
     }
     if (name === '@/lib/liveBroadcastScore') return { scoreForLiveBroadcast: () => null };
+    if (name === '@/lib/liveRequestSecurity') {
+      return { isSameSiteMutation: (request) => request.headers.get('origin') === 'https://forum.test' };
+    }
     if (name === '@/lib/siteSnapshots') return { readSiteSnapshot: async () => null };
     if (name === '@/lib/liveDmoStorage') {
       return {
