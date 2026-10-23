@@ -7,7 +7,9 @@ import type { Te4DmoReplaySpeed, Te4LiveSnapshot } from '@/lib/te4DmoLive';
 import type { Te4CourtSurface } from '@/lib/te4DmoTypes';
 import {
   createCourtProjector,
+  DEFAULT_LIVE_COURT_CAMERA,
   findCourtRacketContact,
+  playerRightVector,
   type LiveCourtCamera,
   type LiveCourtProjectedPoint,
   type LiveCourtWorldPoint,
@@ -33,16 +35,11 @@ type Props = {
 };
 
 const surfacePalette: Record<Te4CourtSurface, { court: string; apron: string }> = {
-  hard: { court: '#28779b', apron: '#c8d7e0' },
-  clay: { court: '#b55f3d', apron: '#d3a27f' },
-  grass: { court: '#367b45', apron: '#294c32' },
-  unknown: { court: '#526b79', apron: '#aebbc2' },
+  hard: { court: '#50b9ae', apron: '#f6a77b' },
+  clay: { court: '#e98d68', apron: '#f6c27d' },
+  grass: { court: '#62b66f', apron: '#f6a77b' },
+  unknown: { court: '#78aab0', apron: '#f1c58f' },
 };
-
-function normalize3(vector: WorldPoint): WorldPoint {
-  const length = Math.hypot(...vector) || 1;
-  return [vector[0] / length, vector[1] / length, vector[2] / length];
-}
 
 function drawScene(
   context: CanvasRenderingContext2D,
@@ -58,11 +55,11 @@ function drawScene(
   const width = 900;
   const height = 520;
   const palette = surfacePalette[surface];
+  const cameraAzimuth = camera.azimuth * Math.PI / 180;
+  const cameraFacingX = Math.cos(cameraAzimuth);
+  const cameraFacingY = Math.sin(cameraAzimuth);
   context.clearRect(0, 0, width, height);
-  const backdrop = context.createLinearGradient(0, 0, 0, height);
-  backdrop.addColorStop(0, '#0a1524');
-  backdrop.addColorStop(1, '#192430');
-  context.fillStyle = backdrop;
+  context.fillStyle = '#f3dfae';
   context.fillRect(0, 0, width, height);
 
   const rawProject = createCourtProjector(camera, zoom);
@@ -103,121 +100,6 @@ function drawScene(
     context.stroke();
   };
 
-  const drawFigure = (
-    x: number,
-    y: number,
-    z: number,
-    figureHeight: number,
-    color: string,
-    across: 'x' | 'y',
-    wave = false,
-    skinColor = '#d6a77e',
-  ) => {
-    const acrossPoint = (offset: number, at: number): WorldPoint => (
-      across === 'x' ? [x + offset, y, z + at] : [x, y + offset, z + at]
-    );
-    const widthValue = figureHeight * 0.32;
-    const shoulderLeft = acrossPoint(-widthValue * 0.45, figureHeight * 0.72);
-    const shoulderRight = acrossPoint(widthValue * 0.45, figureHeight * 0.72);
-    const hipLeft = acrossPoint(-widthValue * 0.3, figureHeight * 0.4);
-    const hipRight = acrossPoint(widthValue * 0.3, figureHeight * 0.4);
-    const footLeft = acrossPoint(-widthValue * 0.32, 0);
-    const footRight = acrossPoint(widthValue * 0.32, 0);
-    const kneeLeft = acrossPoint(-widthValue * 0.28, figureHeight * 0.2);
-    const kneeRight = acrossPoint(widthValue * 0.28, figureHeight * 0.2);
-    const [, , scale] = project(x, y, z);
-    const limbWidth = Math.max(1.6, figureHeight * scale * 0.095);
-    const limb = (points: WorldPoint[]) => {
-      line(points, 'rgba(15,25,36,.88)', limbWidth + 1.8);
-      line(points, skinColor, limbWidth);
-    };
-    const leftElbow = acrossPoint(-widthValue * 0.68, figureHeight * 0.52);
-    const rightElbow = acrossPoint(widthValue * 0.68, figureHeight * 0.54);
-    const leftHand = acrossPoint(-widthValue * 0.72, figureHeight * (wave ? 0.98 : 0.32));
-    const rightHand = acrossPoint(widthValue * 0.72, figureHeight * 0.34);
-    polygon([
-      shoulderLeft,
-      shoulderRight,
-      acrossPoint(widthValue * 0.4, figureHeight * 0.57),
-      hipRight,
-      hipLeft,
-      acrossPoint(-widthValue * 0.4, figureHeight * 0.57),
-    ], color, 'rgba(15,25,36,.82)');
-    limb([hipLeft, kneeLeft, footLeft]);
-    limb([hipRight, kneeRight, footRight]);
-    limb([shoulderLeft, leftElbow, leftHand]);
-    limb([shoulderRight, rightElbow, rightHand]);
-    const [headX, headY, headScale] = project(x, y, z + figureHeight * 0.88);
-    const headRadius = Math.max(1.8, figureHeight * headScale * 0.105);
-    context.fillStyle = skinColor;
-    context.beginPath();
-    context.arc(headX, headY, headRadius, 0, Math.PI * 2);
-    context.fill();
-    context.fillStyle = '#26323f';
-    context.beginPath();
-    context.arc(headX, headY - Math.max(1, figureHeight * headScale * 0.025), headRadius, Math.PI, Math.PI * 2);
-    context.fill();
-  };
-
-  const crowdColors = ['#d1d7dc', '#e29b62', '#8ca9c0', '#b7c984', '#9e91c8', '#d77f78', '#e0d4b6'];
-  const crowdSkinTones = ['#f0c8a7', '#d6a77e', '#bd8967', '#9b6c51'];
-  polygon([[-1650, 700, 0], [1650, 700, 0], [1650, 1080, 320], [-1650, 1080, 320]], '#263646', '#526579');
-  polygon([[-1650, -700, 0], [1650, -700, 0], [1650, -1080, 320], [-1650, -1080, 320]], '#263646', '#526579');
-  polygon([[1450, -760, 0], [1450, 760, 0], [1850, 760, 300], [1850, -760, 300]], '#202f40', '#526579');
-  polygon([[-1450, -760, 0], [-1450, 760, 0], [-1850, 760, 300], [-1850, -760, 300]], '#202f40', '#526579');
-  for (let row = 1; row <= 3; row += 1) {
-    const offset = 700 + row * 95;
-    const railHeight = row * 80;
-    line([[-1580, offset, railHeight], [1580, offset, railHeight]], 'rgba(201,216,232,.23)', 1.4);
-    line([[-1580, -offset, railHeight], [1580, -offset, railHeight]], 'rgba(201,216,232,.23)', 1.4);
-  }
-  for (let row = 0; row < 4; row += 1) {
-    for (let seat = 0; seat < 34; seat += 1) {
-      const x = -1450 + seat * 86 + (row % 2) * 43;
-      const z = 20 + row * 46;
-      const y = 755 + row * 82;
-      const colorIndex = (seat * 3 + row * 5) % crowdColors.length;
-      const skinIndex = (seat * 5 + row * 3) % crowdSkinTones.length;
-      drawFigure(x, y, z, 86, crowdColors[colorIndex], 'x', (seat + row * 4) % 11 === 0, crowdSkinTones[skinIndex]);
-      drawFigure(
-        x,
-        -y,
-        z,
-        86,
-        crowdColors[(seat * 5 + row * 2 + 1) % crowdColors.length],
-        'x',
-        (seat + row * 3) % 13 === 0,
-        crowdSkinTones[(skinIndex + 2) % crowdSkinTones.length],
-      );
-    }
-    for (let seat = 0; seat < 16; seat += 1) {
-      const y = -640 + seat * 84;
-      const z = 20 + row * 46;
-      const x = 1485 + row * 88;
-      const skinIndex = (seat * 3 + row * 7) % crowdSkinTones.length;
-      drawFigure(
-        x,
-        y,
-        z,
-        86,
-        crowdColors[(seat * 2 + row * 3) % crowdColors.length],
-        'y',
-        (seat + row) % 10 === 0,
-        crowdSkinTones[skinIndex],
-      );
-      drawFigure(
-        -x,
-        y,
-        z,
-        86,
-        crowdColors[(seat * 4 + row + 2) % crowdColors.length],
-        'y',
-        (seat + row * 2) % 12 === 0,
-        crowdSkinTones[(skinIndex + 1) % crowdSkinTones.length],
-      );
-    }
-  }
-
   polygon([[-1450, -700, 0], [1450, -700, 0], [1450, 700, 0], [-1450, 700, 0]], palette.apron, null);
   polygon([[-1275, -590, 0], [1275, -590, 0], [1275, 590, 0], [-1275, 590, 0]], palette.court, null);
   if (surface === 'grass') {
@@ -252,14 +134,6 @@ function drawScene(
   }
   line([[0, -560, 0], [0, -560, 120]], '#edf3f7', 3);
   line([[0, 560, 0], [0, 560, 120]], '#edf3f7', 3);
-
-  line([[0, 610, 0], [0, 610, 290]], '#d9e1e9', 5);
-  polygon([[-42, 590, 250], [42, 590, 250], [42, 630, 250], [-42, 630, 250]], '#e4e9ee', '#17212b');
-  drawFigure(0, 610, 275, 118, '#edf2f6', 'x');
-  for (const x of [-1_240, 1_240]) {
-    for (const y of [-570, 570]) drawFigure(x, y, 0, 126, '#f2f0df', 'y');
-  }
-  for (const y of [-575, 575]) drawFigure(0, y, 0, 108, '#d9e7f2', 'x');
 
   if (!samples.length) {
     context.fillStyle = 'rgba(8,19,40,.72)';
@@ -319,170 +193,165 @@ function drawScene(
 
   const drawPlayer = (player: typeof playerActors[number]) => {
     const { x, y, color, name, id } = player;
-    const towardBall = normalize3([ball.x - x, ball.y - y, 0]);
-    const facing: WorldPoint = Math.hypot(ball.x - x, ball.y - y) > 1
-      ? towardBall
+    const distance = Math.hypot(ball.x - x, ball.y - y);
+    const facing: WorldPoint = distance > 1
+      ? [(ball.x - x) / distance, (ball.y - y) / distance, 0]
       : [id === 1 ? 1 : -1, 0, 0];
-    const across: WorldPoint = [-facing[1], facing[0], 0];
-    const point = (acrossOffset: number, forwardOffset: number, z: number): WorldPoint => [
-      x + across[0] * acrossOffset + facing[0] * forwardOffset,
-      y + across[1] * acrossOffset + facing[1] * forwardOffset,
-      z,
-    ];
-    const limb = (start: WorldPoint, end: WorldPoint, limbColor: string, thickness: number) => {
-      const scale = (project(...start)[2] + project(...end)[2]) / 2;
-      line([start, end], '#17212b', Math.max(2.8, thickness * scale + 3));
-      line([start, end], limbColor, Math.max(1.8, thickness * scale));
+    const facingCamera = facing[0] * cameraFacingX + facing[1] * cameraFacingY > 0;
+    const [groundX, groundY, groundScale] = project(x, y, 0);
+    const playerRight = playerRightVector(facing);
+    const projectedRight = project(
+      x + playerRight[0] * 100,
+      y + playerRight[1] * 100,
+      0,
+    );
+    const rightSide = projectedRight[0] >= groundX ? 1 : -1;
+    const figureScale = Math.max(0.9, Math.min(1.12, groundScale * 3.6));
+    context.fillStyle = 'rgba(32,52,66,.22)';
+    context.beginPath();
+    context.ellipse(groundX, groundY, 26 * groundScale, 12 * groundScale, 0, 0, Math.PI * 2);
+    context.fill();
+    context.save();
+    context.translate(groundX, groundY);
+    context.scale(figureScale, figureScale);
+    const outline = '#203442';
+    const skin = id === 1 ? '#df9c70' : '#f0b88b';
+    const shorts = id === 1 ? '#31546a' : '#873e53';
+    const limb = (points: [number, number][], limbColor: string, thickness: number) => {
+      context.beginPath();
+      points.forEach(([pointX, pointY], index) => {
+        if (index === 0) context.moveTo(pointX, pointY);
+        else context.lineTo(pointX, pointY);
+      });
+      context.lineCap = 'round';
+      context.lineJoin = 'round';
+      context.strokeStyle = outline;
+      context.lineWidth = thickness + 4;
+      context.stroke();
+      context.strokeStyle = limbColor;
+      context.lineWidth = thickness;
+      context.stroke();
     };
-    const joint = (center: WorldPoint, radius: number, fill: string) => {
-      const [jointX, jointY, scale] = project(...center);
-      const jointRadius = Math.max(2.5, radius * scale);
+    const shape = (points: [number, number][], fill: string) => {
       context.beginPath();
-      context.arc(jointX, jointY, jointRadius + 1, 0, Math.PI * 2);
-      context.fillStyle = '#17212b';
+      points.forEach(([pointX, pointY], index) => {
+        if (index === 0) context.moveTo(pointX, pointY);
+        else context.lineTo(pointX, pointY);
+      });
+      context.closePath();
+      context.fillStyle = fill;
       context.fill();
+      context.strokeStyle = outline;
+      context.lineWidth = 3;
+      context.lineJoin = 'round';
+      context.stroke();
+    };
+    const dot = (dotX: number, dotY: number, radius: number, fill: string) => {
       context.beginPath();
-      context.arc(jointX, jointY, jointRadius, 0, Math.PI * 2);
+      context.arc(dotX, dotY, radius, 0, Math.PI * 2);
       context.fillStyle = fill;
       context.fill();
     };
-    const shoulderLeft = point(-28, 0, 134);
-    const shoulderRight = point(28, 0, 134);
-    const hipLeft = point(-19, -2, 78);
-    const hipRight = point(19, -2, 78);
-    const kneeLeft = point(-22, 12, 40);
-    const kneeRight = point(22, -8, 40);
-    const footLeft = point(-24, 18, 5);
-    const footRight = point(24, -14, 5);
-    const skin = '#d9ad8e';
-    const shorts = id === 1 ? '#16566b' : '#743747';
-    const torso = [
-      shoulderLeft,
-      shoulderRight,
-      point(22, 0, 120),
-      point(20, -2, 101),
-      point(18, -2, 82),
-      point(-18, -2, 82),
-      point(-20, -2, 101),
-      point(-22, 0, 120),
-    ];
-    const [groundX, groundY, groundScale] = project(x, y, 0);
-    context.fillStyle = 'rgba(0,0,0,.28)';
-    context.beginPath();
-    context.ellipse(groundX, groundY, 35 * groundScale, 18 * groundScale, 0, 0, Math.PI * 2);
-    context.fill();
-    limb(hipLeft, kneeLeft, skin, 21);
-    limb(kneeLeft, footLeft, skin, 17);
-    limb(hipRight, kneeRight, skin, 21);
-    limb(kneeRight, footRight, skin, 17);
-    joint(kneeLeft, 9, skin);
-    joint(kneeRight, 9, skin);
-    limb(footLeft, point(-24, 40, 3), '#f2f4f7', 16);
-    limb(footRight, point(24, 8, 3), '#f2f4f7', 16);
-    polygon([
-      point(-8, 4, 153),
-      point(8, 4, 153),
-      point(9, 4, 132),
-      point(-9, 4, 132),
-    ], skin, null);
-    polygon(torso, color, '#17212b');
-    line([point(-15, 1, 117), point(15, 1, 117)], 'rgba(255,255,255,.5)', 2.4);
-    polygon([hipLeft, hipRight, point(15, 8, 55), point(-15, 8, 55)], shorts, '#17212b');
-    line([point(-16, 8, 73), point(16, 8, 73)], 'rgba(255,255,255,.3)', 1.8);
+    const leftHip: [number, number] = [-8, -25];
+    const rightHip: [number, number] = [8, -25];
+    const leftKnee: [number, number] = [-12, -14];
+    const rightKnee: [number, number] = [12, -14];
+    const leftFoot: [number, number] = [-15, -3];
+    const rightFoot: [number, number] = [15, -3];
+    limb([leftHip, leftKnee, leftFoot], skin, 8);
+    limb([rightHip, rightKnee, rightFoot], skin, 8);
+    limb([leftFoot, [-22, -2]], '#fff9e8', 8);
+    limb([rightFoot, [22, -2]], '#fff9e8', 8);
+    shape([leftHip, rightHip, [11, -16], [8, -27], [-8, -27], [-11, -16]], shorts);
+    shape([[-11, -53], [11, -53], [16, -47], [14, -31], [9, -26], [-9, -26], [-14, -31], [-16, -47]], color);
+    limb([[-rightSide * 14, -48], [-rightSide * 21, -41], [-rightSide * 21, -33]], skin, 7);
+    limb([[rightSide * 14, -48], [rightSide * 20, -41], [rightSide * 20, -34]], skin, 7);
+    limb([[rightSide * 20, -34], [rightSide * 25, -30]], skin, 6);
+    limb([[-rightSide * 21, -33], [-rightSide * 17, -30]], skin, 6);
+    limb([[-8, -49], [0, -45], [8, -49]], '#fff1d0', 2.5);
+    limb([[-9, -30], [9, -30]], 'rgba(255,255,255,.7)', 2);
 
-    const head = point(0, 9, 164);
-    const [headX, headY, headScale] = project(...head);
-    const headRadius = Math.max(4.8, 11 * headScale);
+    context.beginPath();
+    context.arc(0, -65, 12, 0, Math.PI * 2);
     context.fillStyle = skin;
-    context.beginPath();
-    context.arc(headX, headY, headRadius, 0, Math.PI * 2);
     context.fill();
-    context.strokeStyle = '#17212b';
-    context.lineWidth = Math.max(1, headScale * 3);
+    context.strokeStyle = outline;
+    context.lineWidth = 3;
     context.stroke();
-    const [hairX, hairY] = project(head[0], head[1], head[2] + 3);
-    context.fillStyle = '#26313c';
     context.beginPath();
-    context.ellipse(hairX, hairY, headRadius * 0.92, headRadius * 0.48, 0, Math.PI, Math.PI * 2);
+    context.ellipse(0, -68, 11, 7, 0, Math.PI, Math.PI * 2);
+    context.fillStyle = id === 1 ? '#253c49' : '#4e3435';
     context.fill();
+    if (facingCamera) {
+      context.beginPath();
+      context.arc(-4, -66, 1.5, 0, Math.PI * 2);
+      context.arc(4, -66, 1.5, 0, Math.PI * 2);
+      context.fillStyle = outline;
+      context.fill();
+      context.beginPath();
+      context.arc(0, -61, 3, 0.18 * Math.PI, 0.82 * Math.PI);
+      context.strokeStyle = outline;
+      context.lineWidth = 1.7;
+      context.stroke();
+    } else {
+      context.beginPath();
+      context.arc(0, -65, 11, 0, Math.PI * 2);
+      context.fillStyle = id === 1 ? '#253c49' : '#4e3435';
+      context.fill();
+      context.beginPath();
+      context.ellipse(0, -55, 6, 2.5, 0, 0, Math.PI * 2);
+      context.fillStyle = skin;
+      context.fill();
+    }
 
     const isHitting = contactPlayer === id;
-    const racketDirection: WorldPoint = isHitting
-      ? normalize3([ball.x - shoulderRight[0], ball.y - shoulderRight[1], ball.z - shoulderRight[2]])
-      : normalize3([facing[0] + across[0] * 0.2, facing[1] + across[1] * 0.2, 0.28]);
-    const racketLength = 56;
-    const racketCenter: WorldPoint = isHitting
-      ? [ball.x, ball.y, ball.z]
-      : [
-        shoulderRight[0] + facing[0] * 82 + across[0] * 16,
-        shoulderRight[1] + facing[1] * 82 + across[1] * 16,
-        108,
-      ];
-    const hand: WorldPoint = isHitting
-      ? [
-        racketCenter[0] - racketDirection[0] * racketLength,
-        racketCenter[1] - racketDirection[1] * racketLength,
-        racketCenter[2] - racketDirection[2] * racketLength,
-      ]
-      : [
-        shoulderRight[0] + facing[0] * 27 + across[0] * 13,
-        shoulderRight[1] + facing[1] * 27 + across[1] * 13,
-        105,
-      ];
-    const elbow: WorldPoint = [
-      (shoulderRight[0] + hand[0]) / 2 + across[0] * 12,
-      (shoulderRight[1] + hand[1]) / 2 + across[1] * 12,
-      (shoulderRight[2] + hand[2]) / 2 - 6,
-    ];
-    const freeElbow = point(-39, 18, 105);
-    const freeHand = point(-51, 26, 89);
-    limb(shoulderLeft, freeElbow, skin, 16);
-    limb(freeElbow, freeHand, skin, 14);
-    limb(shoulderRight, elbow, skin, 16);
-    limb(elbow, hand, skin, 14);
-    joint(freeElbow, 7, skin);
-    joint(elbow, 7, skin);
-    joint(freeHand, 6, skin);
-    joint(hand, 6, skin);
-    line([hand, racketCenter], '#dce4eb', Math.max(1.2, racketLength * headScale * 0.045));
+    const projectedBall = project(ball.x, ball.y, ball.z);
+    const screenX = projectedBall[0] - groundX;
+    const screenY = projectedBall[1] - groundY;
+    const localBallX = screenX / figureScale;
+    const localBallY = screenY / figureScale;
+    const racketHand: [number, number] = [rightSide * 20, -34];
+    const racketCenter: [number, number] = isHitting
+      ? [Math.max(-52, Math.min(52, localBallX)), Math.max(-70, Math.min(-12, localBallY))]
+      : [rightSide * 34, -49];
+    limb([[rightSide * 14, -48], [rightSide * 19, -42], racketHand], skin, 6);
+    limb([[racketHand[0], racketHand[1]], racketCenter], '#fff1d0', 2.5);
+    const racketAngle = Math.atan2(racketCenter[1] - racketHand[1], racketCenter[0] - racketHand[0]) + Math.PI / 2;
+    context.save();
+    context.translate(racketCenter[0], racketCenter[1]);
+    context.rotate(racketAngle);
+    context.beginPath();
+    context.ellipse(0, 0, 7, 12, 0, 0, Math.PI * 2);
+    context.fillStyle = 'rgba(255,249,232,.35)';
+    context.fill();
+    context.strokeStyle = outline;
+    context.lineWidth = 2.5;
+    context.stroke();
+    context.beginPath();
+    context.moveTo(-5, -5);
+    context.lineTo(5, 5);
+    context.moveTo(5, -5);
+    context.lineTo(-5, 5);
+    context.strokeStyle = 'rgba(32,52,66,.55)';
+    context.lineWidth = 1;
+    context.stroke();
+    context.restore();
 
-    const racketAcross: WorldPoint = across;
-    const racketRadius = 14;
-    const racketHalfHeight = 20;
-    const framePoints: WorldPoint[] = [];
-    for (let step = 0; step <= 20; step += 1) {
-      const angle = step * Math.PI * 2 / 20;
-      framePoints.push([
-        racketCenter[0] + racketAcross[0] * racketRadius * Math.cos(angle),
-        racketCenter[1] + racketAcross[1] * racketRadius * Math.cos(angle),
-        racketCenter[2] + racketHalfHeight * Math.sin(angle),
-      ]);
-    }
-    line(framePoints, '#e9eef4', Math.max(1.2, racketRadius * headScale * 0.08));
-    for (let strand = -2; strand <= 2; strand += 1) {
-      const offset = strand * 4.5;
-      const halfSpan = racketRadius * Math.sqrt(Math.max(0, 1 - (offset / racketRadius) ** 2));
-      line([
-        [racketCenter[0] - racketAcross[0] * halfSpan, racketCenter[1] - racketAcross[1] * halfSpan, racketCenter[2] + offset],
-        [racketCenter[0] + racketAcross[0] * halfSpan, racketCenter[1] + racketAcross[1] * halfSpan, racketCenter[2] + offset],
-      ], 'rgba(31,43,54,.72)', Math.max(0.7, headScale * 2));
-    }
+    context.font = '700 20px system-ui, sans-serif';
+    context.textAlign = 'center';
+    context.lineWidth = 4;
+    context.strokeStyle = '#203442';
+    context.strokeText(name, 0, -86);
+    context.fillStyle = '#fff9e8';
+    context.fillText(name, 0, -86);
+    context.restore();
     if (isHitting) {
-      const [contactX, contactY] = project(ball.x, ball.y, ball.z);
       context.beginPath();
-      context.arc(contactX, contactY, Math.max(5, 16 * headScale), 0, Math.PI * 2);
-      context.strokeStyle = 'rgba(245,216,91,.82)';
-      context.lineWidth = 1.5;
+      context.arc(projectedBall[0], projectedBall[1], Math.max(6, 14 * ballScale), 0, Math.PI * 2);
+      context.strokeStyle = 'rgba(224,122,67,.72)';
+      context.lineWidth = 2;
       context.stroke();
     }
-
-    context.font = `700 ${Math.max(9, 8 + headScale * 8)}px system-ui, sans-serif`;
-    context.textAlign = 'center';
-    context.lineWidth = 3;
-    context.strokeStyle = 'rgba(12,20,29,.82)';
-    context.strokeText(name, headX, headY - headRadius - 4);
-    context.fillStyle = '#ffffff';
-    context.fillText(name, headX, headY - headRadius - 4);
   };
 
   playerActors
@@ -539,11 +408,11 @@ function DmoLiveCourt({ snapshot, surface, playbackSpeed }: Props) {
     players: snapshot.players,
     surface,
     playbackSpeed,
-    camera: { azimuth: 42, elevation: 38 },
+    camera: DEFAULT_LIVE_COURT_CAMERA,
     zoom: 1,
   });
-  const [cameraAzimuth, setCameraAzimuth] = useState(42);
-  const [cameraElevation, setCameraElevation] = useState(38);
+  const [cameraAzimuth, setCameraAzimuth] = useState(DEFAULT_LIVE_COURT_CAMERA.azimuth);
+  const [cameraElevation, setCameraElevation] = useState(DEFAULT_LIVE_COURT_CAMERA.elevation);
   const [zoom, setZoom] = useState(1);
   sceneRef.current = {
     samples: sampleBufferRef.current,
@@ -736,8 +605,8 @@ function DmoLiveCourt({ snapshot, surface, playbackSpeed }: Props) {
             aria-label="Reset court camera"
             title="Reset court camera"
             onClick={() => {
-              setCameraAzimuth(42);
-              setCameraElevation(38);
+              setCameraAzimuth(DEFAULT_LIVE_COURT_CAMERA.azimuth);
+              setCameraElevation(DEFAULT_LIVE_COURT_CAMERA.elevation);
               setZoom(1);
             }}
           >

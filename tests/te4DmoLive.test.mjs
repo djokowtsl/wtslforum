@@ -8,7 +8,12 @@ import {
   formatLivePointScore,
   Te4DmoLiveParser,
 } from '../lib/te4DmoLive.ts';
-import { findCourtRacketContact, projectCourtPoint } from '../lib/liveCourtProjection.ts';
+import {
+  DEFAULT_LIVE_COURT_CAMERA,
+  findCourtRacketContact,
+  playerRightVector,
+  projectCourtPoint,
+} from '../lib/liveCourtProjection.ts';
 import { hasPlayerPositionData } from '../lib/te4LiveSetup.ts';
 import { isSameSiteMutation } from '../lib/liveRequestSecurity.ts';
 
@@ -153,6 +158,18 @@ test('court projection remains stable around every azimuth and view elevation', 
   const low = projectCourtPoint([320, -170, 185], { azimuth: 46, elevation: 5 });
   const high = projectCourtPoint([320, -170, 185], { azimuth: 46, elevation: 90 });
   assert.notEqual(Math.round(low[1]), Math.round(high[1]));
+});
+
+test('default court view keeps the positive-x end on screen-right', () => {
+  const negativeEnd = projectCourtPoint([-1189, 0, 0], DEFAULT_LIVE_COURT_CAMERA);
+  const positiveEnd = projectCourtPoint([1189, 0, 0], DEFAULT_LIVE_COURT_CAMERA);
+  assert.ok(negativeEnd[0] < positiveEnd[0]);
+});
+
+test('racket side is the player’s right, independent of the camera view', () => {
+  assert.deepEqual(playerRightVector([1, 0, 0]), [0, -1, 0]);
+  const right = playerRightVector([0, 1, 0]);
+  assert.ok(right.every((value, index) => Math.abs(value - [1, 0, 0][index]) < 1e-9));
 });
 
 test('racket contact pose follows recorded shot events and selects the nearest player', () => {
