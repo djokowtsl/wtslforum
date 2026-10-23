@@ -21,6 +21,7 @@ import { consumePendingDmoReaderReset } from '@/lib/dmoReaderState';
 import { hasPlayerPositionData } from '@/lib/te4LiveSetup';
 import { isPresignedUrlRetrievalFailure } from '@/lib/dmoUploadErrors';
 import { attemptFullReplayPreparation } from '@/lib/liveReplayPreparation';
+import type { PlayerHandedness } from '@/lib/liveCourtPerformance';
 import {
   loadDmoDirectory,
   saveDmoDirectory,
@@ -140,6 +141,9 @@ export default function DmoLiveHost({ displayName, canPrepareFullReplay }: Props
   const [discordMessageUrl, setDiscordMessageUrl] = useState('');
   const [playerOne, setPlayerOne] = useState('');
   const [playerTwo, setPlayerTwo] = useState('');
+  const [playerHands, setPlayerHands] = useState<[PlayerHandedness, PlayerHandedness]>(['right', 'right']);
+  const playerHandsRef = useRef(playerHands);
+  playerHandsRef.current = playerHands;
   const [notice, setNotice] = useState('Choose the folder where TE4 is writing its DMO recording.');
   const [error, setError] = useState('');
   const [busy, setBusy] = useState(false);
@@ -373,6 +377,8 @@ export default function DmoLiveHost({ displayName, canPrepareFullReplay }: Props
     const broadcastBestOf = automaticMatch?.bestOf ?? bestOf;
     setBusy(true);
     setError('');
+    playerHandsRef.current = ['right', 'right'];
+    setPlayerHands(['right', 'right']);
     if (mode === 'manual') {
       liveDmoGrowthDetected.current = false;
       setRealTimeObserved(false);
@@ -502,7 +508,11 @@ export default function DmoLiveHost({ displayName, canPrepareFullReplay }: Props
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({
             sequence: 1,
-            snapshot: { ...firstFrame, players: canonicalPlayers ?? firstFrame.players },
+            snapshot: {
+              ...firstFrame,
+              players: canonicalPlayers ?? firstFrame.players,
+              handedness: playerHandsRef.current,
+            },
           }),
         });
         if (!initialResponse.ok) throw new Error(await responseError(initialResponse));
@@ -594,6 +604,7 @@ export default function DmoLiveHost({ displayName, canPrepareFullReplay }: Props
           ...current,
           pointHistory: undefined,
           players: canonicalBroadcastPlayers.current ?? current.players,
+          handedness: playerHandsRef.current,
         }
         : undefined;
       if (pointHistory?.length) {
@@ -858,6 +869,7 @@ export default function DmoLiveHost({ displayName, canPrepareFullReplay }: Props
       message: unresolved.map((item) => item.message).join(' · '),
     };
   })();
+  const activeBroadcastPlayers = canonicalBroadcastPlayers.current ?? automaticPlayers.current;
 
   return (
     <section className={styles.page}>
@@ -994,6 +1006,30 @@ export default function DmoLiveHost({ displayName, canPrepareFullReplay }: Props
           />
           Broadcaster tags this as an official match (best of 3 or 5)
         </label>
+        {broadcastId && directory && activeBroadcastPlayers && (
+          <fieldset className={styles.handednessControls}>
+            <legend>Player handedness · shared with all viewers</legend>
+            <p>Set both players for this live match. The DMO does not identify handedness automatically.</p>
+            {activeBroadcastPlayers.map((name, index) => (
+              <label key={`${index}-${name}`}>
+                <span>{name}</span>
+                <select
+                  value={playerHands[index]}
+                  aria-label={`${name} handedness for viewers`}
+                  onChange={(event) => {
+                    const next = [...playerHandsRef.current] as [PlayerHandedness, PlayerHandedness];
+                    next[index] = event.currentTarget.value as PlayerHandedness;
+                    playerHandsRef.current = next;
+                    setPlayerHands(next);
+                  }}
+                >
+                  <option value="right">Right-handed</option>
+                  <option value="left">Left-handed</option>
+                </select>
+              </label>
+            ))}
+          </fieldset>
+        )}
         {!broadcastId ? (
           <button type="button" className={styles.primaryButton} onClick={() => void startBroadcast('manual')} disabled={(!directory && !discordMessageUrl.trim()) || busy}>
             <Radio size={16} /> {busy ? 'Starting…' : directory ? 'Replay selected DMO' : 'Start broadcast manually'}

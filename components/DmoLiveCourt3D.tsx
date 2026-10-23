@@ -116,9 +116,6 @@ function ThreeCourt({
   const playerCameraPanRef = useRef(0);
   const [cameraView, setCameraView] = useState<CameraView>('court');
   const [playerCameraPan, setPlayerCameraPan] = useState(0);
-  const [playerHands, setPlayerHands] = useState<[PlayerHandedness, PlayerHandedness]>(['right', 'right']);
-  const playerHandsRef = useRef(playerHands);
-  playerHandsRef.current = playerHands;
   const [soundEnabled, setSoundEnabled] = useState(false);
   const [soundError, setSoundError] = useState('');
   const [crowdVolume, setCrowdVolume] = useState(0.38);
@@ -592,8 +589,8 @@ function ThreeCourt({
           : activeShot
             ? firstPlayerDistance <= secondPlayerDistance ? 0 : 1
             : -1;
-        updatePlayer(players[0], values[3], values[4], 0, values, currentFrame, samples, lastFrame, firstFrame, trajectoryEventsRef.current, strikingPlayer === 0, elapsed, playerHandsRef.current[0]);
-        updatePlayer(players[1], values[5], values[6], 1, values, currentFrame, samples, lastFrame, firstFrame, trajectoryEventsRef.current, strikingPlayer === 1, elapsed, playerHandsRef.current[1]);
+        updatePlayer(players[0], values[3], values[4], 0, values, currentFrame, samples, lastFrame, firstFrame, trajectoryEventsRef.current, strikingPlayer === 0, elapsed, sceneDataRef.current.snapshot.handedness?.[0] ?? 'right');
+        updatePlayer(players[1], values[5], values[6], 1, values, currentFrame, samples, lastFrame, firstFrame, trajectoryEventsRef.current, strikingPlayer === 1, elapsed, sceneDataRef.current.snapshot.handedness?.[1] ?? 'right');
         const activeView = cameraViewRef.current;
         if (activeView.startsWith('player-')) {
           const playerIndex = activeView.startsWith('player-two') ? 1 : 0;
@@ -843,26 +840,6 @@ function ThreeCourt({
               <option value="player-two-third">{snapshot.players[1]} · Third person</option>
             </select>
           </label>
-          <details>
-            <summary>Player handedness</summary>
-            {snapshot.players.map((name, index) => (
-              <label key={`${name}-${index}`} style={{ display: 'block' }}>
-                {name}{' '}
-                <select
-                  aria-label={`${name} handedness`}
-                  value={playerHands[index]}
-                  onChange={(event) => setPlayerHands((current) => {
-                    const next = [...current] as [PlayerHandedness, PlayerHandedness];
-                    next[index] = event.currentTarget.value as PlayerHandedness;
-                    return next;
-                  })}
-                >
-                  <option value="right">Right-handed</option>
-                  <option value="left">Left-handed</option>
-                </select>
-              </label>
-            ))}
-          </details>
           <div className={styles.iconControls} role="group" aria-label="Zoom and reset">
             <button type="button" aria-label="Zoom out" onClick={() => requestZoom(1.15)}><Minus size={15} /></button>
             <button type="button" aria-label="Zoom in" onClick={() => requestZoom(0.87)}><Plus size={15} /></button>

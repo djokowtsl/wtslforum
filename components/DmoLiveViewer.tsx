@@ -350,6 +350,7 @@ export default function DmoLiveViewer({ canWatch }: Props) {
                     <Te4DmoReplayPlayer
                       broadcastId={broadcast.id}
                       initialSpeed={broadcast.replaySpeed}
+                      handedness={broadcast.snapshot.handedness ?? ['right', 'right']}
                       fallback={(
                         <DmoLiveDisplay
                           snapshot={broadcast.snapshot}
