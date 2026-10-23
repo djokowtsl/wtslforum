@@ -20,6 +20,7 @@ canvas{width:100%;display:block;border-radius:8px}
 #mode{display:flex;gap:6px;align-items:center}#mode button[aria-pressed="true"]{border-color:var(--ac);color:var(--ac);font-weight:600}
 #ctl{display:flex;flex-wrap:wrap;gap:6px;align-items:center;margin-top:6px}#ctl input[type=range]{flex:1;min-width:100px}
 #view-controls{display:flex;flex-wrap:wrap;gap:5px;align-items:center}
+#hand-controls{display:flex;flex-wrap:wrap;gap:6px;align-items:center}
 #view-controls label{color:var(--mu);font-size:12px}
 #ctl #zm{width:92px;min-width:72px;flex:none;accent-color:var(--ac)}
 #zv{min-width:42px;text-align:center}
@@ -37,18 +38,22 @@ tr.s{cursor:pointer}tr.s:hover{background:var(--bg)}.p1{color:#f59e0b}.p2{color:
 <h1 id="t"></h1><div class="mu" id="sub"></div>
 <div class="card"><div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap"><b>Replay mode</b><div id="mode"><button id="full" type="button" aria-pressed="false">Full match</button><button id="highlights" type="button" aria-pressed="false">Highlights</button><button id="points" type="button" aria-pressed="true">Point by point</button></div><span class="mu">You are</span><select id="me"></select><span class="mu">green = you won the point</span></div><div id="strip"></div></div>
 <div id="grid"><div class="card"><div id="court-heading"><span id="surface" class="surface-badge" data-surface="unknown"></span><span id="tournament" class="mu"></span></div><canvas id="cv" width="900" height="520"></canvas>
-<div id="ctl"><button id="pl">Pause</button><input type="range" id="sc" min="0" max="1000" value="0" aria-label="Replay position"><span class="mu" id="clock" aria-live="off"></span><button id="au" type="button" aria-pressed="false" title="Rally sounds are off until enabled">Sound off</button><div id="view-controls" role="group" aria-label="Camera and zoom controls"><label for="vw">Angle</label><select id="vw" aria-label="Camera angle"><option value="t">Overhead</option><option value="p">Behind baseline</option><option value="s">Sideline</option><option value="q">Three-quarter</option></select><label for="zm">Zoom</label><button id="zoomOut" type="button" aria-label="Zoom out">−</button><input type="range" id="zm" min="0.7" max="1.8" step="0.1" value="1" aria-label="Court zoom"><button id="zoomIn" type="button" aria-label="Zoom in">+</button><output id="zv" class="mu" aria-live="polite">100%</output><button id="focusPlayers" type="button" aria-pressed="false">Focus players</button><button id="resetView" type="button">Reset view</button></div><select id="sp" aria-label="Playback speed"><option value=".25">0.25x</option><option value=".5">0.5x</option><option value="1" selected>1x</option><option value="2">2x</option><option value="4">4x</option></select></div>
+ <div id="ctl"><button id="pl">Pause</button><input type="range" id="sc" min="0" max="1000" value="0" aria-label="Replay position"><span class="mu" id="clock" aria-live="off"></span><button id="au" type="button" aria-pressed="false" title="Rally sounds are off until enabled">Sound off</button><div id="view-controls" role="group" aria-label="Camera and zoom controls"><label for="vw">Angle</label><select id="vw" aria-label="Camera angle"><option value="t">Overhead</option><option value="p">Behind baseline</option><option value="s">Sideline</option><option value="q">Three-quarter</option></select><label for="zm">Zoom</label><button id="zoomOut" type="button" aria-label="Zoom out">−</button><input type="range" id="zm" min="0.7" max="1.8" step="0.1" value="1" aria-label="Court zoom"><button id="zoomIn" type="button" aria-label="Zoom in">+</button><output id="zv" class="mu" aria-live="polite">100%</output><button id="focusPlayers" type="button" aria-pressed="false">Focus players</button><button id="resetView" type="button">Reset view</button></div><div id="hand-controls" role="group" aria-label="Player handedness"></div><select id="sp" aria-label="Playback speed"><option value=".25">0.25x</option><option value=".5">0.5x</option><option value="1" selected>1x</option><option value="2">2x</option><option value="4">4x</option></select></div>
 <div class="mu">Reconstructed court playback from DMO frame data; sounds are synthesized from recorded racket contacts and first bounces. Both players carry a racket. Arrow keys: previous / next point, or highlight in Highlights mode.</div></div>
 <div class="card"><div id="pi"></div><table><thead><tr><th>#</th><th>Player</th><th>km/h</th><th>Height</th><th>Reach</th><th>Landed</th></tr></thead><tbody id="tb"></tbody></table>
 <div class="mu" id="nt"></div></div></div>
 <div class="card"><b>Match numbers</b> <span class="mu">winners / errors are the last shot of a rally; forced vs unforced is not decoded yet</span><table id="nm"></table></div>
 <div class="card"><div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap"><b>Court maps</b><select id="mp"></select><select id="mk"><option value="a">All shots</option><option value="s">Serves</option><option value="r">Rally shots</option><option value="w">Winners</option><option value="e">Errors</option></select><span class="mu">where the first bounce landed, shown from the hitter's end (left to right); dots are single shots</span></div><canvas id="cm" width="760" height="640"></canvas><div class="mu" id="ms"></div></div>
 <script>
-const D=__DATA__;let me=2,cur=0,T=0,matchT=0,highlightT=0,mode='point',play=true,last=performance.now(),sp=1;
+ const D=__DATA__;let me=2,cur=0,T=0,matchT=0,highlightT=0,mode='point',play=true,last=performance.now(),sp=1,hands=['right','right'];
 const $=i=>document.getElementById(i),cv=$('cv'),cx=cv.getContext('2d'),css=n=>getComputedStyle(document.documentElement).getPropertyValue(n);
 const esc=value=>String(value).replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
 const decode=encoded=>{const b=atob(encoded),u=new Uint8Array(b.length);for(let i=0;i<b.length;i++)u[i]=b.charCodeAt(i);return new Int16Array(u.buffer)};
 const hasMatch=Boolean(D.match&&typeof D.match.d==='string');
+ const handsKey=`te4-handedness:${D.names[0]}:${D.names[1]}`;
+ try{const saved=JSON.parse(localStorage.getItem(handsKey)||'null');if(Array.isArray(saved))hands=saved.map(v=>v==='left'?'left':'right')}catch{}
+ $('hand-controls').innerHTML=D.names.map((name,index)=>`<label>${esc(name)} <select data-hand="${index}" aria-label="${esc(name)} handedness"><option value="right">Right-handed</option><option value="left">Left-handed</option></select></label>`).join('');
+ $('hand-controls').querySelectorAll('select').forEach(select=>{select.value=hands[+select.dataset.hand];select.onchange=()=>{hands[+select.dataset.hand]=select.value;try{localStorage.setItem(handsKey,JSON.stringify(hands))}catch{}}});
 D.pts.forEach(p=>{if(hasMatch){p.N=p.fc}else if(typeof p.d==='string'){p.a=decode(p.d);p.N=p.a.length/7;p.mf=0}else{p.a=[];p.N=0}});
 const matchFrames=hasMatch?decode(D.match.d):null,matchN=hasMatch?D.match.n:0,fps=hasMatch?D.match.fps:30;
 if(hasMatch&&(matchN<2||matchFrames.length!==matchN*7||fps<=0||D.pts.some(p=>!Number.isInteger(p.mf)||!Number.isInteger(p.fc)||p.fc<1||p.mf<0||p.mf+p.fc>matchN)))throw new Error('Full-match replay data is incomplete.');
@@ -171,15 +176,15 @@ function court(){
  [[-1189,-549,1189,-549],[-1189,549,1189,549],[-1189,-411,1189,-411],[-1189,411,1189,411],[-1189,-549,-1189,549],[1189,-549,1189,549],[-640,-411,-640,411],[640,-411,640,411],[-640,0,640,0]].forEach(a=>poly([[a[0],a[1],0],[a[2],a[3],0]],null,c));
  poly([[0,-549,0],[0,549,0],[0,549,107],[0,-549,107]],'rgba(255,255,255,.18)',c);
 }
-const person=(x,y,c,name,swing,ball,id)=> {
+ const person=(x,y,c,name,swing,ball,id,handedness)=> {
  const[a,b,k]=pr(x,y,0),u=Math.max(.68,k),skin='#f0c7a6',outline='#17212b',shorts=id===1?'#15566d':'#742f42';
  const top=b-38*u,hip=b-16*u,headY=b-49*u;
  cx.fillStyle='rgba(0,0,0,.28)';cx.beginPath();cx.ellipse(a,b,12*u,4.5*u,0,0,7);cx.fill();
  const limb=(x1,y1,x2,y2,width,color)=>{cx.lineCap='round';cx.strokeStyle=outline;cx.lineWidth=width+2*u;cx.beginPath();cx.moveTo(x1,y1);cx.lineTo(x2,y2);cx.stroke();cx.strokeStyle=color;cx.lineWidth=width;cx.beginPath();cx.moveTo(x1,y1);cx.lineTo(x2,y2);cx.stroke()};
  limb(a-4*u,hip,a-6*u,b-4*u,4*u,skin);limb(a+4*u,hip,a+6*u,b-4*u,4*u,skin);
- const motion=swing?Math.sin((1-swing)*Math.PI*2):0,shoulderY=top+7*u,handX=a+17*u+motion*5*u,handY=top+17*u-motion*3*u;
- limb(a-8*u,shoulderY,a-14*u,top+16*u,3.5*u,skin);limb(a-14*u,top+16*u,a-12*u,top+23*u,3.5*u,skin);
- limb(a+8*u,shoulderY,a+13*u,top+12*u-motion*2*u,4*u,skin);limb(a+13*u,top+12*u-motion*2*u,handX,handY,3.5*u,skin);
+  const motion=swing?Math.sin((1-swing)*Math.PI*2):0,shoulderY=top+7*u,side=handedness==='left'?-1:1,handX=a+side*(17*u+motion*5*u),handY=top+17*u-motion*3*u;
+  limb(a-side*8*u,shoulderY,a-side*14*u,top+16*u,3.5*u,skin);limb(a-side*14*u,top+16*u,a-side*12*u,top+23*u,3.5*u,skin);
+  limb(a+side*8*u,shoulderY,a+side*13*u,top+12*u-motion*2*u,4*u,skin);limb(a+side*13*u,top+12*u-motion*2*u,handX,handY,3.5*u,skin);
  cx.beginPath();cx.moveTo(a-8*u,top+3*u);cx.lineTo(a+8*u,top+3*u);cx.lineTo(a+11*u,top+11*u);cx.lineTo(a+7*u,hip);cx.lineTo(a-7*u,hip);cx.lineTo(a-11*u,top+11*u);cx.closePath();cx.fillStyle=c;cx.strokeStyle=outline;cx.lineWidth=1.4*u;cx.fill();cx.stroke();
  cx.strokeStyle='rgba(255,255,255,.55)';cx.lineWidth=1.5*u;cx.beginPath();cx.moveTo(a-5*u,top+7*u);cx.lineTo(a+5*u,top+7*u);cx.stroke();
  cx.beginPath();cx.moveTo(a-7*u,hip);cx.lineTo(a+7*u,hip);cx.lineTo(a+9*u,b-7*u);cx.lineTo(a+1*u,b-7*u);cx.lineTo(a,b-11*u);cx.lineTo(a-1*u,b-7*u);cx.lineTo(a-9*u,b-7*u);cx.closePath();cx.fillStyle=shorts;cx.strokeStyle=outline;cx.lineWidth=1.2*u;cx.fill();cx.stroke();
@@ -216,7 +221,7 @@ function frame(now){
  active.sh.forEach(s=>{if(s.bx!=null&&s.bt!=null&&offset+s.bt<=time){const[x,y]=pr(s.bx,s.by,0);cx.fillStyle=s.p==1?'rgba(245,158,11,.85)':'rgba(239,68,68,.85)';cx.beginPath();cx.arc(x,y,4,0,7);cx.fill()}});
  const bx=g(i0,0),by=g(i0,1),bz=g(i0,2),[sx,sy,k]=pr(bx,by,0),[ux,uy]=pr(bx,by,bz);
  const swingFor=q=>{let nearest=null;for(const s of active.sh)if(s.p===q&&(!nearest||Math.abs(offset+s.t-time)<Math.abs(offset+nearest.t-time)))nearest=s;if(!nearest||Math.abs(offset+nearest.t-time)>9)return null;return 1-Math.abs(offset+nearest.t-time)/9};
-  [[[g(i0,3),g(i0,4)],'#f59e0b',D.names[0],1],[[g(i0,5),g(i0,6)],'#ef4444',D.names[1],2]].sort((a,b)=>b[0][0]-a[0][0]).forEach(([q,c,n,id])=>person(q[0],q[1],c,n,swingFor(id),[ux,uy],id));
+   [[[g(i0,3),g(i0,4)],'#f59e0b',D.names[0],1],[[g(i0,5),g(i0,6)],'#ef4444',D.names[1],2]].sort((a,b)=>b[0][0]-a[0][0]).forEach(([q,c,n,id])=>person(q[0],q[1],c,n,swingFor(id),[ux,uy],id,hands[id-1]));
  cx.fillStyle='rgba(0,0,0,.3)';cx.beginPath();cx.ellipse(sx,sy,4*k,2.5*k,0,0,7);cx.fill();cx.fillStyle='#e8f84a';cx.strokeStyle='#222';cx.lineWidth=1;cx.beginPath();cx.arc(ux,uy,4*k,0,7);cx.fill();cx.stroke();
  updateAudio(audioTime());
  const sliderTime=full?matchT:inHighlights?highlightT:T,sliderCount=full?matchN:inHighlights?highlightFrames:active.N;

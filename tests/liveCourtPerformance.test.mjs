@@ -1,12 +1,14 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { racketContact, RACKET_HEAD_OFFSET, RIGHT_HAND_X, serveLift, crossedFrame, trailAllowed } from '../lib/liveCourtPerformance.ts';
+import { dominantHandX, racketContact, RACKET_HEAD_OFFSET, RIGHT_HAND_X, serveLift, crossedFrame, trailAllowed } from '../lib/liveCourtPerformance.ts';
 import { interpolateLiveCourtFrame } from '../lib/liveCourtMotion.ts';
 import * as THREE from 'three';
 import { makePlayer } from '../components/DmoLiveCourt3DScene.ts';
 
 test('right-handed rig has its dominant hand on anatomical right when facing +Z', () => {
   assert.ok(RIGHT_HAND_X < 0);
+  assert.ok(dominantHandX('right') < 0);
+  assert.ok(dominantHandX('left') > 0);
 });
 test('racket string-bed centre reaches ball on overhead and both rally sides', () => {
   for (const ball of [[-.3, 3.1, .2], [-1, 1.2, .6], [.8, 1.3, .5]]) {

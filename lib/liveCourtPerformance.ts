@@ -1,7 +1,11 @@
 export type Point3 = [number, number, number];
+export type PlayerHandedness = 'left' | 'right';
 export const RACKET_HEAD_OFFSET = 0.36;
 // The face points along local +Z: anatomical right is local -X.
 export const RIGHT_HAND_X = -0.39;
+export function dominantHandX(handedness: PlayerHandedness) {
+  return handedness === 'right' ? RIGHT_HAND_X : -RIGHT_HAND_X;
+}
 
 export function racketContact(ball: Point3, preferredGrip: Point3) {
   const delta = ball.map((v, i) => v - preferredGrip[i]);
