@@ -9,6 +9,7 @@ import styles from './DmoLiveDisplay.module.css';
 
 type Props = {
   snapshot: Te4LiveSnapshot;
+  isWta?: boolean;
   state: 'live' | 'ended';
   playbackSpeed?: Te4DmoReplaySpeed;
   stale?: boolean;
@@ -105,6 +106,7 @@ function ChanceChart({
 
 export default function DmoLiveDisplay({
   snapshot,
+  isWta = false,
   state,
   playbackSpeed = 1,
   stale = false,
@@ -140,7 +142,7 @@ export default function DmoLiveDisplay({
       </header>
 
       <div className={styles.liveCourtStage}>
-        <DmoLiveCourt snapshot={snapshot} surface={surface} playbackSpeed={playbackSpeed} />
+        <DmoLiveCourt snapshot={snapshot} surface={surface} playbackSpeed={playbackSpeed} isWta={isWta} />
         <aside className={styles.scoreBug} aria-label="Live match score">
           <div className={styles.scoreBugHeader}>
             <span className={styles.scoreBugStatus}>

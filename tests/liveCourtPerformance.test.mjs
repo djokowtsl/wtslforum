@@ -40,6 +40,22 @@ test('actual racket mesh centre meets the target after player rotation and scale
     });
   }
 });
+test('WTA court rigs use a skirt and ponytail while standard rigs keep shorts', () => {
+  const standard = makePlayer(0xff0000, 0x333333);
+  const wta = makePlayer(0xff0000, 0x333333, true);
+
+  assert.equal(standard.hip.geometry.type, 'CapsuleGeometry');
+  assert.equal(wta.hip.geometry.type, 'CylinderGeometry');
+  assert.ok(wta.head.children.some((part) => part.geometry?.type === 'CapsuleGeometry'));
+
+  for (const rig of [standard, wta]) {
+    rig.root.traverse((object) => {
+      object.geometry?.dispose();
+      if (Array.isArray(object.material)) object.material.forEach((material) => material.dispose());
+      else object.material?.dispose();
+    });
+  }
+});
 test('cues never play before contact and are not repeated on a stalled playhead', () => {
   assert.equal(crossedFrame(100, 90, 99), false);
   assert.equal(crossedFrame(100, 99, 100), true);

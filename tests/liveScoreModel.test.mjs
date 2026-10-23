@@ -52,6 +52,14 @@ test('live WTSL feed parses both players’ in-game Elo values', () => {
   assert.equal(match.court, 'Clay Court');
 });
 
+test('live WTSL hosting tag identifies WTA matches independently of the host version suffix', () => {
+  const poll = '0 1 "Player One vs Player Two" 40 00 05dc 00 "WTA - XKT(WTSL) v4.4k" "1-0, 2-1" 0666 00 00 "1 Clay Court" trailer';
+  const [match] = parseLiveWtslMatches(poll);
+
+  assert.equal(match.tagline, 'WTA - XKT(WTSL) v4.4k');
+  assert.equal(match.tourHint, 'TE4_(F)');
+});
+
 test('live Elo labels match the Discord embed and omit unavailable ratings', () => {
   assert.equal(formatLivePlayerElos(1500, 1638), '[Game: 1500 | Tour: 1638]');
   assert.equal(formatLivePlayerElos(1500, null), '[Game: 1500]');

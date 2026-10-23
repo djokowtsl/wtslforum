@@ -22,6 +22,7 @@ type Broadcast = {
   stream: LiveStream | null;
   players: [string, string] | null;
   broadcastMode: 'manual' | 'auto';
+  isWta: boolean;
   replay: boolean;
   replayDataReady: boolean;
   replaySpeed: 1 | 2 | 4;
@@ -467,6 +468,7 @@ export default function DmoLiveViewer({ canWatch }: Props) {
                       fallback={(
                         <DmoLiveDisplay
                           snapshot={broadcast.snapshot}
+                          isWta={broadcast.isWta}
                           state={broadcast.status}
                           playbackSpeed={broadcast.replaySpeed}
                           stale={broadcast.stale}
@@ -480,6 +482,7 @@ export default function DmoLiveViewer({ canWatch }: Props) {
                   ) : (
                     <DmoLiveDisplay
                       snapshot={broadcast.snapshot}
+                      isWta={broadcast.isWta}
                       state={broadcast.status}
                       playbackSpeed={broadcast.replay ? broadcast.replaySpeed : 1}
                       liveScore={broadcast.broadcastMode === 'auto' && !broadcast.replay

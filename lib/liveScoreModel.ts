@@ -132,7 +132,7 @@ export function parseLiveWtslMatches(pollText: string): ParsedLiveMatch[] {
     if (!/\bvs\b/i.test(name.value) || score.value.trim() === '...') continue;
 
     const settings = decodeSettings(gameInfo);
-    const tourHint: ParsedLiveMatch['tourHint'] = /(?:\bWTA\b|TE4[_\s]?\(?F\)?)/i.test(tagline.value)
+    const tourHint: ParsedLiveMatch['tourHint'] = /(?:\bWTA\s*-\s*XKT\(WTSL\)|TE4[_\s]?\(?F\)?)/i.test(tagline.value)
       ? 'TE4_(F)'
       : /\bATP\b/i.test(tagline.value) ? 'TE4' : null;
     const match = {

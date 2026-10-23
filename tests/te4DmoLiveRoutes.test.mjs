@@ -295,6 +295,7 @@ test('signed-in members can read broadcasts while guests cannot', async () => {
     stream: null,
     sourceMessageUrl: null,
     broadcastMode: 'manual',
+    isWta: false,
     replay: false,
     replayDataReady: false,
     replaySpeed: 1,

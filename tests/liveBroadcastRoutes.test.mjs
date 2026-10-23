@@ -115,7 +115,7 @@ test('automatic broadcasts require a confirmed WTSL live match and retain its of
     '@/lib/liveScores': {
       getLiveWtslMatchForPlayers: async (players) => (
         players[0] === 'Alpha' && players[1] === 'Beta'
-          ? { name: 'Alpha vs Beta', bestOf: 3 }
+          ? { name: 'Alpha vs Beta', bestOf: 3, tourHint: 'TE4_(F)' }
           : null
       ),
     },
@@ -152,6 +152,7 @@ test('automatic broadcasts require a confirmed WTSL live match and retain its of
   assert.equal(JSON.parse(storedPayload).hasDmo, true);
   assert.equal(JSON.parse(storedPayload).officialByBroadcaster, true);
   assert.equal(JSON.parse(storedPayload).likelyOfficial, true);
+  assert.equal(JSON.parse(storedPayload).isWta, true);
 });
 
 test('automatic broadcasts are rejected when the exact player pair is not live', async () => {
@@ -431,7 +432,7 @@ test('verified replay openings can be shown before the first point; other DMO br
       },
     },
     { id: 'legacy-no-point', payload: { version: 1, pointCount: 0, players: ['Old One', 'Old Two'] } },
-    { id: 'auto-parsed', payload: { hasDmo: true, mode: 'auto', snapshot: { pointCount: 1, players: ['Alpha', 'Beta'] } } },
+    { id: 'auto-parsed', payload: { hasDmo: true, mode: 'auto', isWta: true, snapshot: { pointCount: 1, players: ['Alpha', 'Beta'] } } },
     { id: 'replay-parsed', payload: { hasDmo: true, mode: 'manual', replay: true, snapshot: { pointCount: 1, players: ['Gamma', 'Delta'] } } },
     {
       id: 'stream-only',
@@ -469,6 +470,7 @@ test('verified replay openings can be shown before the first point; other DMO br
     'replay-parsed',
     'stream-only',
   ]);
+  assert.equal(body.broadcasts.find((broadcast) => broadcast.id === 'auto-parsed').isWta, true);
   const host = readFileSync(new URL('../components/DmoLiveHost.tsx', import.meta.url), 'utf8');
   assert.match(host, /hasCompletedDmoPoints\(current\)/);
   assert.match(host, /hasCompletedDmoPoints\(matchedSnapshot\)/);
