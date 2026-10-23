@@ -53,6 +53,7 @@ export type Te4LiveSnapshot = {
   filename: string;
   stadium: string | null;
   players: [string, string];
+  handedness?: ['left' | 'right', 'left' | 'right'];
   frameCount: number;
   courtFrameCount?: number;
   pointCount: number;

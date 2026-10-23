@@ -7,20 +7,26 @@ import styles from './Te4DmoReplayPlayer.module.css';
 type Props = {
   broadcastId: string;
   initialSpeed: 1 | 2 | 4;
+  handedness: ['left' | 'right', 'left' | 'right'];
   fallback: ReactNode;
 };
 
-function embedViewerData(html: string, viewer: Te4ViewerData): string {
+function embedViewerData(
+  html: string,
+  viewer: Te4ViewerData,
+  handedness: ['left' | 'right', 'left' | 'right'],
+): string {
   const json = JSON.stringify(viewer)
     .replace(/</g, '\\u003c')
     .replace(/>/g, '\\u003e')
     .replace(/&/g, '\\u0026')
     .replace(/\u2028/g, '\\u2028')
     .replace(/\u2029/g, '\\u2029');
-  return html.replace('__DATA__', json);
+  const handsJson = JSON.stringify(handedness).replace(/</g, '\\u003c');
+  return html.replace('__DATA__', json).replace('__HANDEDNESS__', handsJson);
 }
 
-export default function Te4DmoReplayPlayer({ broadcastId, initialSpeed, fallback }: Props) {
+export default function Te4DmoReplayPlayer({ broadcastId, initialSpeed, handedness, fallback }: Props) {
   const frameRef = useRef<HTMLIFrameElement>(null);
   const [srcDoc, setSrcDoc] = useState('');
   const [title, setTitle] = useState('Full match DMO replay');
@@ -44,10 +50,12 @@ export default function Te4DmoReplayPlayer({ broadcastId, initialSpeed, fallback
           throw new Error('The replay data is incomplete.');
         }
         const shell = await shellResponse.text();
-        if (!shell.includes('__DATA__')) throw new Error('The replay player template is incomplete.');
+        if (!shell.includes('__DATA__') || !shell.includes('__HANDEDNESS__')) {
+          throw new Error('The replay player template is incomplete.');
+        }
         if (!active) return;
         setTitle(`Match replay: ${viewer.names[0]} vs ${viewer.names[1]}`);
-        setSrcDoc(embedViewerData(shell, viewer));
+        setSrcDoc(embedViewerData(shell, viewer, handedness));
       } catch (cause) {
         if (active) setError(cause instanceof Error ? cause.message : 'The replay could not be loaded.');
       }
@@ -57,6 +65,10 @@ export default function Te4DmoReplayPlayer({ broadcastId, initialSpeed, fallback
       active = false;
     };
   }, [broadcastId]);
+
+  useEffect(() => {
+    frameRef.current?.contentWindow?.postMessage({ type: 'set-handedness', handedness }, '*');
+  }, [handedness[0], handedness[1]]);
 
   if (error) {
     return (
@@ -79,7 +91,10 @@ export default function Te4DmoReplayPlayer({ broadcastId, initialSpeed, fallback
         title={title}
         srcDoc={srcDoc}
         sandbox="allow-scripts"
-        onLoad={() => frameRef.current?.contentWindow?.postMessage({ type: 'set-speed', speed: initialSpeed }, '*')}
+        onLoad={() => {
+          frameRef.current?.contentWindow?.postMessage({ type: 'set-speed', speed: initialSpeed }, '*');
+          frameRef.current?.contentWindow?.postMessage({ type: 'set-handedness', handedness }, '*');
+        }}
       />
     </div>
   );
