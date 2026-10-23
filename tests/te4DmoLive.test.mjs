@@ -99,6 +99,19 @@ test('incremental DMO parsing waits for frames, then emits a compact live snapsh
   assert.ok(shortMotionWindow?.court.length <= 96);
 });
 
+test('live court mirrors the lateral axis for the right-handed player rigs', () => {
+  const parser = new Te4DmoLiveParser();
+  parser.append(syntheticDmo());
+  const snapshot = parser.snapshot('match.dmo', 3);
+  assert.ok(snapshot);
+
+  const sampleIndex = snapshot.courtFrameIndices?.indexOf(10) ?? -1;
+  assert.ok(sampleIndex >= 0);
+  assert.equal(snapshot.court[sampleIndex][1], -Math.round(parser.ballY[10]));
+  assert.equal(snapshot.court[sampleIndex][4], -Math.round(parser.player1Y[10]));
+  assert.equal(snapshot.court[sampleIndex][6], -Math.round(parser.player2Y[10]));
+});
+
 test('opening DMO snapshots omit impossible court samples without rejecting valid match data', () => {
   const bytes = syntheticDmo();
   const frameLocator = new Te4DmoLiveParser();
@@ -115,6 +128,22 @@ test('opening DMO snapshots omit impossible court samples without rejecting vali
   assert.ok(snapshot.court.every((sample) => sample.every((value, index) => (
     index === 2 ? value >= 0 && value <= 600 : value >= -5000 && value <= 5000
   ))));
+});
+
+test('live snapshots omit ball samples with outlier heights instead of clamping them into the court', () => {
+  const bytes = syntheticDmo();
+  const locator = new Te4DmoLiveParser();
+  locator.append(bytes);
+  writeFixed(bytes, locator.offsets[10], 1_851_878_764);
+
+  const parser = new Te4DmoLiveParser();
+  parser.append(bytes);
+  const snapshot = parser.snapshot('match.dmo', 3, 12, 12, 100);
+
+  assert.ok(snapshot);
+  assert.equal(snapshot.courtFrameIndices?.includes(10), false);
+  assert.equal(snapshot.court.length, 11);
+  assert.ok(snapshot.court.every((sample) => sample[2] <= 600));
 });
 
 test('DMO replay eligibility requires parsed completed points and advances at the chosen speed', () => {
@@ -205,7 +234,9 @@ test('live court snapshots include frame-indexed rally boundaries and optional s
   assert.equal(silent.court.length, silent.frameCount);
   assert.equal(silent.courtFrameIndices.length, silent.frameCount);
   assert.equal(silent.soundEvents, undefined);
-  assert.deepEqual(silent.trajectoryEvents, [{ frame: 20, kind: 'shot' }]);
+  assert.deepEqual(silent.trajectoryEvents, [
+    { frame: 20, kind: 'shot', player: 1, shotType: 'serve' },
+  ]);
   assert.deepEqual(sounding.soundEvents, [
     { frame: 20, kind: 'racket' },
     { frame: 25, kind: 'bounce' },
@@ -224,7 +255,7 @@ test('point-end markers reset the reconstructed court trajectory', () => {
   const snapshot = parser.snapshot('match.dmo', 3, parser.frameCount, 72, 72);
 
   assert.deepEqual(snapshot?.trajectoryEvents, [
-    { frame: 20, kind: 'shot' },
+    { frame: 20, kind: 'shot', player: 1, shotType: 'serve' },
     { frame: 25, kind: 'point-end' },
   ]);
 });

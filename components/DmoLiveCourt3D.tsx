@@ -20,6 +20,7 @@ import {
   type LiveCourtMotionEvent,
   type LiveCourtSample,
 } from '@/lib/liveCourtMotion';
+import { playerRightVector } from '@/lib/liveCourtProjection';
 import DmoLiveCourt from './DmoLiveCourt';
 import {
   BALL_RADIUS,
@@ -53,39 +54,16 @@ type CameraView =
 
 const DEFAULT_CAMERA = new THREE.Vector3(-25, 26, 30);
 
-function playCue(context: AudioContext, kind: 'racket' | 'bounce' | 'grunt' | 'cheer') {
+function playCue(context: AudioContext, kind: 'racket' | 'bounce' | 'grunt') {
   const now = context.currentTime;
   const gain = context.createGain();
-  if (kind === 'cheer') {
-    const duration = 0.42;
-    const buffer = context.createBuffer(1, Math.floor(context.sampleRate * duration), context.sampleRate);
-    const samples = buffer.getChannelData(0);
-    for (let index = 0; index < samples.length; index += 1) {
-      samples[index] = (Math.random() * 2 - 1) * (1 - index / samples.length);
-    }
-    const source = context.createBufferSource();
-    source.buffer = buffer;
-    const filter = context.createBiquadFilter();
-    filter.type = 'bandpass';
-    filter.frequency.value = 880;
-    filter.Q.value = 0.8;
-    gain.gain.setValueAtTime(0.028, now);
-    gain.gain.exponentialRampToValueAtTime(0.0001, now + duration);
-    source.connect(filter);
-    filter.connect(gain);
-    gain.connect(context.destination);
-    source.start(now);
-    source.stop(now + duration);
-    return;
-  }
-
   const oscillator = context.createOscillator();
   const filter = kind === 'grunt' ? context.createBiquadFilter() : null;
   const duration = kind === 'racket' ? 0.075 : kind === 'grunt' ? 0.22 : 0.12;
   oscillator.type = kind === 'grunt' ? 'sawtooth' : kind === 'racket' ? 'triangle' : 'sine';
   oscillator.frequency.setValueAtTime(kind === 'grunt' ? 150 : kind === 'racket' ? 720 : 390, now);
   oscillator.frequency.exponentialRampToValueAtTime(kind === 'grunt' ? 82 : kind === 'racket' ? 260 : 150, now + duration);
-  gain.gain.setValueAtTime(kind === 'grunt' ? 0.045 : kind === 'racket' ? 0.085 : 0.072, now);
+  gain.gain.setValueAtTime(kind === 'grunt' ? 0.095 : kind === 'racket' ? 0.085 : 0.072, now);
   gain.gain.exponentialRampToValueAtTime(0.0001, now + duration);
   if (filter) {
     filter.type = 'bandpass';
@@ -99,49 +77,6 @@ function playCue(context: AudioContext, kind: 'racket' | 'bounce' | 'grunt' | 'c
   gain.connect(context.destination);
   oscillator.start(now);
   oscillator.stop(now + duration);
-}
-
-function createPlayerLabel(name: string) {
-  const measureCanvas = document.createElement('canvas');
-  const measureContext = measureCanvas.getContext('2d');
-  const font = '600 25px system-ui, sans-serif';
-  if (measureContext) measureContext.font = font;
-  const labelWidth = Math.min(
-    440,
-    Math.max(150, Math.ceil((measureContext?.measureText(name).width ?? 150) + 36)),
-  );
-  const canvas = document.createElement('canvas');
-  canvas.width = labelWidth * 2;
-  canvas.height = 128;
-  const context = canvas.getContext('2d');
-  if (context) {
-    context.scale(2, 2);
-    context.beginPath();
-    context.roundRect(2, 4, labelWidth - 4, 56, 18);
-    context.fillStyle = 'rgba(6, 13, 29, 0.62)';
-    context.fill();
-    context.strokeStyle = 'rgba(203, 216, 237, 0.18)';
-    context.lineWidth = 1;
-    context.stroke();
-    context.fillStyle = '#f1f5fb';
-    context.font = font;
-    context.textAlign = 'center';
-    context.textBaseline = 'middle';
-    context.shadowColor = 'rgba(0, 0, 0, 0.32)';
-    context.shadowBlur = 3;
-    context.fillText(name, labelWidth / 2, 32, labelWidth - 28);
-  }
-  const texture = new THREE.CanvasTexture(canvas);
-  texture.colorSpace = THREE.SRGBColorSpace;
-  const sprite = new THREE.Sprite(new THREE.SpriteMaterial({
-    map: texture,
-    transparent: true,
-    depthTest: false,
-    depthWrite: false,
-  }));
-  sprite.scale.set(Math.min(1.72, Math.max(0.95, labelWidth / 512 * 2.5)), 0.3, 1);
-  sprite.renderOrder = 1000;
-  return sprite;
 }
 
 function ThreeCourt({
@@ -160,6 +95,8 @@ function ThreeCourt({
   const playheadRef = useRef<number | null>(null);
   const lastSoundFrameRef = useRef(Math.max(0, snapshot.frameCount - 3));
   const playedSoundEventsRef = useRef(new Set<string>());
+  const lastCalloutFrameRef = useRef<number | null>(null);
+  const shotCalloutTimerRef = useRef<number | null>(null);
   const previousSnapshotRef = useRef({
     filename: snapshot.filename,
     players: snapshot.players,
@@ -174,6 +111,12 @@ function ThreeCourt({
   const [soundError, setSoundError] = useState('');
   const [crowdVolume, setCrowdVolume] = useState(0.38);
   const [hasCourtData, setHasCourtData] = useState(snapshot.court.length > 0);
+  const [shotCallout, setShotCallout] = useState<{
+    player: string;
+    shotType: 'serve' | 'rally';
+    speedKmh: number;
+    frame: number;
+  } | null>(null);
 
   useEffect(() => {
     const previous = previousSnapshotRef.current;
@@ -186,6 +129,12 @@ function ThreeCourt({
       trajectoryEventsRef.current = [];
       playheadRef.current = null;
       playedSoundEventsRef.current.clear();
+      lastCalloutFrameRef.current = null;
+      setShotCallout(null);
+      if (shotCalloutTimerRef.current !== null) {
+        window.clearTimeout(shotCalloutTimerRef.current);
+        shotCalloutTimerRef.current = null;
+      }
       lastSoundFrameRef.current = Math.max(0, snapshot.frameCount - 3);
       setHasCourtData(false);
     }
@@ -218,8 +167,10 @@ function ThreeCourt({
     );
     if (playheadRef.current === null && sampleBufferRef.current.length) {
       playheadRef.current = sampleBufferRef.current[0].frame;
+      lastCalloutFrameRef.current = sampleBufferRef.current[0].frame;
     } else if (playheadRef.current !== null && playheadRef.current < earliestFrame) {
       playheadRef.current = earliestFrame;
+      lastCalloutFrameRef.current = earliestFrame;
     }
     setHasCourtData(sampleBufferRef.current.length > 0);
   }, [snapshot, playbackSpeed]);
@@ -240,7 +191,11 @@ function ThreeCourt({
       playedSoundEventsRef.current.add(key);
     }
     for (const event of snapshot.trajectoryEvents ?? []) {
-      const cue = event.kind === 'point-end' ? 'cheer' : event.frame % 2 === 0 ? 'grunt' : null;
+      const cue = event.kind === 'shot'
+        && event.shotType === 'rally'
+        && (event.speedKmh ?? 0) >= 135
+        ? 'grunt'
+        : null;
       const key = `${event.frame}:${event.kind}`;
       if (!cue || event.frame < lastSoundFrameRef.current || playedSoundEventsRef.current.has(key)) continue;
       playCue(context, cue);
@@ -260,6 +215,9 @@ function ThreeCourt({
     crowdAudio?.load();
     crowdAudioRef.current = null;
     soundOnRef.current = false;
+    if (shotCalloutTimerRef.current !== null) {
+      window.clearTimeout(shotCalloutTimerRef.current);
+    }
     void audioContextRef.current?.close();
     audioContextRef.current = null;
   }, []);
@@ -338,12 +296,6 @@ function ThreeCourt({
       makePlayer(PALETTE.shirtTwo, 0x514b61),
     ];
     players.forEach(({ root }) => scene.add(root));
-    const playerLabels = initialPlayers.map((name) => {
-      const label = createPlayerLabel(name);
-      scene.add(label);
-      return label;
-    });
-
     const ball = new THREE.Mesh(
       new THREE.SphereGeometry(BALL_RADIUS, 18, 14),
       new THREE.MeshStandardMaterial({
@@ -421,6 +373,18 @@ function ThreeCourt({
       elapsedMs: number,
     ) => {
       const position = new THREE.Vector3(x * SCALE, 0, z * SCALE);
+      if (!rig.root.userData.positionInitialized) {
+        rig.root.position.copy(position);
+        rig.root.userData.positionInitialized = true;
+      } else {
+        const movement = position.clone().sub(rig.root.position);
+        const distance = movement.length();
+        // Limit location changes to a plausible court movement speed to avoid
+        // teleport flashes when the recording shifts between sampled positions.
+        const maximumStep = Math.max(0.04, elapsedMs / 1000 * 7);
+        if (distance <= maximumStep) rig.root.position.copy(position);
+        else if (distance > 0) rig.root.position.addScaledVector(movement, maximumStep / distance);
+      }
       const maxGapFrames = TE4_DMO_FRAMES_PER_SECOND * sceneDataRef.current.playbackSpeed / 2;
       const prior = interpolateLiveCourtFrame(samples, Math.max(firstFrame, frame - 2), maxGapFrames) ?? values;
       const later = interpolateLiveCourtFrame(samples, Math.min(lastFrame, frame + 2), maxGapFrames) ?? values;
@@ -452,8 +416,15 @@ function ThreeCourt({
       const strikeWeight = event
         ? THREE.MathUtils.clamp(1 - Math.abs(event.frame - frame) / 6, 0, 1)
         : 0;
-      const localX = ((ballX - position.x) * Math.cos(facing) - (ballZ - position.z) * Math.sin(facing)) / 0.92;
-      const localZ = ((ballX - position.x) * Math.sin(facing) + (ballZ - position.z) * Math.cos(facing)) / 0.92;
+      const rightVector = playerRightVector([Math.sin(facing), Math.cos(facing), 0]);
+      const localX = (
+        (ballX - rig.root.position.x) * rightVector[0]
+        + (ballZ - rig.root.position.z) * rightVector[1]
+      ) / rig.root.scale.x;
+      const localZ = (
+        (ballX - rig.root.position.x) * Math.sin(facing)
+        + (ballZ - rig.root.position.z) * Math.cos(facing)
+      ) / rig.root.scale.x;
       const phase = frame * 0.22 + index * Math.PI;
       const gaitSpeed = speed > 0.12 ? speed : 0;
       const leftCycle = Math.sin(phase);
@@ -463,7 +434,6 @@ function ThreeCourt({
       const rightLift = Math.max(0, rightCycle) * gaitSpeed * 0.13;
       const bodyBounce = gaitSpeed * Math.abs(Math.sin(phase * 2)) * 0.035;
       const crouch = strikeWeight * THREE.MathUtils.clamp((1.05 - ballY) / 0.95, 0, 1) * 0.18;
-      rig.root.position.set(position.x, 0, position.z);
       rig.root.rotation.y = facing;
       rig.body.position.set(Math.sin(phase * 0.5) * gaitSpeed * 0.02, 1.22 + bodyBounce - crouch * 0.45, 0);
       rig.body.rotation.z = THREE.MathUtils.clamp(-velocityX * 0.18, -0.22, 0.22);
@@ -532,6 +502,34 @@ function ThreeCourt({
           ) ?? firstFrame;
         }
         playheadRef.current = currentFrame;
+        const previousCalloutFrame = lastCalloutFrameRef.current;
+        if (previousCalloutFrame === null || currentFrame < previousCalloutFrame) {
+          lastCalloutFrameRef.current = currentFrame;
+        } else {
+          const eligibleCallouts = trajectoryEventsRef.current
+            .filter((event) => (
+              event.kind === 'shot'
+              && event.frame > previousCalloutFrame
+              && event.frame <= currentFrame
+              && event.player !== undefined
+              && event.speedKmh !== undefined
+              && event.speedKmh >= (event.shotType === 'serve' ? 160 : 135)
+            ));
+          const calloutEvent = eligibleCallouts[eligibleCallouts.length - 1];
+          if (calloutEvent?.player && calloutEvent.shotType && calloutEvent.speedKmh) {
+            if (shotCalloutTimerRef.current !== null) {
+              window.clearTimeout(shotCalloutTimerRef.current);
+            }
+            setShotCallout({
+              player: sceneDataRef.current.snapshot.players[calloutEvent.player - 1],
+              shotType: calloutEvent.shotType,
+              speedKmh: calloutEvent.speedKmh,
+              frame: calloutEvent.frame,
+            });
+            shotCalloutTimerRef.current = window.setTimeout(() => setShotCallout(null), 2_200);
+          }
+          lastCalloutFrameRef.current = currentFrame;
+        }
         const maxGapFrames = TE4_DMO_FRAMES_PER_SECOND * sceneDataRef.current.playbackSpeed / 2;
         const values = interpolateLiveCourtFrame(samples, currentFrame, maxGapFrames) ?? samples[samples.length - 1].values;
         const ballPosition = new THREE.Vector3(values[0] * SCALE, Math.max(0, values[2]) * SCALE, values[1] * SCALE);
@@ -550,10 +548,6 @@ function ThreeCourt({
           : -1;
         updatePlayer(players[0], values[3], values[4], 0, values, currentFrame, samples, lastFrame, firstFrame, trajectoryEventsRef.current, strikingPlayer === 0, elapsed);
         updatePlayer(players[1], values[5], values[6], 1, values, currentFrame, samples, lastFrame, firstFrame, trajectoryEventsRef.current, strikingPlayer === 1, elapsed);
-        playerLabels.forEach((label, index) => {
-          label.position.set(players[index].root.position.x, 2.02, players[index].root.position.z);
-        });
-
         const activeView = cameraViewRef.current;
         if (activeView.startsWith('player-')) {
           const playerIndex = activeView.startsWith('player-two') ? 1 : 0;
@@ -630,8 +624,8 @@ function ThreeCourt({
           controls.minDistance = 0.5;
         } else {
           camera.position.copy(player.root.position)
-            .add(new THREE.Vector3(0, 3.0, 0))
-            .addScaledVector(forward, -6.2);
+            .add(new THREE.Vector3(0, 2.4, 0))
+            .addScaledVector(forward, -3.6);
           controls.target.copy(player.root.position).add(new THREE.Vector3(0, 1.0, 0));
           controls.minDistance = 2;
         }
@@ -752,10 +746,10 @@ function ThreeCourt({
               }}
             >
               <option value="">Choose player view</option>
-              <option value="player-one-first">Player 1 · First person</option>
-              <option value="player-one-third">Player 1 · Third person</option>
-              <option value="player-two-first">Player 2 · First person</option>
-              <option value="player-two-third">Player 2 · Third person</option>
+              <option value="player-one-first">{snapshot.players[0]} · First person</option>
+              <option value="player-one-third">{snapshot.players[0]} · Third person</option>
+              <option value="player-two-first">{snapshot.players[1]} · First person</option>
+              <option value="player-two-third">{snapshot.players[1]} · Third person</option>
             </select>
           </label>
           <div className={styles.iconControls} role="group" aria-label="Zoom and reset">
@@ -790,6 +784,15 @@ function ThreeCourt({
       </div>
       <div className={styles.viewport} ref={viewportRef}>
         <div className={styles.canvasHost} ref={canvasHostRef} />
+        {shotCallout && (
+          <div className={styles.shotCallout} role="status" aria-live="polite" key={shotCallout.frame}>
+            <span className={styles.shotCalloutLabel}>
+              {shotCallout.shotType === 'serve' ? 'FAST SERVE' : 'POWER SHOT'}
+            </span>
+            <strong>{shotCallout.player}</strong>
+            <b>{shotCallout.speedKmh}<small>km/h</small></b>
+          </div>
+        )}
         {!hasCourtData && (
           <p className={styles.waiting} role="status">Court positions will appear as the match feed updates.</p>
         )}

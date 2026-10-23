@@ -90,6 +90,9 @@ export type Te4LiveSnapshot = {
   trajectoryEvents?: Array<{
     frame: number;
     kind: 'shot' | 'point-end';
+    player?: Te4LivePlayer;
+    shotType?: 'serve' | 'rally';
+    speedKmh?: number;
   }>;
   soundEvents?: Array<{
     frame: number;
@@ -332,6 +335,54 @@ export class Te4DmoLiveParser {
     return p1Distance <= p2Distance ? 1 : 2;
   }
 
+  private isValidBallFrame(frame: number): boolean {
+    if (frame < 0 || frame >= this.frameCount) return false;
+    const x = this.ballX[frame];
+    const y = this.ballY[frame];
+    const height = this.ballZ[frame];
+    return Number.isFinite(x)
+      && Number.isFinite(y)
+      && Number.isFinite(height)
+      && Math.abs(x) <= 2500
+      && Math.abs(y) <= 1800
+      && height >= -50
+      && height <= 750;
+  }
+
+  private estimatedBallSpeedKmh(frame: number, includeHeight = false): number | null {
+    if (frame + 6 >= this.frameCount) return null;
+    for (let sample = frame + 2; sample <= frame + 6; sample += 1) {
+      if (!this.isValidBallFrame(sample)) return null;
+    }
+    const distance = Math.hypot(
+      this.ballX[frame + 6] - this.ballX[frame + 2],
+      this.ballY[frame + 6] - this.ballY[frame + 2],
+      includeHeight ? this.ballZ[frame + 6] - this.ballZ[frame + 2] : 0,
+    ) / 4;
+    const speed = distance * 0.6 * 3.6 / (includeHeight ? 0.928 : 1);
+    return Number.isFinite(speed) && speed >= 40 && speed <= 300 ? speed : null;
+  }
+
+  private shotSpeedKmh(frame: number, serve: boolean): number | null {
+    if (serve) {
+      const recorded = this.serveRecord(frame).speed;
+      if (recorded !== null && Number.isFinite(recorded) && recorded >= 50 && recorded <= 300) {
+        return Math.round(recorded);
+      }
+    }
+    const estimated = this.estimatedBallSpeedKmh(frame, serve);
+    return estimated === null ? null : Math.round(estimated);
+  }
+
+  private playerForShot(frame: number, serve: boolean): Te4LivePlayer | undefined {
+    if (serve) return this.serverForServe(frame);
+    for (const offset of [0, 1, -1, 2, -2, 3, -3]) {
+      const candidate = frame + offset;
+      if (this.isValidBallFrame(candidate)) return this.nearestPlayer(candidate);
+    }
+    return undefined;
+  }
+
   private serverForServe(frame: number): Te4LivePlayer {
     const p1Distance = Math.abs(Math.abs(this.player1X[frame]) - 1189);
     const p2Distance = Math.abs(Math.abs(this.player2X[frame]) - 1189);
@@ -359,16 +410,6 @@ export class Te4DmoLiveParser {
     const read = (relative: number) => this.readFloat(offset + relative);
     const speed = Math.hypot(read(127), read(135), read(143)) * 0.036;
     return { speed: speed > 50 ? speed : null };
-  }
-
-  private rawServeSpeedKmh(frame: number): number | null {
-    if (frame + 6 >= this.frameCount) return null;
-    const distance = Math.hypot(
-      this.ballX[frame + 6] - this.ballX[frame + 2],
-      this.ballY[frame + 6] - this.ballY[frame + 2],
-      this.ballZ[frame + 6] - this.ballZ[frame + 2],
-    ) / 4;
-    return distance * 0.6 * 3.6 / 0.928;
   }
 
   private isValidHit(frame: number): boolean {
@@ -548,8 +589,7 @@ export class Te4DmoLiveParser {
     const liveHits = parsed.openHits.filter((frame) => frame >= 0 && frame < this.frameCount);
     const liveServeSpeed = parsed.openServe === null
       ? null
-      : this.serveRecord(parsed.openServe).speed
-        ?? this.rawServeSpeedKmh(parsed.openServe);
+      : this.shotSpeedKmh(parsed.openServe, true);
     const lastFrame = visibleFrameCount - 1;
     const firstFrame = Math.max(0, visibleFrameCount - Math.max(1, Math.floor(courtWindowFrames)));
     const maxSamples = Math.max(2, Math.min(100, Math.floor(courtSampleLimit)));
@@ -560,15 +600,25 @@ export class Te4DmoLiveParser {
       const frame = sampleCount <= 1
         ? firstFrame
         : firstFrame + Math.round(sampleIndex * (lastFrame - firstFrame) / (sampleCount - 1));
-      const ballX = this.ballX[frame] > 3000 ? 0 : this.ballX[frame];
+      const playerPositions = [
+        this.player1X[frame],
+        this.player1Y[frame],
+        this.player2X[frame],
+        this.player2Y[frame],
+      ];
+      if (
+        !this.isValidBallFrame(frame)
+        || playerPositions.some((value) => !Number.isFinite(value) || Math.abs(value) > 2500)
+      ) continue;
       const sample = [
-        Math.round(ballX),
-        Math.round(this.ballY[frame]),
+        Math.round(this.ballX[frame]),
+        // TE4's lateral axis is opposite the right-handed rig's local court axis.
+        -Math.round(this.ballY[frame]),
         Math.round(Math.max(0, Math.min(600, this.ballZ[frame]))),
         Math.round(this.player1X[frame]),
-        Math.round(this.player1Y[frame]),
+        -Math.round(this.player1Y[frame]),
         Math.round(this.player2X[frame]),
-        Math.round(this.player2Y[frame]),
+        -Math.round(this.player2Y[frame]),
       ];
       // A few recordings contain false-positive frames with impossible court
       // coordinates. Keep valid score data and omit only the malformed sample.
@@ -578,12 +628,20 @@ export class Te4DmoLiveParser {
     }
 
     const trajectoryEvents: NonNullable<Te4LiveSnapshot['trajectoryEvents']> = [];
-    for (const frame of parsed.serveFrames) {
-      if (frame >= firstFrame && frame <= lastFrame) trajectoryEvents.push({ frame, kind: 'shot' });
-    }
-    for (const frame of parsed.hitFrames) {
-      if (frame >= firstFrame && frame <= lastFrame) trajectoryEvents.push({ frame, kind: 'shot' });
-    }
+    const addShotEvent = (frame: number, shotType: 'serve' | 'rally') => {
+      if (frame < firstFrame || frame > lastFrame) return;
+      const player = this.playerForShot(frame, shotType === 'serve');
+      const speedKmh = this.shotSpeedKmh(frame, shotType === 'serve');
+      trajectoryEvents.push({
+        frame,
+        kind: 'shot',
+        shotType,
+        ...(player ? { player } : {}),
+        ...(speedKmh === null ? {} : { speedKmh }),
+      });
+    };
+    for (const frame of parsed.serveFrames) addShotEvent(frame, 'serve');
+    for (const frame of parsed.hitFrames) addShotEvent(frame, 'rally');
     for (const frame of parsed.endFrames) {
       if (frame >= firstFrame && frame <= lastFrame) trajectoryEvents.push({ frame, kind: 'point-end' });
     }
@@ -608,6 +666,11 @@ export class Te4DmoLiveParser {
         const bounceSearchFrom = frame + (serve ? 2 : 0);
         const bounceSearchEnd = Math.min(bounceSearchFrom + 300, visibleFrameCount - 2);
         for (let bounceFrame = bounceSearchFrom + 3; bounceFrame < bounceSearchEnd; bounceFrame += 1) {
+          if (
+            !this.isValidBallFrame(bounceFrame - 1)
+            || !this.isValidBallFrame(bounceFrame)
+            || !this.isValidBallFrame(bounceFrame + 1)
+          ) continue;
           const z = this.ballZ[bounceFrame];
           if (
             z < 25

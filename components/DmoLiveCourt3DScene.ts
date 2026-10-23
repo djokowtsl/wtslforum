@@ -458,7 +458,10 @@ export function makePlayer(shirtColor: number, shortsColor: number): PlayerRig {
 
   const racket = new THREE.Group();
   const racketVisual = new THREE.Group();
-  racketVisual.position.y = 0.11;
+  // Pivot the racket at the grip, so the hand closes around the handle rather
+  // than appearing to hold the hoop. The rig's local +X is the player's right.
+  racketVisual.position.y = 0.277;
+  racketVisual.scale.setScalar(0.77);
   racket.add(racketVisual);
   const frame = new THREE.Mesh(new THREE.TorusGeometry(0.24, 0.027, 6, 24), material(0xe5dfc6, 0.55));
   frame.scale.set(0.77, 1.22, 0.45);
@@ -480,7 +483,7 @@ export function makePlayer(shirtColor: number, shortsColor: number): PlayerRig {
   }
   racket.position.set(0.39, 1.1, 0.04);
   root.add(racket);
-  root.scale.set(0.92, 0.9, 0.92);
+  root.scale.set(0.84, 0.84, 0.84);
   return {
     root, body, hip, head, leftArm, rightArm, leftLeg, rightLeg,
     leftHand, rightHand, leftShoe, rightShoe, racket,
