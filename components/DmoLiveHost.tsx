@@ -3,7 +3,7 @@
 import { useEffect, useRef, useState } from 'react';
 import { uploadPresigned } from '@vercel/blob/client';
 import Link from 'next/link';
-import { AlertTriangle, ExternalLink, FolderOpen, Radio, Square } from 'lucide-react';
+import { AlertTriangle, FolderOpen, Play, Radio, Square } from 'lucide-react';
 import {
   hasCompletedDmoPoints,
   LIVE_DMO_COURT_SAMPLES,
@@ -867,7 +867,10 @@ export default function DmoLiveHost({ displayName, canPrepareFullReplay }: Props
           <h1>Live <em>Streams</em></h1>
           <p>Share a live court, replay a completed DMO from the start, or add a stream link from your Discord post. DMO files stay on your device.</p>
         </div>
-        <Link className={styles.watchLink} href="/livestreams/viewer"><ExternalLink size={15} /> Viewer page</Link>
+        <Link className={styles.watchLink} href="/livestreams/viewer">
+          <Play size={15} fill="currentColor" aria-hidden="true" />
+          <span>Watch Matches</span>
+        </Link>
       </header>
 
       <section className={styles.controlPanel} aria-label="Broadcast controls">
