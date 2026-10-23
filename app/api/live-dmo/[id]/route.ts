@@ -134,7 +134,34 @@ export async function PATCH(request: Request, context: RouteContext) {
                 'players', COALESCE(
                   NULLIF(payload->'players', 'null'::jsonb),
                   ${JSON.stringify(update.data.snapshot.players)}::jsonb
-                )
+                ),
+                'pointLog', COALESCE((
+                  SELECT jsonb_agg(point ORDER BY point_number)
+                  FROM (
+                    SELECT DISTINCT ON (point_number) point_number, point
+                    FROM (
+                      SELECT (incoming.point->>'number')::int AS point_number,
+                             incoming.point AS point,
+                             0 AS source_order
+                      FROM jsonb_array_elements(
+                        ${JSON.stringify(update.data.snapshot.recentPoints)}::jsonb
+                      ) AS incoming(point)
+                      UNION ALL
+                      SELECT (stored.point->>'number')::int AS point_number,
+                             stored.point AS point,
+                             1 AS source_order
+                      FROM jsonb_array_elements(
+                        CASE
+                          WHEN jsonb_typeof(payload->'pointLog')='array' THEN payload->'pointLog'
+                          WHEN jsonb_typeof(payload->'snapshot'->'recentPoints')='array' THEN payload->'snapshot'->'recentPoints'
+                          WHEN jsonb_typeof(payload->'recentPoints')='array' THEN payload->'recentPoints'
+                          ELSE '[]'::jsonb
+                        END
+                      ) AS stored(point)
+                    ) AS candidates
+                    ORDER BY point_number, source_order
+                  ) AS deduplicated
+                ), '[]'::jsonb)
               ),
             sequence=${update.data.sequence},
             updated_at=NOW(),
