@@ -3,7 +3,7 @@
 import type { Te4DmoReplaySpeed, Te4LivePoint, Te4LiveSnapshot } from '@/lib/te4DmoLive';
 import type { LivePreMatchProbability } from '@/lib/liveBroadcast';
 import { surfaceForDmoTournament } from '@/lib/te4DmoSurface';
-import DmoLiveCourt from './DmoLiveCourt';
+import DmoLiveCourt from './DmoLiveCourt3D';
 import styles from './DmoLiveDisplay.module.css';
 
 type Props = {
