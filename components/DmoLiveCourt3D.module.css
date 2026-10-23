@@ -159,6 +159,31 @@
   cursor: grabbing;
 }
 
+.shotCallout {
+  position: absolute;
+  z-index: 3;
+  left: 14px;
+  bottom: 14px;
+  display: grid;
+  grid-template-columns: auto 1fr auto;
+  align-items: center;
+  gap: 9px;
+  max-width: min(92%, 370px);
+  padding: 9px 12px;
+  border: 1px solid rgba(176, 244, 59, .34);
+  border-radius: 9px;
+  background: rgba(6, 13, 29, .9);
+  box-shadow: 0 8px 22px rgba(0, 0, 0, .25);
+  color: #eaf0fb;
+  pointer-events: none;
+  animation: shotCalloutIn 180ms ease-out both;
+}
+.shotCalloutLabel { color: #b0f43b; font: 800 8px/1 system-ui, sans-serif; letter-spacing: .11em; white-space: nowrap; }
+.shotCallout strong { overflow: hidden; font: 650 11px/1 system-ui, sans-serif; text-overflow: ellipsis; white-space: nowrap; }
+.shotCallout b { color: #fff; font: italic 800 16px/1 var(--font-display, sans-serif); font-variant-numeric: tabular-nums; white-space: nowrap; }
+.shotCallout small { margin-left: 4px; color: #b1bfd4; font: 700 8px/1 system-ui, sans-serif; }
+@keyframes shotCalloutIn { from { opacity: 0; transform: translateY(5px); } to { opacity: 1; transform: translateY(0); } }
+
 .waiting {
   position: absolute;
   inset: auto 14px 12px;

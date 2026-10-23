@@ -1,6 +1,12 @@
 export type LiveCourtCoordinates = [number, number, number, number, number, number, number];
 export type LiveCourtSample = { frame: number; values: LiveCourtCoordinates };
-export type LiveCourtMotionEvent = { frame: number; kind: 'shot' | 'point-end' };
+export type LiveCourtMotionEvent = {
+  frame: number;
+  kind: 'shot' | 'point-end';
+  player?: 1 | 2;
+  shotType?: 'serve' | 'rally';
+  speedKmh?: number;
+};
 
 // The DMO court runs along X, with the net at X=0. Player-local +Z points
 // toward the net; this keeps the right-handed model oriented consistently.
