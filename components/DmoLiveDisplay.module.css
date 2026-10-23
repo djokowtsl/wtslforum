@@ -36,21 +36,20 @@
 .liveCourtStage { position: relative; }
 .mainGrid { display: grid; grid-template-columns: minmax(0, 1.1fr) minmax(0, .9fr); gap: 18px; padding: 18px; }
 .leftColumn, .rightColumn { min-width: 0; }
-.scoreBug { position: absolute; z-index: 4; top: 86px; right: 32px; width: min(290px, calc(100% - 54px)); padding: 9px 10px 8px; border: 1px solid rgba(196, 208, 226, .3); border-radius: 9px; background: rgba(6, 13, 29, .86); box-shadow: 0 8px 22px rgba(0, 0, 0, .3); color: var(--live-text); backdrop-filter: blur(9px); pointer-events: none; }
-.scoreBugHeader { display: flex; align-items: center; justify-content: space-between; gap: 10px; padding: 0 2px 7px; }
-.scoreBugStatus { display: inline-flex; align-items: center; gap: 6px; color: var(--live-lime); font-size: 8px; font-weight: 800; letter-spacing: .1em; text-transform: uppercase; }
-.scoreBugDot, .scoreBugServeDot { flex: none; width: 6px; height: 6px; border-radius: 50%; background: var(--live-lime); box-shadow: 0 0 0 3px rgba(176, 244, 59, .1); }
-.scoreBugSets { overflow: hidden; color: var(--live-muted); font-size: 8px; font-weight: 700; text-align: right; text-overflow: ellipsis; white-space: nowrap; }
+.scoreBug { position: absolute; z-index: 4; top: 86px; right: 26px; width: min(232px, calc(100% - 44px)); padding: 7px 8px 6px; border: 1px solid rgba(196, 208, 226, .24); border-radius: 10px; background: rgba(6, 13, 29, .72); box-shadow: 0 6px 16px rgba(0, 0, 0, .22); color: var(--live-text); backdrop-filter: blur(8px); pointer-events: none; }
+.scoreBugHeader { display: flex; align-items: center; justify-content: space-between; gap: 8px; padding: 0 2px 5px; }
+.scoreBugStatus { display: inline-flex; align-items: center; gap: 5px; color: var(--live-lime); font-size: 7px; font-weight: 800; letter-spacing: .1em; text-transform: uppercase; }
+.scoreBugDot, .scoreBugServeDot { flex: none; width: 5px; height: 5px; border-radius: 50%; background: var(--live-lime); box-shadow: 0 0 0 3px rgba(176, 244, 59, .1); }
+.scoreBugSets { overflow: hidden; color: var(--live-muted); font-size: 7px; font-weight: 700; text-align: right; text-overflow: ellipsis; white-space: nowrap; }
 .scoreBugTable { border-top: 1px solid rgba(196, 208, 226, .18); }
-.scoreBugHeading, .scoreBugRow { display: grid; grid-template-columns: minmax(75px, 1fr) 39px 44px 38px; align-items: center; gap: 4px; }
-.scoreBugHeading { padding: 6px 2px 4px; color: var(--live-muted); font-size: 7px; font-weight: 800; letter-spacing: .04em; text-align: center; text-transform: uppercase; }
+.scoreBugHeading, .scoreBugRow { display: grid; grid-template-columns: minmax(62px, 1fr) 31px 35px 31px; align-items: center; gap: 3px; }
+.scoreBugHeading { padding: 4px 2px 3px; color: var(--live-muted); font-size: 6px; font-weight: 800; letter-spacing: .04em; text-align: center; text-transform: uppercase; }
 .scoreBugHeading > :first-child { text-align: left; }
-.scoreBugRow { min-height: 25px; border-top: 1px solid rgba(196, 208, 226, .11); font-size: 10px; font-variant-numeric: tabular-nums; text-align: center; }
-.scoreBugPlayer { display: flex; align-items: center; gap: 7px; min-width: 0; color: var(--live-soft); text-align: left; }
+.scoreBugRow { min-height: 21px; border-top: 1px solid rgba(196, 208, 226, .11); font-size: 9px; font-variant-numeric: tabular-nums; text-align: center; }
+.scoreBugPlayer { display: flex; align-items: center; gap: 5px; min-width: 0; color: var(--live-soft); text-align: left; }
 .scoreBugPlayer span { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.scoreBugServeDot { width: 5px; height: 5px; }
-.scoreBugPoints { color: var(--live-lime); font-size: 12px; }
-.scoreBugServe { color: var(--live-muted); font-size: 9px; }
+.scoreBugPoints { color: var(--live-lime); font-size: 11px; }
+.scoreBugServe { color: var(--live-muted); font-size: 8px; }
 .pointNote { min-height: 17px; margin: 9px 2px 0; color: var(--live-muted); font-size: 10px; }
 
 .metrics { overflow: hidden; margin-top: 13px; border: 1px solid rgba(150, 180, 230, .14); border-radius: 9px; background: var(--live-panel-2); }
@@ -106,7 +105,10 @@
 @media (max-width: 560px) {
   .header { align-items: flex-start; flex-direction: column; }
   .liveCourtStage { padding: 12px 12px 0; }
-  .scoreBug { top: 126px; right: 22px; width: min(258px, calc(100% - 38px)); }
+  .scoreBug { top: 126px; right: 16px; width: min(208px, calc(100% - 28px)); padding: 6px 7px 5px; }
+  .scoreBugHeading, .scoreBugRow { grid-template-columns: minmax(56px, 1fr) 27px 32px 28px; gap: 2px; }
+  .scoreBugHeading { padding: 3px 2px 2px; }
+  .scoreBugRow { min-height: 20px; }
   .mainGrid { gap: 15px; padding: 12px; }
   .metricsHeading, .metricRow { grid-template-columns: minmax(94px, 1.2fr) repeat(2, minmax(48px, .8fr)); gap: 5px; padding: 8px; }
   .metricsHeading { font-size: 7px; }
@@ -118,5 +120,5 @@
 }
 
 @media (max-width: 420px) {
-  .scoreBug { top: 146px; right: 18px; width: min(250px, calc(100% - 30px)); }
+  .scoreBug { top: 146px; right: 12px; width: min(196px, calc(100% - 24px)); }
 }
