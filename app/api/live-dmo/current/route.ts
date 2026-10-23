@@ -3,6 +3,8 @@ import { getSession } from '@/lib/auth';
 import { sql } from '@/lib/db';
 import { hasCompletedDmoPoints } from '@/lib/te4DmoLive';
 import { cleanupExpiredLiveDmoBroadcasts, isLiveDmoReplayPath } from '@/lib/liveDmoStorage';
+import { getLiveBroadcastScoreFeed } from '@/lib/liveScores';
+import { scoreForLiveBroadcast } from '@/lib/liveBroadcastScore';
 
 export const dynamic = 'force-dynamic';
 
@@ -111,9 +113,23 @@ export async function GET() {
         stale: Boolean(row.stale),
       }];
     });
+    const needsLiveScore = broadcasts.some((broadcast) =>
+      broadcast.broadcastMode === 'auto' && !broadcast.replay && broadcast.status === 'live',
+    );
+    const scoreFeed = needsLiveScore ? await getLiveBroadcastScoreFeed() : null;
+    const scoredBroadcasts = broadcasts.map((broadcast) => {
+      if (broadcast.broadcastMode !== 'auto' || broadcast.replay) return broadcast;
+      const players = broadcast.snapshot?.players ?? broadcast.players;
+      return {
+        ...broadcast,
+        liveScore: broadcast.status === 'live' && players
+          ? scoreForLiveBroadcast(scoreFeed, players, broadcast.snapshot?.bestOf)
+          : null,
+      };
+    });
     return NextResponse.json({
-      broadcasts,
-      broadcast: broadcasts[0] ?? null,
+      broadcasts: scoredBroadcasts,
+      broadcast: scoredBroadcasts[0] ?? null,
     }, { headers: PRIVATE_HEADERS });
   } catch (error) {
     console.error('[live-broadcast] viewer read failed', error instanceof Error ? error.name : 'UnknownError');
