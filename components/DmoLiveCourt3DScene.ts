@@ -294,16 +294,16 @@ export function buildCourtFixtures(scene: THREE.Scene) {
 
   for (const end of [-1, 1]) {
     const bench = new THREE.Group();
-    bench.position.x = end * 13.55;
+    bench.position.set(end * 2.4, 0, 6.75);
     scene.add(bench);
-    addBox(bench, [0.62, 0.12, 2.55], [0, 0.53, 0], seatMaterial);
-    addBox(bench, [0.12, 0.88, 2.55], [end * 0.3, 1.0, 0], backMaterial);
-    for (const z of [-0.91, 0.91]) {
-      addBox(bench, [0.09, 0.5, 0.09], [-0.2, 0.26, z], frameMaterial);
-      addBox(bench, [0.09, 0.5, 0.09], [0.2, 0.26, z], frameMaterial);
+    addBox(bench, [2.55, 0.12, 0.62], [0, 0.53, 0], seatMaterial);
+    addBox(bench, [2.55, 0.88, 0.12], [0, 1.0, 0.28], backMaterial);
+    for (const x of [-0.91, 0.91]) {
+      addBox(bench, [0.09, 0.5, 0.09], [x, 0.26, -0.2], frameMaterial);
+      addBox(bench, [0.09, 0.5, 0.09], [x, 0.26, 0.2], frameMaterial);
     }
-    addBox(bench, [0.44, 0.08, 0.08], [0, 0.25, -0.91], frameMaterial);
-    addBox(bench, [0.44, 0.08, 0.08], [0, 0.25, 0.91], frameMaterial);
+    addBox(bench, [2.1, 0.08, 0.08], [0, 0.25, -0.21], frameMaterial);
+    addBox(bench, [2.1, 0.08, 0.08], [0, 0.25, 0.21], frameMaterial);
   }
 
   const chair = new THREE.Group();

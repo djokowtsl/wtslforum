@@ -234,6 +234,37 @@ function renderStaticScene(
   polygon([[-1275, -590, 0], [1275, -590, 0], [1275, 590, 0], [-1275, 590, 0]], palette.court, null);
   const fixtureColor = '#53647c';
   const fixtureHighlight = '#9da8b7';
+  const drawPlayerBench = (centerX: number) => {
+    const benchY = 675;
+    for (const x of [centerX - 91, centerX + 91]) {
+      for (const y of [benchY - 20, benchY + 20]) {
+        line([[x, y, 0], [x, y, 52]], fixtureColor, 4);
+      }
+    }
+    polygon([
+      [centerX - 127, benchY - 31, 54],
+      [centerX + 127, benchY - 31, 54],
+      [centerX + 127, benchY + 31, 54],
+      [centerX - 127, benchY + 31, 54],
+    ], '#647188', fixtureHighlight);
+    polygon([
+      [centerX - 127, benchY + 25, 58],
+      [centerX + 127, benchY + 25, 58],
+      [centerX + 127, benchY + 37, 142],
+      [centerX - 127, benchY + 37, 142],
+    ], '#45536a', fixtureHighlight);
+    line([
+      [centerX - 105, benchY - 20, 26],
+      [centerX + 105, benchY - 20, 26],
+    ], fixtureColor, 5);
+    line([
+      [centerX - 105, benchY + 20, 26],
+      [centerX + 105, benchY + 20, 26],
+    ], fixtureColor, 5);
+  };
+  drawPlayerBench(-240);
+  drawPlayerBench(240);
+
   for (const end of [-1, 1]) {
     const x = end * 1350;
     for (const y of [-94, 94]) {
