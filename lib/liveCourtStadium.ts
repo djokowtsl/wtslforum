@@ -44,6 +44,62 @@ function drawStadiumCrowd(context: CanvasRenderingContext2D, project: Project) {
   polygon([[-2350, 690, 0], [2350, 690, 0], [2350, 1450, 0], [-2350, 1450, 0]], '#19283b', '#3e5265');
   polygon([[-2320, -700, 0], [-1440, -700, 0], [-1440, 700, 0], [-2320, 700, 0]], '#1b2b40', '#3e5265');
   polygon([[1440, -700, 0], [2320, -700, 0], [2320, 700, 0], [1440, 700, 0]], '#1b2b40', '#3e5265');
+  const wallColor = '#26364b';
+  const wallRim = '#64778e';
+  for (const side of [-1, 1]) {
+    const y = side * 1450;
+    polygon([
+      [-2350, y, 0],
+      [2350, y, 0],
+      [2350, y, 620],
+      [-2350, y, 620],
+    ], wallColor, '#42556c');
+    polygon([
+      [-2350, y, 620],
+      [2350, y, 620],
+      [2350, y - side * 62, 620],
+      [-2350, y - side * 62, 620],
+    ], wallRim, '#8797aa');
+  }
+  for (const end of [-1, 1]) {
+    const x = end * 2320;
+    polygon([
+      [x, -1450, 0],
+      [x, 1450, 0],
+      [x, 1450, 620],
+      [x, -1450, 620],
+    ], wallColor, '#42556c');
+    polygon([
+      [x, -1450, 620],
+      [x, 1450, 620],
+      [x - end * 62, 1450, 620],
+      [x - end * 62, -1450, 620],
+    ], wallRim, '#8797aa');
+  }
+  context.save();
+  context.strokeStyle = 'rgba(174,190,210,.18)';
+  context.lineWidth = 2;
+  for (let x = -2100; x <= 2100; x += 350) {
+    for (const y of [-1450, 1450]) {
+      const [bottomX, bottomY] = project(x, y, 0);
+      const [topX, topY] = project(x, y, 620);
+      context.beginPath();
+      context.moveTo(bottomX, bottomY);
+      context.lineTo(topX, topY);
+      context.stroke();
+    }
+  }
+  for (let y = -1150; y <= 1150; y += 350) {
+    for (const x of [-2320, 2320]) {
+      const [bottomX, bottomY] = project(x, y, 0);
+      const [topX, topY] = project(x, y, 620);
+      context.beginPath();
+      context.moveTo(bottomX, bottomY);
+      context.lineTo(topX, topY);
+      context.stroke();
+    }
+  }
+  context.restore();
 
   const drawSpectator = (x: number, y: number, z: number, index: number) => {
     const [screenX, screenY, scale] = project(x, y, z);
@@ -118,16 +174,16 @@ function renderStaticScene(
   const height = context.canvas.height;
   const palette = stadium
     ? {
-      hard: { court: '#278a91', apron: '#18334e' },
-      clay: { court: '#c66749', apron: '#27384a' },
-      grass: { court: '#438654', apron: '#1e3a4b' },
-      unknown: { court: '#528d95', apron: '#24384d' },
+      hard: { court: '#4c6b99', apron: '#263752' },
+      clay: { court: '#9c5a4c', apron: '#353d4c' },
+      grass: { court: '#63795b', apron: '#2e3d4b' },
+      unknown: { court: '#566b89', apron: '#2a3a52' },
     }[surface]
     : {
-      hard: { court: '#50b9ae', apron: '#f6a77b' },
-      clay: { court: '#e98d68', apron: '#f6c27d' },
-      grass: { court: '#62b66f', apron: '#f6a77b' },
-      unknown: { court: '#78aab0', apron: '#f1c58f' },
+      hard: { court: '#6b83a7', apron: '#d4dce8' },
+      clay: { court: '#bd715d', apron: '#ebe1d7' },
+      grass: { court: '#728d6a', apron: '#e0e6dc' },
+      unknown: { court: '#7c91ad', apron: '#e0e6ec' },
     }[surface];
 
   const rawProject = createCourtProjector(camera, zoom);
@@ -176,6 +232,61 @@ function renderStaticScene(
 
   polygon([[-1450, -700, 0], [1450, -700, 0], [1450, 700, 0], [-1450, 700, 0]], palette.apron, null);
   polygon([[-1275, -590, 0], [1275, -590, 0], [1275, 590, 0], [-1275, 590, 0]], palette.court, null);
+  const fixtureColor = '#53647c';
+  const fixtureHighlight = '#9da8b7';
+  for (const end of [-1, 1]) {
+    const x = end * 1350;
+    for (const y of [-94, 94]) {
+      line([[x - end * 20, y, 0], [x - end * 20, y, 52]], fixtureColor, 4);
+      line([[x + end * 20, y, 0], [x + end * 20, y, 52]], fixtureColor, 4);
+    }
+    polygon([
+      [x - 28, -115, 54],
+      [x + 28, -115, 54],
+      [x + 28, 115, 54],
+      [x - 28, 115, 54],
+    ], '#647188', fixtureHighlight);
+    polygon([
+      [x + end * 28, -115, 58],
+      [x + end * 28, 115, 58],
+      [x + end * 28, 115, 138],
+      [x + end * 28, -115, 138],
+    ], '#45536a', fixtureHighlight);
+  }
+
+  // Courtside umpire chair and seated official, on the far side of the net.
+  line([[0, 630, 0], [0, 630, 164]], fixtureColor, 5);
+  line([[0, 692, 0], [0, 692, 164]], fixtureColor, 5);
+  polygon([
+    [-48, 620, 164],
+    [48, 620, 164],
+    [48, 700, 164],
+    [-48, 700, 164],
+  ], '#647188', fixtureHighlight);
+  polygon([
+    [-40, 700, 170],
+    [40, 700, 170],
+    [40, 700, 236],
+    [-40, 700, 236],
+  ], '#45536a', fixtureHighlight);
+  polygon([
+    [-22, 636, 195],
+    [22, 636, 195],
+    [18, 660, 235],
+    [-18, 660, 235],
+  ], '#526d93', null);
+  line([[-12, 640, 200], [-22, 610, 168]], '#d2a17f', 5);
+  line([[12, 640, 200], [22, 610, 168]], '#d2a17f', 5);
+  line([[-12, 640, 194], [-18, 620, 170]], fixtureColor, 6);
+  line([[12, 640, 194], [18, 620, 170]], fixtureColor, 6);
+  const umpireHead = project(0, 648, 267);
+  context.beginPath();
+  context.arc(umpireHead[0], umpireHead[1], 7, 0, Math.PI * 2);
+  context.fillStyle = '#d2a17f';
+  context.fill();
+  context.strokeStyle = '#353744';
+  context.lineWidth = 2;
+  context.stroke();
   if (surface === 'grass') {
     for (let y = -520; y < 560; y += 180) {
       polygon([[-1270, y, 0], [1270, y, 0], [1270, y + 78, 0], [-1270, y + 78, 0]], 'rgba(255,255,255,.055)', null);

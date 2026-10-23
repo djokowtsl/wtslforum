@@ -20,10 +20,10 @@ export type PlayerRig = {
 export const SCALE = 0.01;
 export const BALL_RADIUS = 0.034;
 export const PALETTE = {
-  outside: 0x80857d,
-  stands: 0x646b64,
-  trim: 0xa2a79f,
-  yellow: 0xe9dc78,
+  outside: 0x596373,
+  stands: 0x3d4859,
+  trim: 0x9da8b7,
+  yellow: 0xf0dc63,
   shirtOne: 0xd9a95e,
   shirtTwo: 0xd96d5b,
 };
@@ -53,9 +53,9 @@ function addBox(
 }
 
 function courtColor(surface: Te4CourtSurface) {
-  if (surface === 'grass') return 0x567a51;
-  if (surface === 'clay') return 0x9d5a43;
-  return 0x416f67;
+  if (surface === 'grass') return 0x63795b;
+  if (surface === 'clay') return 0x9c5a4c;
+  return 0x4c6b99;
 }
 
 export function buildCourt(scene: THREE.Scene, surface: Te4CourtSurface) {
@@ -64,7 +64,7 @@ export function buildCourt(scene: THREE.Scene, surface: Te4CourtSurface) {
   const singlesHalfWidth = SINGLES_WIDTH / 2;
   const ground = new THREE.Mesh(
     new THREE.PlaneGeometry(300, 300),
-    material(0x707670),
+    material(0x4c5665),
   );
   ground.rotation.x = -Math.PI / 2;
   ground.position.y = -0.12;
@@ -180,7 +180,7 @@ export function buildCrowd(scene: THREE.Scene) {
 
   for (let row = 0; row < 7; row += 1) {
     const y = 0.05 + row * rowStep;
-    const platformMaterial = material(row % 2 === 0 ? PALETTE.stands : 0x234743, 0.96);
+    const platformMaterial = material(row % 2 === 0 ? PALETTE.stands : 0x333e4e, 0.96);
     for (const side of [-1, 1]) {
       const platform = addBox(scene, [30.2, 0.12, 0.72], [0, y, side * (9.3 + row * rowSpacing)], platformMaterial);
       platform.castShadow = false;
@@ -237,6 +237,113 @@ export function buildCrowd(scene: THREE.Scene) {
   }
   if (bodyMesh.instanceColor) bodyMesh.instanceColor.needsUpdate = true;
   if (headMesh.instanceColor) headMesh.instanceColor.needsUpdate = true;
+
+  // A low, open-sided retaining bowl gives the seating a clear stadium boundary
+  // without placing a roof or scoreboard in aerial and TV camera sightlines.
+  const structure = material(0x293649, 0.88);
+  const fascia = material(0x758397, 0.72);
+  const enclosureHeight = 7.2;
+  const sideWalls = [-1, 1].map((side) => addBox(
+    scene,
+    [39.2, enclosureHeight, 0.56],
+    [0, enclosureHeight / 2, side * 15.55],
+    structure,
+  ));
+  const endWalls = [-1, 1].map((end) => addBox(
+    scene,
+    [0.56, enclosureHeight, 31.7],
+    [end * 22.45, enclosureHeight / 2, 0],
+    structure,
+  ));
+  for (const wall of [...sideWalls, ...endWalls]) {
+    wall.castShadow = false;
+    wall.receiveShadow = true;
+  }
+  for (const side of [-1, 1]) {
+    const cap = addBox(scene, [39.4, 0.16, 0.68], [0, enclosureHeight + 0.08, side * 15.55], fascia);
+    cap.castShadow = false;
+    for (let index = -3; index <= 3; index += 1) {
+      const rib = addBox(
+        scene,
+        [0.22, enclosureHeight - 0.3, 0.7],
+        [index * 5.5, enclosureHeight / 2, side * 15.55],
+        fascia,
+      );
+      rib.castShadow = false;
+    }
+  }
+  for (const end of [-1, 1]) {
+    const cap = addBox(scene, [0.68, 0.16, 31.9], [end * 22.45, enclosureHeight + 0.08, 0], fascia);
+    cap.castShadow = false;
+    for (let index = -2; index <= 2; index += 1) {
+      const rib = addBox(
+        scene,
+        [0.7, enclosureHeight - 0.3, 0.22],
+        [end * 22.45, enclosureHeight / 2, index * 6.2],
+        fascia,
+      );
+      rib.castShadow = false;
+    }
+  }
+}
+
+export function buildCourtFixtures(scene: THREE.Scene) {
+  const frameMaterial = material(0x364255, 0.72);
+  const seatMaterial = material(0x647188, 0.76);
+  const backMaterial = material(0x45536a, 0.78);
+
+  for (const end of [-1, 1]) {
+    const bench = new THREE.Group();
+    bench.position.x = end * 13.55;
+    scene.add(bench);
+    addBox(bench, [0.62, 0.12, 2.55], [0, 0.53, 0], seatMaterial);
+    addBox(bench, [0.12, 0.88, 2.55], [end * 0.3, 1.0, 0], backMaterial);
+    for (const z of [-0.91, 0.91]) {
+      addBox(bench, [0.09, 0.5, 0.09], [-0.2, 0.26, z], frameMaterial);
+      addBox(bench, [0.09, 0.5, 0.09], [0.2, 0.26, z], frameMaterial);
+    }
+    addBox(bench, [0.44, 0.08, 0.08], [0, 0.25, -0.91], frameMaterial);
+    addBox(bench, [0.44, 0.08, 0.08], [0, 0.25, 0.91], frameMaterial);
+  }
+
+  const chair = new THREE.Group();
+  chair.position.set(0, 0, 6.75);
+  chair.rotation.y = Math.PI;
+  scene.add(chair);
+  for (const x of [-0.34, 0.34]) {
+    addBox(chair, [0.08, 1.5, 0.08], [x, 0.75, 0], frameMaterial);
+  }
+  addBox(chair, [0.82, 0.11, 0.72], [0, 1.48, 0], frameMaterial);
+  addBox(chair, [0.58, 0.08, 0.58], [0, 1.65, 0], seatMaterial);
+  addBox(chair, [0.58, 0.62, 0.09], [0, 1.96, -0.25], backMaterial);
+  addBox(chair, [0.7, 0.08, 0.45], [0, 0.48, 0.25], frameMaterial);
+  for (const y of [0.48, 0.82, 1.16]) {
+    addBox(chair, [0.6, 0.07, 0.08], [0, y, 0.38], seatMaterial);
+  }
+
+  const umpireShirt = material(0x526d93, 0.84);
+  const umpireSkin = material(0xd2a17f, 0.9);
+  const umpireHair = material(0x353744, 0.92);
+  const torso = new THREE.Mesh(new THREE.CapsuleGeometry(0.16, 0.3, 4, 8), umpireShirt);
+  torso.position.set(0, 2.02, 0.02);
+  torso.castShadow = true;
+  chair.add(torso);
+  const head = new THREE.Mesh(new THREE.SphereGeometry(0.14, 12, 10), umpireSkin);
+  head.position.set(0, 2.35, 0.02);
+  head.castShadow = true;
+  chair.add(head);
+  const hair = new THREE.Mesh(new THREE.SphereGeometry(0.143, 12, 8, 0, Math.PI * 2, 0, Math.PI * 0.48), umpireHair);
+  hair.position.set(0, 2.38, 0.02);
+  chair.add(hair);
+  for (const side of [-1, 1]) {
+    const arm = new THREE.Mesh(new THREE.CylinderGeometry(0.055, 0.07, 0.42, 8), umpireSkin);
+    arm.position.set(side * 0.2, 1.99, 0.14);
+    arm.rotation.x = Math.PI / 2.7;
+    arm.rotation.z = side * -0.24;
+    arm.castShadow = true;
+    chair.add(arm);
+    addBox(chair, [0.13, 0.16, 0.47], [side * 0.15, 1.68, 0.36], frameMaterial);
+  }
 }
 
 export function makePlayer(shirtColor: number, shortsColor: number): PlayerRig {
@@ -330,7 +437,7 @@ export function makePlayer(shirtColor: number, shortsColor: number): PlayerRig {
   }
   racket.position.set(0.38, 1.2, 0);
   root.add(racket);
-  root.scale.setScalar(0.95);
+  root.scale.set(0.92, 0.86, 0.92);
   return {
     root, body, hip, head, leftArm, rightArm, leftLeg, rightLeg,
     leftHand, rightHand, leftShoe, rightShoe, racket,

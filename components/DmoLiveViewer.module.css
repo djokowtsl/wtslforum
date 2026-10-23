@@ -12,3 +12,9 @@
 .empty p { max-width: 520px; margin: 0; color: var(--muted, #8c9db8); font-size: 11px; line-height: 1.6; }
 .broadcastTags { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 8px; }
 .broadcastTag { padding: 4px 6px; border-radius: 5px; background: rgba(176,244,59,.1); color: var(--lime, #b0f43b); font-size: 8px; font-weight: 800; letter-spacing: .08em; }
+.carouselControls { display: flex; justify-content: flex-end; align-items: center; gap: 8px; margin: 0 1px 10px; color: var(--muted, #8c9db8); font-size: 11px; font-variant-numeric: tabular-nums; }
+.carouselControls span { margin-right: 3px; }
+.carouselControls button { display: grid; width: 34px; height: 34px; place-items: center; padding: 0; border: 1px solid var(--line-2, rgba(150,180,230,.22)); border-radius: 9px; background: var(--panel, #081328); color: var(--text, #f1f5fb); cursor: pointer; }
+.carouselControls button:hover:not(:disabled) { border-color: var(--lime, #b0f43b); color: var(--lime, #b0f43b); }
+.carouselControls button:disabled { cursor: not-allowed; opacity: .4; }
+.carouselControls button:focus-visible { outline: 2px solid var(--lime, #b0f43b); outline-offset: 2px; }

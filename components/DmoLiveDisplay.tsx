@@ -18,7 +18,7 @@ type Props = {
 };
 
 function scoreLabel(sets: [number, number][]) {
-  if (!sets.length) return 'Match in progress';
+  if (!sets.length) return null;
   return sets.map(([a, b]) => `${a}–${b}`).join('  ');
 }
 
@@ -111,8 +111,9 @@ export default function DmoLiveDisplay({
   pointLog,
   pointLogLoaded = false,
 }: Props) {
-  const p1Stats = snapshot.stats[0];
-  const p2Stats = snapshot.stats[1];
+  const playerStats = snapshot.stats;
+  const p1Stats = playerStats[0];
+  const p2Stats = playerStats[1];
   const surface = surfaceForDmoTournament(snapshot.stadium);
   const statusLabel = state === 'ended' ? 'Broadcast ended' : stale ? 'Connection paused' : 'Live';
   const pointScore = snapshot.score.tiebreak
@@ -132,14 +133,50 @@ export default function DmoLiveDisplay({
           <h2>{snapshot.players[0]} <i>vs</i> {snapshot.players[1]}</h2>
           <p>{snapshot.stadium || 'TE4 match'}</p>
         </div>
-        <div className={styles.finalScore}>
-          <small>SETS</small>
-          <strong>{scoreLabel(snapshot.score.sets)}</strong>
-        </div>
       </header>
 
       <div className={styles.liveCourtStage}>
         <DmoLiveCourt snapshot={snapshot} surface={surface} playbackSpeed={playbackSpeed} />
+        <aside className={styles.scoreBug} aria-label="Live match score">
+          <div className={styles.scoreBugHeader}>
+            <span className={styles.scoreBugStatus}>
+              <i aria-hidden="true" className={styles.scoreBugDot} />
+              {statusLabel}
+            </span>
+            {scoreLabel(snapshot.score.sets) && (
+              <strong className={styles.scoreBugSets} aria-label="Set scores">
+                {scoreLabel(snapshot.score.sets)}
+              </strong>
+            )}
+          </div>
+          <div className={styles.scoreBugTable} role="table" aria-label="Player, games, points and serve percentage">
+            <div className={styles.scoreBugHeading} role="row">
+              <span role="columnheader">Player</span>
+              <span role="columnheader">Games</span>
+              <span role="columnheader">{snapshot.score.tiebreak ? 'TB' : 'Points'}</span>
+              <span role="columnheader">Serve</span>
+            </div>
+            {snapshot.players.map((name, index) => (
+              <div className={styles.scoreBugRow} role="row" key={`${index}-${name}`}>
+                <strong role="cell" className={styles.scoreBugPlayer} title={name}>
+                  {snapshot.score.server === index + 1 && (
+                    <i className={styles.scoreBugServeDot} role="img" aria-label="Serving" />
+                  )}
+                  <span>{name}</span>
+                </strong>
+                <strong role="cell">{snapshot.score.games[index]}</strong>
+                <strong role="cell" className={styles.scoreBugPoints}>
+                  {snapshot.score.tiebreak ? snapshot.score.points[index] : snapshot.score.pointText[index]}
+                </strong>
+                <span role="cell" className={styles.scoreBugServe}>
+                  {playerStats[index].serviceWinRate === null
+                    ? '—'
+                    : `${Math.round(playerStats[index].serviceWinRate * 100)}%`}
+                </span>
+              </div>
+            ))}
+          </div>
+        </aside>
         <p className={styles.pointNote}>
           {snapshot.currentPoint.inProgress
             ? `Point ${snapshot.currentPoint.number} in progress · ${snapshot.currentPoint.rallyHits} recorded rally shots${snapshot.currentPoint.serveSpeedKmh ? ` · serve ${snapshot.currentPoint.serveSpeedKmh} km/h` : ''}`
@@ -149,28 +186,6 @@ export default function DmoLiveDisplay({
 
       <div className={styles.mainGrid}>
         <div className={styles.leftColumn}>
-          <div className={styles.scoreTable} role="table" aria-label="Match score">
-        <div className={styles.scoreHeading} role="row">
-          <span role="columnheader">Player</span>
-          <span role="columnheader">Games</span>
-          <span role="columnheader">{snapshot.score.tiebreak ? 'TB' : 'Points'}</span>
-          <span role="columnheader">Serve</span>
-        </div>
-            {snapshot.players.map((name, index) => {
-              const stats = index === 0 ? p1Stats : p2Stats;
-              return (
-                <div className={styles.scoreRow} role="row" key={`${index}-${name}`}>
-                  <strong role="cell" className={styles.playerName}>{name}</strong>
-                  <strong role="cell">{snapshot.score.games[index]}</strong>
-                  <strong role="cell" className={styles.pointsCell}>{snapshot.score.tiebreak ? snapshot.score.points[index] : snapshot.score.pointText[index]}</strong>
-                  <span role="cell" className={styles.serveCell}>
-                    {snapshot.score.server === index + 1 ? <i aria-label="Serving">●</i> : null}
-                    {stats.serviceWinRate === null ? '—' : `${Math.round(stats.serviceWinRate * 100)}%`}
-                  </span>
-                </div>
-              );
-            })}
-          </div>
           <div className={styles.metrics} role="table" aria-label="Match statistics">
             <div className={styles.metricsHeading} role="row">
               <span role="columnheader">Statistic</span>

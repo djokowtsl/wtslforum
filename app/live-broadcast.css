@@ -1,5 +1,9 @@
 .live-broadcast-page { min-height: 75vh; }
 .live-broadcast-list { display: grid; gap: 24px; }
+.live-broadcast-carousel { min-width: 0; }
+.live-broadcast-list:focus-visible { outline: 2px solid var(--lime, #b0f43b); outline-offset: 4px; border-radius: 14px; }
+.live-broadcast-list[aria-roledescription="carousel"] { display: flex; gap: 14px; overflow-x: auto; padding: 1px 1px 9px; overscroll-behavior-x: contain; scroll-snap-type: x mandatory; scroll-behavior: smooth; }
+.live-broadcast-list[aria-roledescription="carousel"] > .live-broadcast-card { flex: 0 0 100%; scroll-snap-align: start; }
 .live-broadcast-card { min-width: 0; scroll-margin-top: 20px; padding: 18px; border: 1px solid var(--line-2, rgba(150,180,230,.22)); border-radius: 16px; background: var(--panel, #081328); }
 .live-broadcast-card-heading { display: flex; align-items: center; justify-content: space-between; gap: 12px; margin-bottom: 14px; color: var(--muted, #8c9db8); font-size: 12px; }
 .live-broadcast-card-heading > span { display: inline-flex; align-items: center; gap: 7px; font-size: 10px; font-weight: 900; letter-spacing: .1em; text-transform: uppercase; }
@@ -17,4 +21,7 @@
 @media (max-width: 600px) {
   .live-broadcast-card { padding: 12px; }
   .live-broadcast-card-heading { align-items: flex-start; flex-direction: column; }
+}
+@media (prefers-reduced-motion: reduce) {
+  .live-broadcast-list[aria-roledescription="carousel"] { scroll-behavior: auto; }
 }
