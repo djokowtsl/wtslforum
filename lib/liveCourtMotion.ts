@@ -27,6 +27,11 @@ export function findPlayerShotEvent(
   );
 }
 
+export function clampPlayerCameraLateralPan(value: number, halfCourtWidth = 10.97 / 2): number {
+  if (!Number.isFinite(value)) return 0;
+  return Math.max(-halfCourtWidth, Math.min(halfCourtWidth, value));
+}
+
 export function mergeLiveCourtSamples(
   previous: LiveCourtSample[],
   incoming: LiveCourtSample[],
