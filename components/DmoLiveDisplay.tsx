@@ -1,6 +1,6 @@
 'use client';
 
-import type { Te4DmoReplaySpeed, Te4LiveSnapshot } from '@/lib/te4DmoLive';
+import type { Te4DmoReplaySpeed, Te4LivePoint, Te4LiveSnapshot } from '@/lib/te4DmoLive';
 import type { LivePreMatchProbability } from '@/lib/liveBroadcast';
 import { surfaceForDmoTournament } from '@/lib/te4DmoSurface';
 import DmoLiveCourt from './DmoLiveCourt';
@@ -13,6 +13,8 @@ type Props = {
   stale?: boolean;
   updatedAt?: string;
   preMatchPrediction?: LivePreMatchProbability | null;
+  pointLog?: Te4LivePoint[];
+  pointLogLoaded?: boolean;
 };
 
 function scoreLabel(sets: [number, number][]) {
@@ -106,6 +108,8 @@ export default function DmoLiveDisplay({
   stale = false,
   updatedAt,
   preMatchPrediction,
+  pointLog,
+  pointLogLoaded = false,
 }: Props) {
   const p1Stats = snapshot.stats[0];
   const p2Stats = snapshot.stats[1];
@@ -114,6 +118,7 @@ export default function DmoLiveDisplay({
   const pointScore = snapshot.score.tiebreak
     ? `${snapshot.score.points[0]}–${snapshot.score.points[1]}`
     : `${snapshot.score.pointText[0]}–${snapshot.score.pointText[1]}`;
+  const displayedPointLog = pointLog ?? snapshot.recentPoints;
 
   return (
     <section className={styles.panel} aria-label="Live TE4 DMO match">
@@ -125,7 +130,7 @@ export default function DmoLiveDisplay({
             {updatedAt && <small>{timeAgo(updatedAt)}</small>}
           </div>
           <h2>{snapshot.players[0]} <i>vs</i> {snapshot.players[1]}</h2>
-          <p>{snapshot.stadium || 'TE4 match'} <span>·</span> {snapshot.pointCount} completed points</p>
+          <p>{snapshot.stadium || 'TE4 match'}</p>
         </div>
         <div className={styles.finalScore}>
           <small>SETS</small>
@@ -208,20 +213,32 @@ export default function DmoLiveDisplay({
         <div className={styles.rightColumn}>
           <div className={styles.recentHeading}>
             <strong>POINT LOG</strong>
-            <span>LAST {snapshot.recentPoints.length}</span>
+            <span>NEWEST FIRST</span>
           </div>
-          {snapshot.recentPoints.length ? (
-            <ol className={styles.pointList}>
-              {[...snapshot.recentPoints].reverse().map((point) => (
+          {displayedPointLog.length ? (
+            <div
+              className={styles.pointListScroller}
+              role="region"
+              tabIndex={0}
+              aria-label="Match point log, newest first. Scroll down for earlier points."
+            >
+              <ol className={styles.pointList}>
+              {[...displayedPointLog].reverse().map((point) => (
                 <li key={point.number}>
                   <span className={styles.pointScore}>{point.scoreLabel ?? '—'}</span>
                   <span><b>{snapshot.players[point.winner - 1]}</b><small>{point.rallyHits ? `${point.rallyHits + 1} shots` : 'Unreturned serve'}{point.faults ? ` · ${point.faults} fault` : ''}</small></span>
-                  <span className={styles.pointServer}>{point.server === 1 ? 'P1 serve' : 'P2 serve'}</span>
+                  <span className={styles.pointServer} title={`Served by ${snapshot.players[point.server - 1]}`}>
+                    Serve: {snapshot.players[point.server - 1]}
+                  </span>
                 </li>
               ))}
-            </ol>
+              </ol>
+            </div>
           ) : (
             <p className={styles.emptyLog}>Completed points will appear here.</p>
+          )}
+          {pointLogLoaded && displayedPointLog.length < snapshot.pointCount && (
+            <p className={styles.pointLogNotice}>Some earlier points are unavailable for this broadcast.</p>
           )}
         </div>
       </div>
