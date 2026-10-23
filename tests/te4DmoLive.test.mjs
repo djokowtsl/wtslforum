@@ -100,7 +100,7 @@ test('incremental DMO parsing waits for frames, then emits a compact live snapsh
   assert.ok(shortMotionWindow?.court.length <= 96);
 });
 
-test('live court mirrors the lateral axis for the right-handed player rigs', () => {
+test('live court preserves recorded lateral signs independently of player handedness', () => {
   const parser = new Te4DmoLiveParser();
   parser.append(syntheticDmo());
   const snapshot = parser.snapshot('match.dmo', 3);
@@ -108,9 +108,38 @@ test('live court mirrors the lateral axis for the right-handed player rigs', () 
 
   const sampleIndex = snapshot.courtFrameIndices?.indexOf(10) ?? -1;
   assert.ok(sampleIndex >= 0);
-  assert.equal(snapshot.court[sampleIndex][1], -Math.round(parser.ballY[10]));
-  assert.equal(snapshot.court[sampleIndex][4], -Math.round(parser.player1Y[10]));
-  assert.equal(snapshot.court[sampleIndex][6], -Math.round(parser.player2Y[10]));
+  assert.equal(snapshot.court[sampleIndex][1], Math.round(parser.ballY[10]));
+  assert.equal(snapshot.court[sampleIndex][4], Math.round(parser.player1Y[10]));
+  assert.equal(snapshot.court[sampleIndex][6], Math.round(parser.player2Y[10]));
+});
+
+test('VocalBeast serving and landing sides remain as recorded on both service courts', () => {
+  // Signed coordinates from the supplied VocalBeast / Squeaky recording:
+  // first serve at frame 142, second serve at 611. Replay these samples in a
+  // small synthetic container so no uploaded match file is needed in CI.
+  const raw = [
+    [-1184, 107, 296, -1189, 100, 1439, -373],
+    [540, -372, 14, -1122, 58, 1439, -386],
+    [-1184, -93, 296, -1189, -100, 1439, 365],
+    [546, 395, 10, -1117, -42, 1462, 439],
+  ];
+  const bytes = syntheticDmo();
+  const locator = new Te4DmoLiveParser();
+  locator.append(bytes);
+  raw.forEach((values, i) => {
+    const offset = locator.offsets[10 + i];
+    [120, 112, 0, 16, 8, 40, 32].forEach((relative, j) => {
+      writeFixed(bytes, offset + relative, values[j]);
+    });
+  });
+  const parser = new Te4DmoLiveParser();
+  parser.append(bytes);
+  const snapshot = parser.snapshot('VocalBeast vs Squeaky.dmo', 3);
+  raw.forEach((values, i) => {
+    const index = snapshot.courtFrameIndices.indexOf(10 + i);
+    assert.ok(index >= 0);
+    assert.deepEqual(snapshot.court[index], values);
+  });
 });
 
 test('opening DMO snapshots omit impossible court samples without rejecting valid match data', () => {

@@ -612,13 +612,14 @@ export class Te4DmoLiveParser {
       ) continue;
       const sample = [
         Math.round(this.ballX[frame]),
-        // TE4's lateral axis is opposite the right-handed rig's local court axis.
-        -Math.round(this.ballY[frame]),
+        // Preserve TE4's court-side signs. Handedness belongs to the player
+        // rig; reflecting these positions mirrors every serve and rally.
+        Math.round(this.ballY[frame]),
         Math.round(Math.max(0, Math.min(600, this.ballZ[frame]))),
         Math.round(this.player1X[frame]),
-        -Math.round(this.player1Y[frame]),
+        Math.round(this.player1Y[frame]),
         Math.round(this.player2X[frame]),
-        -Math.round(this.player2Y[frame]),
+        Math.round(this.player2Y[frame]),
       ];
       // A few recordings contain false-positive frames with impossible court
       // coordinates. Keep valid score data and omit only the malformed sample.
