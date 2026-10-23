@@ -111,30 +111,45 @@ function drawScene(
     color: string,
     across: 'x' | 'y',
     wave = false,
+    skinColor = '#d6a77e',
   ) => {
     const acrossPoint = (offset: number, at: number): WorldPoint => (
       across === 'x' ? [x + offset, y, z + at] : [x, y + offset, z + at]
     );
-    const widthValue = figureHeight * 0.26;
-    const skin = '#d6a77e';
-    const shoulderLeft = acrossPoint(-widthValue * 0.38, figureHeight * 0.72);
-    const shoulderRight = acrossPoint(widthValue * 0.38, figureHeight * 0.72);
-    const hipLeft = acrossPoint(-widthValue * 0.25, figureHeight * 0.4);
-    const hipRight = acrossPoint(widthValue * 0.25, figureHeight * 0.4);
-    const footLeft = acrossPoint(-widthValue * 0.2, 0);
-    const footRight = acrossPoint(widthValue * 0.2, 0);
-    const kneeLeft = acrossPoint(-widthValue * 0.2, figureHeight * 0.2);
-    const kneeRight = acrossPoint(widthValue * 0.2, figureHeight * 0.2);
+    const widthValue = figureHeight * 0.32;
+    const shoulderLeft = acrossPoint(-widthValue * 0.45, figureHeight * 0.72);
+    const shoulderRight = acrossPoint(widthValue * 0.45, figureHeight * 0.72);
+    const hipLeft = acrossPoint(-widthValue * 0.3, figureHeight * 0.4);
+    const hipRight = acrossPoint(widthValue * 0.3, figureHeight * 0.4);
+    const footLeft = acrossPoint(-widthValue * 0.32, 0);
+    const footRight = acrossPoint(widthValue * 0.32, 0);
+    const kneeLeft = acrossPoint(-widthValue * 0.28, figureHeight * 0.2);
+    const kneeRight = acrossPoint(widthValue * 0.28, figureHeight * 0.2);
     const [, , scale] = project(x, y, z);
-    const limbWidth = Math.max(1.2, figureHeight * scale * 0.07);
-    polygon([shoulderLeft, shoulderRight, hipRight, hipLeft], color, '#16202b');
-    line([hipLeft, kneeLeft, footLeft], skin, limbWidth);
-    line([hipRight, kneeRight, footRight], skin, limbWidth);
-    line([shoulderLeft, acrossPoint(-widthValue * 0.65, figureHeight * (wave ? 1.02 : 0.48))], skin, limbWidth);
-    line([shoulderRight, acrossPoint(widthValue * 0.65, figureHeight * 0.55)], skin, limbWidth);
+    const limbWidth = Math.max(1.6, figureHeight * scale * 0.095);
+    const limb = (points: WorldPoint[]) => {
+      line(points, 'rgba(15,25,36,.88)', limbWidth + 1.8);
+      line(points, skinColor, limbWidth);
+    };
+    const leftElbow = acrossPoint(-widthValue * 0.68, figureHeight * 0.52);
+    const rightElbow = acrossPoint(widthValue * 0.68, figureHeight * 0.54);
+    const leftHand = acrossPoint(-widthValue * 0.72, figureHeight * (wave ? 0.98 : 0.32));
+    const rightHand = acrossPoint(widthValue * 0.72, figureHeight * 0.34);
+    polygon([
+      shoulderLeft,
+      shoulderRight,
+      acrossPoint(widthValue * 0.4, figureHeight * 0.57),
+      hipRight,
+      hipLeft,
+      acrossPoint(-widthValue * 0.4, figureHeight * 0.57),
+    ], color, 'rgba(15,25,36,.82)');
+    limb([hipLeft, kneeLeft, footLeft]);
+    limb([hipRight, kneeRight, footRight]);
+    limb([shoulderLeft, leftElbow, leftHand]);
+    limb([shoulderRight, rightElbow, rightHand]);
     const [headX, headY, headScale] = project(x, y, z + figureHeight * 0.88);
-    const headRadius = Math.max(1.5, figureHeight * headScale * 0.09);
-    context.fillStyle = skin;
+    const headRadius = Math.max(1.8, figureHeight * headScale * 0.105);
+    context.fillStyle = skinColor;
     context.beginPath();
     context.arc(headX, headY, headRadius, 0, Math.PI * 2);
     context.fill();
@@ -145,6 +160,7 @@ function drawScene(
   };
 
   const crowdColors = ['#d1d7dc', '#e29b62', '#8ca9c0', '#b7c984', '#9e91c8', '#d77f78', '#e0d4b6'];
+  const crowdSkinTones = ['#f0c8a7', '#d6a77e', '#bd8967', '#9b6c51'];
   polygon([[-1650, 700, 0], [1650, 700, 0], [1650, 1080, 320], [-1650, 1080, 320]], '#263646', '#526579');
   polygon([[-1650, -700, 0], [1650, -700, 0], [1650, -1080, 320], [-1650, -1080, 320]], '#263646', '#526579');
   polygon([[1450, -760, 0], [1450, 760, 0], [1850, 760, 300], [1850, -760, 300]], '#202f40', '#526579');
@@ -155,20 +171,50 @@ function drawScene(
     line([[-1580, offset, railHeight], [1580, offset, railHeight]], 'rgba(201,216,232,.23)', 1.4);
     line([[-1580, -offset, railHeight], [1580, -offset, railHeight]], 'rgba(201,216,232,.23)', 1.4);
   }
-  for (let row = 0; row < 3; row += 1) {
-    for (let seat = 0; seat < 23; seat += 1) {
-      const x = -1430 + seat * 130 + (row % 2) * 30;
-      const z = 22 + row * 58;
-      const y = 760 + row * 94;
-      drawFigure(x, y, z, 76, crowdColors[(seat * 3 + row * 5) % crowdColors.length], 'x', (seat + row * 4) % 11 === 0);
-      drawFigure(x, -y, z, 76, crowdColors[(seat * 5 + row * 2 + 1) % crowdColors.length], 'x', (seat + row * 3) % 13 === 0);
+  for (let row = 0; row < 4; row += 1) {
+    for (let seat = 0; seat < 34; seat += 1) {
+      const x = -1450 + seat * 86 + (row % 2) * 43;
+      const z = 20 + row * 46;
+      const y = 755 + row * 82;
+      const colorIndex = (seat * 3 + row * 5) % crowdColors.length;
+      const skinIndex = (seat * 5 + row * 3) % crowdSkinTones.length;
+      drawFigure(x, y, z, 86, crowdColors[colorIndex], 'x', (seat + row * 4) % 11 === 0, crowdSkinTones[skinIndex]);
+      drawFigure(
+        x,
+        -y,
+        z,
+        86,
+        crowdColors[(seat * 5 + row * 2 + 1) % crowdColors.length],
+        'x',
+        (seat + row * 3) % 13 === 0,
+        crowdSkinTones[(skinIndex + 2) % crowdSkinTones.length],
+      );
     }
-    for (let seat = 0; seat < 12; seat += 1) {
-      const y = -640 + seat * 116;
-      const z = 22 + row * 58;
-      const x = 1485 + row * 95;
-      drawFigure(x, y, z, 76, crowdColors[(seat * 2 + row * 3) % crowdColors.length], 'y', (seat + row) % 10 === 0);
-      drawFigure(-x, y, z, 76, crowdColors[(seat * 4 + row + 2) % crowdColors.length], 'y', (seat + row * 2) % 12 === 0);
+    for (let seat = 0; seat < 16; seat += 1) {
+      const y = -640 + seat * 84;
+      const z = 20 + row * 46;
+      const x = 1485 + row * 88;
+      const skinIndex = (seat * 3 + row * 7) % crowdSkinTones.length;
+      drawFigure(
+        x,
+        y,
+        z,
+        86,
+        crowdColors[(seat * 2 + row * 3) % crowdColors.length],
+        'y',
+        (seat + row) % 10 === 0,
+        crowdSkinTones[skinIndex],
+      );
+      drawFigure(
+        -x,
+        y,
+        z,
+        86,
+        crowdColors[(seat * 4 + row + 2) % crowdColors.length],
+        'y',
+        (seat + row * 2) % 12 === 0,
+        crowdSkinTones[(skinIndex + 1) % crowdSkinTones.length],
+      );
     }
   }
 
@@ -285,45 +331,68 @@ function drawScene(
     ];
     const limb = (start: WorldPoint, end: WorldPoint, limbColor: string, thickness: number) => {
       const scale = (project(...start)[2] + project(...end)[2]) / 2;
-      line([start, end], '#17212b', Math.max(2, thickness * scale + 2));
-      line([start, end], limbColor, Math.max(1, thickness * scale));
+      line([start, end], '#17212b', Math.max(2.8, thickness * scale + 3));
+      line([start, end], limbColor, Math.max(1.8, thickness * scale));
     };
-    const shoulderLeft = point(-24, 0, 132);
-    const shoulderRight = point(24, 0, 132);
-    const hipLeft = point(-17, -2, 77);
-    const hipRight = point(17, -2, 77);
-    const kneeLeft = point(-20, 12, 40);
-    const kneeRight = point(20, -8, 40);
-    const footLeft = point(-22, 18, 5);
-    const footRight = point(22, -14, 5);
+    const joint = (center: WorldPoint, radius: number, fill: string) => {
+      const [jointX, jointY, scale] = project(...center);
+      const jointRadius = Math.max(2.5, radius * scale);
+      context.beginPath();
+      context.arc(jointX, jointY, jointRadius + 1, 0, Math.PI * 2);
+      context.fillStyle = '#17212b';
+      context.fill();
+      context.beginPath();
+      context.arc(jointX, jointY, jointRadius, 0, Math.PI * 2);
+      context.fillStyle = fill;
+      context.fill();
+    };
+    const shoulderLeft = point(-28, 0, 134);
+    const shoulderRight = point(28, 0, 134);
+    const hipLeft = point(-19, -2, 78);
+    const hipRight = point(19, -2, 78);
+    const kneeLeft = point(-22, 12, 40);
+    const kneeRight = point(22, -8, 40);
+    const footLeft = point(-24, 18, 5);
+    const footRight = point(24, -14, 5);
     const skin = '#d9ad8e';
     const shorts = id === 1 ? '#16566b' : '#743747';
     const torso = [
       shoulderLeft,
       shoulderRight,
-      point(20, 0, 86),
-      point(-20, 0, 86),
+      point(22, 0, 120),
+      point(20, -2, 101),
+      point(18, -2, 82),
+      point(-18, -2, 82),
+      point(-20, -2, 101),
+      point(-22, 0, 120),
     ];
     const [groundX, groundY, groundScale] = project(x, y, 0);
     context.fillStyle = 'rgba(0,0,0,.28)';
     context.beginPath();
     context.ellipse(groundX, groundY, 35 * groundScale, 18 * groundScale, 0, 0, Math.PI * 2);
     context.fill();
-    limb(hipLeft, kneeLeft, skin, 18);
-    limb(kneeLeft, footLeft, skin, 15);
-    limb(hipRight, kneeRight, skin, 18);
-    limb(kneeRight, footRight, skin, 15);
-    limb(footLeft, point(-22, 40, 3), '#f2f4f7', 18);
-    limb(footRight, point(22, 8, 3), '#f2f4f7', 18);
+    limb(hipLeft, kneeLeft, skin, 21);
+    limb(kneeLeft, footLeft, skin, 17);
+    limb(hipRight, kneeRight, skin, 21);
+    limb(kneeRight, footRight, skin, 17);
+    joint(kneeLeft, 9, skin);
+    joint(kneeRight, 9, skin);
+    limb(footLeft, point(-24, 40, 3), '#f2f4f7', 16);
+    limb(footRight, point(24, 8, 3), '#f2f4f7', 16);
+    polygon([
+      point(-8, 4, 153),
+      point(8, 4, 153),
+      point(9, 4, 132),
+      point(-9, 4, 132),
+    ], skin, null);
     polygon(torso, color, '#17212b');
-    line([point(-8, 0, 119), point(9, 0, 119)], 'rgba(255,255,255,.52)', 2);
-    polygon([hipLeft, hipRight, point(13, 8, 55), point(-13, 8, 55)], shorts, '#17212b');
+    line([point(-15, 1, 117), point(15, 1, 117)], 'rgba(255,255,255,.5)', 2.4);
+    polygon([hipLeft, hipRight, point(15, 8, 55), point(-15, 8, 55)], shorts, '#17212b');
+    line([point(-16, 8, 73), point(16, 8, 73)], 'rgba(255,255,255,.3)', 1.8);
 
-    const head = point(0, 9, 162);
+    const head = point(0, 9, 164);
     const [headX, headY, headScale] = project(...head);
-    const headRadius = Math.max(4.2, 10 * headScale);
-    const neck = point(0, 4, 139);
-    limb(point(-4, 0, 145), neck, skin, 9);
+    const headRadius = Math.max(4.8, 11 * headScale);
     context.fillStyle = skin;
     context.beginPath();
     context.arc(headX, headY, headRadius, 0, Math.PI * 2);
@@ -367,10 +436,14 @@ function drawScene(
     ];
     const freeElbow = point(-39, 18, 105);
     const freeHand = point(-51, 26, 89);
-    limb(shoulderLeft, freeElbow, skin, 13);
-    limb(freeElbow, freeHand, skin, 11);
-    limb(shoulderRight, elbow, skin, 13);
-    limb(elbow, hand, skin, 11);
+    limb(shoulderLeft, freeElbow, skin, 16);
+    limb(freeElbow, freeHand, skin, 14);
+    limb(shoulderRight, elbow, skin, 16);
+    limb(elbow, hand, skin, 14);
+    joint(freeElbow, 7, skin);
+    joint(elbow, 7, skin);
+    joint(freeHand, 6, skin);
+    joint(hand, 6, skin);
     line([hand, racketCenter], '#dce4eb', Math.max(1.2, racketLength * headScale * 0.045));
 
     const racketAcross: WorldPoint = across;
