@@ -3,6 +3,7 @@ import test from 'node:test';
 import {
   advanceLiveCourtPlayhead,
   interpolateLiveCourtFrame,
+  liveCourtFacingAngle,
   latestLiveCourtMotionEvent,
   mergeLiveCourtEvents,
   mergeLiveCourtSamples,
@@ -48,4 +49,23 @@ test('sample interpolation and rally boundaries track the absolute DMO frame', (
   ]);
   assert.equal(latestLiveCourtMotionEvent(events, 11)?.kind, 'shot');
   assert.equal(latestLiveCourtMotionEvent(events, 12)?.kind, 'point-end');
+});
+
+test('wide sample gaps ease into the next court state instead of snapping', () => {
+  const samples = [sample(10, 0), sample(110, 100)];
+
+  assert.equal(interpolateLiveCourtFrame(samples, 99, 10)?.[0], 0);
+  assert.equal(interpolateLiveCourtFrame(samples, 100, 10)?.[0], 0);
+  assert.equal(interpolateLiveCourtFrame(samples, 105, 10)?.[0], 50);
+  assert.equal(interpolateLiveCourtFrame(samples, 110, 10)?.[0], 100);
+});
+
+test('right-handed player models face the net from either end of the DMO court', () => {
+  const negativeEndFacing = liveCourtFacingAngle(-12);
+  const positiveEndFacing = liveCourtFacingAngle(12);
+
+  assert.equal(negativeEndFacing, Math.PI / 2);
+  assert.equal(positiveEndFacing, -Math.PI / 2);
+  assert.ok(-Math.sin(negativeEndFacing) < 0);
+  assert.ok(-Math.sin(positiveEndFacing) > 0);
 });

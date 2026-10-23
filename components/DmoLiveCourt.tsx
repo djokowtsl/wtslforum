@@ -141,10 +141,7 @@ function drawScene(
     const velocityY = (movementAfter[yIndex] - movementBefore[yIndex]) / movementSpan;
     const stride = Math.min(1, Math.hypot(velocityX, velocityY) / 24);
     const isHitting = contactPlayer === id;
-    const distance = Math.hypot(ball.x - x, ball.y - y);
-    const facing: WorldPoint = distance > 1
-      ? [(ball.x - x) / distance, (ball.y - y) / distance, 0]
-      : [id === 1 ? 1 : -1, 0, 0];
+    const facing: WorldPoint = x < 0 ? [1, 0, 0] : [-1, 0, 0];
     const facingCamera = facing[0] * cameraFacingX + facing[1] * cameraFacingY > 0;
     const [groundX, groundY, groundScale] = project(x, y, 0);
     const playerRight = playerRightVector(facing);
