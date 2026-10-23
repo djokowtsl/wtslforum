@@ -21,7 +21,7 @@ import {
   type LiveCourtMotionEvent,
   type LiveCourtSample,
 } from '@/lib/liveCourtMotion';
-import { crossedFrame, racketContact, RIGHT_HAND_X, serveLift, trailAllowed } from '@/lib/liveCourtPerformance';
+import { crossedFrame, dominantHandX, racketContact, serveLift, trailAllowed, type PlayerHandedness } from '@/lib/liveCourtPerformance';
 import DmoLiveCourt from './DmoLiveCourt';
 import {
   BALL_RADIUS,
@@ -116,6 +116,9 @@ function ThreeCourt({
   const playerCameraPanRef = useRef(0);
   const [cameraView, setCameraView] = useState<CameraView>('court');
   const [playerCameraPan, setPlayerCameraPan] = useState(0);
+  const [playerHands, setPlayerHands] = useState<[PlayerHandedness, PlayerHandedness]>(['right', 'right']);
+  const playerHandsRef = useRef(playerHands);
+  playerHandsRef.current = playerHands;
   const [soundEnabled, setSoundEnabled] = useState(false);
   const [soundError, setSoundError] = useState('');
   const [crowdVolume, setCrowdVolume] = useState(0.38);
@@ -360,6 +363,7 @@ function ThreeCourt({
       events: LiveCourtMotionEvent[],
       striking: boolean,
       elapsedMs: number,
+      handedness: PlayerHandedness,
     ) => {
       const position = new THREE.Vector3(x * SCALE, 0, z * SCALE);
       const oldSide = rig.root.userData.courtSide;
@@ -465,27 +469,32 @@ function ThreeCourt({
       rig.leftShoe.rotation.y = leftCycle * gaitSpeed * 0.12;
       rig.rightShoe.rotation.y = rightCycle * gaitSpeed * 0.12;
       const swing = strikeWeight > 0 ? 0.72 * strikeWeight : Math.sin(phase * 0.55) * gaitSpeed * 0.2;
-      const leftHand = new THREE.Vector3(0.38, 1.08 + bodyBounce + swing * 0.2, 0.05);
-      const rightHand = new THREE.Vector3(RIGHT_HAND_X, 1.1 + bodyBounce + swing, 0.04);
+      const dominantX = dominantHandX(handedness);
+      const dominantHand = new THREE.Vector3(dominantX, 1.1 + bodyBounce + swing, 0.04);
+      const nonDominantHand = new THREE.Vector3(-dominantX, 1.08 + bodyBounce + swing * 0.2, 0.05);
       if (serving) {
         const preparation = Math.max(0, 1 - Math.abs(frame - event.frame) / 24);
         // Toss arm lowers as the striking arm extends through contact.
         const toss = Math.max(0, Math.min(1, -(frame - event.frame) / 8));
-        leftHand.y += preparation * toss * 0.9;
-        rightHand.y += preparation * 0.65;
-        rightHand.z -= preparation * 0.2;
+        nonDominantHand.y += preparation * toss * 0.9;
+        dominantHand.y += preparation * 0.65;
+        dominantHand.z -= preparation * 0.2;
       }
       const contact = racketContact(
         [localX, ballY / rig.root.scale.y, localZ],
-        [rightHand.x, rightHand.y, rightHand.z],
+        [dominantHand.x, dominantHand.y, dominantHand.z],
       );
       const contactHand = new THREE.Vector3(...contact.grip);
-      rightHand.lerp(contactHand, strikeWeight);
-      poseLimb(rig.leftArm, new THREE.Vector3(0.23, 1.42 + bodyBounce, 0), leftHand);
-      poseLimb(rig.rightArm, new THREE.Vector3(-0.23, 1.4 + bodyBounce, 0), rightHand);
-      rig.leftHand.position.copy(leftHand);
-      rig.rightHand.position.copy(rightHand);
-      rig.racket.position.copy(rightHand);
+      dominantHand.lerp(contactHand, strikeWeight);
+      const dominantArm = handedness === 'right' ? rig.rightArm : rig.leftArm;
+      const nonDominantArm = handedness === 'right' ? rig.leftArm : rig.rightArm;
+      const dominantMesh = handedness === 'right' ? rig.rightHand : rig.leftHand;
+      const nonDominantMesh = handedness === 'right' ? rig.leftHand : rig.rightHand;
+      poseLimb(nonDominantArm, new THREE.Vector3(-dominantX * 0.59, 1.42 + bodyBounce, 0), nonDominantHand);
+      poseLimb(dominantArm, new THREE.Vector3(dominantX * 0.59, 1.4 + bodyBounce, 0), dominantHand);
+      dominantMesh.position.copy(dominantHand);
+      nonDominantMesh.position.copy(nonDominantHand);
+      rig.racket.position.copy(dominantHand);
       const restingRacketAngle = -0.12 + Math.sin(phase * 0.55) * speed * 0.14;
       const resting = new THREE.Quaternion().setFromEuler(new THREE.Euler(0, 0, -restingRacketAngle));
       const contactRotation = new THREE.Quaternion().setFromUnitVectors(
@@ -583,8 +592,8 @@ function ThreeCourt({
           : activeShot
             ? firstPlayerDistance <= secondPlayerDistance ? 0 : 1
             : -1;
-        updatePlayer(players[0], values[3], values[4], 0, values, currentFrame, samples, lastFrame, firstFrame, trajectoryEventsRef.current, strikingPlayer === 0, elapsed);
-        updatePlayer(players[1], values[5], values[6], 1, values, currentFrame, samples, lastFrame, firstFrame, trajectoryEventsRef.current, strikingPlayer === 1, elapsed);
+        updatePlayer(players[0], values[3], values[4], 0, values, currentFrame, samples, lastFrame, firstFrame, trajectoryEventsRef.current, strikingPlayer === 0, elapsed, playerHandsRef.current[0]);
+        updatePlayer(players[1], values[5], values[6], 1, values, currentFrame, samples, lastFrame, firstFrame, trajectoryEventsRef.current, strikingPlayer === 1, elapsed, playerHandsRef.current[1]);
         const activeView = cameraViewRef.current;
         if (activeView.startsWith('player-')) {
           const playerIndex = activeView.startsWith('player-two') ? 1 : 0;
@@ -834,6 +843,26 @@ function ThreeCourt({
               <option value="player-two-third">{snapshot.players[1]} · Third person</option>
             </select>
           </label>
+          <details>
+            <summary>Player handedness</summary>
+            {snapshot.players.map((name, index) => (
+              <label key={`${name}-${index}`} style={{ display: 'block' }}>
+                {name}{' '}
+                <select
+                  aria-label={`${name} handedness`}
+                  value={playerHands[index]}
+                  onChange={(event) => setPlayerHands((current) => {
+                    const next = [...current] as [PlayerHandedness, PlayerHandedness];
+                    next[index] = event.currentTarget.value as PlayerHandedness;
+                    return next;
+                  })}
+                >
+                  <option value="right">Right-handed</option>
+                  <option value="left">Left-handed</option>
+                </select>
+              </label>
+            ))}
+          </details>
           <div className={styles.iconControls} role="group" aria-label="Zoom and reset">
             <button type="button" aria-label="Zoom out" onClick={() => requestZoom(1.15)}><Minus size={15} /></button>
             <button type="button" aria-label="Zoom in" onClick={() => requestZoom(0.87)}><Plus size={15} /></button>
