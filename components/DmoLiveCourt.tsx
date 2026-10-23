@@ -2,8 +2,11 @@
 
 import { memo, useEffect, useRef, useState } from 'react';
 import { Minus, Plus, RotateCcw, Volume2, VolumeX } from 'lucide-react';
-import { TE4_DMO_FRAMES_PER_SECOND } from '@/lib/te4DmoLive';
-import type { Te4DmoReplaySpeed, Te4LiveSnapshot } from '@/lib/te4DmoLive';
+import {
+  TE4_DMO_FRAMES_PER_SECOND,
+  type Te4DmoReplaySpeed,
+  type Te4LiveSnapshot,
+} from '@/lib/te4DmoLive';
 import type { Te4CourtSurface } from '@/lib/te4DmoTypes';
 import {
   createCourtProjector,
@@ -24,6 +27,10 @@ import {
   type LiveCourtMotionEvent,
   type LiveCourtSample,
 } from '@/lib/liveCourtMotion';
+import {
+  drawLiveCourtBackdrop,
+  drawLiveCourtCrowdMotion,
+} from '@/lib/liveCourtStadium';
 import styles from './DmoLiveCourt.module.css';
 
 type WorldPoint = LiveCourtWorldPoint;
@@ -32,13 +39,7 @@ type Props = {
   snapshot: Te4LiveSnapshot;
   surface: Te4CourtSurface;
   playbackSpeed: Te4DmoReplaySpeed;
-};
-
-const surfacePalette: Record<Te4CourtSurface, { court: string; apron: string }> = {
-  hard: { court: '#50b9ae', apron: '#f6a77b' },
-  clay: { court: '#e98d68', apron: '#f6c27d' },
-  grass: { court: '#62b66f', apron: '#f6a77b' },
-  unknown: { court: '#78aab0', apron: '#f1c58f' },
+  stadiumAtmosphere?: boolean;
 };
 
 function drawScene(
@@ -51,89 +52,19 @@ function drawScene(
   zoom: number,
   cursor: number,
   playbackSpeed: Te4DmoReplaySpeed,
+  stadiumAtmosphere: boolean,
+  timestampMs: number,
 ) {
   const width = 900;
   const height = 520;
-  const palette = surfacePalette[surface];
   const cameraAzimuth = camera.azimuth * Math.PI / 180;
   const cameraFacingX = Math.cos(cameraAzimuth);
   const cameraFacingY = Math.sin(cameraAzimuth);
-  context.clearRect(0, 0, width, height);
-  context.fillStyle = '#f3dfae';
-  context.fillRect(0, 0, width, height);
 
   const rawProject = createCourtProjector(camera, zoom);
   const project = (x: number, y: number, z: number): ProjectedPoint => rawProject([x, y, z]);
-  const polygon = (
-    points: WorldPoint[],
-    fill: string | null,
-    stroke: string | null,
-  ) => {
-    context.beginPath();
-    points.forEach(([x, y, z], index) => {
-      const [screenX, screenY] = project(x, y, z);
-      if (index === 0) context.moveTo(screenX, screenY);
-      else context.lineTo(screenX, screenY);
-    });
-    if (fill) {
-      context.fillStyle = fill;
-      context.fill();
-    }
-    if (stroke) {
-      context.strokeStyle = stroke;
-      context.stroke();
-    }
-  };
-
-  const line = (points: WorldPoint[], color: string, widthValue: number) => {
-    if (points.length < 2) return;
-    context.beginPath();
-    points.forEach(([x, y, z], index) => {
-      const [screenX, screenY] = project(x, y, z);
-      if (index === 0) context.moveTo(screenX, screenY);
-      else context.lineTo(screenX, screenY);
-    });
-    context.strokeStyle = color;
-    context.lineWidth = widthValue;
-    context.lineCap = 'round';
-    context.lineJoin = 'round';
-    context.stroke();
-  };
-
-  polygon([[-1450, -700, 0], [1450, -700, 0], [1450, 700, 0], [-1450, 700, 0]], palette.apron, null);
-  polygon([[-1275, -590, 0], [1275, -590, 0], [1275, 590, 0], [-1275, 590, 0]], palette.court, null);
-  if (surface === 'grass') {
-    for (let y = -520; y < 560; y += 180) {
-      polygon([[-1270, y, 0], [1270, y, 0], [1270, y + 78, 0], [-1270, y + 78, 0]], 'rgba(255,255,255,.055)', null);
-    }
-  }
-
-  context.lineWidth = 2;
-  context.lineCap = 'round';
-  context.lineJoin = 'round';
-  const lineColor = 'rgba(250,252,255,.94)';
-  [
-    [-1189, -549, 1189, -549],
-    [-1189, 549, 1189, 549],
-    [-1189, -411, 1189, -411],
-    [-1189, 411, 1189, 411],
-    [-1189, -549, -1189, 549],
-    [1189, -549, 1189, 549],
-    [-640, -411, -640, 411],
-    [640, -411, 640, 411],
-    [-640, 0, 640, 0],
-  ].forEach(([x1, y1, x2, y2]) => {
-    polygon([[x1, y1, 0], [x2, y2, 0]], null, lineColor);
-  });
-  polygon([[0, -549, 0], [0, 549, 0], [0, 549, 107], [0, -549, 107]], 'rgba(255,255,255,.18)', lineColor);
-  for (let y = -540; y <= 540; y += 54) {
-    line([[0, y, 8], [0, y, 100]], 'rgba(241,246,250,.34)', 0.8);
-  }
-  for (let z = 16; z <= 96; z += 16) {
-    line([[0, -549, z], [0, 549, z]], 'rgba(241,246,250,.3)', 0.8);
-  }
-  line([[0, -560, 0], [0, -560, 120]], '#edf3f7', 3);
-  line([[0, 560, 0], [0, 560, 120]], '#edf3f7', 3);
+  drawLiveCourtBackdrop(context, surface, camera, zoom, stadiumAtmosphere);
+  if (stadiumAtmosphere) drawLiveCourtCrowdMotion(context, project, timestampMs);
 
   if (!samples.length) {
     context.fillStyle = 'rgba(8,19,40,.72)';
@@ -186,13 +117,30 @@ function drawScene(
   context.fill();
 
   const playerActors = [
-    { x: value(3), y: value(4), color: '#eaa134', name: players[0], id: 1 as const },
-    { x: value(5), y: value(6), color: '#e05d64', name: players[1], id: 2 as const },
+    { x: value(3), y: value(4), color: '#eaa134', name: players[0], id: 1 as const, xIndex: 3, yIndex: 4 },
+    { x: value(5), y: value(6), color: '#e05d64', name: players[1], id: 2 as const, xIndex: 5, yIndex: 6 },
   ];
+  const movementBeforeFrame = Math.max(samples[0].frame, cursor - 3);
+  const movementAfterFrame = Math.min(samples[samples.length - 1].frame, cursor + 3);
+  const movementBefore = interpolateLiveCourtFrame(
+    samples,
+    movementBeforeFrame,
+    TE4_DMO_FRAMES_PER_SECOND * playbackSpeed / 2,
+  ) ?? current;
+  const movementAfter = interpolateLiveCourtFrame(
+    samples,
+    movementAfterFrame,
+    TE4_DMO_FRAMES_PER_SECOND * playbackSpeed / 2,
+  ) ?? current;
+  const movementSpan = Math.max(1, movementAfterFrame - movementBeforeFrame);
   const contactPlayer = findCourtRacketContact(ball, playerActors, activeTrajectory, cursor);
 
   const drawPlayer = (player: typeof playerActors[number]) => {
-    const { x, y, color, name, id } = player;
+    const { x, y, color, name, id, xIndex, yIndex } = player;
+    const velocityX = (movementAfter[xIndex] - movementBefore[xIndex]) / movementSpan;
+    const velocityY = (movementAfter[yIndex] - movementBefore[yIndex]) / movementSpan;
+    const stride = Math.min(1, Math.hypot(velocityX, velocityY) / 24);
+    const isHitting = contactPlayer === id;
     const distance = Math.hypot(ball.x - x, ball.y - y);
     const facing: WorldPoint = distance > 1
       ? [(ball.x - x) / distance, (ball.y - y) / distance, 0]
@@ -207,12 +155,16 @@ function drawScene(
     );
     const rightSide = projectedRight[0] >= groundX ? 1 : -1;
     const figureScale = Math.max(0.9, Math.min(1.12, groundScale * 3.6));
+    const stepPhase = Math.sin(timestampMs * 0.012 + id * Math.PI);
+    const bodyBob = Math.abs(Math.sin(timestampMs * 0.008 + id)) * (1 + stride * 3);
+    const lean = Math.max(-1, Math.min(1, (velocityX * facing[0] + velocityY * facing[1]) / 22)) * 0.13;
     context.fillStyle = 'rgba(32,52,66,.22)';
     context.beginPath();
     context.ellipse(groundX, groundY, 26 * groundScale, 12 * groundScale, 0, 0, Math.PI * 2);
     context.fill();
     context.save();
-    context.translate(groundX, groundY);
+    context.translate(groundX, groundY - bodyBob);
+    context.rotate(lean);
     context.scale(figureScale, figureScale);
     const outline = '#203442';
     const skin = id === 1 ? '#df9c70' : '#f0b88b';
@@ -254,17 +206,18 @@ function drawScene(
     };
     const leftHip: [number, number] = [-8, -25];
     const rightHip: [number, number] = [8, -25];
-    const leftKnee: [number, number] = [-12, -14];
-    const rightKnee: [number, number] = [12, -14];
-    const leftFoot: [number, number] = [-15, -3];
-    const rightFoot: [number, number] = [15, -3];
+    const step = stepPhase * (2 + stride * 7);
+    const leftKnee: [number, number] = [-12 + step * 0.55, -14 - Math.max(0, stepPhase) * stride * 4];
+    const rightKnee: [number, number] = [12 - step * 0.55, -14 - Math.max(0, -stepPhase) * stride * 4];
+    const leftFoot: [number, number] = [-15 + step, -3 + Math.max(0, stepPhase) * stride * 5];
+    const rightFoot: [number, number] = [15 - step, -3 + Math.max(0, -stepPhase) * stride * 5];
     limb([leftHip, leftKnee, leftFoot], skin, 8);
     limb([rightHip, rightKnee, rightFoot], skin, 8);
     limb([leftFoot, [-22, -2]], '#fff9e8', 8);
     limb([rightFoot, [22, -2]], '#fff9e8', 8);
     shape([leftHip, rightHip, [11, -16], [8, -27], [-8, -27], [-11, -16]], shorts);
     shape([[-11, -53], [11, -53], [16, -47], [14, -31], [9, -26], [-9, -26], [-14, -31], [-16, -47]], color);
-    limb([[-rightSide * 14, -48], [-rightSide * 21, -41], [-rightSide * 21, -33]], skin, 7);
+    limb([[-rightSide * 14, -48], [-rightSide * (21 + stride * 4), -41 - Math.max(0, stepPhase) * stride * 4], [-rightSide * (21 + stride * 4), -33]], skin, 7);
     limb([[rightSide * 14, -48], [rightSide * 20, -41], [rightSide * 20, -34]], skin, 7);
     limb([[rightSide * 20, -34], [rightSide * 25, -30]], skin, 6);
     limb([[-rightSide * 21, -33], [-rightSide * 17, -30]], skin, 6);
@@ -288,11 +241,18 @@ function drawScene(
       context.arc(4, -66, 1.5, 0, Math.PI * 2);
       context.fillStyle = outline;
       context.fill();
-      context.beginPath();
-      context.arc(0, -61, 3, 0.18 * Math.PI, 0.82 * Math.PI);
-      context.strokeStyle = outline;
-      context.lineWidth = 1.7;
-      context.stroke();
+      if (isHitting) {
+        context.beginPath();
+        context.ellipse(0, -60, 2.6, 3.6, 0, 0, Math.PI * 2);
+        context.fillStyle = outline;
+        context.fill();
+      } else {
+        context.beginPath();
+        context.arc(0, -61, 3, 0.18 * Math.PI, 0.82 * Math.PI);
+        context.strokeStyle = outline;
+        context.lineWidth = 1.7;
+        context.stroke();
+      }
     } else {
       context.beginPath();
       context.arc(0, -65, 11, 0, Math.PI * 2);
@@ -304,13 +264,12 @@ function drawScene(
       context.fill();
     }
 
-    const isHitting = contactPlayer === id;
     const projectedBall = project(ball.x, ball.y, ball.z);
     const screenX = projectedBall[0] - groundX;
     const screenY = projectedBall[1] - groundY;
     const localBallX = screenX / figureScale;
     const localBallY = screenY / figureScale;
-    const racketHand: [number, number] = [rightSide * 20, -34];
+    const racketHand: [number, number] = [rightSide * (20 + stride * 3), -34 - (isHitting ? 7 : 0)];
     const racketCenter: [number, number] = isHitting
       ? [Math.max(-52, Math.min(52, localBallX)), Math.max(-70, Math.min(-12, localBallY))]
       : [rightSide * 34, -49];
@@ -370,23 +329,87 @@ function drawScene(
   context.shadowBlur = 0;
 }
 
-function playSynthesizedCue(context: AudioContext, kind: 'racket' | 'bounce') {
-  const now = context.currentTime;
-  const oscillator = context.createOscillator();
+type SynthesizedCue = 'racket' | 'bounce' | 'grunt' | 'cheer';
+type CrowdBed = { source: AudioBufferSourceNode; gain: GainNode };
+
+function createCrowdBed(context: AudioContext): CrowdBed {
+  const buffer = context.createBuffer(1, context.sampleRate * 2, context.sampleRate);
+  const samples = buffer.getChannelData(0);
+  for (let index = 0; index < samples.length; index += 1) {
+    samples[index] = (Math.random() * 2 - 1) * 0.24;
+  }
+  const source = context.createBufferSource();
+  source.buffer = buffer;
+  source.loop = true;
+  const filter = context.createBiquadFilter();
+  filter.type = 'bandpass';
+  filter.frequency.value = 540;
+  filter.Q.value = 0.65;
   const gain = context.createGain();
-  const racket = kind === 'racket';
-  oscillator.type = racket ? 'triangle' : 'sine';
-  oscillator.frequency.setValueAtTime(racket ? 720 : 390, now);
-  oscillator.frequency.exponentialRampToValueAtTime(racket ? 260 : 150, now + (racket ? 0.055 : 0.09));
-  gain.gain.setValueAtTime(racket ? 0.035 : 0.028, now);
-  gain.gain.exponentialRampToValueAtTime(0.0001, now + (racket ? 0.06 : 0.1));
-  oscillator.connect(gain);
+  gain.gain.value = 0.0001;
+  source.connect(filter);
+  filter.connect(gain);
   gain.connect(context.destination);
-  oscillator.start(now);
-  oscillator.stop(now + (racket ? 0.06 : 0.1));
+  source.start();
+  return { source, gain };
 }
 
-function DmoLiveCourt({ snapshot, surface, playbackSpeed }: Props) {
+function playSynthesizedCue(context: AudioContext, kind: SynthesizedCue) {
+  const now = context.currentTime;
+  const gain = context.createGain();
+  if (kind === 'cheer') {
+    const duration = 0.42;
+    const buffer = context.createBuffer(1, Math.floor(context.sampleRate * duration), context.sampleRate);
+    const samples = buffer.getChannelData(0);
+    for (let index = 0; index < samples.length; index += 1) {
+      samples[index] = (Math.random() * 2 - 1) * (1 - index / samples.length);
+    }
+    const source = context.createBufferSource();
+    source.buffer = buffer;
+    const filter = context.createBiquadFilter();
+    filter.type = 'bandpass';
+    filter.frequency.value = 880;
+    filter.Q.value = 0.8;
+    gain.gain.setValueAtTime(0.028, now);
+    gain.gain.exponentialRampToValueAtTime(0.0001, now + duration);
+    source.connect(filter);
+    filter.connect(gain);
+    gain.connect(context.destination);
+    source.start(now);
+    source.stop(now + duration);
+    return;
+  }
+
+  const oscillator = context.createOscillator();
+  const filter = kind === 'grunt' ? context.createBiquadFilter() : null;
+  const racket = kind === 'racket';
+  const grunt = kind === 'grunt';
+  const duration = racket ? 0.06 : grunt ? 0.16 : 0.1;
+  oscillator.type = grunt ? 'sawtooth' : racket ? 'triangle' : 'sine';
+  oscillator.frequency.setValueAtTime(grunt ? 150 : racket ? 720 : 390, now);
+  oscillator.frequency.exponentialRampToValueAtTime(grunt ? 82 : racket ? 260 : 150, now + duration);
+  gain.gain.setValueAtTime(grunt ? 0.018 : racket ? 0.035 : 0.028, now);
+  gain.gain.exponentialRampToValueAtTime(0.0001, now + duration);
+  if (filter) {
+    filter.type = 'bandpass';
+    filter.frequency.value = 610;
+    filter.Q.value = 1;
+    oscillator.connect(filter);
+    filter.connect(gain);
+  } else {
+    oscillator.connect(gain);
+  }
+  gain.connect(context.destination);
+  oscillator.start(now);
+  oscillator.stop(now + duration);
+}
+
+function DmoLiveCourt({
+  snapshot,
+  surface,
+  playbackSpeed,
+  stadiumAtmosphere = true,
+}: Props) {
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const cameraDragRef = useRef<{ x: number; y: number } | null>(null);
   const sampleBufferRef = useRef<LiveCourtSample[]>([]);
@@ -397,17 +420,27 @@ function DmoLiveCourt({ snapshot, surface, playbackSpeed }: Props) {
     players: snapshot.players,
     frameCount: snapshot.frameCount,
   });
+  const frameProgressRef = useRef({
+    filename: snapshot.filename,
+    frameCount: snapshot.frameCount,
+    changedAt: Date.now(),
+  });
   const audioContextRef = useRef<AudioContext | null>(null);
+  const crowdBedRef = useRef<CrowdBed | null>(null);
   const lastSoundFrameRef = useRef(Math.max(0, snapshot.frameCount - 3));
   const playedSoundEventsRef = useRef(new Set<string>());
   const [soundEnabled, setSoundEnabled] = useState(false);
   const [soundError, setSoundError] = useState('');
+  const [feedStalled, setFeedStalled] = useState(false);
+  const [renderError, setRenderError] = useState('');
+  const renderErrorRef = useRef(false);
   const sceneRef = useRef({
     samples: sampleBufferRef.current,
     trajectoryEvents: trajectoryEventsRef.current,
     players: snapshot.players,
     surface,
     playbackSpeed,
+    stadiumAtmosphere,
     camera: DEFAULT_LIVE_COURT_CAMERA,
     zoom: 1,
   });
@@ -420,9 +453,31 @@ function DmoLiveCourt({ snapshot, surface, playbackSpeed }: Props) {
     players: snapshot.players,
     surface,
     playbackSpeed,
+    stadiumAtmosphere,
     camera: { azimuth: cameraAzimuth, elevation: cameraElevation },
     zoom,
   };
+
+  useEffect(() => {
+    const progress = frameProgressRef.current;
+    if (snapshot.filename !== progress.filename || snapshot.frameCount !== progress.frameCount) {
+      frameProgressRef.current = {
+        filename: snapshot.filename,
+        frameCount: snapshot.frameCount,
+        changedAt: Date.now(),
+      };
+      setFeedStalled(false);
+    }
+  }, [snapshot.filename, snapshot.frameCount]);
+
+  useEffect(() => {
+    const interval = window.setInterval(() => {
+      const progress = frameProgressRef.current;
+      const stalled = progress.frameCount > 0 && Date.now() - progress.changedAt > 5_000;
+      setFeedStalled((current) => current === stalled ? current : stalled);
+    }, 1_000);
+    return () => window.clearInterval(interval);
+  }, []);
 
   useEffect(() => {
     const previousSnapshot = previousSnapshotRef.current;
@@ -504,17 +559,38 @@ function DmoLiveCourt({ snapshot, surface, playbackSpeed }: Props) {
       const cursor = motionPreference.matches
         ? samples[samples.length - 1]?.frame ?? 0
         : playheadRef.current ?? samples[0]?.frame ?? 0;
-      drawScene(
-        context,
-        samples,
-        current.trajectoryEvents,
-        current.players,
-        current.surface,
-        current.camera,
-        current.zoom,
-        cursor,
-        current.playbackSpeed,
-      );
+      try {
+        drawScene(
+          context,
+          samples,
+          current.trajectoryEvents,
+          current.players,
+          current.surface,
+          current.camera,
+          current.zoom,
+          cursor,
+          current.playbackSpeed,
+          current.stadiumAtmosphere,
+          now,
+        );
+        if (renderErrorRef.current) {
+          renderErrorRef.current = false;
+          setRenderError('');
+        }
+      } catch (error) {
+        if (!renderErrorRef.current) {
+          renderErrorRef.current = true;
+          setRenderError('The court view could not be redrawn. It will retry automatically.');
+          console.error('[Forum live court] redraw failed', error);
+        }
+        context.clearRect(0, 0, context.canvas.width, context.canvas.height);
+        context.fillStyle = '#0b1424';
+        context.fillRect(0, 0, context.canvas.width, context.canvas.height);
+        context.fillStyle = '#e2e8f0';
+        context.font = '600 16px system-ui, sans-serif';
+        context.textAlign = 'center';
+        context.fillText('Court view temporarily unavailable', context.canvas.width / 2, context.canvas.height / 2);
+      }
       animation = window.requestAnimationFrame(tick);
     };
     animation = window.requestAnimationFrame(tick);
@@ -536,6 +612,17 @@ function DmoLiveCourt({ snapshot, surface, playbackSpeed }: Props) {
       playSynthesizedCue(context, event.kind);
       playedSoundEventsRef.current.add(key);
     }
+    for (const event of snapshot.trajectoryEvents ?? []) {
+      const cue = event.kind === 'point-end'
+        ? 'cheer'
+        : event.frame % 2 === 0
+          ? 'grunt'
+          : null;
+      const key = `${event.frame}:${event.kind}`;
+      if (!cue || event.frame < lastSoundFrameRef.current || playedSoundEventsRef.current.has(key)) continue;
+      playSynthesizedCue(context, cue);
+      playedSoundEventsRef.current.add(key);
+    }
     lastSoundFrameRef.current = Math.max(lastSoundFrameRef.current, snapshot.frameCount - 3);
 
     const oldestRetainedFrame = snapshot.frameCount - 600;
@@ -544,21 +631,39 @@ function DmoLiveCourt({ snapshot, surface, playbackSpeed }: Props) {
         playedSoundEventsRef.current.delete(key);
       }
     }
-  }, [snapshot.frameCount, snapshot.soundEvents, soundEnabled]);
+  }, [snapshot.frameCount, snapshot.soundEvents, snapshot.trajectoryEvents, soundEnabled]);
 
   useEffect(() => () => {
+    try {
+      crowdBedRef.current?.source.stop();
+      crowdBedRef.current?.source.disconnect();
+      crowdBedRef.current?.gain.disconnect();
+    } catch {
+      // Closing the context below stops any remaining generated audio.
+    }
+    crowdBedRef.current = null;
     void audioContextRef.current?.close();
     audioContextRef.current = null;
   }, []);
 
   const toggleSound = async () => {
     if (soundEnabled) {
+      const context = audioContextRef.current;
+      const crowdBed = crowdBedRef.current;
+      if (context && crowdBed) {
+        crowdBed.gain.gain.setTargetAtTime(0.0001, context.currentTime, 0.12);
+        crowdBed.source.stop(context.currentTime + 0.45);
+        crowdBedRef.current = null;
+      }
       setSoundEnabled(false);
       return;
     }
     try {
       if (!audioContextRef.current) audioContextRef.current = new AudioContext();
-      await audioContextRef.current.resume();
+      const context = audioContextRef.current;
+      await context.resume();
+      if (!crowdBedRef.current) crowdBedRef.current = createCrowdBed(context);
+      crowdBedRef.current.gain.gain.setTargetAtTime(0.009, context.currentTime, 0.45);
       lastSoundFrameRef.current = Math.max(0, snapshot.frameCount - 3);
       setSoundError('');
       setSoundEnabled(true);
@@ -631,9 +736,9 @@ function DmoLiveCourt({ snapshot, surface, playbackSpeed }: Props) {
           <output>{Math.round(zoom * 100)}%</output>
           <button
             type="button"
-            aria-label={soundEnabled ? 'Mute synthesized court sounds' : 'Enable synthesized court sounds'}
+            aria-label={soundEnabled ? 'Mute generated crowd and court sounds' : 'Enable generated crowd and court sounds'}
             aria-pressed={soundEnabled}
-            title={soundEnabled ? 'Mute synthesized court sounds' : 'Enable synthesized court sounds'}
+            title={soundEnabled ? 'Mute generated crowd and court sounds' : 'Enable generated crowd and court sounds'}
             onClick={() => void toggleSound()}
           >
             {soundEnabled ? <Volume2 size={15} /> : <VolumeX size={15} />}
@@ -672,9 +777,17 @@ function DmoLiveCourt({ snapshot, surface, playbackSpeed }: Props) {
         <span><i className={styles.playerOne} />{snapshot.players[0]}</span>
         <span><i className={styles.playerTwo} />{snapshot.players[1]}</span>
         <span><i className={styles.ball} />Ball</span>
-        <span className={styles.sceneNote}>Drag to orbit · adjust angle and elevation</span>
+        <span className={styles.sceneNote}>
+          {stadiumAtmosphere ? 'Live court view · drag to orbit' : 'Drag to orbit · adjust angle and elevation'}
+        </span>
       </div>
-      {soundError && <p role="status">{soundError}</p>}
+      {feedStalled && (
+        <p className={styles.liveStatus} role="status">
+          The court view has not updated recently. Showing the last available position.
+        </p>
+      )}
+      {renderError && <p className={styles.liveStatus} role="alert">{renderError}</p>}
+      {soundError && <p className={styles.liveStatus} role="status">{soundError}</p>}
     </section>
   );
 }
