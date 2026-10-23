@@ -2,6 +2,12 @@ export type LiveCourtCoordinates = [number, number, number, number, number, numb
 export type LiveCourtSample = { frame: number; values: LiveCourtCoordinates };
 export type LiveCourtMotionEvent = { frame: number; kind: 'shot' | 'point-end' };
 
+// The DMO court runs along X, with the net at X=0. Player-local +Z points
+// toward the net; this keeps the right-handed model oriented consistently.
+export function liveCourtFacingAngle(playerX: number): number {
+  return Number.isFinite(playerX) && playerX > 0 ? -Math.PI / 2 : Math.PI / 2;
+}
+
 export function mergeLiveCourtSamples(
   previous: LiveCourtSample[],
   incoming: LiveCourtSample[],
@@ -88,7 +94,17 @@ export function interpolateLiveCourtFrame(
   const before = samples[Math.max(0, high)];
   const after = samples[Math.min(samples.length - 1, low)];
   const span = after.frame - before.frame;
-  if (span <= 0 || span > maxGapFrames) return before.values;
+  if (span <= 0) return before.values;
+  const safeMaxGapFrames = Number.isFinite(maxGapFrames) ? Math.max(1, maxGapFrames) : 1;
+  if (span > safeMaxGapFrames) {
+    const blendStart = after.frame - safeMaxGapFrames;
+    if (frame <= blendStart) return before.values;
+    const progress = Math.max(0, Math.min(1, (frame - blendStart) / safeMaxGapFrames));
+    const blend = progress * progress * (3 - 2 * progress);
+    return before.values.map((value, index) =>
+      value + (after.values[index] - value) * blend,
+    ) as LiveCourtCoordinates;
+  }
   const blend = (frame - before.frame) / span;
   return before.values.map((value, index) =>
     value + (after.values[index] - value) * blend,

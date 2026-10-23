@@ -105,10 +105,6 @@
 @media (max-width: 560px) {
   .header { align-items: flex-start; flex-direction: column; }
   .liveCourtStage { padding: 12px 12px 0; }
-  .scoreBug { top: 126px; right: 16px; width: min(208px, calc(100% - 28px)); padding: 6px 7px 5px; }
-  .scoreBugHeading, .scoreBugRow { grid-template-columns: minmax(56px, 1fr) 27px 32px 28px; gap: 2px; }
-  .scoreBugHeading { padding: 3px 2px 2px; }
-  .scoreBugRow { min-height: 20px; }
   .mainGrid { gap: 15px; padding: 12px; }
   .metricsHeading, .metricRow { grid-template-columns: minmax(94px, 1.2fr) repeat(2, minmax(48px, .8fr)); gap: 5px; padding: 8px; }
   .metricsHeading { font-size: 7px; }
@@ -119,6 +115,41 @@
   .footer { align-items: flex-end; flex-direction: column; }
 }
 
+@media (max-width: 720px) {
+  .liveCourtStage {
+    display: flex;
+    flex-direction: column;
+    gap: 10px;
+  }
+
+  .liveCourtStage > :first-child { order: 2; }
+  .scoreBug {
+    position: relative;
+    top: auto;
+    right: auto;
+    order: 1;
+    width: min(100%, 440px);
+    margin: 0 auto;
+    padding: 8px 10px;
+    background: rgba(6, 13, 29, .94);
+  }
+  .scoreBugStatus { font-size: 9px; }
+  .scoreBugDot, .scoreBugServeDot { width: 6px; height: 6px; }
+  .scoreBugSets { font-size: 9px; }
+  .scoreBugHeading, .scoreBugRow {
+    grid-template-columns: minmax(0, 1fr) 40px 44px 52px;
+    gap: 4px;
+  }
+  .scoreBugHeading { padding: 4px 2px 3px; font-size: 8px; }
+  .scoreBugRow { min-height: 29px; font-size: 11px; }
+  .scoreBugPoints { font-size: 13px; }
+  .scoreBugServe { font-size: 10px; }
+  .pointNote { order: 3; margin: 0 2px; }
+}
+
 @media (max-width: 420px) {
-  .scoreBug { top: 146px; right: 12px; width: min(196px, calc(100% - 24px)); }
+  .scoreBugHeading, .scoreBugRow {
+    grid-template-columns: minmax(0, 1fr) 36px 40px 48px;
+    gap: 3px;
+  }
 }

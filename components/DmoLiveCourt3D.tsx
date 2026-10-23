@@ -13,6 +13,7 @@ import type { Te4CourtSurface } from '@/lib/te4DmoTypes';
 import {
   advanceLiveCourtPlayhead,
   interpolateLiveCourtFrame,
+  liveCourtFacingAngle,
   mergeLiveCourtEvents,
   mergeLiveCourtSamples,
   type LiveCourtCoordinates,
@@ -377,10 +378,10 @@ function ThreeCourt({
       if (!bounds.width || !bounds.height) return;
       renderer.setSize(bounds.width, bounds.height, false);
       camera.aspect = bounds.width / bounds.height;
-      const compactFrame = bounds.width <= 600;
-      camera.fov = compactFrame ? 42 : 34;
+      const compactFrame = bounds.width <= 720;
+      camera.fov = compactFrame ? 38 : 34;
       camera.updateProjectionMatrix();
-      const responsiveScale = compactFrame ? 1.2 : 1;
+      const responsiveScale = compactFrame ? 0.82 : 1;
       const activeView = cameraViewRef.current;
       if (activeView === 'court') {
         camera.position.copy(DEFAULT_CAMERA).multiplyScalar(responsiveScale);
@@ -391,7 +392,7 @@ function ThreeCourt({
         controls.target.set(0, 0.5, 0);
         controls.update();
       } else if (activeView === 'aerial') {
-        camera.position.set(0, 60, 0.1);
+        camera.position.set(0, compactFrame ? 46 : 60, 0.1);
         controls.target.set(0, 0.5, 0);
         controls.update();
       }
@@ -417,6 +418,7 @@ function ThreeCourt({
       firstFrame: number,
       events: LiveCourtMotionEvent[],
       striking: boolean,
+      elapsedMs: number,
     ) => {
       const position = new THREE.Vector3(x * SCALE, 0, z * SCALE);
       const maxGapFrames = TE4_DMO_FRAMES_PER_SECOND * sceneDataRef.current.playbackSpeed / 2;
@@ -430,7 +432,20 @@ function ThreeCourt({
       const ballX = values[0] * SCALE;
       const ballZ = values[1] * SCALE;
       const ballY = Math.max(0, values[2] * SCALE) + BALL_RADIUS;
-      const facing = Math.atan2(ballX - position.x, ballZ - position.z);
+      const storedSide = rig.root.userData.courtSide;
+      const courtSide = (storedSide === -1 || storedSide === 1) && Math.abs(position.x) <= 0.8
+        ? storedSide
+        : position.x < 0 ? -1 : 1;
+      rig.root.userData.courtSide = courtSide;
+      const targetFacing = liveCourtFacingAngle(courtSide);
+      const facingDelta = Math.atan2(
+        Math.sin(targetFacing - rig.root.rotation.y),
+        Math.cos(targetFacing - rig.root.rotation.y),
+      );
+      const facing = rig.root.userData.facingInitialized
+        ? rig.root.rotation.y + facingDelta * (1 - Math.exp(-12 * elapsedMs / 1000))
+        : targetFacing;
+      rig.root.userData.facingInitialized = true;
       const event = striking
         ? events.find((item) => item.kind === 'shot' && Math.abs(item.frame - frame) <= 6)
         : undefined;
@@ -486,16 +501,14 @@ function ThreeCourt({
       poseLimb(rig.rightArm, new THREE.Vector3(0.23, 1.4 + bodyBounce, 0), rightHand);
       rig.leftHand.position.copy(leftHand);
       rig.rightHand.position.copy(rightHand);
-      const restingRacket = new THREE.Vector3(rightHand.x, rightHand.y + 0.1, rightHand.z);
-      const contactRacket = new THREE.Vector3(
-        THREE.MathUtils.clamp(localX, -1.2, 1.2),
-        THREE.MathUtils.clamp(ballY / 0.86, 0.22, 1.75),
-        THREE.MathUtils.clamp(localZ, -0.85, 1.25),
+      rig.racket.position.copy(rightHand);
+      const restingRacketAngle = -0.12 + Math.sin(phase * 0.55) * speed * 0.14;
+      const strokeRacketAngle = localX >= 0 ? -0.62 : 0.62;
+      rig.racket.rotation.z = THREE.MathUtils.lerp(
+        restingRacketAngle,
+        strokeRacketAngle,
+        strikeWeight,
       );
-      rig.racket.position.copy(restingRacket.lerp(contactRacket, strikeWeight));
-      rig.racket.rotation.z = strikeWeight > 0
-        ? -0.8 + (1 - strikeWeight) * 0.5
-        : -0.12 + Math.sin(phase * 0.55) * speed * 0.14;
     };
 
     const animate = (now: number) => {
@@ -535,8 +548,8 @@ function ThreeCourt({
         const strikingPlayer = activeShot
           ? firstPlayerDistance <= secondPlayerDistance ? 0 : 1
           : -1;
-        updatePlayer(players[0], values[3], values[4], 0, values, currentFrame, samples, lastFrame, firstFrame, trajectoryEventsRef.current, strikingPlayer === 0);
-        updatePlayer(players[1], values[5], values[6], 1, values, currentFrame, samples, lastFrame, firstFrame, trajectoryEventsRef.current, strikingPlayer === 1);
+        updatePlayer(players[0], values[3], values[4], 0, values, currentFrame, samples, lastFrame, firstFrame, trajectoryEventsRef.current, strikingPlayer === 0, elapsed);
+        updatePlayer(players[1], values[5], values[6], 1, values, currentFrame, samples, lastFrame, firstFrame, trajectoryEventsRef.current, strikingPlayer === 1, elapsed);
         playerLabels.forEach((label, index) => {
           label.position.set(players[index].root.position.x, 2.02, players[index].root.position.z);
         });
@@ -598,8 +611,9 @@ function ThreeCourt({
       cameraViewRef.current = view;
       controls.target.set(0, 0.5, 0);
       const compactFrame = viewportRef.current?.getBoundingClientRect().width ?? window.innerWidth;
-      const narrowScale = compactFrame <= 600 ? 1.2 : 1;
-      if (view === 'aerial') camera.position.set(0, 60, 0.1);
+      const compactViewport = compactFrame <= 720;
+      const narrowScale = compactViewport ? 0.82 : 1;
+      if (view === 'aerial') camera.position.set(0, compactViewport ? 46 : 60, 0.1);
       else if (view === 'tv') camera.position.set(0, 24 * narrowScale, 46 * narrowScale);
       else if (view === 'court') camera.position.copy(DEFAULT_CAMERA).multiplyScalar(narrowScale);
       else {

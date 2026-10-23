@@ -457,12 +457,15 @@ export function makePlayer(shirtColor: number, shortsColor: number): PlayerRig {
   rightShoe.position.set(0.12, 0.032, 0.07);
 
   const racket = new THREE.Group();
+  const racketVisual = new THREE.Group();
+  racketVisual.position.y = 0.11;
+  racket.add(racketVisual);
   const frame = new THREE.Mesh(new THREE.TorusGeometry(0.24, 0.027, 6, 24), material(0xe5dfc6, 0.55));
   frame.scale.set(0.77, 1.22, 0.45);
-  racket.add(frame);
+  racketVisual.add(frame);
   const handle = new THREE.Mesh(new THREE.CylinderGeometry(0.035, 0.045, 0.5, 7), material(0xb6aa84));
   handle.position.y = -0.36;
-  racket.add(handle);
+  racketVisual.add(handle);
   const stringMaterial = new THREE.LineBasicMaterial({ color: 0xeae7d8, transparent: true, opacity: 0.55 });
   for (let index = -2; index <= 2; index += 1) {
     const vertical = new THREE.BufferGeometry().setFromPoints([
@@ -473,9 +476,9 @@ export function makePlayer(shirtColor: number, shortsColor: number): PlayerRig {
       new THREE.Vector3(-0.13, index * 0.07, 0),
       new THREE.Vector3(0.13, index * 0.07, 0),
     ]);
-    racket.add(new THREE.Line(vertical, stringMaterial), new THREE.Line(horizontal, stringMaterial));
+    racketVisual.add(new THREE.Line(vertical, stringMaterial), new THREE.Line(horizontal, stringMaterial));
   }
-  racket.position.set(0.38, 1.2, 0);
+  racket.position.set(0.39, 1.1, 0.04);
   root.add(racket);
   root.scale.set(0.92, 0.9, 0.92);
   return {
