@@ -130,6 +130,38 @@
   font: 700 9px/1 system-ui, sans-serif;
 }
 
+.panControl {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  color: #aab9cf;
+  font: 700 9px/1 system-ui, sans-serif;
+  white-space: nowrap;
+}
+
+.panControl button {
+  display: inline-grid;
+  width: 26px;
+  height: 30px;
+  padding: 0;
+  place-items: center;
+  border: 1px solid rgba(152, 174, 207, .2);
+  border-radius: 6px;
+  background: rgba(3, 9, 20, .54);
+  color: #d2dced;
+  cursor: pointer;
+}
+
+.panControl button:hover {
+  border-color: rgba(176, 244, 59, .5);
+  color: #b0f43b;
+}
+
+.panControl input {
+  width: 92px;
+  accent-color: #b0f43b;
+}
+
 .volumeControl input {
   width: 74px;
   accent-color: #b0f43b;

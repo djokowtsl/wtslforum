@@ -1,7 +1,7 @@
 'use client';
 
 import { useCallback, useEffect, useRef, useState } from 'react';
-import { Minus, Plus, RotateCcw, Volume2, VolumeX } from 'lucide-react';
+import { ChevronLeft, ChevronRight, Minus, Plus, RotateCcw, Volume2, VolumeX } from 'lucide-react';
 import * as THREE from 'three';
 import { OrbitControls } from 'three/examples/jsm/controls/OrbitControls.js';
 import {
@@ -12,6 +12,8 @@ import {
 import type { Te4CourtSurface } from '@/lib/te4DmoTypes';
 import {
   advanceLiveCourtPlayhead,
+  clampPlayerCameraLateralPan,
+  findPlayerShotEvent,
   interpolateLiveCourtFrame,
   liveCourtFacingAngle,
   mergeLiveCourtEvents,
@@ -79,6 +81,13 @@ function playCue(context: AudioContext, kind: 'racket' | 'bounce' | 'grunt') {
   oscillator.stop(now + duration);
 }
 
+function playPlayerGrunt(audio: HTMLAudioElement) {
+  const voice = audio.cloneNode(true) as HTMLAudioElement;
+  voice.volume = 0.72;
+  voice.playbackRate = 0.94 + Math.random() * 0.12;
+  void voice.play().catch(() => undefined);
+}
+
 function ThreeCourt({
   snapshot,
   surface,
@@ -90,6 +99,7 @@ function ThreeCourt({
   const canvasHostRef = useRef<HTMLDivElement>(null);
   const audioContextRef = useRef<AudioContext | null>(null);
   const crowdAudioRef = useRef<HTMLAudioElement | null>(null);
+  const gruntAudioRef = useRef<HTMLAudioElement | null>(null);
   const sampleBufferRef = useRef<LiveCourtSample[]>([]);
   const trajectoryEventsRef = useRef<LiveCourtMotionEvent[]>([]);
   const playheadRef = useRef<number | null>(null);
@@ -106,7 +116,9 @@ function ThreeCourt({
   sceneDataRef.current = { snapshot, surface, playbackSpeed, stadiumAtmosphere };
   const soundOnRef = useRef(false);
   const cameraViewRef = useRef<CameraView>('court');
+  const playerCameraPanRef = useRef(0);
   const [cameraView, setCameraView] = useState<CameraView>('court');
+  const [playerCameraPan, setPlayerCameraPan] = useState(0);
   const [soundEnabled, setSoundEnabled] = useState(false);
   const [soundError, setSoundError] = useState('');
   const [crowdVolume, setCrowdVolume] = useState(0.38);
@@ -193,12 +205,12 @@ function ThreeCourt({
     for (const event of snapshot.trajectoryEvents ?? []) {
       const cue = event.kind === 'shot'
         && event.shotType === 'rally'
-        && (event.speedKmh ?? 0) >= 135
         ? 'grunt'
         : null;
-      const key = `${event.frame}:${event.kind}`;
+      const key = `${event.frame}:${event.kind}:${event.player ?? 0}`;
       if (!cue || event.frame < lastSoundFrameRef.current || playedSoundEventsRef.current.has(key)) continue;
-      playCue(context, cue);
+      if (gruntAudioRef.current) playPlayerGrunt(gruntAudioRef.current);
+      else playCue(context, cue);
       playedSoundEventsRef.current.add(key);
     }
     lastSoundFrameRef.current = Math.max(lastSoundFrameRef.current, snapshot.frameCount - 3);
@@ -214,6 +226,7 @@ function ThreeCourt({
     crowdAudio?.removeAttribute('src');
     crowdAudio?.load();
     crowdAudioRef.current = null;
+    gruntAudioRef.current = null;
     soundOnRef.current = false;
     if (shotCalloutTimerRef.current !== null) {
       window.clearTimeout(shotCalloutTimerRef.current);
@@ -410,9 +423,8 @@ function ThreeCourt({
         ? rig.root.rotation.y + facingDelta * (1 - Math.exp(-12 * elapsedMs / 1000))
         : targetFacing;
       rig.root.userData.facingInitialized = true;
-      const event = striking
-        ? events.find((item) => item.kind === 'shot' && Math.abs(item.frame - frame) <= 6)
-        : undefined;
+      const eventPlayer = index === 0 ? 1 : 2;
+      const event = striking ? findPlayerShotEvent(events, eventPlayer, frame) : undefined;
       const strikeWeight = event
         ? THREE.MathUtils.clamp(1 - Math.abs(event.frame - frame) / 6, 0, 1)
         : 0;
@@ -543,9 +555,11 @@ function ThreeCourt({
         );
         const firstPlayerDistance = Math.hypot((values[0] - values[3]) * SCALE, (values[1] - values[4]) * SCALE);
         const secondPlayerDistance = Math.hypot((values[0] - values[5]) * SCALE, (values[1] - values[6]) * SCALE);
-        const strikingPlayer = activeShot
-          ? firstPlayerDistance <= secondPlayerDistance ? 0 : 1
-          : -1;
+        const strikingPlayer = activeShot?.player
+          ? activeShot.player - 1
+          : activeShot
+            ? firstPlayerDistance <= secondPlayerDistance ? 0 : 1
+            : -1;
         updatePlayer(players[0], values[3], values[4], 0, values, currentFrame, samples, lastFrame, firstFrame, trajectoryEventsRef.current, strikingPlayer === 0, elapsed);
         updatePlayer(players[1], values[5], values[6], 1, values, currentFrame, samples, lastFrame, firstFrame, trajectoryEventsRef.current, strikingPlayer === 1, elapsed);
         const activeView = cameraViewRef.current;
@@ -554,23 +568,28 @@ function ThreeCourt({
           const player = players[playerIndex];
           const heading = player.root.rotation.y;
           const forward = new THREE.Vector3(Math.sin(heading), 0, Math.cos(heading));
+          const side = new THREE.Vector3(forward.z, 0, -forward.x);
+          const lateralPan = clampPlayerCameraLateralPan(playerCameraPanRef.current);
           const playerPosition = player.root.position;
           if (activeView.endsWith('-first')) {
             const eye = playerPosition.clone()
               .add(new THREE.Vector3(0, 1.55, 0))
               .addScaledVector(forward, 0.18);
-            const aim = eye.clone().addScaledVector(forward, 16).add(new THREE.Vector3(0, 0.25, 0));
+            const aim = eye.clone()
+              .addScaledVector(forward, 16)
+              .addScaledVector(side, lateralPan)
+              .add(new THREE.Vector3(0, 0.25, 0));
             camera.position.lerp(eye, 0.32);
             controls.target.lerp(aim, 0.32);
           } else {
-            const side = new THREE.Vector3(forward.z, 0, -forward.x);
             const follow = playerPosition.clone()
               .add(new THREE.Vector3(0, 3.0, 0))
               .addScaledVector(forward, -6.2)
               .addScaledVector(side, 1.25);
             const aim = playerPosition.clone()
               .add(new THREE.Vector3(0, 1.0, 0))
-              .addScaledVector(forward, 1.5);
+              .addScaledVector(forward, 1.5)
+              .addScaledVector(side, lateralPan);
             camera.position.lerp(follow, 0.22);
             controls.target.lerp(aim, 0.22);
           }
@@ -603,6 +622,10 @@ function ThreeCourt({
 
     const preset = (view: Exclude<CameraView, 'custom'>) => {
       cameraViewRef.current = view;
+      if (view.startsWith('player-')) {
+        playerCameraPanRef.current = 0;
+        setPlayerCameraPan(0);
+      }
       controls.target.set(0, 0.5, 0);
       const compactFrame = viewportRef.current?.getBoundingClientRect().width ?? window.innerWidth;
       const compactViewport = compactFrame <= 720;
@@ -643,9 +666,15 @@ function ThreeCourt({
     const onZoom = (event: Event) => zoom((event as CustomEvent<number>).detail);
     const onPreset = (event: Event) =>
       preset((event as CustomEvent<Exclude<CameraView, 'custom'>>).detail);
+    const onPlayerPan = (event: Event) => {
+      const pan = clampPlayerCameraLateralPan((event as CustomEvent<number>).detail);
+      playerCameraPanRef.current = pan;
+      setPlayerCameraPan(pan);
+    };
     viewport.addEventListener('courtzoom', onZoom);
     viewport.addEventListener('courtreset', reset);
     viewport.addEventListener('courtpreset', onPreset);
+    viewport.addEventListener('courtplayerpan', onPlayerPan);
 
     return () => {
       window.cancelAnimationFrame(animation);
@@ -654,6 +683,7 @@ function ThreeCourt({
       viewport.removeEventListener('courtzoom', onZoom);
       viewport.removeEventListener('courtreset', reset);
       viewport.removeEventListener('courtpreset', onPreset);
+      viewport.removeEventListener('courtplayerpan', onPlayerPan);
       renderer.dispose();
       renderer.domElement.remove();
       const geometries = new Set<THREE.BufferGeometry>();
@@ -683,6 +713,9 @@ function ThreeCourt({
     viewportRef.current?.dispatchEvent(new CustomEvent('courtpreset', { detail: view }));
   };
   const resetCamera = () => viewportRef.current?.dispatchEvent(new Event('courtreset'));
+  const changePlayerCameraPan = (pan: number) => {
+    viewportRef.current?.dispatchEvent(new CustomEvent<number>('courtplayerpan', { detail: pan }));
+  };
 
   const toggleSound = async () => {
     if (soundEnabled) {
@@ -704,6 +737,11 @@ function ThreeCourt({
         }
         crowdAudioRef.current.volume = crowdVolume;
         await crowdAudioRef.current.play();
+      }
+      if (!gruntAudioRef.current) {
+        const gruntAudio = new Audio('/audio/te4-player-grunt.mp3');
+        gruntAudio.preload = 'auto';
+        gruntAudioRef.current = gruntAudio;
       }
       lastSoundFrameRef.current = Math.max(0, snapshot.frameCount - 3);
       soundOnRef.current = true;
@@ -757,6 +795,34 @@ function ThreeCourt({
             <button type="button" aria-label="Zoom in" onClick={() => requestZoom(0.87)}><Plus size={15} /></button>
             <button type="button" aria-label="Reset court camera" onClick={resetCamera}><RotateCcw size={15} /></button>
           </div>
+          {cameraView.startsWith('player-') && (
+            <label className={styles.panControl}>
+              <span>Look across court</span>
+              <button
+                type="button"
+                aria-label="Pan player camera left"
+                onClick={() => changePlayerCameraPan(playerCameraPan - 0.75)}
+              >
+                <ChevronLeft size={14} />
+              </button>
+              <input
+                type="range"
+                min="-5.485"
+                max="5.485"
+                step="0.1"
+                value={playerCameraPan}
+                aria-label="Player camera lateral pan"
+                onChange={(event) => changePlayerCameraPan(Number(event.currentTarget.value))}
+              />
+              <button
+                type="button"
+                aria-label="Pan player camera right"
+                onClick={() => changePlayerCameraPan(playerCameraPan + 0.75)}
+              >
+                <ChevronRight size={14} />
+              </button>
+            </label>
+          )}
           <button
             className={styles.soundButton}
             type="button"
@@ -801,7 +867,9 @@ function ThreeCourt({
         <span><i className={styles.playerOne} />{snapshot.players[0]}</span>
         <span><i className={styles.playerTwo} />{snapshot.players[1]}</span>
         <span><i className={styles.ball} />Ball</span>
-        <span className={styles.hint}>Drag to orbit · scroll to zoom</span>
+        <span className={styles.hint}>
+          {cameraView.startsWith('player-') ? 'Use Look across court to pan laterally · scroll to zoom' : 'Drag to orbit · scroll to zoom'}
+        </span>
       </div>
       {soundError && <p className={styles.soundError} role="status">{soundError}</p>}
     </section>

@@ -364,7 +364,7 @@ test('broadcast owners can heartbeat and end only their own active broadcast', a
     recentPoints: [{ number: 1, scoreLabel: '0-0(15-0)', server: 1, winner: 1, rallyHits: 0, faults: 0 }],
     courtFrameIndices: [8, 9],
     trajectoryEvents: [
-      { frame: 8, kind: 'shot' },
+      { frame: 8, kind: 'shot', player: 1, shotType: 'serve', speedKmh: 195 },
       { frame: 9, kind: 'point-end' },
     ],
     soundEvents: [{ frame: 8, kind: 'racket' }],
@@ -377,6 +377,13 @@ test('broadcast owners can heartbeat and end only their own active broadcast', a
   assert.equal(snapshotUpdate.status, 200);
   const savedSnapshot = JSON.parse(queries[1].values[0]);
   assert.deepEqual(savedSnapshot.courtFrameIndices, [8, 9]);
+  assert.deepEqual(savedSnapshot.trajectoryEvents[0], {
+    frame: 8,
+    kind: 'shot',
+    player: 1,
+    shotType: 'serve',
+    speedKmh: 195,
+  });
   assert.equal(savedSnapshot.trajectoryEvents[1].kind, 'point-end');
 
   const ended = await route.DELETE(request(undefined, `/api/live-dmo/${id}`, 'DELETE'), context);
