@@ -2,6 +2,7 @@
 
 import type { Te4DmoReplaySpeed, Te4LivePoint, Te4LiveSnapshot } from '@/lib/te4DmoLive';
 import type { LivePreMatchProbability } from '@/lib/liveBroadcast';
+import type { LiveBroadcastScore } from '@/lib/liveBroadcastScore';
 import { surfaceForDmoTournament } from '@/lib/te4DmoSurface';
 import DmoLiveCourt from './DmoLiveCourt3D';
 import styles from './DmoLiveDisplay.module.css';
@@ -15,6 +16,7 @@ type Props = {
   preMatchPrediction?: LivePreMatchProbability | null;
   pointLog?: Te4LivePoint[];
   pointLogLoaded?: boolean;
+  liveScore?: LiveBroadcastScore | null;
 };
 
 function scoreLabel(sets: [number, number][]) {
@@ -110,15 +112,17 @@ export default function DmoLiveDisplay({
   preMatchPrediction,
   pointLog,
   pointLogLoaded = false,
+  liveScore,
 }: Props) {
   const playerStats = snapshot.stats;
   const p1Stats = playerStats[0];
   const p2Stats = playerStats[1];
   const surface = surfaceForDmoTournament(snapshot.stadium);
   const statusLabel = state === 'ended' ? 'Broadcast ended' : stale ? 'Connection paused' : 'Live';
-  const pointScore = snapshot.score.tiebreak
-    ? `${snapshot.score.points[0]}–${snapshot.score.points[1]}`
-    : `${snapshot.score.pointText[0]}–${snapshot.score.pointText[1]}`;
+  // Undefined means DMO replay/manual scoring. Null means an automatic
+  // broadcast's authoritative score is unavailable; never fall back to DMO.
+  const score = liveScore === undefined ? snapshot.score : liveScore;
+  const pointScore = score?.pointText.join('–') ?? '—';
   const displayedPointLog = pointLog ?? snapshot.recentPoints;
 
   return (
@@ -143,9 +147,9 @@ export default function DmoLiveDisplay({
               <i aria-hidden="true" className={styles.scoreBugDot} />
               {statusLabel}
             </span>
-            {scoreLabel(snapshot.score.sets) && (
+            {score && scoreLabel(score.sets) && (
               <strong className={styles.scoreBugSets} aria-label="Set scores">
-                {scoreLabel(snapshot.score.sets)}
+                {scoreLabel(score.sets)}
               </strong>
             )}
           </div>
@@ -153,20 +157,20 @@ export default function DmoLiveDisplay({
             <div className={styles.scoreBugHeading} role="row">
               <span role="columnheader">Player</span>
               <span role="columnheader">Games</span>
-              <span role="columnheader">{snapshot.score.tiebreak ? 'TB' : 'Points'}</span>
+              <span role="columnheader">{score?.tiebreak ? 'TB' : 'Points'}</span>
               <span role="columnheader">Serve</span>
             </div>
             {snapshot.players.map((name, index) => (
               <div className={styles.scoreBugRow} role="row" key={`${index}-${name}`}>
                 <strong role="cell" className={styles.scoreBugPlayer} title={name}>
-                  {snapshot.score.server === index + 1 && (
+                  {score?.server === index + 1 && (
                     <i className={styles.scoreBugServeDot} role="img" aria-label="Serving" />
                   )}
                   <span>{name}</span>
                 </strong>
-                <strong role="cell">{snapshot.score.games[index]}</strong>
+                <strong role="cell">{score?.games[index] ?? '—'}</strong>
                 <strong role="cell" className={styles.scoreBugPoints}>
-                  {snapshot.score.tiebreak ? snapshot.score.points[index] : snapshot.score.pointText[index]}
+                  {score?.pointText[index] ?? '—'}
                 </strong>
                 <span role="cell" className={styles.scoreBugServe}>
                   {playerStats[index].serviceWinRate === null
@@ -178,9 +182,13 @@ export default function DmoLiveDisplay({
           </div>
         </aside>
         <p className={styles.pointNote}>
-          {snapshot.currentPoint.inProgress
+          {liveScore !== undefined
+            ? liveScore
+              ? `TE4 live score · ${timeAgo(liveScore.checkedAt)}`
+              : 'Live score temporarily unavailable.'
+            : snapshot.currentPoint.inProgress
             ? `Point ${snapshot.currentPoint.number} in progress · ${snapshot.currentPoint.rallyHits} recorded rally shots${snapshot.currentPoint.serveSpeedKmh ? ` · serve ${snapshot.currentPoint.serveSpeedKmh} km/h` : ''}`
-            : `Next point · ${pointScore}${snapshot.score.tiebreak ? ' (tiebreak)' : ''}`}
+            : `Next point · ${pointScore}${score?.tiebreak ? ' (tiebreak)' : ''}`}
         </p>
       </div>
 

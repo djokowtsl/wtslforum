@@ -17,10 +17,12 @@ function loadRoute(path, mocks) {
     if (name.startsWith('node:')) return require(name);
     if (name === '@/lib/liveScores') {
       return {
+        getLiveBroadcastScoreFeed: async () => null,
         getLiveWtslMatchForPlayers: async () => null,
         canonicalizeRankedDmoPlayers: async (players) => players,
       };
     }
+    if (name === '@/lib/liveBroadcastScore') return { scoreForLiveBroadcast: () => null };
     if (name === '@/lib/siteSnapshots') return { readSiteSnapshot: async () => null };
     if (name === '@/lib/liveDmoStorage') {
       return {

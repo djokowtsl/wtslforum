@@ -1,4 +1,5 @@
 import { sql } from './db';
+import type { LiveBroadcastScoreFeed } from './liveBroadcastScore';
 import { normalizePlayerName } from './queries';
 import { computeOfficialHeadToHeadRecord } from './clutchStats';
 import {
@@ -291,6 +292,48 @@ export async function getLiveWtslMatches() {
     matches: await Promise.all(matches.map((match) => enrichMatch(match, playersByTour))),
     checkedAt: new Date().toISOString(),
   };
+}
+
+// One lightweight score read shared by all viewers. Never serve an old score
+// after a failed refresh, or run H2H probability requests on this hot path.
+let broadcastScoreCache: { at: number; feed: LiveBroadcastScoreFeed | null } | null = null;
+let broadcastScoreRequest: Promise<LiveBroadcastScoreFeed | null> | null = null;
+
+export async function getLiveBroadcastScoreFeed(): Promise<LiveBroadcastScoreFeed | null> {
+  if (broadcastScoreCache && Date.now() - broadcastScoreCache.at < 1_000) {
+    return broadcastScoreCache.feed;
+  }
+  if (broadcastScoreRequest) return broadcastScoreRequest;
+  const request = (async () => {
+    try {
+      const response = await fetch(SERVER_LIST_URL, {
+        headers: { 'user-agent': 'WTSL Forum live broadcast score' },
+        cache: 'no-store',
+        signal: AbortSignal.timeout(2_000),
+      });
+      if (!response.ok) throw new Error(`TE4 server list returned ${response.status}`);
+      const matches = parseLiveWtslMatches(await response.text());
+      const playersByTour = createPlayersByTour(await getRankedPlayerRows());
+      const feed: LiveBroadcastScoreFeed = {
+        matches: matches.map((match) => ({
+          ...match,
+          rankedPlayers: rankedPlayersForMatch(match, playersByTour),
+        })),
+        checkedAt: new Date().toISOString(),
+      };
+      broadcastScoreCache = { at: Date.now(), feed };
+      return feed;
+    } catch {
+      broadcastScoreCache = { at: Date.now(), feed: null };
+      return null;
+    }
+  })();
+  broadcastScoreRequest = request;
+  try {
+    return await request;
+  } finally {
+    if (broadcastScoreRequest === request) broadcastScoreRequest = null;
+  }
 }
 
 export async function getLiveWtslMatchForPlayers(players: [string, string]) {

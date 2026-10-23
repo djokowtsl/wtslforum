@@ -5,6 +5,7 @@ import { AlertTriangle, ChevronLeft, ChevronRight, Radio } from 'lucide-react';
 import { LIVE_DMO_UPDATE_INTERVAL_MS } from '@/lib/te4DmoLive';
 import type { Te4LivePoint, Te4LiveSnapshot } from '@/lib/te4DmoLive';
 import type { LivePreMatchProbability, LiveStream } from '@/lib/liveBroadcast';
+import type { LiveBroadcastScore } from '@/lib/liveBroadcastScore';
 import DmoLiveDisplay from './DmoLiveDisplay';
 import LiveBroadcastComments from './LiveBroadcastComments';
 import LiveStreamEmbed from './LiveStreamEmbed';
@@ -28,6 +29,7 @@ type Broadcast = {
   likelyOfficial: boolean;
   updatedAt: string;
   stale: boolean;
+  liveScore?: LiveBroadcastScore | null;
 };
 
 type PointLogState = {
@@ -369,6 +371,9 @@ export default function DmoLiveViewer({ canWatch }: Props) {
                       snapshot={broadcast.snapshot}
                       state={broadcast.status}
                       playbackSpeed={broadcast.replay ? broadcast.replaySpeed : 1}
+                      liveScore={broadcast.broadcastMode === 'auto' && !broadcast.replay
+                        ? broadcast.liveScore ?? null
+                        : undefined}
                       stale={broadcast.stale}
                       updatedAt={broadcast.updatedAt}
                       preMatchPrediction={preMatchPredictions[broadcast.id]}

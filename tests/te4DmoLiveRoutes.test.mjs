@@ -15,6 +15,8 @@ function loadRoute(path, mocks) {
   new Function('require', 'module', 'exports', code)((name) => {
     if (name in mocks) return mocks[name];
     if (name.startsWith('node:')) return require(name);
+    if (name === '@/lib/liveScores') return { getLiveBroadcastScoreFeed: async () => null };
+    if (name === '@/lib/liveBroadcastScore') return { scoreForLiveBroadcast: () => null };
     if (name === '@/lib/te4DmoLive') {
       return {
         hasCompletedDmoPoints: (snapshot) => Boolean(snapshot && Number.isInteger(snapshot.pointCount) && snapshot.pointCount > 0),
