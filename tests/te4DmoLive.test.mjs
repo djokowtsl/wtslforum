@@ -67,6 +67,11 @@ test('incremental DMO parsing waits for frames, then emits a compact live snapsh
   assert.ok(snapshot.frameCount > 10);
   assert.equal(snapshot.bestOf, 3);
   assert.equal(snapshot.pointCount, 0);
+  assert.equal(snapshot.pointHistory, undefined);
+  assert.deepEqual(
+    parser.snapshot('match.dmo', 3, parser.frameCount, undefined, undefined, false, true)?.pointHistory,
+    [],
+  );
   assert.deepEqual(snapshot.winChance, [0.5, 0.5]);
   assert.equal(snapshot.stats.length, 2);
   assert.ok(snapshot.court.length > 0 && snapshot.court.length <= 96);
