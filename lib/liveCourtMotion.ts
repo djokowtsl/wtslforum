@@ -117,6 +117,13 @@ export function interpolateLiveCourtFrame(
 
   const before = samples[Math.max(0, high)];
   const after = samples[Math.min(samples.length - 1, low)];
+  // Changeovers are editorial cuts. Interpolation would send both players
+  // through the net, even before the renderer detects the changed ends.
+  if ([3, 5].some(i => Math.abs(before.values[i]) > 100
+    && Math.abs(after.values[i]) > 100
+    && Math.sign(before.values[i]) !== Math.sign(after.values[i]))) {
+    return after.values;
+  }
   const span = after.frame - before.frame;
   if (span <= 0) return before.values;
   const safeMaxGapFrames = Number.isFinite(maxGapFrames) ? Math.max(1, maxGapFrames) : 1;

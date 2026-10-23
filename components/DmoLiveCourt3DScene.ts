@@ -430,6 +430,7 @@ export function makePlayer(shirtColor: number, shortsColor: number): PlayerRig {
   const handGeometry = new THREE.SphereGeometry(0.075, 10, 8);
   const leftHand = new THREE.Mesh(handGeometry, skin);
   const rightHand = new THREE.Mesh(handGeometry, skin);
+  rightHand.name = 'dominant-right-hand';
   for (const part of [leftArm, rightArm, leftLeg, rightLeg]) {
     part.castShadow = true;
     root.add(part);
@@ -450,6 +451,8 @@ export function makePlayer(shirtColor: number, shortsColor: number): PlayerRig {
   sole.castShadow = true;
   leftShoe.add(sole);
   const rightShoe = leftShoe.clone();
+  leftShoe.name = 'left-shoe';
+  rightShoe.name = 'right-shoe';
   leftShoe.castShadow = true;
   rightShoe.castShadow = true;
   root.add(leftShoe, rightShoe);
@@ -459,11 +462,12 @@ export function makePlayer(shirtColor: number, shortsColor: number): PlayerRig {
   const racket = new THREE.Group();
   const racketVisual = new THREE.Group();
   // Pivot the racket at the grip, so the hand closes around the handle rather
-  // than appearing to hold the hoop. The rig's local +X is the player's right.
+  // than appearing to hold the hoop. The face is +Z; anatomical right is -X.
   racketVisual.position.y = 0.36;
   racketVisual.scale.setScalar(0.77);
   racket.add(racketVisual);
   const frame = new THREE.Mesh(new THREE.TorusGeometry(0.24, 0.027, 6, 24), material(0xe5dfc6, 0.55));
+  frame.name = 'racket-head';
   frame.scale.set(0.77, 1.22, 0.45);
   racketVisual.add(frame);
   const handle = new THREE.Mesh(new THREE.CylinderGeometry(0.035, 0.045, 0.5, 7), material(0xb6aa84));
@@ -483,7 +487,7 @@ export function makePlayer(shirtColor: number, shortsColor: number): PlayerRig {
   }
   racket.position.set(0.39, 1.1, 0.04);
   root.add(racket);
-  root.scale.set(0.84, 0.84, 0.84);
+  root.scale.set(0.95, 0.95, 0.95);
   return {
     root, body, hip, head, leftArm, rightArm, leftLeg, rightLeg,
     leftHand, rightHand, leftShoe, rightShoe, racket,
