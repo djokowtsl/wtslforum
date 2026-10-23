@@ -4,20 +4,25 @@ import type { Te4CourtSurface } from '@/lib/te4DmoTypes';
 export type PlayerRig = {
   root: THREE.Group;
   body: THREE.Mesh;
+  hip: THREE.Mesh;
   head: THREE.Mesh;
   leftArm: THREE.Mesh;
   rightArm: THREE.Mesh;
   leftLeg: THREE.Mesh;
   rightLeg: THREE.Mesh;
+  leftHand: THREE.Mesh;
+  rightHand: THREE.Mesh;
+  leftShoe: THREE.Mesh;
+  rightShoe: THREE.Mesh;
   racket: THREE.Group;
 };
 
 export const SCALE = 0.01;
 export const BALL_RADIUS = 0.034;
 export const PALETTE = {
-  outside: 0x274f49,
-  stands: 0x193b39,
-  trim: 0x8b9e83,
+  outside: 0x80857d,
+  stands: 0x646b64,
+  trim: 0xa2a79f,
   yellow: 0xe9dc78,
   shirtOne: 0xd9a95e,
   shirtTwo: 0xd96d5b,
@@ -57,6 +62,15 @@ export function buildCourt(scene: THREE.Scene, surface: Te4CourtSurface) {
   const halfLength = COURT_LENGTH / 2;
   const halfWidth = COURT_WIDTH / 2;
   const singlesHalfWidth = SINGLES_WIDTH / 2;
+  const ground = new THREE.Mesh(
+    new THREE.PlaneGeometry(300, 300),
+    material(0x707670),
+  );
+  ground.rotation.x = -Math.PI / 2;
+  ground.position.y = -0.12;
+  ground.receiveShadow = true;
+  scene.add(ground);
+
   const apron = new THREE.Mesh(
     new THREE.PlaneGeometry(31.8, 18.4),
     material(PALETTE.outside),
@@ -177,71 +191,123 @@ export function buildCrowd(scene: THREE.Scene) {
     }
   }
 
+  const seatMesh = new THREE.InstancedMesh(
+    new THREE.BoxGeometry(0.24, 0.08, 0.22),
+    material(PALETTE.stands, 0.95),
+    spectators.length,
+  );
   const bodyMesh = new THREE.InstancedMesh(
-    new THREE.CapsuleGeometry(0.085, 0.23, 3, 6),
+    new THREE.CapsuleGeometry(0.09, 0.28, 3, 6),
     new THREE.MeshStandardMaterial({ color: 0xffffff, roughness: 0.92 }),
     spectators.length,
   );
   const headMesh = new THREE.InstancedMesh(
-    new THREE.SphereGeometry(0.075, 8, 6),
+    new THREE.SphereGeometry(0.08, 10, 8),
     new THREE.MeshStandardMaterial({ color: 0xffffff, roughness: 0.88 }),
     spectators.length,
   );
   const dummy = new THREE.Object3D();
-  const color = new THREE.Color();
+  const shirts = [0xc96b52, 0x397e75, 0xd7b253, 0x526b98, 0xefe0c8, 0x885e80, 0x465754];
+  const skinTones = [0xf1c2a0, 0xd8a17c, 0x9e684c, 0xe0b090];
   spectators.forEach((spectator, index) => {
-    const baseY = 0.2 + spectator.row * rowStep;
-    dummy.position.set(spectator.x, baseY, spectator.z);
+    const seatY = 0.17 + spectator.row * rowStep;
+    dummy.position.set(spectator.x, seatY, spectator.z);
     dummy.rotation.y = spectator.facing;
+    dummy.scale.set(1, 1, 1);
+    dummy.updateMatrix();
+    seatMesh.setMatrixAt(index, dummy.matrix);
+
+    dummy.position.y = seatY + 0.28;
+    dummy.scale.set(0.88 + (index % 4) * 0.06, 0.92 + (index % 3) * 0.07, 1);
     dummy.updateMatrix();
     bodyMesh.setMatrixAt(index, dummy.matrix);
-    color.setHSL(((index * 37) % 360) / 360, 0.24 + (index % 3) * 0.08, 0.44 + (index % 4) * 0.055);
-    bodyMesh.setColorAt(index, color);
-    dummy.position.y = baseY + 0.19;
+    bodyMesh.setColorAt(index, new THREE.Color(shirts[(index * 5 + spectator.row) % shirts.length]));
+
+    dummy.position.y = seatY + 0.56;
+    dummy.scale.setScalar(0.88 + (index % 3) * 0.08);
     dummy.updateMatrix();
     headMesh.setMatrixAt(index, dummy.matrix);
-    color.setHSL(((index * 29 + 12) % 360) / 360, 0.2, 0.61);
-    headMesh.setColorAt(index, color);
+    headMesh.setColorAt(index, new THREE.Color(skinTones[(index * 3 + spectator.row) % skinTones.length]));
   });
-  bodyMesh.instanceMatrix.needsUpdate = true;
-  headMesh.instanceMatrix.needsUpdate = true;
-  bodyMesh.castShadow = false;
-  headMesh.castShadow = false;
-  scene.add(bodyMesh, headMesh);
+  for (const instances of [seatMesh, bodyMesh, headMesh]) {
+    instances.instanceMatrix.needsUpdate = true;
+    instances.castShadow = false;
+    instances.receiveShadow = false;
+    scene.add(instances);
+  }
+  if (bodyMesh.instanceColor) bodyMesh.instanceColor.needsUpdate = true;
+  if (headMesh.instanceColor) headMesh.instanceColor.needsUpdate = true;
 }
 
 export function makePlayer(shirtColor: number, shortsColor: number): PlayerRig {
   const root = new THREE.Group();
+  const outline = material(0x18302e);
   const skin = material(0xd8a17c);
-  const body = new THREE.Mesh(new THREE.CapsuleGeometry(0.28, 0.56, 5, 10), material(shirtColor, 0.78));
-  body.position.y = 1.18;
+  const shirt = material(shirtColor, 0.78);
+  const shorts = material(shortsColor, 0.8);
+  const shoe = material(0xe9e6d9);
+  const body = new THREE.Mesh(new THREE.CylinderGeometry(0.29, 0.23, 0.68, 12), shirt);
+  body.scale.set(1.04, 1, 0.86);
+  body.position.y = 1.22;
   body.castShadow = true;
+  const shoulderGeometry = new THREE.SphereGeometry(0.16, 12, 10);
+  for (const side of [-1, 1]) {
+    const shoulder = new THREE.Mesh(shoulderGeometry, shirt);
+    shoulder.position.set(side * 0.21, 0.23, 0);
+    shoulder.scale.set(1.08, 0.72, 0.9);
+    shoulder.castShadow = true;
+    body.add(shoulder);
+  }
   root.add(body);
-  const shorts = new THREE.Mesh(new THREE.BoxGeometry(0.48, 0.25, 0.3), material(shortsColor, 0.8));
-  shorts.position.y = 0.79;
-  shorts.castShadow = true;
-  root.add(shorts);
-  const head = new THREE.Mesh(new THREE.SphereGeometry(0.17, 16, 12), skin);
-  head.position.y = 1.75;
+  const hip = new THREE.Mesh(new THREE.BoxGeometry(0.46, 0.24, 0.3), shorts);
+  hip.position.y = 0.79;
+  hip.castShadow = true;
+  root.add(hip);
+  const neck = new THREE.Mesh(new THREE.CylinderGeometry(0.075, 0.09, 0.14, 9), skin);
+  neck.position.y = 1.61;
+  root.add(neck);
+  const head = new THREE.Mesh(new THREE.SphereGeometry(0.16, 16, 12), skin);
+  head.position.y = 1.78;
   head.castShadow = true;
   root.add(head);
   const hair = new THREE.Mesh(
-    new THREE.SphereGeometry(0.172, 14, 9, 0, Math.PI * 2, 0, Math.PI * 0.47),
-    material(0x18302e),
+    new THREE.SphereGeometry(0.164, 14, 9, 0, Math.PI * 2, 0, Math.PI * 0.47),
+    outline,
   );
-  hair.position.set(0, 1.79, 0);
+  hair.position.set(0, 1.82, 0);
   root.add(hair);
 
-  const armGeometry = new THREE.CylinderGeometry(0.07, 0.09, 1, 8);
+  const limbGeometry = new THREE.CylinderGeometry(0.07, 0.09, 1, 8);
   const legGeometry = new THREE.CylinderGeometry(0.09, 0.105, 1, 8);
-  const leftArm = new THREE.Mesh(armGeometry, skin);
-  const rightArm = new THREE.Mesh(armGeometry, skin);
+  const leftArm = new THREE.Mesh(limbGeometry, skin);
+  const rightArm = new THREE.Mesh(limbGeometry, skin);
   const leftLeg = new THREE.Mesh(legGeometry, skin);
   const rightLeg = new THREE.Mesh(legGeometry, skin);
+  const handGeometry = new THREE.SphereGeometry(0.075, 10, 8);
+  const leftHand = new THREE.Mesh(handGeometry, skin);
+  const rightHand = new THREE.Mesh(handGeometry, skin);
   for (const part of [leftArm, rightArm, leftLeg, rightLeg]) {
     part.castShadow = true;
     root.add(part);
   }
+  leftHand.castShadow = true;
+  rightHand.castShadow = true;
+  root.add(leftHand, rightHand);
+
+  const leftShoe = new THREE.Mesh(new THREE.BoxGeometry(0.23, 0.12, 0.36), shoe);
+  const sole = new THREE.Mesh(
+    new THREE.BoxGeometry(0.232, 0.025, 0.362),
+    material(0x26322f, 0.95),
+  );
+  sole.position.y = -0.047;
+  sole.castShadow = true;
+  leftShoe.add(sole);
+  const rightShoe = leftShoe.clone();
+  leftShoe.castShadow = true;
+  rightShoe.castShadow = true;
+  root.add(leftShoe, rightShoe);
+  leftShoe.position.set(-0.12, 0.032, 0.07);
+  rightShoe.position.set(0.12, 0.032, 0.07);
 
   const racket = new THREE.Group();
   const frame = new THREE.Mesh(new THREE.TorusGeometry(0.24, 0.027, 6, 24), material(0xe5dfc6, 0.55));
@@ -250,10 +316,25 @@ export function makePlayer(shirtColor: number, shortsColor: number): PlayerRig {
   const handle = new THREE.Mesh(new THREE.CylinderGeometry(0.035, 0.045, 0.5, 7), material(0xb6aa84));
   handle.position.y = -0.36;
   racket.add(handle);
+  const stringMaterial = new THREE.LineBasicMaterial({ color: 0xeae7d8, transparent: true, opacity: 0.55 });
+  for (let index = -2; index <= 2; index += 1) {
+    const vertical = new THREE.BufferGeometry().setFromPoints([
+      new THREE.Vector3(index * 0.06, -0.18, 0),
+      new THREE.Vector3(index * 0.06, 0.2, 0),
+    ]);
+    const horizontal = new THREE.BufferGeometry().setFromPoints([
+      new THREE.Vector3(-0.13, index * 0.07, 0),
+      new THREE.Vector3(0.13, index * 0.07, 0),
+    ]);
+    racket.add(new THREE.Line(vertical, stringMaterial), new THREE.Line(horizontal, stringMaterial));
+  }
   racket.position.set(0.38, 1.2, 0);
   root.add(racket);
-  root.scale.setScalar(0.9);
-  return { root, body, head, leftArm, rightArm, leftLeg, rightLeg, racket };
+  root.scale.setScalar(0.95);
+  return {
+    root, body, hip, head, leftArm, rightArm, leftLeg, rightLeg,
+    leftHand, rightHand, leftShoe, rightShoe, racket,
+  };
 }
 
 export function poseLimb(mesh: THREE.Mesh, from: THREE.Vector3, to: THREE.Vector3, radius = 1) {
