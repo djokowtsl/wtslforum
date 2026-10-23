@@ -101,21 +101,34 @@ function playCue(context: AudioContext, kind: 'racket' | 'bounce' | 'grunt' | 'c
 }
 
 function createPlayerLabel(name: string) {
+  const measureCanvas = document.createElement('canvas');
+  const measureContext = measureCanvas.getContext('2d');
+  const font = '600 25px system-ui, sans-serif';
+  if (measureContext) measureContext.font = font;
+  const labelWidth = Math.min(
+    440,
+    Math.max(150, Math.ceil((measureContext?.measureText(name).width ?? 150) + 36)),
+  );
   const canvas = document.createElement('canvas');
-  canvas.width = 512;
-  canvas.height = 96;
+  canvas.width = labelWidth * 2;
+  canvas.height = 128;
   const context = canvas.getContext('2d');
   if (context) {
-    context.fillStyle = 'rgba(6, 13, 29, 0.86)';
-    context.fillRect(6, 6, 500, 84);
-    context.strokeStyle = 'rgba(203, 216, 237, 0.42)';
-    context.lineWidth = 3;
-    context.strokeRect(6, 6, 500, 84);
+    context.scale(2, 2);
+    context.beginPath();
+    context.roundRect(2, 4, labelWidth - 4, 56, 18);
+    context.fillStyle = 'rgba(6, 13, 29, 0.62)';
+    context.fill();
+    context.strokeStyle = 'rgba(203, 216, 237, 0.18)';
+    context.lineWidth = 1;
+    context.stroke();
     context.fillStyle = '#f1f5fb';
-    context.font = '600 34px system-ui, sans-serif';
+    context.font = font;
     context.textAlign = 'center';
     context.textBaseline = 'middle';
-    context.fillText(name, 256, 49, 470);
+    context.shadowColor = 'rgba(0, 0, 0, 0.32)';
+    context.shadowBlur = 3;
+    context.fillText(name, labelWidth / 2, 32, labelWidth - 28);
   }
   const texture = new THREE.CanvasTexture(canvas);
   texture.colorSpace = THREE.SRGBColorSpace;
@@ -125,7 +138,7 @@ function createPlayerLabel(name: string) {
     depthTest: false,
     depthWrite: false,
   }));
-  sprite.scale.set(2.5, 0.47, 1);
+  sprite.scale.set(Math.min(1.72, Math.max(0.95, labelWidth / 512 * 2.5)), 0.3, 1);
   sprite.renderOrder = 1000;
   return sprite;
 }
@@ -525,7 +538,7 @@ function ThreeCourt({
         updatePlayer(players[0], values[3], values[4], 0, values, currentFrame, samples, lastFrame, firstFrame, trajectoryEventsRef.current, strikingPlayer === 0);
         updatePlayer(players[1], values[5], values[6], 1, values, currentFrame, samples, lastFrame, firstFrame, trajectoryEventsRef.current, strikingPlayer === 1);
         playerLabels.forEach((label, index) => {
-          label.position.set(players[index].root.position.x, 1.78, players[index].root.position.z);
+          label.position.set(players[index].root.position.x, 2.02, players[index].root.position.z);
         });
 
         const activeView = cameraViewRef.current;

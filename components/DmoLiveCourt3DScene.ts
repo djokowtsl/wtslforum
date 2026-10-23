@@ -240,18 +240,30 @@ export function buildCrowd(scene: THREE.Scene) {
 
   // A low, open-sided retaining bowl gives the seating a clear stadium boundary
   // without placing a roof or scoreboard in aerial and TV camera sightlines.
-  const structure = material(0x293649, 0.88);
-  const fascia = material(0x758397, 0.72);
-  const enclosureHeight = 7.2;
+  const structure = new THREE.MeshStandardMaterial({
+    color: 0x293649,
+    roughness: 0.88,
+    transparent: true,
+    opacity: 0.2,
+    depthWrite: false,
+  });
+  const fascia = new THREE.MeshStandardMaterial({
+    color: 0x758397,
+    roughness: 0.72,
+    transparent: true,
+    opacity: 0.38,
+    depthWrite: false,
+  });
+  const enclosureHeight = 1.8;
   const sideWalls = [-1, 1].map((side) => addBox(
     scene,
-    [39.2, enclosureHeight, 0.56],
+    [39.2, enclosureHeight, 0.4],
     [0, enclosureHeight / 2, side * 15.55],
     structure,
   ));
   const endWalls = [-1, 1].map((end) => addBox(
     scene,
-    [0.56, enclosureHeight, 31.7],
+    [0.4, enclosureHeight, 31.7],
     [end * 22.45, enclosureHeight / 2, 0],
     structure,
   ));
@@ -260,26 +272,26 @@ export function buildCrowd(scene: THREE.Scene) {
     wall.receiveShadow = true;
   }
   for (const side of [-1, 1]) {
-    const cap = addBox(scene, [39.4, 0.16, 0.68], [0, enclosureHeight + 0.08, side * 15.55], fascia);
+    const cap = addBox(scene, [39.4, 0.12, 0.5], [0, enclosureHeight + 0.06, side * 15.55], fascia);
     cap.castShadow = false;
-    for (let index = -3; index <= 3; index += 1) {
+    for (let index = -2; index <= 2; index += 1) {
       const rib = addBox(
         scene,
-        [0.22, enclosureHeight - 0.3, 0.7],
-        [index * 5.5, enclosureHeight / 2, side * 15.55],
+        [0.12, enclosureHeight - 0.18, 0.5],
+        [index * 8, enclosureHeight / 2, side * 15.55],
         fascia,
       );
       rib.castShadow = false;
     }
   }
   for (const end of [-1, 1]) {
-    const cap = addBox(scene, [0.68, 0.16, 31.9], [end * 22.45, enclosureHeight + 0.08, 0], fascia);
+    const cap = addBox(scene, [0.5, 0.12, 31.9], [end * 22.45, enclosureHeight + 0.06, 0], fascia);
     cap.castShadow = false;
-    for (let index = -2; index <= 2; index += 1) {
+    for (let index = -1; index <= 1; index += 1) {
       const rib = addBox(
         scene,
-        [0.7, enclosureHeight - 0.3, 0.22],
-        [end * 22.45, enclosureHeight / 2, index * 6.2],
+        [0.5, enclosureHeight - 0.18, 0.12],
+        [end * 22.45, enclosureHeight / 2, index * 9],
         fascia,
       );
       rib.castShadow = false;
@@ -350,42 +362,67 @@ export function makePlayer(shirtColor: number, shortsColor: number): PlayerRig {
   const root = new THREE.Group();
   const outline = material(0x18302e);
   const skin = material(0xd8a17c);
+  const facialDetail = material(0x302b2c, 0.86);
   const shirt = material(shirtColor, 0.78);
   const shorts = material(shortsColor, 0.8);
   const shoe = material(0xe9e6d9);
-  const body = new THREE.Mesh(new THREE.CylinderGeometry(0.29, 0.23, 0.68, 12), shirt);
-  body.scale.set(1.04, 1, 0.86);
+  const body = new THREE.Mesh(new THREE.LatheGeometry([
+    new THREE.Vector2(0.02, -0.38),
+    new THREE.Vector2(0.18, -0.36),
+    new THREE.Vector2(0.22, -0.25),
+    new THREE.Vector2(0.23, -0.08),
+    new THREE.Vector2(0.28, 0.15),
+    new THREE.Vector2(0.3, 0.27),
+    new THREE.Vector2(0.24, 0.38),
+    new THREE.Vector2(0.14, 0.43),
+    new THREE.Vector2(0.02, 0.44),
+  ], 20), shirt);
+  body.scale.set(1.02, 1, 0.86);
   body.position.y = 1.22;
   body.castShadow = true;
-  const shoulderGeometry = new THREE.SphereGeometry(0.16, 12, 10);
+  const shoulderGeometry = new THREE.SphereGeometry(0.15, 16, 12);
   for (const side of [-1, 1]) {
     const shoulder = new THREE.Mesh(shoulderGeometry, shirt);
-    shoulder.position.set(side * 0.21, 0.23, 0);
-    shoulder.scale.set(1.08, 0.72, 0.9);
+    shoulder.position.set(side * 0.22, 0.22, 0);
+    shoulder.scale.set(1.05, 0.76, 0.92);
     shoulder.castShadow = true;
     body.add(shoulder);
   }
   root.add(body);
-  const hip = new THREE.Mesh(new THREE.BoxGeometry(0.46, 0.24, 0.3), shorts);
+  const hip = new THREE.Mesh(new THREE.CapsuleGeometry(0.19, 0.06, 4, 12), shorts);
+  hip.scale.set(1.1, 0.48, 0.78);
   hip.position.y = 0.79;
   hip.castShadow = true;
   root.add(hip);
-  const neck = new THREE.Mesh(new THREE.CylinderGeometry(0.075, 0.09, 0.14, 9), skin);
+  const neck = new THREE.Mesh(new THREE.CapsuleGeometry(0.07, 0.045, 3, 10), skin);
   neck.position.y = 1.61;
   root.add(neck);
   const head = new THREE.Mesh(new THREE.SphereGeometry(0.16, 16, 12), skin);
   head.position.y = 1.78;
   head.castShadow = true;
   root.add(head);
+  const earGeometry = new THREE.SphereGeometry(0.035, 10, 8);
+  for (const side of [-1, 1]) {
+    const ear = new THREE.Mesh(earGeometry, skin);
+    ear.position.set(side * 0.15, 0, 0);
+    ear.scale.set(0.55, 0.74, 0.82);
+    head.add(ear);
+    const eye = new THREE.Mesh(new THREE.SphereGeometry(0.014, 8, 6), facialDetail);
+    eye.position.set(side * 0.05, 0.025, 0.145);
+    head.add(eye);
+  }
+  const nose = new THREE.Mesh(new THREE.SphereGeometry(0.019, 8, 6), skin);
+  nose.position.set(0, -0.018, 0.158);
+  head.add(nose);
   const hair = new THREE.Mesh(
     new THREE.SphereGeometry(0.164, 14, 9, 0, Math.PI * 2, 0, Math.PI * 0.47),
     outline,
   );
-  hair.position.set(0, 1.82, 0);
-  root.add(hair);
+  hair.position.set(0, 0.04, 0);
+  head.add(hair);
 
-  const limbGeometry = new THREE.CylinderGeometry(0.07, 0.09, 1, 8);
-  const legGeometry = new THREE.CylinderGeometry(0.09, 0.105, 1, 8);
+  const limbGeometry = new THREE.CapsuleGeometry(0.07, 0.86, 4, 12);
+  const legGeometry = new THREE.CapsuleGeometry(0.085, 0.83, 4, 12);
   const leftArm = new THREE.Mesh(limbGeometry, skin);
   const rightArm = new THREE.Mesh(limbGeometry, skin);
   const leftLeg = new THREE.Mesh(legGeometry, skin);
@@ -401,12 +438,15 @@ export function makePlayer(shirtColor: number, shortsColor: number): PlayerRig {
   rightHand.castShadow = true;
   root.add(leftHand, rightHand);
 
-  const leftShoe = new THREE.Mesh(new THREE.BoxGeometry(0.23, 0.12, 0.36), shoe);
-  const sole = new THREE.Mesh(
-    new THREE.BoxGeometry(0.232, 0.025, 0.362),
-    material(0x26322f, 0.95),
-  );
-  sole.position.y = -0.047;
+  const shoeGeometry = new THREE.CapsuleGeometry(0.095, 0.17, 3, 12);
+  shoeGeometry.rotateX(Math.PI / 2);
+  const leftShoe = new THREE.Mesh(shoeGeometry, shoe);
+  leftShoe.scale.set(1.08, 0.72, 1);
+  const soleGeometry = new THREE.CapsuleGeometry(0.098, 0.17, 3, 12);
+  soleGeometry.rotateX(Math.PI / 2);
+  const sole = new THREE.Mesh(soleGeometry, material(0x26322f, 0.95));
+  sole.scale.set(1.06, 0.52, 0.86);
+  sole.position.y = -0.055;
   sole.castShadow = true;
   leftShoe.add(sole);
   const rightShoe = leftShoe.clone();
@@ -437,7 +477,7 @@ export function makePlayer(shirtColor: number, shortsColor: number): PlayerRig {
   }
   racket.position.set(0.38, 1.2, 0);
   root.add(racket);
-  root.scale.set(0.92, 0.86, 0.92);
+  root.scale.set(0.92, 0.9, 0.92);
   return {
     root, body, hip, head, leftArm, rightArm, leftLeg, rightLeg,
     leftHand, rightHand, leftShoe, rightShoe, racket,
