@@ -12,6 +12,7 @@ import {
 import type { Te4CourtSurface } from '@/lib/te4DmoTypes';
 import {
   advanceLiveCourtPlayhead,
+  findPlayerShotEvent,
   interpolateLiveCourtFrame,
   liveCourtFacingAngle,
   mergeLiveCourtEvents,
@@ -410,9 +411,8 @@ function ThreeCourt({
         ? rig.root.rotation.y + facingDelta * (1 - Math.exp(-12 * elapsedMs / 1000))
         : targetFacing;
       rig.root.userData.facingInitialized = true;
-      const event = striking
-        ? events.find((item) => item.kind === 'shot' && Math.abs(item.frame - frame) <= 6)
-        : undefined;
+      const eventPlayer = index === 0 ? 1 : 2;
+      const event = striking ? findPlayerShotEvent(events, eventPlayer, frame) : undefined;
       const strikeWeight = event
         ? THREE.MathUtils.clamp(1 - Math.abs(event.frame - frame) / 6, 0, 1)
         : 0;

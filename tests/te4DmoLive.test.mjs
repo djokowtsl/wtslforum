@@ -16,6 +16,7 @@ import {
 } from '../lib/liveCourtProjection.ts';
 import { hasPlayerPositionData } from '../lib/te4LiveSetup.ts';
 import { isSameSiteMutation } from '../lib/liveRequestSecurity.ts';
+import { findPlayerShotEvent } from '../lib/liveCourtMotion.ts';
 
 const UINT32_SCALE = 0x100000000;
 
@@ -199,6 +200,17 @@ test('racket side is the player’s right, independent of the camera view', () =
   assert.deepEqual(playerRightVector([1, 0, 0]), [0, -1, 0]);
   const right = playerRightVector([0, 1, 0]);
   assert.ok(right.every((value, index) => Math.abs(value - [1, 0, 0][index]) < 1e-9));
+});
+
+test('racket strike poses only follow shot events assigned to that player', () => {
+  const playerOneShot = { frame: 100, kind: 'shot', player: 1 };
+  const playerTwoShot = { frame: 104, kind: 'shot', player: 2 };
+  const events = [playerOneShot, playerTwoShot];
+
+  assert.equal(findPlayerShotEvent(events, 1, 101), playerOneShot);
+  assert.equal(findPlayerShotEvent(events, 2, 101), playerTwoShot);
+  assert.equal(findPlayerShotEvent(events, 1, 110), undefined);
+  assert.equal(findPlayerShotEvent([{ frame: 100, kind: 'shot' }], 1, 100), undefined);
 });
 
 test('racket contact pose follows recorded shot events and selects the nearest player', () => {

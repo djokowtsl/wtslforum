@@ -14,6 +14,19 @@ export function liveCourtFacingAngle(playerX: number): number {
   return Number.isFinite(playerX) && playerX > 0 ? -Math.PI / 2 : Math.PI / 2;
 }
 
+export function findPlayerShotEvent(
+  events: LiveCourtMotionEvent[],
+  player: 1 | 2,
+  frame: number,
+  tolerance = 6,
+): LiveCourtMotionEvent | undefined {
+  return events.find((event) =>
+    event.kind === 'shot'
+    && event.player === player
+    && Math.abs(event.frame - frame) <= tolerance,
+  );
+}
+
 export function mergeLiveCourtSamples(
   previous: LiveCourtSample[],
   incoming: LiveCourtSample[],

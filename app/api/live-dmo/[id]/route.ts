@@ -59,6 +59,9 @@ const snapshotSchema = z.object({
   trajectoryEvents: z.array(z.object({
     frame: z.number().int().min(0).max(1_000_000),
     kind: z.enum(['shot', 'point-end']),
+    player: player.optional(),
+    shotType: z.enum(['serve', 'rally']).optional(),
+    speedKmh: z.number().min(0).max(500).optional(),
   }).strict()).max(256).optional(),
   soundEvents: z.array(z.object({
     frame: z.number().int().min(0).max(1_000_000),
