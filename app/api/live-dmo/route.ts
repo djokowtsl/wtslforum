@@ -100,6 +100,7 @@ export async function POST(request: Request) {
 
   let broadcastBestOf = body.bestOf ?? 3;
   let broadcastPlayers = body.players;
+  let isWta = false;
   if (body.players) {
     try {
       broadcastPlayers = await canonicalizeRankedDmoPlayers(body.players);
@@ -125,6 +126,7 @@ export async function POST(request: Request) {
     }
     broadcastBestOf = liveMatch.bestOf;
     broadcastPlayers = liveMatch.canonicalPlayers ?? broadcastPlayers;
+    isWta = liveMatch.tourHint === 'TE4_(F)';
   }
 
   if (!body.hasDmo && !messageUrl) {
@@ -196,6 +198,7 @@ export async function POST(request: Request) {
     replay: body.replay,
     replaySpeed: body.replay ? body.replaySpeed : 1,
     bestOf: broadcastBestOf,
+    isWta,
     officialByBroadcaster: body.officialByBroadcaster,
     likelyOfficial: await likelyOfficialFromSnapshot(broadcastPlayers, broadcastBestOf),
     stream,
@@ -216,6 +219,7 @@ export async function POST(request: Request) {
       id,
       stream,
       ...(broadcastPlayers ? { players: broadcastPlayers } : {}),
+      isWta,
       replay: body.replay,
       replaySpeed: body.replay ? body.replaySpeed : 1,
     }, { status: 201, headers: PRIVATE_HEADERS });

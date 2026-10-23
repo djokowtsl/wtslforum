@@ -40,6 +40,7 @@ type Props = {
   surface: Te4CourtSurface;
   playbackSpeed: Te4DmoReplaySpeed;
   stadiumAtmosphere?: boolean;
+  isWta?: boolean;
 };
 
 function drawScene(
@@ -54,6 +55,7 @@ function drawScene(
   playbackSpeed: Te4DmoReplaySpeed,
   stadiumAtmosphere: boolean,
   timestampMs: number,
+  isWta: boolean,
 ) {
   const width = 900;
   const height = 520;
@@ -212,7 +214,11 @@ function drawScene(
     limb([rightHip, rightKnee, rightFoot], skin, 8);
     limb([leftFoot, [-22, -2]], '#fff9e8', 8);
     limb([rightFoot, [22, -2]], '#fff9e8', 8);
-    shape([leftHip, rightHip, [11, -16], [8, -27], [-8, -27], [-11, -16]], shorts);
+    if (isWta) {
+      shape([[-11, -27], [11, -27], [14, -18], [18, -10], [-18, -10], [-14, -18]], shorts);
+    } else {
+      shape([leftHip, rightHip, [11, -16], [8, -27], [-8, -27], [-11, -16]], shorts);
+    }
     shape([[-11, -53], [11, -53], [16, -47], [14, -31], [9, -26], [-9, -26], [-14, -31], [-16, -47]], color);
     limb([[-rightSide * 14, -48], [-rightSide * (21 + stride * 4), -41 - Math.max(0, stepPhase) * stride * 4], [-rightSide * (21 + stride * 4), -33]], skin, 7);
     limb([[rightSide * 14, -48], [rightSide * 20, -41], [rightSide * 20, -34]], skin, 7);
@@ -221,6 +227,12 @@ function drawScene(
     limb([[-8, -49], [0, -45], [8, -49]], '#fff1d0', 2.5);
     limb([[-9, -30], [9, -30]], 'rgba(255,255,255,.7)', 2);
 
+    if (isWta) {
+      context.beginPath();
+      context.ellipse(-10, -66, 4, 9, -0.2, 0, Math.PI * 2);
+      context.fillStyle = id === 1 ? '#253c49' : '#4e3435';
+      context.fill();
+    }
     context.beginPath();
     context.arc(0, -65, 12, 0, Math.PI * 2);
     context.fillStyle = skin;
@@ -406,6 +418,7 @@ function DmoLiveCourt({
   surface,
   playbackSpeed,
   stadiumAtmosphere = true,
+  isWta = false,
 }: Props) {
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const cameraDragRef = useRef<{ x: number; y: number } | null>(null);
@@ -438,6 +451,7 @@ function DmoLiveCourt({
     surface,
     playbackSpeed,
     stadiumAtmosphere,
+    isWta,
     camera: DEFAULT_LIVE_COURT_CAMERA,
     zoom: 1,
   });
@@ -451,6 +465,7 @@ function DmoLiveCourt({
     surface,
     playbackSpeed,
     stadiumAtmosphere,
+    isWta,
     camera: { azimuth: cameraAzimuth, elevation: cameraElevation },
     zoom,
   };
@@ -569,6 +584,7 @@ function DmoLiveCourt({
           current.playbackSpeed,
           current.stadiumAtmosphere,
           now,
+          current.isWta,
         );
         if (renderErrorRef.current) {
           renderErrorRef.current = false;

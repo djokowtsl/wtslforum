@@ -41,6 +41,7 @@ type Props = {
   surface: Te4CourtSurface;
   playbackSpeed: Te4DmoReplaySpeed;
   stadiumAtmosphere?: boolean;
+  isWta?: boolean;
 };
 
 type CameraView =
@@ -87,6 +88,7 @@ function ThreeCourt({
   surface,
   playbackSpeed,
   stadiumAtmosphere = true,
+  isWta = false,
   onUnsupported,
 }: Props & { onUnsupported: () => void }) {
   const viewportRef = useRef<HTMLDivElement>(null);
@@ -280,8 +282,8 @@ function ThreeCourt({
     buildCourtFixtures(scene);
     buildCrowd(scene);
     const players = [
-      makePlayer(PALETTE.shirtOne, 0x335d58),
-      makePlayer(PALETTE.shirtTwo, 0x514b61),
+      makePlayer(PALETTE.shirtOne, 0x335d58, isWta),
+      makePlayer(PALETTE.shirtTwo, 0x514b61, isWta),
     ];
     players.forEach(({ root }) => scene.add(root));
     const ball = new THREE.Mesh(
@@ -747,7 +749,7 @@ function ThreeCourt({
       materials.forEach((item) => item.dispose());
       textures.forEach((texture) => texture.dispose());
     };
-  }, [onUnsupported, snapshot.filename]);
+  }, [isWta, onUnsupported, snapshot.filename]);
 
   const requestZoom = (factor: number) => {
     viewportRef.current?.dispatchEvent(new CustomEvent<number>('courtzoom', { detail: factor }));

@@ -103,6 +103,7 @@ export async function GET() {
         stream,
         sourceMessageUrl: typeof stored.sourceMessageUrl === 'string' ? stored.sourceMessageUrl : null,
         broadcastMode: stored.mode === 'auto' ? 'auto' : 'manual',
+        isWta: stored.isWta === true,
         replay: stored.replay === true,
         replayDataReady: isLiveDmoReplayPath(stored.replayDataPath),
         replaySpeed: [1, 2, 4].includes(Number(stored.replaySpeed))

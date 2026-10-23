@@ -358,7 +358,7 @@ export function buildCourtFixtures(scene: THREE.Scene) {
   }
 }
 
-export function makePlayer(shirtColor: number, shortsColor: number): PlayerRig {
+export function makePlayer(shirtColor: number, shortsColor: number, isWta = false): PlayerRig {
   const root = new THREE.Group();
   const outline = material(0x18302e);
   const skin = material(0xd8a17c);
@@ -389,8 +389,13 @@ export function makePlayer(shirtColor: number, shortsColor: number): PlayerRig {
     body.add(shoulder);
   }
   root.add(body);
-  const hip = new THREE.Mesh(new THREE.CapsuleGeometry(0.19, 0.06, 4, 12), shorts);
-  hip.scale.set(1.1, 0.48, 0.78);
+  const hip = new THREE.Mesh(
+    isWta
+      ? new THREE.CylinderGeometry(0.18, 0.28, 0.28, 18)
+      : new THREE.CapsuleGeometry(0.19, 0.06, 4, 12),
+    shorts,
+  );
+  hip.scale.set(1.1, isWta ? 1 : 0.48, isWta ? 0.88 : 0.78);
   hip.position.y = 0.79;
   hip.castShadow = true;
   root.add(hip);
@@ -420,6 +425,12 @@ export function makePlayer(shirtColor: number, shortsColor: number): PlayerRig {
   );
   hair.position.set(0, 0.04, 0);
   head.add(hair);
+  if (isWta) {
+    const ponytail = new THREE.Mesh(new THREE.CapsuleGeometry(0.052, 0.18, 3, 8), outline);
+    ponytail.position.set(-0.1, -0.07, -0.08);
+    ponytail.rotation.z = -0.18;
+    head.add(ponytail);
+  }
 
   const limbGeometry = new THREE.CapsuleGeometry(0.07, 0.86, 4, 12);
   const legGeometry = new THREE.CapsuleGeometry(0.085, 0.83, 4, 12);
