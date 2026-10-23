@@ -84,6 +84,146 @@ test('admins can create a broadcast after expired rows are cleared', async () =>
   assert.match(queries[2].text, /INSERT INTO dmo_live_broadcasts/);
 });
 
+test('signed-in viewers can fetch the full private point log', async () => {
+  const points = [
+    { number: 1, scoreLabel: '0-0(15-0)', server: 1, winner: 1, rallyHits: 0, faults: 0 },
+    { number: 2, scoreLabel: '0-0(15-15)', server: 2, winner: 2, rallyHits: 3, faults: 1 },
+  ];
+  const route = loadRoute('app/api/live-dmo/[id]/points/route.ts', {
+    'next/server': nextServer,
+    '@/lib/auth': { getSession: async () => ({ discordId: 'member', isAdmin: false }) },
+    '@/lib/liveRequestSecurity': { isSameSiteMutation },
+    '@/lib/db': {
+      sql: async () => [{ point_log: points }],
+    },
+  });
+  const response = await route.GET(
+    validRequest('/api/live-dmo/7e09e922-44c3-49d7-8211-48f13b8b865a/points', 'GET'),
+    { params: Promise.resolve({ id: '7e09e922-44c3-49d7-8211-48f13b8b865a' }) },
+  );
+  assert.equal(response.status, 200);
+  assert.deepEqual(await response.json(), { points });
+
+  let guestDatabaseCalls = 0;
+  const guestRoute = loadRoute('app/api/live-dmo/[id]/points/route.ts', {
+    'next/server': nextServer,
+    '@/lib/auth': { getSession: async () => null },
+    '@/lib/liveRequestSecurity': { isSameSiteMutation },
+    '@/lib/db': { sql: async () => { guestDatabaseCalls += 1; return []; } },
+  });
+  const guestResponse = await guestRoute.GET(
+    validRequest('/api/live-dmo/7e09e922-44c3-49d7-8211-48f13b8b865a/points', 'GET'),
+    { params: Promise.resolve({ id: '7e09e922-44c3-49d7-8211-48f13b8b865a' }) },
+  );
+  assert.equal(guestResponse.status, 401);
+  assert.equal(guestDatabaseCalls, 0);
+});
+
+test('point log batches are same-site, validated, owner-only updates', async () => {
+  const queries = [];
+  const points = [
+    { number: 1, scoreLabel: '0-0(15-0)', server: 1, winner: 1, rallyHits: 0, faults: 0 },
+  ];
+  const route = loadRoute('app/api/live-dmo/[id]/points/route.ts', {
+    'next/server': nextServer,
+    '@/lib/auth': { getSession: async () => ({ discordId: 'owner', isAdmin: false }) },
+    '@/lib/liveRequestSecurity': { isSameSiteMutation },
+    '@/lib/db': {
+      sql: async (strings, ...values) => {
+        queries.push({ text: strings.join('?'), values });
+        return [{ id: '7e09e922-44c3-49d7-8211-48f13b8b865a' }];
+      },
+    },
+  });
+  const request = new Request('https://forum.test/api/live-dmo/7e09e922-44c3-49d7-8211-48f13b8b865a/points', {
+    method: 'PATCH',
+    headers: {
+      Origin: 'https://forum.test',
+      'X-Forwarded-Host': 'forum.test',
+      'X-Forwarded-Proto': 'https',
+      'Content-Type': 'application/json',
+    },
+    body: JSON.stringify({ points }),
+  });
+  const response = await route.PATCH(
+    request,
+    { params: Promise.resolve({ id: '7e09e922-44c3-49d7-8211-48f13b8b865a' }) },
+  );
+  assert.equal(response.status, 200);
+  assert.match(queries[0].text, /'pointLog'/);
+  assert.match(queries[0].text, /jsonb_array_elements/);
+  assert.ok(queries[0].values.includes('owner'));
+  assert.ok(queries[0].values.includes(JSON.stringify(points)));
+});
+
+test('live snapshot updates merge their recent points into the retained point log', async () => {
+  const queries = [];
+  const recentPoints = [
+    { number: 1, scoreLabel: '0-0(15-0)', server: 1, winner: 1, rallyHits: 0, faults: 0 },
+  ];
+  const snapshot = {
+    version: 1,
+    filename: 'match.dmo',
+    stadium: null,
+    players: ['One', 'Two'],
+    frameCount: 10,
+    courtFrameCount: 10,
+    pointCount: 1,
+    bestOf: 3,
+    score: {
+      sets: [],
+      games: [0, 0],
+      points: [1, 0],
+      pointText: ['15', '0'],
+      tiebreak: false,
+      server: 1,
+    },
+    currentPoint: { number: 2, server: 2, rallyHits: 0, serveSpeedKmh: null, inProgress: false },
+    winChance: [0.5, 0.5],
+    winHistory: [0.5],
+    stats: [0, 1].map(() => ({
+      servicePoints: 1,
+      servicePointsWon: 1,
+      serviceWinRate: 1,
+      pointsWon: 1,
+      firstServeFaults: 0,
+      acesOrUnreturned: 0,
+    })),
+    recentPoints,
+    court: [[0, 0, 0, 0, 0, 0, 0]],
+    courtFrameIndices: [0],
+  };
+  const route = loadRoute('app/api/live-dmo/[id]/route.ts', {
+    'next/server': nextServer,
+    '@/lib/auth': { getSession: async () => ({ discordId: 'owner', isAdmin: false }) },
+    '@/lib/liveRequestSecurity': { isSameSiteMutation },
+    '@/lib/db': {
+      sql: async (strings, ...values) => {
+        queries.push({ text: strings.join('?'), values });
+        return [{ id: '7e09e922-44c3-49d7-8211-48f13b8b865a' }];
+      },
+    },
+  });
+  const request = new Request('https://forum.test/api/live-dmo/7e09e922-44c3-49d7-8211-48f13b8b865a', {
+    method: 'PATCH',
+    headers: {
+      Origin: 'https://forum.test',
+      'X-Forwarded-Host': 'forum.test',
+      'X-Forwarded-Proto': 'https',
+      'Content-Type': 'application/json',
+    },
+    body: JSON.stringify({ sequence: 1, snapshot }),
+  });
+  const response = await route.PATCH(
+    request,
+    { params: Promise.resolve({ id: '7e09e922-44c3-49d7-8211-48f13b8b865a' }) },
+  );
+  assert.equal(response.status, 200);
+  assert.match(queries[0].text, /'pointLog'/);
+  assert.match(queries[0].text, /jsonb_array_elements/);
+  assert.ok(queries[0].values.includes(JSON.stringify(recentPoints)));
+});
+
 test('signed-in members can read broadcasts while guests cannot', async () => {
   let databaseCalls = 0;
   const route = loadRoute('app/api/live-dmo/current/route.ts', {

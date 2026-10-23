@@ -82,14 +82,9 @@ export type Te4LiveSnapshot = {
     firstServeFaults: number;
     acesOrUnreturned: number;
   }>;
-  recentPoints: Array<{
-    number: number;
-    scoreLabel?: string;
-    server: Te4LivePlayer;
-    winner: Te4LivePlayer;
-    rallyHits: number;
-    faults: number;
-  }>;
+  recentPoints: Te4LivePoint[];
+  /** Full local history used once to seed the private server-side point log. */
+  pointHistory?: Te4LivePoint[];
   court: number[][];
   courtFrameIndices?: number[];
   trajectoryEvents?: Array<{
@@ -100,6 +95,15 @@ export type Te4LiveSnapshot = {
     frame: number;
     kind: 'racket' | 'bounce';
   }>;
+};
+
+export type Te4LivePoint = {
+  number: number;
+  scoreLabel?: string;
+  server: Te4LivePlayer;
+  winner: Te4LivePlayer;
+  rallyHits: number;
+  faults: number;
 };
 
 export type Te4LiveSoundEvent = NonNullable<Te4LiveSnapshot['soundEvents']>[number];
@@ -480,6 +484,7 @@ export class Te4DmoLiveParser {
     courtWindowFrames = replayCourtWindowFrames(1),
     courtSampleLimit = LIVE_DMO_COURT_SAMPLES,
     includeSoundEvents = false,
+    includePointHistory = false,
   ): Te4LiveSnapshot | null {
     const visibleFrameCount = Math.min(this.frameCount, Math.max(0, Math.floor(frameLimit)));
     if (!this.header || this.header.bad || visibleFrameCount < 10) return null;
@@ -634,8 +639,8 @@ export class Te4DmoLiveParser {
     }
 
     const recentStart = Math.max(0, points.length - 12);
-    const recentPoints = points.slice(recentStart).map((point, index) => {
-      const pointIndex = recentStart + index;
+    const describePoint = (pointIndex: number): Te4LivePoint => {
+      const point = points[pointIndex];
       const scoreAfterPoint = score.rows[pointIndex + 1] ?? score.current;
       return {
         number: pointIndex + 1,
@@ -645,7 +650,11 @@ export class Te4DmoLiveParser {
         rallyHits: point.hits.length,
         faults: point.faults,
       };
-    });
+    };
+    const recentPoints = points.slice(recentStart).map((_, index) => describePoint(recentStart + index));
+    const pointHistory = includePointHistory
+      ? points.map((_, index) => describePoint(index))
+      : undefined;
 
     return {
       version: 1,
@@ -678,6 +687,7 @@ export class Te4DmoLiveParser {
       winHistory: downsample(history, 120),
       stats,
       recentPoints,
+      ...(pointHistory ? { pointHistory } : {}),
       court,
       courtFrameIndices,
       trajectoryEvents: trajectoryEvents.slice(-256),

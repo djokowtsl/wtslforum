@@ -82,13 +82,16 @@
 .recentHeading strong { font-size: 9px; font-weight: 800; letter-spacing: .13em; }
 .recentHeading span { color: var(--live-muted); font-size: 8px; font-weight: 800; letter-spacing: .1em; }
 .recentHeading { margin-top: 15px; }
+.pointListScroller { max-height: min(62vh, 600px); overflow-y: auto; overscroll-behavior: contain; scrollbar-gutter: stable; padding-right: 4px; }
+.pointListScroller:focus-visible { outline: 2px solid var(--live-lime); outline-offset: 3px; }
 .pointList { display: grid; gap: 0; margin: 0; padding: 0; list-style: none; }
 .pointList li { display: flex; align-items: center; gap: 10px; min-height: 43px; border-top: 1px solid rgba(150, 180, 230, .1); }
 .pointScore { flex: 0 0 auto; min-width: 76px; color: var(--live-lime); font: 700 10px var(--font-mono, monospace); font-variant-numeric: tabular-nums; white-space: nowrap; }
 .pointList li > span:nth-child(2) { display: grid; flex: 1; min-width: 0; gap: 2px; }
 .pointList b { overflow: hidden; font-size: 10px; text-overflow: ellipsis; white-space: nowrap; }
 .pointList small { color: var(--live-muted); font-size: 8px; }
-.pointServer { flex: none; color: var(--live-muted); font-size: 8px; }
+.pointServer { flex: none; max-width: 118px; overflow: hidden; color: var(--live-muted); font-size: 8px; text-overflow: ellipsis; white-space: nowrap; }
+.pointLogNotice { margin: 8px 0 0; color: #efb645; font-size: 9px; line-height: 1.4; }
 .emptyLog { margin: 0; padding: 12px 0; color: var(--live-muted); font-size: 10px; }
 .footer { display: flex; justify-content: flex-end; gap: 12px; padding: 12px 18px; border-top: 1px solid var(--live-line); color: var(--live-muted); font-size: 9px; }
 .footer > span:last-child { flex: none; }
@@ -105,5 +108,7 @@
   .metricsHeading { font-size: 7px; }
   .metricRow { font-size: 9px; }
   .metricRow strong { font-size: 12px; }
+  .pointListScroller { max-height: min(58vh, 480px); }
+  .pointServer { max-width: 96px; }
   .footer { align-items: flex-end; flex-direction: column; }
 }

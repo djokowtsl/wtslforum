@@ -3,7 +3,7 @@
 import { useEffect, useRef, useState } from 'react';
 import { AlertTriangle, Radio } from 'lucide-react';
 import { LIVE_DMO_UPDATE_INTERVAL_MS } from '@/lib/te4DmoLive';
-import type { Te4LiveSnapshot } from '@/lib/te4DmoLive';
+import type { Te4LivePoint, Te4LiveSnapshot } from '@/lib/te4DmoLive';
 import type { LivePreMatchProbability, LiveStream } from '@/lib/liveBroadcast';
 import DmoLiveDisplay from './DmoLiveDisplay';
 import LiveBroadcastComments from './LiveBroadcastComments';
@@ -30,8 +30,33 @@ type Broadcast = {
   stale: boolean;
 };
 
+type PointLogState = {
+  points: Te4LivePoint[];
+  loaded: boolean;
+};
+
+function mergePointLog(existing: Te4LivePoint[], incoming: Te4LivePoint[]) {
+  const pointsByNumber = new Map(existing.map((point) => [point.number, point]));
+  let changed = false;
+  for (const point of incoming) {
+    const previous = pointsByNumber.get(point.number);
+    if (
+      !previous
+      || previous.scoreLabel !== point.scoreLabel
+      || previous.server !== point.server
+      || previous.winner !== point.winner
+      || previous.rallyHits !== point.rallyHits
+      || previous.faults !== point.faults
+    ) changed = true;
+    pointsByNumber.set(point.number, point);
+  }
+  if (!changed && pointsByNumber.size === existing.length) return existing;
+  return [...pointsByNumber.values()].sort((first, second) => first.number - second.number);
+}
+
 export default function DmoLiveViewer({ canWatch }: Props) {
   const [broadcasts, setBroadcasts] = useState<Broadcast[]>([]);
+  const [pointLogs, setPointLogs] = useState<Record<string, PointLogState>>({});
   const [preMatchPredictions, setPreMatchPredictions] = useState<Record<string, LivePreMatchProbability | null>>({});
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
@@ -39,6 +64,9 @@ export default function DmoLiveViewer({ canWatch }: Props) {
   const focusedOnce = useRef<string | null>(null);
   const preMatchResolved = useRef(new Set<string>());
   const preMatchAttempts = useRef(new Map<string, number>());
+  const pointLogLoading = useRef(new Set<string>());
+  const pointLogLoaded = useRef(new Set<string>());
+  const pointLogRetryAt = useRef(new Map<string, number>());
   const hasActiveDmo = broadcasts.some((broadcast) => broadcast.status === 'live' && Boolean(broadcast.snapshot));
 
   useEffect(() => {
@@ -79,7 +107,70 @@ export default function DmoLiveViewer({ canWatch }: Props) {
             return broadcast;
           });
         });
+        setPointLogs((current) => {
+          const next: Record<string, PointLogState> = {};
+          for (const broadcast of nextBroadcasts) {
+            if (!broadcast.snapshot) continue;
+            const previous = current[broadcast.id] ?? { points: [], loaded: false };
+            const points = mergePointLog(previous.points, broadcast.snapshot.recentPoints);
+            next[broadcast.id] = {
+              ...previous,
+              points,
+            };
+          }
+          return next;
+        });
         for (const broadcast of nextBroadcasts) {
+          if (
+            broadcast.snapshot
+            && !pointLogLoaded.current.has(broadcast.id)
+            && !pointLogLoading.current.has(broadcast.id)
+            && Date.now() >= (pointLogRetryAt.current.get(broadcast.id) ?? 0)
+          ) {
+            pointLogLoading.current.add(broadcast.id);
+            void fetch(`/api/live-dmo/${encodeURIComponent(broadcast.id)}/points`, { cache: 'no-store' })
+              .then(async (pointResponse) => {
+                const pointBody = await pointResponse.json().catch(() => null);
+                if (!pointResponse.ok || !Array.isArray(pointBody?.points)) {
+                  throw new Error('The full point log is unavailable.');
+                }
+                if (!active) return;
+                const expectedPointCount = broadcast.snapshot?.pointCount ?? 0;
+                setPointLogs((current) => {
+                  const previous = current[broadcast.id] ?? { points: [], loaded: false };
+                  const points = mergePointLog(pointBody.points as Te4LivePoint[], previous.points);
+                  return {
+                    ...current,
+                    [broadcast.id]: {
+                      points,
+                      loaded: true,
+                    },
+                  };
+                });
+                const mergedPointCount = mergePointLog(
+                  pointBody.points as Te4LivePoint[],
+                  broadcast.snapshot?.recentPoints ?? [],
+                ).length;
+                if (mergedPointCount >= expectedPointCount) {
+                  pointLogLoaded.current.add(broadcast.id);
+                  pointLogRetryAt.current.delete(broadcast.id);
+                } else {
+                  pointLogRetryAt.current.set(broadcast.id, Date.now() + 30_000);
+                }
+              })
+              .catch(() => {
+                if (!active) return;
+                pointLogRetryAt.current.set(broadcast.id, Date.now() + 30_000);
+                setPointLogs((current) => {
+                  const previous = current[broadcast.id] ?? { points: [], loaded: false };
+                  return {
+                    ...current,
+                    [broadcast.id]: { ...previous, loaded: true },
+                  };
+                });
+              })
+              .finally(() => pointLogLoading.current.delete(broadcast.id));
+          }
           if (
             broadcast.status !== 'live'
             || broadcast.replay
@@ -196,6 +287,8 @@ export default function DmoLiveViewer({ canWatch }: Props) {
                           stale={broadcast.stale}
                           updatedAt={broadcast.updatedAt}
                           preMatchPrediction={preMatchPredictions[broadcast.id]}
+                          pointLog={pointLogs[broadcast.id]?.points}
+                          pointLogLoaded={pointLogs[broadcast.id]?.loaded}
                         />
                       )}
                     />
@@ -207,6 +300,8 @@ export default function DmoLiveViewer({ canWatch }: Props) {
                       stale={broadcast.stale}
                       updatedAt={broadcast.updatedAt}
                       preMatchPrediction={preMatchPredictions[broadcast.id]}
+                      pointLog={pointLogs[broadcast.id]?.points}
+                      pointLogLoaded={pointLogs[broadcast.id]?.loaded}
                     />
                   )
                 ) : broadcast.stream && broadcast.status === 'live' ? (

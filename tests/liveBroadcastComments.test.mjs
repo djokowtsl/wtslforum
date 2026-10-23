@@ -208,6 +208,22 @@ test('guests can reach the Live Streams page but only signed-in viewers receive 
   assert.match(nav, /const navItems = NAV/);
 });
 
+test('the host Viewer page link opens a dedicated viewer-only route', () => {
+  const host = readFileSync(new URL('../components/DmoLiveHost.tsx', import.meta.url), 'utf8');
+  const viewerPage = readFileSync(new URL('../app/livestreams/viewer/page.tsx', import.meta.url), 'utf8');
+  assert.match(host, /href="\/livestreams\/viewer"[^>]*>.*Viewer page/);
+  assert.match(viewerPage, /<DmoLiveViewer canWatch={Boolean\(user\)} \/>/);
+  assert.doesNotMatch(viewerPage, /DmoLiveHost/);
+});
+
+test('the live host page shows players where to find the general TE4 DMO folder', () => {
+  const host = readFileSync(new URL('../components/DmoLiveHost.tsx', import.meta.url), 'utf8');
+  assert.ok(host.includes(String.raw`%USERPROFILE%\AppData\LocalLow\Mana Games\Tennis Elbow 4\Profiles\Demos`));
+  assert.ok(host.includes('Settings → Profiles → Show Data Folder, then open'));
+  assert.ok(host.includes(String.raw`Profiles\Demos`));
+  assert.ok(host.includes('Use <b>Choose TE4 folder</b> above to select <code>Demos</code>'));
+});
+
 test('the comments migration cascades with the broadcast and indexes pending review records', () => {
   const migration = readFileSync(new URL('../migrations/2026-10-22-live-stream-comments.sql', import.meta.url), 'utf8');
   assert.match(migration, /broadcast_id UUID NOT NULL REFERENCES dmo_live_broadcasts\(id\) ON DELETE CASCADE/);
