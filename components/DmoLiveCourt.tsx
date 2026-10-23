@@ -154,7 +154,7 @@ function drawScene(
       0,
     );
     const rightSide = projectedRight[0] >= groundX ? 1 : -1;
-    const figureScale = Math.max(0.9, Math.min(1.12, groundScale * 3.6));
+    const figureScale = Math.max(0.42, Math.min(0.54, groundScale * 1.5));
     const stepPhase = Math.sin(timestampMs * 0.012 + id * Math.PI);
     const bodyBob = Math.abs(Math.sin(timestampMs * 0.008 + id)) * (1 + stride * 3);
     const lean = Math.max(-1, Math.min(1, (velocityX * facing[0] + velocityY * facing[1]) / 22)) * 0.13;
