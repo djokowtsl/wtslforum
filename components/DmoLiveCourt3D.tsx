@@ -13,7 +13,6 @@ import type { Te4CourtSurface } from '@/lib/te4DmoTypes';
 import {
   advanceLiveCourtPlayhead,
   clampPlayerCameraLateralPan,
-  findPlayerShotEvent,
   interpolateLiveCourtFrame,
   liveCourtFacingAngle,
   mergeLiveCourtEvents,
@@ -22,7 +21,7 @@ import {
   type LiveCourtMotionEvent,
   type LiveCourtSample,
 } from '@/lib/liveCourtMotion';
-import { playerRightVector } from '@/lib/liveCourtProjection';
+import { crossedFrame, racketContact, RIGHT_HAND_X, serveLift, trailAllowed } from '@/lib/liveCourtPerformance';
 import DmoLiveCourt from './DmoLiveCourt';
 import {
   BALL_RADIUS,
@@ -56,36 +55,31 @@ type CameraView =
 
 const DEFAULT_CAMERA = new THREE.Vector3(-25, 26, 30);
 
-function playCue(context: AudioContext, kind: 'racket' | 'bounce' | 'grunt') {
+function playCue(context: AudioContext, kind: 'racket' | 'bounce') {
   const now = context.currentTime;
   const gain = context.createGain();
   const oscillator = context.createOscillator();
-  const filter = kind === 'grunt' ? context.createBiquadFilter() : null;
-  const duration = kind === 'racket' ? 0.075 : kind === 'grunt' ? 0.22 : 0.12;
-  oscillator.type = kind === 'grunt' ? 'sawtooth' : kind === 'racket' ? 'triangle' : 'sine';
-  oscillator.frequency.setValueAtTime(kind === 'grunt' ? 150 : kind === 'racket' ? 720 : 390, now);
-  oscillator.frequency.exponentialRampToValueAtTime(kind === 'grunt' ? 82 : kind === 'racket' ? 260 : 150, now + duration);
-  gain.gain.setValueAtTime(kind === 'grunt' ? 0.095 : kind === 'racket' ? 0.085 : 0.072, now);
+  const duration = kind === 'racket' ? 0.075 : 0.12;
+  oscillator.type = kind === 'racket' ? 'triangle' : 'sine';
+  oscillator.frequency.setValueAtTime(kind === 'racket' ? 720 : 390, now);
+  oscillator.frequency.exponentialRampToValueAtTime(kind === 'racket' ? 260 : 150, now + duration);
+  gain.gain.setValueAtTime(kind === 'racket' ? 0.085 : 0.072, now);
   gain.gain.exponentialRampToValueAtTime(0.0001, now + duration);
-  if (filter) {
-    filter.type = 'bandpass';
-    filter.frequency.value = 340;
-    filter.Q.value = 0.85;
-    oscillator.connect(filter);
-    filter.connect(gain);
-  } else {
-    oscillator.connect(gain);
-  }
+  oscillator.connect(gain);
   gain.connect(context.destination);
   oscillator.start(now);
   oscillator.stop(now + duration);
 }
 
-function playPlayerGrunt(audio: HTMLAudioElement) {
-  const voice = audio.cloneNode(true) as HTMLAudioElement;
-  voice.volume = 0.72;
-  voice.playbackRate = 0.94 + Math.random() * 0.12;
-  void voice.play().catch(() => undefined);
+function playSample(context: AudioContext, buffer: AudioBuffer, volume: number, active?: Set<AudioBufferSourceNode>) {
+  const voice = context.createBufferSource();
+  const gain = context.createGain();
+  voice.buffer = buffer;
+  gain.gain.value = volume;
+  voice.connect(gain).connect(context.destination);
+  active?.add(voice);
+  voice.onended = () => { active?.delete(voice); voice.disconnect(); gain.disconnect(); };
+  voice.start();
 }
 
 function ThreeCourt({
@@ -99,12 +93,15 @@ function ThreeCourt({
   const canvasHostRef = useRef<HTMLDivElement>(null);
   const audioContextRef = useRef<AudioContext | null>(null);
   const crowdAudioRef = useRef<HTMLAudioElement | null>(null);
-  const gruntAudioRef = useRef<HTMLAudioElement | null>(null);
+  const gruntAudioRef = useRef<AudioBuffer | null>(null);
+  const applauseAudioRef = useRef<AudioBuffer | null>(null);
+  const activeGruntsRef = useRef(new Set<AudioBufferSourceNode>());
+  const soundEventsRef = useRef<Array<{ frame: number; kind: 'racket' | 'bounce' }>>([]);
+  const transitionRef = useRef<HTMLDivElement>(null);
   const sampleBufferRef = useRef<LiveCourtSample[]>([]);
   const trajectoryEventsRef = useRef<LiveCourtMotionEvent[]>([]);
   const playheadRef = useRef<number | null>(null);
   const lastSoundFrameRef = useRef(Math.max(0, snapshot.frameCount - 3));
-  const playedSoundEventsRef = useRef(new Set<string>());
   const lastCalloutFrameRef = useRef<number | null>(null);
   const shotCalloutTimerRef = useRef<number | null>(null);
   const previousSnapshotRef = useRef({
@@ -139,8 +136,8 @@ function ThreeCourt({
     if (identityChanged) {
       sampleBufferRef.current = [];
       trajectoryEventsRef.current = [];
+      soundEventsRef.current = [];
       playheadRef.current = null;
-      playedSoundEventsRef.current.clear();
       lastCalloutFrameRef.current = null;
       setShotCallout(null);
       if (shotCalloutTimerRef.current !== null) {
@@ -177,6 +174,12 @@ function ThreeCourt({
       snapshot.trajectoryEvents ?? [],
       earliestFrame,
     );
+    const soundMap = new Map(
+      [...soundEventsRef.current, ...(snapshot.soundEvents ?? [])]
+        .filter(e => e.frame >= earliestFrame)
+        .map(e => [`${e.frame}:${e.kind}`, e]),
+    );
+    soundEventsRef.current = [...soundMap.values()];
     if (playheadRef.current === null && sampleBufferRef.current.length) {
       playheadRef.current = sampleBufferRef.current[0].frame;
       lastCalloutFrameRef.current = sampleBufferRef.current[0].frame;
@@ -187,38 +190,7 @@ function ThreeCourt({
     setHasCourtData(sampleBufferRef.current.length > 0);
   }, [snapshot, playbackSpeed]);
 
-  useEffect(() => {
-    if (!soundEnabled) return;
-    const context = audioContextRef.current;
-    if (!context || context.state !== 'running') return;
-    if (snapshot.frameCount < lastSoundFrameRef.current) {
-      playedSoundEventsRef.current.clear();
-      lastSoundFrameRef.current = Math.max(0, snapshot.frameCount - 3);
-    }
-
-    for (const event of snapshot.soundEvents ?? []) {
-      const key = `${event.frame}:${event.kind}`;
-      if (event.frame < lastSoundFrameRef.current || playedSoundEventsRef.current.has(key)) continue;
-      playCue(context, event.kind);
-      playedSoundEventsRef.current.add(key);
-    }
-    for (const event of snapshot.trajectoryEvents ?? []) {
-      const cue = event.kind === 'shot'
-        && event.shotType === 'rally'
-        ? 'grunt'
-        : null;
-      const key = `${event.frame}:${event.kind}:${event.player ?? 0}`;
-      if (!cue || event.frame < lastSoundFrameRef.current || playedSoundEventsRef.current.has(key)) continue;
-      if (gruntAudioRef.current) playPlayerGrunt(gruntAudioRef.current);
-      else playCue(context, cue);
-      playedSoundEventsRef.current.add(key);
-    }
-    lastSoundFrameRef.current = Math.max(lastSoundFrameRef.current, snapshot.frameCount - 3);
-    const oldestFrame = snapshot.frameCount - 600;
-    for (const key of playedSoundEventsRef.current) {
-      if (Number(key.slice(0, key.indexOf(':'))) < oldestFrame) playedSoundEventsRef.current.delete(key);
-    }
-  }, [snapshot.frameCount, snapshot.soundEvents, snapshot.trajectoryEvents, soundEnabled]);
+  // Cues are consumed by the animation playhead, never snapshot arrival.
 
   useEffect(() => () => {
     const crowdAudio = crowdAudioRef.current;
@@ -227,6 +199,9 @@ function ThreeCourt({
     crowdAudio?.load();
     crowdAudioRef.current = null;
     gruntAudioRef.current = null;
+    for (const voice of activeGruntsRef.current) voice.stop();
+    activeGruntsRef.current.clear();
+    applauseAudioRef.current = null;
     soundOnRef.current = false;
     if (shotCalloutTimerRef.current !== null) {
       window.clearTimeout(shotCalloutTimerRef.current);
@@ -371,6 +346,7 @@ function ThreeCourt({
     let currentFrame = sampleBufferRef.current[0]?.frame ?? 0;
     const motionPreference = window.matchMedia('(prefers-reduced-motion: reduce)');
     let graphicsFailed = false;
+    let changeoverUntil = 0;
     const updatePlayer = (
       rig: PlayerRig,
       x: number,
@@ -386,6 +362,18 @@ function ThreeCourt({
       elapsedMs: number,
     ) => {
       const position = new THREE.Vector3(x * SCALE, 0, z * SCALE);
+      const oldSide = rig.root.userData.courtSide;
+      const changedEnds = (oldSide === 1 || oldSide === -1)
+        && Math.abs(position.x) > 1 && Math.sign(position.x) !== oldSide;
+      if (changedEnds) {
+        // A recorded changeover is a scene cut, not a straight walk through the net.
+        changeoverUntil = performance.now() + 650;
+        rig.root.position.copy(position);
+        if (transitionRef.current) {
+          transitionRef.current.style.transition = 'none';
+          transitionRef.current.style.opacity = '1';
+        }
+      }
       if (!rig.root.userData.positionInitialized) {
         rig.root.position.copy(position);
         rig.root.userData.positionInitialized = true;
@@ -424,14 +412,20 @@ function ThreeCourt({
         : targetFacing;
       rig.root.userData.facingInitialized = true;
       const eventPlayer = index === 0 ? 1 : 2;
-      const event = striking ? findPlayerShotEvent(events, eventPlayer, frame) : undefined;
+      const event = events.filter(item => item.kind === 'shot' && item.player === eventPlayer
+        && Math.abs(item.frame - frame) <= (item.shotType === 'serve' ? 24 : 6))
+        .sort((a, b) => Math.abs(a.frame - frame) - Math.abs(b.frame - frame))[0];
+      const serving = event?.shotType === 'serve';
+      const jump = serving ? serveLift(frame - event.frame) : 0;
       const strikeWeight = event
         ? THREE.MathUtils.clamp(1 - Math.abs(event.frame - frame) / 6, 0, 1)
         : 0;
-      const rightVector = playerRightVector([Math.sin(facing), Math.cos(facing), 0]);
+      // Convert world X/Z into rig-local X/Z. With its face along +Z,
+      // this local +X basis is anatomical LEFT, not the racket arm.
+      const localXAxis = [Math.cos(facing), -Math.sin(facing)];
       const localX = (
-        (ballX - rig.root.position.x) * rightVector[0]
-        + (ballZ - rig.root.position.z) * rightVector[1]
+        (ballX - rig.root.position.x) * localXAxis[0]
+        + (ballZ - rig.root.position.z) * localXAxis[1]
       ) / rig.root.scale.x;
       const localZ = (
         (ballX - rig.root.position.x) * Math.sin(facing)
@@ -442,9 +436,9 @@ function ThreeCourt({
       const leftCycle = Math.sin(phase);
       const rightCycle = Math.sin(phase + Math.PI);
       const stride = gaitSpeed * 0.19;
-      const leftLift = Math.max(0, leftCycle) * gaitSpeed * 0.13;
-      const rightLift = Math.max(0, rightCycle) * gaitSpeed * 0.13;
-      const bodyBounce = gaitSpeed * Math.abs(Math.sin(phase * 2)) * 0.035;
+      const leftLift = Math.max(0, leftCycle) * gaitSpeed * 0.13 + jump;
+      const rightLift = Math.max(0, rightCycle) * gaitSpeed * 0.13 + jump;
+      const bodyBounce = gaitSpeed * Math.abs(Math.sin(phase * 2)) * 0.035 + jump;
       const crouch = strikeWeight * THREE.MathUtils.clamp((1.05 - ballY) / 0.95, 0, 1) * 0.18;
       rig.root.rotation.y = facing;
       rig.body.position.set(Math.sin(phase * 0.5) * gaitSpeed * 0.02, 1.22 + bodyBounce - crouch * 0.45, 0);
@@ -471,26 +465,33 @@ function ThreeCourt({
       rig.leftShoe.rotation.y = leftCycle * gaitSpeed * 0.12;
       rig.rightShoe.rotation.y = rightCycle * gaitSpeed * 0.12;
       const swing = strikeWeight > 0 ? 0.72 * strikeWeight : Math.sin(phase * 0.55) * gaitSpeed * 0.2;
-      const leftHand = new THREE.Vector3(-0.38, 1.08 + bodyBounce + swing * 0.2, 0.05);
-      const rightHand = new THREE.Vector3(0.39, 1.1 + bodyBounce + swing, 0.04);
-      const contactHand = new THREE.Vector3(
-        THREE.MathUtils.clamp(localX, -1.05, 1.05),
-        THREE.MathUtils.clamp(ballY / 0.86 - 0.42, 0.16, 1.62),
-        THREE.MathUtils.clamp(localZ, -0.75, 1.15),
+      const leftHand = new THREE.Vector3(0.38, 1.08 + bodyBounce + swing * 0.2, 0.05);
+      const rightHand = new THREE.Vector3(RIGHT_HAND_X, 1.1 + bodyBounce + swing, 0.04);
+      if (serving) {
+        const preparation = Math.max(0, 1 - Math.abs(frame - event.frame) / 24);
+        // Toss arm lowers as the striking arm extends through contact.
+        const toss = Math.max(0, Math.min(1, -(frame - event.frame) / 8));
+        leftHand.y += preparation * toss * 0.9;
+        rightHand.y += preparation * 0.65;
+        rightHand.z -= preparation * 0.2;
+      }
+      const contact = racketContact(
+        [localX, ballY / rig.root.scale.y, localZ],
+        [rightHand.x, rightHand.y, rightHand.z],
       );
+      const contactHand = new THREE.Vector3(...contact.grip);
       rightHand.lerp(contactHand, strikeWeight);
-      poseLimb(rig.leftArm, new THREE.Vector3(-0.23, 1.42 + bodyBounce, 0), leftHand);
-      poseLimb(rig.rightArm, new THREE.Vector3(0.23, 1.4 + bodyBounce, 0), rightHand);
+      poseLimb(rig.leftArm, new THREE.Vector3(0.23, 1.42 + bodyBounce, 0), leftHand);
+      poseLimb(rig.rightArm, new THREE.Vector3(-0.23, 1.4 + bodyBounce, 0), rightHand);
       rig.leftHand.position.copy(leftHand);
       rig.rightHand.position.copy(rightHand);
       rig.racket.position.copy(rightHand);
       const restingRacketAngle = -0.12 + Math.sin(phase * 0.55) * speed * 0.14;
-      const strokeRacketAngle = localX >= 0 ? -0.62 : 0.62;
-      rig.racket.rotation.z = THREE.MathUtils.lerp(
-        restingRacketAngle,
-        strokeRacketAngle,
-        strikeWeight,
+      const resting = new THREE.Quaternion().setFromEuler(new THREE.Euler(0, 0, -restingRacketAngle));
+      const contactRotation = new THREE.Quaternion().setFromUnitVectors(
+        new THREE.Vector3(0, 1, 0), new THREE.Vector3(...contact.axis),
       );
+      rig.racket.quaternion.slerpQuaternions(resting, contactRotation, strikeWeight);
     };
 
     const animate = (now: number) => {
@@ -514,6 +515,28 @@ function ThreeCourt({
           ) ?? firstFrame;
         }
         playheadRef.current = currentFrame;
+        const context = audioContextRef.current;
+        if (soundOnRef.current && context?.state === 'running') {
+          const previous = lastSoundFrameRef.current;
+          if (currentFrame >= previous && currentFrame - previous < 120) {
+            for (const cue of soundEventsRef.current) {
+              if (crossedFrame(cue.frame, previous, currentFrame)) playCue(context, cue.kind);
+            }
+            for (const cue of trajectoryEventsRef.current) {
+              if (!crossedFrame(cue.frame, previous, currentFrame)) continue;
+              if (cue.kind === 'point-end' || cue.shotType === 'serve') {
+                for (const voice of activeGruntsRef.current) voice.stop();
+                activeGruntsRef.current.clear();
+              }
+              if (cue.kind === 'shot' && cue.shotType === 'rally' && gruntAudioRef.current) {
+                playSample(context, gruntAudioRef.current, 0.72, activeGruntsRef.current);
+              } else if (cue.kind === 'point-end' && cue.frame % 3 === 0 && applauseAudioRef.current) {
+                playSample(context, applauseAudioRef.current, crowdAudioRef.current?.volume ?? 0.38, activeGruntsRef.current);
+              }
+            }
+          }
+        }
+        lastSoundFrameRef.current = currentFrame;
         const previousCalloutFrame = lastCalloutFrameRef.current;
         if (previousCalloutFrame === null || currentFrame < previousCalloutFrame) {
           lastCalloutFrameRef.current = currentFrame;
@@ -570,6 +593,8 @@ function ThreeCourt({
           const forward = new THREE.Vector3(Math.sin(heading), 0, Math.cos(heading));
           const side = new THREE.Vector3(forward.z, 0, -forward.x);
           const lateralPan = clampPlayerCameraLateralPan(playerCameraPanRef.current);
+          const servingView = trajectoryEventsRef.current.some(e =>
+            e.player === playerIndex + 1 && e.shotType === 'serve' && Math.abs(e.frame - currentFrame) <= 24);
           const playerPosition = player.root.position;
           if (activeView.endsWith('-first')) {
             const eye = playerPosition.clone()
@@ -587,7 +612,7 @@ function ThreeCourt({
               .addScaledVector(forward, -6.2)
               .addScaledVector(side, 1.25);
             const aim = playerPosition.clone()
-              .add(new THREE.Vector3(0, 1.0, 0))
+              .add(new THREE.Vector3(0, servingView ? 1.8 : 1.0, 0))
               .addScaledVector(forward, 1.5)
               .addScaledVector(side, lateralPan);
             camera.position.lerp(follow, 0.22);
@@ -595,7 +620,8 @@ function ThreeCourt({
           }
         }
 
-        const trailStartFrame = Math.max(firstFrame, currentFrame - Math.min(10, (lastFrame - firstFrame) * 0.35));
+        const latestHit = trajectoryEventsRef.current.filter(e => e.kind === 'shot' && e.frame <= currentFrame).at(-1);
+        const trailStartFrame = Math.max(firstFrame, latestHit?.frame ?? firstFrame, currentFrame - Math.min(10, (lastFrame - firstFrame) * 0.35));
         for (let index = 0; index < 10; index += 1) {
           const t = index / 9;
           const trailValues = interpolateLiveCourtFrame(
@@ -607,10 +633,21 @@ function ThreeCourt({
           trailPositions[index * 3 + 1] = Math.max(0, trailValues[2]) * SCALE + BALL_RADIUS;
           trailPositions[index * 3 + 2] = trailValues[1] * SCALE;
         }
-        trailGeometry.setDrawRange(0, 10);
+        const showTrail = trailAllowed(trajectoryEventsRef.current, currentFrame)
+          && performance.now() >= changeoverUntil;
+        trailGeometry.setDrawRange(0, showTrail ? 10 : 0);
+        const tossing = trajectoryEventsRef.current.some(e => e.shotType === 'serve'
+          && e.frame > currentFrame && e.frame - currentFrame <= 24);
+        const knownPhase = trajectoryEventsRef.current.some(e => e.frame <= currentFrame);
+        ball.visible = (showTrail || tossing || !knownPhase) && performance.now() >= changeoverUntil;
+        ballShadow.visible = ball.visible;
         (trailGeometry.attributes.position as THREE.BufferAttribute).needsUpdate = true;
       }
       try {
+        if (transitionRef.current && performance.now() >= changeoverUntil) {
+          transitionRef.current.style.transition = 'opacity 250ms ease-out';
+          transitionRef.current.style.opacity = '0';
+        }
         controls.update();
         renderer.render(scene, camera);
       } catch {
@@ -720,6 +757,8 @@ function ThreeCourt({
   const toggleSound = async () => {
     if (soundEnabled) {
       crowdAudioRef.current?.pause();
+      for (const voice of activeGruntsRef.current) voice.stop();
+      activeGruntsRef.current.clear();
       soundOnRef.current = false;
       setSoundEnabled(false);
       return;
@@ -739,11 +778,16 @@ function ThreeCourt({
         await crowdAudioRef.current.play();
       }
       if (!gruntAudioRef.current) {
-        const gruntAudio = new Audio('/audio/te4-player-grunt.mp3');
-        gruntAudio.preload = 'auto';
-        gruntAudioRef.current = gruntAudio;
+        const response = await fetch('/audio/te4-player-grunt.mp3');
+        if (!response.ok) throw new Error('Grunt sample unavailable');
+        gruntAudioRef.current = await context.decodeAudioData(await response.arrayBuffer());
       }
-      lastSoundFrameRef.current = Math.max(0, snapshot.frameCount - 3);
+      if (!applauseAudioRef.current) {
+        const response = await fetch('/audio/te4-point-applause.mp3');
+        if (!response.ok) throw new Error('Applause sample unavailable');
+        applauseAudioRef.current = await context.decodeAudioData(await response.arrayBuffer());
+      }
+      lastSoundFrameRef.current = playheadRef.current ?? snapshot.frameCount;
       soundOnRef.current = true;
       setSoundError('');
       setSoundEnabled(true);
@@ -850,6 +894,7 @@ function ThreeCourt({
       </div>
       <div className={styles.viewport} ref={viewportRef}>
         <div className={styles.canvasHost} ref={canvasHostRef} />
+        <div ref={transitionRef} className={styles.changeover} aria-hidden="true">Change of ends</div>
         {shotCallout && (
           <div className={styles.shotCallout} role="status" aria-live="polite" key={shotCallout.frame}>
             <span className={styles.shotCalloutLabel}>

@@ -175,6 +175,19 @@
   background: #4c5665;
 }
 
+.changeover {
+  position: absolute;
+  inset: 0;
+  display: grid;
+  place-items: center;
+  background: #101b2b;
+  color: #d2dced;
+  font: 700 16px system-ui, sans-serif;
+  opacity: 0;
+  pointer-events: none;
+  transition: opacity 180ms ease-out;
+}
+
 .canvasHost,
 .canvasHost canvas {
   display: block;
