@@ -71,11 +71,13 @@ test('only admins can start a live DMO broadcast', async () => {
 
 test('admins can create a broadcast after expired rows are cleared', async () => {
   const queries = [];
+  let cleanupCalls = 0;
   const route = loadRoute('app/api/admin/dmo-live/route.ts', {
     'node:crypto': { randomUUID: () => '7e09e922-44c3-49d7-8211-48f13b8b865a' },
     'next/server': nextServer,
     '@/lib/auth': { getSession: async () => ({ discordId: 'admin', isAdmin: true }) },
     '@/lib/liveRequestSecurity': { isSameSiteMutation },
+    '@/lib/liveDmoStorage': { cleanupExpiredLiveDmoBroadcasts: async () => { cleanupCalls += 1; } },
     '@/lib/db': {
       sql: async (strings, ...values) => {
         queries.push({ text: strings.join('?'), values });
@@ -86,10 +88,10 @@ test('admins can create a broadcast after expired rows are cleared', async () =>
   const response = await route.POST(validRequest('/api/admin/dmo-live'));
   assert.equal(response.status, 201);
   assert.equal((await response.json()).id, '7e09e922-44c3-49d7-8211-48f13b8b865a');
-  assert.equal(queries.length, 3);
-  assert.match(queries[0].text, /DELETE FROM dmo_live_broadcasts WHERE expires_at <= NOW/);
-  assert.match(queries[1].text, /status='live'/);
-  assert.match(queries[2].text, /INSERT INTO dmo_live_broadcasts/);
+  assert.equal(cleanupCalls, 1);
+  assert.equal(queries.length, 2);
+  assert.match(queries[0].text, /status='live'/);
+  assert.match(queries[1].text, /INSERT INTO dmo_live_broadcasts/);
 });
 
 test('signed-in viewers can fetch the full private point log', async () => {
@@ -374,6 +376,47 @@ test('full replay files require sign-in and are served from the private store', 
   }
 });
 
+test('expired live broadcasts are marked ended and update their Discord announcements', async () => {
+  const id = '7e09e922-44c3-49d7-8211-48f13b8b865a';
+  const payload = {
+    discordAnnouncement: { channelId: '1562898541238554765', messageId: 'discord-message-expired' },
+  };
+  const queries = [];
+  const finished = [];
+  const storage = loadRoute('lib/liveDmoStorage.ts', {
+    '@vercel/blob': { del: async () => {} },
+    '@/lib/liveBroadcastAnnouncements': {
+      finishLiveBroadcastAnnouncement: async (input) => finished.push(input),
+    },
+    '@/lib/db': {
+      sql: async (strings, ...values) => {
+        const query = strings.join('?');
+        queries.push({ query, values });
+        if (query.includes('SELECT id')) {
+          return [{ id, owner_discord_id: 'broadcast-owner', status: 'live', payload, replay_path: null }];
+        }
+        if (query.includes('UPDATE dmo_live_broadcasts')) {
+          return [{ id, owner_discord_id: 'broadcast-owner', payload }];
+        }
+        return [];
+      },
+    },
+  });
+
+  await storage.cleanupExpiredLiveDmoBroadcasts();
+
+  assert.equal(queries.length, 2);
+  assert.match(queries[0].query, /status, payload/);
+  assert.match(queries[1].query, /status='ended'/);
+  assert.match(queries[1].query, /INTERVAL '15 minutes'/);
+  assert.equal(queries.some(({ query }) => query.includes('DELETE FROM dmo_live_broadcasts')), false);
+  assert.deepEqual(finished, [{
+    id,
+    ownerDiscordId: 'broadcast-owner',
+    payload,
+  }]);
+});
+
 test('expired private replay blobs are deleted before their database rows', async () => {
   const originalStoreId = process.env.MODERATION_BLOB_STORE_ID;
   const replayPath = 'dmo-live-replays/7e09e922-44c3-49d7-8211-48f13b8b865a-5409358e-55c8-4e8a-a74d-e1edbfb751d5.json';
@@ -389,8 +432,8 @@ test('expired private replay blobs are deleted before their database rows', asyn
           queries.push({ query, values });
           return query.includes('SELECT id')
             ? [
-              { id: '7e09e922-44c3-49d7-8211-48f13b8b865a', replay_path: replayPath },
-              { id: 'c94d7cb5-cc07-4de3-93f4-0f3375e30136', replay_path: null },
+              { id: '7e09e922-44c3-49d7-8211-48f13b8b865a', status: 'ended', replay_path: replayPath },
+              { id: 'c94d7cb5-cc07-4de3-93f4-0f3375e30136', status: 'ended', replay_path: null },
             ]
             : [];
         },
