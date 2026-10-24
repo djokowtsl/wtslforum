@@ -8,6 +8,7 @@ import { canonicalizeRankedDmoPlayers, getLiveWtslMatchForPlayers } from '@/lib/
 import { readSiteSnapshot } from '@/lib/siteSnapshots';
 import { cleanupExpiredLiveDmoBroadcasts } from '@/lib/liveDmoStorage';
 import type { PublicFixturePayload } from '@/lib/liveFeedTypes';
+import { announceLiveBroadcast } from '@/lib/discord';
 import {
   isLikelyOfficialWtslMatch,
   parseDiscordMessageUrl,
@@ -215,6 +216,21 @@ export async function POST(request: Request) {
         (${id}::uuid, ${user.discordId}, 'live', 0, ${JSON.stringify(payload)}::jsonb, NOW(), NOW(),
           NOW() + CASE WHEN ${body.replay} THEN INTERVAL '15 minutes' ELSE INTERVAL '45 seconds' END)
     `;
+    try {
+      await announceLiveBroadcast({
+        id,
+        ownerDiscordId: user.discordId,
+        ownerName: user.username,
+        players: broadcastPlayers ?? null,
+        bestOf: broadcastBestOf,
+        isWta,
+        officialByBroadcaster: body.officialByBroadcaster,
+        likelyOfficial: payload.likelyOfficial,
+        stream,
+      });
+    } catch (error) {
+      console.warn('[live-broadcast] announcement delivery failed', error instanceof Error ? error.message : 'UnknownError');
+    }
     return NextResponse.json({
       id,
       stream,
