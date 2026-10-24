@@ -11,6 +11,7 @@ export async function startExternalLiveBroadcast(input: {
   stream: LiveStream;
   sourceMessageUrl?: string | null;
   players?: [string, string] | null;
+  character?: string | null;
   bestOf?: 1 | 3 | 5;
   isWta?: boolean;
   officialByBroadcaster?: boolean;
@@ -34,6 +35,7 @@ export async function startExternalLiveBroadcast(input: {
     officialByBroadcaster,
     likelyOfficial,
     stream: input.stream,
+    ...(input.character ? { character: input.character } : {}),
     ...(input.sourceMessageUrl ? { sourceMessageUrl: input.sourceMessageUrl } : {}),
     ...(input.players ? { players: input.players } : {}),
   };
@@ -78,7 +80,20 @@ export async function startExternalLiveBroadcast(input: {
   if (!rows[0]?.id) throw new Error('External stream broadcast could not be stored.');
   const broadcastId = String(rows[0].id);
   const duplicate = Boolean(rows[0].duplicate);
-  if (duplicate) return { id: broadcastId, duplicate: true };
+  if (duplicate) {
+    if (input.character) {
+      await sql`
+        UPDATE dmo_live_broadcasts
+        SET payload=COALESCE(payload, '{}'::jsonb)
+              || jsonb_build_object('character', ${input.character})
+        WHERE id=${broadcastId}::uuid
+          AND owner_discord_id=${input.ownerDiscordId}
+          AND status='live'
+          AND expires_at > NOW()
+      `;
+    }
+    return { id: broadcastId, duplicate: true };
+  }
 
   try {
     const announcement = await announceLiveBroadcast({

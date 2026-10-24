@@ -29,6 +29,7 @@ const startSchema = z.object({
   hasDmo: z.boolean(),
   discordMessageUrl: z.string().trim().max(500).optional().default(''),
   players: z.tuple([z.string().trim().min(1).max(80), z.string().trim().min(1).max(80)]).optional(),
+  character: z.string().trim().min(1).max(120).nullable().optional(),
   mode: z.enum(['manual', 'auto']).optional().default('manual'),
   replay: z.boolean().optional().default(false),
   replaySpeed: z.union([z.literal(1), z.literal(2), z.literal(4)]).optional().default(1),
@@ -213,6 +214,7 @@ export async function POST(request: Request) {
     stream,
     sourceMessageUrl: verifiedMessageUrl,
     ...(broadcastPlayers ? { players: broadcastPlayers } : {}),
+    ...(body.character ? { character: body.character } : {}),
   };
   if (!body.hasDmo && directStream) {
     try {
@@ -221,6 +223,7 @@ export async function POST(request: Request) {
         ownerName: user.username,
         stream: directStream,
         players: broadcastPlayers ?? null,
+        character: body.character ?? null,
         bestOf: broadcastBestOf,
         isWta,
         officialByBroadcaster: body.officialByBroadcaster,
@@ -229,6 +232,7 @@ export async function POST(request: Request) {
       return NextResponse.json({
         id: result.id,
         stream: directStream,
+        ...(body.character ? { character: body.character } : {}),
         ...(broadcastPlayers ? { players: broadcastPlayers } : {}),
         isWta,
         replay: false,
@@ -293,6 +297,7 @@ export async function POST(request: Request) {
     return NextResponse.json({
       id,
       stream,
+      ...(body.character ? { character: body.character } : {}),
       ...(broadcastPlayers ? { players: broadcastPlayers } : {}),
       isWta,
       replay: body.replay,
