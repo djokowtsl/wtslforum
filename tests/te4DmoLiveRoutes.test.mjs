@@ -31,6 +31,9 @@ function loadRoute(path, mocks) {
         isLiveDmoReplayPath: (value) => typeof value === 'string' && value.startsWith('dmo-live-replays/'),
       };
     }
+    if (name === '@/lib/liveBroadcastAnnouncements') {
+      return { finishLiveBroadcastAnnouncement: async () => {} };
+    }
     if (name === 'zod') return require('zod');
     throw new Error(`Unexpected route dependency: ${name}`);
   }, module, module.exports);

@@ -35,6 +35,9 @@ function loadRoute(path, mocks) {
       };
     }
     if (name === '@/lib/discord') return { announceLiveBroadcast: async () => {} };
+    if (name === '@/lib/liveBroadcastAnnouncements') {
+      return { finishLiveBroadcastAnnouncement: async () => {} };
+    }
     throw new Error(`Unexpected route dependency: ${name}`);
   }, module, module.exports);
   return module.exports;
@@ -54,6 +57,21 @@ function loadDiscordAnnouncements() {
   return module.exports;
 }
 
+function loadAnnouncementLifecycle(discord) {
+  const source = readFileSync(new URL('../lib/liveBroadcastAnnouncements.ts', import.meta.url), 'utf8');
+  const { code } = require('next/dist/build/swc').transformSync(source, {
+    jsc: { parser: { syntax: 'typescript' }, target: 'es2022' },
+    module: { type: 'commonjs' },
+  });
+  const module = { exports: {} };
+  new Function('require', 'module', 'exports', code)((name) => {
+    if (name === 'next/server') return nextServer;
+    if (name === '@/lib/discord') return discord;
+    throw new Error(`Unexpected announcement lifecycle dependency: ${name}`);
+  }, module, module.exports);
+  return module.exports;
+}
+
 function request(body, path = '/api/live-dmo', method = 'POST') {
   return new Request(`https://forum.test${path}`, {
     method,
@@ -67,7 +85,11 @@ function request(body, path = '/api/live-dmo', method = 'POST') {
   });
 }
 
-const nextServer = { NextResponse: { json: (body, init) => Response.json(body, init) } };
+const backgroundCallbacks = [];
+const nextServer = {
+  after: (callback) => backgroundCallbacks.push(callback),
+  NextResponse: { json: (body, init) => Response.json(body, init) },
+};
 const liveMessageUrl = 'https://discord.com/channels/786583939028090881/1293144531855872074/1561378343230906484';
 const validMessage = {
   id: '1561378343230906484',
@@ -87,7 +109,12 @@ test('a signed-in member can start multiple broadcasts from their linked Discord
     'zod': require('zod'),
     '@/lib/auth': { getSession: async () => ({ discordId: 'linked-member', username: 'Linked Member', isAdmin: false }) },
     '@/lib/liveRequestSecurity': { isSameSiteMutation: () => true },
-    '@/lib/discord': { announceLiveBroadcast: async (announcement) => announcements.push(announcement) },
+    '@/lib/discord': {
+      announceLiveBroadcast: async (announcement) => {
+        announcements.push(announcement);
+        return { channelId: '1562898541238554765', messageId: `announcement-${announcements.length}` };
+      },
+    },
     '@/lib/liveBroadcast': {
       parseDiscordMessageUrl: (value) => value === liveMessageUrl
         ? { guildId: '786583939028090881', channelId: '1293144531855872074', messageId: '1561378343230906484' }
@@ -119,6 +146,7 @@ test('a signed-in member can start multiple broadcasts from their linked Discord
     assert.equal(announcements[0].ownerName, 'Linked Member');
     assert.deepEqual(announcements[0].players, ['Alpha', 'Beta']);
     assert.equal(announcements[0].stream.provider, 'youtube');
+    assert.equal(inserts.filter((item) => item.query.includes("jsonb_build_object('discordAnnouncement'")).length, 2);
   } finally {
     globalThis.fetch = originalFetch;
     if (originalToken === undefined) delete process.env.DISCORD_BOT_TOKEN;
@@ -548,6 +576,102 @@ test('broadcast owners can heartbeat and end only their own active broadcast', a
   assert.equal(ended.status, 200);
   assert.match(queries[2].text, /owner_discord_id=\?.*OR \?/s);
   assert.match(queries[2].text, /status='live'/);
+});
+
+test('ending a broadcast edits its Discord post immediately and deletes it one minute later', async () => {
+  const id = '7e09e922-44c3-49d7-8211-48f13b8b865a';
+  const reference = { channelId: '1562898541238554765', messageId: 'discord-message-123' };
+  const payload = {
+    ownerName: 'Broadcaster',
+    players: ['Alpha', 'Beta'],
+    bestOf: 3,
+    isWta: true,
+    officialByBroadcaster: true,
+    likelyOfficial: false,
+    stream: { provider: 'twitch', sourceUrl: 'https://www.twitch.tv/example' },
+    discordAnnouncement: reference,
+  };
+  const route = loadRoute('app/api/live-dmo/[id]/route.ts', {
+    'next/server': nextServer,
+    'zod': require('zod'),
+    '@/lib/auth': { getSession: async () => ({ discordId: 'broadcast-owner', isAdmin: false }) },
+    '@/lib/liveRequestSecurity': { isSameSiteMutation: () => true },
+    '@/lib/db': {
+      sql: async () => [{ id, owner_discord_id: 'broadcast-owner', payload }],
+    },
+    '@/lib/discord': loadDiscordAnnouncements(),
+    '@/lib/liveBroadcastAnnouncements': loadAnnouncementLifecycle(loadDiscordAnnouncements()),
+  });
+  const originalFetch = globalThis.fetch;
+  const originalToken = process.env.DISCORD_BOT_TOKEN;
+  const originalSetTimeout = globalThis.setTimeout;
+  const calls = [];
+  const callbackStart = backgroundCallbacks.length;
+  process.env.DISCORD_BOT_TOKEN = 'test-bot-token';
+  globalThis.fetch = async (url, options) => {
+    calls.push({ url: String(url), options });
+    return options.method === 'DELETE' ? new Response(null, { status: 204 }) : Response.json({ id: reference.messageId });
+  };
+  try {
+    const response = await route.DELETE(
+      request(undefined, `/api/live-dmo/${id}`, 'DELETE'),
+      { params: Promise.resolve({ id }) },
+    );
+    assert.equal(response.status, 200);
+    assert.equal(calls.length, 1);
+    assert.match(calls[0].url, new RegExp(`/channels/${reference.channelId}/messages/${reference.messageId}$`));
+    assert.equal(calls[0].options.method, 'PATCH');
+    const edited = JSON.parse(calls[0].options.body);
+    assert.match(edited.content, /Broadcast ended/);
+    assert.match(edited.embeds[0].description, /removed in one minute/);
+    assert.equal(edited.embeds[0].color, 0x6b7280);
+    assert.deepEqual(edited.allowed_mentions, { parse: [], users: [], roles: [] });
+
+    const scheduledDelete = backgroundCallbacks[callbackStart];
+    assert.equal(typeof scheduledDelete, 'function');
+    let scheduledDelay = 0;
+    globalThis.setTimeout = (callback, delay, ...args) => {
+      scheduledDelay = delay;
+      return originalSetTimeout(callback, 0, ...args);
+    };
+    await scheduledDelete();
+    assert.ok(scheduledDelay > 59_000 && scheduledDelay <= 60_000);
+    assert.equal(calls.length, 2);
+    assert.equal(calls[1].options.method, 'DELETE');
+  } finally {
+    globalThis.fetch = originalFetch;
+    globalThis.setTimeout = originalSetTimeout;
+    if (originalToken === undefined) delete process.env.DISCORD_BOT_TOKEN;
+    else process.env.DISCORD_BOT_TOKEN = originalToken;
+  }
+});
+
+test('Forum admins end a broadcast through the same Discord announcement lifecycle', async () => {
+  const id = '7e09e922-44c3-49d7-8211-48f13b8b865a';
+  const payload = {
+    discordAnnouncement: { channelId: '1562898541238554765', messageId: 'discord-message-456' },
+  };
+  const finished = [];
+  const route = loadRoute('app/api/admin/dmo-live/[id]/route.ts', {
+    'next/server': nextServer,
+    'zod': require('zod'),
+    '@/lib/auth': { getSession: async () => ({ discordId: 'forum-admin', isAdmin: true }) },
+    '@/lib/liveRequestSecurity': { isSameSiteMutation: () => true },
+    '@/lib/db': {
+      sql: async () => [{ id, owner_discord_id: 'broadcast-owner', payload }],
+    },
+    '@/lib/liveBroadcastAnnouncements': {
+      finishLiveBroadcastAnnouncement: async (input) => finished.push(input),
+    },
+  });
+  const response = await route.DELETE(
+    request(undefined, `/api/admin/dmo-live/${id}`, 'DELETE'),
+    { params: Promise.resolve({ id }) },
+  );
+  assert.equal(response.status, 200);
+  assert.equal(finished.length, 1);
+  assert.equal(finished[0].ownerDiscordId, 'broadcast-owner');
+  assert.equal(finished[0].payload, payload);
 });
 
 test('homepage displays video links only when a signed-in viewer has a matching broadcast', () => {

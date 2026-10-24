@@ -3,8 +3,10 @@ import { z } from 'zod';
 import { getSession } from '@/lib/auth';
 import { isSameSiteMutation } from '@/lib/liveRequestSecurity';
 import { sql } from '@/lib/db';
+import { finishLiveBroadcastAnnouncement } from '@/lib/liveBroadcastAnnouncements';
 
 export const dynamic = 'force-dynamic';
+export const maxDuration = 120;
 
 const MAX_BODY_BYTES = 32 * 1024;
 const PRIVATE_HEADERS = {
@@ -216,11 +218,16 @@ export async function DELETE(request: Request, context: RouteContext) {
       WHERE id=${id}::uuid
         AND (owner_discord_id=${user.discordId} OR ${user.isAdmin})
         AND status='live'
-      RETURNING id
+      RETURNING id, owner_discord_id, payload
     `;
     if (!rows.length) {
       return NextResponse.json({ error: 'Broadcast not found or already ended.' }, { status: 404, headers: PRIVATE_HEADERS });
     }
+    await finishLiveBroadcastAnnouncement({
+      id,
+      ownerDiscordId: String(rows[0].owner_discord_id),
+      payload: rows[0].payload,
+    });
     return NextResponse.json({ ok: true }, { headers: PRIVATE_HEADERS });
   } catch (error) {
     console.error('[live-broadcast] end failed', error instanceof Error ? error.name : 'UnknownError');

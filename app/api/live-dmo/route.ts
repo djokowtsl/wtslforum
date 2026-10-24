@@ -9,6 +9,7 @@ import { readSiteSnapshot } from '@/lib/siteSnapshots';
 import { cleanupExpiredLiveDmoBroadcasts } from '@/lib/liveDmoStorage';
 import type { PublicFixturePayload } from '@/lib/liveFeedTypes';
 import { announceLiveBroadcast } from '@/lib/discord';
+import { finishLiveBroadcastAnnouncement } from '@/lib/liveBroadcastAnnouncements';
 import {
   isLikelyOfficialWtslMatch,
   parseDiscordMessageUrl,
@@ -16,6 +17,7 @@ import {
 } from '@/lib/liveBroadcast';
 
 export const dynamic = 'force-dynamic';
+export const maxDuration = 120;
 
 const PRIVATE_HEADERS = {
   'Cache-Control': 'private, no-store',
@@ -199,6 +201,7 @@ export async function POST(request: Request) {
     replay: body.replay,
     replaySpeed: body.replay ? body.replaySpeed : 1,
     bestOf: broadcastBestOf,
+    ownerName: user.username,
     isWta,
     officialByBroadcaster: body.officialByBroadcaster,
     likelyOfficial: await likelyOfficialFromSnapshot(broadcastPlayers, broadcastBestOf),
@@ -217,7 +220,7 @@ export async function POST(request: Request) {
           NOW() + CASE WHEN ${body.replay} THEN INTERVAL '15 minutes' ELSE INTERVAL '45 seconds' END)
     `;
     try {
-      await announceLiveBroadcast({
+      const announcement = await announceLiveBroadcast({
         id,
         ownerDiscordId: user.discordId,
         ownerName: user.username,
@@ -228,6 +231,29 @@ export async function POST(request: Request) {
         likelyOfficial: payload.likelyOfficial,
         stream,
       });
+      if (announcement) {
+        try {
+          const saved = await sql`
+            UPDATE dmo_live_broadcasts
+            SET payload=COALESCE(payload, '{}'::jsonb)
+                  || jsonb_build_object('discordAnnouncement', ${JSON.stringify(announcement)}::jsonb)
+            WHERE id=${id}::uuid
+            RETURNING owner_discord_id, status, payload
+          `;
+          if (saved[0]?.status === 'ended') {
+            await finishLiveBroadcastAnnouncement({
+              id,
+              ownerDiscordId: String(saved[0].owner_discord_id || user.discordId),
+              payload: saved[0].payload,
+            });
+          }
+        } catch (error) {
+          console.warn(
+            '[live-broadcast] announcement reference could not be saved',
+            error instanceof Error ? error.name : 'UnknownError',
+          );
+        }
+      }
     } catch (error) {
       console.warn('[live-broadcast] announcement delivery failed', error instanceof Error ? error.message : 'UnknownError');
     }
