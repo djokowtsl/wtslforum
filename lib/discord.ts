@@ -21,6 +21,45 @@ type LiveBroadcastAnnouncement = {
   stream?: { provider: string; sourceUrl: string } | null;
 };
 
+export type LiveBroadcastAnnouncementReference = {
+  channelId: string;
+  messageId: string;
+};
+
+function liveBroadcastEmbed(input: LiveBroadcastAnnouncement, ended = false) {
+  const playerNames = input.players?.map((name) => name.slice(0, 100));
+  const matchName = playerNames?.length === 2 ? `${playerNames[0]} vs ${playerNames[1]}` : null;
+  const streamUrl = input.stream?.sourceUrl;
+  const streamProvider = input.stream?.provider;
+  const officialLabel = input.officialByBroadcaster
+    ? 'Official match'
+    : input.likelyOfficial
+      ? 'Likely official match'
+      : null;
+  const fields = [
+    ...(matchName ? [{ name: 'Match', value: matchName, inline: false }] : []),
+    ...(matchName ? [{ name: 'Tour', value: input.isWta ? 'WTA' : 'ATP', inline: true }] : []),
+    ...(matchName ? [{ name: 'Format', value: `Best of ${input.bestOf}`, inline: true }] : []),
+    ...(officialLabel ? [{ name: 'Match status', value: officialLabel, inline: true }] : []),
+    ...(streamUrl
+      ? [{ name: 'Stream', value: `[Watch on ${streamProvider === 'twitch' || streamProvider === 'twitch-clip' ? 'Twitch' : 'YouTube'}](${streamUrl})`, inline: false }]
+      : []),
+  ];
+  const siteUrl = (process.env.NEXT_PUBLIC_SITE_URL || 'https://www.wtslforum.com').replace(/\/+$/, '');
+  const broadcastUrl = `${siteUrl}/livestreams?broadcast=${encodeURIComponent(input.id)}#broadcast-${encodeURIComponent(input.id)}`;
+
+  return {
+    title: matchName || `${input.ownerName.slice(0, 100)} is live`,
+    url: broadcastUrl,
+    description: ended
+      ? 'This broadcast has ended. This announcement will be removed in one minute.'
+      : 'A live match broadcast has started on the WTSL Forum.',
+    color: ended ? 0x6b7280 : 0x22c55e,
+    fields,
+    timestamp: new Date().toISOString(),
+  };
+}
+
 function roleWasPingedRecently(messages: unknown, now: number): boolean {
   if (!Array.isArray(messages)) return false;
   return messages.some((message: any) => {
@@ -35,11 +74,13 @@ function roleWasPingedRecently(messages: unknown, now: number): boolean {
 }
 
 /** Posts one live-stream announcement. Discord failures never prevent a broadcast from starting. */
-export async function announceLiveBroadcast(input: LiveBroadcastAnnouncement): Promise<void> {
+export async function announceLiveBroadcast(
+  input: LiveBroadcastAnnouncement,
+): Promise<LiveBroadcastAnnouncementReference | null> {
   const token = process.env.DISCORD_BOT_TOKEN;
   if (!token) {
     console.warn('[live-broadcast] Discord announcement skipped: bot token is not configured');
-    return;
+    return null;
   }
 
   const shouldConsiderRolePing = input.officialByBroadcaster || input.likelyOfficial;
@@ -67,26 +108,6 @@ export async function announceLiveBroadcast(input: LiveBroadcastAnnouncement): P
     }
   }
 
-  const siteUrl = (process.env.NEXT_PUBLIC_SITE_URL || 'https://www.wtslforum.com').replace(/\/+$/, '');
-  const broadcastUrl = `${siteUrl}/livestreams?broadcast=${encodeURIComponent(input.id)}#broadcast-${encodeURIComponent(input.id)}`;
-  const playerNames = input.players?.map((name) => name.slice(0, 100));
-  const matchName = playerNames?.length === 2 ? `${playerNames[0]} vs ${playerNames[1]}` : null;
-  const streamUrl = input.stream?.sourceUrl;
-  const streamProvider = input.stream?.provider;
-  const officialLabel = input.officialByBroadcaster
-    ? 'Official match'
-    : input.likelyOfficial
-      ? 'Likely official match'
-      : null;
-  const fields = [
-    ...(matchName ? [{ name: 'Match', value: matchName, inline: false }] : []),
-    ...(matchName ? [{ name: 'Tour', value: input.isWta ? 'WTA' : 'ATP', inline: true }] : []),
-    ...(matchName ? [{ name: 'Format', value: `Best of ${input.bestOf}`, inline: true }] : []),
-    ...(officialLabel ? [{ name: 'Match status', value: officialLabel, inline: true }] : []),
-    ...(streamUrl
-      ? [{ name: 'Stream', value: `[Watch on ${streamProvider === 'twitch' || streamProvider === 'twitch-clip' ? 'Twitch' : 'YouTube'}](${streamUrl})`, inline: false }]
-      : []),
-  ];
   const content = `<@${input.ownerDiscordId}> is streaming now${includeRolePing ? ` <@&${LIVE_STREAM_ROLE_ID}>` : ''}`;
 
   try {
@@ -98,14 +119,7 @@ export async function announceLiveBroadcast(input: LiveBroadcastAnnouncement): P
       },
       body: JSON.stringify({
         content,
-        embeds: [{
-          title: matchName || `${input.ownerName.slice(0, 100)} is live`,
-          url: broadcastUrl,
-          description: 'A live match broadcast has started on the WTSL Forum.',
-          color: 0x22c55e,
-          fields,
-          timestamp: new Date().toISOString(),
-        }],
+        embeds: [liveBroadcastEmbed(input)],
         allowed_mentions: {
           parse: [],
           users: [input.ownerDiscordId],
@@ -114,12 +128,81 @@ export async function announceLiveBroadcast(input: LiveBroadcastAnnouncement): P
       }),
       signal: AbortSignal.timeout(DISCORD_REQUEST_TIMEOUT_MS),
     });
-    if (!response.ok) {
+    const message = await response.json().catch(() => null);
+    if (!response.ok || !message?.id) {
       throw new Error(`Discord announcement failed (HTTP ${response.status}).`);
     }
+    return { channelId: LIVE_STREAMS_CHANNEL_ID, messageId: String(message.id) };
   } catch (error) {
     console.warn(
       '[live-broadcast] Discord announcement failed',
+      error instanceof Error ? error.message : 'UnknownError',
+    );
+    return null;
+  }
+}
+
+/** Marks the original announcement as ended without sending another mention. */
+export async function markLiveBroadcastAnnouncementEnded(input: LiveBroadcastAnnouncement & {
+  reference: LiveBroadcastAnnouncementReference;
+}): Promise<void> {
+  const token = process.env.DISCORD_BOT_TOKEN;
+  if (!token) {
+    console.warn('[live-broadcast] cannot mark announcement ended: bot token is not configured');
+    return;
+  }
+  try {
+    const response = await fetch(
+      `${api}/channels/${input.reference.channelId}/messages/${input.reference.messageId}`,
+      {
+        method: 'PATCH',
+        headers: {
+          Authorization: `Bot ${token}`,
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          content: '⏹️ **Broadcast ended**',
+          embeds: [liveBroadcastEmbed(input, true)],
+          allowed_mentions: { parse: [], users: [], roles: [] },
+        }),
+        signal: AbortSignal.timeout(DISCORD_REQUEST_TIMEOUT_MS),
+      },
+    );
+    if (!response.ok) {
+      throw new Error(`Discord announcement edit failed (HTTP ${response.status}).`);
+    }
+  } catch (error) {
+    console.warn(
+      '[live-broadcast] could not mark announcement ended',
+      error instanceof Error ? error.message : 'UnknownError',
+    );
+  }
+}
+
+/** Deletes the ended announcement after its one-minute notice period. */
+export async function deleteLiveBroadcastAnnouncement(
+  reference: LiveBroadcastAnnouncementReference,
+): Promise<void> {
+  const token = process.env.DISCORD_BOT_TOKEN;
+  if (!token) {
+    console.warn('[live-broadcast] cannot delete announcement: bot token is not configured');
+    return;
+  }
+  try {
+    const response = await fetch(
+      `${api}/channels/${reference.channelId}/messages/${reference.messageId}`,
+      {
+        method: 'DELETE',
+        headers: { Authorization: `Bot ${token}` },
+        signal: AbortSignal.timeout(DISCORD_REQUEST_TIMEOUT_MS),
+      },
+    );
+    if (!response.ok && response.status !== 404) {
+      throw new Error(`Discord announcement deletion failed (HTTP ${response.status}).`);
+    }
+  } catch (error) {
+    console.warn(
+      '[live-broadcast] could not delete ended announcement',
       error instanceof Error ? error.message : 'UnknownError',
     );
   }

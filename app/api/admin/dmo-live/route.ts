@@ -3,8 +3,10 @@ import { NextResponse } from 'next/server';
 import { getSession } from '@/lib/auth';
 import { isSameSiteMutation } from '@/lib/liveRequestSecurity';
 import { sql } from '@/lib/db';
+import { cleanupExpiredLiveDmoBroadcasts } from '@/lib/liveDmoStorage';
 
 export const dynamic = 'force-dynamic';
+export const maxDuration = 120;
 
 const PRIVATE_HEADERS = {
   'Cache-Control': 'private, no-store',
@@ -21,7 +23,7 @@ export async function POST(request: Request) {
   }
 
   try {
-    await sql`DELETE FROM dmo_live_broadcasts WHERE expires_at <= NOW()`;
+    await cleanupExpiredLiveDmoBroadcasts();
     const active = await sql`
       SELECT id FROM dmo_live_broadcasts
       WHERE status='live' AND expires_at > NOW()

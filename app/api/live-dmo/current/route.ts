@@ -9,6 +9,7 @@ import { scoreForLiveBroadcast } from '@/lib/liveBroadcastScore';
 import { z } from 'zod';
 
 export const dynamic = 'force-dynamic';
+export const maxDuration = 120;
 const viewerHeartbeatSchema = z.object({ broadcastId: z.string().uuid() }).strict();
 const MAX_HEARTBEAT_BYTES = 512;
 
