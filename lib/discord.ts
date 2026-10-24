@@ -21,6 +21,10 @@ type LiveBroadcastAnnouncement = {
   stream?: { provider: string; sourceUrl: string } | null;
 };
 
+type LiveBroadcastAnnouncementOptions = {
+  pingViewerRoleInSource?: boolean;
+};
+
 export type LiveBroadcastAnnouncementReference = {
   channelId: string;
   messageId: string;
@@ -77,6 +81,7 @@ function roleWasPingedRecently(messages: unknown, now: number): boolean {
 /** Posts one live-stream announcement. Discord failures never prevent a broadcast from starting. */
 export async function announceLiveBroadcast(
   input: LiveBroadcastAnnouncement,
+  options: LiveBroadcastAnnouncementOptions = {},
 ): Promise<LiveBroadcastAnnouncementReference | null> {
   const token = process.env.DISCORD_BOT_TOKEN;
   if (!token) {
@@ -84,8 +89,11 @@ export async function announceLiveBroadcast(
     return null;
   }
 
-  const shouldConsiderRolePing = input.officialByBroadcaster || input.likelyOfficial;
+  const shouldConsiderRolePing = options.pingViewerRoleInSource
+    || input.officialByBroadcaster
+    || input.likelyOfficial;
   let includeRolePing = false;
+  let includeSourceRolePing = false;
   if (shouldConsiderRolePing) {
     try {
       const recentMessagesResponse = await fetch(
@@ -100,10 +108,42 @@ export async function announceLiveBroadcast(
         throw new Error(`Discord history request failed (HTTP ${recentMessagesResponse.status}).`);
       }
       const recentMessages = await recentMessagesResponse.json();
-      includeRolePing = !roleWasPingedRecently(recentMessages, Date.now());
+      const roleWasRecentlyPinged = roleWasPingedRecently(recentMessages, Date.now());
+      if (options.pingViewerRoleInSource) {
+        includeSourceRolePing = !roleWasRecentlyPinged;
+      } else {
+        includeRolePing = !roleWasRecentlyPinged;
+      }
     } catch (error) {
       console.warn(
         '[live-broadcast] recent role-ping check failed; sending without the role mention',
+        error instanceof Error ? error.message : 'UnknownError',
+      );
+    }
+  }
+
+  if (includeSourceRolePing) {
+    const siteUrl = (process.env.NEXT_PUBLIC_SITE_URL || 'https://www.wtslforum.com').replace(/\/+$/, '');
+    const broadcastUrl = `${siteUrl}/livestreams?broadcast=${encodeURIComponent(input.id)}#broadcast-${encodeURIComponent(input.id)}`;
+    try {
+      const response = await fetch(`${api}/channels/${RECENT_LIVE_ROLE_PINGS_CHANNEL_ID}/messages`, {
+        method: 'POST',
+        headers: {
+          Authorization: `Bot ${token}`,
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          content: `📺 <@&${LIVE_STREAM_ROLE_ID}> A Forum member started a live stream: ${broadcastUrl}`,
+          allowed_mentions: { parse: [], users: [], roles: [LIVE_STREAM_ROLE_ID] },
+        }),
+        signal: AbortSignal.timeout(DISCORD_REQUEST_TIMEOUT_MS),
+      });
+      if (!response.ok) {
+        throw new Error(`Discord viewer notification failed (HTTP ${response.status}).`);
+      }
+    } catch (error) {
+      console.warn(
+        '[live-broadcast] source-channel viewer notification failed',
         error instanceof Error ? error.message : 'UnknownError',
       );
     }

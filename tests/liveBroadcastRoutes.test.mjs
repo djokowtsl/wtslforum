@@ -13,7 +13,13 @@ function loadRoute(path, mocks) {
   });
   const module = { exports: {} };
   new Function('require', 'module', 'exports', code)((name) => {
-    if (name in mocks) return mocks[name];
+    if (name in mocks) {
+      const mocked = mocks[name];
+      if (name === '@/lib/liveBroadcast' && typeof mocked.parseLiveStreamUrl !== 'function') {
+        return { ...mocked, parseLiveStreamUrl: () => null };
+      }
+      return mocked;
+    }
     if (name.startsWith('node:')) return require(name);
     if (name === 'zod') return require('zod');
     if (name === '@/lib/liveScores') {
@@ -35,6 +41,9 @@ function loadRoute(path, mocks) {
       };
     }
     if (name === '@/lib/discord') return { announceLiveBroadcast: async () => {} };
+    if (name === '@/lib/liveBroadcastStart') {
+      return { startExternalLiveBroadcast: async () => ({ id: 'external-broadcast', duplicate: false }) };
+    }
     if (name === '@/lib/liveBroadcastAnnouncements') {
       return { finishLiveBroadcastAnnouncement: async () => {} };
     }
@@ -154,6 +163,125 @@ test('a signed-in member can start multiple broadcasts from their linked Discord
   }
 });
 
+test('a signed-in Forum member can start a stream directly from a supported URL', async () => {
+  const starts = [];
+  const stream = {
+    provider: 'twitch',
+    id: 'wtsl_player',
+    sourceUrl: 'https://www.twitch.tv/wtsl_player',
+  };
+  const route = loadRoute('app/api/live-dmo/route.ts', {
+    'next/server': nextServer,
+    'node:crypto': { randomUUID: () => 'unused-due-to-external-start' },
+    'zod': require('zod'),
+    '@/lib/auth': { getSession: async () => ({ discordId: 'verified-member', username: 'Verified Member', isAdmin: false }) },
+    '@/lib/liveRequestSecurity': { isSameSiteMutation: () => true },
+    '@/lib/liveBroadcast': {
+      parseDiscordMessageUrl: () => null,
+      parseLiveStreamUrl: (value) => value === stream.sourceUrl ? stream : null,
+      streamLinksInDiscordMessage: () => [],
+    },
+    '@/lib/liveBroadcastStart': {
+      startExternalLiveBroadcast: async (input) => {
+        starts.push(input);
+        return { id: 'external-stream-123', duplicate: false };
+      },
+    },
+    '@/lib/db': { sql: async () => [] },
+  });
+
+  const response = await route.POST(request({ hasDmo: false, discordMessageUrl: stream.sourceUrl }));
+  assert.equal(response.status, 201);
+  assert.deepEqual(await response.json(), {
+    id: 'external-stream-123',
+    stream,
+    isWta: false,
+    replay: false,
+    replaySpeed: 1,
+  });
+  assert.equal(starts.length, 1);
+  assert.equal(starts[0].ownerDiscordId, 'verified-member');
+  assert.equal(starts[0].ownerName, 'Verified Member');
+  assert.deepEqual(starts[0].stream, stream);
+  assert.equal(starts[0].sourceMessageUrl, undefined);
+});
+
+test('automatic Discord stream intake requires the shared secret and a verified Forum account', async () => {
+  const messageId = '1561378343230906484';
+  const message = {
+    id: messageId,
+    channel_id: '1293144531855872074',
+    author: { id: '1564000000000000001', bot: false },
+    content: 'Live: https://youtu.be/dQw4w9WgXcQ',
+    embeds: [],
+  };
+  const stream = {
+    provider: 'youtube',
+    id: 'dQw4w9WgXcQ',
+    sourceUrl: 'https://youtu.be/dQw4w9WgXcQ',
+  };
+  const starts = [];
+  let memberRows = [{ display_name: 'Verified Forum Member' }];
+  const route = loadRoute('app/api/live-dmo/auto-start/route.ts', {
+    'next/server': nextServer,
+    'zod': require('zod'),
+    '@/lib/db': { sql: async () => memberRows },
+    '@/lib/liveBroadcast': {
+      LIVE_STREAM_CHANNEL_ID: '1293144531855872074',
+      LIVE_STREAM_GUILD_ID: '786583939028090881',
+      streamLinksInDiscordMessage: () => [stream],
+    },
+    '@/lib/liveBroadcastStart': {
+      startExternalLiveBroadcast: async (input) => {
+        starts.push(input);
+        return { id: 'discord-stream-123', duplicate: false };
+      },
+    },
+  });
+  const originalFetch = globalThis.fetch;
+  const originalToken = process.env.DISCORD_BOT_TOKEN;
+  const originalSecret = process.env.WTSL_SYNC_SECRET;
+  process.env.DISCORD_BOT_TOKEN = 'test-bot-token';
+  process.env.WTSL_SYNC_SECRET = 'test-sync-secret';
+  globalThis.fetch = async () => Response.json(message);
+  const internalRequest = (secret) => new Request('https://forum.test/api/live-dmo/auto-start', {
+    method: 'POST',
+    headers: {
+      ...(secret ? { 'x-wtsl-sync-secret': secret } : {}),
+      'Content-Type': 'application/json',
+    },
+    body: JSON.stringify({ messageId }),
+  });
+
+  try {
+    const unauthorized = await route.POST(internalRequest(''));
+    assert.equal(unauthorized.status, 401);
+    assert.equal(starts.length, 0);
+
+    const accepted = await route.POST(internalRequest('test-sync-secret'));
+    assert.equal(accepted.status, 201);
+    assert.deepEqual(await accepted.json(), { id: 'discord-stream-123', duplicate: false });
+    assert.equal(starts.length, 1);
+    assert.equal(starts[0].ownerDiscordId, '1564000000000000001');
+    assert.equal(starts[0].ownerName, 'Verified Forum Member');
+    assert.equal(
+      starts[0].sourceMessageUrl,
+      `https://discord.com/channels/786583939028090881/1293144531855872074/${messageId}`,
+    );
+
+    memberRows = [];
+    const unverified = await route.POST(internalRequest('test-sync-secret'));
+    assert.equal(unverified.status, 403);
+    assert.equal(starts.length, 1);
+  } finally {
+    globalThis.fetch = originalFetch;
+    if (originalToken === undefined) delete process.env.DISCORD_BOT_TOKEN;
+    else process.env.DISCORD_BOT_TOKEN = originalToken;
+    if (originalSecret === undefined) delete process.env.WTSL_SYNC_SECRET;
+    else process.env.WTSL_SYNC_SECRET = originalSecret;
+  }
+});
+
 test('Discord announcement delivery failures do not prevent a broadcast from starting', async () => {
   const route = loadRoute('app/api/live-dmo/route.ts', {
     'next/server': nextServer,
@@ -182,6 +310,48 @@ test('Discord announcement delivery failures do not prevent a broadcast from sta
     }));
     assert.equal(response.status, 201);
   } finally {
+    if (originalToken === undefined) delete process.env.DISCORD_BOT_TOKEN;
+    else process.env.DISCORD_BOT_TOKEN = originalToken;
+  }
+});
+
+test('external stream announcements ping viewers in the source channel but not the broadcast channel', async () => {
+  const { announceLiveBroadcast } = loadDiscordAnnouncements();
+  const originalFetch = globalThis.fetch;
+  const originalToken = process.env.DISCORD_BOT_TOKEN;
+  process.env.DISCORD_BOT_TOKEN = 'test-bot-token';
+  const calls = [];
+  globalThis.fetch = async (url, options = {}) => {
+    calls.push({ url: String(url), options });
+    if (String(url).includes('/messages?limit=100')) return Response.json([]);
+    return Response.json({ id: `message-${calls.length}` });
+  };
+  try {
+    const reference = await announceLiveBroadcast({
+      id: 'external-broadcast',
+      ownerDiscordId: 'verified-member',
+      ownerName: 'Verified Member',
+      players: null,
+      bestOf: 3,
+      isWta: false,
+      officialByBroadcaster: false,
+      likelyOfficial: false,
+      stream: { provider: 'youtube', sourceUrl: 'https://youtu.be/dQw4w9WgXcQ' },
+    }, { pingViewerRoleInSource: true });
+
+    assert.deepEqual(reference, { channelId: '1562898541238554765', messageId: 'message-3' });
+    assert.match(calls[1].url, /channels\/1293144531855872074\/messages$/);
+    const rolePing = JSON.parse(calls[1].options.body);
+    assert.match(rolePing.content, /<@&1439615663860879501>/);
+    assert.deepEqual(rolePing.allowed_mentions, { parse: [], users: [], roles: ['1439615663860879501'] });
+
+    assert.match(calls[2].url, /channels\/1562898541238554765\/messages$/);
+    const announcement = JSON.parse(calls[2].options.body);
+    assert.equal(announcement.content, '<@verified-member> is streaming now');
+    assert.deepEqual(announcement.allowed_mentions, { parse: [], users: ['verified-member'], roles: [] });
+    assert.equal(announcement.embeds[0].title, '📺 Watch: Verified Member is live');
+  } finally {
+    globalThis.fetch = originalFetch;
     if (originalToken === undefined) delete process.env.DISCORD_BOT_TOKEN;
     else process.env.DISCORD_BOT_TOKEN = originalToken;
   }
