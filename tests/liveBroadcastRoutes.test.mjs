@@ -190,11 +190,16 @@ test('a signed-in Forum member can start a stream directly from a supported URL'
     '@/lib/db': { sql: async () => [] },
   });
 
-  const response = await route.POST(request({ hasDmo: false, discordMessageUrl: stream.sourceUrl }));
+  const response = await route.POST(request({
+    hasDmo: false,
+    discordMessageUrl: stream.sourceUrl,
+    character: 'Serena Williams',
+  }));
   assert.equal(response.status, 201);
   assert.deepEqual(await response.json(), {
     id: 'external-stream-123',
     stream,
+    character: 'Serena Williams',
     isWta: false,
     replay: false,
     replaySpeed: 1,
@@ -203,7 +208,42 @@ test('a signed-in Forum member can start a stream directly from a supported URL'
   assert.equal(starts[0].ownerDiscordId, 'verified-member');
   assert.equal(starts[0].ownerName, 'Verified Member');
   assert.deepEqual(starts[0].stream, stream);
+  assert.equal(starts[0].character, 'Serena Williams');
   assert.equal(starts[0].sourceMessageUrl, undefined);
+});
+
+test('broadcast owners can add or remove a character on a live stream', async () => {
+  const broadcastId = 'ad407a42-df03-4f70-9a8c-11e755683f74';
+  const updates = [];
+  const route = loadRoute('app/api/live-dmo/[id]/character/route.ts', {
+    'next/server': nextServer,
+    'zod': require('zod'),
+    '@/lib/auth': { getSession: async () => ({ discordId: 'broadcast-owner', isAdmin: false }) },
+    '@/lib/liveRequestSecurity': { isSameSiteMutation: () => true },
+    '@/lib/db': {
+      sql: async (strings, ...values) => {
+        updates.push({ query: strings.join('?'), values });
+        return [{ id: broadcastId }];
+      },
+    },
+  });
+  const send = (character) => route.PATCH(
+    request({ character }, `/api/live-dmo/${broadcastId}/character`, 'PATCH'),
+    { params: Promise.resolve({ id: broadcastId }) },
+  );
+
+  const added = await send('Serena Williams');
+  assert.equal(added.status, 200);
+  assert.deepEqual(await added.json(), { ok: true, character: 'Serena Williams' });
+  assert.match(updates[0].query, /owner_discord_id/);
+  assert.match(updates[0].query, /status='live'/);
+  assert.ok(updates[0].values.includes('broadcast-owner'));
+  assert.ok(updates[0].values.includes('Serena Williams'));
+
+  const removed = await send(null);
+  assert.equal(removed.status, 200);
+  assert.deepEqual(await removed.json(), { ok: true, character: null });
+  assert.ok(updates[1].values.includes(null));
 });
 
 test('automatic Discord stream intake requires the shared secret and a verified Forum account', async () => {
@@ -879,7 +919,7 @@ test('verified replay openings can be shown before the first point; other DMO br
       },
     },
     { id: 'legacy-no-point', payload: { version: 1, pointCount: 0, players: ['Old One', 'Old Two'] } },
-    { id: 'auto-parsed', payload: { hasDmo: true, mode: 'auto', isWta: true, snapshot: { pointCount: 1, players: ['Alpha', 'Beta'] } } },
+    { id: 'auto-parsed', payload: { hasDmo: true, mode: 'auto', isWta: true, character: 'Serena Williams', snapshot: { pointCount: 1, players: ['Alpha', 'Beta'] } } },
     { id: 'replay-parsed', payload: { hasDmo: true, mode: 'manual', replay: true, snapshot: { pointCount: 1, players: ['Gamma', 'Delta'] } } },
     {
       id: 'stream-only',
@@ -918,6 +958,7 @@ test('verified replay openings can be shown before the first point; other DMO br
     'stream-only',
   ]);
   assert.equal(body.broadcasts.find((broadcast) => broadcast.id === 'auto-parsed').isWta, true);
+  assert.equal(body.broadcasts.find((broadcast) => broadcast.id === 'auto-parsed').character, 'Serena Williams');
   const host = readFileSync(new URL('../components/DmoLiveHost.tsx', import.meta.url), 'utf8');
   assert.match(host, /hasCompletedDmoPoints\(current\)/);
   assert.match(host, /hasCompletedDmoPoints\(matchedSnapshot\)/);

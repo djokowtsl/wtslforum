@@ -29,7 +29,13 @@ export async function GET() {
     const row = rows[0];
     return NextResponse.json({
       broadcast: row
-        ? { id: String(row.id), stream: row.payload?.stream ?? null }
+        ? {
+          id: String(row.id),
+          stream: row.payload?.stream ?? null,
+          ...(typeof row.payload?.character === 'string'
+            ? { character: row.payload.character }
+            : {}),
+        }
         : null,
     }, { headers: PRIVATE_HEADERS });
   } catch (error) {

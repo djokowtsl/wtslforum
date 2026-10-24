@@ -100,6 +100,9 @@ export async function GET() {
         id: row.id,
         status: row.status,
         ownerName: row.owner_name || 'Forum member',
+        ...(typeof stored.character === 'string' && stored.character.trim().length <= 120
+          ? { character: stored.character.trim() }
+          : {}),
         snapshot,
         stream,
         sourceMessageUrl: typeof stored.sourceMessageUrl === 'string' ? stored.sourceMessageUrl : null,

@@ -137,6 +137,12 @@ export default function DmoLiveHost({ displayName, canPrepareFullReplay }: Props
   const [bestOf, setBestOf] = useState<Te4LiveBestOf>(3);
   const [broadcastId, setBroadcastId] = useState<string | null>(null);
   const [broadcastMode, setBroadcastMode] = useState<'manual' | 'auto' | null>(null);
+  const [characterChoices, setCharacterChoices] = useState<string[]>([]);
+  const [characterRosterStatus, setCharacterRosterStatus] = useState<'loading' | 'ready' | 'error'>('loading');
+  const [characterRosterRetry, setCharacterRosterRetry] = useState(0);
+  const [character, setCharacter] = useState('');
+  const [savedBroadcastCharacter, setSavedBroadcastCharacter] = useState('');
+  const [savingCharacter, setSavingCharacter] = useState(false);
   const [officialByBroadcaster, setOfficialByBroadcaster] = useState(false);
   const [discordMessageUrl, setDiscordMessageUrl] = useState('');
   const [playerOne, setPlayerOne] = useState('');
@@ -171,6 +177,32 @@ export default function DmoLiveHost({ displayName, canPrepareFullReplay }: Props
   }, []);
 
   useEffect(() => {
+    const controller = new AbortController();
+    setCharacterRosterStatus('loading');
+    fetch('/api/character-stats?tour=all&include_profile=false', {
+      cache: 'no-store',
+      signal: controller.signal,
+    })
+      .then(async (response) => {
+        const body = await response.json().catch(() => null);
+        if (!response.ok || !Array.isArray(body?.names)) {
+          throw new Error('The WTSL character roster is unavailable.');
+        }
+        const names: string[] = [...new Set((body.names as unknown[]).filter(
+          (name: unknown): name is string => typeof name === 'string' && Boolean(name.trim()),
+        ))];
+        if (!names.length) throw new Error('The WTSL character roster is unavailable.');
+        setCharacterChoices(names);
+        setCharacterRosterStatus('ready');
+      })
+      .catch((cause: unknown) => {
+        if (cause instanceof Error && cause.name === 'AbortError') return;
+        setCharacterRosterStatus('error');
+      });
+    return () => controller.abort();
+  }, [characterRosterRetry]);
+
+  useEffect(() => {
     let active = true;
     let checking = false;
     const refreshOwnedStream = async () => {
@@ -179,11 +211,16 @@ export default function DmoLiveHost({ displayName, canPrepareFullReplay }: Props
       try {
         const response = await fetch('/api/live-dmo/owned', { cache: 'no-store' });
         if (!response.ok) return;
-        const body = await response.json() as { broadcast?: { id?: string; stream?: unknown } | null };
+        const body = await response.json() as {
+          broadcast?: { id?: string; stream?: unknown; character?: string | null } | null;
+        };
         if (active && !broadcastId && body.broadcast?.id && body.broadcast.stream) {
           broadcastModeRef.current = 'manual';
           setBroadcastMode('manual');
           setBroadcastId(body.broadcast.id);
+          const savedCharacter = body.broadcast.character || '';
+          setCharacter(savedCharacter);
+          setSavedBroadcastCharacter(savedCharacter);
           setNotice('Your stream link is live. You can stop it here when you are finished.');
         }
       } catch {
@@ -453,6 +490,7 @@ export default function DmoLiveHost({ displayName, canPrepareFullReplay }: Props
           replaySpeed: replaySource ? replaySpeed : 1,
           discordMessageUrl: mode === 'manual' ? discordMessageUrl.trim() : '',
           players,
+          character: character.trim() || null,
           mode,
           bestOf: broadcastBestOf,
           officialByBroadcaster: officialByBroadcaster && broadcastBestOf !== 1,
@@ -462,10 +500,14 @@ export default function DmoLiveHost({ displayName, canPrepareFullReplay }: Props
       const body = await response.json() as {
         id?: string;
         players?: [string, string];
+        character?: string | null;
       };
       if (!body.id) throw new Error('The broadcast could not be started.');
       createdBroadcastId = body.id;
       const canonicalPlayers = body.players ?? players ?? null;
+      const savedCharacter = body.character ?? character.trim();
+      setCharacter(savedCharacter);
+      setSavedBroadcastCharacter(savedCharacter);
       canonicalBroadcastPlayers.current = canonicalPlayers;
       replay.current = null;
       resetDmoReaderOnNextPoll.current = false;
@@ -608,6 +650,30 @@ export default function DmoLiveHost({ displayName, canPrepareFullReplay }: Props
       setError(cause instanceof Error ? cause.message : 'The broadcast could not be stopped.');
     } finally {
       setBusy(false);
+    }
+  };
+
+  const saveBroadcastCharacter = async () => {
+    if (!broadcastId || busy || savingCharacter || character === savedBroadcastCharacter) return;
+    setSavingCharacter(true);
+    setError('');
+    const nextCharacter = character.trim() || null;
+    try {
+      const response = await fetch(`/api/live-dmo/${broadcastId}/character`, {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ character: nextCharacter }),
+      });
+      if (!response.ok) throw new Error(await responseError(response));
+      setCharacter(nextCharacter ?? '');
+      setSavedBroadcastCharacter(nextCharacter ?? '');
+      setNotice(nextCharacter
+        ? `${nextCharacter} is now shown on your broadcast.`
+        : 'The character label has been removed from your broadcast.');
+    } catch (cause) {
+      setError(cause instanceof Error ? cause.message : 'The broadcast character could not be saved.');
+    } finally {
+      setSavingCharacter(false);
     }
   };
 
@@ -936,6 +1002,50 @@ export default function DmoLiveHost({ displayName, canPrepareFullReplay }: Props
             <option value={5}>Best of 5 sets</option>
           </select>
         </label>
+        <div className={styles.characterControl}>
+          <label className={styles.bestOf}>
+            <span>Your TE4 character (optional)</span>
+            <select
+              aria-label="Your TE4 character"
+              value={character}
+              onChange={(event) => setCharacter(event.currentTarget.value)}
+              disabled={characterRosterStatus === 'loading' || busy || savingCharacter}
+            >
+              <option value="">No character</option>
+              {character && !characterChoices.includes(character) && (
+                <option value={character}>{character}</option>
+              )}
+              {characterChoices.map((name) => <option key={name} value={name}>{name}</option>)}
+            </select>
+            {characterRosterStatus === 'loading' && (
+              <small className={styles.characterRosterStatus} role="status">Loading WTSL character roster…</small>
+            )}
+            {characterRosterStatus === 'error' && (
+              <span className={styles.characterRosterStatus} role="status">
+                Roster unavailable.{' '}
+                <button type="button" onClick={() => setCharacterRosterRetry((retry) => retry + 1)}>
+                  Retry
+                </button>
+              </span>
+            )}
+          </label>
+          {broadcastId && (
+            <button
+              type="button"
+              className={styles.secondaryButton}
+              onClick={() => void saveBroadcastCharacter()}
+              disabled={busy || savingCharacter || character === savedBroadcastCharacter}
+            >
+              {savingCharacter
+                ? 'Saving…'
+                : character === savedBroadcastCharacter
+                  ? 'Character saved'
+                  : character
+                    ? savedBroadcastCharacter ? 'Update character' : 'Add character'
+                    : 'Remove character'}
+            </button>
+          )}
+        </div>
         <button type="button" className={styles.secondaryButton} onClick={chooseFolder} disabled={busy || Boolean(broadcastId)}>
           <FolderOpen size={16} /> {directory ? 'Change folder' : 'Choose TE4 folder'}
         </button>

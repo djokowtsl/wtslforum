@@ -18,6 +18,7 @@ type Broadcast = {
   id: string;
   status: 'live' | 'ended';
   ownerName: string;
+  character?: string | null;
   snapshot: Te4LiveSnapshot | null;
   stream: LiveStream | null;
   players: [string, string] | null;
@@ -403,6 +404,9 @@ export default function DmoLiveViewer({ canWatch }: Props) {
                       : broadcast.status === 'live' ? 'LIVE' : 'ENDED'}
                     {' · '}{broadcast.ownerName}
                   </span>
+                  {broadcast.character && (
+                    <small className={styles.characterTag}>Playing as {broadcast.character}</small>
+                  )}
                   {broadcast.status === 'live' && !broadcast.replay && (
                     <small
                       className={styles.viewerCount}
