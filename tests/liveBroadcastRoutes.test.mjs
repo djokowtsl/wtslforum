@@ -219,7 +219,7 @@ test('official live broadcasts mention the broadcaster and role unless the role 
       users: ['broadcaster-456'],
       roles: ['1439615663860879501'],
     });
-    assert.equal(sent.embeds[0].title, 'Alpha vs Beta');
+    assert.equal(sent.embeds[0].title, '📺 Watch: Alpha vs Beta');
     assert.match(sent.embeds[0].url, /\/livestreams\?broadcast=broadcast-123#broadcast-broadcast-123$/);
     assert.match(sent.embeds[0].fields.find((field) => field.name === 'Stream').value, /Watch on YouTube/);
   } finally {
@@ -623,6 +623,8 @@ test('ending a broadcast edits its Discord post immediately and deletes it one m
     assert.equal(calls[0].options.method, 'PATCH');
     const edited = JSON.parse(calls[0].options.body);
     assert.match(edited.content, /Broadcast ended/);
+    assert.equal(edited.embeds[0].title, '📺 Watch: Alpha vs Beta');
+    assert.match(edited.embeds[0].url, new RegExp(`/livestreams\\?broadcast=${id}#broadcast-${id}$`));
     assert.match(edited.embeds[0].description, /removed in one minute/);
     assert.equal(edited.embeds[0].color, 0x6b7280);
     assert.deepEqual(edited.allowed_mentions, { parse: [], users: [], roles: [] });

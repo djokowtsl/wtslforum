@@ -47,9 +47,10 @@ function liveBroadcastEmbed(input: LiveBroadcastAnnouncement, ended = false) {
   ];
   const siteUrl = (process.env.NEXT_PUBLIC_SITE_URL || 'https://www.wtslforum.com').replace(/\/+$/, '');
   const broadcastUrl = `${siteUrl}/livestreams?broadcast=${encodeURIComponent(input.id)}#broadcast-${encodeURIComponent(input.id)}`;
+  const broadcastTitle = matchName || `${input.ownerName.slice(0, 100)} is live`;
 
   return {
-    title: matchName || `${input.ownerName.slice(0, 100)} is live`,
+    title: `📺 Watch: ${broadcastTitle}`,
     url: broadcastUrl,
     description: ended
       ? 'This broadcast has ended. This announcement will be removed in one minute.'
