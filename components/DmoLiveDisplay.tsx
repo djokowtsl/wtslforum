@@ -1,6 +1,12 @@
 'use client';
 
-import type { Te4DmoReplaySpeed, Te4LivePoint, Te4LiveSnapshot } from '@/lib/te4DmoLive';
+import { useEffect, useRef, useState } from 'react';
+import {
+  LIVE_DMO_FRAME_STALL_MS,
+  type Te4DmoReplaySpeed,
+  type Te4LivePoint,
+  type Te4LiveSnapshot,
+} from '@/lib/te4DmoLive';
 import type { LivePreMatchProbability } from '@/lib/liveBroadcast';
 import type { LiveBroadcastScore } from '@/lib/liveBroadcastScore';
 import { surfaceForDmoTournament } from '@/lib/te4DmoSurface';
@@ -116,23 +122,52 @@ export default function DmoLiveDisplay({
   pointLogLoaded = false,
   liveScore,
 }: Props) {
+  const [frameStalled, setFrameStalled] = useState(false);
+  const frameProgressRef = useRef({
+    filename: snapshot.filename,
+    frameCount: snapshot.frameCount,
+    changedAt: Date.now(),
+  });
   const playerStats = snapshot.stats;
   const p1Stats = playerStats[0];
   const p2Stats = playerStats[1];
   const surface = surfaceForDmoTournament(snapshot.stadium);
-  const statusLabel = state === 'ended' ? 'Broadcast ended' : stale ? 'Connection paused' : 'Live';
+  const buffering = state === 'live' && (stale || frameStalled);
+  const statusLabel = state === 'ended' ? 'Broadcast ended' : buffering ? 'Buffering' : 'Live';
   // Undefined means DMO replay/manual scoring. Null means an automatic
   // broadcast's authoritative score is unavailable; never fall back to DMO.
   const score = liveScore === undefined ? snapshot.score : liveScore;
   const pointScore = score?.pointText.join('–') ?? '—';
   const displayedPointLog = pointLog ?? snapshot.recentPoints;
 
+  useEffect(() => {
+    frameProgressRef.current = {
+      filename: snapshot.filename,
+      frameCount: snapshot.frameCount,
+      changedAt: Date.now(),
+    };
+    setFrameStalled(false);
+  }, [snapshot.filename, snapshot.frameCount]);
+
+  useEffect(() => {
+    if (state !== 'live') {
+      setFrameStalled(false);
+      return;
+    }
+    const interval = window.setInterval(() => {
+      const progress = frameProgressRef.current;
+      const stalled = Date.now() - progress.changedAt >= LIVE_DMO_FRAME_STALL_MS;
+      setFrameStalled((current) => current === stalled ? current : stalled);
+    }, 500);
+    return () => window.clearInterval(interval);
+  }, [state]);
+
   return (
     <section className={styles.panel} aria-label="Live TE4 DMO match">
       <header className={styles.header}>
         <div>
           <div className={styles.statusRow}>
-            <span className={`${styles.statusDot} ${state === 'ended' ? styles.endedDot : stale ? styles.staleDot : ''}`} />
+            <span className={`${styles.statusDot} ${state === 'ended' ? styles.endedDot : buffering ? styles.staleDot : ''}`} />
             <span>{statusLabel}</span>
             {updatedAt && <small>{timeAgo(updatedAt)}</small>}
           </div>
@@ -142,7 +177,13 @@ export default function DmoLiveDisplay({
       </header>
 
       <div className={styles.liveCourtStage}>
-        <DmoLiveCourt snapshot={snapshot} surface={surface} playbackSpeed={playbackSpeed} isWta={isWta} />
+        <DmoLiveCourt
+          snapshot={snapshot}
+          surface={surface}
+          playbackSpeed={playbackSpeed}
+          isWta={isWta}
+          buffering={buffering}
+        />
         <aside className={styles.scoreBug} aria-label="Live match score">
           <div className={styles.scoreBugHeader}>
             <span className={styles.scoreBugStatus}>
