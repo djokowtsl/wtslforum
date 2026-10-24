@@ -122,6 +122,12 @@
   background: rgba(3, 9, 20, .54);
 }
 
+.soundButton[aria-pressed='true'] {
+  border-color: rgba(176, 244, 59, .34);
+  background: rgba(176, 244, 59, .1);
+  color: #b0f43b;
+}
+
 .volumeControl {
   display: inline-flex;
   align-items: center;

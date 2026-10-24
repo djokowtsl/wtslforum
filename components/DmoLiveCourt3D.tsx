@@ -14,6 +14,7 @@ import {
   advanceLiveCourtPlayhead,
   clampPlayerCameraLateralPan,
   interpolateLiveCourtFrame,
+  liveCourtTrajectoryCue,
   liveCourtFacingAngle,
   mergeLiveCourtEvents,
   mergeLiveCourtSamples,
@@ -22,7 +23,7 @@ import {
   type LiveCourtSample,
 } from '@/lib/liveCourtMotion';
 import { crossedFrame, dominantHandX, racketContact, serveLift, trailAllowed, type PlayerHandedness } from '@/lib/liveCourtPerformance';
-import DmoLiveCourt from './DmoLiveCourt';
+import DmoLiveCourt, { type GruntControlProps } from './DmoLiveCourt';
 import {
   BALL_RADIUS,
   PALETTE,
@@ -89,8 +90,10 @@ function ThreeCourt({
   playbackSpeed,
   stadiumAtmosphere = true,
   isWta = false,
+  gruntsEnabled,
+  onGruntsEnabledChange,
   onUnsupported,
-}: Props & { onUnsupported: () => void }) {
+}: Props & GruntControlProps & { onUnsupported: () => void }) {
   const viewportRef = useRef<HTMLDivElement>(null);
   const canvasHostRef = useRef<HTMLDivElement>(null);
   const audioContextRef = useRef<AudioContext | null>(null);
@@ -98,6 +101,9 @@ function ThreeCourt({
   const gruntAudioRef = useRef<AudioBuffer | null>(null);
   const applauseAudioRef = useRef<AudioBuffer | null>(null);
   const activeGruntsRef = useRef(new Set<AudioBufferSourceNode>());
+  const activeApplauseRef = useRef(new Set<AudioBufferSourceNode>());
+  const gruntsEnabledRef = useRef(gruntsEnabled);
+  gruntsEnabledRef.current = gruntsEnabled;
   const soundEventsRef = useRef<Array<{ frame: number; kind: 'racket' | 'bounce' }>>([]);
   const transitionRef = useRef<HTMLDivElement>(null);
   const sampleBufferRef = useRef<LiveCourtSample[]>([]);
@@ -203,6 +209,8 @@ function ThreeCourt({
     gruntAudioRef.current = null;
     for (const voice of activeGruntsRef.current) voice.stop();
     activeGruntsRef.current.clear();
+    for (const voice of activeApplauseRef.current) voice.stop();
+    activeApplauseRef.current.clear();
     applauseAudioRef.current = null;
     soundOnRef.current = false;
     if (shotCalloutTimerRef.current !== null) {
@@ -535,11 +543,14 @@ function ThreeCourt({
               if (cue.kind === 'point-end' || cue.shotType === 'serve') {
                 for (const voice of activeGruntsRef.current) voice.stop();
                 activeGruntsRef.current.clear();
+                for (const voice of activeApplauseRef.current) voice.stop();
+                activeApplauseRef.current.clear();
               }
-              if (cue.kind === 'shot' && cue.shotType === 'rally' && gruntAudioRef.current) {
+              const audioCue = liveCourtTrajectoryCue(cue, gruntsEnabledRef.current);
+              if (audioCue === 'grunt' && gruntAudioRef.current) {
                 playSample(context, gruntAudioRef.current, 0.72, activeGruntsRef.current);
-              } else if (cue.kind === 'point-end' && cue.frame % 3 === 0 && applauseAudioRef.current) {
-                playSample(context, applauseAudioRef.current, crowdAudioRef.current?.volume ?? 0.38, activeGruntsRef.current);
+              } else if (audioCue === 'cheer' && cue.frame % 3 === 0 && applauseAudioRef.current) {
+                playSample(context, applauseAudioRef.current, crowdAudioRef.current?.volume ?? 0.38, activeApplauseRef.current);
               }
             }
           }
@@ -767,6 +778,8 @@ function ThreeCourt({
       crowdAudioRef.current?.pause();
       for (const voice of activeGruntsRef.current) voice.stop();
       activeGruntsRef.current.clear();
+      for (const voice of activeApplauseRef.current) voice.stop();
+      activeApplauseRef.current.clear();
       soundOnRef.current = false;
       setSoundEnabled(false);
       return;
@@ -808,6 +821,13 @@ function ThreeCourt({
     setCrowdVolume(volume);
     if (soundOnRef.current && stadiumAtmosphere && crowdAudioRef.current) {
       crowdAudioRef.current.volume = volume;
+    }
+  };
+  const changeGruntsEnabled = (enabled: boolean) => {
+    onGruntsEnabledChange(enabled);
+    if (!enabled) {
+      for (const voice of activeGruntsRef.current) voice.stop();
+      activeGruntsRef.current.clear();
     }
   };
 
@@ -884,6 +904,16 @@ function ThreeCourt({
             {soundEnabled ? <Volume2 size={15} /> : <VolumeX size={15} />}
             <span>{soundEnabled ? 'Sound on' : 'Sound off'}</span>
           </button>
+          <button
+            className={styles.soundButton}
+            type="button"
+            aria-label={gruntsEnabled ? 'Turn player grunts off' : 'Turn player grunts on'}
+            aria-pressed={gruntsEnabled}
+            title={gruntsEnabled ? 'Turn player grunts off' : 'Turn player grunts on'}
+            onClick={() => changeGruntsEnabled(!gruntsEnabled)}
+          >
+            <span>Grunts {gruntsEnabled ? 'on' : 'off'}</span>
+          </button>
           {soundEnabled && stadiumAtmosphere && (
             <label className={styles.volumeControl}>
               <span>Crowd</span>
@@ -931,7 +961,9 @@ function ThreeCourt({
 
 export default function DmoLiveCourt3D(props: Props) {
   const [use2dFallback, setUse2dFallback] = useState(false);
+  const [gruntsEnabled, setGruntsEnabled] = useState(true);
   const useFallback = useCallback(() => setUse2dFallback(true), []);
-  if (use2dFallback) return <DmoLiveCourt {...props} />;
-  return <ThreeCourt {...props} onUnsupported={useFallback} />;
+  const gruntControls = { gruntsEnabled, onGruntsEnabledChange: setGruntsEnabled };
+  if (use2dFallback) return <DmoLiveCourt {...props} {...gruntControls} />;
+  return <ThreeCourt {...props} {...gruntControls} onUnsupported={useFallback} />;
 }

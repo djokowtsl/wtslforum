@@ -1,7 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { dominantHandX, racketContact, RACKET_HEAD_OFFSET, RIGHT_HAND_X, serveLift, crossedFrame, trailAllowed } from '../lib/liveCourtPerformance.ts';
-import { interpolateLiveCourtFrame } from '../lib/liveCourtMotion.ts';
+import { interpolateLiveCourtFrame, liveCourtTrajectoryCue } from '../lib/liveCourtMotion.ts';
 import * as THREE from 'three';
 import { makePlayer } from '../components/DmoLiveCourt3DScene.ts';
 
@@ -61,6 +61,16 @@ test('cues never play before contact and are not repeated on a stalled playhead'
   assert.equal(crossedFrame(100, 99, 100), true);
   assert.equal(crossedFrame(100, 100, 100), false);
   assert.equal(crossedFrame(100, 110, 90), false);
+});
+test('grunt preference gates rally grunts without muting point cheers or serving sounds', () => {
+  const rally = { kind: 'shot', shotType: 'rally' };
+  const serve = { kind: 'shot', shotType: 'serve' };
+  const pointEnd = { kind: 'point-end' };
+
+  assert.equal(liveCourtTrajectoryCue(rally, true), 'grunt');
+  assert.equal(liveCourtTrajectoryCue(rally, false), null);
+  assert.equal(liveCourtTrajectoryCue(serve, true), null);
+  assert.equal(liveCourtTrajectoryCue(pointEnd, false), 'cheer');
 });
 test('trails stay hidden throughout point breaks until the next hit', () => {
   const events = [{frame:10,kind:'shot'},{frame:20,kind:'point-end'},{frame:100,kind:'shot'}];
