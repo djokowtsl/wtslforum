@@ -172,6 +172,36 @@ export default function DmoLiveHost({ displayName, canPrepareFullReplay }: Props
 
   useEffect(() => {
     let active = true;
+    let checking = false;
+    const refreshOwnedStream = async () => {
+      if (!active || broadcastId || checking) return;
+      checking = true;
+      try {
+        const response = await fetch('/api/live-dmo/owned', { cache: 'no-store' });
+        if (!response.ok) return;
+        const body = await response.json() as { broadcast?: { id?: string; stream?: unknown } | null };
+        if (active && !broadcastId && body.broadcast?.id && body.broadcast.stream) {
+          broadcastModeRef.current = 'manual';
+          setBroadcastMode('manual');
+          setBroadcastId(body.broadcast.id);
+          setNotice('Your stream link is live. You can stop it here when you are finished.');
+        }
+      } catch {
+        // The host controls remain available if the optional status refresh is offline.
+      } finally {
+        checking = false;
+      }
+    };
+    void refreshOwnedStream();
+    const interval = window.setInterval(() => void refreshOwnedStream(), 15_000);
+    return () => {
+      active = false;
+      window.clearInterval(interval);
+    };
+  }, [broadcastId]);
+
+  useEffect(() => {
+    let active = true;
     void loadDmoDirectory().then(async (saved) => {
       if (!active || !saved) return;
       setSavedDirectory(saved);
@@ -877,7 +907,7 @@ export default function DmoLiveHost({ displayName, canPrepareFullReplay }: Props
         <div>
         <p className={styles.kicker}>WTSL FORUM / LIVE</p>
           <h1>Live <em>Streams</em></h1>
-          <p>Share a live court, replay a completed DMO from the start, or add a stream link from your Discord post. DMO files stay on your device.</p>
+          <p>Share a live court, replay a completed DMO from the start, or add a YouTube/Twitch link or Discord stream post to start a stream. DMO files stay on your device.</p>
         </div>
         <Link className={styles.watchLink} href="/livestreams/viewer">
           <Play size={15} fill="currentColor" aria-hidden="true" />
@@ -966,14 +996,14 @@ export default function DmoLiveHost({ displayName, canPrepareFullReplay }: Props
           </button>
         )}
         <label className={styles.bestOf}>
-          <span>Discord stream message (optional)</span>
+          <span>Stream URL or Discord stream message (optional)</span>
           <input
             type="url"
             value={discordMessageUrl}
             onChange={(event) => setDiscordMessageUrl(event.currentTarget.value)}
-            placeholder="https://discord.com/channels/…"
+            placeholder="YouTube/Twitch link or Discord permalink"
             disabled={busy || Boolean(broadcastId)}
-            aria-label="Link to your stream message in the WTSL Discord channel"
+            aria-label="YouTube or Twitch stream URL, or a link to your stream message in the WTSL Discord channel"
           />
         </label>
         {!directory && <label className={styles.bestOf}>
@@ -1032,7 +1062,7 @@ export default function DmoLiveHost({ displayName, canPrepareFullReplay }: Props
         )}
         {!broadcastId ? (
           <button type="button" className={styles.primaryButton} onClick={() => void startBroadcast('manual')} disabled={(!directory && !discordMessageUrl.trim()) || busy}>
-            <Radio size={16} /> {busy ? 'Starting…' : directory ? 'Replay selected DMO' : 'Start broadcast manually'}
+            <Radio size={16} /> {busy ? 'Starting…' : directory ? 'Replay selected DMO' : 'Start stream from link'}
           </button>
         ) : (
           <button type="button" className={styles.stopButton} onClick={stopBroadcast} disabled={busy}>
@@ -1083,7 +1113,7 @@ export default function DmoLiveHost({ displayName, canPrepareFullReplay }: Props
           ? replay.current
             ? 'Your replay appears in the viewer list below. Signed-in members can watch the match progress there.'
             : 'Your broadcast appears in the viewer list below. Other signed-in members can watch it there too.'
-          : 'Choose a TE4 folder to replay a completed DMO, add a stream message link, or use both. Multiple broadcasts appear in the viewer list.'}</p>
+          : 'Choose a TE4 folder to replay a completed DMO, or add a supported stream link and start it immediately. Multiple broadcasts appear in the viewer list.'}</p>
       </div>
     </section>
   );

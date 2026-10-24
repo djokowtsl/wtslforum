@@ -13,8 +13,10 @@ import { finishLiveBroadcastAnnouncement } from '@/lib/liveBroadcastAnnouncement
 import {
   isLikelyOfficialWtslMatch,
   parseDiscordMessageUrl,
+  parseLiveStreamUrl,
   streamLinksInDiscordMessage,
 } from '@/lib/liveBroadcast';
+import { startExternalLiveBroadcast } from '@/lib/liveBroadcastStart';
 
 export const dynamic = 'force-dynamic';
 export const maxDuration = 120;
@@ -144,14 +146,17 @@ export async function POST(request: Request) {
 
   let stream: ReturnType<typeof streamLinksInDiscordMessage>[number] | null = null;
   let verifiedMessageUrl: string | null = null;
-  if (messageUrl) {
-    const reference = parseDiscordMessageUrl(messageUrl);
-    if (!reference) {
-      return NextResponse.json(
-        { error: 'Use a message link from the WTSL live-stream channel.' },
-        { status: 400, headers: PRIVATE_HEADERS },
-      );
-    }
+  const discordReference = messageUrl ? parseDiscordMessageUrl(messageUrl) : null;
+  const directStream = messageUrl && !discordReference ? parseLiveStreamUrl(messageUrl) : null;
+  if (messageUrl && !discordReference && !directStream) {
+    return NextResponse.json(
+      { error: 'Use a supported YouTube or Twitch stream URL, or a message link from the WTSL live-stream channel.' },
+      { status: 400, headers: PRIVATE_HEADERS },
+    );
+  }
+  if (directStream) stream = directStream;
+  if (discordReference) {
+    const reference = discordReference;
     const token = process.env.DISCORD_BOT_TOKEN;
     if (!token) {
       return NextResponse.json({ error: 'Discord message verification is not configured.' }, { status: 503, headers: PRIVATE_HEADERS });
@@ -209,6 +214,34 @@ export async function POST(request: Request) {
     sourceMessageUrl: verifiedMessageUrl,
     ...(broadcastPlayers ? { players: broadcastPlayers } : {}),
   };
+  if (!body.hasDmo && directStream) {
+    try {
+      const result = await startExternalLiveBroadcast({
+        ownerDiscordId: user.discordId,
+        ownerName: user.username,
+        stream: directStream,
+        players: broadcastPlayers ?? null,
+        bestOf: broadcastBestOf,
+        isWta,
+        officialByBroadcaster: body.officialByBroadcaster,
+        likelyOfficial: payload.likelyOfficial,
+      });
+      return NextResponse.json({
+        id: result.id,
+        stream: directStream,
+        ...(broadcastPlayers ? { players: broadcastPlayers } : {}),
+        isWta,
+        replay: false,
+        replaySpeed: 1,
+      }, { status: result.duplicate ? 200 : 201, headers: PRIVATE_HEADERS });
+    } catch (error) {
+      console.error('[live-broadcast] external stream start failed', error instanceof Error ? error.name : 'UnknownError');
+      return NextResponse.json(
+        { error: 'Live broadcasting is temporarily unavailable.' },
+        { status: 503, headers: PRIVATE_HEADERS },
+      );
+    }
+  }
   const id = randomUUID();
   try {
     await cleanupExpiredLiveDmoBroadcasts();
