@@ -32,6 +32,7 @@
 }
 .sceneControls button { width: 30px; padding: 0; cursor: pointer; }
 .sceneControls button:hover { border-color: #b0f43b; color: #b0f43b; }
+.sceneControls .gruntControl { width: auto; min-width: 66px; padding: 0 7px; font-size: 9px; font-weight: 700; }
 .cameraControl { display: flex; align-items: center; gap: 4px; }
 .cameraControl span { color: #9eacc0; font-size: 7px; font-weight: 800; letter-spacing: .08em; }
 .cameraControl input, .zoomRange { width: 62px; accent-color: #b0f43b; }

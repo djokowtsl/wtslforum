@@ -20,6 +20,7 @@ import {
 import {
   advanceLiveCourtPlayhead,
   interpolateLiveCourtFrame,
+  liveCourtTrajectoryCue,
   latestLiveCourtMotionEvent,
   mergeLiveCourtEvents,
   mergeLiveCourtSamples,
@@ -41,7 +42,10 @@ type Props = {
   playbackSpeed: Te4DmoReplaySpeed;
   stadiumAtmosphere?: boolean;
   isWta?: boolean;
+  gruntsEnabled: boolean;
+  onGruntsEnabledChange: (enabled: boolean) => void;
 };
+export type GruntControlProps = Pick<Props, 'gruntsEnabled' | 'onGruntsEnabledChange'>;
 
 function drawScene(
   context: CanvasRenderingContext2D,
@@ -363,7 +367,11 @@ function createCrowdBed(context: AudioContext): CrowdBed {
   return { source, gain };
 }
 
-function playSynthesizedCue(context: AudioContext, kind: SynthesizedCue) {
+function playSynthesizedCue(
+  context: AudioContext,
+  kind: SynthesizedCue,
+  activeGrunts?: Set<OscillatorNode>,
+) {
   const now = context.currentTime;
   const gain = context.createGain();
   if (kind === 'cheer') {
@@ -409,6 +417,10 @@ function playSynthesizedCue(context: AudioContext, kind: SynthesizedCue) {
     oscillator.connect(gain);
   }
   gain.connect(context.destination);
+  if (grunt && activeGrunts) {
+    activeGrunts.add(oscillator);
+    oscillator.addEventListener('ended', () => activeGrunts.delete(oscillator), { once: true });
+  }
   oscillator.start(now);
   oscillator.stop(now + duration);
 }
@@ -419,6 +431,8 @@ function DmoLiveCourt({
   playbackSpeed,
   stadiumAtmosphere = true,
   isWta = false,
+  gruntsEnabled,
+  onGruntsEnabledChange,
 }: Props) {
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const cameraDragRef = useRef<{ x: number; y: number } | null>(null);
@@ -437,6 +451,7 @@ function DmoLiveCourt({
   });
   const audioContextRef = useRef<AudioContext | null>(null);
   const crowdBedRef = useRef<CrowdBed | null>(null);
+  const activeGruntVoicesRef = useRef(new Set<OscillatorNode>());
   const lastSoundFrameRef = useRef(Math.max(0, snapshot.frameCount - 3));
   const playedSoundEventsRef = useRef(new Set<string>());
   const [soundEnabled, setSoundEnabled] = useState(false);
@@ -622,14 +637,14 @@ function DmoLiveCourt({
     for (const event of snapshot.soundEvents ?? []) {
       const key = `${event.frame}:${event.kind}`;
       if (event.frame < lastSoundFrameRef.current || playedSoundEventsRef.current.has(key)) continue;
-      playSynthesizedCue(context, event.kind);
+      playSynthesizedCue(context, event.kind, activeGruntVoicesRef.current);
       playedSoundEventsRef.current.add(key);
     }
     for (const event of snapshot.trajectoryEvents ?? []) {
-      const cue = event.kind === 'point-end' ? 'cheer' : 'grunt';
+      const cue = liveCourtTrajectoryCue(event, gruntsEnabled);
       const key = `${event.frame}:${event.kind}`;
-      if (!cue || event.frame < lastSoundFrameRef.current || playedSoundEventsRef.current.has(key)) continue;
-      playSynthesizedCue(context, cue);
+      if (event.frame < lastSoundFrameRef.current || playedSoundEventsRef.current.has(key)) continue;
+      if (cue) playSynthesizedCue(context, cue, activeGruntVoicesRef.current);
       playedSoundEventsRef.current.add(key);
     }
     lastSoundFrameRef.current = Math.max(lastSoundFrameRef.current, snapshot.frameCount - 3);
@@ -640,7 +655,7 @@ function DmoLiveCourt({
         playedSoundEventsRef.current.delete(key);
       }
     }
-  }, [snapshot.frameCount, snapshot.soundEvents, snapshot.trajectoryEvents, soundEnabled]);
+  }, [snapshot.frameCount, snapshot.soundEvents, snapshot.trajectoryEvents, soundEnabled, gruntsEnabled]);
 
   useEffect(() => () => {
     try {
@@ -655,8 +670,25 @@ function DmoLiveCourt({
     audioContextRef.current = null;
   }, []);
 
+  const stopActiveGrunts = () => {
+    for (const voice of activeGruntVoicesRef.current) {
+      try {
+        voice.stop();
+      } catch {
+        // The voice may have ended between frames.
+      }
+    }
+    activeGruntVoicesRef.current.clear();
+  };
+
+  const changeGruntsEnabled = (enabled: boolean) => {
+    if (!enabled) stopActiveGrunts();
+    onGruntsEnabledChange(enabled);
+  };
+
   const toggleSound = async () => {
     if (soundEnabled) {
+      stopActiveGrunts();
       const context = audioContextRef.current;
       const crowdBed = crowdBedRef.current;
       if (context && crowdBed) {
@@ -751,6 +783,16 @@ function DmoLiveCourt({
             onClick={() => void toggleSound()}
           >
             {soundEnabled ? <Volume2 size={15} /> : <VolumeX size={15} />}
+          </button>
+          <button
+            className={styles.gruntControl}
+            type="button"
+            aria-label={gruntsEnabled ? 'Turn player grunts off' : 'Turn player grunts on'}
+            aria-pressed={gruntsEnabled}
+            title={gruntsEnabled ? 'Turn player grunts off' : 'Turn player grunts on'}
+            onClick={() => changeGruntsEnabled(!gruntsEnabled)}
+          >
+            Grunts {gruntsEnabled ? 'on' : 'off'}
           </button>
         </div>
       </div>

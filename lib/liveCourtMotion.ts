@@ -8,6 +8,14 @@ export type LiveCourtMotionEvent = {
   speedKmh?: number;
 };
 
+export function liveCourtTrajectoryCue(
+  event: Pick<LiveCourtMotionEvent, 'kind' | 'shotType'>,
+  gruntsEnabled: boolean,
+): 'grunt' | 'cheer' | null {
+  if (event.kind === 'point-end') return 'cheer';
+  return event.shotType === 'rally' && gruntsEnabled ? 'grunt' : null;
+}
+
 // The DMO court runs along X, with the net at X=0. Player-local +Z points
 // toward the net; this keeps the right-handed model oriented consistently.
 export function liveCourtFacingAngle(playerX: number): number {
