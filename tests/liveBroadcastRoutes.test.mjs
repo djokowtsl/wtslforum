@@ -34,7 +34,22 @@ function loadRoute(path, mocks) {
         isLiveDmoReplayPath: (value) => typeof value === 'string' && value.startsWith('dmo-live-replays/'),
       };
     }
+    if (name === '@/lib/discord') return { announceLiveBroadcast: async () => {} };
     throw new Error(`Unexpected route dependency: ${name}`);
+  }, module, module.exports);
+  return module.exports;
+}
+
+function loadDiscordAnnouncements() {
+  const source = readFileSync(new URL('../lib/discord.ts', import.meta.url), 'utf8');
+  const { code } = require('next/dist/build/swc').transformSync(source, {
+    jsc: { parser: { syntax: 'typescript' }, target: 'es2022' },
+    module: { type: 'commonjs' },
+  });
+  const module = { exports: {} };
+  new Function('require', 'module', 'exports', code)((name) => {
+    if (name.startsWith('node:')) return require(name);
+    throw new Error(`Unexpected Discord module dependency: ${name}`);
   }, module, module.exports);
   return module.exports;
 }
@@ -64,13 +79,15 @@ const validMessage = {
 
 test('a signed-in member can start multiple broadcasts from their linked Discord stream posts', async () => {
   const inserts = [];
+  const announcements = [];
   const route = loadRoute('app/api/live-dmo/route.ts', {
     'next/server': nextServer,
     'next': { NextResponse: nextServer.NextResponse },
     'node:crypto': { randomUUID: () => `broadcast-${inserts.length}` },
     'zod': require('zod'),
-    '@/lib/auth': { getSession: async () => ({ discordId: 'linked-member', isAdmin: false }) },
+    '@/lib/auth': { getSession: async () => ({ discordId: 'linked-member', username: 'Linked Member', isAdmin: false }) },
     '@/lib/liveRequestSecurity': { isSameSiteMutation: () => true },
+    '@/lib/discord': { announceLiveBroadcast: async (announcement) => announcements.push(announcement) },
     '@/lib/liveBroadcast': {
       parseDiscordMessageUrl: (value) => value === liveMessageUrl
         ? { guildId: '786583939028090881', channelId: '1293144531855872074', messageId: '1561378343230906484' }
@@ -97,6 +114,134 @@ test('a signed-in member can start multiple broadcasts from their linked Discord
     assert.equal(second.status, 201);
     assert.equal(inserts.filter((item) => item.query.includes('INSERT INTO dmo_live_broadcasts')).length, 2);
     assert.equal(inserts.some((item) => item.query.includes("status='live'")), false);
+    assert.equal(announcements.length, 2);
+    assert.equal(announcements[0].ownerDiscordId, 'linked-member');
+    assert.equal(announcements[0].ownerName, 'Linked Member');
+    assert.deepEqual(announcements[0].players, ['Alpha', 'Beta']);
+    assert.equal(announcements[0].stream.provider, 'youtube');
+  } finally {
+    globalThis.fetch = originalFetch;
+    if (originalToken === undefined) delete process.env.DISCORD_BOT_TOKEN;
+    else process.env.DISCORD_BOT_TOKEN = originalToken;
+  }
+});
+
+test('Discord announcement delivery failures do not prevent a broadcast from starting', async () => {
+  const route = loadRoute('app/api/live-dmo/route.ts', {
+    'next/server': nextServer,
+    'node:crypto': { randomUUID: () => 'broadcast-after-discord-failure' },
+    'zod': require('zod'),
+    '@/lib/auth': { getSession: async () => ({ discordId: 'linked-member', username: 'Linked Member', isAdmin: false }) },
+    '@/lib/liveRequestSecurity': { isSameSiteMutation: () => true },
+    '@/lib/discord': { announceLiveBroadcast: async () => { throw new Error('Discord unavailable'); } },
+    '@/lib/liveScores': {
+      getLiveWtslMatchForPlayers: async () => ({ bestOf: 3, canonicalPlayers: ['Alpha', 'Beta'], tourHint: 'TE4' }),
+    },
+    '@/lib/liveBroadcast': {
+      parseDiscordMessageUrl: () => null,
+      streamLinksInDiscordMessage: () => [],
+    },
+    '@/lib/db': { sql: async () => [] },
+  });
+  const originalToken = process.env.DISCORD_BOT_TOKEN;
+  delete process.env.DISCORD_BOT_TOKEN;
+  try {
+    const response = await route.POST(request({
+      hasDmo: true,
+      players: ['Alpha', 'Beta'],
+      mode: 'auto',
+      bestOf: 3,
+    }));
+    assert.equal(response.status, 201);
+  } finally {
+    if (originalToken === undefined) delete process.env.DISCORD_BOT_TOKEN;
+    else process.env.DISCORD_BOT_TOKEN = originalToken;
+  }
+});
+
+test('official live broadcasts mention the broadcaster and role unless the role was pinged in the past minute', async () => {
+  const { announceLiveBroadcast } = loadDiscordAnnouncements();
+  const originalFetch = globalThis.fetch;
+  const originalToken = process.env.DISCORD_BOT_TOKEN;
+  process.env.DISCORD_BOT_TOKEN = 'test-bot-token';
+  const calls = [];
+  globalThis.fetch = async (url, options) => {
+    calls.push({ url: String(url), options });
+    return calls.length === 1 ? Response.json([]) : Response.json({ id: 'announcement-message' });
+  };
+  try {
+    await announceLiveBroadcast({
+      id: 'broadcast-123',
+      ownerDiscordId: 'broadcaster-456',
+      ownerName: 'Broadcaster',
+      players: ['Alpha', 'Beta'],
+      bestOf: 3,
+      isWta: false,
+      officialByBroadcaster: false,
+      likelyOfficial: true,
+      stream: { provider: 'youtube', sourceUrl: 'https://www.youtube.com/watch?v=dQw4w9WgXcQ' },
+    });
+    assert.match(calls[0].url, /channels\/1293144531855872074\/messages\?limit=100$/);
+    assert.match(calls[1].url, /channels\/1562898541238554765\/messages$/);
+    const sent = JSON.parse(calls[1].options.body);
+    assert.match(sent.content, /<@broadcaster-456>/);
+    assert.match(sent.content, /<@&1439615663860879501>/);
+    assert.deepEqual(sent.allowed_mentions, {
+      parse: [],
+      users: ['broadcaster-456'],
+      roles: ['1439615663860879501'],
+    });
+    assert.equal(sent.embeds[0].title, 'Alpha vs Beta');
+    assert.match(sent.embeds[0].url, /\/livestreams\?broadcast=broadcast-123#broadcast-broadcast-123$/);
+    assert.match(sent.embeds[0].fields.find((field) => field.name === 'Stream').value, /Watch on YouTube/);
+  } finally {
+    globalThis.fetch = originalFetch;
+    if (originalToken === undefined) delete process.env.DISCORD_BOT_TOKEN;
+    else process.env.DISCORD_BOT_TOKEN = originalToken;
+  }
+});
+
+test('a recent role ping suppresses only the role mention, while an unclassified stream skips the history lookup', async () => {
+  const { announceLiveBroadcast } = loadDiscordAnnouncements();
+  const originalFetch = globalThis.fetch;
+  const originalToken = process.env.DISCORD_BOT_TOKEN;
+  process.env.DISCORD_BOT_TOKEN = 'test-bot-token';
+  const calls = [];
+  globalThis.fetch = async (url, options) => {
+    calls.push({ url: String(url), options });
+    if (calls.length === 1) {
+      return Response.json([{
+        timestamp: new Date(Date.now() - 30_000).toISOString(),
+        mention_roles: ['1439615663860879501'],
+        content: '',
+      }]);
+    }
+    return Response.json({ id: 'announcement-message' });
+  };
+  try {
+    const officialInput = {
+      id: 'broadcast-123',
+      ownerDiscordId: 'broadcaster-456',
+      ownerName: 'Broadcaster',
+      players: ['Alpha', 'Beta'],
+      bestOf: 3,
+      isWta: false,
+      officialByBroadcaster: true,
+      likelyOfficial: false,
+      stream: null,
+    };
+    await announceLiveBroadcast(officialInput);
+    const officialMessage = JSON.parse(calls[1].options.body);
+    assert.match(officialMessage.content, /<@broadcaster-456>/);
+    assert.doesNotMatch(officialMessage.content, /<@&1439615663860879501>/);
+    assert.deepEqual(officialMessage.allowed_mentions.roles, []);
+
+    calls.length = 0;
+    await announceLiveBroadcast({ ...officialInput, officialByBroadcaster: false, likelyOfficial: false });
+    assert.equal(calls.length, 1);
+    assert.match(calls[0].url, /channels\/1562898541238554765\/messages$/);
+    const nonOfficialMessage = JSON.parse(calls[0].options.body);
+    assert.deepEqual(nonOfficialMessage.allowed_mentions.roles, []);
   } finally {
     globalThis.fetch = originalFetch;
     if (originalToken === undefined) delete process.env.DISCORD_BOT_TOKEN;
@@ -106,12 +251,14 @@ test('a signed-in member can start multiple broadcasts from their linked Discord
 
 test('automatic broadcasts require a confirmed WTSL live match and retain its official labels', async () => {
   const inserts = [];
+  const announcements = [];
   const route = loadRoute('app/api/live-dmo/route.ts', {
     'next/server': nextServer,
     'node:crypto': { randomUUID: () => 'automatic-broadcast' },
     'zod': require('zod'),
     '@/lib/auth': { getSession: async () => ({ discordId: 'linked-member', isAdmin: false }) },
     '@/lib/liveRequestSecurity': { isSameSiteMutation: () => true },
+    '@/lib/discord': { announceLiveBroadcast: async (announcement) => announcements.push(announcement) },
     '@/lib/liveScores': {
       getLiveWtslMatchForPlayers: async (players) => (
         players[0] === 'Alpha' && players[1] === 'Beta'
@@ -153,6 +300,10 @@ test('automatic broadcasts require a confirmed WTSL live match and retain its of
   assert.equal(JSON.parse(storedPayload).officialByBroadcaster, true);
   assert.equal(JSON.parse(storedPayload).likelyOfficial, true);
   assert.equal(JSON.parse(storedPayload).isWta, true);
+  assert.equal(announcements.length, 1);
+  assert.equal(announcements[0].officialByBroadcaster, true);
+  assert.equal(announcements[0].likelyOfficial, true);
+  assert.equal(announcements[0].isWta, true);
 });
 
 test('automatic broadcasts are rejected when the exact player pair is not live', async () => {

@@ -4,6 +4,127 @@ export async function announceTopic(title:string,id:number,author:string){await 
 export async function announceArticle(title:string,slug:string|number,author:string){await send(process.env.DISCORD_ARTICLES_CHANNEL_ID||'',`📰 **New WTSL Forum article:** ${title}\nBy **${author}**\n${process.env.NEXT_PUBLIC_SITE_URL||''}/articles/${slug}`)}
 export async function announceMod(message:string){await send(process.env.DISCORD_MOD_CHANNEL_ID||'',`🛡️ **WTSL Forum moderation**\n${message}`)}
 
+const LIVE_STREAMS_CHANNEL_ID = '1562898541238554765';
+const RECENT_LIVE_ROLE_PINGS_CHANNEL_ID = '1293144531855872074';
+const LIVE_STREAM_ROLE_ID = '1439615663860879501';
+const DISCORD_REQUEST_TIMEOUT_MS = 5_000;
+
+type LiveBroadcastAnnouncement = {
+  id: string;
+  ownerDiscordId: string;
+  ownerName: string;
+  players?: [string, string] | null;
+  bestOf: 1 | 3 | 5;
+  isWta: boolean;
+  officialByBroadcaster: boolean;
+  likelyOfficial: boolean;
+  stream?: { provider: string; sourceUrl: string } | null;
+};
+
+function roleWasPingedRecently(messages: unknown, now: number): boolean {
+  if (!Array.isArray(messages)) return false;
+  return messages.some((message: any) => {
+    const timestamp = Date.parse(String(message?.timestamp ?? ''));
+    const age = now - timestamp;
+    const hasRoleMention = Array.isArray(message?.mention_roles)
+      && message.mention_roles.some((roleId: unknown) => String(roleId) === LIVE_STREAM_ROLE_ID);
+    const hasRoleText = typeof message?.content === 'string'
+      && message.content.includes(`<@&${LIVE_STREAM_ROLE_ID}>`);
+    return age >= 0 && age < 60_000 && (hasRoleMention || hasRoleText);
+  });
+}
+
+/** Posts one live-stream announcement. Discord failures never prevent a broadcast from starting. */
+export async function announceLiveBroadcast(input: LiveBroadcastAnnouncement): Promise<void> {
+  const token = process.env.DISCORD_BOT_TOKEN;
+  if (!token) {
+    console.warn('[live-broadcast] Discord announcement skipped: bot token is not configured');
+    return;
+  }
+
+  const shouldConsiderRolePing = input.officialByBroadcaster || input.likelyOfficial;
+  let includeRolePing = false;
+  if (shouldConsiderRolePing) {
+    try {
+      const recentMessagesResponse = await fetch(
+        `${api}/channels/${RECENT_LIVE_ROLE_PINGS_CHANNEL_ID}/messages?limit=100`,
+        {
+          headers: { Authorization: `Bot ${token}` },
+          cache: 'no-store',
+          signal: AbortSignal.timeout(DISCORD_REQUEST_TIMEOUT_MS),
+        },
+      );
+      if (!recentMessagesResponse.ok) {
+        throw new Error(`Discord history request failed (HTTP ${recentMessagesResponse.status}).`);
+      }
+      const recentMessages = await recentMessagesResponse.json();
+      includeRolePing = !roleWasPingedRecently(recentMessages, Date.now());
+    } catch (error) {
+      console.warn(
+        '[live-broadcast] recent role-ping check failed; sending without the role mention',
+        error instanceof Error ? error.message : 'UnknownError',
+      );
+    }
+  }
+
+  const siteUrl = (process.env.NEXT_PUBLIC_SITE_URL || 'https://www.wtslforum.com').replace(/\/+$/, '');
+  const broadcastUrl = `${siteUrl}/livestreams?broadcast=${encodeURIComponent(input.id)}#broadcast-${encodeURIComponent(input.id)}`;
+  const playerNames = input.players?.map((name) => name.slice(0, 100));
+  const matchName = playerNames?.length === 2 ? `${playerNames[0]} vs ${playerNames[1]}` : null;
+  const streamUrl = input.stream?.sourceUrl;
+  const streamProvider = input.stream?.provider;
+  const officialLabel = input.officialByBroadcaster
+    ? 'Official match'
+    : input.likelyOfficial
+      ? 'Likely official match'
+      : null;
+  const fields = [
+    ...(matchName ? [{ name: 'Match', value: matchName, inline: false }] : []),
+    ...(matchName ? [{ name: 'Tour', value: input.isWta ? 'WTA' : 'ATP', inline: true }] : []),
+    ...(matchName ? [{ name: 'Format', value: `Best of ${input.bestOf}`, inline: true }] : []),
+    ...(officialLabel ? [{ name: 'Match status', value: officialLabel, inline: true }] : []),
+    ...(streamUrl
+      ? [{ name: 'Stream', value: `[Watch on ${streamProvider === 'twitch' || streamProvider === 'twitch-clip' ? 'Twitch' : 'YouTube'}](${streamUrl})`, inline: false }]
+      : []),
+  ];
+  const content = `<@${input.ownerDiscordId}> is streaming now${includeRolePing ? ` <@&${LIVE_STREAM_ROLE_ID}>` : ''}`;
+
+  try {
+    const response = await fetch(`${api}/channels/${LIVE_STREAMS_CHANNEL_ID}/messages`, {
+      method: 'POST',
+      headers: {
+        Authorization: `Bot ${token}`,
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify({
+        content,
+        embeds: [{
+          title: matchName || `${input.ownerName.slice(0, 100)} is live`,
+          url: broadcastUrl,
+          description: 'A live match broadcast has started on the WTSL Forum.',
+          color: 0x22c55e,
+          fields,
+          timestamp: new Date().toISOString(),
+        }],
+        allowed_mentions: {
+          parse: [],
+          users: [input.ownerDiscordId],
+          roles: includeRolePing ? [LIVE_STREAM_ROLE_ID] : [],
+        },
+      }),
+      signal: AbortSignal.timeout(DISCORD_REQUEST_TIMEOUT_MS),
+    });
+    if (!response.ok) {
+      throw new Error(`Discord announcement failed (HTTP ${response.status}).`);
+    }
+  } catch (error) {
+    console.warn(
+      '[live-broadcast] Discord announcement failed',
+      error instanceof Error ? error.message : 'UnknownError',
+    );
+  }
+}
+
 /** Opens (or reuses) a DM channel with a Discord user and sends them a message. Never throws —
  * a user can have DMs disabled, and that should never block whatever triggered the notification. */
 export async function sendDM(discordUserId:string,content:string){
