@@ -3,10 +3,12 @@
 import { memo, useEffect, useRef, useState } from 'react';
 import { Minus, Plus, RotateCcw, Volume2, VolumeX } from 'lucide-react';
 import {
+  LIVE_DMO_FRAME_STALL_MS,
   TE4_DMO_FRAMES_PER_SECOND,
   type Te4DmoReplaySpeed,
   type Te4LiveSnapshot,
 } from '@/lib/te4DmoLive';
+import DmoLiveBufferingOverlay from './DmoLiveBufferingOverlay';
 import type { Te4CourtSurface } from '@/lib/te4DmoTypes';
 import {
   createCourtProjector,
@@ -42,6 +44,7 @@ type Props = {
   playbackSpeed: Te4DmoReplaySpeed;
   stadiumAtmosphere?: boolean;
   isWta?: boolean;
+  buffering?: boolean;
   gruntsEnabled: boolean;
   onGruntsEnabledChange: (enabled: boolean) => void;
 };
@@ -431,6 +434,7 @@ function DmoLiveCourt({
   playbackSpeed,
   stadiumAtmosphere = true,
   isWta = false,
+  buffering = false,
   gruntsEnabled,
   onGruntsEnabledChange,
 }: Props) {
@@ -500,7 +504,7 @@ function DmoLiveCourt({
   useEffect(() => {
     const interval = window.setInterval(() => {
       const progress = frameProgressRef.current;
-      const stalled = progress.frameCount > 0 && Date.now() - progress.changedAt > 5_000;
+      const stalled = progress.frameCount > 0 && Date.now() - progress.changedAt > LIVE_DMO_FRAME_STALL_MS;
       setFeedStalled((current) => current === stalled ? current : stalled);
     }, 1_000);
     return () => window.clearInterval(interval);
@@ -823,6 +827,7 @@ function DmoLiveCourt({
           onPointerUp={() => { cameraDragRef.current = null; }}
           onPointerCancel={() => { cameraDragRef.current = null; }}
         />
+        <DmoLiveBufferingOverlay buffering={buffering || feedStalled} />
       </div>
       <div className={styles.legend}>
         <span><i className={styles.playerOne} />{snapshot.players[0]}</span>
@@ -832,11 +837,6 @@ function DmoLiveCourt({
           {stadiumAtmosphere ? 'Live court view · drag to orbit' : 'Drag to orbit · adjust angle and elevation'}
         </span>
       </div>
-      {feedStalled && (
-        <p className={styles.liveStatus} role="status">
-          The court view has not updated recently. Showing the last available position.
-        </p>
-      )}
       {renderError && <p className={styles.liveStatus} role="alert">{renderError}</p>}
       {soundError && <p className={styles.liveStatus} role="status">{soundError}</p>}
     </section>

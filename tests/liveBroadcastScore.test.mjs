@@ -100,9 +100,18 @@ test('the rendered automatic scoreboard uses TE4 data, without changing the DMO 
   const React = require('react');
   const { renderToStaticMarkup } = require('react-dom/server');
   let courtSnapshot;
+  let courtBuffering = false;
   const Display = load('components/DmoLiveDisplay.tsx', {
+    '@/lib/te4DmoLive': { LIVE_DMO_FRAME_STALL_MS: 5_000 },
     '@/lib/te4DmoSurface': { surfaceForDmoTournament: () => 'hard' },
-    './DmoLiveCourt3D': { __esModule: true, default: ({ snapshot: value }) => { courtSnapshot = value; return null; } },
+    './DmoLiveCourt3D': {
+      __esModule: true,
+      default: ({ snapshot: value, buffering }) => {
+        courtSnapshot = value;
+        courtBuffering = buffering;
+        return null;
+      },
+    },
     './DmoLiveDisplay.module.css': { __esModule: true, default: new Proxy({}, { get: (_, key) => key }) },
   }).default;
   const render = (props = {}) => renderToStaticMarkup(React.createElement(Display, { snapshot, state: 'live', ...props }));
@@ -111,11 +120,30 @@ test('the rendered automatic scoreboard uses TE4 data, without changing the DMO 
   assert.doesNotMatch(html, /7–6/);
   assert.match(html, /TE4 live score/);
   assert.equal(courtSnapshot, snapshot);
+  assert.equal(courtBuffering, false);
+  render({ stale: true });
+  assert.equal(courtBuffering, true);
   assert.deepEqual(snapshot.score, dmoScore);
   const unavailable = render({ liveScore: null });
   assert.match(unavailable, /Live score temporarily unavailable/);
   assert.doesNotMatch(unavailable, /7–6/);
   assert.match(render(), /7–6/); // Manual/historical replays keep their DMO score.
+});
+
+test('the court buffering overlay clearly announces delays and stays absent when the feed is fresh', () => {
+  const React = require('react');
+  const { renderToStaticMarkup } = require('react-dom/server');
+  const Overlay = load('components/DmoLiveBufferingOverlay.tsx', {
+    './DmoLiveBufferingOverlay.module.css': {
+      __esModule: true,
+      default: new Proxy({}, { get: (_, key) => key }),
+    },
+  }).default;
+  const buffered = renderToStaticMarkup(React.createElement(Overlay, { buffering: true }));
+  assert.match(buffered, /role="status"/);
+  assert.match(buffered, /Buffering live court/);
+  assert.match(buffered, /Waiting for the next match update/);
+  assert.equal(renderToStaticMarkup(React.createElement(Overlay, { buffering: false })), '');
 });
 
 const nextServer = { NextResponse: { json: (body, init) => Response.json(body, init) } };

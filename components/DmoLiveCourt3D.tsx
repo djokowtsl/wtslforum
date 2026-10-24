@@ -24,6 +24,7 @@ import {
 } from '@/lib/liveCourtMotion';
 import { crossedFrame, dominantHandX, racketContact, serveLift, trailAllowed, type PlayerHandedness } from '@/lib/liveCourtPerformance';
 import DmoLiveCourt, { type GruntControlProps } from './DmoLiveCourt';
+import DmoLiveBufferingOverlay from './DmoLiveBufferingOverlay';
 import {
   BALL_RADIUS,
   PALETTE,
@@ -43,6 +44,7 @@ type Props = {
   playbackSpeed: Te4DmoReplaySpeed;
   stadiumAtmosphere?: boolean;
   isWta?: boolean;
+  buffering?: boolean;
 };
 
 type CameraView =
@@ -90,6 +92,7 @@ function ThreeCourt({
   playbackSpeed,
   stadiumAtmosphere = true,
   isWta = false,
+  buffering = false,
   gruntsEnabled,
   onGruntsEnabledChange,
   onUnsupported,
@@ -945,6 +948,7 @@ function ThreeCourt({
         {!hasCourtData && (
           <p className={styles.waiting} role="status">Court positions will appear as the match feed updates.</p>
         )}
+        <DmoLiveBufferingOverlay buffering={buffering} />
       </div>
       <div className={styles.legend}>
         <span><i className={styles.playerOne} />{snapshot.players[0]}</span>
