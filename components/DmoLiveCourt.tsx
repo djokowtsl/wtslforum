@@ -34,6 +34,7 @@ import {
   drawLiveCourtBackdrop,
   drawLiveCourtCrowdMotion,
 } from '@/lib/liveCourtStadium';
+import { liveGruntAudioUrl } from '@/lib/liveGruntAudio';
 import styles from './DmoLiveCourt.module.css';
 
 type WorldPoint = LiveCourtWorldPoint;
@@ -347,6 +348,7 @@ function drawScene(
 
 type SynthesizedCue = 'racket' | 'bounce' | 'grunt' | 'cheer';
 type CrowdBed = { source: AudioBufferSourceNode; gain: GainNode };
+type ActiveGruntVoice = OscillatorNode | AudioBufferSourceNode;
 
 function createCrowdBed(context: AudioContext): CrowdBed {
   const buffer = context.createBuffer(1, context.sampleRate * 2, context.sampleRate);
@@ -373,7 +375,8 @@ function createCrowdBed(context: AudioContext): CrowdBed {
 function playSynthesizedCue(
   context: AudioContext,
   kind: SynthesizedCue,
-  activeGrunts?: Set<OscillatorNode>,
+  activeGrunts?: Set<ActiveGruntVoice>,
+  isWta = false,
 ) {
   const now = context.currentTime;
   const gain = context.createGain();
@@ -406,13 +409,13 @@ function playSynthesizedCue(
   const grunt = kind === 'grunt';
   const duration = racket ? 0.075 : grunt ? 0.22 : 0.12;
   oscillator.type = grunt ? 'sawtooth' : racket ? 'triangle' : 'sine';
-  oscillator.frequency.setValueAtTime(grunt ? 150 : racket ? 720 : 390, now);
-  oscillator.frequency.exponentialRampToValueAtTime(grunt ? 82 : racket ? 260 : 150, now + duration);
+  oscillator.frequency.setValueAtTime(grunt ? (isWta ? 260 : 150) : racket ? 720 : 390, now);
+  oscillator.frequency.exponentialRampToValueAtTime(grunt ? (isWta ? 140 : 82) : racket ? 260 : 150, now + duration);
   gain.gain.setValueAtTime(grunt ? 0.045 : racket ? 0.085 : 0.072, now);
   gain.gain.exponentialRampToValueAtTime(0.0001, now + duration);
   if (filter) {
     filter.type = 'bandpass';
-    filter.frequency.value = 340;
+    filter.frequency.value = isWta ? 520 : 340;
     filter.Q.value = 0.85;
     oscillator.connect(filter);
     filter.connect(gain);
@@ -426,6 +429,33 @@ function playSynthesizedCue(
   }
   oscillator.start(now);
   oscillator.stop(now + duration);
+}
+
+function playWtaGrunt(context: AudioContext, buffer: AudioBuffer, activeGrunts: Set<ActiveGruntVoice>) {
+  const source = context.createBufferSource();
+  const gain = context.createGain();
+  source.buffer = buffer;
+  source.playbackRate.value = 0.92 + Math.random() * 0.12;
+  gain.gain.value = 0.72;
+  source.connect(gain);
+  gain.connect(context.destination);
+  activeGrunts.add(source);
+  source.onended = () => activeGrunts.delete(source);
+  source.start();
+}
+
+function playLiveCourtCue(
+  context: AudioContext,
+  kind: SynthesizedCue,
+  activeGrunts: Set<ActiveGruntVoice>,
+  isWta: boolean,
+  wtaGrunt: AudioBuffer | null,
+) {
+  if (kind === 'grunt' && isWta && wtaGrunt) {
+    playWtaGrunt(context, wtaGrunt, activeGrunts);
+    return;
+  }
+  playSynthesizedCue(context, kind, activeGrunts, isWta);
 }
 
 function DmoLiveCourt({
@@ -455,7 +485,8 @@ function DmoLiveCourt({
   });
   const audioContextRef = useRef<AudioContext | null>(null);
   const crowdBedRef = useRef<CrowdBed | null>(null);
-  const activeGruntVoicesRef = useRef(new Set<OscillatorNode>());
+  const activeGruntVoicesRef = useRef(new Set<ActiveGruntVoice>());
+  const wtaGruntAudioRef = useRef<AudioBuffer | null>(null);
   const lastSoundFrameRef = useRef(Math.max(0, snapshot.frameCount - 3));
   const playedSoundEventsRef = useRef(new Set<string>());
   const [soundEnabled, setSoundEnabled] = useState(false);
@@ -641,14 +672,14 @@ function DmoLiveCourt({
     for (const event of snapshot.soundEvents ?? []) {
       const key = `${event.frame}:${event.kind}`;
       if (event.frame < lastSoundFrameRef.current || playedSoundEventsRef.current.has(key)) continue;
-      playSynthesizedCue(context, event.kind, activeGruntVoicesRef.current);
+      playLiveCourtCue(context, event.kind, activeGruntVoicesRef.current, isWta, wtaGruntAudioRef.current);
       playedSoundEventsRef.current.add(key);
     }
     for (const event of snapshot.trajectoryEvents ?? []) {
       const cue = liveCourtTrajectoryCue(event, gruntsEnabled);
       const key = `${event.frame}:${event.kind}`;
       if (event.frame < lastSoundFrameRef.current || playedSoundEventsRef.current.has(key)) continue;
-      if (cue) playSynthesizedCue(context, cue, activeGruntVoicesRef.current);
+      if (cue) playLiveCourtCue(context, cue, activeGruntVoicesRef.current, isWta, wtaGruntAudioRef.current);
       playedSoundEventsRef.current.add(key);
     }
     lastSoundFrameRef.current = Math.max(lastSoundFrameRef.current, snapshot.frameCount - 3);
@@ -659,7 +690,7 @@ function DmoLiveCourt({
         playedSoundEventsRef.current.delete(key);
       }
     }
-  }, [snapshot.frameCount, snapshot.soundEvents, snapshot.trajectoryEvents, soundEnabled, gruntsEnabled]);
+  }, [snapshot.frameCount, snapshot.soundEvents, snapshot.trajectoryEvents, soundEnabled, gruntsEnabled, isWta]);
 
   useEffect(() => () => {
     try {
@@ -670,6 +701,7 @@ function DmoLiveCourt({
       // Closing the context below stops any remaining generated audio.
     }
     crowdBedRef.current = null;
+    wtaGruntAudioRef.current = null;
     void audioContextRef.current?.close();
     audioContextRef.current = null;
   }, []);
@@ -707,6 +739,11 @@ function DmoLiveCourt({
       if (!audioContextRef.current) audioContextRef.current = new AudioContext();
       const context = audioContextRef.current;
       await context.resume();
+      if (isWta && gruntsEnabled && !wtaGruntAudioRef.current) {
+        const response = await fetch(liveGruntAudioUrl(true));
+        if (!response.ok) throw new Error('WTA grunt sample unavailable');
+        wtaGruntAudioRef.current = await context.decodeAudioData(await response.arrayBuffer());
+      }
       if (!crowdBedRef.current) crowdBedRef.current = createCrowdBed(context);
       crowdBedRef.current.gain.gain.setTargetAtTime(0.009, context.currentTime, 0.45);
       lastSoundFrameRef.current = Math.max(0, snapshot.frameCount - 3);
@@ -716,6 +753,25 @@ function DmoLiveCourt({
       setSoundError('Sound could not be enabled in this browser.');
     }
   };
+
+  useEffect(() => {
+    if (!isWta || !soundEnabled || !gruntsEnabled || wtaGruntAudioRef.current) return;
+    const context = audioContextRef.current;
+    if (!context) return;
+    let cancelled = false;
+    void fetch(liveGruntAudioUrl(true))
+      .then(async (response) => {
+        if (!response.ok) throw new Error('WTA grunt sample unavailable');
+        return context.decodeAudioData(await response.arrayBuffer());
+      })
+      .then((buffer) => {
+        if (!cancelled) wtaGruntAudioRef.current = buffer;
+      })
+      .catch(() => {
+        if (!cancelled) setSoundError('The WTA grunt sample could not be loaded.');
+      });
+    return () => { cancelled = true; };
+  }, [isWta, soundEnabled, gruntsEnabled]);
 
   return (
     <section className={styles.scene} aria-label="Live court view">

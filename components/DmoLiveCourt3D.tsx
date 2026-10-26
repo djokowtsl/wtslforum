@@ -23,6 +23,7 @@ import {
   type LiveCourtSample,
 } from '@/lib/liveCourtMotion';
 import { crossedFrame, dominantHandX, racketContact, serveLift, trailAllowed, type PlayerHandedness } from '@/lib/liveCourtPerformance';
+import { liveGruntAudioUrl } from '@/lib/liveGruntAudio';
 import DmoLiveCourt, { type GruntControlProps } from './DmoLiveCourt';
 import DmoLiveBufferingOverlay from './DmoLiveBufferingOverlay';
 import {
@@ -59,6 +60,12 @@ type CameraView =
 
 const DEFAULT_CAMERA = new THREE.Vector3(-25, 26, 30);
 
+async function loadGruntSample(context: AudioContext, isWta: boolean) {
+  const response = await fetch(liveGruntAudioUrl(isWta));
+  if (!response.ok) throw new Error('Grunt sample unavailable');
+  return context.decodeAudioData(await response.arrayBuffer());
+}
+
 function playCue(context: AudioContext, kind: 'racket' | 'bounce') {
   const now = context.currentTime;
   const gain = context.createGain();
@@ -75,10 +82,17 @@ function playCue(context: AudioContext, kind: 'racket' | 'bounce') {
   oscillator.stop(now + duration);
 }
 
-function playSample(context: AudioContext, buffer: AudioBuffer, volume: number, active?: Set<AudioBufferSourceNode>) {
+function playSample(
+  context: AudioContext,
+  buffer: AudioBuffer,
+  volume: number,
+  active?: Set<AudioBufferSourceNode>,
+  playbackRate = 1,
+) {
   const voice = context.createBufferSource();
   const gain = context.createGain();
   voice.buffer = buffer;
+  voice.playbackRate.value = playbackRate;
   gain.gain.value = volume;
   voice.connect(gain).connect(context.destination);
   active?.add(voice);
@@ -101,7 +115,7 @@ function ThreeCourt({
   const canvasHostRef = useRef<HTMLDivElement>(null);
   const audioContextRef = useRef<AudioContext | null>(null);
   const crowdAudioRef = useRef<HTMLAudioElement | null>(null);
-  const gruntAudioRef = useRef<AudioBuffer | null>(null);
+  const gruntAudioRef = useRef<{ isWta: boolean; buffer: AudioBuffer } | null>(null);
   const applauseAudioRef = useRef<AudioBuffer | null>(null);
   const activeGruntsRef = useRef(new Set<AudioBufferSourceNode>());
   const activeApplauseRef = useRef(new Set<AudioBufferSourceNode>());
@@ -550,8 +564,8 @@ function ThreeCourt({
                 activeApplauseRef.current.clear();
               }
               const audioCue = liveCourtTrajectoryCue(cue, gruntsEnabledRef.current);
-              if (audioCue === 'grunt' && gruntAudioRef.current) {
-                playSample(context, gruntAudioRef.current, 0.72, activeGruntsRef.current);
+              if (audioCue === 'grunt' && gruntAudioRef.current?.isWta === isWta) {
+                playSample(context, gruntAudioRef.current.buffer, 0.72, activeGruntsRef.current, 0.92 + Math.random() * 0.12);
               } else if (audioCue === 'cheer' && cue.frame % 3 === 0 && applauseAudioRef.current) {
                 playSample(context, applauseAudioRef.current, crowdAudioRef.current?.volume ?? 0.38, activeApplauseRef.current);
               }
@@ -801,10 +815,8 @@ function ThreeCourt({
         crowdAudioRef.current.volume = crowdVolume;
         await crowdAudioRef.current.play();
       }
-      if (!gruntAudioRef.current) {
-        const response = await fetch('/audio/te4-player-grunt.mp3');
-        if (!response.ok) throw new Error('Grunt sample unavailable');
-        gruntAudioRef.current = await context.decodeAudioData(await response.arrayBuffer());
+      if (gruntAudioRef.current?.isWta !== isWta) {
+        gruntAudioRef.current = { isWta, buffer: await loadGruntSample(context, isWta) };
       }
       if (!applauseAudioRef.current) {
         const response = await fetch('/audio/te4-point-applause.mp3');
@@ -820,6 +832,20 @@ function ThreeCourt({
       setSoundError('Sound could not be enabled in this browser.');
     }
   };
+
+  useEffect(() => {
+    const context = audioContextRef.current;
+    if (!soundEnabled || !gruntsEnabled || !context || gruntAudioRef.current?.isWta === isWta) return;
+    let cancelled = false;
+    void loadGruntSample(context, isWta)
+      .then((buffer) => {
+        if (!cancelled) gruntAudioRef.current = { isWta, buffer };
+      })
+      .catch(() => {
+        if (!cancelled) setSoundError('Player grunt audio could not be loaded.');
+      });
+    return () => { cancelled = true; };
+  }, [isWta, soundEnabled, gruntsEnabled]);
   const changeCrowdVolume = (volume: number) => {
     setCrowdVolume(volume);
     if (soundOnRef.current && stadiumAtmosphere && crowdAudioRef.current) {
