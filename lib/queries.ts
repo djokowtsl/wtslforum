@@ -48,11 +48,39 @@ export async function getThreadReactions(topicId: number, replyIds: number[], vi
  * member's approved ATP identity first, then their selected default, then their Discord name. */
 export async function getArticleComments(articleId: number) {
   return sql`
+    WITH RECURSIVE visible_comments AS (
+      SELECT c.id,c.parent_comment_id
+      FROM article_comments c
+      WHERE c.article_id=${articleId} AND c.moderation_status='approved' AND c.parent_comment_id IS NULL
+      UNION ALL
+      SELECT child.id,child.parent_comment_id
+      FROM article_comments child
+      JOIN visible_comments parent ON child.parent_comment_id=parent.id
+      WHERE child.article_id=${articleId} AND child.moderation_status='approved'
+    ),
+    recent_comments AS (
+      SELECT visible.id,visible.parent_comment_id
+      FROM visible_comments visible
+      JOIN article_comments c ON c.id=visible.id
+      ORDER BY c.created_at DESC
+      LIMIT 100
+    ),
+    comment_scope AS (
+      SELECT id,parent_comment_id FROM recent_comments
+      UNION
+      SELECT parent.id,parent.parent_comment_id
+      FROM article_comments parent
+      JOIN comment_scope child ON child.parent_comment_id=parent.id
+      WHERE parent.article_id=${articleId} AND parent.moderation_status='approved'
+    )
     SELECT c.id,c.article_id,c.author_id,c.body,c.created_at,c.updated_at,
+      c.parent_comment_id,(recent.id IS NOT NULL) AS is_recent,
       COALESCE(article_identity.player_name,u.display_name) author,
       u.avatar_url avatar,article_identity.wtsl_player_id AS official_player_id,
       article_identity.tour AS official_tour
     FROM article_comments c
+    JOIN comment_scope visible ON visible.id=c.id
+    LEFT JOIN recent_comments recent ON recent.id=c.id
     LEFT JOIN users u ON u.id=c.author_id
     LEFT JOIN LATERAL (
       SELECT COALESCE(NULLIF(wp.name,''),NULLIF(pc.player_name,'')) player_name,
@@ -66,8 +94,7 @@ export async function getArticleComments(articleId: number) {
       LIMIT 1
     ) article_identity ON TRUE
     WHERE c.article_id=${articleId} AND c.moderation_status='approved'
-    ORDER BY c.created_at DESC
-    LIMIT 100
+    ORDER BY c.created_at ASC,c.id ASC
   `;
 }
 
@@ -77,6 +104,34 @@ export async function getArticleReactions(articleId: number, viewerId: string | 
   const vid = viewerId ? Number(viewerId) : null;
   const rows = await sql`
     SELECT r.emoji,COUNT(*)::int count,
+      COALESCE(BOOL_OR(r.user_id=${vid}::bigint),false) reacted,
+      COALESCE(ARRAY_AGG(
+        COALESCE(reaction_identity.player_name,u.display_name)
+        ORDER BY COALESCE(reaction_identity.player_name,u.display_name)
+      ) FILTER (WHERE COALESCE(reaction_identity.player_name,u.display_name) IS NOT NULL),
+        ARRAY[]::text[]) reactors
+    FROM article_comment_reactions r
+    LEFT JOIN users u ON u.id=r.user_id
+    LEFT JOIN LATERAL (
+      SELECT COALESCE(NULLIF(wp.name,''),NULLIF(pc.player_name,'')) player_name
+      FROM player_claims pc
+      LEFT JOIN wtsl_players wp ON wp.wtsl_player_id=pc.wtsl_player_id AND wp.tour=pc.tour
+      WHERE pc.user_id=u.id AND pc.status='approved'
+      ORDER BY CASE WHEN pc.id=u.default_player_claim_id THEN 0 ELSE 1 END,
+        CASE WHEN pc.tour='TE4' THEN 0 ELSE 1 END,pc.created_at ASC,pc.id ASC
+      LIMIT 1
+    ) reaction_identity ON TRUE
+    WHERE r.article_id=${articleId}
+    GROUP BY r.emoji
+  `;
+  return rows as unknown as ReactionSummary;
+}
+
+export async function getArticleCommentReactions(commentIds: number[], viewerId: string | number | null) {
+  if (!commentIds.length) return {} as Record<number, ReactionSummary>;
+  const vid = viewerId ? Number(viewerId) : null;
+  const rows = await sql`
+    SELECT r.article_comment_id,r.emoji,COUNT(*)::int count,
       COALESCE(BOOL_OR(r.user_id=${vid}::bigint),false) reacted,
       COALESCE(ARRAY_AGG(
         COALESCE(reaction_identity.player_name,u.display_name)
@@ -94,10 +149,19 @@ export async function getArticleReactions(articleId: number, viewerId: string | 
         CASE WHEN pc.tour='TE4' THEN 0 ELSE 1 END,pc.created_at ASC,pc.id ASC
       LIMIT 1
     ) reaction_identity ON TRUE
-    WHERE r.article_id=${articleId}
-    GROUP BY r.emoji
+    WHERE r.article_comment_id=ANY(${commentIds}::bigint[])
+    GROUP BY r.article_comment_id,r.emoji
   `;
-  return rows as unknown as ReactionSummary;
+  const byComment: Record<number, ReactionSummary> = {};
+  for (const row of rows as any[]) {
+    (byComment[Number(row.article_comment_id)] ??= []).push({
+      emoji: row.emoji,
+      count: row.count,
+      reacted: row.reacted,
+      reactors: row.reactors ?? [],
+    });
+  }
+  return byComment;
 }
 
 export async function getTopics(opts: { category?: string | null; limit?: number } = {}) {
@@ -262,14 +326,26 @@ export async function getTopic(ref: string | number) {
   if (!topic) return null;
   await sql`UPDATE topics SET views = views + 1 WHERE id = ${topic.id}`;
   const replies = await sql`
+    WITH RECURSIVE visible_replies AS (
+      SELECT r.id,r.parent_reply_id
+      FROM replies r
+      WHERE r.topic_id=${topic.id} AND r.moderation_status='approved' AND r.parent_reply_id IS NULL
+      UNION ALL
+      SELECT child.id,child.parent_reply_id
+      FROM replies child
+      JOIN visible_replies parent ON child.parent_reply_id=parent.id
+      WHERE child.topic_id=${topic.id} AND child.moderation_status='approved'
+    )
     SELECT r.id, r.body, r.created_at, r.updated_at, u.id AS author_id,
+      r.parent_reply_id,
       COALESCE(reply_identity.player_name, u.display_name) AS author,
       u.avatar_url AS avatar, u.is_admin, u.is_moderator,
       CASE WHEN u.status='online' AND (
         u.last_active_at IS NULL OR u.last_active_at < NOW() - ${ONLINE_PRESENCE_WINDOW_MINUTES} * INTERVAL '1 minute'
       ) THEN 'offline' ELSE COALESCE(u.status,'offline') END AS author_status,
       reply_identity.wtsl_player_id AS official_player_id, reply_identity.tour AS official_tour
-    FROM replies r
+    FROM visible_replies visible
+    JOIN replies r ON r.id=visible.id
     LEFT JOIN users u ON u.id = r.author_id
     LEFT JOIN LATERAL (
       SELECT COALESCE(wp.name, pc.player_name) AS player_name, pc.wtsl_player_id, pc.tour

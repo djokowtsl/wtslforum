@@ -1,8 +1,10 @@
 import Link from 'next/link';
 import { notFound } from 'next/navigation';
 import type { Metadata } from 'next';
+import type { ReactNode } from 'react';
 import { safe } from '@/lib/db';
 import { getTopic, getThreadReactions } from '@/lib/queries';
+import { buildCommentTree, type CommentNode } from '@/lib/commentTree';
 import { resolveMentions } from '@/lib/messages';
 import { getSession, discordAvatar, canModerateComments } from '@/lib/auth';
 import { fmtDateTime } from '@/lib/format';
@@ -17,6 +19,7 @@ import AdminTopicControls from '@/components/AdminTopicControls';
 import ForumAvatar from '@/components/ForumAvatar';
 import { getThreadCommunityNotes, type CommunityNote } from '@/lib/communityNotes';
 import DiscussionVideo from '@/components/DiscussionVideo';
+import ReplyToComment from '@/components/ReplyToComment';
 
 export const dynamic = 'force-dynamic';
 export const metadata: Metadata = { title: 'Discussion' };
@@ -31,6 +34,7 @@ export default async function Thread({ params }: { params: Promise<{ id: string 
   const data = await safe(() => getTopic(decodeURIComponent(id)), null as any);
   if (!data) notFound();
   const { topic, replies, video } = data;
+  const replyTree = buildCommentTree(replies, 'parent_reply_id');
   const topicAuthorHref = officialAuthorHref(topic);
   const u = await getSession();
   const canModerateReplies = canModerateComments(u);
@@ -42,6 +46,46 @@ export default async function Thread({ params }: { params: Promise<{ id: string 
   );
   const allUsernames = [topic.body, ...replies.map((r: any) => r.body)].flatMap((b: string) => [...(b || '').matchAll(/@(\w+)/g)].map((m) => m[1]));
   const mentionables = await safe(() => resolveMentions(allUsernames), {});
+  const canReply = !!u && (!topic.locked || u.isAdmin);
+  const renderReply = (node: CommentNode<any>): ReactNode => {
+    const r = node.comment;
+    const replyAuthorHref = officialAuthorHref(r);
+    const ownsReply = !!u && String(r.author_id) === String(u.id);
+    return (
+      <article className="post" key={r.id}>
+        <div className="post-user">
+          <img className="avatar-img" src={discordAvatar(r.avatar, r.author || 'W')} alt="" />
+          <strong><StatusDot status={r.author_status} /> {replyAuthorHref ? <Link className='post-author-link' href={replyAuthorHref}>{r.author}</Link> : r.author || 'WTSL'}</strong>
+          {r.is_admin && <span className='pill cyan role'>Admin</span>}
+          {!r.is_admin && r.is_moderator && <span className='pill cyan role'>Moderator</span>}
+          {u && r.author_id && Number(r.author_id) !== Number(u.id) && (
+            <Link href={`/messages/${r.author_id}`} className='pill'>Message</Link>
+          )}
+        </div>
+        <EditableReply
+          replyId={Number(r.id)}
+          body={r.body}
+          canEdit={ownsReply}
+          canDelete={ownsReply || canModerateReplies}
+          createdAt={r.created_at}
+          updatedAt={r.updated_at || r.created_at}
+        >
+          <>
+            <RichText text={r.body} mentionables={mentionables} />
+            <ReactionBar replyId={Number(r.id)} initial={reactions.replies[Number(r.id)] || []} signedIn={!!u} />
+            {canReply && <ReplyToComment target="discussion" topicId={Number(topic.id)} parentId={Number(r.id)} />}
+            {canModerateReplies && <SpoilerCorrection kind="reply" id={Number(r.id)} body={r.body} />}
+            <CommunityNotes targetType="reply" targetId={Number(r.id)} notes={notesByTarget.get(`reply:${r.id}`) || []} viewerId={u?.id ?? null} canModerate={canModerateReplies} />
+          </>
+        </EditableReply>
+        {node.children.length > 0 && (
+          <div className="thread-comment-children" aria-label={`Replies to ${r.author || 'comment'}`}>
+            {node.children.map((child) => renderReply(child))}
+          </div>
+        )}
+      </article>
+    );
+  };
 
   return (
     <main className="container thread">
@@ -86,38 +130,7 @@ export default async function Thread({ params }: { params: Promise<{ id: string 
         </div>
       </article>
 
-      {replies.map((r: any) => {
-        const replyAuthorHref = officialAuthorHref(r);
-        const ownsReply = !!u && String(r.author_id) === String(u.id);
-        return (
-          <article className='post' key={r.id}>
-            <div className='post-user'>
-              <img className='avatar-img' src={discordAvatar(r.avatar, r.author || 'W')} alt='' />
-              <strong><StatusDot status={r.author_status} /> {replyAuthorHref ? <Link className='post-author-link' href={replyAuthorHref}>{r.author}</Link> : r.author || 'WTSL'}</strong>
-              {r.is_admin && <span className='pill cyan role'>Admin</span>}
-              {!r.is_admin && r.is_moderator && <span className='pill cyan role'>Moderator</span>}
-              {u && r.author_id && Number(r.author_id) !== Number(u.id) && (
-                <Link href={`/messages/${r.author_id}`} className='pill'>Message</Link>
-              )}
-            </div>
-            <EditableReply
-              replyId={Number(r.id)}
-              body={r.body}
-              canEdit={ownsReply}
-              canDelete={ownsReply || canModerateReplies}
-              createdAt={r.created_at}
-              updatedAt={r.updated_at || r.created_at}
-            >
-              <>
-                <RichText text={r.body} mentionables={mentionables} />
-                <ReactionBar replyId={Number(r.id)} initial={reactions.replies[Number(r.id)] || []} signedIn={!!u} />
-                {canModerateReplies && <SpoilerCorrection kind="reply" id={Number(r.id)} body={r.body} />}
-                <CommunityNotes targetType="reply" targetId={Number(r.id)} notes={notesByTarget.get(`reply:${r.id}`) || []} viewerId={u?.id ?? null} canModerate={canModerateReplies} />
-              </>
-            </EditableReply>
-          </article>
-        );
-      })}
+      {replyTree.map((node) => renderReply(node))}
 
       {u ? (
         topic.locked && !u.isAdmin ? <div className="notice">This discussion has been locked by a moderator.</div> : <ReplyForm topicId={Number(topic.id)} />

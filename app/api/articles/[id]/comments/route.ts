@@ -17,14 +17,26 @@ export async function POST(req: Request, { params }: RouteContext) {
   }
 
   const body = await req.json().catch(() => null);
+  const parentCommentId = body?.parentCommentId == null ? null : Number(body.parentCommentId);
   const text = typeof body?.body === 'string' ? body.body.trim() : '';
   if (!text) return NextResponse.json({ error: 'Comment text is required.' }, { status: 400 });
+  if (parentCommentId !== null && (!Number.isSafeInteger(parentCommentId) || parentCommentId < 1)) {
+    return NextResponse.json({ error: 'Choose a valid comment to reply to.' }, { status: 400 });
+  }
   if (text.length > 10000) return NextResponse.json({ error: 'Comments must be 10,000 characters or fewer.' }, { status: 400 });
   const spoilerError = spoilerMarkupError(text);
   if (spoilerError) return NextResponse.json({ error: spoilerError }, { status: 400 });
 
   const article = await sql`SELECT id FROM articles WHERE id=${articleId} AND published=TRUE LIMIT 1`;
   if (!article[0]) return NextResponse.json({ error: 'Article not found.' }, { status: 404 });
+  if (parentCommentId !== null) {
+    const parent = await sql`
+      SELECT id FROM article_comments
+      WHERE id=${parentCommentId} AND article_id=${articleId} AND moderation_status='approved'
+      LIMIT 1
+    `;
+    if (!parent[0]) return NextResponse.json({ error: 'That comment is no longer available.' }, { status: 404 });
+  }
 
   let decision;
   try {
@@ -38,8 +50,8 @@ export async function POST(req: Request, { params }: RouteContext) {
   }
 
   const rows = await sql`
-    INSERT INTO article_comments(article_id,author_id,body,moderation_status,moderation_reason)
-    VALUES (${articleId},${Number(user.id)},${text},${decision.status},${decision.reason})
+    INSERT INTO article_comments(article_id,parent_comment_id,author_id,body,moderation_status,moderation_reason)
+    VALUES (${articleId},${parentCommentId},${Number(user.id)},${text},${decision.status},${decision.reason})
     RETURNING id
   `;
   if (decision.status === 'pending') {
