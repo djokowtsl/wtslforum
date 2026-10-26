@@ -106,7 +106,11 @@ export async function startExternalLiveBroadcast(input: {
       officialByBroadcaster,
       likelyOfficial,
       stream: input.stream,
-    }, { pingViewerRoleInSource: true });
+    }, {
+      // Keep ordinary intake pings in their source channel. Official matches
+      // use the player-facing WTSL Live Streams announcement instead.
+      pingViewerRoleInSource: !officialByBroadcaster && !likelyOfficial,
+    });
 
     if (announcement) {
       try {
