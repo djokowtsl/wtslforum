@@ -110,7 +110,7 @@ export async function getArticleReactions(articleId: number, viewerId: string | 
         ORDER BY COALESCE(reaction_identity.player_name,u.display_name)
       ) FILTER (WHERE COALESCE(reaction_identity.player_name,u.display_name) IS NOT NULL),
         ARRAY[]::text[]) reactors
-    FROM article_comment_reactions r
+    FROM reactions r
     LEFT JOIN users u ON u.id=r.user_id
     LEFT JOIN LATERAL (
       SELECT COALESCE(NULLIF(wp.name,''),NULLIF(pc.player_name,'')) player_name
@@ -138,7 +138,7 @@ export async function getArticleCommentReactions(commentIds: number[], viewerId:
         ORDER BY COALESCE(reaction_identity.player_name,u.display_name)
       ) FILTER (WHERE COALESCE(reaction_identity.player_name,u.display_name) IS NOT NULL),
         ARRAY[]::text[]) reactors
-    FROM reactions r
+    FROM article_comment_reactions r
     LEFT JOIN users u ON u.id=r.user_id
     LEFT JOIN LATERAL (
       SELECT COALESCE(NULLIF(wp.name,''),NULLIF(pc.player_name,'')) player_name

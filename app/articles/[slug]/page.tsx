@@ -26,19 +26,35 @@ export default async function Article({ params }: { params: Promise<{ slug: stri
   let comments: any[] = [];
   let reactions: ReactionSummary = [];
   let commentReactions: Record<number, ReactionSummary> = {};
-  let interactionsUnavailable = false;
-  try {
-    [comments, reactions] = await Promise.all([
-      getArticleComments(articleId),
-      getArticleReactions(articleId, user?.id ?? null),
-    ]);
-    commentReactions = await getArticleCommentReactions(
-      comments.map((comment: any) => Number(comment.id)),
-      user?.id ?? null,
-    );
-  } catch (error) {
-    console.error('[articles] article interactions could not be loaded', error instanceof Error ? error.message : error);
-    interactionsUnavailable = true;
+  let commentsUnavailable = false;
+  let articleReactionsUnavailable = false;
+  let commentReactionsUnavailable = false;
+  const [commentsResult, articleReactionsResult] = await Promise.allSettled([
+    getArticleComments(articleId),
+    getArticleReactions(articleId, user?.id ?? null),
+  ]);
+  if (commentsResult.status === 'fulfilled') {
+    comments = commentsResult.value;
+  } else {
+    console.error('[articles] comments could not be loaded', commentsResult.reason instanceof Error ? commentsResult.reason.message : commentsResult.reason);
+    commentsUnavailable = true;
+  }
+  if (articleReactionsResult.status === 'fulfilled') {
+    reactions = articleReactionsResult.value;
+  } else {
+    console.error('[articles] article reactions could not be loaded', articleReactionsResult.reason instanceof Error ? articleReactionsResult.reason.message : articleReactionsResult.reason);
+    articleReactionsUnavailable = true;
+  }
+  if (!commentsUnavailable && comments.length > 0) {
+    try {
+      commentReactions = await getArticleCommentReactions(
+        comments.map((comment: any) => Number(comment.id)),
+        user?.id ?? null,
+      );
+    } catch (error) {
+      console.error('[articles] comment reactions could not be loaded', error instanceof Error ? error.message : error);
+      commentReactionsUnavailable = true;
+    }
   }
   const commentTree = buildCommentTree(comments, 'parent_comment_id');
   const recentCommentCount = comments.filter((comment) => comment.is_recent !== false).length;
@@ -61,11 +77,13 @@ export default async function Article({ params }: { params: Promise<{ slug: stri
         </header>
         <div className="article-comment-body"><RichText text={comment.body} /></div>
         <div className="article-comment-interactions">
-          <ReactionBar
-            articleCommentId={Number(comment.id)}
-            initial={commentReactions[Number(comment.id)] || []}
-            signedIn={!!user}
-          />
+          {!commentReactionsUnavailable && (
+            <ReactionBar
+              articleCommentId={Number(comment.id)}
+              initial={commentReactions[Number(comment.id)] || []}
+              signedIn={!!user}
+            />
+          )}
           {user && <ReplyToComment target="article" articleId={articleId} parentId={Number(comment.id)} />}
           {canRemoveComment && (
             <EditableArticleComment
@@ -98,22 +116,26 @@ export default async function Article({ params }: { params: Promise<{ slug: stri
       <article className="article-long">{content ? <ArticleRichText doc={content.bodyDoc} /> : <RichText text={a.body} />}</article>
       <section className="article-reactions" aria-labelledby="article-reactions-title">
         <h2 id="article-reactions-title">React to this article</h2>
-        {interactionsUnavailable
-          ? <p className="notice article-interactions-unavailable" role="status">Article interactions are temporarily unavailable.</p>
+        {articleReactionsUnavailable
+          ? <p className="notice article-interactions-unavailable" role="status">Article reactions are temporarily unavailable.</p>
           : <ReactionBar articleId={articleId} initial={reactions} signedIn={!!user} />}
       </section>
       <section className="article-comments-section" aria-labelledby="article-comments-title">
         <div className="article-comments-heading">
           <h2 id="article-comments-title">Comments</h2>
-          {!interactionsUnavailable && <span>{recentCommentCount >= 100 ? 'Latest 100 comments' : `${recentCommentCount} ${recentCommentCount === 1 ? 'comment' : 'comments'}`}</span>}
+          {!commentsUnavailable && <span>{recentCommentCount >= 100 ? 'Latest 100 comments' : `${recentCommentCount} ${recentCommentCount === 1 ? 'comment' : 'comments'}`}</span>}
         </div>
-        {!interactionsUnavailable && (user
+        {commentsUnavailable && <p className="notice" role="status">Comments are temporarily unavailable.</p>}
+        {!commentsUnavailable && commentReactionsUnavailable && (
+          <p className="notice" role="status">Comment reactions are temporarily unavailable.</p>
+        )}
+        {!commentsUnavailable && (user
           ? <ArticleCommentForm articleId={articleId} />
           : <p className="article-comment-signin"><Link href="/api/auth/discord">Sign in with Discord</Link> to join the conversation.</p>)}
-        {!interactionsUnavailable && comments.length === 0 && (
+        {!commentsUnavailable && comments.length === 0 && (
           <p className="article-comments-empty">No comments yet. Start the conversation.</p>
         )}
-        {!interactionsUnavailable && comments.length > 0 && (
+        {!commentsUnavailable && comments.length > 0 && (
           <div className="article-comment-list">
             {commentTree.map((node) => renderComment(node))}
           </div>
