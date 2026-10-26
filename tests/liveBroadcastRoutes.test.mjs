@@ -81,6 +81,24 @@ function loadAnnouncementLifecycle(discord) {
   return module.exports;
 }
 
+function loadLiveBroadcastStart({ sql, announceLiveBroadcast }) {
+  const source = readFileSync(new URL('../lib/liveBroadcastStart.ts', import.meta.url), 'utf8');
+  const { code } = require('next/dist/build/swc').transformSync(source, {
+    jsc: { parser: { syntax: 'typescript' }, target: 'es2022' },
+    module: { type: 'commonjs' },
+  });
+  const module = { exports: {} };
+  new Function('require', 'module', 'exports', code)((name) => {
+    if (name === 'node:crypto') return { randomUUID: () => 'external-broadcast' };
+    if (name === '@/lib/db') return { sql };
+    if (name === '@/lib/liveDmoStorage') return { cleanupExpiredLiveDmoBroadcasts: async () => {} };
+    if (name === '@/lib/discord') return { announceLiveBroadcast };
+    if (name === '@/lib/liveBroadcastAnnouncements') return { finishLiveBroadcastAnnouncement: async () => {} };
+    throw new Error(`Unexpected live broadcast start dependency: ${name}`);
+  }, module, module.exports);
+  return module.exports;
+}
+
 function request(body, path = '/api/live-dmo', method = 'POST') {
   return new Request(`https://forum.test${path}`, {
     method,
@@ -397,6 +415,30 @@ test('external stream announcements ping viewers in the source channel but not t
   }
 });
 
+test('external official broadcasts route the viewer role to the player-facing announcement', async () => {
+  const startCalls = [];
+  const { startExternalLiveBroadcast } = loadLiveBroadcastStart({
+    sql: async (strings) => strings.join('').includes('WITH broadcast_lock')
+      ? [{ id: 'external-broadcast', duplicate: false }]
+      : [],
+    announceLiveBroadcast: async (announcement, options) => {
+      startCalls.push({ announcement, options });
+      return null;
+    },
+  });
+
+  await startExternalLiveBroadcast({
+    ownerDiscordId: 'broadcaster-123',
+    ownerName: 'Broadcaster',
+    stream: { provider: 'youtube', id: 'stream-123', sourceUrl: 'https://youtu.be/stream-123' },
+    officialByBroadcaster: true,
+  });
+
+  assert.equal(startCalls.length, 1);
+  assert.equal(startCalls[0].announcement.officialByBroadcaster, true);
+  assert.deepEqual(startCalls[0].options, { pingViewerRoleInSource: false });
+});
+
 test('official live broadcasts mention the broadcaster and role unless the role was pinged in the past minute', async () => {
   const { announceLiveBroadcast } = loadDiscordAnnouncements();
   const originalFetch = globalThis.fetch;
@@ -432,6 +474,46 @@ test('official live broadcasts mention the broadcaster and role unless the role 
     assert.equal(sent.embeds[0].title, '📺 Watch: Alpha vs Beta');
     assert.match(sent.embeds[0].url, /\/livestreams\?broadcast=broadcast-123#broadcast-broadcast-123$/);
     assert.match(sent.embeds[0].fields.find((field) => field.name === 'Stream').value, /Watch on YouTube/);
+  } finally {
+    globalThis.fetch = originalFetch;
+    if (originalToken === undefined) delete process.env.DISCORD_BOT_TOKEN;
+    else process.env.DISCORD_BOT_TOKEN = originalToken;
+  }
+});
+
+test('a broadcaster-tagged official match mentions the viewer role in WTSL Live Streams', async () => {
+  const { announceLiveBroadcast } = loadDiscordAnnouncements();
+  const originalFetch = globalThis.fetch;
+  const originalToken = process.env.DISCORD_BOT_TOKEN;
+  process.env.DISCORD_BOT_TOKEN = 'test-bot-token';
+  const calls = [];
+  globalThis.fetch = async (url, options = {}) => {
+    calls.push({ url: String(url), options });
+    if (String(url).includes('/messages?limit=100')) return Response.json([]);
+    return Response.json({ id: `message-${calls.length}` });
+  };
+  try {
+    await announceLiveBroadcast({
+      id: 'official-broadcast',
+      ownerDiscordId: 'broadcaster-456',
+      ownerName: 'Broadcaster',
+      players: ['Alpha', 'Beta'],
+      bestOf: 3,
+      isWta: false,
+      officialByBroadcaster: true,
+      likelyOfficial: false,
+      stream: null,
+    });
+
+    assert.equal(calls.length, 2);
+    assert.match(calls[1].url, /channels\/1562898541238554765\/messages$/);
+    const announcement = JSON.parse(calls[1].options.body);
+    assert.match(announcement.content, /<@&1439615663860879501>/);
+    assert.deepEqual(announcement.allowed_mentions.roles, ['1439615663860879501']);
+    assert.equal(
+      announcement.embeds[0].fields.find((field) => field.name === 'Match status').value,
+      'Official match',
+    );
   } finally {
     globalThis.fetch = originalFetch;
     if (originalToken === undefined) delete process.env.DISCORD_BOT_TOKEN;
