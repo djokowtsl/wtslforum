@@ -530,6 +530,17 @@ h1, h2, h3 { margin: 0; }
 .article-comment-author time { color: var(--muted); font-size: 11px; }
 .article-comment-body { margin-top: 10px; color: var(--soft); line-height: 1.7; overflow-wrap: anywhere; }
 .article-comment-actions { display: flex; flex-wrap: wrap; align-items: center; gap: 7px; margin-top: 10px; }
+.article-comment-interactions { display: grid; justify-items: start; gap: 8px; margin-top: 10px; }
+.article-comment-interactions .reaction-bar { margin-top: 0; }
+.article-comment-children, .thread-comment-children { display: grid; gap: 12px; margin: 16px 0 0 10px; padding-left: 14px; border-left: 2px solid var(--line); }
+.article-comment-children .article-comment { background: var(--panel-2); }
+.thread-comment-children > .post { margin: 0; }
+.comment-reply-area { margin-top: 9px; }
+.comment-reply-form { display: grid; gap: 10px; margin-top: 10px; padding: 12px; border: 1px solid var(--line); border-radius: 10px; background: var(--panel-2); }
+.comment-reply-form label { color: var(--muted); font-size: 12px; font-weight: 700; }
+.comment-reply-form textarea { width: 100%; min-height: 76px; resize: vertical; padding: 10px 11px; border: 1px solid var(--line-2); border-radius: 9px; background: var(--bg-2); color: var(--text-strong); font: inherit; line-height: 1.55; }
+.comment-reply-form textarea:focus-visible { outline: 2px solid var(--lime); outline-offset: 2px; }
+.comment-reply-actions { display: flex; flex-wrap: wrap; gap: 8px; }
 .article-comment-edit { width: 100%; }
 .article-comment-edit textarea { display: block; width: 100%; min-height: 100px; padding: 11px 12px; resize: vertical; border: 1px solid var(--line-2); border-radius: 9px; background: var(--panel-2); color: var(--text-strong); font: inherit; }
 .article-comment-signin, .article-comments-empty { padding: 14px 16px; border: 1px solid var(--line); border-radius: 10px; background: var(--panel); color: var(--muted); }

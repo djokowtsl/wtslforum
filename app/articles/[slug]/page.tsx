@@ -1,5 +1,6 @@
 import Link from 'next/link';
 import { notFound } from 'next/navigation';
+import type { ReactNode } from 'react';
 import { safe, sql } from '@/lib/db';
 import { fmtDate } from '@/lib/format';
 import { canModerateComments, discordAvatar, getSession } from '@/lib/auth';
@@ -9,7 +10,9 @@ import { readArticleContent, safeArticleUrl } from '@/lib/articleContent';
 import ReactionBar from '@/components/ReactionBar';
 import ArticleCommentForm from '@/components/ArticleCommentForm';
 import EditableArticleComment from '@/components/EditableArticleComment';
-import { getArticleComments, getArticleReactions, type ReactionSummary } from '@/lib/queries';
+import ReplyToComment from '@/components/ReplyToComment';
+import { buildCommentTree, type CommentNode } from '@/lib/commentTree';
+import { getArticleComments, getArticleCommentReactions, getArticleReactions, type ReactionSummary } from '@/lib/queries';
 
 export const dynamic = 'force-dynamic';
 
@@ -22,16 +25,65 @@ export default async function Article({ params }: { params: Promise<{ slug: stri
   const articleId = Number(a.id);
   let comments: any[] = [];
   let reactions: ReactionSummary = [];
+  let commentReactions: Record<number, ReactionSummary> = {};
   let interactionsUnavailable = false;
   try {
     [comments, reactions] = await Promise.all([
       getArticleComments(articleId),
       getArticleReactions(articleId, user?.id ?? null),
     ]);
+    commentReactions = await getArticleCommentReactions(
+      comments.map((comment: any) => Number(comment.id)),
+      user?.id ?? null,
+    );
   } catch (error) {
     console.error('[articles] article interactions could not be loaded', error instanceof Error ? error.message : error);
     interactionsUnavailable = true;
   }
+  const commentTree = buildCommentTree(comments, 'parent_comment_id');
+  const recentCommentCount = comments.filter((comment) => comment.is_recent !== false).length;
+  const renderComment = (node: CommentNode<any>): ReactNode => {
+    const comment = node.comment;
+    const author = comment.author || 'Former member';
+    const officialProfile = comment.official_player_id && comment.official_tour
+      ? `/players/${encodeURIComponent(String(comment.official_player_id))}?tour=${encodeURIComponent(String(comment.official_tour))}`
+      : null;
+    const ownsComment = Boolean(user && String(comment.author_id) === String(user.id));
+    const canRemoveComment = ownsComment || canModerateComments(user);
+    return (
+      <article className="article-comment" key={comment.id}>
+        <header className="article-comment-header">
+          <img src={discordAvatar(comment.avatar, author)} alt="" />
+          <div className="article-comment-author">
+            {officialProfile ? <Link href={officialProfile}>{author}</Link> : <strong>{author}</strong>}
+            <time dateTime={new Date(comment.created_at).toISOString()}>{fmtDate(comment.created_at)}</time>
+          </div>
+        </header>
+        <div className="article-comment-body"><RichText text={comment.body} /></div>
+        <div className="article-comment-interactions">
+          <ReactionBar
+            articleCommentId={Number(comment.id)}
+            initial={commentReactions[Number(comment.id)] || []}
+            signedIn={!!user}
+          />
+          {user && <ReplyToComment target="article" articleId={articleId} parentId={Number(comment.id)} />}
+          {canRemoveComment && (
+            <EditableArticleComment
+              commentId={Number(comment.id)}
+              initialBody={comment.body}
+              canEdit={ownsComment}
+              canDelete={canRemoveComment}
+            />
+          )}
+        </div>
+        {node.children.length > 0 && (
+          <div className="article-comment-children" aria-label={`Replies to ${author}`}>
+            {node.children.map((child) => renderComment(child))}
+          </div>
+        )}
+      </article>
+    );
+  };
   const content = readArticleContent(a.body);
   const coverUrl = safeArticleUrl(a.cover_url);
   return (
@@ -53,7 +105,7 @@ export default async function Article({ params }: { params: Promise<{ slug: stri
       <section className="article-comments-section" aria-labelledby="article-comments-title">
         <div className="article-comments-heading">
           <h2 id="article-comments-title">Comments</h2>
-          {!interactionsUnavailable && <span>{comments.length === 100 ? 'Latest 100 comments' : `${comments.length} ${comments.length === 1 ? 'comment' : 'comments'}`}</span>}
+          {!interactionsUnavailable && <span>{recentCommentCount >= 100 ? 'Latest 100 comments' : `${recentCommentCount} ${recentCommentCount === 1 ? 'comment' : 'comments'}`}</span>}
         </div>
         {!interactionsUnavailable && (user
           ? <ArticleCommentForm articleId={articleId} />
@@ -63,34 +115,7 @@ export default async function Article({ params }: { params: Promise<{ slug: stri
         )}
         {!interactionsUnavailable && comments.length > 0 && (
           <div className="article-comment-list">
-            {comments.map((comment: any) => {
-              const author = comment.author || 'Former member';
-              const officialProfile = comment.official_player_id && comment.official_tour
-                ? `/players/${encodeURIComponent(String(comment.official_player_id))}?tour=${encodeURIComponent(String(comment.official_tour))}`
-                : null;
-              const ownsComment = Boolean(user && String(comment.author_id) === String(user.id));
-              const canRemoveComment = ownsComment || canModerateComments(user);
-              return (
-                <article className="article-comment" key={comment.id}>
-                  <header className="article-comment-header">
-                    <img src={discordAvatar(comment.avatar, author)} alt="" />
-                    <div className="article-comment-author">
-                      {officialProfile ? <Link href={officialProfile}>{author}</Link> : <strong>{author}</strong>}
-                      <time dateTime={new Date(comment.created_at).toISOString()}>{fmtDate(comment.created_at)}</time>
-                    </div>
-                  </header>
-                  <div className="article-comment-body"><RichText text={comment.body} /></div>
-                  {canRemoveComment && (
-                    <EditableArticleComment
-                      commentId={Number(comment.id)}
-                      initialBody={comment.body}
-                      canEdit={ownsComment}
-                      canDelete={canRemoveComment}
-                    />
-                  )}
-                </article>
-              );
-            })}
+            {commentTree.map((node) => renderComment(node))}
           </div>
         )}
       </section>

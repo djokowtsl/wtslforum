@@ -80,7 +80,7 @@ test('article comments validate, screen once, and queue uncertain text for revie
   assert.deepEqual(pending.calls.moderation, ['A thoughtful comment']);
   assert.equal(pending.calls.sql.length, 2);
   assert.match(pending.calls.sql[1].query, /INSERT INTO article_comments/);
-  assert.equal(pending.calls.sql[1].values[3], 'pending');
+  assert.equal(pending.calls.sql[1].values[4], 'pending');
 
   const tooLong = loadRoute('app/api/articles/[id]/comments/route.ts');
   assert.equal((await tooLong.handlers.POST(post({ body: 'x'.repeat(10001) }), context())).status, 400);
