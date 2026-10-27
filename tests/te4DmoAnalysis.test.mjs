@@ -79,6 +79,8 @@ test('maps known embedded event names to court surfaces and leaves unknown event
   assert.equal(surfaceForDmoTournament('0112 Laver Cup'), 'hard');
   assert.equal(surfaceForDmoTournament('0009 AO Rod Laver Day'), 'hard');
   assert.equal(surfaceForDmoTournament('Roland Garros'), 'clay');
+  assert.equal(surfaceForDmoTournament('Philippe Chatrier'), 'clay');
+  assert.equal(surfaceForDmoTournament('Phillipe Chartrier'), 'clay');
   assert.equal(surfaceForDmoTournament('Wimbledon Championships'), 'grass');
   assert.equal(surfaceForDmoTournament('Custom WTSL Event'), 'unknown');
   assert.equal(surfaceForDmoTournament(null), 'unknown');

@@ -521,6 +521,47 @@ test('a broadcaster-tagged official match mentions the viewer role in WTSL Live 
   }
 });
 
+test('automatic WTSL broadcasts mention the viewer role even without a manual official tag', async () => {
+  const { announceLiveBroadcast } = loadDiscordAnnouncements();
+  const originalFetch = globalThis.fetch;
+  const originalToken = process.env.DISCORD_BOT_TOKEN;
+  process.env.DISCORD_BOT_TOKEN = 'test-bot-token';
+  const calls = [];
+  globalThis.fetch = async (url, options = {}) => {
+    calls.push({ url: String(url), options });
+    if (String(url).includes('/messages?limit=100')) return Response.json([]);
+    return Response.json({ id: `message-${calls.length}` });
+  };
+  try {
+    await announceLiveBroadcast({
+      id: 'automatic-official-broadcast',
+      ownerDiscordId: 'broadcaster-456',
+      ownerName: 'Broadcaster',
+      players: ['Alpha', 'Beta'],
+      bestOf: 3,
+      broadcastMode: 'auto',
+      isWta: false,
+      officialByBroadcaster: false,
+      likelyOfficial: false,
+      stream: null,
+    });
+
+    assert.equal(calls.length, 2);
+    assert.match(calls[1].url, /channels\/1562898541238554765\/messages$/);
+    const announcement = JSON.parse(calls[1].options.body);
+    assert.match(announcement.content, /<@&1439615663860879501>/);
+    assert.deepEqual(announcement.allowed_mentions.roles, ['1439615663860879501']);
+    assert.equal(
+      announcement.embeds[0].fields.find((field) => field.name === 'Match status').value,
+      'Official match',
+    );
+  } finally {
+    globalThis.fetch = originalFetch;
+    if (originalToken === undefined) delete process.env.DISCORD_BOT_TOKEN;
+    else process.env.DISCORD_BOT_TOKEN = originalToken;
+  }
+});
+
 test('a recent role ping suppresses only the role mention, while an unclassified stream skips the history lookup', async () => {
   const { announceLiveBroadcast } = loadDiscordAnnouncements();
   const originalFetch = globalThis.fetch;
@@ -621,6 +662,7 @@ test('automatic broadcasts require a confirmed WTSL live match and retain its of
   assert.equal(JSON.parse(storedPayload).likelyOfficial, true);
   assert.equal(JSON.parse(storedPayload).isWta, true);
   assert.equal(announcements.length, 1);
+  assert.equal(announcements[0].broadcastMode, 'auto');
   assert.equal(announcements[0].officialByBroadcaster, true);
   assert.equal(announcements[0].likelyOfficial, true);
   assert.equal(announcements[0].isWta, true);

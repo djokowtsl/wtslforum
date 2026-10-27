@@ -102,6 +102,7 @@ export async function startExternalLiveBroadcast(input: {
       ownerName: payload.ownerName,
       players: input.players ?? null,
       bestOf,
+      broadcastMode: 'manual',
       isWta,
       officialByBroadcaster,
       likelyOfficial,

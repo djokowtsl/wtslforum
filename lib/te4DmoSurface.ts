@@ -27,6 +27,7 @@ const tournamentSurfaceRules: Array<{ surface: Exclude<Te4CourtSurface, 'unknown
       /\bterre battue\b/i,
       /\broland garros\b/i,
       /\bfrench open\b/i,
+      /\b(?:philippe|phillipe)\s+(?:chatrier|chartrier)\b/i,
       /\bmonte[- ]carlo\b/i,
       /\binternazionali d['’]italia\b/i,
       /\bitalian open\b/i,
