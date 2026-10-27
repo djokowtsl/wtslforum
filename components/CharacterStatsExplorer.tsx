@@ -1317,6 +1317,7 @@ export default function CharacterStatsExplorer({
 
       <CharacterMetricCharts
         tour={tour}
+        selectedCharacter={character}
         onSelectCharacter={(name) => {
           characterRef.current = name;
           setCharacter(name);

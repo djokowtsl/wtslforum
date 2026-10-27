@@ -54,6 +54,68 @@
   background: var(--panel, rgba(255, 255, 255, 0.035));
 }
 
+.radarCard {
+  grid-column: 1 / -1;
+}
+
+.radarFigure {
+  display: grid;
+  justify-items: center;
+  gap: 4px;
+  width: 100%;
+  margin: 0;
+}
+
+.radarChart {
+  display: block;
+  width: min(100%, 680px);
+  height: auto;
+  overflow: visible;
+}
+
+.radarRing {
+  fill: none;
+  stroke: var(--line, rgba(120, 140, 160, 0.34));
+  stroke-width: 1.2;
+  stroke-dasharray: 5 6;
+}
+
+.radarAxis {
+  stroke: var(--line, rgba(120, 140, 160, 0.42));
+  stroke-width: 1;
+}
+
+.radarShape {
+  fill: rgba(110, 231, 237, 0.18);
+  stroke: var(--cyan, #6ee7ed);
+  stroke-width: 3;
+  stroke-linejoin: round;
+}
+
+.radarLabel {
+  fill: var(--soft, #8995a5);
+  font-family: inherit;
+  font-size: 15px;
+  font-weight: 700;
+}
+
+.radarValue {
+  fill: var(--ink, currentColor);
+  font-family: inherit;
+  font-size: 20px;
+  font-weight: 800;
+  font-variant-numeric: tabular-nums;
+}
+
+.radarNote {
+  max-width: 660px;
+  margin: 0 auto;
+  color: var(--soft, #687386);
+  font-size: 12px;
+  line-height: 1.5;
+  text-align: center;
+}
+
 .cardHeading {
   align-items: center;
 }
@@ -373,6 +435,14 @@
 
   .card {
     padding: 14px;
+  }
+
+  .radarLabel {
+    font-size: 25px;
+  }
+
+  .radarValue {
+    font-size: 31px;
   }
 
   .controls {
