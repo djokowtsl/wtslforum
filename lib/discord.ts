@@ -15,6 +15,7 @@ type LiveBroadcastAnnouncement = {
   ownerName: string;
   players?: [string, string] | null;
   bestOf: 1 | 3 | 5;
+  broadcastMode?: 'auto' | 'manual';
   isWta: boolean;
   officialByBroadcaster: boolean;
   likelyOfficial: boolean;
@@ -35,7 +36,7 @@ function liveBroadcastEmbed(input: LiveBroadcastAnnouncement, ended = false) {
   const matchName = playerNames?.length === 2 ? `${playerNames[0]} vs ${playerNames[1]}` : null;
   const streamUrl = input.stream?.sourceUrl;
   const streamProvider = input.stream?.provider;
-  const officialLabel = input.officialByBroadcaster
+  const officialLabel = input.broadcastMode === 'auto' || input.officialByBroadcaster
     ? 'Official match'
     : input.likelyOfficial
       ? 'Likely official match'
@@ -89,8 +90,9 @@ export async function announceLiveBroadcast(
     return null;
   }
 
+  const isOfficialMatch = input.broadcastMode === 'auto' || input.officialByBroadcaster;
   const shouldConsiderRolePing = options.pingViewerRoleInSource
-    || input.officialByBroadcaster
+    || isOfficialMatch
     || input.likelyOfficial;
   let includeRolePing = false;
   let includeSourceRolePing = false;

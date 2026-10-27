@@ -65,6 +65,7 @@ export async function finishLiveBroadcastAnnouncement(input: {
     ownerName: typeof payload.ownerName === 'string' ? payload.ownerName : 'Forum member',
     players: parsePlayers(payload.players),
     bestOf,
+    broadcastMode: payload.mode === 'auto' ? 'auto' : 'manual',
     isWta: payload.isWta === true,
     officialByBroadcaster: payload.officialByBroadcaster === true,
     likelyOfficial: payload.likelyOfficial === true,

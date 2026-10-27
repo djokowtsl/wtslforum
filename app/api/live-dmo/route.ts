@@ -263,6 +263,7 @@ export async function POST(request: Request) {
         ownerName: user.username,
         players: broadcastPlayers ?? null,
         bestOf: broadcastBestOf,
+        broadcastMode: body.mode,
         isWta,
         officialByBroadcaster: body.officialByBroadcaster,
         likelyOfficial: payload.likelyOfficial,
