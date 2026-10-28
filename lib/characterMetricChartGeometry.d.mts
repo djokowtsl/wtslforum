@@ -24,3 +24,19 @@ export function tooltipPosition({
   padding?: number;
   gap?: number;
 }): { left: number; top: number };
+
+export function radarProfileValues(
+  characters: Array<{
+    character?: string | null;
+    metrics?: Record<string, unknown>;
+  }>,
+  selectedCharacter: string,
+  metricNames: string[],
+): Array<{ name: string; value: number; score: number }>;
+
+export function radarCoordinates(
+  values: number[],
+  centerX: number,
+  centerY: number,
+  radius: number,
+): Array<{ x: number; y: number }>;

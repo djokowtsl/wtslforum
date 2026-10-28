@@ -7,6 +7,7 @@ import {
   NORMALIZED_DOMAIN,
   tooltipPosition,
 } from '@/lib/characterMetricChartGeometry.mjs';
+import CharacterRadarChart from '@/components/CharacterRadarChart';
 
 type Tour = 'all' | 'atp' | 'wta';
 
@@ -588,9 +589,11 @@ function SingleMetricPlot({
 
 export default function CharacterMetricCharts({
   tour,
+  selectedCharacter,
   onSelectCharacter,
 }: {
   tour: Tour;
+  selectedCharacter: string;
   onSelectCharacter: (character: string) => void;
 }) {
   const [data, setData] = useState<CharacterChartData | null>(null);
@@ -796,6 +799,12 @@ export default function CharacterMetricCharts({
               <p className={styles.status}>No characters have values for this measure.</p>
             )}
           </article>
+          <CharacterRadarChart
+            characters={data.characters}
+            metricNames={metricNames}
+            selectedCharacter={selectedCharacter}
+            tour={tour}
+          />
         </div>
       )}
     </section>
