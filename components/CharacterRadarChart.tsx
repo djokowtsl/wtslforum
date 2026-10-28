@@ -241,11 +241,6 @@ export default function CharacterRadarChart({
                 );
               })}
             </svg>
-            <figcaption className={styles.radarNote}>
-              Physical Rating reflects Speed, Stamina, and Muscle Tone; Net Rating
-              reflects Net Presence, both volley ratings, and Smash. Each compares
-              roster-wide matchup simulations with those inputs set to neutral 50.
-            </figcaption>
           </figure>
         </>
       )}
