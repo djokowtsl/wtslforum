@@ -43,6 +43,8 @@ const COMBINED_SKILLS = new Set([
   'Serve Rating',
   'Forehand Rating',
   'Backhand Rating',
+  'Physical Rating',
+  'Net Rating',
 ]);
 
 function numericValue(value: unknown): number | null {
