@@ -1,6 +1,6 @@
 'use client';
 
-import { useEffect, useId, useMemo, useState } from 'react';
+import { useEffect, useId, useMemo, useRef, useState } from 'react';
 import styles from './CharacterMetricCharts.module.css';
 import {
   axisTicks,
@@ -600,12 +600,21 @@ export default function CharacterMetricCharts({
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
   const [retry, setRetry] = useState(0);
+  const chartDataByTour = useRef(new Map<Tour, CharacterChartData>());
   const [xMetric, setXMetric] = useState('');
   const [yMetric, setYMetric] = useState('');
   const [singleMetric, setSingleMetric] = useState('');
   const [normalized, setNormalized] = useState(true);
 
   useEffect(() => {
+    const cached = chartDataByTour.current.get(tour);
+    if (cached) {
+      setData(cached);
+      setLoading(false);
+      setError('');
+      return;
+    }
+
     const controller = new AbortController();
     setLoading(true);
     setError('');
@@ -626,6 +635,7 @@ export default function CharacterMetricCharts({
         return result.chart_data as CharacterChartData;
       })
       .then((chartData) => {
+        chartDataByTour.current.set(tour, chartData);
         setData(chartData);
         setLoading(false);
       })
