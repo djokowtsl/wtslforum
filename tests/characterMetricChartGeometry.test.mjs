@@ -3,10 +3,14 @@ import { readFileSync } from 'node:fs';
 import test from 'node:test';
 import {
   axisTicks,
+  DEFAULT_RADAR_METRICS,
+  MAX_RADAR_METRICS,
+  MIN_RADAR_METRICS,
   NORMALIZED_DOMAIN,
   radarCoordinates,
   radarProfileValues,
   tooltipPosition,
+  toggleRadarMetricSelection,
 } from '../lib/characterMetricChartGeometry.mjs';
 
 const chartComponent = readFileSync(
@@ -87,6 +91,37 @@ test('radar coordinates start at the top and handle an incomplete profile', () =
   assert.deepEqual(radarCoordinates([100, 50], 100, 100, 20), []);
 });
 
+test('radar metric selection defaults to three ratings and stays readable', () => {
+  const defaults = [
+    'Forehand Rating',
+    'Backhand Rating',
+    'Serve Rating',
+  ];
+  const available = [...defaults, 'Speed', 'Stamina', 'Muscle Tone', 'Topspin'];
+
+  assert.deepEqual(DEFAULT_RADAR_METRICS, defaults);
+  assert.equal(MIN_RADAR_METRICS, 3);
+  assert.equal(MAX_RADAR_METRICS, 6);
+  assert.deepEqual(
+    toggleRadarMetricSelection(defaults, 'Forehand Rating', false, available),
+    ['Backhand Rating', 'Serve Rating'],
+  );
+
+  let selected = defaults;
+  for (const metric of ['Speed', 'Stamina', 'Muscle Tone']) {
+    selected = toggleRadarMetricSelection(selected, metric, true, available);
+  }
+  assert.deepEqual(selected, [...defaults, 'Speed', 'Stamina', 'Muscle Tone']);
+  assert.deepEqual(
+    toggleRadarMetricSelection(selected, 'Topspin', true, available),
+    selected,
+  );
+  assert.deepEqual(
+    toggleRadarMetricSelection(selected, 'Muscle Tone', false, available),
+    [...defaults, 'Speed', 'Stamina'],
+  );
+});
+
 test('the radar chart follows the selected character on the character page', () => {
   const explorer = readFileSync(
     new URL('../components/CharacterStatsExplorer.tsx', import.meta.url),
@@ -98,6 +133,21 @@ test('the radar chart follows the selected character on the character page', () 
   );
 
   assert.match(explorer, /selectedCharacter=\{character\}/);
-  assert.match(radar, /radarProfileValues\(characters, selectedCharacter, metricNames\)/);
-  assert.match(radar, /Values use the same measures as the roster charts/);
+  assert.match(radar, /DEFAULT_RADAR_METRICS/);
+  assert.match(
+    radar,
+    /radarProfileValues\(characters, selectedCharacter, selectedMetricNames\)/,
+  );
+  assert.match(radar, /toggleRadarMetricSelection/);
+  assert.match(radar, /checked=\{checked\}/);
+  assert.match(radar, /disabled=\{disabled\}/);
+  assert.match(
+    radar,
+    /Physical Rating reflects Speed, Stamina, and Muscle Tone/,
+  );
+  assert.match(
+    radar,
+    /Net Rating\s+reflects Net Presence, both volley ratings, and Smash/,
+  );
+  assert.match(radar, /matchup simulations with those inputs set to neutral 50/);
 });
