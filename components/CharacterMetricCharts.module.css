@@ -116,6 +116,115 @@
   text-align: center;
 }
 
+.radarToolbar {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 16px;
+}
+
+.radarToolbar .radarNote {
+  max-width: 660px;
+  margin: 5px 0 0;
+  text-align: left;
+}
+
+.radarMetricPicker {
+  position: relative;
+  z-index: 3;
+  flex: 0 0 auto;
+}
+
+.radarPickerButton {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  list-style: none;
+  border: 1px solid var(--line, rgba(120, 140, 160, 0.4));
+  border-radius: 10px;
+  padding: 9px 12px;
+  color: var(--ink, currentColor);
+  background: var(--panel, #101a2b);
+  font: inherit;
+  font-size: 13px;
+  font-weight: 700;
+  cursor: pointer;
+}
+
+.radarPickerButton::-webkit-details-marker {
+  display: none;
+}
+
+.radarPickerButton::after {
+  content: "⌄";
+  color: var(--soft, #8995a5);
+  font-size: 16px;
+}
+
+.radarPickerButton:focus-visible {
+  outline: 2px solid var(--cyan, #6ee7ed);
+  outline-offset: 3px;
+}
+
+.radarMetricCount {
+  color: var(--soft, #8995a5);
+  font-variant-numeric: tabular-nums;
+}
+
+.radarPickerMenu {
+  position: absolute;
+  top: calc(100% + 8px);
+  right: 0;
+  display: grid;
+  gap: 4px;
+  width: min(340px, calc(100vw - 40px));
+  max-height: min(340px, 60vh);
+  overflow-y: auto;
+  padding: 12px;
+  border: 1px solid var(--line, rgba(120, 140, 160, 0.4));
+  border-radius: 12px;
+  background: var(--panel, #101a2b);
+  box-shadow: 0 16px 40px rgba(0, 0, 0, 0.4);
+}
+
+.radarPickerHelp {
+  margin: 0 0 5px;
+  padding: 0 4px 7px;
+  border-bottom: 1px solid var(--line, rgba(120, 140, 160, 0.25));
+  color: var(--soft, #8995a5);
+  font-size: 12px;
+  line-height: 1.4;
+}
+
+.radarMetricOption {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  min-height: 36px;
+  border-radius: 8px;
+  padding: 6px 7px;
+  color: var(--ink, currentColor);
+  font-size: 13px;
+  line-height: 1.3;
+  cursor: pointer;
+}
+
+.radarMetricOption:hover {
+  background: rgba(120, 140, 160, 0.12);
+}
+
+.radarMetricOption input {
+  flex: 0 0 auto;
+  width: 16px;
+  height: 16px;
+  margin: 0;
+  accent-color: var(--cyan, #6ee7ed);
+}
+
+.radarMetricOption input:disabled + span {
+  opacity: 0.58;
+}
+
 .cardHeading {
   align-items: center;
 }
@@ -431,6 +540,20 @@
   .heading,
   .cardHeading {
     flex-wrap: wrap;
+  }
+
+  .radarToolbar {
+    align-items: stretch;
+    flex-direction: column;
+  }
+
+  .radarMetricPicker {
+    align-self: flex-start;
+  }
+
+  .radarPickerMenu {
+    right: auto;
+    left: 0;
   }
 
   .card {

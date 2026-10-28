@@ -1,10 +1,14 @@
 'use client';
 
-import { useMemo } from 'react';
+import { useId, useMemo, useState } from 'react';
 import styles from './CharacterMetricCharts.module.css';
 import {
+  DEFAULT_RADAR_METRICS,
+  MAX_RADAR_METRICS,
+  MIN_RADAR_METRICS,
   radarCoordinates,
   radarProfileValues,
+  toggleRadarMetricSelection,
 } from '@/lib/characterMetricChartGeometry.mjs';
 
 type CharacterChartRow = {
@@ -49,9 +53,17 @@ export default function CharacterRadarChart({
   selectedCharacter: string;
   tour: 'all' | 'atp' | 'wta';
 }) {
+  const [selectedMetrics, setSelectedMetrics] = useState<string[]>(
+    () => [...DEFAULT_RADAR_METRICS],
+  );
+  const selectedMetricNames = useMemo(
+    () => selectedMetrics.filter((name) => metricNames.includes(name)),
+    [metricNames, selectedMetrics],
+  );
+  const checkboxPrefix = useId().replace(/:/g, '');
   const metrics = useMemo(
-    () => radarProfileValues(characters, selectedCharacter, metricNames),
-    [characters, metricNames, selectedCharacter],
+    () => radarProfileValues(characters, selectedCharacter, selectedMetricNames),
+    [characters, selectedCharacter, selectedMetricNames],
   );
   const axisEnds = radarCoordinates(
     metrics.map(() => 100),
@@ -88,16 +100,70 @@ export default function CharacterRadarChart({
         )}
       </div>
 
-      {metrics.length < 3 ? (
+      <div className={styles.radarToolbar}>
+        <p className={styles.radarNote}>
+          Choose 3–6 measures to keep labels readable. The shape scales each measure
+          across the {tourLabel} roster; labels show the character’s original values.
+        </p>
+        <details className={styles.radarMetricPicker}>
+          <summary
+            className={styles.radarPickerButton}
+            aria-label={`Choose radar metrics. ${selectedMetricNames.length} selected.`}
+          >
+            <span>Choose metrics</span>
+            <span className={styles.radarMetricCount}>
+              {selectedMetricNames.length}/{MAX_RADAR_METRICS}
+            </span>
+          </summary>
+          <div className={styles.radarPickerMenu}>
+            <p className={styles.radarPickerHelp}>
+              Select at least {MIN_RADAR_METRICS} and no more than {MAX_RADAR_METRICS}.
+            </p>
+            {metricNames.map((name, index) => {
+              const checked = selectedMetricNames.includes(name);
+              const disabled = !checked
+                && selectedMetricNames.length >= MAX_RADAR_METRICS;
+              const id = `${checkboxPrefix}-metric-${index}`;
+
+              return (
+                <label
+                  key={name}
+                  className={styles.radarMetricOption}
+                  htmlFor={id}
+                >
+                  <input
+                    id={id}
+                    type="checkbox"
+                    checked={checked}
+                    disabled={disabled}
+                    onChange={(event) => {
+                      const isChecked = event.target.checked;
+                      setSelectedMetrics((current) => toggleRadarMetricSelection(
+                        current,
+                        name,
+                        isChecked,
+                        metricNames,
+                      ));
+                    }}
+                  />
+                  <span>{name}</span>
+                </label>
+              );
+            })}
+          </div>
+        </details>
+      </div>
+
+      {selectedMetricNames.length < MIN_RADAR_METRICS ? (
         <p className={styles.status} role="status">
-          A radar profile is unavailable for {selectedCharacter || 'the selected character'}.
+          Select at least {MIN_RADAR_METRICS} metrics to draw the radar chart.
+        </p>
+      ) : metrics.length < MIN_RADAR_METRICS ? (
+        <p className={styles.status} role="status">
+          At least {MIN_RADAR_METRICS} selected metrics need values for this character.
         </p>
       ) : (
         <>
-          <p className={styles.radarNote}>
-            The shape scales each measure across the {tourLabel} roster; labels show the
-            character’s original values.
-          </p>
           <figure className={styles.radarFigure}>
             <svg
               className={styles.radarChart}
@@ -176,7 +242,9 @@ export default function CharacterRadarChart({
               })}
             </svg>
             <figcaption className={styles.radarNote}>
-              Values use the same measures as the roster charts.
+              Physical Rating reflects Speed, Stamina, and Muscle Tone; Net Rating
+              reflects Net Presence, both volley ratings, and Smash. Each compares
+              roster-wide matchup simulations with those inputs set to neutral 50.
             </figcaption>
           </figure>
         </>

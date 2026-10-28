@@ -1,4 +1,15 @@
 export const NORMALIZED_DOMAIN: Readonly<{ min: number; max: number }>;
+export const DEFAULT_RADAR_METRICS: readonly string[];
+export const MIN_RADAR_METRICS: number;
+export const MAX_RADAR_METRICS: number;
+
+export function toggleRadarMetricSelection(
+  current: string[],
+  metricName: string,
+  checked: boolean,
+  availableMetrics: string[],
+  maximum?: number,
+): string[];
 
 export function axisTicks(
   domain: { min: number; max: number },
