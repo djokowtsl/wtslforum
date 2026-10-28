@@ -141,13 +141,18 @@ test('the radar chart follows the selected character on the character page', () 
   assert.match(radar, /toggleRadarMetricSelection/);
   assert.match(radar, /checked=\{checked\}/);
   assert.match(radar, /disabled=\{disabled\}/);
-  assert.match(
-    radar,
-    /Physical Rating reflects Speed, Stamina, and Muscle Tone/,
+  assert.doesNotMatch(radar, /Physical Rating reflects/);
+  assert.doesNotMatch(radar, /Net Rating\s+reflects/);
+  assert.match(radar, /Choose 3–6 measures to keep labels readable/);
+});
+
+test('character chart data is reused when switching back to a tour', () => {
+  const metricCharts = readFileSync(
+    new URL('../components/CharacterMetricCharts.tsx', import.meta.url),
+    'utf8',
   );
-  assert.match(
-    radar,
-    /Net Rating\s+reflects Net Presence, both volley ratings, and Smash/,
-  );
-  assert.match(radar, /matchup simulations with those inputs set to neutral 50/);
+
+  assert.match(metricCharts, /chartDataByTour = useRef\(new Map<Tour, CharacterChartData>\(\)\)/);
+  assert.match(metricCharts, /chartDataByTour\.current\.get\(tour\)/);
+  assert.match(metricCharts, /chartDataByTour\.current\.set\(tour, chartData\)/);
 });
