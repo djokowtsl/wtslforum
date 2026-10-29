@@ -68,6 +68,7 @@ export async function finishLiveBroadcastAnnouncement(input: {
     broadcastMode: payload.mode === 'auto' ? 'auto' : 'manual',
     isWta: payload.isWta === true,
     officialByBroadcaster: payload.officialByBroadcaster === true,
+    officialByTournament: payload.officialByTournament === true,
     likelyOfficial: payload.likelyOfficial === true,
     stream: parseStream(payload.stream),
     reference,

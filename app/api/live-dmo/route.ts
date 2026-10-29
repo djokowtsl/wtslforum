@@ -8,6 +8,10 @@ import { canonicalizeRankedDmoPlayers, getLiveWtslMatchForPlayers } from '@/lib/
 import { readSiteSnapshot } from '@/lib/siteSnapshots';
 import { cleanupExpiredLiveDmoBroadcasts } from '@/lib/liveDmoStorage';
 import type { PublicFixturePayload } from '@/lib/liveFeedTypes';
+import {
+  isFreshTournamentMatchSnapshot,
+  matchesOngoingTournament,
+} from '@/lib/liveBroadcastTournamentMatches';
 import { announceLiveBroadcast } from '@/lib/discord';
 import { finishLiveBroadcastAnnouncement } from '@/lib/liveBroadcastAnnouncements';
 import {
@@ -201,6 +205,9 @@ export async function POST(request: Request) {
     verifiedMessageUrl = `https://discord.com/channels/${reference.guildId}/${reference.channelId}/${reference.messageId}`;
   }
 
+  const officialByTournament = await officialByTournamentFromSnapshot(
+    broadcastPlayers,
+  );
   const payload = {
     hasDmo: body.hasDmo,
     mode: body.mode,
@@ -210,6 +217,7 @@ export async function POST(request: Request) {
     ownerName: user.username,
     isWta,
     officialByBroadcaster: body.officialByBroadcaster,
+    officialByTournament,
     likelyOfficial: await likelyOfficialFromSnapshot(broadcastPlayers, broadcastBestOf),
     stream,
     sourceMessageUrl: verifiedMessageUrl,
@@ -227,6 +235,7 @@ export async function POST(request: Request) {
         bestOf: broadcastBestOf,
         isWta,
         officialByBroadcaster: body.officialByBroadcaster,
+        officialByTournament: payload.officialByTournament,
         likelyOfficial: payload.likelyOfficial,
       });
       return NextResponse.json({
@@ -266,6 +275,7 @@ export async function POST(request: Request) {
         broadcastMode: body.mode,
         isWta,
         officialByBroadcaster: body.officialByBroadcaster,
+        officialByTournament: payload.officialByTournament,
         likelyOfficial: payload.likelyOfficial,
         stream,
       });
@@ -320,8 +330,24 @@ async function likelyOfficialFromSnapshot(
   if (!players || (bestOf !== 3 && bestOf !== 5)) return false;
   try {
     const snapshot = await readSiteSnapshot<PublicFixturePayload>('live-fixtures');
-    if (!snapshot || Date.now() - Date.parse(snapshot.checkedAt) > 24 * 60 * 60 * 1000) return false;
+    if (!snapshot || !isFreshTournamentMatchSnapshot(snapshot.checkedAt)) return false;
     return isLikelyOfficialWtslMatch(players, bestOf, snapshot.payload.publicOpen ?? []);
+  } catch {
+    return false;
+  }
+}
+
+async function officialByTournamentFromSnapshot(
+  players: [string, string] | undefined,
+) {
+  if (!players) return false;
+  try {
+    const snapshot = await readSiteSnapshot<PublicFixturePayload>('live-fixtures');
+    if (!snapshot || !isFreshTournamentMatchSnapshot(snapshot.checkedAt)) return false;
+    return matchesOngoingTournament(
+      players,
+      snapshot.payload.ongoingTournamentMatches ?? [],
+    );
   } catch {
     return false;
   }

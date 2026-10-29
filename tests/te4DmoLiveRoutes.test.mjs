@@ -305,6 +305,7 @@ test('signed-in members can read broadcasts while guests cannot', async () => {
     replayDataReady: false,
     replaySpeed: 1,
     officialByBroadcaster: false,
+    officialByTournament: false,
     likelyOfficial: false,
     players: ['One', 'Two'],
     sequence: 4,

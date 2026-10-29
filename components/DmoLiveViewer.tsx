@@ -28,6 +28,7 @@ type Broadcast = {
   replayDataReady: boolean;
   replaySpeed: 1 | 2 | 4;
   officialByBroadcaster: boolean;
+  officialByTournament: boolean;
   likelyOfficial: boolean;
   updatedAt: string;
   stale: boolean;
@@ -452,12 +453,14 @@ export default function DmoLiveViewer({ canWatch }: Props) {
                   </div>
                   {players && <strong>{players[0]} <i>vs</i> {players[1]}</strong>}
                 </div>
-                {(broadcast.broadcastMode === 'auto' || broadcast.officialByBroadcaster || broadcast.likelyOfficial) && (
+                {(broadcast.broadcastMode === 'auto' || broadcast.officialByBroadcaster || broadcast.officialByTournament || broadcast.likelyOfficial) && (
                   <div className={styles.broadcastTags}>
                     {broadcast.broadcastMode === 'auto' && <small className={styles.broadcastTag}>AUTO · WTSL LIVE</small>}
                     {broadcast.officialByBroadcaster
                       ? <small className={styles.broadcastTag}>OFFICIAL · BROADCASTER TAG</small>
-                      : broadcast.likelyOfficial && <small className={styles.broadcastTag}>LIKELY OFFICIAL</small>}
+                      : broadcast.officialByTournament
+                        ? <small className={styles.broadcastTag}>OFFICIAL · ONGOING TOURNAMENT</small>
+                        : broadcast.likelyOfficial && <small className={styles.broadcastTag}>LIKELY OFFICIAL</small>}
                   </div>
                 )}
                 {broadcast.stream && broadcast.status === 'live' && (

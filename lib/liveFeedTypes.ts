@@ -1,8 +1,10 @@
 import type { CoreFixture } from '@/lib/wtsl-core';
+import type { OngoingTournamentMatch } from '@/lib/liveBroadcastTournamentMatches';
 
 export type PublicFixturePayload = {
   bettingBoard: { open: CoreFixture[]; recent_settled: CoreFixture[] };
   publicOpen: CoreFixture[];
+  ongoingTournamentMatches?: OngoingTournamentMatch[];
   checkedAt: string;
   updatedAt?: string | null;
 };

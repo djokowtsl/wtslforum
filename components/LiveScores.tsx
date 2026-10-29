@@ -50,6 +50,7 @@ export default function LiveScores({
     status: 'live' | 'ended';
     ownerName: string;
     officialByBroadcaster: boolean;
+    officialByTournament: boolean;
     likelyOfficial: boolean;
     players: [string, string] | null;
     snapshot: { players?: [string, string] } | null;
@@ -257,13 +258,13 @@ export default function LiveScores({
                     className="live-broadcast-match-link"
                     href={`/livestreams?broadcast=${encodeURIComponent(broadcast.id)}#broadcast-${encodeURIComponent(broadcast.id)}`}
                     key={broadcast.id}
-                    title={`Watch ${broadcast.ownerName}'s live broadcast${broadcast.officialByBroadcaster ? ' · official match tagged by broadcaster' : broadcast.likelyOfficial ? ' · likely official match' : ''}`}
-                    aria-label={`Watch ${broadcast.ownerName}'s live broadcast of ${firstName} vs ${secondName}${broadcast.officialByBroadcaster ? ', official match tagged by broadcaster' : broadcast.likelyOfficial ? ', likely official match' : ''}`}
+                    title={`Watch ${broadcast.ownerName}'s live broadcast${broadcast.officialByBroadcaster ? ' · official match tagged by broadcaster' : broadcast.officialByTournament ? ' · official ongoing tournament match' : broadcast.likelyOfficial ? ' · likely official match' : ''}`}
+                    aria-label={`Watch ${broadcast.ownerName}'s live broadcast of ${firstName} vs ${secondName}${broadcast.officialByBroadcaster ? ', official match tagged by broadcaster' : broadcast.officialByTournament ? ', official ongoing tournament match' : broadcast.likelyOfficial ? ', likely official match' : ''}`}
                   >
                     🎥
-                    {(broadcast.officialByBroadcaster || broadcast.likelyOfficial) && (
+                    {(broadcast.officialByBroadcaster || broadcast.officialByTournament || broadcast.likelyOfficial) && (
                       <small className="live-broadcast-match-label">
-                        {broadcast.officialByBroadcaster ? 'OFFICIAL' : 'LIKELY OFFICIAL'}
+                        {broadcast.officialByBroadcaster || broadcast.officialByTournament ? 'OFFICIAL' : 'LIKELY OFFICIAL'}
                       </small>
                     )}
                   </Link>

@@ -108,13 +108,14 @@ export async function GET() {
         sourceMessageUrl: typeof stored.sourceMessageUrl === 'string' ? stored.sourceMessageUrl : null,
         broadcastMode: stored.mode === 'auto' ? 'auto' : 'manual',
         isWta: stored.isWta === true,
+        officialByBroadcaster: stored.officialByBroadcaster === true,
+        officialByTournament: stored.officialByTournament === true,
+        likelyOfficial: stored.likelyOfficial === true,
         replay: stored.replay === true,
         replayDataReady: isLiveDmoReplayPath(stored.replayDataPath),
         replaySpeed: [1, 2, 4].includes(Number(stored.replaySpeed))
           ? Number(stored.replaySpeed)
           : 1,
-        officialByBroadcaster: stored.officialByBroadcaster === true,
-        likelyOfficial: stored.likelyOfficial === true,
         players: rawPlayers,
         sequence: Number(row.sequence || 0),
         startedAt: new Date(row.started_at).toISOString(),
