@@ -915,6 +915,14 @@ test('category fallback averages ranked attribute percentiles, not raw ratings',
   ]);
 });
 
+test('simulated Physical and Net ratings appear in their attribute sections', () => {
+  assert.match(component, /profile\.radar_ratings/);
+  assert.match(component, /const displayedAttributes = \[\.\.\.attributes, \.\.\.radarRatings\]/);
+  assert.match(component, /name\.includes\('net rating'\)\) return 'Net & Feel'/);
+  assert.match(component, /name\.includes\('physical rating'\)\) return 'Movement & Variety'/);
+  assert.match(component, /<StatTable stats=\{displayedAttributes\} \/>/);
+});
+
 test('character comparisons sanitize mechanics and selection explanations', () => {
   for (const marker of [
     'comparison.first_mechanics',
@@ -961,6 +969,24 @@ test('character profile endpoint strips unverified simulation fields recursively
         percentile: 0.97,
         simulation: { match_win_pct: 53.4, winners_per_100: 12.1 },
       }],
+      radar_ratings: [
+        {
+          attribute: 'Physical Rating',
+          value: 62.1,
+          rank: 12,
+          count: 102,
+          percentile: 0.89,
+          bar: 89,
+        },
+        {
+          attribute: 'Net Rating',
+          value: 55.7,
+          rank: 45,
+          count: 102,
+          percentile: 0.56,
+          bar: 56,
+        },
+      ],
     },
   };
   const safe = removeUnsupportedCharacterProjections(unsafe);
@@ -989,6 +1015,24 @@ test('character profile endpoint strips unverified simulation fields recursively
         count: 102,
         percentile: 0.97,
       }],
+      radar_ratings: [
+        {
+          attribute: 'Physical Rating',
+          value: 62.1,
+          rank: 12,
+          count: 102,
+          percentile: 0.89,
+          bar: 89,
+        },
+        {
+          attribute: 'Net Rating',
+          value: 55.7,
+          rank: 45,
+          count: 102,
+          percentile: 0.56,
+          bar: 56,
+        },
+      ],
     },
   });
   assert.ok(!JSON.stringify(safe).includes('per 100 points'));

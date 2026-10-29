@@ -156,3 +156,15 @@ test('character chart data is reused when switching back to a tour', () => {
   assert.match(metricCharts, /chartDataByTour\.current\.get\(tour\)/);
   assert.match(metricCharts, /chartDataByTour\.current\.set\(tour, chartData\)/);
 });
+
+test('Physical and Net ratings are grouped with combined metrics in both charts', () => {
+  const metricCharts = readFileSync(
+    new URL('../components/CharacterMetricCharts.tsx', import.meta.url),
+    'utf8',
+  );
+  const group = metricCharts.match(/const COMBINED_SKILLS = new Set\(\[([\s\S]*?)\]\)/)?.[1] || '';
+
+  assert.match(group, /'Physical Rating'/);
+  assert.match(group, /'Net Rating'/);
+  assert.match(metricCharts, /<optgroup label="Combined skill ratings">/);
+});

@@ -89,6 +89,7 @@ const emptyCharacterFilters: CharacterRosterFilters = {
 };
 const groupNames = ['Groundstrokes', 'Serve', 'Net & Feel', 'Movement & Variety'];
 const combinedSkillRatings = new Set(['Serve Rating', 'Forehand Rating', 'Backhand Rating']);
+const matchupSimulatedRatings = new Set(['Physical Rating', 'Net Rating']);
 const uninformativeRelativeStrengths = new Set(['slice serve', 'topspin serve', 'twist serve']);
 const excludedRatingAttributes = new Set(['boomboomserver', 'ontimeserver']);
 
@@ -120,6 +121,8 @@ function statsWithoutExcludedAttributes(value: unknown): Stat[] {
 
 function statGroup(attribute: string) {
   const name = attribute.toLowerCase();
+  if (name.includes('net rating')) return 'Net & Feel';
+  if (name.includes('physical rating')) return 'Movement & Variety';
   if (name.includes('serve') || name.includes('service')) return 'Serve';
   if (['volley', 'smash', 'net presence', 'ball feeling'].some((part) => name.includes(part))) {
     return 'Net & Feel';
@@ -303,21 +306,29 @@ function RankedAttribute({ ranking, character }: { ranking: Record<string, any>;
   const top = rows.slice(0, 3);
   const bottom = rows.slice(-3).reverse();
   const isCombinedRating = combinedSkillRatings.has(String(ranking.attribute));
+  const isMatchupSimulatedRating =
+    matchupSimulatedRatings.has(String(ranking.attribute));
 
   return (
     <section className="panel character-ranking-panel">
       <div className="character-section-heading">
         <div>
           <span className="panel-label">
-            {isCombinedRating ? 'COMBINED RATING' : 'ROSTER RANKING'}
+            {isMatchupSimulatedRating
+              ? 'MATCHUP-SIMULATED RATING'
+              : isCombinedRating
+                ? 'COMBINED RATING'
+                : 'ROSTER RANKING'}
           </span>
           <h2>{ranking.attribute}</h2>
         </div>
       </div>
       <p className="character-rating-explainer">
-        {isCombinedRating
-          ? 'Combines Power, Consistency, and Precision, then compares the result with the selected tour roster.'
-          : 'Character-sheet ratings ranked against the selected tour roster.'}
+        {isMatchupSimulatedRating
+          ? 'Roster-wide matchup simulations compare each character with the selected tour roster.'
+          : isCombinedRating
+            ? 'Combines Power, Consistency, and Precision, then compares the result with the selected tour roster.'
+            : 'Character-sheet ratings ranked against the selected tour roster.'}
       </p>
       <div className="character-top-bottom">
         <div>
@@ -542,6 +553,8 @@ function Profile({
     tradeoffCopy,
   );
   const attributes = statsWithoutExcludedAttributes(profile.stats);
+  const radarRatings = statsWithoutExcludedAttributes(profile.radar_ratings);
+  const displayedAttributes = [...attributes, ...radarRatings];
   const characterSummary = buildCharacterProfileSummary(
     profile.character,
     attributes,
@@ -836,7 +849,7 @@ function Profile({
         <div className="character-section-heading">
           <div><span className="panel-label">ATTRIBUTES</span><h2>Attribute rankings</h2></div>
         </div>
-        <StatTable stats={attributes} />
+        <StatTable stats={displayedAttributes} />
       </section>
 
     </div>
@@ -881,7 +894,10 @@ export default function CharacterStatsExplorer({
   const attributes = (currentRoster?.ranking_options || currentRoster?.attributes || [])
     .filter((name) => !isExcludedRatingAttribute(name));
   const combinedRatingOptions = attributes.filter((name) => combinedSkillRatings.has(name));
-  const attributeRankingOptions = attributes.filter((name) => !combinedSkillRatings.has(name));
+  const matchupRatingOptions = attributes.filter((name) => matchupSimulatedRatings.has(name));
+  const attributeRankingOptions = attributes.filter((name) =>
+    !combinedSkillRatings.has(name) && !matchupSimulatedRatings.has(name),
+  );
   const currentProfile =
     data?.tour === tour && data.profile?.character === character ? data : null;
   const filterMetadata = Array.isArray(currentRoster?.character_filter_metadata)
@@ -1249,6 +1265,11 @@ export default function CharacterStatsExplorer({
                 {combinedRatingOptions.length > 0 && (
                   <optgroup label="Combined skill ratings">
                     {combinedRatingOptions.map((name) => <option key={name} value={name}>{name}</option>)}
+                  </optgroup>
+                )}
+                {matchupRatingOptions.length > 0 && (
+                  <optgroup label="Matchup-simulated ratings">
+                    {matchupRatingOptions.map((name) => <option key={name} value={name}>{name}</option>)}
                   </optgroup>
                 )}
                 {attributeRankingOptions.length > 0 && (
