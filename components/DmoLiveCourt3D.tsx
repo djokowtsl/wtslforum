@@ -58,7 +58,9 @@ type CameraView =
   | 'player-two-third'
   | 'custom';
 
-const DEFAULT_CAMERA = new THREE.Vector3(-25, 26, 30);
+// Low diagonal courtside framing brings the rally closer while preserving
+// player and court scale.
+const DEFAULT_CAMERA = new THREE.Vector3(-18, 8, 19);
 
 async function loadGruntSample(context: AudioContext, isWta: boolean) {
   const response = await fetch(liveGruntAudioUrl(isWta));
