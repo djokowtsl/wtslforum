@@ -141,7 +141,8 @@ test('the court buffering overlay clearly announces delays and stays absent when
   }).default;
   const buffered = renderToStaticMarkup(React.createElement(Overlay, { buffering: true }));
   assert.match(buffered, /role="status"/);
-  assert.match(buffered, /Buffering live court/);
+  assert.match(buffered, /<strong>Buffering<\/strong>/);
+  assert.doesNotMatch(buffered, /Buffering live court/);
   assert.match(buffered, /Waiting for the next match update/);
   assert.equal(renderToStaticMarkup(React.createElement(Overlay, { buffering: false })), '');
 });
