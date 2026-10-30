@@ -1,6 +1,10 @@
 import type { Metadata } from 'next';
+import Link from 'next/link';
 import PageHero from '@/components/PageHero';
+import { getPublishedCoachingReports, type PublicCoachingReport } from '@/lib/coachingReports';
 import styles from './coaching-hub.module.css';
+
+export const dynamic = 'force-dynamic';
 
 export const metadata: Metadata = {
   title: 'Coaching Hub',
@@ -60,7 +64,24 @@ const reportCapabilities = [
   },
 ];
 
-export default function CoachingHubPage() {
+function reportDate(value: string | Date): string {
+  const date = value instanceof Date ? value : new Date(value);
+  if (Number.isNaN(date.getTime())) return 'Date unavailable';
+  return date.toLocaleDateString('en-GB', { timeZone: 'UTC', dateStyle: 'medium' });
+}
+
+export default async function CoachingHubPage() {
+  let reports: PublicCoachingReport[] = [];
+  let reportsUnavailable = false;
+  try {
+    reports = await getPublishedCoachingReports();
+  } catch (error) {
+    console.error('[coaching-hub] public reports unavailable', {
+      errorType: error instanceof Error ? error.name : 'UnknownError',
+    });
+    reportsUnavailable = true;
+  }
+
   return (
     <>
       <PageHero eyebrow="Tennis Elbow 4 · Analysis & learning" title="Coaching Hub">
@@ -74,7 +95,7 @@ export default function CoachingHubPage() {
             <h2 id="coaching-intro-title">Replay it. Read it. Improve it.</h2>
             <p>
               TE4 Coach offers replay breakdowns, live broadcasts, and a shared shot library.
-              Forum DMO reports will be listed here once they are ready for public sharing.
+              Reviewed Forum DMO reports appear here only after consent and staff approval.
             </p>
           </div>
           <div className={styles.introActions}>
@@ -131,16 +152,38 @@ export default function CoachingHubPage() {
           </div>
 
           <div className={styles.reportPanel}>
-            <div className={styles.reportStatus}>
-              <span className={styles.statusDot} />
-              No public reports yet
-            </div>
-            <h3>Approved match breakdowns will appear here.</h3>
-            <p>
-              The Forum’s staff-only DMO analyzer can produce an interactive replay, ranked
-              moments, and match or serve summaries. This page will show only reviewed reports
-              cleared for public sharing—not uploaded DMO files or the private analysis workspace.
-            </p>
+            {reportsUnavailable ? (
+              <div className={styles.reportEmpty} role="status">
+                Public coaching reports are temporarily unavailable. Please try again later.
+              </div>
+            ) : reports.length === 0 ? (
+              <>
+                <div className={styles.reportStatus}>
+                  <span className={styles.statusDot} />
+                  No public reports yet
+                </div>
+                <h3>Approved match breakdowns will appear here.</h3>
+                <p>
+                  The Forum analyzer can publish an interactive replay and ranked match moments
+                  after staff review and consent checks. Source DMO files and the admin workspace
+                  remain private.
+                </p>
+              </>
+            ) : (
+              <div className={styles.reportGrid}>
+                {reports.map((report) => (
+                  <article className={styles.reportCard} key={report.id}>
+                    <span>{report.tournament} · {report.round_name}</span>
+                    <h3>{report.player1} <i>vs</i> {report.player2}</h3>
+                    <p className={styles.reportScore}>{report.score}</p>
+                    <p className={styles.reportDate}>Published {reportDate(report.published_at)}</p>
+                    <Link href={`/coaching-hub/${report.id}`}>
+                      Open match breakdown <span aria-hidden="true">→</span>
+                    </Link>
+                  </article>
+                ))}
+              </div>
+            )}
 
             <div className={styles.capabilityGrid} aria-label="Potential Forum report content">
               {reportCapabilities.map((capability) => (
@@ -155,8 +198,8 @@ export default function CoachingHubPage() {
             </div>
 
             <p className={styles.consentNote}>
-              Public DMO reports require review and explicit sharing consent from the submitter
-              and both players.
+              Public DMO reports include only consent-cleared replay data. Uploaded DMO files and
+              staff analysis remain private.
             </p>
           </div>
         </section>
