@@ -1,7 +1,7 @@
 import { NextResponse } from 'next/server';
 import { getSession } from '@/lib/auth';
 import { sql } from '@/lib/db';
-import { announceTopic } from '@/lib/discord';
+import { announceAdminTopic, announceTopic } from '@/lib/discord';
 import { claimMatchThread } from '@/lib/matchThreads';
 import { looksLikeImageUrl, moderateTextAndImages, ModerationUnavailableError } from '@/lib/moderation';
 import { spoilerMarkupError } from '@/lib/spoilers';
@@ -76,7 +76,10 @@ export async function POST(req: Request) {
       won = false;
     }
   }
-  if (won && decision.status === 'approved') await announceTopic(title, id, user.username).catch(() => {});
+  if (won && decision.status === 'approved') {
+    const announce = user.isAdmin ? announceAdminTopic : announceTopic;
+    await announce(title, id, user.username).catch(() => {});
+  }
   if (decision.status === 'pending' && won) {
     return NextResponse.json({ id, pending: true, message: 'Your discussion is waiting for moderator review.' }, { status: 202 });
   }

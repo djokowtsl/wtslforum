@@ -1,7 +1,37 @@
 const api='https://discord.com/api/v10';
-async function send(channelId:string,content:string){const token=process.env.DISCORD_BOT_TOKEN;if(!token||!channelId)return;await fetch(`${api}/channels/${channelId}/messages`,{method:'POST',headers:{Authorization:`Bot ${token}`,'Content-Type':'application/json'},body:JSON.stringify({content})});}
-export async function announceTopic(title:string,id:number,author:string){await send(process.env.DISCORD_FORUM_CHANNEL_ID||'',`🎾 **New WTSL discussion:** ${title}\nStarted by **${author}**\n${process.env.NEXT_PUBLIC_SITE_URL||''}/discussions/${id}`)}
-export async function announceArticle(title:string,slug:string|number,author:string){await send(process.env.DISCORD_ARTICLES_CHANNEL_ID||'',`📰 **New WTSL Forum article:** ${title}\nBy **${author}**\n${process.env.NEXT_PUBLIC_SITE_URL||''}/articles/${slug}`)}
+const FORUM_ARTICLES_CHANNEL_ID='1556169407011491901';
+const ADMIN_THREADS_CHANNEL_ID='801907383055810638';
+
+function forumSiteUrl(){return (process.env.NEXT_PUBLIC_SITE_URL||'https://www.wtslforum.com').replace(/\/+$/,'');}
+
+async function send(channelId:string,content:string){
+  const token=process.env.DISCORD_BOT_TOKEN;
+  if(!token){console.warn('[forum-discord] announcement skipped: bot token is not configured');return;}
+  if(!channelId){console.warn('[forum-discord] announcement skipped: channel is not configured');return;}
+  try{
+    const response=await fetch(`${api}/channels/${channelId}/messages`,{
+      method:'POST',
+      headers:{Authorization:`Bot ${token}`,'Content-Type':'application/json'},
+      body:JSON.stringify({content,allowed_mentions:{parse:[]}}),
+      signal:AbortSignal.timeout(5_000),
+    });
+    if(!response.ok)console.warn(`[forum-discord] message delivery failed (HTTP ${response.status})`);
+  }catch(error){
+    console.warn('[forum-discord] message delivery failed',error instanceof Error?error.message:'UnknownError');
+  }
+}
+
+export async function announceTopic(title:string,id:number,author:string){
+  await send(process.env.DISCORD_FORUM_CHANNEL_ID||'',`🎾 **New WTSL discussion:** ${title}\nStarted by **${author}**\n${forumSiteUrl()}/discussions/${id}`);
+}
+
+export async function announceAdminTopic(title:string,id:number,author:string){
+  await send(ADMIN_THREADS_CHANNEL_ID,`🎾 **New WTSL Forum thread:** ${title}\nStarted by **${author}**\n${forumSiteUrl()}/discussions/${id}`);
+}
+
+export async function announceArticle(title:string,slug:string|number,author:string){
+  await send(FORUM_ARTICLES_CHANNEL_ID,`📰 **New WTSL Forum article:** ${title}\nBy **${author}**\n${forumSiteUrl()}/articles/${slug}`);
+}
 export async function announceMod(message:string){await send(process.env.DISCORD_MOD_CHANNEL_ID||'',`🛡️ **WTSL Forum moderation**\n${message}`)}
 
 const LIVE_STREAMS_CHANNEL_ID = '1562898541238554765';

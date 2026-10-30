@@ -2,7 +2,7 @@ import { NextResponse } from 'next/server';
 import { del, get, put } from '@vercel/blob';
 import { canModerateComments, getSession } from '@/lib/auth';
 import { sql } from '@/lib/db';
-import { announceTopic } from '@/lib/discord';
+import { announceAdminTopic, announceTopic } from '@/lib/discord';
 
 const contentKinds = ['topic', 'reply', 'media', 'note', 'article_comment', 'live_comment'] as const;
 type ContentKind = typeof contentKinds[number];
@@ -28,8 +28,12 @@ export async function POST(req: Request) {
     if (!rows[0]) return NextResponse.json({ error: 'This discussion is no longer awaiting review.' }, { status: 409 });
     if (action === 'approve') {
       if (rows[0].author_id) {
-        const author = await sql`SELECT display_name FROM users WHERE id=${rows[0].author_id} LIMIT 1`;
-        await announceTopic(rows[0].title, id, author[0]?.display_name || 'WTSL').catch(() => {});
+        const author = await sql`SELECT display_name,discord_id,is_admin FROM users WHERE id=${rows[0].author_id} LIMIT 1`;
+        const configuredAdmins = (process.env.ADMIN_DISCORD_IDS || '').split(',').map((value) => value.trim()).filter(Boolean);
+        const isAdminAuthor = Boolean(author[0]?.is_admin)
+          || configuredAdmins.includes(String(author[0]?.discord_id || ''));
+        const announce = isAdminAuthor ? announceAdminTopic : announceTopic;
+        await announce(rows[0].title, id, author[0]?.display_name || 'WTSL').catch(() => {});
       }
     } else {
       await sql`DELETE FROM match_threads WHERE topic_id=${id}`;
