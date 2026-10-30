@@ -61,6 +61,16 @@ function mergePointLog(existing: Te4LivePoint[], incoming: Te4LivePoint[]) {
   return [...pointsByNumber.values()].sort((first, second) => first.number - second.number);
 }
 
+function playerInitials(name: string) {
+  return name
+    .trim()
+    .split(/\s+/)
+    .filter(Boolean)
+    .slice(0, 2)
+    .map((part) => part.charAt(0).toUpperCase())
+    .join('') || '—';
+}
+
 export default function DmoLiveViewer({ canWatch }: Props) {
   const [broadcasts, setBroadcasts] = useState<Broadcast[]>([]);
   const [pointLogs, setPointLogs] = useState<Record<string, PointLogState>>({});
@@ -77,6 +87,29 @@ export default function DmoLiveViewer({ canWatch }: Props) {
   const pointLogLoaded = useRef(new Set<string>());
   const pointLogRetryAt = useRef(new Map<string, number>());
   const hasActiveDmo = broadcasts.some((broadcast) => broadcast.status === 'live' && Boolean(broadcast.snapshot));
+  const heroBroadcast = broadcasts[activeBroadcastIndex] ?? broadcasts[0] ?? null;
+  const heroPlayers = heroBroadcast?.snapshot?.players ?? heroBroadcast?.players ?? null;
+  const heroIndex = Math.min(activeBroadcastIndex, Math.max(0, broadcasts.length - 1));
+  const heroCounter = heroBroadcast
+    ? `${String(heroIndex + 1).padStart(2, '0')} / ${String(broadcasts.length).padStart(2, '0')}`
+    : '-- / --';
+  const heroChannel = !heroBroadcast
+    ? loading ? 'SEARCHING THE COURTS' : 'LIVE MATCH CENTRE'
+    : heroBroadcast.replay
+      ? `REPLAY / ${heroBroadcast.status === 'live' ? `${heroBroadcast.replaySpeed}×` : 'ENDED'}`
+      : heroBroadcast.status === 'live' ? 'MATCHDAY / LIVE' : 'BROADCAST ENDED';
+  const heroMode = !heroBroadcast
+    ? 'MATCH'
+    : heroBroadcast.replay
+      ? 'MATCH'
+      : heroBroadcast.snapshot ? 'COURT' : heroBroadcast.stream ? 'STREAM' : 'MATCH';
+  const heroState = !heroBroadcast
+    ? 'CENTRE'
+    : heroBroadcast.replay
+      ? heroBroadcast.status === 'live' ? 'PLAYING' : 'ENDED'
+      : heroBroadcast.status === 'live' ? 'LIVE' : 'ENDED';
+  const heroLocation = heroBroadcast?.snapshot?.stadium
+    || (heroBroadcast?.stream ? 'LIVE VIDEO' : heroBroadcast?.snapshot ? 'COURT FEED' : '');
 
   useEffect(() => {
     if (!canWatch) {
@@ -336,12 +369,49 @@ export default function DmoLiveViewer({ canWatch }: Props) {
   }, [focusedBroadcastId, broadcasts, scrollToBroadcast]);
 
   return (
-    <section className={styles.page} aria-label="Live Streams">
-      <header className={styles.heading}>
-        <p className={styles.kicker}>WTSL FORUM / LIVE</p>
-        {canWatch ? <h2>Watching <em>now</em></h2> : <h1>Live Streams</h1>}
-        <p>Live matches and replays appear with a court view, video stream, or both.</p>
+    <section className={styles.page} id="live-streams" aria-label="Live Streams">
+      <header className={styles.topline}>
+        <a className={styles.wordmark} href="#live-streams" aria-label="WTSL Forum live broadcasts">
+          <span className={styles.mark}>W</span>
+          <span>WTSL <b>FORUM</b></span>
+        </a>
+        <div className={styles.channel}><Radio size={14} strokeWidth={1.8} /> {heroChannel}</div>
+        <span className={styles.toplineRight}>{heroLocation}</span>
       </header>
+
+      <section className={styles.intro} aria-labelledby="live-intro-title">
+        <div className={styles.introCopy}>
+          <div className={styles.introKicker}>
+            <i aria-hidden="true" />
+            {heroBroadcast?.replay ? 'MATCH REPLAY' : heroBroadcast?.status === 'live' ? 'THE TOUR, IN PLAY' : 'WTSL TENNIS'}
+          </div>
+          <h1 id="live-intro-title">Every point.<br /><em>Up close.</em></h1>
+        </div>
+        <p className={styles.introNote}>
+          Live match movement, player context, and the score—together in one courtside view.
+        </p>
+        {heroPlayers && (
+          <div className={styles.players} aria-label={`Players: ${heroPlayers[0]} and ${heroPlayers[1]}`}>
+            {heroPlayers.map((name, index) => (
+              <div className={styles.player} key={`${index}-${name}`}>
+                <span aria-hidden="true">{playerInitials(name)}</span>
+                <b title={name}>{name}</b>
+              </div>
+            ))}
+          </div>
+        )}
+        <div className={styles.roundel} role="img" aria-label={`${heroMode} ${heroState}, broadcast ${heroCounter}`}>
+          <span>WTSL</span>
+          <b>{heroMode}<br />{heroState}</b>
+          <i>{heroCounter}</i>
+        </div>
+      </section>
+
+      <div className={styles.contentLabel}>
+        <span>LIVE MATCHES &amp; REPLAYS</span>
+        <span>COURT FEED / SCORE / MOMENTUM</span>
+      </div>
+
       {!canWatch ? (
         <div className={styles.empty}>
           <span className={styles.icon}><Radio size={23} /></span>
@@ -530,6 +600,10 @@ export default function DmoLiveViewer({ canWatch }: Props) {
       )}
         </>
       )}
+      <footer className={styles.footer}>
+        <span>WTSL FORUM <i>·</i> LIVE MATCH CENTRE</span>
+        <span>COURT FEED / SCORE / POINT HISTORY</span>
+      </footer>
     </section>
   );
 }
