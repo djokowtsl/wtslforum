@@ -95,10 +95,74 @@ test('replay listing returns only safe metadata and paginates uploaded DMO files
     nextCursor: '40',
   });
   assert.match(queries[0].text, /private_blob_pathname LIKE 'dmo\/%'/);
+  assert.match(queries[0].text, /public_share_consent IS TRUE/);
   assert.match(queries[0].text, /file_name, private_blob_pathname/);
   assert.match(queries[0].text, /ORDER BY id DESC/);
   assert.ok(queries[0].values.includes('%Open%'));
   assert.ok(!JSON.stringify(page).includes('private_blob_pathname'));
+});
+
+test('replay detail lookup excludes submissions without explicit sharing consent', async () => {
+  const queries = [];
+  const { getPublicDmoReplay } = loadModule('lib/dmoReplayLibrary.ts', {
+    '@/lib/db': {
+      sql: async (strings, ...values) => {
+        queries.push({ text: strings.join('?'), values });
+        return [];
+      },
+    },
+  });
+
+  assert.equal(await getPublicDmoReplay('21'), null);
+  assert.match(queries[0].text, /public_share_consent IS TRUE/);
+});
+
+test('Discord consent endpoint requires authorization and matches the original submitter', async () => {
+  const updates = [];
+  const route = loadModule('app/api/sync/dmo-submissions/consent/route.ts', {
+    'next/server': nextServer,
+    '@/lib/wtslSyncAuth': {
+      isWtslSyncAuthorized: (headers) => headers.get('x-wtsl-sync-secret') === 'test-secret',
+    },
+    '@/lib/dmo-submissions': {
+      setDmoSubmissionPublicShareConsent: async (input) => {
+        updates.push(input);
+        return true;
+      },
+    },
+  });
+
+  const unauthorized = await route.POST(new Request('https://forum.test/api/sync/dmo-submissions/consent', {
+    method: 'POST',
+    body: JSON.stringify({
+      discordChannelId: '1055277431398866995',
+      discordMessageId: '123456789012345678',
+      submitterDiscordId: '223456789012345678',
+      publicShareConsent: true,
+    }),
+    headers: { 'content-type': 'application/json' },
+  }));
+  assert.equal(unauthorized.status, 401);
+
+  const response = await route.POST(new Request('https://forum.test/api/sync/dmo-submissions/consent', {
+    method: 'POST',
+    body: JSON.stringify({
+      discordChannelId: '1055277431398866995',
+      discordMessageId: '123456789012345678',
+      submitterDiscordId: '223456789012345678',
+      publicShareConsent: true,
+    }),
+    headers: {
+      'content-type': 'application/json',
+      'x-wtsl-sync-secret': 'test-secret',
+    },
+  }));
+  assert.equal(response.status, 200);
+  assert.deepEqual(updates, [{
+    discordChannelId: '1055277431398866995',
+    discordMessageId: '123456789012345678',
+    submitterDiscordId: '223456789012345678',
+  }]);
 });
 
 test('replay metadata endpoint does not expose the private upload path', async () => {
