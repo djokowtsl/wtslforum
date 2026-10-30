@@ -20,6 +20,7 @@ export const NAV = [
   { href: '/articles', label: 'Articles' },
   { href: '/media', label: 'Media' },
   { href: '/livestreams', label: 'Live Streams' },
+  { href: '/coaching-hub', label: 'Coaching Hub' },
   { href: '/awards', label: 'Awards' },
   { href: '/stats', label: 'Statistics' },
   { href: '/screenshot-stats', label: 'Screenshot Data' },
