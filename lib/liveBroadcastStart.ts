@@ -15,6 +15,7 @@ export async function startExternalLiveBroadcast(input: {
   bestOf?: 1 | 3 | 5;
   isWta?: boolean;
   officialByBroadcaster?: boolean;
+  officialByTournament?: boolean;
   likelyOfficial?: boolean;
 }) {
   await cleanupExpiredLiveDmoBroadcasts();
@@ -23,6 +24,7 @@ export async function startExternalLiveBroadcast(input: {
   const bestOf = input.bestOf ?? 3;
   const isWta = input.isWta ?? false;
   const officialByBroadcaster = input.officialByBroadcaster ?? false;
+  const officialByTournament = input.officialByTournament ?? false;
   const likelyOfficial = input.likelyOfficial ?? false;
   const payload = {
     hasDmo: false,
@@ -33,6 +35,7 @@ export async function startExternalLiveBroadcast(input: {
     ownerName: input.ownerName.slice(0, 100),
     isWta,
     officialByBroadcaster,
+    officialByTournament,
     likelyOfficial,
     stream: input.stream,
     ...(input.character ? { character: input.character } : {}),
@@ -105,12 +108,13 @@ export async function startExternalLiveBroadcast(input: {
       broadcastMode: 'manual',
       isWta,
       officialByBroadcaster,
+      officialByTournament,
       likelyOfficial,
       stream: input.stream,
     }, {
       // Keep ordinary intake pings in their source channel. Official matches
       // use the player-facing WTSL Live Streams announcement instead.
-      pingViewerRoleInSource: !officialByBroadcaster && !likelyOfficial,
+      pingViewerRoleInSource: !officialByBroadcaster && !officialByTournament && !likelyOfficial,
     });
 
     if (announcement) {

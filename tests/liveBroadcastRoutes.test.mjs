@@ -34,6 +34,16 @@ function loadRoute(path, mocks) {
       return { isSameSiteMutation: (request) => request.headers.get('origin') === 'https://forum.test' };
     }
     if (name === '@/lib/siteSnapshots') return { readSiteSnapshot: async () => null };
+    if (name === '@/lib/liveBroadcastTournamentMatches') {
+      return {
+        isFreshTournamentMatchSnapshot: (checkedAt) => {
+          const age = Date.now() - Date.parse(checkedAt);
+          return Number.isFinite(age) && age >= 0 && age <= 30 * 60 * 1000;
+        },
+        matchesOngoingTournament: () => false,
+        findOngoingTournamentMatchInText: () => null,
+      };
+    }
     if (name === '@/lib/liveDmoStorage') {
       return {
         cleanupExpiredLiveDmoBroadcasts: async () => {},
@@ -270,7 +280,7 @@ test('automatic Discord stream intake requires the shared secret and a verified 
     id: messageId,
     channel_id: '1293144531855872074',
     author: { id: '1564000000000000001', bot: false },
-    content: 'Live: https://youtu.be/dQw4w9WgXcQ',
+    content: 'Alpha vs Beta live: https://youtu.be/dQw4w9WgXcQ',
     embeds: [],
   };
   const stream = {
@@ -288,6 +298,24 @@ test('automatic Discord stream intake requires the shared secret and a verified 
       LIVE_STREAM_CHANNEL_ID: '1293144531855872074',
       LIVE_STREAM_GUILD_ID: '786583939028090881',
       streamLinksInDiscordMessage: () => [stream],
+    },
+    '@/lib/siteSnapshots': {
+      readSiteSnapshot: async () => ({
+        checkedAt: new Date().toISOString(),
+        payload: {
+          ongoingTournamentMatches: [{
+            tournamentId: 'event-2026',
+            tour: 'TE4',
+            first_name: 'Alpha',
+            second_name: 'Beta',
+          }],
+        },
+      }),
+    },
+    '@/lib/liveBroadcastTournamentMatches': {
+      isFreshTournamentMatchSnapshot: () => true,
+      findOngoingTournamentMatchInText: (text, matches) =>
+        text.includes('Alpha') && text.includes('Beta') ? matches[0] : null,
     },
     '@/lib/liveBroadcastStart': {
       startExternalLiveBroadcast: async (input) => {
@@ -322,6 +350,8 @@ test('automatic Discord stream intake requires the shared secret and a verified 
     assert.equal(starts.length, 1);
     assert.equal(starts[0].ownerDiscordId, '1564000000000000001');
     assert.equal(starts[0].ownerName, 'Verified Forum Member');
+    assert.deepEqual(starts[0].players, ['Alpha', 'Beta']);
+    assert.equal(starts[0].officialByTournament, true);
     assert.equal(
       starts[0].sourceMessageUrl,
       `https://discord.com/channels/786583939028090881/1293144531855872074/${messageId}`,
@@ -521,7 +551,7 @@ test('a broadcaster-tagged official match mentions the viewer role in WTSL Live 
   }
 });
 
-test('automatic WTSL broadcasts mention the viewer role even without a manual official tag', async () => {
+test('automatic mode still mentions the viewer role but does not by itself label a match official', async () => {
   const { announceLiveBroadcast } = loadDiscordAnnouncements();
   const originalFetch = globalThis.fetch;
   const originalToken = process.env.DISCORD_BOT_TOKEN;
@@ -552,7 +582,27 @@ test('automatic WTSL broadcasts mention the viewer role even without a manual of
     assert.match(announcement.content, /<@&1439615663860879501>/);
     assert.deepEqual(announcement.allowed_mentions.roles, ['1439615663860879501']);
     assert.equal(
-      announcement.embeds[0].fields.find((field) => field.name === 'Match status').value,
+      announcement.embeds[0].fields.find((field) => field.name === 'Match status'),
+      undefined,
+    );
+
+    calls.length = 0;
+    await announceLiveBroadcast({
+      id: 'automatic-confirmed-tournament-broadcast',
+      ownerDiscordId: 'broadcaster-456',
+      ownerName: 'Broadcaster',
+      players: ['Alpha', 'Beta'],
+      bestOf: 3,
+      broadcastMode: 'auto',
+      isWta: false,
+      officialByBroadcaster: false,
+      officialByTournament: true,
+      likelyOfficial: false,
+      stream: null,
+    });
+    const confirmedAnnouncement = JSON.parse(calls[1].options.body);
+    assert.equal(
+      confirmedAnnouncement.embeds[0].fields.find((field) => field.name === 'Match status').value,
       'Official match',
     );
   } finally {
@@ -630,8 +680,25 @@ test('automatic broadcasts require a confirmed WTSL live match and retain its of
     '@/lib/siteSnapshots': {
       readSiteSnapshot: async () => ({
         checkedAt: new Date().toISOString(),
-        payload: { publicOpen: [{ tour: 'TE4', first_name: 'Beta', second_name: 'Alpha' }] },
+        payload: {
+          publicOpen: [{ tour: 'TE4', first_name: 'Beta', second_name: 'Alpha' }],
+          ongoingTournamentMatches: [{
+            tournamentId: 'jinan-2026',
+            tour: 'TE4_(F)',
+            first_name: 'Beta',
+            second_name: 'Alpha',
+          }],
+        },
       }),
+    },
+    '@/lib/liveBroadcastTournamentMatches': {
+      isFreshTournamentMatchSnapshot: () => true,
+      matchesOngoingTournament: (players, matches) => (
+        matches.some((match) =>
+          match.tour === 'TE4_(F)'
+          && [match.first_name, match.second_name].sort().join('|') === [...players].sort().join('|')
+        )
+      ),
     },
     '@/lib/liveBroadcast': {
       isLikelyOfficialWtslMatch: () => true,
@@ -650,7 +717,7 @@ test('automatic broadcasts require a confirmed WTSL live match and retain its of
     players: ['Alpha', 'Beta'],
     mode: 'auto',
     bestOf: 3,
-    officialByBroadcaster: true,
+    officialByBroadcaster: false,
   }));
   assert.equal(response.status, 201);
   const insertedBroadcast = inserts.find((item) => item.query.includes('INSERT INTO dmo_live_broadcasts'));
@@ -658,12 +725,14 @@ test('automatic broadcasts require a confirmed WTSL live match and retain its of
   assert.ok(storedPayload);
   assert.equal(JSON.parse(storedPayload).bestOf, 3);
   assert.equal(JSON.parse(storedPayload).hasDmo, true);
-  assert.equal(JSON.parse(storedPayload).officialByBroadcaster, true);
+  assert.equal(JSON.parse(storedPayload).officialByBroadcaster, false);
+  assert.equal(JSON.parse(storedPayload).officialByTournament, true);
   assert.equal(JSON.parse(storedPayload).likelyOfficial, true);
   assert.equal(JSON.parse(storedPayload).isWta, true);
   assert.equal(announcements.length, 1);
   assert.equal(announcements[0].broadcastMode, 'auto');
-  assert.equal(announcements[0].officialByBroadcaster, true);
+  assert.equal(announcements[0].officialByBroadcaster, false);
+  assert.equal(announcements[0].officialByTournament, true);
   assert.equal(announcements[0].likelyOfficial, true);
   assert.equal(announcements[0].isWta, true);
 });

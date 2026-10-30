@@ -4,6 +4,12 @@ import { z } from 'zod';
 import { sql } from '@/lib/db';
 import { startExternalLiveBroadcast } from '@/lib/liveBroadcastStart';
 import { LIVE_STREAM_CHANNEL_ID, LIVE_STREAM_GUILD_ID, streamLinksInDiscordMessage } from '@/lib/liveBroadcast';
+import { readSiteSnapshot } from '@/lib/siteSnapshots';
+import type { PublicFixturePayload } from '@/lib/liveFeedTypes';
+import {
+  findOngoingTournamentMatchInText,
+  isFreshTournamentMatchSnapshot,
+} from '@/lib/liveBroadcastTournamentMatches';
 
 export const dynamic = 'force-dynamic';
 const PRIVATE_HEADERS = {
@@ -100,12 +106,39 @@ export async function POST(request: Request) {
       return NextResponse.json({ error: 'Only verified Forum members can start a stream.' }, { status: 403, headers: PRIVATE_HEADERS });
     }
 
+    let tournamentMatch = null;
+    try {
+      const snapshot = await readSiteSnapshot<PublicFixturePayload>('live-fixtures');
+      if (snapshot && isFreshTournamentMatchSnapshot(snapshot.checkedAt)) {
+        const embedText = Array.isArray(message?.embeds)
+          ? message.embeds.flatMap((embed: any) => [
+              embed?.title,
+              embed?.description,
+              ...(Array.isArray(embed?.fields)
+                ? embed.fields.flatMap((field: any) => [field?.name, field?.value])
+                : []),
+            ]).filter((value: unknown): value is string => typeof value === 'string').join(' ')
+          : '';
+        tournamentMatch = findOngoingTournamentMatchInText(
+          `${String(message?.content || '')} ${embedText}`,
+          snapshot.payload.ongoingTournamentMatches ?? [],
+        );
+      }
+    } catch {
+      // Missing or stale tournament data must not create an official classification.
+    }
+
     const sourceMessageUrl = `https://discord.com/channels/${LIVE_STREAM_GUILD_ID}/${LIVE_STREAM_CHANNEL_ID}/${body.messageId}`;
     const result = await startExternalLiveBroadcast({
       ownerDiscordId: authorDiscordId,
       ownerName: String(members[0].display_name || 'Forum member'),
       stream: streams[0],
       sourceMessageUrl,
+      ...(tournamentMatch
+        ? { players: [tournamentMatch.first_name, tournamentMatch.second_name] as [string, string] }
+        : {}),
+      isWta: tournamentMatch?.tour === 'TE4_(F)',
+      officialByTournament: Boolean(tournamentMatch),
     });
     return NextResponse.json(
       { id: result.id, duplicate: result.duplicate },
