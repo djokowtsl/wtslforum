@@ -5,10 +5,11 @@ import type { Te4ViewerData } from '@/lib/te4DmoTypes';
 import styles from './Te4DmoReplayPlayer.module.css';
 
 type Props = {
-  broadcastId: string;
+  broadcastId?: string;
+  replayUrl?: string;
   initialSpeed: 1 | 2 | 4;
   handedness: ['left' | 'right', 'left' | 'right'];
-  fallback: ReactNode;
+  fallback?: ReactNode;
 };
 
 function embedViewerData(
@@ -26,7 +27,13 @@ function embedViewerData(
   return html.replace('__DATA__', json).replace('__HANDEDNESS__', handsJson);
 }
 
-export default function Te4DmoReplayPlayer({ broadcastId, initialSpeed, handedness, fallback }: Props) {
+export default function Te4DmoReplayPlayer({
+  broadcastId,
+  replayUrl,
+  initialSpeed,
+  handedness,
+  fallback,
+}: Props) {
   const frameRef = useRef<HTMLIFrameElement>(null);
   const [srcDoc, setSrcDoc] = useState('');
   const [title, setTitle] = useState('Full match DMO replay');
@@ -36,8 +43,11 @@ export default function Te4DmoReplayPlayer({ broadcastId, initialSpeed, handedne
     let active = true;
     const prepare = async () => {
       try {
+        const dataUrl = replayUrl
+          ?? (broadcastId ? `/api/live-dmo/${encodeURIComponent(broadcastId)}/replay` : '');
+        if (!dataUrl) throw new Error('The replay could not be loaded.');
         const [dataResponse, shellResponse] = await Promise.all([
-          fetch(`/api/live-dmo/${broadcastId}/replay`, { cache: 'no-store' }),
+          fetch(dataUrl, { cache: 'no-store' }),
           fetch('/te4-match-viewer-shell.html', { cache: 'force-cache' }),
         ]);
         const payload = await dataResponse.json().catch(() => null);
@@ -64,7 +74,7 @@ export default function Te4DmoReplayPlayer({ broadcastId, initialSpeed, handedne
     return () => {
       active = false;
     };
-  }, [broadcastId]);
+  }, [broadcastId, replayUrl]);
 
   useEffect(() => {
     frameRef.current?.contentWindow?.postMessage({ type: 'set-handedness', handedness }, '*');
@@ -73,7 +83,7 @@ export default function Te4DmoReplayPlayer({ broadcastId, initialSpeed, handedne
   if (error) {
     return (
       <div className={styles.fallback}>
-        <p role="alert">{error} Showing the live court summary instead.</p>
+        <p role="alert">{error}{fallback ? ' Showing the live court summary instead.' : ''}</p>
         {fallback}
       </div>
     );

@@ -14,6 +14,7 @@ export type DmoSubmission = {
   player1: string;
   player2: string;
   file_name: string | null;
+  public_share_consent: boolean;
   private_blob_pathname: string | null;
   private_blob_content_type: string | null;
   external_url: string | null;
@@ -38,6 +39,7 @@ export type NewDmoSubmission = {
   player1: string;
   player2: string;
   fileName?: string | null;
+  publicShareConsent?: boolean;
   privateBlobPathname?: string | null;
   privateBlobContentType?: string | null;
   externalUrl?: string | null;
@@ -87,6 +89,7 @@ export async function ensureDmoSubmissionSchema() {
           player1 TEXT NOT NULL,
           player2 TEXT NOT NULL,
           file_name TEXT,
+          public_share_consent BOOLEAN NOT NULL DEFAULT FALSE,
           private_blob_pathname TEXT,
           private_blob_content_type TEXT,
           external_url TEXT,
@@ -102,6 +105,10 @@ export async function ensureDmoSubmissionSchema() {
           CONSTRAINT dmo_submissions_discord_source_unique
             UNIQUE (source_discord_channel_id, source_discord_message_id)
         )
+      `;
+      await sql`
+        ALTER TABLE dmo_submissions
+        ADD COLUMN IF NOT EXISTS public_share_consent BOOLEAN NOT NULL DEFAULT FALSE
       `;
       await sql`
         ALTER TABLE dmo_submissions
@@ -153,13 +160,14 @@ export async function createDmoSubmission(
   const rows = await sql`
     INSERT INTO dmo_submissions (
       submitted_by,submitter_discord_id,submitter_name,source,tournament,round_name,
-      player1,player2,file_name,private_blob_pathname,private_blob_content_type,
+      player1,player2,file_name,public_share_consent,private_blob_pathname,private_blob_content_type,
       external_url,source_discord_channel_id,source_discord_message_id,
       submission_thread_id,discord_message_id,discord_delivery_status,submission_date
     ) VALUES (
       ${input.submittedBy},${input.submitterDiscordId},${input.submitterName},
       ${input.source},${input.tournament},${input.roundName},${input.player1},
-      ${input.player2},${input.fileName ?? null},${input.privateBlobPathname ?? null},
+      ${input.player2},${input.fileName ?? null},${input.publicShareConsent ?? false},
+      ${input.privateBlobPathname ?? null},
       ${input.privateBlobContentType ?? null},${input.externalUrl ?? null},
       ${input.sourceDiscordChannelId ?? null},${input.sourceDiscordMessageId ?? null},
       ${input.submissionThreadId ?? null},${input.discordMessageId ?? null},
@@ -177,6 +185,24 @@ export async function createDmoSubmission(
   );
   if (existing) return existing;
   throw new Error('The DMO submission could not be saved.');
+}
+
+export async function setDmoSubmissionPublicShareConsent(input: {
+  discordChannelId: string;
+  discordMessageId: string;
+  submitterDiscordId: string;
+}): Promise<boolean> {
+  await ensureDmoSubmissionSchema();
+  const rows = await sql`
+    UPDATE dmo_submissions
+    SET public_share_consent=TRUE
+    WHERE source='discord'
+      AND source_discord_channel_id=${input.discordChannelId}
+      AND source_discord_message_id=${input.discordMessageId}
+      AND submitter_discord_id=${input.submitterDiscordId}
+    RETURNING id
+  `;
+  return rows.length > 0;
 }
 
 export async function getDmoSubmission(id: number): Promise<DmoSubmission | null> {

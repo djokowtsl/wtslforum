@@ -19,7 +19,13 @@ export default async function Media({ searchParams }: { searchParams: Promise<{ 
 
   return (
     <>
-      <PageHero eyebrow="Community highlights" title="Media">Clips, highlights and match footage shared by the WTSL community.</PageHero>
+      <PageHero
+        eyebrow="Community highlights"
+        title="Media"
+        actions={<a className="btn btn-sm btn-primary" href="/replays">Watch match replays</a>}
+      >
+        Clips, highlights and match footage shared by the WTSL community.
+      </PageHero>
       <main className="container">
         <div className="tour-tabs" role="tablist" aria-label="Tour filter" style={{ marginBottom: 24 }}>
           <a href="/media" className={`tour-tab${!tour ? ' active' : ''}`}>All</a>

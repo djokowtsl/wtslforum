@@ -1,0 +1,2 @@
+ALTER TABLE dmo_submissions
+  ADD COLUMN IF NOT EXISTS public_share_consent BOOLEAN NOT NULL DEFAULT FALSE;

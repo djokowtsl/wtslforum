@@ -1,0 +1,267 @@
+.library {
+  display: grid;
+  grid-template-columns: minmax(270px, 350px) minmax(0, 1fr);
+  gap: 20px;
+  align-items: start;
+  margin: 0 auto 48px;
+}
+
+.listPanel,
+.viewerEmpty {
+  border: 1px solid var(--line-2);
+  border-radius: 16px;
+  background: var(--panel);
+}
+
+.listPanel {
+  padding: 18px;
+}
+
+.listHeading {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  margin-bottom: 16px;
+}
+
+.eyebrow {
+  display: block;
+  margin-bottom: 4px;
+  color: var(--muted);
+  font-size: 10px;
+  font-weight: 800;
+  letter-spacing: .11em;
+  text-transform: uppercase;
+}
+
+.listHeading h2,
+.viewerHeading h1,
+.viewerEmpty h2 {
+  color: var(--text-strong);
+  font-family: var(--font-display);
+  font-style: italic;
+  font-weight: 800;
+  line-height: 1.05;
+  text-transform: uppercase;
+}
+
+.listHeading h2 {
+  font-size: 24px;
+}
+
+.count {
+  display: grid;
+  min-width: 34px;
+  height: 34px;
+  place-items: center;
+  border-radius: 50%;
+  background: var(--panel-2);
+  color: var(--lime);
+  font-size: 12px;
+  font-weight: 800;
+}
+
+.searchLabel {
+  display: block;
+  margin-bottom: 6px;
+  color: var(--soft);
+  font-size: 12px;
+  font-weight: 700;
+}
+
+.search {
+  width: 100%;
+  min-height: 42px;
+  padding: 9px 11px;
+  border: 1px solid var(--line-2);
+  border-radius: 9px;
+  outline: none;
+  background: var(--bg-2);
+  color: var(--text);
+  font: inherit;
+  font-size: 13px;
+}
+
+.search:focus-visible {
+  border-color: var(--lime);
+  outline: 2px solid rgba(176, 244, 59, .24);
+}
+
+.matches {
+  display: grid;
+  gap: 8px;
+  margin-top: 14px;
+  max-height: 68vh;
+  overflow: auto;
+  overscroll-behavior: contain;
+}
+
+.match {
+  display: grid;
+  gap: 5px;
+  width: 100%;
+  padding: 11px;
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  background: transparent;
+  color: var(--text);
+  cursor: pointer;
+  font: inherit;
+  text-align: left;
+  transition: border-color .15s ease, background .15s ease;
+}
+
+.match:hover,
+.match.active {
+  border-color: rgba(176, 244, 59, .48);
+  background: var(--panel-2);
+}
+
+.match:focus-visible,
+.more:focus-visible {
+  outline: 2px solid var(--lime);
+  outline-offset: 2px;
+}
+
+.matchPlayers {
+  color: var(--text-strong);
+  font-size: 14px;
+  font-weight: 800;
+}
+
+.matchPlayers i,
+.viewerHeading h1 i {
+  color: var(--muted);
+  font-size: .82em;
+  font-style: normal;
+  font-weight: 500;
+}
+
+.matchMeta,
+.matchDate {
+  overflow: hidden;
+  color: var(--muted);
+  font-size: 11px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.matchDate {
+  color: var(--soft);
+  font-size: 10px;
+}
+
+.empty {
+  margin: 0;
+  padding: 18px 8px;
+  color: var(--muted);
+  font-size: 13px;
+  text-align: center;
+}
+
+.error {
+  margin: 12px 0 0;
+  color: var(--red);
+  font-size: 12px;
+}
+
+.more {
+  width: 100%;
+  margin-top: 12px;
+  padding: 10px;
+  border: 1px solid var(--line-2);
+  border-radius: 9px;
+  background: var(--panel-2);
+  color: var(--text);
+  cursor: pointer;
+  font: inherit;
+  font-size: 12px;
+  font-weight: 750;
+}
+
+.more:disabled {
+  cursor: wait;
+  opacity: .7;
+}
+
+.viewerPanel {
+  min-width: 0;
+}
+
+.viewerHeading {
+  margin-bottom: 14px;
+}
+
+.viewerHeading h1 {
+  font-size: clamp(25px, 4vw, 42px);
+}
+
+.viewerHeading p {
+  margin: 7px 0 0;
+  color: var(--muted);
+  font-size: 12px;
+}
+
+.viewerHeading p span {
+  padding: 0 5px;
+}
+
+.viewerEmpty {
+  display: grid;
+  min-height: 440px;
+  place-content: center;
+  justify-items: center;
+  padding: 32px;
+  text-align: center;
+}
+
+.playIcon {
+  display: grid;
+  width: 54px;
+  height: 54px;
+  margin-bottom: 16px;
+  place-items: center;
+  padding-left: 3px;
+  border: 1px solid rgba(176, 244, 59, .3);
+  border-radius: 50%;
+  background: rgba(176, 244, 59, .08);
+  color: var(--lime);
+  font-size: 17px;
+}
+
+.viewerEmpty h2 {
+  font-size: 25px;
+}
+
+.viewerEmpty p {
+  max-width: 430px;
+  margin: 10px 0 0;
+  color: var(--muted);
+  font-size: 13px;
+}
+
+@media (max-width: 900px) {
+  .library {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  .matches {
+    max-height: 420px;
+  }
+}
+
+@media (max-width: 540px) {
+  .listPanel {
+    padding: 13px;
+  }
+
+  .viewerHeading h1 {
+    font-size: 28px;
+  }
+
+  .viewerEmpty {
+    min-height: 320px;
+    padding: 24px;
+  }
+}

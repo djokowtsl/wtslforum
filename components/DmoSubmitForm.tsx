@@ -11,6 +11,7 @@ export default function DmoSubmitForm() {
   const [player2, setPlayer2] = useState('');
   const [externalUrl, setExternalUrl] = useState('');
   const [file, setFile] = useState<File | null>(null);
+  const [publicShareConsent, setPublicShareConsent] = useState(false);
   const [fileInputKey, setFileInputKey] = useState(0);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState('');
@@ -45,6 +46,7 @@ export default function DmoSubmitForm() {
       form.append('player1', player1);
       form.append('player2', player2);
       form.append('externalUrl', externalUrl.trim());
+      form.append('publicShareConsent', String(publicShareConsent && Boolean(file)));
       if (file) form.append('file', file);
 
       const response = await fetch('/api/dmo-submissions', { method: 'POST', body: form });
@@ -57,6 +59,7 @@ export default function DmoSubmitForm() {
       setPlayer2('');
       setExternalUrl('');
       setFile(null);
+      setPublicShareConsent(false);
       setFileInputKey((value) => value + 1);
       setNotice(
         data.discordDelivered
@@ -76,7 +79,8 @@ export default function DmoSubmitForm() {
       <h3>Submit a match recording</h3>
       <p className="notice" style={{ marginBottom: 14 }}>
         Add the tournament, round, and players, then attach a .dmo file or provide a recording link.
-        Submissions are kept private for admins and are also sent to the Discord DMO admin channel.
+        The uploaded .dmo file stays private for admins. If you opt in, a replay generated from it
+        can appear in the public archive; recording links are not published.
       </p>
       {error && <div className="notice" role="alert" style={{ borderColor: '#ffb3bb', marginBottom: 14 }}>{error}</div>}
       {notice && <div className="notice" role="status" style={{ marginBottom: 14 }}>{notice}</div>}
@@ -129,8 +133,23 @@ export default function DmoSubmitForm() {
             key={fileInputKey}
             type="file"
             accept=".dmo,application/octet-stream"
-            onChange={(event) => setFile(event.target.files?.[0] ?? null)}
+            onChange={(event) => {
+              setFile(event.target.files?.[0] ?? null);
+              setPublicShareConsent(false);
+            }}
           />
+        </label>
+        <label style={{ display: 'flex', alignItems: 'flex-start', gap: 9 }}>
+          <input
+            type="checkbox"
+            checked={publicShareConsent}
+            disabled={!file}
+            onChange={(event) => setPublicShareConsent(event.target.checked)}
+            style={{ marginTop: 3 }}
+          />
+          <span>
+            I confirm this is an official WTSL match and both players agree to share its replay publicly.
+          </span>
         </label>
         <button className="btn btn-sm" type="submit" disabled={busy}>
           {busy ? 'Submitting…' : 'Submit recording'}
