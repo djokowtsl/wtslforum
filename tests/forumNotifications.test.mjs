@@ -15,6 +15,7 @@ function loadModule(path, mocks) {
   new Function('require', 'module', 'exports', code)(
     (name) => {
       if (name in mocks) return mocks[name];
+      if (name === 'node:crypto') return require(name);
       throw new Error(`Unexpected dependency: ${name}`);
     },
     module,
@@ -111,9 +112,19 @@ test('editing a published post only notifies users newly mentioned', async () =>
 
 test('new direct-message notices link back to the conversation without quoting private text', async () => {
   const sent = [];
+  const claimId = 'claim-123';
+  const { sql } = makeSql((query) => {
+    if (query.includes('SELECT discord_id')) return [{ discord_id: 'discord-21' }];
+    if (query.includes('INSERT INTO forum_dm_discord_notification_cooldowns')) {
+      assert.match(query, /INTERVAL '12 hours'/);
+      return [{ claim_id: claimId }];
+    }
+    return assert.fail(`Unexpected SQL: ${query}`);
+  });
   const notifications = loadModule('lib/forumNotifications.ts', {
-    './db': { sql: async () => [{ discord_id: 'discord-21' }] },
+    './db': { sql },
     './discord': { sendDM: async (...args) => sent.push(args) },
+    'node:crypto': { randomUUID: () => claimId },
   });
 
   await notifications.notifyForumDirectMessage({
@@ -127,6 +138,39 @@ test('new direct-message notices link back to the conversation without quoting p
   assert.match(sent[0][1], /Author sent you a direct message/);
   assert.match(sent[0][1], /https:\/\/www\.wtslforum\.com\/messages\/12/);
   assert.doesNotMatch(sent[0][1], /message body/i);
+});
+
+test('direct-message Discord notices are suppressed for 12 hours per recipient', async () => {
+  const sent = [];
+  const claimId = 'claim-123';
+  let hasActiveCooldown = false;
+  const { sql, calls } = makeSql((query) => {
+    if (query.includes('SELECT discord_id')) return [{ discord_id: 'discord-21' }];
+    if (query.includes('INSERT INTO forum_dm_discord_notification_cooldowns')) {
+      assert.match(query, /INTERVAL '12 hours'/);
+      if (hasActiveCooldown) return [];
+      hasActiveCooldown = true;
+      return [{ claim_id: claimId }];
+    }
+    return assert.fail(`Unexpected SQL: ${query}`);
+  });
+  const notifications = loadModule('lib/forumNotifications.ts', {
+    './db': { sql },
+    './discord': { sendDM: async (...args) => sent.push(args) },
+    'node:crypto': { randomUUID: () => claimId },
+  });
+
+  const message = {
+    recipientUserId: 21,
+    senderUserId: 12,
+    senderName: 'Author',
+  };
+  await notifications.notifyForumDirectMessage(message);
+  await notifications.notifyForumDirectMessage({ ...message, senderUserId: 13, senderName: 'Another author' });
+
+  assert.equal(calls.filter(({ query }) => query.includes('INSERT INTO forum_dm_discord_notification_cooldowns')).length, 2);
+  assert.equal(sent.length, 1);
+  assert.match(sent[0][1], /messages\/12/);
 });
 
 test('direct-message route notifies the recipient after the message is stored', async () => {
@@ -190,13 +234,27 @@ test('replying in an existing direct-message thread notifies its recipient', asy
 });
 
 test('Discord delivery failure never prevents a Forum message from being accepted', async () => {
+  const claimId = 'claim-123';
+  const calls = [];
+  const { sql } = makeSql((query, values) => {
+    calls.push({ query, values });
+    if (query.includes('SELECT discord_id')) return [{ discord_id: 'discord-21' }];
+    if (query.includes('INSERT INTO forum_dm_discord_notification_cooldowns')) return [{ claim_id: claimId }];
+    if (query.includes('DELETE FROM forum_dm_discord_notification_cooldowns')) return [];
+    return assert.fail(`Unexpected SQL: ${query}`);
+  });
   const notifications = loadModule('lib/forumNotifications.ts', {
-    './db': { sql: async () => [{ discord_id: 'discord-21' }] },
+    './db': { sql },
     './discord': { sendDM: async () => { throw new Error('Discord unavailable'); } },
+    'node:crypto': { randomUUID: () => claimId },
   });
   await assert.doesNotReject(() => notifications.notifyForumDirectMessage({
     recipientUserId: 21,
     senderUserId: 12,
     senderName: 'Author',
   }));
+  assert.ok(calls.some(({ query, values }) =>
+    query.includes('DELETE FROM forum_dm_discord_notification_cooldowns')
+      && values.includes(claimId),
+  ));
 });
