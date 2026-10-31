@@ -1,3 +1,4 @@
+import { randomUUID } from 'node:crypto';
 import { sql } from './db';
 import { sendDM } from './discord';
 
@@ -24,21 +25,51 @@ export async function notifyForumDirectMessage(input: {
   senderUserId: string | number;
   senderName: string;
 }) {
+  const recipientUserId = Number(input.recipientUserId);
+  if (!Number.isSafeInteger(recipientUserId) || recipientUserId <= 0) return;
+
   try {
     const rows = await sql`
       SELECT discord_id
       FROM users
-      WHERE id=${Number(input.recipientUserId)}
+      WHERE id=${recipientUserId}
       LIMIT 1
     `;
     const discordId = rows[0]?.discord_id;
     if (!discordId) return;
 
+    const claimId = randomUUID();
+    const claims = await sql`
+      INSERT INTO forum_dm_discord_notification_cooldowns
+        (recipient_user_id, claim_id, notified_at)
+      VALUES (${recipientUserId}, ${claimId}, NOW())
+      ON CONFLICT (recipient_user_id) DO UPDATE
+      SET claim_id = EXCLUDED.claim_id,
+          notified_at = EXCLUDED.notified_at
+      WHERE forum_dm_discord_notification_cooldowns.notified_at
+        <= NOW() - INTERVAL '12 hours'
+      RETURNING claim_id
+    `;
+    if (!claims.length) return;
+
     const senderName = input.senderName.trim().slice(0, 80) || 'A Forum member';
-    await sendDM(
-      String(discordId),
-      `📨 **WTSL Forum message**\n${senderName} sent you a direct message.\n${forumLink(`/messages/${encodeURIComponent(String(input.senderUserId))}`)}`,
-    );
+    try {
+      await sendDM(
+        String(discordId),
+        `📨 **WTSL Forum message**\n${senderName} sent you a direct message.\n${forumLink(`/messages/${encodeURIComponent(String(input.senderUserId))}`)}`,
+      );
+    } catch (error) {
+      try {
+        await sql`
+          DELETE FROM forum_dm_discord_notification_cooldowns
+          WHERE recipient_user_id = ${recipientUserId}
+            AND claim_id = ${claimId}
+        `;
+      } catch (cleanupError) {
+        logNotificationFailure('direct-message cooldown release', cleanupError);
+      }
+      throw error;
+    }
   } catch (error) {
     logNotificationFailure('direct-message notification', error);
   }
