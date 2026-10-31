@@ -800,12 +800,14 @@ test('manual DMO replay stores ranked player names without requiring a current l
     players: ['[Fake] Squeaky', 'Player Two'],
     mode: 'manual',
     bestOf: 3,
+    isWta: true,
   }));
   const body = await response.json();
   assert.equal(response.status, 201);
   assert.deepEqual(body.players, ['Squeaky', 'Player Two']);
   assert.equal(body.replay, true);
   assert.equal(body.replaySpeed, 2);
+  assert.equal(body.isWta, true);
   assert.equal(liveFeedLookups, 0);
   const insertedBroadcast = inserts.find((item) => item.query.includes('INSERT INTO dmo_live_broadcasts'));
   const storedPayload = insertedBroadcast?.values.find((value) => typeof value === 'string' && value.includes('"mode":"manual"'));
@@ -813,6 +815,7 @@ test('manual DMO replay stores ranked player names without requiring a current l
   assert.deepEqual(JSON.parse(storedPayload).players, ['Squeaky', 'Player Two']);
   assert.equal(JSON.parse(storedPayload).replay, true);
   assert.equal(JSON.parse(storedPayload).replaySpeed, 2);
+  assert.equal(JSON.parse(storedPayload).isWta, true);
   assert.equal(JSON.parse(storedPayload).likelyOfficial, true);
 });
 

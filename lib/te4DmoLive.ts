@@ -56,6 +56,8 @@ export type Te4LiveSnapshot = {
   players: [string, string];
   handedness?: ['left' | 'right', 'left' | 'right'];
   frameCount: number;
+  /** Source playback frame rate; live DMO snapshots default to 60 fps. */
+  frameRate?: number;
   courtFrameCount?: number;
   pointCount: number;
   bestOf: Te4LiveBestOf;

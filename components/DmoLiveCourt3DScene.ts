@@ -206,6 +206,16 @@ export function buildCrowd(scene: THREE.Scene) {
     new THREE.MeshStandardMaterial({ color: 0xffffff, roughness: 0.88 }),
     spectators.length,
   );
+  const eyeMesh = new THREE.InstancedMesh(
+    new THREE.SphereGeometry(0.012, 6, 4),
+    new THREE.MeshStandardMaterial({ color: 0x28221f, roughness: 0.9 }),
+    spectators.length * 2,
+  );
+  const mouthMesh = new THREE.InstancedMesh(
+    new THREE.BoxGeometry(0.026, 0.006, 0.006),
+    new THREE.MeshStandardMaterial({ color: 0x68463d, roughness: 0.9 }),
+    spectators.length,
+  );
   const dummy = new THREE.Object3D();
   const shirts = [0xc96b52, 0x397e75, 0xd7b253, 0x526b98, 0xefe0c8, 0x885e80, 0x465754];
   const skinTones = [0xf1c2a0, 0xd8a17c, 0x9e684c, 0xe0b090];
@@ -224,12 +234,39 @@ export function buildCrowd(scene: THREE.Scene) {
     bodyMesh.setColorAt(index, new THREE.Color(shirts[(index * 5 + spectator.row) % shirts.length]));
 
     dummy.position.y = seatY + 0.56;
-    dummy.scale.setScalar(0.88 + (index % 3) * 0.08);
+    const headScale = 0.88 + (index % 3) * 0.08;
+    dummy.scale.setScalar(headScale);
     dummy.updateMatrix();
     headMesh.setMatrixAt(index, dummy.matrix);
-    headMesh.setColorAt(index, new THREE.Color(skinTones[(index * 3 + spectator.row) % skinTones.length]));
+    const skin = new THREE.Color(skinTones[(index * 3 + spectator.row) % skinTones.length]);
+    headMesh.setColorAt(index, skin);
+
+    const forwardX = Math.sin(spectator.facing);
+    const forwardZ = Math.cos(spectator.facing);
+    const sideX = Math.cos(spectator.facing);
+    const sideZ = -Math.sin(spectator.facing);
+    for (const eyeSide of [-1, 1]) {
+      dummy.position.set(
+        spectator.x + forwardX * 0.071 * headScale + sideX * eyeSide * 0.025 * headScale,
+        seatY + 0.57,
+        spectator.z + forwardZ * 0.071 * headScale + sideZ * eyeSide * 0.025 * headScale,
+      );
+      dummy.rotation.y = spectator.facing;
+      dummy.scale.setScalar(headScale);
+      dummy.updateMatrix();
+      eyeMesh.setMatrixAt(index * 2 + (eyeSide === 1 ? 1 : 0), dummy.matrix);
+    }
+    dummy.position.set(
+      spectator.x + forwardX * 0.078 * headScale,
+      seatY + 0.535,
+      spectator.z + forwardZ * 0.078 * headScale,
+    );
+    dummy.rotation.y = spectator.facing;
+    dummy.scale.setScalar(headScale);
+    dummy.updateMatrix();
+    mouthMesh.setMatrixAt(index, dummy.matrix);
   });
-  for (const instances of [seatMesh, bodyMesh, headMesh]) {
+  for (const instances of [seatMesh, bodyMesh, headMesh, eyeMesh, mouthMesh]) {
     instances.instanceMatrix.needsUpdate = true;
     instances.castShadow = false;
     instances.receiveShadow = false;

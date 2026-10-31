@@ -135,6 +135,7 @@ export default function DmoLiveHost({ displayName, canPrepareFullReplay }: Props
   const [realTimeObserved, setRealTimeObserved] = useState(false);
   const [positionsPresent, setPositionsPresent] = useState<boolean | null>(null);
   const [bestOf, setBestOf] = useState<Te4LiveBestOf>(3);
+  const [isWta, setIsWta] = useState(false);
   const [broadcastId, setBroadcastId] = useState<string | null>(null);
   const [broadcastMode, setBroadcastMode] = useState<'manual' | 'auto' | null>(null);
   const [characterChoices, setCharacterChoices] = useState<string[]>([]);
@@ -493,6 +494,7 @@ export default function DmoLiveHost({ displayName, canPrepareFullReplay }: Props
           character: character.trim() || null,
           mode,
           bestOf: broadcastBestOf,
+          isWta: mode === 'manual' && isWta,
           officialByBroadcaster: officialByBroadcaster && broadcastBestOf !== 1,
         }),
       });
@@ -1001,6 +1003,19 @@ export default function DmoLiveHost({ displayName, canPrepareFullReplay }: Props
             <option value={3}>Best of 3 sets</option>
             <option value={5}>Best of 5 sets</option>
           </select>
+        </label>
+        <label className={styles.bestOf}>
+          <span>Match tour</span>
+          <select
+            value={isWta ? 'WTA' : 'ATP'}
+            onChange={(event) => setIsWta(event.currentTarget.value === 'WTA')}
+            disabled={busy || Boolean(broadcastId) || autoWatching}
+            aria-label="Match tour"
+          >
+            <option value="ATP">ATP</option>
+            <option value="WTA">WTA</option>
+          </select>
+          <small>This selects the player model and grunt audio for the replay.</small>
         </label>
         <div className={styles.characterControl}>
           <label className={styles.bestOf}>

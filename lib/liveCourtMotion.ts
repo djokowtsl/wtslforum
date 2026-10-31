@@ -7,6 +7,10 @@ export type LiveCourtMotionEvent = {
   shotType?: 'serve' | 'rally';
   speedKmh?: number;
 };
+export type LiveCourtFootworkEvent = {
+  frame: number;
+  kind: 'footstep' | 'slide';
+};
 
 export function liveCourtTrajectoryCue(
   event: Pick<LiveCourtMotionEvent, 'kind' | 'shotType'>,
@@ -14,6 +18,54 @@ export function liveCourtTrajectoryCue(
 ): 'grunt' | 'cheer' | null {
   if (event.kind === 'point-end') return 'cheer';
   return event.shotType === 'rally' && gruntsEnabled ? 'grunt' : null;
+}
+
+export function deriveLiveCourtFootworkEvents(
+  samples: LiveCourtSample[],
+  framesPerSecond = 60,
+): LiveCourtFootworkEvent[] {
+  const frameRate = Number.isFinite(framesPerSecond) && framesPerSecond > 0
+    ? framesPerSecond
+    : 60;
+  const lastFootstep = [-Infinity, -Infinity];
+  const lastSlide = [-Infinity, -Infinity];
+  const events: LiveCourtFootworkEvent[] = [];
+
+  for (let index = 1; index < samples.length; index += 1) {
+    const previous = samples[index - 1];
+    const current = samples[index];
+    const frameGap = current.frame - previous.frame;
+    if (frameGap <= 0 || frameGap > frameRate * 1.5) continue;
+    const seconds = frameGap / frameRate;
+
+    for (let player = 0; player < 2; player += 1) {
+      const xIndex = player === 0 ? 3 : 5;
+      const zIndex = player === 0 ? 4 : 6;
+      const lateral = (current.values[zIndex] - previous.values[zIndex]) * 0.01;
+      const length = (current.values[xIndex] - previous.values[xIndex]) * 0.01;
+      const distance = Math.hypot(length, lateral);
+      const speed = distance / seconds;
+      if (distance > seconds * 7.5 || speed < 1.25) continue;
+
+      const lateralRatio = distance > 0 ? Math.abs(lateral) / distance : 0;
+      if (
+        speed >= 2.2
+        && lateralRatio >= 0.78
+        && current.frame - lastSlide[player] >= frameRate * 0.75
+      ) {
+        events.push({ frame: current.frame, kind: 'slide' });
+        lastSlide[player] = current.frame;
+        lastFootstep[player] = current.frame;
+      } else if (current.frame - lastFootstep[player] >= frameRate * 0.27) {
+        events.push({ frame: current.frame, kind: 'footstep' });
+        lastFootstep[player] = current.frame;
+      }
+    }
+  }
+
+  return events.sort((first, second) =>
+    first.frame - second.frame || first.kind.localeCompare(second.kind),
+  );
 }
 
 // The DMO court runs along X, with the net at X=0. Player-local +Z points
@@ -27,12 +79,94 @@ export function findPlayerShotEvent(
   player: 1 | 2,
   frame: number,
   tolerance = 6,
+  shotType?: 'serve' | 'rally',
 ): LiveCourtMotionEvent | undefined {
-  return events.find((event) =>
-    event.kind === 'shot'
-    && event.player === player
-    && Math.abs(event.frame - frame) <= tolerance,
-  );
+  const broadTolerance = shotType ? tolerance : Math.max(tolerance, 24);
+  let low = 0;
+  let high = events.length;
+  while (low < high) {
+    const middle = (low + high) >> 1;
+    if (events[middle].frame < frame - broadTolerance) low = middle + 1;
+    else high = middle;
+  }
+  let nearest: LiveCourtMotionEvent | undefined;
+  let nearestDistance = Number.POSITIVE_INFINITY;
+  for (let index = low; index < events.length && events[index].frame <= frame + broadTolerance; index += 1) {
+    const event = events[index];
+    const allowedTolerance = shotType
+      ? tolerance
+      : event.shotType === 'serve' ? Math.max(tolerance, 24) : tolerance;
+    const distance = Math.abs(event.frame - frame);
+    if (
+      event.kind === 'shot'
+      && event.player === player
+      && (!shotType || event.shotType === shotType)
+      && distance <= allowedTolerance
+      && distance < nearestDistance
+    ) {
+      nearest = event;
+      nearestDistance = distance;
+    }
+  }
+  return nearest;
+}
+
+export function findLiveCourtShotInRange(
+  events: LiveCourtMotionEvent[],
+  firstFrame: number,
+  lastFrame: number,
+  shotType?: 'serve' | 'rally',
+): LiveCourtMotionEvent | undefined {
+  const start = Math.min(firstFrame, lastFrame);
+  const end = Math.max(firstFrame, lastFrame);
+  let low = 0;
+  let high = events.length;
+  while (low < high) {
+    const middle = (low + high) >> 1;
+    if (events[middle].frame < start) low = middle + 1;
+    else high = middle;
+  }
+  for (let index = low; index < events.length && events[index].frame <= end; index += 1) {
+    const event = events[index];
+    if (event.kind === 'shot' && (!shotType || event.shotType === shotType)) return event;
+  }
+  return undefined;
+}
+
+export function latestLiveCourtShotEvent(
+  events: LiveCourtMotionEvent[],
+  frame: number,
+): LiveCourtMotionEvent | null {
+  let low = 0;
+  let high = events.length;
+  while (low < high) {
+    const middle = (low + high) >> 1;
+    if (events[middle].frame <= frame) low = middle + 1;
+    else high = middle;
+  }
+  for (let index = low - 1; index >= 0; index -= 1) {
+    if (events[index].kind === 'shot') return events[index];
+  }
+  return null;
+}
+
+export function liveCourtEventsBetween(
+  events: LiveCourtMotionEvent[],
+  afterFrame: number,
+  throughFrame: number,
+): LiveCourtMotionEvent[] {
+  let low = 0;
+  let high = events.length;
+  while (low < high) {
+    const middle = (low + high) >> 1;
+    if (events[middle].frame <= afterFrame) low = middle + 1;
+    else high = middle;
+  }
+  const result: LiveCourtMotionEvent[] = [];
+  for (let index = low; index < events.length && events[index].frame <= throughFrame; index += 1) {
+    result.push(events[index]);
+  }
+  return result;
 }
 
 export function clampPlayerCameraLateralPan(value: number, halfCourtWidth = 10.97 / 2): number {

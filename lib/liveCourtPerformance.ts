@@ -27,6 +27,12 @@ export function crossedFrame(eventFrame: number, previous: number, current: numb
 }
 
 export function trailAllowed(events: {frame: number; kind: string}[], frame: number) {
-  const latest = events.filter(e => e.frame <= frame).at(-1);
-  return latest?.kind === 'shot';
+  let low = 0;
+  let high = events.length;
+  while (low < high) {
+    const middle = (low + high) >> 1;
+    if (events[middle].frame <= frame) low = middle + 1;
+    else high = middle;
+  }
+  return low > 0 && events[low - 1].kind === 'shot';
 }
