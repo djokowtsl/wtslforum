@@ -68,15 +68,33 @@ export default async function MembersPage({
           <div className="member-directory-grid" role="list" aria-label="Forum members">
             {directory.members.map((member) => {
               const isSelf = user && Number(user.id) === Number(member.id);
+              const profileHref = member.profile_player_id
+                ? `/players/${encodeURIComponent(member.profile_player_id)}?tour=${encodeURIComponent(member.profile_tour || 'TE4')}`
+                : null;
+              const memberAvatar = (
+                <img
+                  className="avatar-img"
+                  src={discordAvatar(member.avatar_url, member.display_name)}
+                  alt=""
+                  loading="lazy"
+                />
+              );
+              const memberName = (
+                <span className="member-directory-name">{member.display_name}</span>
+              );
               return (
                 <div className="member-directory-card" key={member.id} role="listitem">
-                  <img
-                    className="avatar-img"
-                    src={discordAvatar(member.avatar_url, member.display_name)}
-                    alt=""
-                    loading="lazy"
-                  />
-                  <span className="member-directory-name">{member.display_name}</span>
+                  {profileHref ? (
+                    <Link className="member-directory-profile-link" href={profileHref}>
+                      {memberAvatar}
+                      {memberName}
+                    </Link>
+                  ) : (
+                    <>
+                      {memberAvatar}
+                      {memberName}
+                    </>
+                  )}
                   {isSelf ? (
                     <span className="pill cyan">You</span>
                   ) : user ? (

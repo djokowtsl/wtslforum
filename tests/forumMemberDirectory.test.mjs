@@ -20,29 +20,46 @@ function loadDirectory(sql) {
   return module.exports;
 }
 
-test('public directory returns only names and avatars with case-insensitive search and pagination', async () => {
+test('public directory limits display data and resolves approved profiles with search and pagination', async () => {
   const calls = [];
   const sql = async (strings, ...values) => {
     const text = strings.join(' ? ');
     calls.push({ text, values });
     if (text.includes('COUNT(*)')) return [{ total: 65 }];
-    return [{ id: 11, display_name: 'Serena', avatar_url: 'https://cdn.test/avatar.png' }];
+    return [{
+      id: 11,
+      display_name: 'Serena',
+      avatar_url: 'https://cdn.test/avatar.png',
+      profile_player_id: 'player-11',
+      profile_tour: 'TE4',
+    }];
   };
   const { listForumMembers } = loadDirectory(sql);
 
   const result = await listForumMembers('  Serena  ', 3, 20);
 
   assert.deepEqual(result, {
-    members: [{ id: 11, display_name: 'Serena', avatar_url: 'https://cdn.test/avatar.png' }],
+    members: [{
+      id: 11,
+      display_name: 'Serena',
+      avatar_url: 'https://cdn.test/avatar.png',
+      profile_player_id: 'player-11',
+      profile_tour: 'TE4',
+    }],
     total: 65,
     page: 3,
     pageCount: 4,
   });
   assert.deepEqual(calls[0].values, ['Serena', 'Serena']);
   assert.deepEqual(calls[1].values, ['Serena', 'Serena', 20, 40]);
-  assert.match(calls[1].text, /SELECT id, display_name, avatar_url/);
-  assert.match(calls[1].text, /ORDER BY LOWER\(display_name\), id/);
-  assert.doesNotMatch(calls[1].text, /discord_id|username|status|email/i);
+  assert.match(calls[1].text, /SELECT u\.id, u\.display_name, u\.avatar_url/);
+  assert.match(calls[1].text, /LEFT JOIN LATERAL/);
+  assert.match(calls[1].text, /c\.status = 'approved'/);
+  assert.match(calls[1].text, /JOIN wtsl_players p/);
+  assert.match(calls[1].text, /CASE WHEN c\.tour = 'TE4' THEN 0/);
+  assert.match(calls[1].text, /WHEN c\.id = u\.default_player_claim_id THEN 1/);
+  assert.match(calls[1].text, /ORDER BY LOWER\(u\.display_name\), u\.id/);
+  assert.doesNotMatch(calls[1].text, /discord_id|username|email|u\.status/i);
 });
 
 test('directory clamps page and page size and caps search input', async () => {
@@ -72,5 +89,8 @@ test('members are linked from desktop and mobile navigation and are publicly bro
   assert.match(page, /export default async function MembersPage/);
   assert.match(page, /listForumMembers\(query, requestedPage, FORUM_MEMBER_PAGE_SIZE\)/);
   assert.doesNotMatch(page, /redirect\(/);
+  assert.match(page, /member\.profile_player_id/);
+  assert.match(page, /href=\{profileHref\}/);
+  assert.match(page, /\/players\/\$\{encodeURIComponent\(member\.profile_player_id\)\}/);
   assert.match(page, /href=\{`\/messages\/\$\{member\.id\}`\}/);
 });
