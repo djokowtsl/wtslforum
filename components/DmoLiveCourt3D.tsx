@@ -1,7 +1,7 @@
 'use client';
 
 import { useCallback, useEffect, useRef, useState } from 'react';
-import { ChevronLeft, ChevronRight, Minus, Plus, RotateCcw, Volume2, VolumeX } from 'lucide-react';
+import { ChevronLeft, ChevronRight, Minus, Pause, Play, Plus, RotateCcw, Volume2, VolumeX } from 'lucide-react';
 import * as THREE from 'three';
 import { OrbitControls } from 'three/examples/jsm/controls/OrbitControls.js';
 import {
@@ -13,7 +13,12 @@ import type { Te4CourtSurface } from '@/lib/te4DmoTypes';
 import {
   advanceLiveCourtPlayhead,
   clampPlayerCameraLateralPan,
+  deriveLiveCourtFootworkEvents,
+  findLiveCourtShotInRange,
+  findPlayerShotEvent,
   interpolateLiveCourtFrame,
+  latestLiveCourtShotEvent,
+  liveCourtEventsBetween,
   liveCourtTrajectoryCue,
   liveCourtFacingAngle,
   mergeLiveCourtEvents,
@@ -46,6 +51,7 @@ type Props = {
   stadiumAtmosphere?: boolean;
   isWta?: boolean;
   buffering?: boolean;
+  fullReplay?: boolean;
 };
 
 type CameraView =
@@ -68,8 +74,78 @@ async function loadGruntSample(context: AudioContext, isWta: boolean) {
   return context.decodeAudioData(await response.arrayBuffer());
 }
 
-function playCue(context: AudioContext, kind: 'racket' | 'bounce') {
+function firstEventAfterFrame<T extends { frame: number }>(events: T[], frame: number) {
+  let low = 0;
+  let high = events.length;
+  while (low < high) {
+    const middle = (low + high) >> 1;
+    if (events[middle].frame <= frame) low = middle + 1;
+    else high = middle;
+  }
+  return low;
+}
+
+const noiseBuffers = new WeakMap<AudioContext, AudioBuffer>();
+
+function courtNoiseBuffer(context: AudioContext) {
+  const existing = noiseBuffers.get(context);
+  if (existing) return existing;
+  const buffer = context.createBuffer(1, Math.floor(context.sampleRate * 0.18), context.sampleRate);
+  const samples = buffer.getChannelData(0);
+  for (let index = 0; index < samples.length; index += 1) {
+    const fade = 1 - index / samples.length;
+    samples[index] = (Math.random() * 2 - 1) * fade;
+  }
+  noiseBuffers.set(context, buffer);
+  return buffer;
+}
+
+function playCue(
+  context: AudioContext,
+  kind: 'racket' | 'bounce' | 'footstep' | 'slide',
+  surface: Te4CourtSurface,
+) {
   const now = context.currentTime;
+  if (kind === 'footstep' || kind === 'slide') {
+    const duration = kind === 'footstep' ? 0.11 : 0.2;
+    const noise = context.createBufferSource();
+    const filter = context.createBiquadFilter();
+    const gain = context.createGain();
+    noise.buffer = courtNoiseBuffer(context);
+    filter.type = 'bandpass';
+    filter.frequency.setValueAtTime(kind === 'slide'
+      ? surface === 'clay' ? 650 : surface === 'grass' ? 430 : 1_250
+      : surface === 'clay' ? 420 : surface === 'grass' ? 320 : 850, now);
+    filter.Q.value = kind === 'slide' ? 0.55 : 0.8;
+    gain.gain.setValueAtTime(kind === 'footstep' ? 0.095 : 0.06, now);
+    gain.gain.exponentialRampToValueAtTime(0.0001, now + duration);
+    noise.connect(filter).connect(gain).connect(context.destination);
+    noise.start(now);
+    noise.stop(now + duration);
+
+    const tone = context.createOscillator();
+    const toneGain = context.createGain();
+    tone.type = 'sine';
+    if (kind === 'footstep') {
+      tone.frequency.setValueAtTime(105, now);
+      tone.frequency.exponentialRampToValueAtTime(58, now + 0.09);
+      toneGain.gain.setValueAtTime(0.035, now);
+      toneGain.gain.exponentialRampToValueAtTime(0.0001, now + 0.09);
+      tone.connect(toneGain).connect(context.destination);
+      tone.start(now);
+      tone.stop(now + 0.1);
+    } else if (surface === 'hard') {
+      tone.frequency.setValueAtTime(1_950, now);
+      tone.frequency.exponentialRampToValueAtTime(1_250, now + 0.12);
+      toneGain.gain.setValueAtTime(0.009, now);
+      toneGain.gain.exponentialRampToValueAtTime(0.0001, now + 0.12);
+      tone.connect(toneGain).connect(context.destination);
+      tone.start(now);
+      tone.stop(now + 0.13);
+    }
+    return;
+  }
+
   const gain = context.createGain();
   const oscillator = context.createOscillator();
   const duration = kind === 'racket' ? 0.075 : 0.12;
@@ -82,6 +158,11 @@ function playCue(context: AudioContext, kind: 'racket' | 'bounce') {
   gain.connect(context.destination);
   oscillator.start(now);
   oscillator.stop(now + duration);
+}
+
+function formatReplayClock(frame: number, frameRate: number) {
+  const seconds = Math.max(0, Math.floor(frame / Math.max(1, frameRate)));
+  return `${Math.floor(seconds / 60)}:${String(seconds % 60).padStart(2, '0')}`;
 }
 
 function playSample(
@@ -106,6 +187,7 @@ function ThreeCourt({
   snapshot,
   surface,
   playbackSpeed,
+  fullReplay = false,
   stadiumAtmosphere = true,
   isWta = false,
   buffering = false,
@@ -123,7 +205,7 @@ function ThreeCourt({
   const activeApplauseRef = useRef(new Set<AudioBufferSourceNode>());
   const gruntsEnabledRef = useRef(gruntsEnabled);
   gruntsEnabledRef.current = gruntsEnabled;
-  const soundEventsRef = useRef<Array<{ frame: number; kind: 'racket' | 'bounce' }>>([]);
+  const soundEventsRef = useRef<Array<{ frame: number; kind: 'racket' | 'bounce' | 'footstep' | 'slide' }>>([]);
   const transitionRef = useRef<HTMLDivElement>(null);
   const sampleBufferRef = useRef<LiveCourtSample[]>([]);
   const trajectoryEventsRef = useRef<LiveCourtMotionEvent[]>([]);
@@ -136,8 +218,22 @@ function ThreeCourt({
     players: snapshot.players,
     frameCount: snapshot.frameCount,
   });
+  const [replayPlaying, setReplayPlaying] = useState(true);
+  const [replayFrame, setReplayFrame] = useState(snapshot.courtFrameIndices?.[0] ?? 0);
+  const [replaySpeed, setReplaySpeed] = useState(playbackSpeed);
+  const replayPlayingRef = useRef(replayPlaying);
+  const replayFrameRef = useRef<number | null>(null);
+  const replaySpeedRef = useRef(replaySpeed);
+  const replayUiUpdateAt = useRef(0);
+  replayPlayingRef.current = replayPlaying;
+  replaySpeedRef.current = replaySpeed;
   const sceneDataRef = useRef({ snapshot, surface, playbackSpeed, stadiumAtmosphere });
-  sceneDataRef.current = { snapshot, surface, playbackSpeed, stadiumAtmosphere };
+  sceneDataRef.current = {
+    snapshot,
+    surface,
+    playbackSpeed: fullReplay ? replaySpeed : playbackSpeed,
+    stadiumAtmosphere,
+  };
   const soundOnRef = useRef(false);
   const cameraViewRef = useRef<CameraView>('court');
   const playerCameraPanRef = useRef(0);
@@ -193,7 +289,9 @@ function ThreeCourt({
     sampleBufferRef.current = mergeLiveCourtSamples(
       sampleBufferRef.current,
       incomingSamples,
-      TE4_DMO_FRAMES_PER_SECOND * 10 * playbackSpeed,
+      fullReplay
+        ? Number.POSITIVE_INFINITY
+        : (snapshot.frameRate ?? TE4_DMO_FRAMES_PER_SECOND) * 10 * playbackSpeed,
     );
     const earliestFrame = sampleBufferRef.current[0]?.frame ?? firstFrame;
     trajectoryEventsRef.current = mergeLiveCourtEvents(
@@ -201,21 +299,37 @@ function ThreeCourt({
       snapshot.trajectoryEvents ?? [],
       earliestFrame,
     );
+    const footworkEvents = deriveLiveCourtFootworkEvents(
+      sampleBufferRef.current,
+      snapshot.frameRate ?? TE4_DMO_FRAMES_PER_SECOND,
+    );
     const soundMap = new Map(
-      [...soundEventsRef.current, ...(snapshot.soundEvents ?? [])]
+      [...soundEventsRef.current, ...(snapshot.soundEvents ?? []), ...footworkEvents]
         .filter(e => e.frame >= earliestFrame)
         .map(e => [`${e.frame}:${e.kind}`, e]),
     );
-    soundEventsRef.current = [...soundMap.values()];
+    soundEventsRef.current = [...soundMap.values()].sort((first, second) =>
+      first.frame - second.frame || first.kind.localeCompare(second.kind),
+    );
     if (playheadRef.current === null && sampleBufferRef.current.length) {
       playheadRef.current = sampleBufferRef.current[0].frame;
       lastCalloutFrameRef.current = sampleBufferRef.current[0].frame;
+      if (fullReplay) {
+        replayFrameRef.current = sampleBufferRef.current[0].frame;
+        setReplayFrame(sampleBufferRef.current[0].frame);
+        setReplayPlaying(true);
+        replayPlayingRef.current = true;
+      }
     } else if (playheadRef.current !== null && playheadRef.current < earliestFrame) {
       playheadRef.current = earliestFrame;
       lastCalloutFrameRef.current = earliestFrame;
+      if (fullReplay) {
+        replayFrameRef.current = earliestFrame;
+        setReplayFrame(earliestFrame);
+      }
     }
     setHasCourtData(sampleBufferRef.current.length > 0);
-  }, [snapshot, playbackSpeed]);
+  }, [snapshot, playbackSpeed, fullReplay, replaySpeed]);
 
   // Cues are consumed by the animation playhead, never snapshot arrival.
 
@@ -416,7 +530,8 @@ function ThreeCourt({
         if (distance <= maximumStep) rig.root.position.copy(position);
         else if (distance > 0) rig.root.position.addScaledVector(movement, maximumStep / distance);
       }
-      const maxGapFrames = TE4_DMO_FRAMES_PER_SECOND * sceneDataRef.current.playbackSpeed / 2;
+      const frameRate = sceneDataRef.current.snapshot.frameRate ?? TE4_DMO_FRAMES_PER_SECOND;
+      const maxGapFrames = frameRate * sceneDataRef.current.playbackSpeed / 2;
       const prior = interpolateLiveCourtFrame(samples, Math.max(firstFrame, frame - 2), maxGapFrames) ?? values;
       const later = interpolateLiveCourtFrame(samples, Math.min(lastFrame, frame + 2), maxGapFrames) ?? values;
       const xIndex = index === 0 ? 3 : 5;
@@ -442,9 +557,7 @@ function ThreeCourt({
         : targetFacing;
       rig.root.userData.facingInitialized = true;
       const eventPlayer = index === 0 ? 1 : 2;
-      const event = events.filter(item => item.kind === 'shot' && item.player === eventPlayer
-        && Math.abs(item.frame - frame) <= (item.shotType === 'serve' ? 24 : 6))
-        .sort((a, b) => Math.abs(a.frame - frame) - Math.abs(b.frame - frame))[0];
+      const event = findPlayerShotEvent(events, eventPlayer, frame);
       const serving = event?.shotType === 'serve';
       const jump = serving ? serveLift(frame - event.frame) : 0;
       const strikeWeight = event
@@ -538,7 +651,33 @@ function ThreeCourt({
       if (samples.length) {
         const firstFrame = samples[0].frame;
         const lastFrame = samples[samples.length - 1].frame;
-        if (motionPreference.matches) {
+        const frameRate = sceneDataRef.current.snapshot.frameRate ?? TE4_DMO_FRAMES_PER_SECOND;
+        if (fullReplay) {
+          const replayStart = firstFrame;
+          const replayEnd = lastFrame;
+          if (replayPlayingRef.current) {
+            currentFrame = advanceLiveCourtPlayhead(
+              replayFrameRef.current,
+              elapsed,
+              replaySpeedRef.current,
+              samples,
+              frameRate,
+            ) ?? replayStart;
+            if (currentFrame >= replayEnd) {
+              currentFrame = replayEnd;
+              replayPlayingRef.current = false;
+              setReplayPlaying(false);
+            }
+          } else {
+            currentFrame = replayFrameRef.current ?? replayStart;
+          }
+          currentFrame = THREE.MathUtils.clamp(currentFrame, replayStart, replayEnd);
+          replayFrameRef.current = currentFrame;
+          if (now - replayUiUpdateAt.current >= 100 || currentFrame === replayEnd) {
+            replayUiUpdateAt.current = now;
+            setReplayFrame(currentFrame);
+          }
+        } else if (motionPreference.matches) {
           currentFrame = lastFrame;
         } else {
           currentFrame = advanceLiveCourtPlayhead(
@@ -546,7 +685,7 @@ function ThreeCourt({
             elapsed,
             sceneDataRef.current.playbackSpeed,
             samples,
-            TE4_DMO_FRAMES_PER_SECOND,
+            frameRate,
           ) ?? firstFrame;
         }
         playheadRef.current = currentFrame;
@@ -554,11 +693,16 @@ function ThreeCourt({
         if (soundOnRef.current && context?.state === 'running') {
           const previous = lastSoundFrameRef.current;
           if (currentFrame >= previous && currentFrame - previous < 120) {
-            for (const cue of soundEventsRef.current) {
-              if (crossedFrame(cue.frame, previous, currentFrame)) playCue(context, cue.kind);
+            const soundCues = soundEventsRef.current;
+            for (let index = firstEventAfterFrame(soundCues, previous);
+              index < soundCues.length && soundCues[index].frame <= currentFrame;
+              index += 1) {
+              const cue = soundCues[index];
+              if (crossedFrame(cue.frame, previous, currentFrame)) {
+                playCue(context, cue.kind, sceneDataRef.current.surface);
+              }
             }
-            for (const cue of trajectoryEventsRef.current) {
-              if (!crossedFrame(cue.frame, previous, currentFrame)) continue;
+            for (const cue of liveCourtEventsBetween(trajectoryEventsRef.current, previous, currentFrame)) {
               if (cue.kind === 'point-end' || cue.shotType === 'serve') {
                 for (const voice of activeGruntsRef.current) voice.stop();
                 activeGruntsRef.current.clear();
@@ -579,11 +723,13 @@ function ThreeCourt({
         if (previousCalloutFrame === null || currentFrame < previousCalloutFrame) {
           lastCalloutFrameRef.current = currentFrame;
         } else {
-          const eligibleCallouts = trajectoryEventsRef.current
+          const eligibleCallouts = liveCourtEventsBetween(
+            trajectoryEventsRef.current,
+            previousCalloutFrame,
+            currentFrame,
+          )
             .filter((event) => (
               event.kind === 'shot'
-              && event.frame > previousCalloutFrame
-              && event.frame <= currentFrame
               && event.player !== undefined
               && event.speedKmh !== undefined
               && event.speedKmh >= (event.shotType === 'serve' ? 160 : 135)
@@ -603,7 +749,7 @@ function ThreeCourt({
           }
           lastCalloutFrameRef.current = currentFrame;
         }
-        const maxGapFrames = TE4_DMO_FRAMES_PER_SECOND * sceneDataRef.current.playbackSpeed / 2;
+        const maxGapFrames = frameRate * sceneDataRef.current.playbackSpeed / 2;
         const values = interpolateLiveCourtFrame(samples, currentFrame, maxGapFrames) ?? samples[samples.length - 1].values;
         const ballPosition = new THREE.Vector3(values[0] * SCALE, Math.max(0, values[2]) * SCALE, values[1] * SCALE);
         ball.position.copy(ballPosition);
@@ -611,8 +757,10 @@ function ThreeCourt({
         ballShadow.position.set(ballPosition.x, 0.025, ballPosition.z);
         const height = Math.max(0, values[2] * SCALE);
         (ballShadow.material as THREE.MeshBasicMaterial).opacity = THREE.MathUtils.clamp(0.43 - height * 0.08, 0.08, 0.43);
-        const activeShot = trajectoryEventsRef.current.find(
-          (event) => event.kind === 'shot' && Math.abs(event.frame - currentFrame) <= 6,
+        const activeShot = findLiveCourtShotInRange(
+          trajectoryEventsRef.current,
+          currentFrame - 6,
+          currentFrame + 6,
         );
         const firstPlayerDistance = Math.hypot((values[0] - values[3]) * SCALE, (values[1] - values[4]) * SCALE);
         const secondPlayerDistance = Math.hypot((values[0] - values[5]) * SCALE, (values[1] - values[6]) * SCALE);
@@ -631,8 +779,13 @@ function ThreeCourt({
           const forward = new THREE.Vector3(Math.sin(heading), 0, Math.cos(heading));
           const side = new THREE.Vector3(forward.z, 0, -forward.x);
           const lateralPan = clampPlayerCameraLateralPan(playerCameraPanRef.current);
-          const servingView = trajectoryEventsRef.current.some(e =>
-            e.player === playerIndex + 1 && e.shotType === 'serve' && Math.abs(e.frame - currentFrame) <= 24);
+          const servingView = Boolean(findPlayerShotEvent(
+            trajectoryEventsRef.current,
+            (playerIndex + 1) as 1 | 2,
+            currentFrame,
+            24,
+            'serve',
+          ));
           const playerPosition = player.root.position;
           if (activeView.endsWith('-first')) {
             const eye = playerPosition.clone()
@@ -658,7 +811,7 @@ function ThreeCourt({
           }
         }
 
-        const latestHit = trajectoryEventsRef.current.filter(e => e.kind === 'shot' && e.frame <= currentFrame).at(-1);
+        const latestHit = latestLiveCourtShotEvent(trajectoryEventsRef.current, currentFrame);
         const trailStartFrame = Math.max(firstFrame, latestHit?.frame ?? firstFrame, currentFrame - Math.min(10, (lastFrame - firstFrame) * 0.35));
         for (let index = 0; index < 10; index += 1) {
           const t = index / 9;
@@ -674,9 +827,14 @@ function ThreeCourt({
         const showTrail = trailAllowed(trajectoryEventsRef.current, currentFrame)
           && performance.now() >= changeoverUntil;
         trailGeometry.setDrawRange(0, showTrail ? 10 : 0);
-        const tossing = trajectoryEventsRef.current.some(e => e.shotType === 'serve'
-          && e.frame > currentFrame && e.frame - currentFrame <= 24);
-        const knownPhase = trajectoryEventsRef.current.some(e => e.frame <= currentFrame);
+        const tossing = Boolean(findLiveCourtShotInRange(
+          trajectoryEventsRef.current,
+          currentFrame + 1,
+          currentFrame + 24,
+          'serve',
+        ));
+        const knownPhase = Boolean(trajectoryEventsRef.current[0]
+          && trajectoryEventsRef.current[0].frame <= currentFrame);
         ball.visible = (showTrail || tossing || !knownPhase) && performance.now() >= changeoverUntil;
         ballShadow.visible = ball.visible;
         (trailGeometry.attributes.position as THREE.BufferAttribute).needsUpdate = true;
@@ -779,7 +937,7 @@ function ThreeCourt({
       materials.forEach((item) => item.dispose());
       textures.forEach((texture) => texture.dispose());
     };
-  }, [isWta, onUnsupported, snapshot.filename]);
+  }, [fullReplay, isWta, onUnsupported, snapshot.filename]);
 
   const requestZoom = (factor: number) => {
     viewportRef.current?.dispatchEvent(new CustomEvent<number>('courtzoom', { detail: factor }));
@@ -861,13 +1019,39 @@ function ThreeCourt({
       activeGruntsRef.current.clear();
     }
   };
+  const replayFrameRate = snapshot.frameRate ?? TE4_DMO_FRAMES_PER_SECOND;
+  const replayStartFrame = sampleBufferRef.current[0]?.frame ?? snapshot.courtFrameIndices?.[0] ?? 0;
+  const replayEndFrame = sampleBufferRef.current.at(-1)?.frame
+    ?? snapshot.courtFrameIndices?.at(-1)
+    ?? Math.max(0, snapshot.frameCount - 1);
+  const seekReplay = (requestedFrame: number) => {
+    const frame = THREE.MathUtils.clamp(requestedFrame, replayStartFrame, replayEndFrame);
+    replayFrameRef.current = frame;
+    playheadRef.current = frame;
+    lastSoundFrameRef.current = frame;
+    lastCalloutFrameRef.current = frame;
+    replayUiUpdateAt.current = 0;
+    setReplayFrame(frame);
+  };
+  const toggleReplay = () => {
+    if (replayPlayingRef.current) {
+      replayPlayingRef.current = false;
+      setReplayPlaying(false);
+      return;
+    }
+    if (replayFrameRef.current === null || replayFrameRef.current >= replayEndFrame) {
+      seekReplay(replayStartFrame);
+    }
+    replayPlayingRef.current = true;
+    setReplayPlaying(true);
+  };
 
   return (
-    <section className={styles.scene} aria-label="Three-dimensional live court">
+    <section className={styles.scene} aria-label={fullReplay ? 'Three-dimensional full match replay' : 'Three-dimensional live court'}>
       <div className={styles.toolbar}>
         <div className={styles.title}>
           <span className={styles.liveDot} aria-hidden="true" />
-          <strong>LIVE COURT</strong>
+          <strong>{fullReplay ? 'FULL MATCH REPLAY' : 'LIVE COURT'}</strong>
         </div>
         <div className={styles.controls} aria-label="Court view controls">
           <div className={styles.presets} role="group" aria-label="Camera angle">
@@ -986,6 +1170,48 @@ function ThreeCourt({
           {cameraView.startsWith('player-') ? 'Use Look across court to pan laterally · scroll to zoom' : 'Drag to orbit · scroll to zoom'}
         </span>
       </div>
+      {fullReplay && hasCourtData && (
+        <div className={styles.replayControls} role="group" aria-label="Full match replay controls">
+          <button
+            type="button"
+            className={styles.replayToggle}
+            aria-label={replayPlaying ? 'Pause full match replay' : 'Play full match replay'}
+            onClick={toggleReplay}
+          >
+            {replayPlaying ? <Pause size={15} aria-hidden="true" /> : <Play size={15} aria-hidden="true" />}
+            <span>{replayPlaying ? 'Pause' : 'Play'}</span>
+          </button>
+          <label className={styles.replaySeek}>
+            <span className={styles.visuallyHidden}>Replay position</span>
+            <input
+              type="range"
+              min={replayStartFrame}
+              max={replayEndFrame}
+              step={1}
+              value={Math.round(Math.min(replayEndFrame, Math.max(replayStartFrame, replayFrame)))}
+              aria-label="Full match replay position"
+              onChange={(event) => seekReplay(Number(event.currentTarget.value))}
+            />
+          </label>
+          <output className={styles.replayClock} aria-live="off">
+            {formatReplayClock(replayFrame - replayStartFrame, replayFrameRate)}
+            {' / '}
+            {formatReplayClock(replayEndFrame - replayStartFrame, replayFrameRate)}
+          </output>
+          <label className={styles.replaySpeedControl}>
+            <span>Speed</span>
+            <select
+              aria-label="Full match replay speed"
+              value={replaySpeed}
+              onChange={(event) => setReplaySpeed(Number(event.currentTarget.value) as Te4DmoReplaySpeed)}
+            >
+              <option value={1}>1×</option>
+              <option value={2}>2×</option>
+              <option value={4}>4×</option>
+            </select>
+          </label>
+        </div>
+      )}
       {soundError && <p className={styles.soundError} role="status">{soundError}</p>}
     </section>
   );
@@ -996,6 +1222,7 @@ export default function DmoLiveCourt3D(props: Props) {
   const [gruntsEnabled, setGruntsEnabled] = useState(true);
   const useFallback = useCallback(() => setUse2dFallback(true), []);
   const gruntControls = { gruntsEnabled, onGruntsEnabledChange: setGruntsEnabled };
-  if (use2dFallback) return <DmoLiveCourt {...props} {...gruntControls} />;
+  const { fullReplay: _fullReplay, ...courtProps } = props;
+  if (use2dFallback) return <DmoLiveCourt {...courtProps} {...gruntControls} />;
   return <ThreeCourt {...props} {...gruntControls} onUnsupported={useFallback} />;
 }
