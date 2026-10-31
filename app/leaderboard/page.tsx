@@ -9,7 +9,11 @@ import LeaderboardMetricPicker from '@/components/LeaderboardMetricPicker';
 import TourTabs from '@/components/TourTabs';
 import PlayerAvatar from '@/components/PlayerAvatar';
 import { DEFAULT_TOUR, isTourCode, type TourCode } from '@/lib/wtsl';
-import { calculateTourAverage } from '@/lib/leaderboardTourAverage.mjs';
+import {
+  calculateTourAverage,
+  DEFAULT_LEADERBOARD_METRIC,
+  resolveLeaderboardLeader,
+} from '@/lib/leaderboardTourAverage.mjs';
 import {
   BOT_RATING_METRICS,
   botLeaderboard,
@@ -76,7 +80,7 @@ export default async function Leaderboard({ searchParams }: { searchParams: Prom
     ? metricParam as BotMetric
     : RESULT_METRICS.some((item) => item.key === metricParam)
       ? metricParam as ResultMetric
-      : 'wins';
+      : DEFAULT_LEADERBOARD_METRIC;
   const screenshotMetric = isBotMetric(metric);
   const botMetric = screenshotMetric ? BOT_METRICS.find((item) => item.key === metric) : null;
   const valueLabel = botMetric?.label ?? RESULT_METRICS.find((item) => item.key === metric)?.label ?? 'Wins';
@@ -90,6 +94,12 @@ export default async function Leaderboard({ searchParams }: { searchParams: Prom
         : leaderboard(tour, metric),
     [] as any[],
   );
+  const leader = resolveLeaderboardLeader(rows, screenshotMetric, isRating);
+  const leaderValue = leader
+    ? screenshotMetric
+      ? formatBotMetric(leader.row.value, botMetric?.valueFormat ?? 'number')
+      : formatResultMetric(metric as ResultMetric, leader.row)
+    : null;
   const tourAverage = calculateTourAverage(rows, metric, screenshotMetric);
   const eligibilityLabel = screenshotMetric
     ? `${LEADERBOARD_MIN_MATCHES}+ screenshot matches`
@@ -110,6 +120,38 @@ export default async function Leaderboard({ searchParams }: { searchParams: Prom
           </div>
           <LeaderboardMetricPicker current={metric} tour={tour} metrics={FORUM_METRICS} />
         </div>
+        {leader && (
+          <section className="leaderboard-leader" aria-label={`${valueLabel} tour leader`}>
+            <div className="leaderboard-leader__identity">
+              <PlayerAvatar
+                src={leader.avatarUrl}
+                flagSrc={leader.flagUrl}
+                flagLabel={leader.country}
+                name={leader.name}
+                size={54}
+              />
+              <div className="leaderboard-leader__copy">
+                <span className="leaderboard-leader__label">Tour leader · {valueLabel}</span>
+                {leader.playerId ? (
+                  <a
+                    className="leaderboard-leader__name"
+                    href={`/players/${encodeURIComponent(leader.playerId)}?tour=${encodeURIComponent(tour)}`}
+                  >
+                    {leader.name}
+                  </a>
+                ) : (
+                  <strong className="leaderboard-leader__name">{leader.name}</strong>
+                )}
+                <small>{leader.country || `${leader.matches} matches`}</small>
+              </div>
+            </div>
+            <div className="leaderboard-leader__metric">
+              <span>{valueLabel}</span>
+              <strong>{leaderValue}</strong>
+              <small>{leader.matches} matches</small>
+            </div>
+          </section>
+        )}
         <aside className="leaderboard-tour-average" aria-label={`${valueLabel} tour average`}>
           <div className="leaderboard-tour-average__copy">
             <span className="leaderboard-tour-average__label">Tour average · {valueLabel}</span>

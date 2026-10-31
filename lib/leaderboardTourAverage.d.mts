@@ -3,6 +3,24 @@ export type TourAverage = {
   playerCount: number;
 };
 
+export const DEFAULT_LEADERBOARD_METRIC: 'serve';
+
+export type LeaderboardLeader = {
+  name: string;
+  playerId: string | null;
+  avatarUrl: string | null;
+  flagUrl: string | null;
+  country: string | null;
+  matches: number;
+  row: Record<string, any>;
+};
+
+export function resolveLeaderboardLeader(
+  rows: readonly Record<string, any>[],
+  screenshotMetric: boolean,
+  ratingMetric: boolean,
+): LeaderboardLeader | null;
+
 export function calculateTourAverage(
   rows: readonly Record<string, unknown>[],
   metric: string,
