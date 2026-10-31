@@ -1,5 +1,5 @@
 import { sql } from './db';
-import { notifyPlayerVerified } from './discord';
+import { notifyForumAdminsForReview, notifyPlayerVerified } from './discord';
 import { ONLINE_PRESENCE_WINDOW_MINUTES } from './presencePolicy';
 import { wtslCore } from './wtsl-core';
 
@@ -173,6 +173,7 @@ export async function submitClaim(userId: string, wtslPlayerId: string, tour: st
   const alreadyOwned = await sql`SELECT id FROM player_claims WHERE wtsl_player_id=${wtslPlayerId} AND tour=${tour} AND status='approved'`;
   if (alreadyOwned.length) throw new Error('That player profile is already verified to another account.');
   await sql`INSERT INTO player_claims (user_id, wtsl_player_id, tour, player_name, note) VALUES (${userId}, ${wtslPlayerId}, ${tour}, ${playerName}, ${note})`;
+  await notifyForumAdminsForReview('A WTSL player verification request needs review.', '/admin/claims');
 }
 
 export async function listClaims(status?: string): Promise<(PlayerClaim & { username: string; discord_id: string })[]> {

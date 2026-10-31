@@ -34,7 +34,10 @@ function loadRoute(path, options = {}) {
     },
     '@/lib/spoilers': { spoilerMarkupError: () => options.spoilerError || null },
     '@vercel/blob': { del: async () => {}, get: async () => null, put: async () => ({ url: 'https://example.test/file' }) },
-    '@/lib/discord': { announceTopic: async () => {} },
+    '@/lib/discord': {
+      announceTopic: async () => {},
+      notifyForumAdminsForReview: async () => {},
+    },
     '@/lib/forumNotifications': { notifyForumMentions: async () => {} },
   };
   const source = readFileSync(new URL(`../${path}`, import.meta.url), 'utf8');

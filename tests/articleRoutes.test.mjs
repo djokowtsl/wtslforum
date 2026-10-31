@@ -7,20 +7,26 @@ import * as uploads from '../lib/articleUploads.ts';
 
 const require = createRequire(import.meta.url);
 const { transformSync } = require('next/dist/build/swc');
-const admin = { id: '7', username: 'Editor', isAdmin: true };
+const admin = { id: '7', discordId: '7007', username: 'Editor', isAdmin: true };
 
 /** Execute the real route exports against isolated auth, SQL and storage doubles. */
 function route(path, options = {}) {
-  const calls = { sql: [], announcements: [], uploads: [] };
+  const calls = { sql: [], announcements: [], uploads: [], writerRoleSync: [] };
   const mocks = {
-    'next/server': { NextResponse: { json: (body, init) => Response.json(body, init) } },
+    'next/server': {
+      NextResponse: { json: (body, init) => Response.json(body, init) },
+      after: (callback) => { void callback(); },
+    },
     '@/lib/auth': { getSession: async () => options.user === undefined ? admin : options.user },
     '@/lib/db': { sql: async (strings, ...values) => {
       calls.sql.push({ query: strings.join('?'), values });
       if (options.dbError) throw new Error('database unavailable');
       return options.rows ?? [{ id: 15, slug: 'article-slug', was_published: false }];
     } },
-    '@/lib/discord': { announceArticle: async (...args) => calls.announcements.push(args) },
+    '@/lib/discord': {
+      announceArticle: async (...args) => calls.announcements.push(args),
+      ensureDiscordWriterRole: async (...args) => calls.writerRoleSync.push(args),
+    },
     '@/lib/articleContent': content,
     '@/lib/articleUploads': uploads,
     '@vercel/blob': { put: async (...args) => {
@@ -73,6 +79,7 @@ test('new unfinished drafts persist as unpublished and are not announced', async
   assert.equal(calls.sql[0].values.at(-1), false);
   assert.equal(calls.sql[0].values[1], 'Untitled article');
   assert.equal(calls.announcements.length, 0);
+  assert.deepEqual(calls.writerRoleSync, [['7007']]);
 });
 
 test('publication stores rich content and announces the usable slug URL', async () => {

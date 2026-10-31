@@ -35,6 +35,7 @@ test('suggestions show character fit, player evidence, mechanics, and trade-offs
     'edge_details',
     'Trade-off:',
     'fuller MatchLog data',
+    'formatRecommendationMetricValue',
   ]) {
     assert.ok(suggestions.includes(marker), `suggestion detail missing: ${marker}`);
   }

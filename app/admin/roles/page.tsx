@@ -1,8 +1,10 @@
 import { redirect } from 'next/navigation';
 import PageHero from '@/components/PageHero';
 import AdminRoleManager from '@/components/AdminRoleManager';
+import AdminCommunityRoleQueue from '@/components/AdminCommunityRoleQueue';
 import { getSession } from '@/lib/auth';
 import { sql } from '@/lib/db';
+import { listPendingForumRoleRequests } from '@/lib/forumRoles';
 
 export const dynamic = 'force-dynamic';
 
@@ -18,6 +20,7 @@ export default async function AdminRoles() {
     FROM users
     ORDER BY lower(display_name),id
   `;
+  const pendingCommunityRoleRequests = await listPendingForumRoleRequests();
   const members = rows.map((member) => ({
     id: Number(member.id),
     display_name: member.display_name,
@@ -35,6 +38,9 @@ export default async function AdminRoles() {
         <div className="panel role-panel">
           <p className="notice">Configured admin and moderator IDs are protected here. Update ADMIN_DISCORD_IDS or MODERATOR_DISCORD_IDS in deployment settings to change those bootstrap lists.</p>
           <AdminRoleManager initialMembers={members} />
+        </div>
+        <div className="panel role-panel">
+          <AdminCommunityRoleQueue initialRequests={pendingCommunityRoleRequests} />
         </div>
       </main>
     </>

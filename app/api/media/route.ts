@@ -4,6 +4,7 @@ import { getSession } from '@/lib/auth';
 import { addClip } from '@/lib/media';
 import { isTourCode } from '@/lib/wtsl';
 import { isImageMimeType, looksLikeImageUrl, moderateContent, ModerationUnavailableError } from '@/lib/moderation';
+import { notifyForumAdminsForReview } from '@/lib/discord';
 
 export const dynamic = 'force-dynamic';
 
@@ -90,6 +91,7 @@ export async function POST(req: NextRequest) {
       privateContentType,
     });
     if (status === 'pending') {
+      await notifyForumAdminsForReview('A media submission needs moderator review.', '/admin/moderation');
       return NextResponse.json({ ok: true, id: clip.id, pending: true, message: 'Your submission is waiting for moderator review.' }, { status: 202 });
     }
     return NextResponse.json({ ok: true, id: clip.id, pending: false }, { status: 201 });

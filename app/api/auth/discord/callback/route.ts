@@ -1,7 +1,9 @@
-import { NextResponse } from 'next/server';
+import { after, NextResponse } from 'next/server';
 import { cookies } from 'next/headers';
 import { upsertDiscordUser, createSession, authConfigured } from '@/lib/auth';
 import { syncBotApprovedIdentitiesForUser } from '@/lib/matchlog-identity-sync';
+import { sql } from '@/lib/db';
+import { ensureDiscordWriterRole } from '@/lib/discord';
 
 export const dynamic = 'force-dynamic';
 
@@ -45,6 +47,19 @@ export async function GET(req: Request) {
         syncError instanceof Error ? syncError.message : syncError,
       );
     }
+    after(async () => {
+      try {
+        const existingArticles = await sql`
+          SELECT 1 FROM articles WHERE author_id=${Number(user.id)} LIMIT 1
+        `;
+        if (existingArticles.length) await ensureDiscordWriterRole(user.discordId);
+      } catch (roleSyncError) {
+        console.error(
+          '[wtsl] Writer role sync after Discord login failed',
+          roleSyncError instanceof Error ? roleSyncError.name : 'UnknownError',
+        );
+      }
+    });
   } catch (e) {
     console.error('[wtsl] Discord callback failed', e instanceof Error ? e.message : e);
     return go(url, 'database');
