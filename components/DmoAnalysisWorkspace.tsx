@@ -4,6 +4,7 @@ import { uploadPresigned } from '@vercel/blob/client';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { Activity, AlertTriangle, ArrowUpRight, Check, ChevronRight, Clock3, Download, FileAudio2, FileUp, Gauge, LoaderCircle, RotateCcw, ShieldCheck, Trophy, X } from 'lucide-react';
 import { isPresignedUrlRetrievalFailure } from '@/lib/dmoUploadErrors';
+import AdminCoachingReportPublishForm from '@/components/AdminCoachingReportPublishForm';
 import {
   buildTe4CoachingSummary,
   defaultTe4CoachingPlayer,
@@ -629,6 +630,8 @@ export default function DmoAnalysisWorkspace() {
               <button type="button" className={styles.exportButton} onClick={() => exportShotTable(result, gameLog)}><Download size={13} /> Shots CSV</button>
             </div>
           </section>
+
+          <AdminCoachingReportPublishForm key={activeMatchId} viewer={result.viewer} />
 
           <section className={styles.logPanel} aria-labelledby="te4tv-log-title">
             <div className={styles.logPanelIntro}>
