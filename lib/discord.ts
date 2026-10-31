@@ -1,6 +1,7 @@
 const api='https://discord.com/api/v10';
 const FORUM_ARTICLES_CHANNEL_ID='1556169407011491901';
 const ADMIN_THREADS_CHANNEL_ID='801907383055810638';
+const FORUM_GUILD_ID='786583939028090881';
 
 function forumSiteUrl(){return (process.env.NEXT_PUBLIC_SITE_URL||'https://www.wtslforum.com').replace(/\/+$/,'');}
 
@@ -290,12 +291,111 @@ export async function sendDM(discordUserId:string,content:string){
   const token=process.env.DISCORD_BOT_TOKEN;
   if(!token||!discordUserId)return;
   try{
-    const dm=await fetch(`${api}/users/@me/channels`,{method:'POST',headers:{Authorization:`Bot ${token}`,'Content-Type':'application/json'},body:JSON.stringify({recipient_id:discordUserId})});
+    const dm=await fetch(`${api}/users/@me/channels`,{method:'POST',headers:{Authorization:`Bot ${token}`,'Content-Type':'application/json'},body:JSON.stringify({recipient_id:discordUserId}),signal:AbortSignal.timeout(DISCORD_REQUEST_TIMEOUT_MS)});
     if(!dm.ok)return;
     const channel=await dm.json();
     if(channel?.id)await send(channel.id,content);
   }catch{
     // best-effort only
+  }
+}
+
+export async function notifyForumAdminsForReview(action: string, path: string) {
+  const adminIds = [...new Set(
+    (process.env.ADMIN_DISCORD_IDS || '').split(',').map((id) => id.trim()).filter(Boolean),
+  )];
+  if (!adminIds.length) {
+    console.warn('[forum-discord] admin review notification skipped: no admins are configured');
+    return;
+  }
+  const route = path.startsWith('/') ? path : '/';
+  const content = `🛡️ **WTSL Forum action needs review**\n${action}\n${forumSiteUrl()}${route}`;
+  await Promise.all(adminIds.map((id) => sendDM(id, content)));
+}
+
+export async function notifyForumRoleDecision(
+  discordUserId: string,
+  roleName: string,
+  decision: 'approved' | 'rejected',
+) {
+  const message = decision === 'approved'
+    ? `✅ Your **${roleName}** role request was approved on the WTSL Forum.`
+    : `Your **${roleName}** role request was not approved. You can review your role requests on your WTSL Forum profile.`;
+  await sendDM(discordUserId, `${message}\n${forumSiteUrl()}/profile`);
+}
+
+/** Ensures the requested Discord server role exists, then assigns it to a member. */
+export async function ensureDiscordWriterRole(discordUserId: string) {
+  const token = process.env.DISCORD_BOT_TOKEN;
+  if (!token || !discordUserId) {
+    console.warn('[forum-discord] Writer role sync skipped: bot token or member ID is missing');
+    return;
+  }
+  const headers = {
+    Authorization: `Bot ${token}`,
+    'Content-Type': 'application/json',
+  };
+  try {
+    const memberResponse = await fetch(`${api}/guilds/${FORUM_GUILD_ID}/members/${discordUserId}`, {
+      headers,
+      signal: AbortSignal.timeout(DISCORD_REQUEST_TIMEOUT_MS),
+    });
+    if (!memberResponse.ok) {
+      console.warn(`[forum-discord] Writer role sync could not find guild member (HTTP ${memberResponse.status})`);
+      return;
+    }
+
+    const rolesResponse = await fetch(`${api}/guilds/${FORUM_GUILD_ID}/roles`, {
+      headers,
+      signal: AbortSignal.timeout(DISCORD_REQUEST_TIMEOUT_MS),
+    });
+    if (!rolesResponse.ok) {
+      console.warn(`[forum-discord] Writer role lookup failed (HTTP ${rolesResponse.status})`);
+      return;
+    }
+    const roles = await rolesResponse.json() as Array<{ id: string; name: string }>;
+    const writerRoles = roles.filter((role) => role.name.trim().toLowerCase() === 'writer');
+    if (writerRoles.length > 1) {
+      console.warn('[forum-discord] Writer role sync skipped: multiple Writer roles exist');
+      return;
+    }
+    let writerRole = writerRoles[0];
+    if (!writerRole) {
+      const created = await fetch(`${api}/guilds/${FORUM_GUILD_ID}/roles`, {
+        method: 'POST',
+        headers: {
+          ...headers,
+          'X-Audit-Log-Reason': encodeURIComponent('WTSL Forum article author role'),
+        },
+        body: JSON.stringify({ name: 'Writer', color: 0x8b9cff, hoist: false, mentionable: false }),
+        signal: AbortSignal.timeout(DISCORD_REQUEST_TIMEOUT_MS),
+      });
+      if (!created.ok) {
+        console.warn(`[forum-discord] Writer role could not be created (HTTP ${created.status})`);
+        return;
+      }
+      writerRole = await created.json();
+    }
+
+    const assigned = await fetch(
+      `${api}/guilds/${FORUM_GUILD_ID}/members/${discordUserId}/roles/${writerRole.id}`,
+      {
+        method: 'PUT',
+        headers: {
+          Authorization: `Bot ${token}`,
+          'X-Audit-Log-Reason': encodeURIComponent('WTSL Forum article author'),
+        },
+        signal: AbortSignal.timeout(DISCORD_REQUEST_TIMEOUT_MS),
+      },
+    );
+    if (!assigned.ok) {
+      console.warn(`[forum-discord] Writer role assignment failed (HTTP ${assigned.status})`);
+    }
+  } catch (error) {
+    console.warn(
+      '[forum-discord] Writer role sync failed',
+      error instanceof Error ? error.name : 'UnknownError',
+    );
   }
 }
 

@@ -4,6 +4,7 @@ import { sql } from '@/lib/db';
 import { moderateTextAndImages, ModerationUnavailableError } from '@/lib/moderation';
 import { spoilerMarkupError } from '@/lib/spoilers';
 import { notifyForumMentions } from '@/lib/forumNotifications';
+import { notifyForumAdminsForReview } from '@/lib/discord';
 
 type RouteContext = { params: Promise<{ id: string }> };
 
@@ -69,6 +70,9 @@ export async function PATCH(req: Request, { params }: RouteContext) {
     });
   }
 
+  if (decision.status === 'pending') {
+    await notifyForumAdminsForReview('An edited article comment needs moderator review.', '/admin/moderation');
+  }
   return decision.status === 'pending'
     ? NextResponse.json({ ok: true, pending: true, message: 'Your edited comment is waiting for moderator review.' }, { status: 202 })
     : NextResponse.json({ ok: true });

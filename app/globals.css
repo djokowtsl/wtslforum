@@ -2686,3 +2686,29 @@ h1, h2, h3 { margin: 0; }
   .article-toolbar button { min-width:32px; min-height:34px; padding:5px 6px; }
   .article-editor-shell .tiptap { min-height:190px; padding:12px; }
 }
+
+.community-role-badges { display:inline-flex; flex-wrap:wrap; align-items:center; gap:5px; vertical-align:middle; }
+.community-role-tag { margin:0; font-size:9px; letter-spacing:.08em; white-space:nowrap; }
+.community-role-request-list { display:grid; gap:10px; margin-top:18px; }
+.community-role-request,
+.community-role-review-item { display:flex; align-items:center; justify-content:space-between; gap:16px; padding:13px 14px; border:1px solid var(--line); border-radius:10px; background:var(--panel); }
+.community-role-request > div,
+.community-role-review-item > div:first-child { display:grid; gap:4px; min-width:0; }
+.community-role-request small,
+.community-role-review-item small { color:var(--muted); font-size:12px; }
+.community-role-review { display:grid; gap:14px; }
+.community-role-review > p { margin:0; color:var(--muted); }
+.community-role-review-item { margin-top:10px; }
+.community-role-review-actions { display:flex; flex:none; gap:8px; }
+.article-comment-author .community-role-badges { margin-left:4px; }
+.article-author-meta { display:flex; align-items:center; flex-wrap:wrap; gap:8px; }
+.member-directory-card { flex-wrap:wrap; }
+.member-directory-card .community-role-badges { flex:1 1 calc(100% - 56px); margin-left:56px; }
+
+@media (max-width:600px) {
+  .community-role-request,
+  .community-role-review-item { align-items:flex-start; flex-direction:column; }
+  .community-role-review-actions { width:100%; }
+  .community-role-review-actions .btn { flex:1; }
+  .member-directory-card .community-role-badges { flex-basis:100%; margin-left:56px; }
+}

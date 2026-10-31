@@ -4,6 +4,7 @@ import { sql } from '@/lib/db';
 import { moderateTextAndImages, ModerationUnavailableError } from '@/lib/moderation';
 import { spoilerMarkupError } from '@/lib/spoilers';
 import { notifyForumMentions } from '@/lib/forumNotifications';
+import { notifyForumAdminsForReview } from '@/lib/discord';
 
 type RouteContext = { params: Promise<{ id: string }> };
 
@@ -66,6 +67,9 @@ export async function PATCH(req: Request, { params }: RouteContext) {
       context: 'in a discussion reply',
       href: `/discussions/${updated[0].topic_id}`,
     });
+  }
+  if (decision.status === 'pending') {
+    await notifyForumAdminsForReview('An edited discussion reply needs moderator review.', '/admin/moderation');
   }
   return NextResponse.json(
     decision.status === 'pending'

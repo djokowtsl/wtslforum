@@ -168,7 +168,7 @@ export async function getTopics(opts: { category?: string | null; limit?: number
   const cat = opts.category || null;
   const limit = opts.limit ?? 100;
   return sql`
-    SELECT t.id,t.title,t.slug,t.pinned,t.locked,t.views,t.created_at,t.updated_at,
+    SELECT t.id,t.author_id,t.title,t.slug,t.pinned,t.locked,t.views,t.created_at,t.updated_at,
       c.name category,c.slug category_slug,
       u.display_name author,u.avatar_url avatar,
       tn.logo_url tournament_logo,

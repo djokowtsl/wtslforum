@@ -17,6 +17,7 @@ function loadRoute(mocks) {
   new Function('require', 'module', 'exports', code)((name) => {
     if (name in mocks) return mocks[name];
     if (name.startsWith('node:') || name === 'zod') return require(name);
+    if (name === '@/lib/discord') return { notifyForumAdminsForReview: async () => {} };
     throw new Error(`Unexpected route dependency: ${name}`);
   }, module, module.exports);
   return module.exports;

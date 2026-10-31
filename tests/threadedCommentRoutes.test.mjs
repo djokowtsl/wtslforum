@@ -20,6 +20,8 @@ function load(path, mocks) {
       ? mocks[name]
       : name === '@/lib/forumNotifications'
         ? { notifyForumMentions: async () => {} }
+        : name === '@/lib/discord'
+          ? { notifyForumAdminsForReview: async () => {} }
         : require(name),
     module,
     module.exports,
