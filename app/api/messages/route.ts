@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from 'next/server';
 import { getSession } from '@/lib/auth';
 import { listConversations, sendMessage } from '@/lib/messages';
 import { safe } from '@/lib/db';
+import { notifyForumDirectMessage } from '@/lib/forumNotifications';
 
 export const dynamic = 'force-dynamic';
 
@@ -23,6 +24,11 @@ export async function POST(req: NextRequest) {
   if (text.length > 4000) return NextResponse.json({ error: 'Message is too long' }, { status: 400 });
   try {
     const message = await sendMessage(u.id, to, text);
+    await notifyForumDirectMessage({
+      recipientUserId: to,
+      senderUserId: u.id,
+      senderName: u.username,
+    });
     return NextResponse.json({ ok: true, message });
   } catch (e) {
     return NextResponse.json({ error: e instanceof Error ? e.message : 'Failed to send message' }, { status: 400 });

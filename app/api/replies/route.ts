@@ -3,6 +3,7 @@ import { getSession } from '@/lib/auth';
 import { sql } from '@/lib/db';
 import { moderateTextAndImages, ModerationUnavailableError } from '@/lib/moderation';
 import { spoilerMarkupError } from '@/lib/spoilers';
+import { notifyForumMentions } from '@/lib/forumNotifications';
 
 export async function POST(req: Request) {
   const user = await getSession();
@@ -50,7 +51,16 @@ export async function POST(req: Request) {
     VALUES (${topicId},${parentReplyId},${Number(user.id)},${text},${decision.status},${decision.reason})
     RETURNING id
   `;
-  if (decision.status === 'approved') await sql`UPDATE topics SET updated_at=NOW() WHERE id=${topicId}`;
+  if (decision.status === 'approved') {
+    await sql`UPDATE topics SET updated_at=NOW() WHERE id=${topicId}`;
+    await notifyForumMentions({
+      body: text,
+      authorUserId: user.id,
+      authorName: user.username,
+      context: 'in a discussion reply',
+      href: `/discussions/${topicId}`,
+    });
+  }
   if (decision.status === 'pending') {
     return NextResponse.json({ id: rows[0].id, pending: true, message: 'Your reply is waiting for moderator review.' }, { status: 202 });
   }

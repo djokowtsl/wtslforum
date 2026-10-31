@@ -15,6 +15,7 @@ function loadModule(path, mocks = {}) {
   const module = { exports: {} };
   new Function('require', 'module', 'exports', code)((name) => {
     if (name in mocks) return mocks[name];
+    if (name === '@/lib/forumNotifications') return { notifyForumMentions: async () => {} };
     throw new Error(`Unexpected dependency: ${name}`);
   }, module, module.exports);
   return module.exports;
@@ -57,6 +58,7 @@ test('published articles and admin threads use their configured Discord destinat
 
 function topicRoute(user, moderationStatus = 'approved') {
   const announcements = [];
+  const mentions = [];
   const handlers = loadModule('app/api/topics/route.ts', {
     'next/server': nextServer,
     '@/lib/auth': { getSession: async () => user },
@@ -74,14 +76,15 @@ function topicRoute(user, moderationStatus = 'approved') {
     '@/lib/spoilers': { spoilerMarkupError: () => null },
     '@/lib/wtsl': { isTourCode: () => false },
     '@/lib/media': { ensureTopicVideoSchema: async () => {} },
+    '@/lib/forumNotifications': { notifyForumMentions: async (input) => mentions.push(input) },
   });
-  return { handlers, announcements };
+  return { handlers, announcements, mentions };
 }
 
 const topicRequest = () => new Request('https://forum.test/api/topics', {
   method: 'POST',
   headers: { 'content-type': 'application/json' },
-  body: JSON.stringify({ title: 'New discussion', body: 'Discussion text', categoryId: 1 }),
+  body: JSON.stringify({ title: 'New discussion', body: 'Discussion text for @Player', categoryId: 1 }),
 });
 
 test('new admin threads use the dedicated channel while member threads keep their existing route', async () => {
@@ -89,25 +92,34 @@ test('new admin threads use the dedicated channel while member threads keep thei
     [{ id: '7', username: 'Editor', isAdmin: true }, 'admin'],
     [{ id: '8', username: 'Member', isAdmin: false }, 'community'],
   ]) {
-    const { handlers, announcements } = topicRoute(user);
+    const { handlers, announcements, mentions } = topicRoute(user);
     const response = await handlers.POST(topicRequest());
     assert.equal(response.status, 201);
     assert.deepEqual(announcements, [[expected, 'New discussion', 42, user.username]]);
+    assert.deepEqual(mentions, [{
+      body: 'Discussion text for @Player',
+      authorUserId: user.id,
+      authorName: user.username,
+      context: 'in a discussion',
+      href: '/discussions/42',
+    }]);
   }
 });
 
 test('pending admin threads wait until approval before being announced', async () => {
-  const { handlers, announcements } = topicRoute(
+  const { handlers, announcements, mentions } = topicRoute(
     { id: '7', username: 'Editor', isAdmin: true },
     'pending',
   );
   const response = await handlers.POST(topicRequest());
   assert.equal(response.status, 202);
   assert.deepEqual(announcements, []);
+  assert.deepEqual(mentions, []);
 });
 
 function moderationReview(author) {
   const announcements = [];
+  const mentions = [];
   let query = 0;
   const handlers = loadModule('app/api/admin/moderation/review/route.ts', {
     'next/server': nextServer,
@@ -117,7 +129,7 @@ function moderationReview(author) {
       sql: async () => {
         query += 1;
         return query === 1
-          ? [{ id: 42, title: 'New discussion', author_id: 7 }]
+          ? [{ id: 42, title: 'New discussion', body: 'Discussion text for @Player', author_id: 7 }]
           : [author];
       },
     },
@@ -125,8 +137,9 @@ function moderationReview(author) {
       announceTopic: async (...args) => announcements.push(['community', ...args]),
       announceAdminTopic: async (...args) => announcements.push(['admin', ...args]),
     },
+    '@/lib/forumNotifications': { notifyForumMentions: async (input) => mentions.push(input) },
   });
-  return { handlers, announcements };
+  return { handlers, announcements, mentions };
 }
 
 test('moderation approval routes admin-authored threads to the admin channel', async () => {
@@ -137,7 +150,7 @@ test('moderation approval routes admin-authored threads to the admin channel', a
       [{ display_name: 'Editor', discord_id: '111', is_admin: true }, 'admin'],
       [{ display_name: 'Member', discord_id: '222', is_admin: false }, 'community'],
     ]) {
-      const { handlers, announcements } = moderationReview(author);
+      const { handlers, announcements, mentions } = moderationReview(author);
       const response = await handlers.POST(new Request('https://forum.test/api/admin/moderation/review', {
         method: 'POST',
         headers: { 'content-type': 'application/json' },
@@ -145,6 +158,13 @@ test('moderation approval routes admin-authored threads to the admin channel', a
       }));
       assert.equal(response.status, 200);
       assert.deepEqual(announcements, [[expected, 'New discussion', 42, author.display_name]]);
+      assert.deepEqual(mentions, [{
+        body: 'Discussion text for @Player',
+        authorUserId: 7,
+        authorName: author.display_name,
+        context: 'in a discussion',
+        href: '/discussions/42',
+      }]);
     }
   } finally {
     if (originalAdminIds === undefined) delete process.env.ADMIN_DISCORD_IDS;

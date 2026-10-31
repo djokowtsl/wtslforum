@@ -16,7 +16,11 @@ function load(path, mocks) {
   });
   const module = { exports: {} };
   new Function('require', 'module', 'exports', code)(
-    (name) => name in mocks ? mocks[name] : require(name),
+    (name) => name in mocks
+      ? mocks[name]
+      : name === '@/lib/forumNotifications'
+        ? { notifyForumMentions: async () => {} }
+        : require(name),
     module,
     module.exports,
   );
@@ -42,7 +46,7 @@ function request(url, body) {
 }
 
 const nextServer = { NextResponse: { json: (body, init) => Response.json(body, init) } };
-const signedIn = { getSession: async () => ({ id: '12', isAdmin: false }) };
+const signedIn = { getSession: async () => ({ id: '12', username: 'Member', isAdmin: false }) };
 const moderation = {
   moderateTextAndImages: async () => ({ status: 'approved', reason: null }),
   ModerationUnavailableError: class ModerationUnavailableError extends Error {},
@@ -51,6 +55,7 @@ const spoilers = { spoilerMarkupError: () => null };
 
 test('discussion replies can target an approved comment in the same discussion', async () => {
   let insertedValues;
+  const mentions = [];
   const { sql } = makeSql((query, values) => {
     if (query.includes('SELECT locked FROM topics')) return [{ locked: false }];
     if (query.includes('SELECT id FROM replies')) return [{ id: 41 }];
@@ -67,14 +72,22 @@ test('discussion replies can target an approved comment in the same discussion',
     '@/lib/db': { sql },
     '@/lib/moderation': moderation,
     '@/lib/spoilers': spoilers,
+    '@/lib/forumNotifications': { notifyForumMentions: async (input) => mentions.push(input) },
   });
 
   const response = await route.POST(request('https://forum.test/api/replies', {
-    topicId: 7, parentReplyId: 41, body: 'A direct reply',
+    topicId: 7, parentReplyId: 41, body: 'A direct reply to @Player',
   }));
   assert.equal(response.status, 201);
   assert.equal((await response.json()).id, 42);
-  assert.deepEqual(insertedValues, [7, 41, 12, 'A direct reply', 'approved', null]);
+  assert.deepEqual(insertedValues, [7, 41, 12, 'A direct reply to @Player', 'approved', null]);
+  assert.deepEqual(mentions, [{
+    body: 'A direct reply to @Player',
+    authorUserId: '12',
+    authorName: 'Member',
+    context: 'in a discussion reply',
+    href: '/discussions/7',
+  }]);
 });
 
 test('discussion replies cannot target a comment from another discussion', async () => {
@@ -100,8 +113,9 @@ test('discussion replies cannot target a comment from another discussion', async
 
 test('article comments can target an approved comment on the same article', async () => {
   let insertedValues;
+  const mentions = [];
   const { sql } = makeSql((query, values) => {
-    if (query.includes('SELECT id FROM articles')) return [{ id: 8 }];
+    if (query.includes('SELECT id,slug FROM articles')) return [{ id: 8, slug: 'article-eight' }];
     if (query.includes('SELECT id FROM article_comments')) return [{ id: 91 }];
     if (query.includes('INSERT INTO article_comments')) {
       insertedValues = values;
@@ -115,15 +129,23 @@ test('article comments can target an approved comment on the same article', asyn
     '@/lib/db': { sql },
     '@/lib/moderation': moderation,
     '@/lib/spoilers': spoilers,
+    '@/lib/forumNotifications': { notifyForumMentions: async (input) => mentions.push(input) },
   });
 
   const response = await route.POST(
-    request('https://forum.test/api/articles/8/comments', { parentCommentId: 91, body: 'An article reply' }),
+    request('https://forum.test/api/articles/8/comments', { parentCommentId: 91, body: 'An article reply to @Player' }),
     { params: Promise.resolve({ id: '8' }) },
   );
   assert.equal(response.status, 201);
   assert.equal((await response.json()).id, 92);
-  assert.deepEqual(insertedValues, [8, 91, 12, 'An article reply', 'approved', null]);
+  assert.deepEqual(insertedValues, [8, 91, 12, 'An article reply to @Player', 'approved', null]);
+  assert.deepEqual(mentions, [{
+    body: 'An article reply to @Player',
+    authorUserId: '12',
+    authorName: 'Member',
+    context: 'in an article comment',
+    href: '/articles/article-eight',
+  }]);
 });
 
 test('reactions can target an approved comment on a published article', async () => {

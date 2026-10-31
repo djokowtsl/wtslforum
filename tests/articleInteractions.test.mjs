@@ -35,6 +35,7 @@ function loadRoute(path, options = {}) {
     '@/lib/spoilers': { spoilerMarkupError: () => options.spoilerError || null },
     '@vercel/blob': { del: async () => {}, get: async () => null, put: async () => ({ url: 'https://example.test/file' }) },
     '@/lib/discord': { announceTopic: async () => {} },
+    '@/lib/forumNotifications': { notifyForumMentions: async () => {} },
   };
   const source = readFileSync(new URL(`../${path}`, import.meta.url), 'utf8');
   const { code } = transformSync(source, {
@@ -62,7 +63,7 @@ test('article comments require a signed-in member and a published article', asyn
   assert.equal(guest.calls.sql.length, 0);
 
   const missing = loadRoute('app/api/articles/[id]/comments/route.ts', {
-    sqlResult: (query) => query.includes('SELECT id FROM articles') ? [] : [{ id: 42 }],
+    sqlResult: (query) => query.includes('SELECT id,slug FROM articles') ? [] : [{ id: 42 }],
   });
   assert.equal((await missing.handlers.POST(post({ body: 'Hello' }), context())).status, 404);
   assert.equal(missing.calls.moderation.length, 0);
@@ -72,7 +73,7 @@ test('article comments require a signed-in member and a published article', asyn
 test('article comments validate, screen once, and queue uncertain text for review', async () => {
   const pending = loadRoute('app/api/articles/[id]/comments/route.ts', {
     decision: { status: 'pending', reason: 'Needs review' },
-    sqlResult: (query) => query.includes('SELECT id FROM articles') ? [{ id: 12 }] : [{ id: 42 }],
+    sqlResult: (query) => query.includes('SELECT id,slug FROM articles') ? [{ id: 12, slug: 'article-twelve' }] : [{ id: 42 }],
   });
   const response = await pending.handlers.POST(post({ body: 'A thoughtful comment' }), context());
   assert.equal(response.status, 202);
