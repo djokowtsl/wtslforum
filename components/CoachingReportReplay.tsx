@@ -1,7 +1,9 @@
 'use client';
 
 import { useEffect, useRef, useState } from 'react';
+import { embedTe4ViewerHtml } from '@/lib/te4ViewerEmbed';
 import type { Te4ViewerData } from '@/lib/te4DmoTypes';
+import { useTe4ViewerTheme } from '@/components/useTe4ViewerTheme';
 import styles from './Te4DmoReplayPlayer.module.css';
 
 type Props = {
@@ -9,20 +11,11 @@ type Props = {
   players: [string, string];
 };
 
-function embedViewerData(html: string, viewer: Te4ViewerData): string {
-  const json = JSON.stringify(viewer)
-    .replace(/</g, '\\u003c')
-    .replace(/>/g, '\\u003e')
-    .replace(/&/g, '\\u0026')
-    .replace(/\u2028/g, '\\u2028')
-    .replace(/\u2029/g, '\\u2029');
-  return html.replace('__DATA__', json).replace('__HANDEDNESS__', '["right","right"]');
-}
-
 export default function CoachingReportReplay({ reportId, players }: Props) {
   const frameRef = useRef<HTMLIFrameElement>(null);
   const [srcDoc, setSrcDoc] = useState('');
   const [error, setError] = useState('');
+  const syncViewerTheme = useTe4ViewerTheme(frameRef);
   const title = `Coaching report replay: ${players[0]} vs ${players[1]}`;
 
   useEffect(() => {
@@ -47,10 +40,7 @@ export default function CoachingReportReplay({ reportId, players }: Props) {
           throw new Error('The replay data is incomplete.');
         }
         const shell = await shellResponse.text();
-        if (!shell.includes('__DATA__') || !shell.includes('__HANDEDNESS__')) {
-          throw new Error('The replay player template is incomplete.');
-        }
-        if (active) setSrcDoc(embedViewerData(shell, viewer));
+        if (active) setSrcDoc(embedTe4ViewerHtml(shell, viewer));
       } catch (cause) {
         if (active) setError(cause instanceof Error ? cause.message : 'The replay could not be loaded.');
       }
@@ -75,6 +65,7 @@ export default function CoachingReportReplay({ reportId, players }: Props) {
         title={title}
         srcDoc={srcDoc}
         sandbox="allow-scripts"
+        onLoad={syncViewerTheme}
       />
     </div>
   );

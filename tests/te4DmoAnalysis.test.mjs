@@ -16,6 +16,8 @@ import {
   defaultTe4CoachingPlayer,
   listTe4CoachingPlayers,
 } from '../lib/te4DmoCoaching.ts';
+import { parseDmoFilename } from '../lib/te4DmoFilename.ts';
+import { embedTe4ViewerHtml } from '../lib/te4ViewerEmbed.ts';
 
 const viewerShell = readFileSync(
   new URL('../public/te4-match-viewer-shell.html', import.meta.url),
@@ -58,6 +60,39 @@ test('unsupported or truncated DMO inputs fail explicitly', () => {
   );
 });
 
+test('parses player names and set scores from common DMO filename formats', () => {
+  assert.deepEqual(
+    parseDmoFilename('2026 WTSL Final - Iakumi vs Squeakova 6-1 6-3.dmo'),
+    { names: ['Iakumi', 'Squeakova'], score: '6-1 6-3' },
+  );
+  assert.deepEqual(
+    parseDmoFilename('2026_WTSL_Final_-_Iakumi_vs_Squeakova_6-1_7-6(5).DMO'),
+    { names: ['Iakumi', 'Squeakova'], score: '6-1 7-6(5)' },
+  );
+  assert.deepEqual(
+    parseDmoFilename('C:\\matches\\Iakumi v. Squeakova.dmo'),
+    { names: ['Iakumi', 'Squeakova'], score: null },
+  );
+  assert.deepEqual(parseDmoFilename('match.dmo'), {
+    names: ['Player 1', 'Player 2'],
+    score: null,
+  });
+});
+
+test('embeds both replay placeholders with script-safe JSON', () => {
+  const html = embedTe4ViewerHtml(
+    'const data = __DATA__; const hands = __HANDEDNESS__;',
+    { label: '</script>&' },
+    ['left', 'right'],
+  );
+  assert.match(html, /const data = \{"label":"\\u003c\/script\\u003e\\u0026"\};/);
+  assert.match(html, /const hands = \["left","right"\];/);
+  assert.throws(
+    () => embedTe4ViewerHtml('const data = __DATA__;', {}),
+    /template is incomplete/,
+  );
+});
+
 test('reads the repeated tournament label from the DMO header alone', () => {
   const header = Buffer.alloc(0x100);
   Buffer.from('\x0fDemoTEM2-1.0g.0', 'binary').copy(header);
@@ -90,6 +125,11 @@ test('ranked DMO highlights stay available when only point-level replay frames e
   assert.match(viewerShell, /\$\('highlights'\)\.disabled=highlightSegments\.length===0;/);
   assert.match(viewerShell, /const highlightSegments=\[\];let highlightFrames=0;/);
   assert.match(viewerShell, /a=hasMatch\?matchFrames:active\.a/);
+});
+
+test('replay shell accepts parent theme updates for embedded viewers', () => {
+  assert.match(viewerShell, /e\.data\?\.type==='set-theme'/);
+  assert.match(viewerShell, /setAttribute\('data-theme',e\.data\.theme==='light'\?'light':'dark'\)/);
 });
 
 test('DMO viewer exposes multiple camera angles, player framing, and adjustable zoom', () => {

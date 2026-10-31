@@ -1,7 +1,9 @@
 'use client';
 
 import { useEffect, useRef, useState, type ReactNode } from 'react';
+import { embedTe4ViewerHtml } from '@/lib/te4ViewerEmbed';
 import type { Te4ViewerData } from '@/lib/te4DmoTypes';
+import { useTe4ViewerTheme } from '@/components/useTe4ViewerTheme';
 import styles from './Te4DmoReplayPlayer.module.css';
 
 type Props = {
@@ -11,26 +13,12 @@ type Props = {
   fallback: ReactNode;
 };
 
-function embedViewerData(
-  html: string,
-  viewer: Te4ViewerData,
-  handedness: ['left' | 'right', 'left' | 'right'],
-): string {
-  const json = JSON.stringify(viewer)
-    .replace(/</g, '\\u003c')
-    .replace(/>/g, '\\u003e')
-    .replace(/&/g, '\\u0026')
-    .replace(/\u2028/g, '\\u2028')
-    .replace(/\u2029/g, '\\u2029');
-  const handsJson = JSON.stringify(handedness).replace(/</g, '\\u003c');
-  return html.replace('__DATA__', json).replace('__HANDEDNESS__', handsJson);
-}
-
 export default function Te4DmoReplayPlayer({ broadcastId, initialSpeed, handedness, fallback }: Props) {
   const frameRef = useRef<HTMLIFrameElement>(null);
   const [srcDoc, setSrcDoc] = useState('');
   const [title, setTitle] = useState('Full match DMO replay');
   const [error, setError] = useState('');
+  const syncViewerTheme = useTe4ViewerTheme(frameRef);
 
   useEffect(() => {
     let active = true;
@@ -55,7 +43,7 @@ export default function Te4DmoReplayPlayer({ broadcastId, initialSpeed, handedne
         }
         if (!active) return;
         setTitle(`Match replay: ${viewer.names[0]} vs ${viewer.names[1]}`);
-        setSrcDoc(embedViewerData(shell, viewer, handedness));
+        setSrcDoc(embedTe4ViewerHtml(shell, viewer, handedness));
       } catch (cause) {
         if (active) setError(cause instanceof Error ? cause.message : 'The replay could not be loaded.');
       }
@@ -92,6 +80,7 @@ export default function Te4DmoReplayPlayer({ broadcastId, initialSpeed, handedne
         srcDoc={srcDoc}
         sandbox="allow-scripts"
         onLoad={() => {
+          syncViewerTheme();
           frameRef.current?.contentWindow?.postMessage({ type: 'set-speed', speed: initialSpeed }, '*');
           frameRef.current?.contentWindow?.postMessage({ type: 'set-handedness', handedness }, '*');
         }}
