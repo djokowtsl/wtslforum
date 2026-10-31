@@ -3,6 +3,7 @@ import { canModerateComments, getSession } from '@/lib/auth';
 import { sql } from '@/lib/db';
 import { moderateTextAndImages, ModerationUnavailableError } from '@/lib/moderation';
 import { spoilerMarkupError } from '@/lib/spoilers';
+import { notifyForumMentions } from '@/lib/forumNotifications';
 
 type RouteContext = { params: Promise<{ id: string }> };
 
@@ -37,6 +38,13 @@ export async function PATCH(req: Request, { params }: RouteContext) {
     return NextResponse.json({ error: 'This comment appears to contain prohibited explicit sexual content or graphic gore.' }, { status: 422 });
   }
 
+  const previous = await sql`
+    SELECT c.body,c.moderation_status,a.slug
+    FROM article_comments c
+    JOIN articles a ON a.id=c.article_id
+    WHERE c.id=${commentId} AND c.author_id=${Number(user.id)}
+    LIMIT 1
+  `;
   const updated = await sql`
     UPDATE article_comments
     SET body=${text},updated_at=NOW(),moderation_status=${decision.status},
@@ -48,6 +56,17 @@ export async function PATCH(req: Request, { params }: RouteContext) {
     const existing = await sql`SELECT id FROM article_comments WHERE id=${commentId} LIMIT 1`;
     if (!existing[0]) return NextResponse.json({ error: 'Comment not found.' }, { status: 404 });
     return NextResponse.json({ error: 'You can only edit your own comments.' }, { status: 403 });
+  }
+
+  if (decision.status === 'approved' && previous[0]) {
+    await notifyForumMentions({
+      body: text,
+      previousBody: previous[0].moderation_status === 'approved' ? previous[0].body : '',
+      authorUserId: user.id,
+      authorName: user.username,
+      context: 'in an article comment',
+      href: `/articles/${encodeURIComponent(String(previous[0].slug))}`,
+    });
   }
 
   return decision.status === 'pending'

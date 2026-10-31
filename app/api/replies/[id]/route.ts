@@ -3,6 +3,7 @@ import { canModerateComments, getSession } from '@/lib/auth';
 import { sql } from '@/lib/db';
 import { moderateTextAndImages, ModerationUnavailableError } from '@/lib/moderation';
 import { spoilerMarkupError } from '@/lib/spoilers';
+import { notifyForumMentions } from '@/lib/forumNotifications';
 
 type RouteContext = { params: Promise<{ id: string }> };
 
@@ -37,6 +38,12 @@ export async function PATCH(req: Request, { params }: RouteContext) {
     return NextResponse.json({ error: 'This reply appears to contain prohibited explicit sexual content or graphic gore.' }, { status: 422 });
   }
 
+  const previous = await sql`
+    SELECT body,moderation_status
+    FROM replies
+    WHERE id=${replyId} AND author_id=${Number(user.id)}
+    LIMIT 1
+  `;
   const updated = await sql`
     UPDATE replies
     SET body=${text}, updated_at=NOW(), moderation_status=${decision.status}, moderation_reason=${decision.reason}, moderated_at=NULL, moderated_by=NULL
@@ -49,7 +56,17 @@ export async function PATCH(req: Request, { params }: RouteContext) {
     return NextResponse.json({ error: 'You can only edit your own comments.' }, { status: 403 });
   }
 
-  if (decision.status === 'approved') await sql`UPDATE topics SET updated_at=NOW() WHERE id=${updated[0].topic_id}`;
+  if (decision.status === 'approved') {
+    await sql`UPDATE topics SET updated_at=NOW() WHERE id=${updated[0].topic_id}`;
+    await notifyForumMentions({
+      body: text,
+      previousBody: previous[0]?.moderation_status === 'approved' ? previous[0].body : '',
+      authorUserId: user.id,
+      authorName: user.username,
+      context: 'in a discussion reply',
+      href: `/discussions/${updated[0].topic_id}`,
+    });
+  }
   return NextResponse.json(
     decision.status === 'pending'
       ? { ok: true, pending: true, message: 'Your edited reply is waiting for moderator review.' }

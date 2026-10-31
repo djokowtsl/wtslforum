@@ -31,6 +31,7 @@ function loadModerationRoute(mocks) {
   const module = { exports: {} };
   new Function('require', 'module', 'exports', code)((name) => {
     if (name in mocks) return mocks[name];
+    if (name === '@/lib/forumNotifications') return { notifyForumMentions: async () => {} };
     if (name.startsWith('node:')) return require(name);
     throw new Error(`Unexpected moderation dependency: ${name}`);
   }, module, module.exports);
