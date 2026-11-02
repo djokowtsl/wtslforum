@@ -1,6 +1,18 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { dominantHandX, racketContact, RACKET_HEAD_OFFSET, RIGHT_HAND_X, serveLift, crossedFrame, trailAllowed } from '../lib/liveCourtPerformance.ts';
+import {
+  defaultPlayerStrokeStyles,
+  dominantHandX,
+  groundstrokeForBallSide,
+  racketContact,
+  RACKET_HEAD_OFFSET,
+  RIGHT_HAND_X,
+  secondHandGripPosition,
+  serveLift,
+  crossedFrame,
+  trailAllowed,
+  TWO_HANDED_GRIP_SEPARATION,
+} from '../lib/liveCourtPerformance.ts';
 import { interpolateLiveCourtFrame, liveCourtTrajectoryCue } from '../lib/liveCourtMotion.ts';
 import * as THREE from 'three';
 import { makePlayer } from '../components/DmoLiveCourt3DScene.ts';
@@ -9,6 +21,22 @@ test('right-handed rig has its dominant hand on anatomical right when facing +Z'
   assert.ok(RIGHT_HAND_X < 0);
   assert.ok(dominantHandX('right') < 0);
   assert.ok(dominantHandX('left') > 0);
+});
+test('stroke side follows the selected dominant hand and defaults to a one-handed forehand', () => {
+  assert.equal(groundstrokeForBallSide(-1, 'right'), 'forehand');
+  assert.equal(groundstrokeForBallSide(1, 'right'), 'backhand');
+  assert.equal(groundstrokeForBallSide(1, 'left'), 'forehand');
+  assert.equal(groundstrokeForBallSide(-1, 'left'), 'backhand');
+  assert.deepEqual(defaultPlayerStrokeStyles(), [
+    { forehand: 'one', backhand: 'two' },
+    { forehand: 'one', backhand: 'two' },
+  ]);
+});
+test('two-handed strokes position the second hand farther up the racket handle', () => {
+  assert.deepEqual(
+    secondHandGripPosition([1, 2, 3], [0, 1, 0]),
+    [1, 2 + TWO_HANDED_GRIP_SEPARATION, 3],
+  );
 });
 test('racket string-bed centre reaches ball on overhead and both rally sides', () => {
   for (const ball of [[-.3, 3.1, .2], [-1, 1.2, .6], [.8, 1.3, .5]]) {

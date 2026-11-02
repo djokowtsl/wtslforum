@@ -27,7 +27,16 @@ import {
   type LiveCourtMotionEvent,
   type LiveCourtSample,
 } from '@/lib/liveCourtMotion';
-import { crossedFrame, dominantHandX, racketContact, serveLift, trailAllowed, type PlayerHandedness } from '@/lib/liveCourtPerformance';
+import {
+  crossedFrame,
+  dominantHandX,
+  groundstrokeForBallSide,
+  racketContact,
+  secondHandGripPosition,
+  serveLift,
+  trailAllowed,
+  type PlayerHandedness,
+} from '@/lib/liveCourtPerformance';
 import { liveGruntAudioUrl } from '@/lib/liveGruntAudio';
 import DmoLiveCourt, { type GruntControlProps } from './DmoLiveCourt';
 import DmoLiveBufferingOverlay from './DmoLiveBufferingOverlay';
@@ -609,6 +618,10 @@ function ThreeCourt({
       rig.rightShoe.rotation.y = rightCycle * gaitSpeed * 0.12;
       const swing = strikeWeight > 0 ? 0.72 * strikeWeight : Math.sin(phase * 0.55) * gaitSpeed * 0.2;
       const dominantX = dominantHandX(handedness);
+      const playerStrokeStyle = sceneDataRef.current.snapshot.strokeStyles?.[index];
+      const stroke = groundstrokeForBallSide(localX, handedness);
+      const twoHandedStroke = !serving
+        && (playerStrokeStyle?.[stroke] ?? (stroke === 'backhand' ? 'two' : 'one')) === 'two';
       const dominantHand = new THREE.Vector3(dominantX, 1.1 + bodyBounce + swing, 0.04);
       const nonDominantHand = new THREE.Vector3(-dominantX, 1.08 + bodyBounce + swing * 0.2, 0.05);
       if (serving) {
@@ -625,6 +638,10 @@ function ThreeCourt({
       );
       const contactHand = new THREE.Vector3(...contact.grip);
       dominantHand.lerp(contactHand, strikeWeight);
+      if (twoHandedStroke) {
+        const secondGrip = secondHandGripPosition(contact.grip, contact.axis);
+        nonDominantHand.lerp(new THREE.Vector3(...secondGrip), strikeWeight);
+      }
       const dominantArm = handedness === 'right' ? rig.rightArm : rig.leftArm;
       const nonDominantArm = handedness === 'right' ? rig.leftArm : rig.rightArm;
       const dominantMesh = handedness === 'right' ? rig.rightHand : rig.leftHand;
