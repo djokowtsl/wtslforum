@@ -7,12 +7,13 @@ export type LiveStream = {
   sourceUrl: string;
 };
 
-export type LiveBroadcastMediaMode = 'external-stream' | 'dmo-court' | 'waiting';
+export type LiveBroadcastMediaMode = 'both' | 'external-stream' | 'dmo-court' | 'waiting';
 
 export function liveBroadcastMediaMode(
   stream: LiveStream | null | undefined,
   hasCourtSnapshot: boolean,
 ): LiveBroadcastMediaMode {
+  if (stream && hasCourtSnapshot) return 'both';
   if (stream) return 'external-stream';
   return hasCourtSnapshot ? 'dmo-court' : 'waiting';
 }

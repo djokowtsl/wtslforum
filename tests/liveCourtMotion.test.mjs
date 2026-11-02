@@ -5,6 +5,7 @@ import {
   deriveLiveCourtFootworkEvents,
   findLiveCourtShotInRange,
   findPlayerShotEvent,
+  inferLiveCourtContactCue,
   interpolateLiveCourtFrame,
   liveCourtFacingAngle,
   liveCourtEventsBetween,
@@ -126,5 +127,32 @@ test('motion event lookups stay scoped to the requested frames and player', () =
   assert.deepEqual(
     liveCourtEventsBetween(events, 100, 120).map((event) => event.frame),
     [110, 120],
+  );
+});
+
+test('stroke variation cues use only nearby ball/player samples, never invented shot labels', () => {
+  const event = { frame: 20, kind: 'shot', player: 1, shotType: 'rally' };
+  const lowContact = { frame: 20, values: [0, 0, 58, 920, 0, -900, 0] };
+  const closeNet = { frame: 20, values: [0, 0, 145, 280, 0, -900, 0] };
+
+  assert.equal(inferLiveCourtContactCue(event, [lowContact]), 'low-contact');
+  assert.equal(inferLiveCourtContactCue(event, [closeNet]), 'close-net');
+  assert.equal(inferLiveCourtContactCue({ ...event, player: 2 }, [closeNet]), 'standard');
+  assert.equal(inferLiveCourtContactCue({ ...event, shotType: 'serve' }, [lowContact]), 'standard');
+  assert.equal(inferLiveCourtContactCue(event, [{ ...lowContact, frame: 24 }]), 'standard');
+  const gentleFlight = [
+    { frame: 20, values: [0, 0, 100, 920, 0, -900, 0] },
+    { frame: 24, values: [25, 0, 94, 920, 0, -900, 0] },
+  ];
+  assert.equal(inferLiveCourtContactCue(event, gentleFlight), 'soft-touch');
+  assert.equal(inferLiveCourtContactCue(event, gentleFlight, 0), 'soft-touch');
+  const firmFlight = [
+    gentleFlight[0],
+    { frame: 24, values: [300, 0, 110, 920, 0, -900, 0] },
+  ];
+  assert.equal(inferLiveCourtContactCue(event, firmFlight), 'standard');
+  assert.equal(
+    inferLiveCourtContactCue(event, [{ ...lowContact, frame: 20, values: [0, 0, 145, 920, 0, -900, 0] }]),
+    'standard',
   );
 });

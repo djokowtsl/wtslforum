@@ -1187,7 +1187,7 @@ test('verified replay openings can be shown before the first point; other DMO br
   assert.match(host, /the score-and-court replay is continuing/);
 });
 
-test('current broadcasts show one latest match per streamer and hide ended matches after one minute', async () => {
+test('current broadcasts show every live match per streamer and hide ended matches after one minute', async () => {
   const now = Date.now();
   const streamPayload = {
     hasDmo: false,
@@ -1254,9 +1254,11 @@ test('current broadcasts show one latest match per streamer and hide ended match
   assert.equal(response.status, 200);
   assert.deepEqual((await response.json()).broadcasts.map((broadcast) => broadcast.id), [
     'latest-live',
+    'older-live',
     'recent-ended',
   ]);
-  assert.match(queryText, /PARTITION BY b\.owner_discord_id/);
+  assert.doesNotMatch(queryText, /ROW_NUMBER\(\)|PARTITION BY b\.owner_discord_id/);
+  assert.match(queryText, /FROM dmo_live_broadcasts b/);
   assert.match(queryText, /INTERVAL '60 seconds'/);
   assert.match(queryText, /INTERVAL '3 seconds'/);
 });

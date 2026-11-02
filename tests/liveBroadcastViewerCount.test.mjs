@@ -125,6 +125,9 @@ test('the UI shows live counts for the active non-replay card with clear unavail
   const styles = readFileSync(new URL('../components/DmoLiveViewer.module.css', import.meta.url), 'utf8');
   assert.match(viewer, /setInterval\(\(\) => \{ void sendHeartbeat\(\); \}, 15_000\)/);
   assert.match(viewer, /document\.visibilityState !== 'visible'/);
+  assert.match(viewer, /Promise\.all\(activeStreamIds\.map/);
+  assert.match(viewer, /getElementById\(`broadcast-\$\{broadcastId\}`\)/);
+  assert.match(viewer, /mediaMode === 'both'/);
   assert.match(viewer, /broadcast\.status === 'live' && !broadcast\.replay/);
   assert.match(viewer, /Signed-in viewers active in the last 45 seconds/);
   assert.match(viewer, /Viewers unavailable/);
