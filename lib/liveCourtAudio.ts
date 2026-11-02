@@ -67,7 +67,7 @@ function effectsBus(context: BaseAudioContext) {
   return compressor;
 }
 
-/** Short, layered physical impacts, separate from crowd and effort voices. */
+/** Brief resonant contacts with a quiet transient, not sustained broadband hiss. */
 export function playLiveCourtEffect(
   context: BaseAudioContext,
   kind: CourtEffectKind,
@@ -79,8 +79,9 @@ export function playLiveCourtEffect(
   const now = context.currentTime;
   const isStep = kind === 'footstep';
   const isSlide = kind === 'slide';
-  const duration = isSlide ? (surface === 'clay' ? 0.38 : 0.26)
-    : isStep ? 0.13 : kind === 'racket' ? 0.095 : 0.14;
+  const duration = isSlide ? (surface === 'clay' ? 0.22 : 0.14)
+    : isStep ? 0.065 : kind === 'racket' ? profile.racketDuration : Math.min(0.085, profile.bounceDuration);
+  const noiseDuration = isSlide ? duration : isStep ? 0.025 : 0.012;
   let buffer = noiseBuffers.get(context);
   if (!buffer) {
     buffer = context.createBuffer(1, Math.ceil(context.sampleRate * 0.5), context.sampleRate);
@@ -96,13 +97,14 @@ export function playLiveCourtEffect(
     : isStep ? profile.stepNoiseHz : kind === 'racket' ? 1800 : 700;
   filter.Q.value = isSlide ? 0.45 : 0.7;
   const noiseGain = context.createGain();
-  const strength = Math.min(1, volume) * (isSlide ? 0.5 : isStep ? 0.34 : kind === 'racket' ? 0.58 : 0.42);
+  const strength = Math.min(1, volume) * (isSlide ? 0.045 : isStep ? 0.018 : kind === 'racket' ? 0.035 : 0.022);
   noiseGain.gain.setValueAtTime(0.0001, now);
-  noiseGain.gain.exponentialRampToValueAtTime(strength, now + (isSlide ? 0.035 : 0.003));
-  noiseGain.gain.exponentialRampToValueAtTime(0.0001, now + duration);
+  noiseGain.gain.exponentialRampToValueAtTime(strength, now + (isSlide ? 0.02 : 0.002));
+  noiseGain.gain.exponentialRampToValueAtTime(0.0001, now + noiseDuration);
   noise.connect(filter).connect(noiseGain).connect(effectsBus(context));
   noise.start(now);
-  noise.stop(now + duration);
+  noise.stop(now + noiseDuration);
+  noise.onended = () => { noise.disconnect(); filter.disconnect(); noiseGain.disconnect(); };
 
   // A low resonant body under the scrape/pop avoids electronic ticking.
   const tone = context.createOscillator();
@@ -110,14 +112,15 @@ export function playLiveCourtEffect(
   tone.type = 'sine';
   const frequencies = isStep ? profile.stepToneHz : isSlide ? profile.slideToneHz
     : kind === 'racket' ? profile.racketHz : profile.bounceHz;
-  tone.frequency.setValueAtTime(frequencies[0], now);
-  tone.frequency.exponentialRampToValueAtTime(frequencies[1], now + duration * 0.8);
-  const body = isSlide ? profile.slideToneGain * 3
-    : isStep ? 0.15 : kind === 'racket' ? profile.racketGain * 3.2 : profile.bounceGain * 3;
+  tone.frequency.setValueAtTime(isSlide ? frequencies[1] : frequencies[1] * 1.35, now);
+  tone.frequency.exponentialRampToValueAtTime(frequencies[1], now + Math.min(0.018, duration * 0.3));
+  const body = isSlide ? profile.slideToneGain * 0.4
+    : isStep ? 0.045 : kind === 'racket' ? profile.racketGain * 1.8 : profile.bounceGain * 1.8;
   toneGain.gain.setValueAtTime(0.0001, now);
   toneGain.gain.exponentialRampToValueAtTime(body * volume, now + 0.003);
   toneGain.gain.exponentialRampToValueAtTime(0.0001, now + duration);
   tone.connect(toneGain).connect(effectsBus(context));
   tone.start(now);
   tone.stop(now + duration);
+  tone.onended = () => { tone.disconnect(); toneGain.disconnect(); };
 }

@@ -178,23 +178,39 @@ test('contacts remain audible when the optional source sound list is empty', () 
   assert.equal(deriveLiveCourtSoundEvents([], [{ frame: 0, kind: 'point-end' }], [], samples).length, 0);
 });
 
-test('each court sound schedules a distinct broadband impact and resonant body', () => {
+test('court contacts keep broadband noise brief and quieter than their resonant body', () => {
   const param = () => ({ value: 0, setValueAtTime() {}, exponentialRampToValueAtTime() {} });
   for (const kind of ['racket', 'bounce', 'footstep', 'slide']) {
     let starts = 0;
+    const envelopes = [];
+    const stops = [];
     const node = () => ({
-      connect() { return this; }, start() { starts++; }, stop() {},
+      connect() { return this; }, start() { starts++; }, stop(time) { stops.push(time); },
       frequency: param(), gain: param(), Q: param(),
     });
     const context = {
       currentTime: 0, sampleRate: 8000, destination: {},
       createBuffer: (_, length) => ({ getChannelData: () => new Float32Array(length) }),
-      createBufferSource: node, createBiquadFilter: node, createGain: node, createOscillator: node,
+      createBufferSource: node, createBiquadFilter: node,
+      createGain: () => {
+        const gain = node();
+        const ramps = [];
+        gain.gain.exponentialRampToValueAtTime = (value, time) => ramps.push({ value, time });
+        envelopes.push(ramps);
+        return gain;
+      },
+      createOscillator: node,
       createDynamicsCompressor: () => ({ ...node(), threshold: param(), knee: param(), ratio: param(),
         attack: param(), release: param() }),
     };
     playLiveCourtEffect(context, kind, 'clay', 0.9);
     assert.equal(starts, 2, `${kind} has noise and body layers`);
+    assert.ok(envelopes[0][0].value <= 0.045, `${kind} noise stays restrained`);
+    if (kind === 'racket' || kind === 'bounce') {
+      assert.ok(stops[0] <= 0.012, `${kind} noise is only a short contact transient`);
+      assert.ok(envelopes[0][0].value < envelopes[1][0].value / 3,
+        `${kind} is body-led rather than noise-led`);
+    }
   }
 });
 
@@ -205,4 +221,27 @@ test('point and game boundaries do not clear accumulated clay marks', async () =
   assert.doesNotMatch(pointBlock, /clearSkidMarks/);
   assert.match(source, /Test court sounds/);
   assert.match(source, /Court effects volume/);
+});
+
+test('crowd volume is adjustable with touch-friendly controls in both court views', async () => {
+  const source = await readFile(new URL('../components/DmoLiveCourt3D.tsx', import.meta.url), 'utf8');
+  const styles = await readFile(new URL('../components/DmoLiveCourt3D.module.css', import.meta.url), 'utf8');
+  const fallback = await readFile(new URL('../components/DmoLiveCourt.tsx', import.meta.url), 'utf8');
+  const fallbackStyles = await readFile(new URL('../components/DmoLiveCourt.module.css', import.meta.url), 'utf8');
+  assert.match(source, /\{stadiumAtmosphere && \(/, 'crowd volume remains available while sound is muted');
+  assert.match(source, /aria-label="Lower crowd volume"/);
+  assert.match(source, /aria-label="Raise crowd volume"/);
+  assert.match(source, /aria-label="Crowd volume level"/);
+  assert.match(source, /createMediaElementSource\(crowdAudio\)\.connect\(crowdGain\)/,
+    'iOS crowd volume uses a Web Audio gain node');
+  assert.match(source, /crowdGainRef\.current\.gain\.setTargetAtTime\(volume/);
+  assert.doesNotMatch(source, /crowdAudioRef\.current\.volume/);
+  assert.match(styles, /\.volumeButton\s*\{[\s\S]*?width:\s*44px/);
+  assert.match(styles, /\.volumeControl input\s*\{[\s\S]*?min-height:\s*44px/);
+  assert.match(fallback, /\{stadiumAtmosphere && \(\s*<div className=\{styles\.crowdVolumeControl\}/,
+    'the mobile/WebGL fallback also exposes crowd volume while muted');
+  assert.match(fallback, /crowdBed\.gain\.gain\.setTargetAtTime\(\s*volume \* 0\.02368421/,
+    'the fallback slider changes the crowd audio gain');
+  assert.match(fallbackStyles, /\.crowdVolumeControl input\s*\{[^}]*min-height:\s*44px/);
+  assert.match(fallbackStyles, /\.sceneControls \.crowdVolumeControl button\s*\{\s*width:\s*44px/);
 });

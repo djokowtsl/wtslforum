@@ -162,9 +162,39 @@
 .volumeControl {
   display: inline-flex;
   align-items: center;
-  gap: 6px;
+  gap: 5px;
   color: #aab9cf;
   font: 700 9px/1 system-ui, sans-serif;
+}
+
+.volumeControl > span {
+  white-space: nowrap;
+}
+
+.volumeControl output {
+  min-width: 30px;
+  color: #d2dced;
+  font-variant-numeric: tabular-nums;
+  text-align: right;
+}
+
+.volumeButton {
+  display: inline-grid;
+  width: 30px;
+  height: 30px;
+  flex: 0 0 auto;
+  padding: 0;
+  place-items: center;
+  border: 1px solid rgba(152, 174, 207, .26);
+  border-radius: 6px;
+  background: rgba(3, 9, 20, .54);
+  color: #d2dced;
+  cursor: pointer;
+}
+
+.volumeButton:hover {
+  border-color: rgba(176, 244, 59, .5);
+  color: #b0f43b;
 }
 
 .panControl {
@@ -201,7 +231,10 @@
 
 .volumeControl input {
   width: 74px;
+  min-height: 30px;
+  margin: 0;
   accent-color: #b0f43b;
+  touch-action: pan-x;
 }
 
 .viewport {
@@ -439,13 +472,33 @@
   }
 
   .volumeControl {
-    flex: 1;
-    min-width: 90px;
+    width: 100%;
+    min-width: 0;
+    min-height: 48px;
+    flex: 1 1 100%;
+    gap: 8px;
+    padding: 3px 9px;
+    border: 1px solid rgba(152, 174, 207, .2);
+    border-radius: 8px;
+    background: rgba(3, 9, 20, .4);
   }
 
   .volumeControl input {
     flex: 1;
-    min-width: 35px;
+    width: 0;
+    min-width: 60px;
+    min-height: 44px;
+    touch-action: pan-x;
+  }
+
+  .volumeButton {
+    width: 44px;
+    height: 44px;
+  }
+
+  .volumeControl output {
+    min-width: 38px;
+    font-size: 11px;
   }
 
   .hint {

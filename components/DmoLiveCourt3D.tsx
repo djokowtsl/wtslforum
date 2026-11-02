@@ -114,13 +114,14 @@ function playSample(
   volume: number,
   active?: Set<AudioBufferSourceNode>,
   playbackRate = 1,
+  destination?: AudioNode,
 ) {
   const voice = context.createBufferSource();
   const gain = context.createGain();
   voice.buffer = buffer;
   voice.playbackRate.value = playbackRate;
   gain.gain.value = volume;
-  voice.connect(gain).connect(context.destination);
+  voice.connect(gain).connect(destination ?? context.destination);
   active?.add(voice);
   voice.onended = () => { active?.delete(voice); voice.disconnect(); gain.disconnect(); };
   voice.start();
@@ -142,6 +143,8 @@ function ThreeCourt({
   const canvasHostRef = useRef<HTMLDivElement>(null);
   const audioContextRef = useRef<AudioContext | null>(null);
   const crowdAudioRef = useRef<HTMLAudioElement | null>(null);
+  const crowdGainRef = useRef<GainNode | null>(null);
+  const crowdVolumeRef = useRef(0.24);
   const gruntAudioRef = useRef<{ isWta: boolean; buffer: AudioBuffer } | null>(null);
   const applauseAudioRef = useRef<AudioBuffer | null>(null);
   const activeGruntsRef = useRef(new Set<AudioBufferSourceNode>());
@@ -298,6 +301,8 @@ function ThreeCourt({
     crowdAudio?.removeAttribute('src');
     crowdAudio?.load();
     crowdAudioRef.current = null;
+    crowdGainRef.current?.disconnect();
+    crowdGainRef.current = null;
     gruntAudioRef.current = null;
     for (const voice of activeGruntsRef.current) voice.stop();
     activeGruntsRef.current.clear();
@@ -874,7 +879,9 @@ function ThreeCourt({
               if (audioCue === 'grunt' && gruntAudioRef.current?.isWta === isWta) {
                 playSample(context, gruntAudioRef.current.buffer, 0.72, activeGruntsRef.current, 0.92 + Math.random() * 0.12);
               } else if (audioCue === 'cheer' && cue.frame % 3 === 0 && applauseAudioRef.current) {
-                playSample(context, applauseAudioRef.current, crowdAudioRef.current?.volume ?? 0.38, activeApplauseRef.current);
+                playSample(context, applauseAudioRef.current,
+                  crowdGainRef.current ? 1 : crowdVolumeRef.current,
+                  activeApplauseRef.current, 1, crowdGainRef.current ?? undefined);
               }
             }
           }
@@ -1141,9 +1148,14 @@ function ThreeCourt({
           const crowdAudio = new Audio('/audio/te4-crowd-ambience.mp3');
           crowdAudio.loop = true;
           crowdAudio.preload = 'auto';
+          // iOS ignores HTMLMediaElement.volume; use the resumed Web Audio graph.
+          const crowdGain = context.createGain();
+          crowdGain.gain.value = crowdVolumeRef.current;
+          context.createMediaElementSource(crowdAudio).connect(crowdGain).connect(context.destination);
+          crowdGainRef.current = crowdGain;
           crowdAudioRef.current = crowdAudio;
         }
-        crowdAudioRef.current.volume = crowdVolume;
+        crowdGainRef.current?.gain.setTargetAtTime(crowdVolumeRef.current, context.currentTime, 0.03);
         layers.push(crowdAudioRef.current.play().catch(() => {
           if (soundOnRef.current) setSoundError('Court effects are on; crowd audio could not be loaded.');
         }));
@@ -1188,9 +1200,14 @@ function ThreeCourt({
   }, [isWta, soundEnabled, gruntsEnabled]);
   const changeCrowdVolume = (volume: number) => {
     setCrowdVolume(volume);
-    if (soundOnRef.current && stadiumAtmosphere && crowdAudioRef.current) {
-      crowdAudioRef.current.volume = volume;
+    crowdVolumeRef.current = volume;
+    const context = audioContextRef.current;
+    if (context && crowdGainRef.current) {
+      crowdGainRef.current.gain.setTargetAtTime(volume, context.currentTime, 0.03);
     }
+  };
+  const adjustCrowdVolume = (delta: number) => {
+    changeCrowdVolume(THREE.MathUtils.clamp(Math.round((crowdVolume + delta) * 100) / 100, 0, 1));
   };
   const changeGruntsEnabled = (enabled: boolean) => {
     onGruntsEnabledChange(enabled);
@@ -1312,9 +1329,17 @@ function ThreeCourt({
           >
             <span>Grunts {gruntsEnabled ? 'on' : 'off'}</span>
           </button>
-          {soundEnabled && stadiumAtmosphere && (
-            <label className={styles.volumeControl}>
+          {stadiumAtmosphere && (
+            <div className={styles.volumeControl} role="group" aria-label="Crowd volume controls">
               <span>Crowd</span>
+              <button
+                className={styles.volumeButton}
+                type="button"
+                aria-label="Lower crowd volume"
+                onClick={() => adjustCrowdVolume(-0.1)}
+              >
+                <Minus size={14} />
+              </button>
               <input
                 type="range"
                 min="0"
@@ -1324,7 +1349,16 @@ function ThreeCourt({
                 aria-label="Crowd volume"
                 onChange={(event) => changeCrowdVolume(Number(event.currentTarget.value))}
               />
-            </label>
+              <output aria-label="Crowd volume level">{Math.round(crowdVolume * 100)}%</output>
+              <button
+                className={styles.volumeButton}
+                type="button"
+                aria-label="Raise crowd volume"
+                onClick={() => adjustCrowdVolume(0.1)}
+              >
+                <Plus size={14} />
+              </button>
+            </div>
           )}
           {soundEnabled && (
             <>
