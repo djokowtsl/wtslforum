@@ -3,6 +3,7 @@
 import { useCallback, useEffect, useState } from 'react';
 import Te4DmoReplayPlayer from './Te4DmoReplayPlayer';
 import type { PublicDmoReplay } from '@/lib/dmoReplayLibrary';
+import { buildTe4CoachAnalysisUrl, buildTe4CoachEmbedUrl } from '@/lib/te4CoachEmbed';
 import styles from './DmoReplayLibrary.module.css';
 
 type ReplayPage = {
@@ -26,6 +27,7 @@ export default function DmoReplayLibrary({
 }) {
   const [matches, setMatches] = useState<PublicDmoReplay[]>(initialPage?.matches ?? []);
   const [selected, setSelected] = useState<PublicDmoReplay | null>(null);
+  const [viewerMode, setViewerMode] = useState<'forum' | 'coach'>('forum');
   const [query, setQuery] = useState('');
   const [cursor, setCursor] = useState<string | null>(initialPage?.nextCursor ?? null);
   const [hasMore, setHasMore] = useState(Boolean(initialPage?.nextCursor));
@@ -96,6 +98,7 @@ export default function DmoReplayLibrary({
 
   const selectMatch = (match: PublicDmoReplay) => {
     setSelected(match);
+    setViewerMode('forum');
     const url = new URL(window.location.href);
     url.searchParams.set('match', match.id);
     window.history.pushState({}, '', url);
@@ -117,13 +120,19 @@ export default function DmoReplayLibrary({
   };
 
   const replayUrl = selected ? `/api/dmo-replays/${encodeURIComponent(selected.id)}/replay` : '';
+  const coachEmbedUrl = selected?.coachShareUrl
+    ? buildTe4CoachEmbedUrl(selected.coachShareUrl)
+    : null;
+  const coachAnalysisUrl = selected?.coachShareUrl
+    ? buildTe4CoachAnalysisUrl(selected.coachShareUrl)
+    : null;
 
   return (
     <section className={styles.library} aria-label="Submitted match replays">
       <div className={styles.listPanel}>
         <div className={styles.listHeading}>
           <div>
-            <span className={styles.eyebrow}>Shared match recordings</span>
+            <span className={styles.eyebrow}>Available match recordings</span>
             <h2>Match replays</h2>
           </div>
           <span className={styles.count}>{error ? '!' : `${matches.length}${hasMore ? '+' : ''}`}</span>
@@ -174,11 +183,53 @@ export default function DmoReplayLibrary({
               <h1>{selected.player1} <i>vs</i> {selected.player2}</h1>
               <p>{formatDate(selected.submissionDate)} <span aria-hidden="true">·</span> Submitted match replay</p>
             </div>
-            <Te4DmoReplayPlayer
-              replayUrl={replayUrl}
-              initialSpeed={1}
-              handedness={['right', 'right']}
-            />
+            {coachEmbedUrl && (
+              <div className={styles.playerOptions} role="tablist" aria-label="Replay player">
+                <button
+                  className={`${styles.playerTab}${viewerMode === 'forum' ? ` ${styles.playerTabActive}` : ''}`}
+                  type="button"
+                  role="tab"
+                  aria-selected={viewerMode === 'forum'}
+                  aria-controls="selected-replay-player"
+                  onClick={() => setViewerMode('forum')}
+                >
+                  Forum player
+                </button>
+                <button
+                  className={`${styles.playerTab}${viewerMode === 'coach' ? ` ${styles.playerTabActive}` : ''}`}
+                  type="button"
+                  role="tab"
+                  aria-selected={viewerMode === 'coach'}
+                  aria-controls="selected-replay-player"
+                  onClick={() => setViewerMode('coach')}
+                >
+                  TE4 Coach player
+                </button>
+                {coachAnalysisUrl && (
+                  <a className={styles.coachAnalysisLink} href={coachAnalysisUrl} target="_blank" rel="noopener noreferrer">
+                    Full Coach analysis
+                  </a>
+                )}
+              </div>
+            )}
+            <div id="selected-replay-player" className={styles.playerPanel} role="tabpanel" tabIndex={0}>
+              {viewerMode === 'coach' && coachEmbedUrl ? (
+                <iframe
+                  className={styles.coachEmbed}
+                  src={coachEmbedUrl}
+                  title={`TE4 Coach replay: ${selected.player1} vs ${selected.player2}`}
+                  allow="fullscreen"
+                  loading="lazy"
+                  referrerPolicy="strict-origin-when-cross-origin"
+                />
+              ) : (
+                <Te4DmoReplayPlayer
+                  replayUrl={replayUrl}
+                  initialSpeed={1}
+                  handedness={['right', 'right']}
+                />
+              )}
+            </div>
           </>
         ) : (
           <div className={styles.viewerEmpty}>
