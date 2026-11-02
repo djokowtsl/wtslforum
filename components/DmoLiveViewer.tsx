@@ -24,6 +24,7 @@ type Broadcast = {
   players: [string, string] | null;
   broadcastMode: 'manual' | 'auto';
   isWta: boolean;
+  canManageTour: boolean;
   replay: boolean;
   replayDataReady: boolean;
   replaySpeed: 1 | 2 | 4;
@@ -67,6 +68,9 @@ export default function DmoLiveViewer({ canWatch }: Props) {
   const [preMatchPredictions, setPreMatchPredictions] = useState<Record<string, LivePreMatchProbability | null>>({});
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
+  const [tourSaveError, setTourSaveError] = useState('');
+  const [tourSaveErrorId, setTourSaveErrorId] = useState<string | null>(null);
+  const [savingTourId, setSavingTourId] = useState<string | null>(null);
   const [focusedBroadcastId, setFocusedBroadcastId] = useState<string | null>(null);
   const [activeBroadcastIndex, setActiveBroadcastIndex] = useState(0);
   const broadcastTrackRef = useRef<HTMLDivElement>(null);
@@ -77,6 +81,32 @@ export default function DmoLiveViewer({ canWatch }: Props) {
   const pointLogLoaded = useRef(new Set<string>());
   const pointLogRetryAt = useRef(new Map<string, number>());
   const hasActiveDmo = broadcasts.some((broadcast) => broadcast.status === 'live' && Boolean(broadcast.snapshot));
+
+  const updateBroadcastTour = async (broadcastId: string, tour: 'ATP' | 'WTA') => {
+    setSavingTourId(broadcastId);
+    setTourSaveError('');
+    setTourSaveErrorId(null);
+    try {
+      const response = await fetch(`/api/live-dmo/${encodeURIComponent(broadcastId)}/tour`, {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ tour }),
+      });
+      const body = await response.json().catch(() => null);
+      if (!response.ok) {
+        throw new Error(typeof body?.error === 'string' ? body.error : 'The match tour could not be saved.');
+      }
+      const isWta = body?.isWta === true;
+      setBroadcasts((current) => current.map((broadcast) =>
+        broadcast.id === broadcastId ? { ...broadcast, isWta } : broadcast,
+      ));
+    } catch (cause) {
+      setTourSaveError(cause instanceof Error ? cause.message : 'The match tour could not be saved.');
+      setTourSaveErrorId(broadcastId);
+    } finally {
+      setSavingTourId(null);
+    }
+  };
 
   useEffect(() => {
     if (!canWatch) {
@@ -453,16 +483,35 @@ export default function DmoLiveViewer({ canWatch }: Props) {
                   </div>
                   {players && <strong>{players[0]} <i>vs</i> {players[1]}</strong>}
                 </div>
-                {(broadcast.broadcastMode === 'auto' || broadcast.officialByBroadcaster || broadcast.officialByTournament || broadcast.likelyOfficial) && (
-                  <div className={styles.broadcastTags}>
-                    {broadcast.broadcastMode === 'auto' && <small className={styles.broadcastTag}>AUTO · WTSL LIVE</small>}
-                    {broadcast.officialByBroadcaster
-                      ? <small className={styles.broadcastTag}>OFFICIAL · BROADCASTER TAG</small>
-                      : broadcast.officialByTournament
-                        ? <small className={styles.broadcastTag}>OFFICIAL · ONGOING TOURNAMENT</small>
-                        : broadcast.likelyOfficial && <small className={styles.broadcastTag}>LIKELY OFFICIAL</small>}
-                  </div>
-                )}
+                <div className={styles.broadcastTags}>
+                  <small className={styles.broadcastTag}>{broadcast.isWta ? 'WTA' : 'ATP'}</small>
+                  {broadcast.broadcastMode === 'auto' && <small className={styles.broadcastTag}>AUTO · WTSL LIVE</small>}
+                  {broadcast.officialByBroadcaster
+                    ? <small className={styles.broadcastTag}>OFFICIAL · BROADCASTER TAG</small>
+                    : broadcast.officialByTournament
+                      ? <small className={styles.broadcastTag}>OFFICIAL · ONGOING TOURNAMENT</small>
+                      : broadcast.likelyOfficial && <small className={styles.broadcastTag}>LIKELY OFFICIAL</small>}
+                  {broadcast.canManageTour && (
+                    <label className={styles.tourControl}>
+                      <span>Tour</span>
+                      <select
+                        aria-label={`Match tour for ${players?.join(' vs ') ?? broadcast.ownerName}`}
+                        value={broadcast.isWta ? 'WTA' : 'ATP'}
+                        disabled={savingTourId !== null}
+                        onChange={(event) => void updateBroadcastTour(
+                          broadcast.id,
+                          event.currentTarget.value === 'WTA' ? 'WTA' : 'ATP',
+                        )}
+                      >
+                        <option value="ATP">ATP</option>
+                        <option value="WTA">WTA</option>
+                      </select>
+                    </label>
+                  )}
+                  {tourSaveError && tourSaveErrorId === broadcast.id && (
+                    <small className={styles.tourError} role="alert">{tourSaveError}</small>
+                  )}
+                </div>
                 {broadcast.stream && broadcast.status === 'live' && (
                   <LiveStreamEmbed stream={broadcast.stream} title={`Live stream by ${broadcast.ownerName}`} />
                 )}
@@ -471,6 +520,7 @@ export default function DmoLiveViewer({ canWatch }: Props) {
                     <Te4DmoReplayPlayer
                       broadcastId={broadcast.id}
                       initialSpeed={broadcast.replaySpeed}
+                      isWta={broadcast.isWta}
                       handedness={broadcast.snapshot.handedness ?? ['right', 'right']}
                       fallback={(
                         <DmoLiveDisplay

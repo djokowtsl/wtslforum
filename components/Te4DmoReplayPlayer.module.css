@@ -6,6 +6,88 @@
   background: #101923;
 }
 
+.replay {
+  overflow: hidden;
+  border: 1px solid rgba(135, 158, 179, 0.28);
+  border-radius: 16px;
+  background: #101923;
+}
+
+.replayHeader {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+  padding: 14px 16px;
+  border-bottom: 1px solid rgba(135, 158, 179, 0.2);
+  background: linear-gradient(110deg, #101923, #172434);
+}
+
+.replayHeading {
+  min-width: 0;
+}
+
+.tourBadge {
+  display: inline-flex;
+  margin-bottom: 5px;
+  padding: 4px 7px;
+  border: 1px solid rgba(176, 244, 59, 0.35);
+  border-radius: 999px;
+  background: rgba(176, 244, 59, 0.08);
+  color: #b0f43b;
+  font: 800 9px/1 system-ui, sans-serif;
+  letter-spacing: 0.1em;
+}
+
+.replayHeading h3 {
+  margin: 0;
+  color: #f1f5fb;
+  font: italic 800 clamp(20px, 3vw, 28px)/1.05 var(--font-display, system-ui), sans-serif;
+}
+
+.replayHeading h3 i {
+  color: #9aabc0;
+  font-size: 0.78em;
+}
+
+.replayHeading p {
+  margin: 6px 0 0;
+  color: #aab9cf;
+  font: 11px/1.4 system-ui, sans-serif;
+}
+
+.viewTabs {
+  display: inline-flex;
+  flex: 0 0 auto;
+  gap: 6px;
+  padding: 4px;
+  border: 1px solid rgba(135, 158, 179, 0.2);
+  border-radius: 9px;
+  background: rgba(3, 9, 20, 0.55);
+}
+
+.viewTabs button {
+  min-height: 30px;
+  padding: 0 10px;
+  border: 1px solid transparent;
+  border-radius: 6px;
+  background: transparent;
+  color: #b5c2cc;
+  font: 700 10px system-ui, sans-serif;
+  cursor: pointer;
+}
+
+.viewTabs button[aria-pressed='true'] {
+  border-color: rgba(176, 244, 59, 0.32);
+  background: rgba(176, 244, 59, 0.1);
+  color: #b0f43b;
+}
+
+.viewTabs button:focus-visible {
+  outline: 2px solid #b0f43b;
+  outline-offset: 2px;
+}
+
 .frame {
   display: block;
   width: 100%;
@@ -13,6 +95,13 @@
   min-height: 560px;
   border: 0;
   background: #101923;
+}
+
+.classicError {
+  margin: 0;
+  padding: 14px 16px;
+  color: #ffd4d8;
+  font-size: 0.9rem;
 }
 
 .loading,
@@ -28,6 +117,19 @@
 }
 
 @media (max-width: 680px) {
+  .replayHeader {
+    align-items: flex-start;
+    flex-direction: column;
+  }
+
+  .viewTabs {
+    width: 100%;
+  }
+
+  .viewTabs button {
+    flex: 1;
+  }
+
   .frame {
     height: 74vh;
     min-height: 460px;

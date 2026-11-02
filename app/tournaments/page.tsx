@@ -3,6 +3,7 @@ import type { Metadata } from 'next';
 import { dbConfigured, safe } from '@/lib/db';
 import { getTournaments } from '@/lib/tournaments';
 import { fmtDate } from '@/lib/format';
+import { tournamentCardTheme } from '@/lib/tournamentCardTheme.mjs';
 import PageHero from '@/components/PageHero';
 import TourTabs from '@/components/TourTabs';
 import YearTabs from '@/components/YearTabs';
@@ -36,7 +37,11 @@ export default async function TournamentsPage({ searchParams }: { searchParams: 
               <div className="section-heading"><h2>{label}</h2><span>{items.length}</span></div>
               <div className="tournament-grid">
                 {items.map((t: any) => (
-                  <Link href={`/tournaments/${t.wtsl_tournament_key}`} className="tournament-card" key={t.id}>
+                  <Link
+                    href={`/tournaments/${t.wtsl_tournament_key}`}
+                    className={`tournament-card tournament-card--${tournamentCardTheme(t.name, t.surface)}`}
+                    key={t.id}
+                  >
                     <div className={`status-dot ${status}`} />
                     <div>
                       <div className="t-name">{t.name}</div>

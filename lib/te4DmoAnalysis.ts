@@ -16,6 +16,7 @@ import {
   type Te4ScoreRow,
 } from './te4DmoParser';
 import { surfaceForDmoTournament } from './te4DmoSurface';
+import { parseDmoFilename } from './te4DmoFilename';
 
 type ScoredPoint = Te4CompletedPoint;
 type MatchModel = {
@@ -44,16 +45,6 @@ type MatchModel = {
 function round(value: number, digits = 0): number {
   const scale = 10 ** digits;
   return Math.round((value + Number.EPSILON) * scale) / scale;
-}
-
-function filenameDetails(filename: string): { names: [string, string]; score: string | null } {
-  const leaf = filename.split(/[\\/]/).at(-1) || filename;
-  const match = /_-_(.+?)_vs_(.+?)_((?:\d+-\d+_?)+)/.exec(leaf);
-  if (!match) return { names: ['Player 1', 'Player 2'], score: null };
-  return {
-    names: [match[1], match[2]],
-    score: match[3].replaceAll('_', ' ').trim(),
-  };
 }
 
 function scoreTokens(score: string): string {
@@ -356,7 +347,7 @@ export function analyzeDmoBuffer(bytes: Buffer, filename: string): Te4AnalysisRe
   }
 
   const replay = new Te4Replay(bytes);
-  const { names, score: filenameScore } = filenameDetails(filename);
+  const { names, score: filenameScore } = parseDmoFilename(filename);
   const realPoints = replay.truePoints().filter(
     (point): point is ScoredPoint => !point.let && point.winner !== null,
   );

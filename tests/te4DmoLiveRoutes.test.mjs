@@ -296,6 +296,7 @@ test('signed-in members can read broadcasts while guests cannot', async () => {
     id: 'broadcast-id',
     status: 'live',
     ownerName: 'Member',
+    canManageTour: true,
     snapshot: { players: ['One', 'Two'], version: 1, pointCount: 1 },
     stream: null,
     sourceMessageUrl: null,
@@ -321,6 +322,64 @@ test('signed-in members can read broadcasts while guests cannot', async () => {
   assert.equal(body.broadcasts[1].replay, true);
   assert.equal(body.broadcasts[1].replayDataReady, true);
   assert.equal(body.broadcasts[1].replaySpeed, 4);
+});
+
+test('broadcast owners and admins can correct the match tour, but other members cannot', async () => {
+  const id = '7e09e922-44c3-49d7-8211-48f13b8b865a';
+  const queries = [];
+  const request = (tour) => new Request(`https://forum.test/api/live-dmo/${id}/tour`, {
+    method: 'PATCH',
+    headers: {
+      Origin: 'https://forum.test',
+      'X-Forwarded-Host': 'forum.test',
+      'X-Forwarded-Proto': 'https',
+      'Content-Type': 'application/json',
+    },
+    body: JSON.stringify({ tour }),
+  });
+  const ownerRoute = loadRoute('app/api/live-dmo/[id]/tour/route.ts', {
+    'next/server': nextServer,
+    '@/lib/auth': { getSession: async () => ({ discordId: 'owner', isAdmin: false }) },
+    '@/lib/liveRequestSecurity': { isSameSiteMutation },
+    '@/lib/db': {
+      sql: async (strings, ...values) => {
+        queries.push({ text: strings.join('?'), values });
+        return [{ id }];
+      },
+    },
+  });
+  const ownerResponse = await ownerRoute.PATCH(request('WTA'), {
+    params: Promise.resolve({ id }),
+  });
+  assert.equal(ownerResponse.status, 200);
+  assert.deepEqual(await ownerResponse.json(), { ok: true, isWta: true });
+  assert.match(queries[0].text, /owner_discord_id=\\?/);
+  assert.deepEqual(queries[0].values, [true, id, 'owner', false]);
+
+  let unauthorizedQueries = 0;
+  const otherMemberRoute = loadRoute('app/api/live-dmo/[id]/tour/route.ts', {
+    'next/server': nextServer,
+    '@/lib/auth': { getSession: async () => ({ discordId: 'other-member', isAdmin: false }) },
+    '@/lib/liveRequestSecurity': { isSameSiteMutation },
+    '@/lib/db': { sql: async () => { unauthorizedQueries += 1; return []; } },
+  });
+  const otherResponse = await otherMemberRoute.PATCH(request('ATP'), {
+    params: Promise.resolve({ id }),
+  });
+  assert.equal(otherResponse.status, 404);
+  assert.equal(unauthorizedQueries, 1);
+
+  const adminRoute = loadRoute('app/api/live-dmo/[id]/tour/route.ts', {
+    'next/server': nextServer,
+    '@/lib/auth': { getSession: async () => ({ discordId: 'admin', isAdmin: true }) },
+    '@/lib/liveRequestSecurity': { isSameSiteMutation },
+    '@/lib/db': { sql: async () => [{ id }] },
+  });
+  const adminResponse = await adminRoute.PATCH(request('ATP'), {
+    params: Promise.resolve({ id }),
+  });
+  assert.equal(adminResponse.status, 200);
+  assert.deepEqual(await adminResponse.json(), { ok: true, isWta: false });
 });
 
 test('full replay files require sign-in and are served from the private store', async () => {

@@ -100,6 +100,7 @@ export async function GET() {
         id: row.id,
         status: row.status,
         ownerName: row.owner_name || 'Forum member',
+        canManageTour: user.isAdmin || String(row.owner_discord_id) === user.discordId,
         ...(typeof stored.character === 'string' && stored.character.trim().length <= 120
           ? { character: stored.character.trim() }
           : {}),

@@ -91,11 +91,12 @@ export default async function CoachingHubPage() {
       <main className={`container ${styles.page}`}>
         <section className={styles.intro} aria-labelledby="coaching-intro-title">
           <div>
-            <span className={styles.kicker}>ONE MATCH, MORE TO LEARN</span>
-            <h2 id="coaching-intro-title">Replay it. Read it. Improve it.</h2>
+            <span className={styles.kicker}>TE4 COACH &amp; FORUM REPORTS</span>
+            <h2 id="coaching-intro-title">Match analysis built around real points.</h2>
             <p>
-              TE4 Coach offers replay breakdowns, live broadcasts, and a shared shot library.
-              Reviewed Forum DMO reports appear here only after consent and staff approval.
+              Explore TE4 Coach’s replay tools, live broadcasts, and shared shot library.
+              Forum reports add reviewed DMO replays and coaching notes, published only with
+              both players’ consent.
             </p>
           </div>
           <div className={styles.introActions}>

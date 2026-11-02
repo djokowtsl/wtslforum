@@ -2,8 +2,13 @@ import assert from 'node:assert/strict';
 import test from 'node:test';
 import {
   advanceLiveCourtPlayhead,
+  deriveLiveCourtFootworkEvents,
+  findLiveCourtShotInRange,
+  findPlayerShotEvent,
   interpolateLiveCourtFrame,
   liveCourtFacingAngle,
+  liveCourtEventsBetween,
+  latestLiveCourtShotEvent,
   latestLiveCourtMotionEvent,
   mergeLiveCourtEvents,
   mergeLiveCourtSamples,
@@ -11,6 +16,10 @@ import {
 
 function sample(frame, ballX) {
   return { frame, values: [ballX, 0, 0, 1, 2, 3, 4] };
+}
+
+function playerSample(frame, playerOneX = 0, playerOneZ = 0, playerTwoX = 0, playerTwoZ = 0) {
+  return { frame, values: [0, 0, 0, playerOneX, playerOneZ, playerTwoX, playerTwoZ] };
 }
 
 test('overlapping court updates merge into one ordered, bounded timeline', () => {
@@ -68,4 +77,41 @@ test('right-handed player models face the net from either end of the DMO court',
   assert.equal(positiveEndFacing, -Math.PI / 2);
   assert.ok(-Math.sin(negativeEndFacing) < 0);
   assert.ok(-Math.sin(positiveEndFacing) > 0);
+});
+
+test('footwork events distinguish normal steps from lateral slides and ignore teleports', () => {
+  const footsteps = deriveLiveCourtFootworkEvents([
+    playerSample(0),
+    playerSample(6, 20, 0),
+  ], 60);
+  assert.deepEqual(footsteps, [{ frame: 6, kind: 'footstep' }]);
+
+  const slides = deriveLiveCourtFootworkEvents([
+    playerSample(0),
+    playerSample(6, 0, 30),
+  ], 60);
+  assert.deepEqual(slides, [{ frame: 6, kind: 'slide' }]);
+
+  assert.deepEqual(deriveLiveCourtFootworkEvents([
+    playerSample(0),
+    playerSample(120, 300, 0),
+  ], 60), []);
+});
+
+test('motion event lookups stay scoped to the requested frames and player', () => {
+  const events = mergeLiveCourtEvents([], [
+    { frame: 80, kind: 'shot', player: 1, shotType: 'serve' },
+    { frame: 100, kind: 'shot', player: 2, shotType: 'rally' },
+    { frame: 110, kind: 'point-end' },
+    { frame: 120, kind: 'shot', player: 1, shotType: 'rally' },
+  ], 20);
+
+  assert.equal(findPlayerShotEvent(events, 1, 102)?.frame, 80);
+  assert.equal(findPlayerShotEvent(events, 2, 102)?.frame, 100);
+  assert.equal(findLiveCourtShotInRange(events, 111, 121)?.frame, 120);
+  assert.equal(latestLiveCourtShotEvent(events, 115)?.frame, 100);
+  assert.deepEqual(
+    liveCourtEventsBetween(events, 100, 120).map((event) => event.frame),
+    [110, 120],
+  );
 });

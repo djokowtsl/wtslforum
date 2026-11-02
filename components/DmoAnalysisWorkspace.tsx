@@ -4,7 +4,9 @@ import { uploadPresigned } from '@vercel/blob/client';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { Activity, AlertTriangle, ArrowUpRight, Check, ChevronRight, Clock3, Download, FileAudio2, FileUp, Gauge, LoaderCircle, RotateCcw, ShieldCheck, Trophy, X } from 'lucide-react';
 import { isPresignedUrlRetrievalFailure } from '@/lib/dmoUploadErrors';
+import { embedTe4ViewerHtml } from '@/lib/te4ViewerEmbed';
 import AdminCoachingReportPublishForm from '@/components/AdminCoachingReportPublishForm';
+import { useTe4ViewerTheme } from '@/components/useTe4ViewerTheme';
 import {
   buildTe4CoachingSummary,
   defaultTe4CoachingPlayer,
@@ -48,16 +50,6 @@ function characterRating(profile: Te4CharacterProfile | null | undefined, label:
   if (typeof rating === 'number') return rating.toFixed(1);
   return typeof rating === 'string' && rating ? rating : '—';
 }
-
-const safeViewerHtml = (html: string, data: Te4AnalysisResult['viewer']) => {
-  const json = JSON.stringify(data)
-    .replace(/</g, '\\u003c')
-    .replace(/>/g, '\\u003e')
-    .replace(/&/g, '\\u0026')
-    .replace(/\u2028/g, '\\u2028')
-    .replace(/\u2029/g, '\\u2029');
-  return html.replace('__DATA__', json);
-};
 
 function csvCell(value: string | number | boolean | null | undefined): string {
   let text = value == null ? '' : String(value);
@@ -221,6 +213,7 @@ export default function DmoAnalysisWorkspace() {
   const fileInput = useRef<HTMLInputElement>(null);
   const gameLogInput = useRef<HTMLInputElement>(null);
   const viewerFrame = useRef<HTMLIFrameElement>(null);
+  const syncViewerTheme = useTe4ViewerTheme(viewerFrame);
 
   const completedJobs = useMemo(
     () => jobs.filter(
@@ -260,7 +253,7 @@ export default function DmoAnalysisWorkspace() {
         return response.text();
       })
       .then((html) => {
-        if (!cancelled) setViewerHtml(safeViewerHtml(html, result.viewer));
+        if (!cancelled) setViewerHtml(embedTe4ViewerHtml(html, result.viewer));
       })
       .catch((cause: unknown) => {
         if (!cancelled) {
@@ -808,6 +801,7 @@ export default function DmoAnalysisWorkspace() {
                     srcDoc={viewerHtml}
                     sandbox="allow-scripts"
                     onLoad={() => {
+                      syncViewerTheme();
                       if (selectedPoint !== null) viewerFrame.current?.contentWindow?.postMessage({ type: 'select-point', point: selectedPoint }, '*');
                     }}
                   />

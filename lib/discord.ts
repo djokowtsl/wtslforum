@@ -161,6 +161,11 @@ export async function announceLiveBroadcast(
   if (includeSourceRolePing) {
     const siteUrl = (process.env.NEXT_PUBLIC_SITE_URL || 'https://www.wtslforum.com').replace(/\/+$/, '');
     const broadcastUrl = `${siteUrl}/livestreams?broadcast=${encodeURIComponent(input.id)}#broadcast-${encodeURIComponent(input.id)}`;
+    const broadcasterName = input.ownerName
+      .replace(/[\r\n]+/g, ' ')
+      .trim()
+      .slice(0, 100)
+      .replace(/([\\`*_~|])/g, '\\$1') || 'A Forum member';
     try {
       const response = await fetch(`${api}/channels/${RECENT_LIVE_ROLE_PINGS_CHANNEL_ID}/messages`, {
         method: 'POST',
@@ -169,7 +174,7 @@ export async function announceLiveBroadcast(
           'Content-Type': 'application/json',
         },
         body: JSON.stringify({
-          content: `📺 <@&${LIVE_STREAM_ROLE_ID}> A Forum member started a live stream: ${broadcastUrl}`,
+          content: `📺 <@&${LIVE_STREAM_ROLE_ID}> **${broadcasterName}** started a live stream: ${broadcastUrl}`,
           allowed_mentions: { parse: [], users: [], roles: [LIVE_STREAM_ROLE_ID] },
         }),
         signal: AbortSignal.timeout(DISCORD_REQUEST_TIMEOUT_MS),
