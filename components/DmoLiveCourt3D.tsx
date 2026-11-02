@@ -739,7 +739,8 @@ function ThreeCourt({
       nonDominantMesh.quaternion.copy(nonDominantForearm.quaternion);
       rig.racket.position.copy(dominantHand);
       const restingRacketAngle = -0.12 + Math.sin(phase * 0.55) * speed * 0.14;
-      const resting = new THREE.Quaternion().setFromEuler(new THREE.Euler(0, 0, -restingRacketAngle));
+      // Present the shaft forward of the forearm, not apparently through it.
+      const resting = new THREE.Quaternion().setFromEuler(new THREE.Euler(0.42, 0, -restingRacketAngle));
       const backswingRotation = resting.clone().multiply(
         new THREE.Quaternion().setFromEuler(new THREE.Euler(0, 0, -strokeSide * 0.9)),
       );

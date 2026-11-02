@@ -74,7 +74,7 @@ function PlayerPortrait() {
         handMesh.quaternion.copy(left ? player.leftForearm.quaternion : player.rightForearm.quaternion);
       }
       player.racket.position.copy(player.rightHand.position);
-      player.racket.quaternion.identity();
+      player.racket.quaternion.setFromEuler(new THREE.Euler(0.42, 0, 0));
       player.rightHand.quaternion.copy(player.racket.quaternion);
       scene.add(player.root);
     });
@@ -86,6 +86,10 @@ function PlayerPortrait() {
     const camera = new THREE.PerspectiveCamera(30, 900 / 800, 0.1, 50);
     camera.position.set(0.2, 1.15, 4.4);
     camera.lookAt(0, 0.95, 0);
+    if (new URLSearchParams(location.search).has('grip')) {
+      camera.position.set(0.82, 0.98, 0.85);
+      camera.lookAt(0.82, 0.9, 0.12);
+    }
     host.current?.append(renderer.domElement);
     renderer.render(scene, camera);
     return () => { renderer.dispose(); renderer.domElement.remove(); };
