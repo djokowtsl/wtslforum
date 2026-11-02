@@ -490,6 +490,7 @@ function DmoLiveCourt({
   const lastSoundFrameRef = useRef(Math.max(0, snapshot.frameCount - 3));
   const playedSoundEventsRef = useRef(new Set<string>());
   const [soundEnabled, setSoundEnabled] = useState(false);
+  const [crowdVolume, setCrowdVolume] = useState(0.38);
   const [soundError, setSoundError] = useState('');
   const [feedStalled, setFeedStalled] = useState(false);
   const [renderError, setRenderError] = useState('');
@@ -722,6 +723,16 @@ function DmoLiveCourt({
     onGruntsEnabledChange(enabled);
   };
 
+  const changeCrowdVolume = (value: number) => {
+    const volume = Math.max(0, Math.min(1, Math.round(value * 100) / 100));
+    setCrowdVolume(volume);
+    const context = audioContextRef.current;
+    const crowdBed = crowdBedRef.current;
+    if (soundEnabled && context && crowdBed) {
+      crowdBed.gain.gain.setTargetAtTime(volume * 0.02368421, context.currentTime, 0.08);
+    }
+  };
+
   const toggleSound = async () => {
     if (soundEnabled) {
       stopActiveGrunts();
@@ -745,7 +756,11 @@ function DmoLiveCourt({
         wtaGruntAudioRef.current = await context.decodeAudioData(await response.arrayBuffer());
       }
       if (!crowdBedRef.current) crowdBedRef.current = createCrowdBed(context);
-      crowdBedRef.current.gain.gain.setTargetAtTime(0.009, context.currentTime, 0.45);
+      crowdBedRef.current.gain.gain.setTargetAtTime(
+        crowdVolume * 0.02368421,
+        context.currentTime,
+        0.45,
+      );
       lastSoundFrameRef.current = Math.max(0, snapshot.frameCount - 3);
       setSoundError('');
       setSoundEnabled(true);
@@ -854,6 +869,35 @@ function DmoLiveCourt({
           >
             Grunts {gruntsEnabled ? 'on' : 'off'}
           </button>
+          {stadiumAtmosphere && (
+            <div className={styles.crowdVolumeControl} role="group" aria-label="Crowd volume controls">
+              <span>Crowd</span>
+              <button
+                type="button"
+                aria-label="Lower crowd volume"
+                onClick={() => changeCrowdVolume(crowdVolume - 0.1)}
+              >
+                <Minus size={14} />
+              </button>
+              <input
+                type="range"
+                min="0"
+                max="1"
+                step="0.01"
+                value={crowdVolume}
+                aria-label="Crowd volume"
+                onChange={(event) => changeCrowdVolume(Number(event.currentTarget.value))}
+              />
+              <output aria-label="Crowd volume level">{Math.round(crowdVolume * 100)}%</output>
+              <button
+                type="button"
+                aria-label="Raise crowd volume"
+                onClick={() => changeCrowdVolume(crowdVolume + 0.1)}
+              >
+                <Plus size={14} />
+              </button>
+            </div>
+          )}
         </div>
       </div>
       <div className={styles.viewport}>

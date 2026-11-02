@@ -38,6 +38,11 @@
 .cameraControl input, .zoomRange { width: 62px; accent-color: #b0f43b; }
 .sceneControls output { min-width: 30px; color: #9eacc0; font-size: 9px; font-variant-numeric: tabular-nums; text-align: right; }
 .cameraControl output { min-width: 27px; }
+.crowdVolumeControl { display: inline-flex; align-items: center; gap: 6px; min-height: 36px; padding: 2px 7px; border: 1px solid rgba(150,180,230,.2); border-radius: 7px; background: rgba(5,15,34,.7); color: #c4d0e2; font-size: 10px; font-weight: 700; }
+.crowdVolumeControl > span { white-space: nowrap; }
+.crowdVolumeControl input { width: 86px; min-height: 30px; margin: 0; accent-color: #b0f43b; touch-action: pan-x; }
+.crowdVolumeControl output { min-width: 34px; color: #d9e3ef; font-variant-numeric: tabular-nums; }
+.sceneControls .crowdVolumeControl button { width: 30px; height: 30px; flex: 0 0 auto; }
 
 .viewport { position: relative; overflow: hidden; background: #101923; }
 .viewport canvas { display: block; width: 100%; height: auto; cursor: grab; touch-action: none; }
@@ -64,5 +69,15 @@
   .sceneControls { width: 100%; justify-content: flex-start; }
   .cameraControl { flex: 1; }
   .cameraControl input, .zoomRange { flex: 1; min-width: 40px; }
+  .sceneControls .crowdVolumeControl {
+    width: 100%;
+    min-height: 50px;
+    flex: 1 1 100%;
+    gap: 8px;
+    padding: 3px 9px;
+  }
+  .crowdVolumeControl input { width: 0; min-width: 60px; min-height: 44px; flex: 1; }
+  .sceneControls .crowdVolumeControl button { width: 44px; height: 44px; }
+  .crowdVolumeControl output { min-width: 38px; font-size: 11px; }
   .sceneNote { width: 100%; margin-left: 0; }
 }
