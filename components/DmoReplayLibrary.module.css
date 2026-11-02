@@ -189,6 +189,59 @@
   min-width: 0;
 }
 
+.playerOptions {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin: 0 0 12px;
+}
+
+.playerTab {
+  min-height: 36px;
+  padding: 8px 12px;
+  border: 1px solid var(--line-2);
+  border-radius: 9px;
+  background: var(--panel);
+  color: var(--text);
+  cursor: pointer;
+  font: inherit;
+  font-size: 12px;
+  font-weight: 750;
+}
+
+.playerTabActive {
+  border-color: rgba(176, 244, 59, .48);
+  background: var(--panel-2);
+  color: var(--lime);
+}
+
+.playerTab:focus-visible,
+.coachAnalysisLink:focus-visible {
+  outline: 2px solid var(--lime);
+  outline-offset: 2px;
+}
+
+.coachAnalysisLink {
+  margin-left: auto;
+  color: var(--lime);
+  font-size: 12px;
+  font-weight: 750;
+}
+
+.playerPanel {
+  min-width: 0;
+}
+
+.coachEmbed {
+  display: block;
+  width: 100%;
+  height: clamp(360px, 56vw, 640px);
+  border: 1px solid var(--line-2);
+  border-radius: 12px;
+  background: var(--panel);
+}
+
 .viewerHeading {
   margin-bottom: 14px;
 }
@@ -263,5 +316,13 @@
   .viewerEmpty {
     min-height: 320px;
     padding: 24px;
+  }
+
+  .coachEmbed {
+    height: 440px;
+  }
+
+  .coachAnalysisLink {
+    margin-left: 0;
   }
 }
