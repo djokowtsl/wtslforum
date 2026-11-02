@@ -35,6 +35,8 @@ function loadRoute(path, mocks) {
   return module.exports;
 }
 
+const te4CoachEmbed = loadRoute('lib/te4CoachEmbed.ts', {});
+
 function request(body, headers = {}) {
   return new Request('https://forum.test/api/admin/dmo-analysis', {
     method: 'POST',
@@ -532,11 +534,12 @@ test('admin DMO analysis page has its own gate and member media submission route
   assert.match(mediaPage, /DMO|recording|match/i);
 });
 
-test('DMO submission tag edits are admin-only and validate the full tag set', async () => {
+test('DMO submission edits are admin-only and validate tags and Coach links', async () => {
   const calls = [];
   const handlers = loadRoute('app/api/admin/dmo-submissions/[id]/route.ts', {
     'next/server': { NextResponse: { json: (body, init) => Response.json(body, init) } },
     '@/lib/auth': { getSession: async () => admin },
+    '@/lib/te4CoachEmbed': te4CoachEmbed,
     '@/lib/dmo-submissions': {
       updateDmoSubmissionTags: async (id, tags) => {
         calls.push({ id, tags });
@@ -570,6 +573,41 @@ test('DMO submission tag edits are admin-only and validate the full tag set', as
     },
   }]);
 
+  const coachLink = await handlers.PATCH(
+    new Request('https://forum.test/api/admin/dmo-submissions/41', {
+      method: 'PATCH',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        tournament: 'Autumn Cup',
+        roundName: 'Final',
+        player1: 'Player One',
+        player2: 'Player Two',
+        submissionDate: '2026-10-16',
+        coachShareUrl: 'https://replays.knowthew.net/m/3f9a1c07b2e4d5a6',
+      }),
+    }),
+    { params: Promise.resolve({ id: '41' }) },
+  );
+  assert.equal(coachLink.status, 200);
+  assert.equal(calls[1].tags.coachShareUrl, 'https://replays.knowthew.net/m/3f9a1c07b2e4d5a6');
+
+  const invalidCoachLink = await handlers.PATCH(
+    new Request('https://forum.test/api/admin/dmo-submissions/41', {
+      method: 'PATCH',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        tournament: 'Autumn Cup',
+        roundName: 'Final',
+        player1: 'Player One',
+        player2: 'Player Two',
+        submissionDate: '2026-10-16',
+        coachShareUrl: 'https://evil.example/m/3f9a1c07b2e4d5a6',
+      }),
+    }),
+    { params: Promise.resolve({ id: '41' }) },
+  );
+  assert.equal(invalidCoachLink.status, 400);
+
   const invalidDate = await handlers.PATCH(
     new Request('https://forum.test/api/admin/dmo-submissions/41', {
       method: 'PATCH',
@@ -585,7 +623,7 @@ test('DMO submission tag edits are admin-only and validate the full tag set', as
     { params: Promise.resolve({ id: '41' }) },
   );
   assert.equal(invalidDate.status, 400);
-  assert.equal(calls.length, 1);
+  assert.equal(calls.length, 2);
 });
 
 test('DMO tag edits reject non-admins without updating metadata', async () => {
@@ -593,6 +631,7 @@ test('DMO tag edits reject non-admins without updating metadata', async () => {
   const handlers = loadRoute('app/api/admin/dmo-submissions/[id]/route.ts', {
     'next/server': { NextResponse: { json: (body, init) => Response.json(body, init) } },
     '@/lib/auth': { getSession: async () => ({ ...admin, isAdmin: false }) },
+    '@/lib/te4CoachEmbed': te4CoachEmbed,
     '@/lib/dmo-submissions': {
       updateDmoSubmissionTags: async () => {
         updated = true;
