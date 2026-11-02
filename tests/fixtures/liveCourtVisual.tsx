@@ -69,9 +69,13 @@ function PlayerPortrait() {
         poseLimb(left ? player.leftForearm : player.rightForearm, elbow, hand);
         (left ? player.leftKnee : player.rightKnee).position.copy(knee);
         (left ? player.leftElbow : player.rightElbow).position.copy(elbow);
-        (left ? player.leftHand : player.rightHand).position.copy(hand);
+        const handMesh = left ? player.leftHand : player.rightHand;
+        handMesh.position.copy(hand);
+        handMesh.quaternion.copy(left ? player.leftForearm.quaternion : player.rightForearm.quaternion);
       }
       player.racket.position.copy(player.rightHand.position);
+      player.racket.quaternion.identity();
+      player.rightHand.quaternion.copy(player.racket.quaternion);
       scene.add(player.root);
     });
     const floor = new THREE.Mesh(new THREE.PlaneGeometry(10, 10),

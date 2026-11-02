@@ -35,8 +35,33 @@ test('human player proportions and visible eyes replace the oversized toy head',
     assert.ok(rig.head.material.isMeshToonMaterial, 'face uses cel shading');
     assert.ok(rig.body.material.isMeshToonMaterial, 'uniform uses cel shading');
     assert.ok(rig.head.getObjectByName('anime-scalp'));
+    const scalp = rig.head.getObjectByName('anime-scalp');
+    scalp.geometry.computeBoundingBox();
+    const scalpSize = scalp.geometry.boundingBox.getSize(new THREE.Vector3());
+    assert.equal(scalp.geometry.userData.animeScalp.rowCount, 7, 'the fitted hair shell covers crown and sides');
+    assert.ok(scalpSize.x > 0.19 && scalpSize.y > 0.22);
+    const scalpVertices = scalp.geometry.getAttribute('position');
+    const crownStart = new THREE.Vector3().fromBufferAttribute(scalpVertices, 4 * 49);
+    const crownEnd = new THREE.Vector3().fromBufferAttribute(scalpVertices, 4 * 49 + 48);
+    assert.ok(crownStart.distanceTo(crownEnd) < 0.00001, 'the face opening closes above the forehead');
+    assert.equal(rig.head.children.filter(child => child.name === 'anime-fringe-strand').length, 2);
     assert.ok(rig.head.getObjectByName('anime-swept-fringe'));
     assert.ok(rig.head.children.filter(child => child.name === 'anime-hair-spike').length >= 3);
+    assert.equal(rig.rightHand.children.filter(child => child.name.startsWith('anime-grip-finger-')).length, 4);
+    assert.ok(rig.rightHand.getObjectByName('anime-grip-thumb'));
+    const handle = rig.racket.getObjectByName('racket-handle');
+    const tape = rig.racket.getObjectByName('racket-grip-tape');
+    assert.ok(handle && handle.geometry.parameters.radiusTop <= 0.02, 'the grip is narrow enough to show the hand');
+    assert.ok(tape && tape.geometry.parameters.radiusTop <= 0.02);
+    assert.ok(rig.rightElbow.geometry.parameters.radius > 0.04, 'muscle segments blend into rounded elbows');
+    rig.leftArm.geometry.computeBoundingBox();
+    assert.ok(rig.leftArm.geometry.boundingBox.max.x - rig.leftArm.geometry.boundingBox.min.x > 0.14);
+    for (const limb of [rig.leftArm, rig.leftForearm, rig.leftCalf]) {
+      const profile = limb.geometry.parameters.points;
+      assert.ok(profile[0].x > profile.at(-1).x, 'limbs taper toward the wrist or ankle, not toward the body');
+    }
+    assert.ok(rig.leftLeg.geometry.parameters.points[0].x <= 0.055,
+      'upper thighs remain inside the waistband');
     if (!isWta) {
       const shorts = rig.hip.getObjectByName('single-piece-athletic-shorts');
       assert.ok(shorts, 'ATP apparel uses one connected shorts shell');

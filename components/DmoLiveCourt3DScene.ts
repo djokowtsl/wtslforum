@@ -124,6 +124,51 @@ function ellipticalBodyGeometry(
   return geometry;
 }
 
+function animeScalpGeometry() {
+  const rows: Array<[y: number, radiusX: number, radiusZ: number, centerZ: number]> = [
+    [-0.095, 0.018, 0.026, -0.018],
+    [-0.064, 0.083, 0.077, -0.017],
+    [-0.025, 0.096, 0.087, -0.014],
+    [0.045, 0.103, 0.093, -0.012],
+    [0.09, 0.09, 0.09, -0.006],
+    [0.125, 0.056, 0.062, -0.003],
+    [0.139, 0.019, 0.026, -0.008],
+  ];
+  const angularSegments = 48;
+  const openingHalfAngle = 0.74;
+  const positions: number[] = [];
+  const indices: number[] = [];
+  for (const [y, radiusX, radiusZ, centerZ] of rows) {
+    // Close the face opening above the forehead, not through the crown.
+    const rowOpening = y >= 0.09 ? 0 : openingHalfAngle;
+    const angularStart = Math.PI / 2 + rowOpening;
+    const angularSpan = Math.PI * 2 - rowOpening * 2;
+    for (let segment = 0; segment <= angularSegments; segment += 1) {
+      const angle = angularStart + (segment / angularSegments) * angularSpan;
+      positions.push(
+        Math.cos(angle) * radiusX,
+        y,
+        centerZ + Math.sin(angle) * radiusZ,
+      );
+    }
+  }
+  const rowSize = angularSegments + 1;
+  for (let row = 0; row < rows.length - 1; row += 1) {
+    for (let segment = 0; segment < angularSegments; segment += 1) {
+      const lower = row * rowSize + segment;
+      const upper = lower + rowSize;
+      indices.push(lower, upper, upper + 1, lower, upper + 1, lower + 1);
+    }
+  }
+  const geometry = new THREE.BufferGeometry();
+  geometry.setAttribute('position', new THREE.Float32BufferAttribute(positions, 3));
+  geometry.setIndex(indices);
+  geometry.computeVertexNormals();
+  geometry.computeBoundingBox();
+  geometry.userData.animeScalp = { openingHalfAngle, rowCount: rows.length };
+  return geometry;
+}
+
 export function buildStadiumEnvironment(scene: THREE.Scene, indoor = false) {
   const existing = scene.getObjectByName('wtsl-stadium-architecture');
   if (existing && scene.userData.wtslStadiumIndoor === indoor) return;
@@ -1106,6 +1151,7 @@ export function makePlayer(shirtColor: number, shortsColor: number, isWta = fals
     hip.add(skirt);
   }
   hip.position.y = 0.9;
+  hip.scale.x = 1.08;
   root.add(hip);
   const neck = new THREE.Mesh(new THREE.CylinderGeometry(0.045, 0.052, 0.11, 14), skin);
   neck.position.y = 1.56;
@@ -1221,15 +1267,25 @@ export function makePlayer(shirtColor: number, shortsColor: number, isWta = fals
   mouth.position.set(0, -0.082, 0.088);
   mouth.name = 'anime-smile';
   head.add(mouth);
-  // A close-fitting domed hairstyle leaves room for brows and expressive eyes.
+  // Full scalp coverage wraps behind the crown and temples; the smaller top
+  // cap alone left the back and sides looking bald from a court-level camera.
   const hair = new THREE.Mesh(
-    new THREE.SphereGeometry(1, 32, 20, 0, Math.PI * 2, 0, 1.3),
+    animeScalpGeometry(),
     hairMaterial,
   );
   hair.name = 'anime-scalp';
-  hair.scale.set(0.104, 0.1, 0.096);
-  hair.position.set(0, 0.04, -0.014);
   head.add(hair);
+  for (const side of [-1, 1]) {
+    const fringeStrand = new THREE.Mesh(
+      new THREE.CapsuleGeometry(0.014, 0.035, 4, 8),
+      hairMaterial,
+    );
+    fringeStrand.name = 'anime-fringe-strand';
+    fringeStrand.scale.set(0.85, 0.92, 0.65);
+    fringeStrand.position.set(side * 0.03, 0.106, 0.069);
+    fringeStrand.rotation.z = -side * 0.27;
+    head.add(fringeStrand);
+  }
   for (const [side, length, radius] of [
     [-1, 0.042, 0.012],
     [0, 0.048, 0.013],
@@ -1237,7 +1293,7 @@ export function makePlayer(shirtColor: number, shortsColor: number, isWta = fals
   ] as const) {
     const spike = new THREE.Mesh(new THREE.ConeGeometry(radius, length, 7), hairMaterial);
     spike.name = 'anime-hair-spike';
-    spike.position.set(side * 0.038, 0.125, 0.068);
+    spike.position.set(side * 0.038, 0.125, 0.035);
     spike.rotation.z = -side * 0.24;
     spike.castShadow = true;
     head.add(spike);
@@ -1263,19 +1319,32 @@ export function makePlayer(shirtColor: number, shortsColor: number, isWta = fals
 
   // poseLimb scales each anatomically slim segment to measured joint spacing.
   const taperedSegment = (proximal: number, mid: number, distal: number) => new THREE.LatheGeometry([
-    new THREE.Vector2(distal * 0.68, -0.5),
-    new THREE.Vector2(distal * 0.78, -0.47),
-    new THREE.Vector2(distal, -0.34),
-    new THREE.Vector2(mid, -0.08),
-    new THREE.Vector2((proximal + mid) * 0.52, 0.2),
-    new THREE.Vector2(proximal, 0.39),
-    new THREE.Vector2(proximal * 0.88, 0.47),
-    new THREE.Vector2(proximal * 0.68, 0.5),
+    new THREE.Vector2(proximal * 0.68, -0.5),
+    new THREE.Vector2(proximal * 0.88, -0.47),
+    new THREE.Vector2(proximal, -0.39),
+    new THREE.Vector2((proximal + mid) * 0.52, -0.2),
+    new THREE.Vector2(mid, 0.08),
+    new THREE.Vector2(distal, 0.34),
+    new THREE.Vector2(distal * 0.78, 0.47),
+    new THREE.Vector2(distal * 0.68, 0.5),
   ], 20);
-  const upperArmGeometry = taperedSegment(0.062, 0.055, 0.044);
-  const forearmGeometry = taperedSegment(0.049, 0.041, 0.032);
-  const legGeometry = taperedSegment(0.096, 0.084, 0.064);
-  const calfGeometry = taperedSegment(0.062, 0.048, 0.03);
+  // Fill the muscle silhouette and overlap larger, rounded joints so movement
+  // reads as connected athletic anatomy instead of exposed hinge-like bones.
+  const upperArmGeometry = taperedSegment(0.072, 0.065, 0.057);
+  const forearmGeometry = taperedSegment(0.056, 0.05, 0.039);
+  // Keep the hip insertion inside the garments, then build the quadriceps
+  // below the hem rather than pushing flesh through the waistband.
+  const legGeometry = new THREE.LatheGeometry([
+    new THREE.Vector2(0.05, -0.5),
+    new THREE.Vector2(0.055, -0.4),
+    new THREE.Vector2(0.06, -0.25),
+    new THREE.Vector2(0.082, -0.08),
+    new THREE.Vector2(0.09, 0.08),
+    new THREE.Vector2(0.073, 0.34),
+    new THREE.Vector2(0.057, 0.47),
+    new THREE.Vector2(0.05, 0.5),
+  ], 20);
+  const calfGeometry = taperedSegment(0.071, 0.058, 0.038);
   const leftArm = new THREE.Mesh(upperArmGeometry, skin);
   const rightArm = new THREE.Mesh(upperArmGeometry, skin);
   const leftForearm = new THREE.Mesh(forearmGeometry, skin);
@@ -1287,16 +1356,16 @@ export function makePlayer(shirtColor: number, shortsColor: number, isWta = fals
   const trimMaterial = animeMaterial(0xf4ead9);
   for (const sleeve of [leftArm, rightArm]) {
     const shirtSleeve = new THREE.Mesh(ellipticalBodyGeometry([
-      [-0.535, 0.043, 0.042],
-      [-0.50, 0.059, 0.057],
-      [-0.34, 0.061, 0.057],
-      [-0.16, 0.055, 0.052],
-      [0.015, 0.044, 0.042],
-      [0.035, 0.032, 0.031],
+      [-0.535, 0.054, 0.055],
+      [-0.50, 0.078, 0.077],
+      [-0.34, 0.079, 0.078],
+      [-0.16, 0.075, 0.074],
+      [0.015, 0.07, 0.069],
+      [0.035, 0.067, 0.066],
     ], 20), shirt);
     shirtSleeve.castShadow = true;
     sleeve.add(shirtSleeve);
-    const cuff = new THREE.Mesh(new THREE.TorusGeometry(0.044, 0.0045, 6, 18), trimMaterial);
+    const cuff = new THREE.Mesh(new THREE.TorusGeometry(0.067, 0.0045, 6, 18), trimMaterial);
     cuff.rotation.x = Math.PI / 2;
     cuff.position.y = 0.02;
     sleeve.add(cuff);
@@ -1310,28 +1379,46 @@ export function makePlayer(shirtColor: number, shortsColor: number, isWta = fals
   }
   // Soft connectors slightly overlap both end rings at each elbow and knee;
   // the shared flesh color hides flat tube caps during fast direction changes.
-  const jointGeometry = new THREE.SphereGeometry(0.033, 16, 12);
+  const jointGeometry = new THREE.SphereGeometry(0.047, 20, 16);
   const leftElbow = new THREE.Mesh(jointGeometry, skin);
   const rightElbow = new THREE.Mesh(jointGeometry, skin);
-  const kneeGeometry = new THREE.SphereGeometry(0.051, 16, 12);
+  const kneeGeometry = new THREE.SphereGeometry(0.061, 20, 16);
   const leftKnee = new THREE.Mesh(kneeGeometry, skin);
   const rightKnee = new THREE.Mesh(kneeGeometry, skin);
-  const handGeometry = new THREE.SphereGeometry(0.04, 12, 10);
+  const handGeometry = new THREE.SphereGeometry(0.05, 20, 16);
+  handGeometry.scale(0.84, 0.92, 0.7);
+  handGeometry.translate(0, 0.015, -0.018);
   const leftHand = new THREE.Mesh(handGeometry, skin);
   const rightHand = new THREE.Mesh(handGeometry, skin);
+  leftHand.name = 'anime-left-palm';
   rightHand.name = 'dominant-right-hand';
-  for (const hand of [leftHand, rightHand]) {
-    hand.scale.set(0.8, 0.76, 0.7);
-    const fingerGeometry = new THREE.CapsuleGeometry(0.0045, 0.018, 2, 6);
+  for (const [hand, side] of [[leftHand, -1], [rightHand, 1]] as const) {
     for (let finger = 0; finger < 4; finger += 1) {
-      const digit = new THREE.Mesh(fingerGeometry, skin);
-      digit.position.set((finger - 1.5) * 0.012, -0.03, 0.006);
-      digit.rotation.z = (finger - 1.5) * 0.08;
+      const gripY = (finger - 1.5) * 0.014;
+      // Each finger curls over the racket's narrow grip instead of ending
+      // invisibly inside an oversized handle.
+      const fingerCurve = new THREE.CatmullRomCurve3([
+        new THREE.Vector3(-0.035, gripY, 0.004),
+        new THREE.Vector3(-0.02, gripY + 0.004, 0.015),
+        new THREE.Vector3(0, gripY + 0.006, 0.021),
+        new THREE.Vector3(0.02, gripY + 0.004, 0.015),
+        new THREE.Vector3(0.035, gripY, 0.004),
+      ]);
+      const digit = new THREE.Mesh(
+        new THREE.TubeGeometry(fingerCurve, 12, 0.006, 6, false),
+        skin,
+      );
+      digit.name = `anime-grip-finger-${finger + 1}`;
       hand.add(digit);
     }
-    const thumb = new THREE.Mesh(fingerGeometry, skin);
-    thumb.position.set(0.03, -0.004, 0.008);
-    thumb.rotation.z = 0.82;
+    const thumbCurve = new THREE.CatmullRomCurve3([
+      new THREE.Vector3(side * 0.04, -0.006, 0.002),
+      new THREE.Vector3(side * 0.027, 0.012, 0.015),
+      new THREE.Vector3(side * 0.008, 0.022, 0.023),
+      new THREE.Vector3(-side * 0.004, 0.006, 0.021),
+    ]);
+    const thumb = new THREE.Mesh(new THREE.TubeGeometry(thumbCurve, 10, 0.007, 6, false), skin);
+    thumb.name = 'anime-grip-thumb';
     hand.add(thumb);
   }
   for (const part of [
@@ -1372,14 +1459,16 @@ export function makePlayer(shirtColor: number, shortsColor: number, isWta = fals
   racketVisual.position.y = 0.36;
   racketVisual.scale.setScalar(0.77);
   racket.add(racketVisual);
-  const frame = new THREE.Mesh(new THREE.TorusGeometry(0.24, 0.027, 6, 24), material(0xe5dfc6, 0.55));
+  const frame = new THREE.Mesh(new THREE.TorusGeometry(0.24, 0.015, 8, 32), material(0xe5dfc6, 0.55));
   frame.name = 'racket-head';
-  frame.scale.set(0.77, 1.22, 0.45);
+  frame.scale.set(0.77, 0.95, 0.45);
   racketVisual.add(frame);
-  const handle = new THREE.Mesh(new THREE.CylinderGeometry(0.035, 0.045, 0.5, 7), material(0xb6aa84));
+  const handle = new THREE.Mesh(new THREE.CylinderGeometry(0.019, 0.02, 0.5, 10), material(0xb6aa84));
+  handle.name = 'racket-handle';
   handle.position.y = -0.36;
   racketVisual.add(handle);
-  const gripTape = new THREE.Mesh(new THREE.CylinderGeometry(0.038, 0.04, 0.28, 8), material(0x293a35, 0.88));
+  const gripTape = new THREE.Mesh(new THREE.CylinderGeometry(0.019, 0.02, 0.28, 10), material(0x293a35, 0.88));
+  gripTape.name = 'racket-grip-tape';
   gripTape.position.y = -0.36;
   racketVisual.add(gripTape);
   const stringMaterial = new THREE.LineBasicMaterial({ color: 0xeae7d8, transparent: true, opacity: 0.55 });

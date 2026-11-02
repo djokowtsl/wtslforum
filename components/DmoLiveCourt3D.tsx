@@ -765,6 +765,9 @@ function ThreeCourt({
       if (impactWeight > 0) rig.racket.quaternion.slerp(contactRotation, impactWeight);
       if (shapedFollowThrough > 0) rig.racket.quaternion.slerp(followRotation, shapedFollowThrough);
       if (serveFollowThrough > 0) rig.racket.quaternion.slerp(serveFollowRotation, serveFollowThrough);
+      // Keep the dominant palm and curled fingers aligned with the grip as
+      // the racket turns through serves and groundstrokes.
+      dominantMesh.quaternion.copy(rig.racket.quaternion);
     };
 
     const animate = (now: number) => {
