@@ -1,3 +1,5 @@
+import type { PlayerStrokeStylePair } from './liveCourtPerformance';
+
 export type Te4LivePlayer = 1 | 2;
 export type Te4LiveBestOf = 1 | 3 | 5;
 export type Te4DmoReplaySpeed = 1 | 2 | 4;
@@ -55,6 +57,7 @@ export type Te4LiveSnapshot = {
   stadium: string | null;
   players: [string, string];
   handedness?: ['left' | 'right', 'left' | 'right'];
+  strokeStyles?: PlayerStrokeStylePair;
   frameCount: number;
   /** Source playback frame rate; live DMO snapshots default to 60 fps. */
   frameRate?: number;
