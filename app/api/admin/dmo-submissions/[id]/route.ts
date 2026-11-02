@@ -1,6 +1,7 @@
 import { NextResponse } from 'next/server';
 import { getSession } from '@/lib/auth';
 import { updateDmoSubmissionTags } from '@/lib/dmo-submissions';
+import { parseTe4CoachShareUrl } from '@/lib/te4CoachEmbed';
 
 export const dynamic = 'force-dynamic';
 
@@ -36,10 +37,22 @@ export async function PATCH(
   const player1 = cleanRequiredText(body?.player1, 100);
   const player2 = cleanRequiredText(body?.player2, 100);
   const submissionDate = body?.submissionDate;
+  const hasCoachShareUrl = body !== null
+    && typeof body === 'object'
+    && Object.prototype.hasOwnProperty.call(body, 'coachShareUrl');
+  const coachShare = hasCoachShareUrl
+    ? parseTe4CoachShareUrl(body.coachShareUrl)
+    : undefined;
 
   if (!tournament || !roundName || !player1 || !player2 || !validDate(submissionDate)) {
     return NextResponse.json(
       { error: 'Tournament, round, both players, and a valid submission date are required.' },
+      { status: 400 },
+    );
+  }
+  if (coachShare && !coachShare.valid) {
+    return NextResponse.json(
+      { error: 'Use an HTTPS TE4 Coach match link from /m, /tv, or a /w dashboard match.' },
       { status: 400 },
     );
   }
@@ -50,6 +63,7 @@ export async function PATCH(
     player1,
     player2,
     submissionDate,
+    ...(coachShare ? { coachShareUrl: coachShare.url } : {}),
   });
   if (!updated) {
     return NextResponse.json({ error: 'DMO submission not found.' }, { status: 404 });
