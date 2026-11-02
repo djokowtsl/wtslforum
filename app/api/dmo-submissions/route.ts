@@ -35,6 +35,7 @@ export async function POST(req: NextRequest) {
   const externalUrl = String(form.get('externalUrl') ?? '').trim().slice(0, 1000);
   const entry = form.get('file');
   const file = entry instanceof File && entry.size > 0 ? entry : null;
+  const publicShareConsent = Boolean(file) && form.get('publicShareConsent') === 'true';
 
   if (!tournament || !roundName || !player1 || !player2) {
     return NextResponse.json(
@@ -107,6 +108,7 @@ export async function POST(req: NextRequest) {
       player1,
       player2,
       fileName: file?.name.slice(0, 120) ?? null,
+      publicShareConsent,
       privateBlobPathname: privatePathname,
       privateBlobContentType: privateContentType,
       externalUrl: externalUrl || null,

@@ -10,11 +10,12 @@ import DmoLiveCourt3D from './DmoLiveCourt3D';
 import styles from './Te4DmoReplayPlayer.module.css';
 
 type Props = {
-  broadcastId: string;
+  broadcastId?: string;
+  replayUrl?: string;
   initialSpeed: 1 | 2 | 4;
-  isWta: boolean;
+  isWta?: boolean;
   handedness: ['left' | 'right', 'left' | 'right'];
-  fallback: ReactNode;
+  fallback?: ReactNode;
 };
 
 function isViewerData(value: unknown): value is Te4ViewerData {
@@ -32,6 +33,7 @@ function isViewerData(value: unknown): value is Te4ViewerData {
 
 export default function Te4DmoReplayPlayer({
   broadcastId,
+  replayUrl,
   initialSpeed,
   isWta,
   handedness,
@@ -60,9 +62,12 @@ export default function Te4DmoReplayPlayer({
       setInitialSnapshot(null);
       setSrcDoc('');
       try {
-        const response = await fetch(`/api/live-dmo/${broadcastId}/replay`, { cache: 'no-store' });
-        const payload = await response.json().catch(() => null);
-        if (!response.ok) {
+        const dataUrl = replayUrl
+          ?? (broadcastId ? `/api/live-dmo/${encodeURIComponent(broadcastId)}/replay` : '');
+        if (!dataUrl) throw new Error('The replay could not be loaded.');
+        const dataResponse = await fetch(dataUrl, { cache: 'no-store' });
+        const payload = await dataResponse.json().catch(() => null);
+        if (!dataResponse.ok) {
           throw new Error(typeof payload?.error === 'string' ? payload.error : 'The replay could not be loaded.');
         }
         if (!isViewerData(payload?.viewer)) throw new Error('The replay data is incomplete.');
@@ -80,7 +85,7 @@ export default function Te4DmoReplayPlayer({
     return () => {
       active = false;
     };
-  }, [broadcastId]);
+  }, [broadcastId, replayUrl]);
 
   useEffect(() => {
     if (view !== 'analysis' || !viewer) return;
@@ -116,7 +121,7 @@ export default function Te4DmoReplayPlayer({
   if (error || !viewer || !snapshot) {
     return (
       <div className={styles.fallback}>
-        <p role="alert">{error || 'The replay data is incomplete.'} Showing the live court summary instead.</p>
+        <p role="alert">{error || 'The replay data is incomplete.'}{fallback ? ' Showing the live court summary instead.' : ''}</p>
         {fallback}
       </div>
     );
@@ -126,7 +131,9 @@ export default function Te4DmoReplayPlayer({
     <section className={styles.replay}>
       <header className={styles.replayHeader}>
         <div className={styles.replayHeading}>
-          <span className={styles.tourBadge}>{isWta ? 'WTA' : 'ATP'} · FULL REPLAY</span>
+          <span className={styles.tourBadge}>
+            {isWta === undefined ? 'TOUR UNVERIFIED' : isWta ? 'WTA' : 'ATP'} · FULL REPLAY
+          </span>
           <h3>{viewer.names[0]} <i>vs</i> {viewer.names[1]}</h3>
           <p>{viewer.tournament || 'Tournament not recorded'} · {viewer.pts.length} points</p>
         </div>
@@ -152,7 +159,7 @@ export default function Te4DmoReplayPlayer({
           snapshot={snapshot}
           surface={viewer.surface}
           playbackSpeed={initialSpeed}
-          isWta={isWta}
+          isWta={isWta ?? false}
           fullReplay
         />
       ) : classicError ? (
