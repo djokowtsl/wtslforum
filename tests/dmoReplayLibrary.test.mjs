@@ -115,6 +115,8 @@ test('replay listing returns only safe metadata and paginates uploaded DMO files
   });
   assert.match(queries[0].text, /private_blob_pathname LIKE 'dmo\/%'/);
   assert.match(queries[0].text, /public_share_consent IS TRUE/);
+  assert.match(queries[0].text, /dmo_replay_publication_overrides/);
+  assert.match(queries[0].text, /publication_override\.revoked_at IS NULL/);
   assert.match(queries[0].text, /file_name, private_blob_pathname/);
   assert.match(queries[0].text, /ORDER BY id DESC/);
   assert.ok(queries[0].values.includes('%Open%'));
@@ -159,7 +161,7 @@ test('replay page server-renders the current public replay page on first load', 
   assert.deepEqual(requestedPage, { limit: 24 });
 });
 
-test('replay detail lookup excludes submissions without explicit sharing consent', async () => {
+test('replay detail lookup requires consent or an active owner publication override', async () => {
   const queries = [];
   const { getPublicDmoReplay } = loadModule('lib/dmoReplayLibrary.ts', {
     '@/lib/db': {
@@ -172,6 +174,8 @@ test('replay detail lookup excludes submissions without explicit sharing consent
 
   assert.equal(await getPublicDmoReplay('21'), null);
   assert.match(queries[0].text, /public_share_consent IS TRUE/);
+  assert.match(queries[0].text, /dmo_replay_publication_overrides/);
+  assert.match(queries[0].text, /publication_override\.revoked_at IS NULL/);
 });
 
 test('Discord consent endpoint requires authorization and matches the original submitter', async () => {

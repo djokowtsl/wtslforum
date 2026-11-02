@@ -23,11 +23,11 @@ export default async function ReplaysPage({
   return (
     <>
       <PageHero
-        eyebrow="Official matches, shared by the community"
+        eyebrow="Official WTSL match replays"
         title="Match Replays"
         actions={<Link className="btn btn-sm" href="/livestreams">Live streams</Link>}
       >
-        Rewatch official WTSL matches recorded and submitted by the players.
+        Rewatch match recordings submitted to the WTSL DMO store.
       </PageHero>
       <main className="container">
         <DmoReplayLibrary initialMatchId={initialMatchId} initialPage={initialPage} />
