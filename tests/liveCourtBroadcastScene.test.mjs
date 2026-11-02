@@ -32,6 +32,14 @@ test('human player proportions and visible eyes replace the oversized toy head',
     assert.ok(headSize.y <= 0.285 && headSize.y >= 0.22, `head height ${headSize.y}`);
     assert.ok(headSize.x <= 0.215, `head width ${headSize.x}`);
     assert.notEqual(rig.body.geometry.type, 'LatheGeometry');
+    if (!isWta) {
+      const shorts = rig.hip.getObjectByName('single-piece-athletic-shorts');
+      assert.ok(shorts, 'ATP apparel uses one connected shorts shell');
+      assert.equal(shorts.geometry.type, 'ExtrudeGeometry');
+      assert.equal(rig.hip.children.filter(part => part.name === 'shorts-volume').length, 1);
+    } else {
+      assert.ok(rig.hip.getObjectByName('tennis-skirt'));
+    }
     const face = new THREE.Mesh(rig.head.geometry, rig.head.material);
     face.updateMatrixWorld(true);
     for (const eye of [rig.face.leftEye, rig.face.rightEye]) {

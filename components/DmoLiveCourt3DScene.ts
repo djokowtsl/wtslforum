@@ -4,7 +4,7 @@ import type { Te4CourtSurface } from '@/lib/te4DmoTypes';
 export type PlayerRig = {
   root: THREE.Group;
   body: THREE.Mesh;
-  hip: THREE.Mesh;
+  hip: THREE.Group;
   head: THREE.Mesh;
   leftArm: THREE.Mesh;
   rightArm: THREE.Mesh;
@@ -1024,45 +1024,50 @@ export function makePlayer(shirtColor: number, shortsColor: number, isWta = fals
   collar.scale.set(1, 0.72, 0.9);
   body.add(collar);
   root.add(body);
-  const hip = new THREE.Mesh(ellipticalBodyGeometry(isWta ? [
-    [-0.24, 0.22, 0.135], [-0.20, 0.24, 0.145], [-0.11, 0.22, 0.14],
-    [0.015, 0.19, 0.125], [0.12, 0.17, 0.11], [0.15, 0.12, 0.085],
-  ] : [
-    [-0.10, 0.18, 0.115], [0, 0.19, 0.125],
-    [0.10, 0.17, 0.115], [0.12, 0.17, 0.11],
-  ], 28), shorts);
+  const hip = new THREE.Group();
+  hip.name = 'animated-hip';
   if (!isWta) {
-    // Two tailored short legs extend to mid-thigh; the pelvis and leg panels
-    // move together with the caller's animated hip anchor.
-    for (const side of [-1, 1]) {
-      const shortLeg = new THREE.Mesh(ellipticalBodyGeometry([
-        [-0.23, 0.105, 0.112],
-        [-0.215, 0.108, 0.114],
-        [-0.15, 0.112, 0.12],
-        [-0.085, 0.11, 0.12],
-        [-0.045, 0.105, 0.115],
-      ], 20), shorts);
-      shortLeg.position.x = side * 0.105;
-      shortLeg.castShadow = true;
-      hip.add(shortLeg);
-      const hem = new THREE.Mesh(
-        new THREE.TorusGeometry(0.105, 0.003, 6, 20),
-        material(0xd9d4c6, 0.82),
-      );
-      hem.rotation.x = Math.PI / 2;
-      hem.position.set(side * 0.105, -0.215, 0);
-      hip.add(hem);
-      const seamMaterial = new THREE.MeshStandardMaterial({
-        color: new THREE.Color(shortsColor).lerp(new THREE.Color(0xffffff), 0.12),
-        roughness: 0.86,
-      });
-      const seamPath = new THREE.CatmullRomCurve3([
-        new THREE.Vector3(side * 0.105, -0.065, 0.095),
-        new THREE.Vector3(side * 0.105, -0.14, 0.104),
-        new THREE.Vector3(side * 0.105, -0.205, 0.09),
-      ]);
-      hip.add(new THREE.Mesh(new THREE.TubeGeometry(seamPath, 8, 0.0018, 5, false), seamMaterial));
-    }
+    // Keep one tailored shell over the pelvis and both upper thighs. Its
+    // connected crotch and two hem notches remove the visibly intersecting
+    // panels that made the earlier mesh look like separate toy parts.
+    const pelvis = new THREE.Mesh(ellipticalBodyGeometry([
+      [-0.18, 0.135, 0.105], [-0.145, 0.16, 0.115],
+      [-0.10, 0.18, 0.12], [0, 0.19, 0.125],
+      [0.10, 0.17, 0.115], [0.12, 0.17, 0.11],
+    ], 28), shorts);
+    pelvis.name = 'shorts-volume';
+    pelvis.castShadow = true;
+    hip.add(pelvis);
+
+    const shortsOutline = new THREE.Shape();
+    shortsOutline.moveTo(-0.155, 0.115);
+    shortsOutline.quadraticCurveTo(0, 0.14, 0.155, 0.115);
+    shortsOutline.lineTo(0.185, -0.155);
+    shortsOutline.quadraticCurveTo(0.19, -0.215, 0.15, -0.22);
+    shortsOutline.lineTo(0.075, -0.22);
+    shortsOutline.quadraticCurveTo(0.058, -0.22, 0.056, -0.195);
+    shortsOutline.lineTo(0.039, -0.12);
+    shortsOutline.quadraticCurveTo(0.025, -0.075, 0, -0.068);
+    shortsOutline.quadraticCurveTo(-0.025, -0.075, -0.039, -0.12);
+    shortsOutline.lineTo(-0.056, -0.195);
+    shortsOutline.quadraticCurveTo(-0.058, -0.22, -0.075, -0.22);
+    shortsOutline.lineTo(-0.15, -0.22);
+    shortsOutline.quadraticCurveTo(-0.19, -0.215, -0.185, -0.155);
+    shortsOutline.closePath();
+    const shortsShell = new THREE.Mesh(new THREE.ExtrudeGeometry(shortsOutline, {
+      depth: 0.258,
+      bevelEnabled: true,
+      bevelSegments: 4,
+      steps: 1,
+      bevelSize: 0.009,
+      bevelThickness: 0.01,
+      curveSegments: 8,
+    }), shorts);
+    shortsShell.name = 'single-piece-athletic-shorts';
+    shortsShell.position.z = -0.129;
+    shortsShell.castShadow = true;
+    hip.add(shortsShell);
+
     const waistband = new THREE.Mesh(ellipticalBodyGeometry([
       [0.105, 0.17, 0.115],
       [0.12, 0.176, 0.12],
@@ -1072,9 +1077,16 @@ export function makePlayer(shirtColor: number, shortsColor: number, isWta = fals
       roughness: 0.86,
     }));
     hip.add(waistband);
+  } else {
+    const skirt = new THREE.Mesh(ellipticalBodyGeometry([
+      [-0.24, 0.22, 0.135], [-0.20, 0.24, 0.145], [-0.11, 0.22, 0.14],
+      [0.015, 0.19, 0.125], [0.12, 0.17, 0.11], [0.15, 0.12, 0.085],
+    ], 28), shorts);
+    skirt.name = 'tennis-skirt';
+    skirt.castShadow = true;
+    hip.add(skirt);
   }
   hip.position.y = 0.9;
-  hip.castShadow = true;
   root.add(hip);
   const neck = new THREE.Mesh(new THREE.CylinderGeometry(0.045, 0.052, 0.11, 14), skin);
   neck.position.y = 1.56;
@@ -1199,16 +1211,19 @@ export function makePlayer(shirtColor: number, shortsColor: number, isWta = fals
   }
   const sockMaterial = material(0xe7e3d8, 0.88);
   for (const calf of [leftCalf, rightCalf]) {
-    const sockBand = new THREE.Mesh(new THREE.TorusGeometry(0.046, 0.009, 6, 16), sockMaterial);
+    const sockBand = new THREE.Mesh(new THREE.TorusGeometry(0.034, 0.005, 6, 16), sockMaterial);
     sockBand.rotation.x = Math.PI / 2;
-    sockBand.position.y = 0.28;
+    sockBand.position.y = -0.43;
     calf.add(sockBand);
   }
-  const jointGeometry = new THREE.SphereGeometry(0.022, 14, 12);
+  // Soft connectors slightly overlap both end rings at each elbow and knee;
+  // the shared flesh color hides flat tube caps during fast direction changes.
+  const jointGeometry = new THREE.SphereGeometry(0.033, 16, 12);
   const leftElbow = new THREE.Mesh(jointGeometry, skin);
   const rightElbow = new THREE.Mesh(jointGeometry, skin);
-  const leftKnee = new THREE.Mesh(new THREE.SphereGeometry(0.027, 14, 12), skin);
-  const rightKnee = new THREE.Mesh(new THREE.SphereGeometry(0.027, 14, 12), skin);
+  const kneeGeometry = new THREE.SphereGeometry(0.051, 16, 12);
+  const leftKnee = new THREE.Mesh(kneeGeometry, skin);
+  const rightKnee = new THREE.Mesh(kneeGeometry, skin);
   const handGeometry = new THREE.SphereGeometry(0.04, 12, 10);
   const leftHand = new THREE.Mesh(handGeometry, skin);
   const rightHand = new THREE.Mesh(handGeometry, skin);
