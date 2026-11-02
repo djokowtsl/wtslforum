@@ -32,6 +32,11 @@ test('human player proportions and visible eyes replace the oversized toy head',
     assert.ok(headSize.y <= 0.285 && headSize.y >= 0.22, `head height ${headSize.y}`);
     assert.ok(headSize.x <= 0.215, `head width ${headSize.x}`);
     assert.notEqual(rig.body.geometry.type, 'LatheGeometry');
+    assert.ok(rig.head.material.isMeshToonMaterial, 'face uses cel shading');
+    assert.ok(rig.body.material.isMeshToonMaterial, 'uniform uses cel shading');
+    assert.ok(rig.head.getObjectByName('anime-scalp'));
+    assert.ok(rig.head.getObjectByName('anime-swept-fringe'));
+    assert.ok(rig.head.children.filter(child => child.name === 'anime-hair-spike').length >= 3);
     if (!isWta) {
       const shorts = rig.hip.getObjectByName('single-piece-athletic-shorts');
       assert.ok(shorts, 'ATP apparel uses one connected shorts shell');
@@ -50,6 +55,11 @@ test('human player proportions and visible eyes replace the oversized toy head',
       eye.geometry.computeBoundingBox();
       const eyeFront = eye.position.z + eye.geometry.boundingBox.max.z * eye.scale.z;
       assert.ok(eyeFront > hit.point.z + 0.003, 'whites must protrude beyond the face, not be buried');
+      const eyeSize = eye.geometry.boundingBox.getSize(new THREE.Vector3()).multiply(eye.scale);
+      assert.ok(eyeSize.y > 0.028, `expressive iris eye height ${eyeSize.y}`);
+      assert.ok(eye.getObjectByName('anime-colored-iris'));
+      assert.ok(eye.getObjectByName('anime-pupil'));
+      assert.ok(eye.getObjectByName('anime-upper-eyelid'));
     }
     assert.ok((rig.head.position.y + headSize.y / 2) * rig.root.scale.y < 1.95);
   }

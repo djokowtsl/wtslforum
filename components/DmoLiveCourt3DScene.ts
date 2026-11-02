@@ -66,6 +66,25 @@ function material(color: number, roughness = 0.86) {
   return new THREE.MeshStandardMaterial({ color, roughness });
 }
 
+const animeToneRamp = new THREE.DataTexture(
+  new Uint8Array([
+    82, 82, 98, 255,
+    160, 160, 174, 255,
+    236, 236, 244, 255,
+  ]),
+  3,
+  1,
+  THREE.RGBAFormat,
+);
+animeToneRamp.magFilter = THREE.NearestFilter;
+animeToneRamp.minFilter = THREE.NearestFilter;
+animeToneRamp.generateMipmaps = false;
+animeToneRamp.needsUpdate = true;
+
+function animeMaterial(color: number) {
+  return new THREE.MeshToonMaterial({ color, gradientMap: animeToneRamp });
+}
+
 function ellipticalBodyGeometry(
   rings: Array<[y: number, radiusX: number, radiusZ: number]>,
   segments = 24,
@@ -998,11 +1017,12 @@ export function buildCourtFixtures(scene: THREE.Scene): CourtFixtureRig {
 
 export function makePlayer(shirtColor: number, shortsColor: number, isWta = false): PlayerRig {
   const root = new THREE.Group();
-  const outline = material(0x18302e);
-  const skin = material(0xd8a17c);
-  const shirt = material(shirtColor, 0.78);
-  const shorts = material(shortsColor, 0.86);
-  const shoe = material(0xe9e6d9);
+  const outline = animeMaterial(0x293443);
+  const skin = animeMaterial(0xf0bd99);
+  const shirt = animeMaterial(shirtColor);
+  const shorts = animeMaterial(shortsColor);
+  const shoe = animeMaterial(0xf1eee6);
+  const hairMaterial = animeMaterial(isWta ? 0x604151 : 0x344459);
   // Sculpted elliptical cross-sections create a human rib cage, waist and
   // shoulder shelf instead of a lathed toy barrel.
   const body = new THREE.Mesh(ellipticalBodyGeometry([
@@ -1019,7 +1039,7 @@ export function makePlayer(shirtColor: number, shortsColor: number, isWta = fals
   ], 32), shirt);
   body.position.y = 1.22;
   body.castShadow = true;
-  const collar = new THREE.Mesh(new THREE.TorusGeometry(0.068, 0.009, 6, 20), material(0xe6e2d7, 0.82));
+  const collar = new THREE.Mesh(new THREE.TorusGeometry(0.068, 0.009, 6, 20), animeMaterial(0xf4ead9));
   collar.position.set(0, 0.275, 0.004);
   collar.scale.set(1, 0.72, 0.9);
   body.add(collar);
@@ -1068,14 +1088,13 @@ export function makePlayer(shirtColor: number, shortsColor: number, isWta = fals
     shortsShell.castShadow = true;
     hip.add(shortsShell);
 
+    const waistbandColor = new THREE.Color(shortsColor)
+      .lerp(new THREE.Color(0xffffff), 0.12).getHex();
     const waistband = new THREE.Mesh(ellipticalBodyGeometry([
       [0.105, 0.17, 0.115],
       [0.12, 0.176, 0.12],
       [0.138, 0.145, 0.098],
-    ], 28), new THREE.MeshStandardMaterial({
-      color: new THREE.Color(shortsColor).lerp(new THREE.Color(0xffffff), 0.12),
-      roughness: 0.86,
-    }));
+    ], 28), animeMaterial(waistbandColor));
     hip.add(waistband);
   } else {
     const skirt = new THREE.Mesh(ellipticalBodyGeometry([
@@ -1104,7 +1123,7 @@ export function makePlayer(shirtColor: number, shortsColor: number, isWta = fals
   head.position.y = 1.73;
   head.castShadow = true;
   root.add(head);
-  const earGeometry = new THREE.SphereGeometry(0.019, 12, 10);
+  const earGeometry = new THREE.SphereGeometry(0.017, 14, 10);
   let leftEye: THREE.Mesh | null = null;
   let rightEye: THREE.Mesh | null = null;
   for (const side of [-1, 1]) {
@@ -1112,58 +1131,131 @@ export function makePlayer(shirtColor: number, shortsColor: number, isWta = fals
     ear.position.set(side * 0.09, -0.002, 0);
     ear.scale.set(0.62, 0.9, 0.72);
     head.add(ear);
-    const eye = new THREE.Mesh(new THREE.SphereGeometry(0.014, 16, 12), material(0xf5f1e9, 0.72));
-    // Eye centers sit just proud of the elliptical facial surface.
-    eye.position.set(side * 0.034, 0.032, 0.087);
-    eye.scale.set(1.25, 0.72, 0.6);
+    const eye = new THREE.Mesh(new THREE.SphereGeometry(0.018, 20, 16), animeMaterial(0xfff8ee));
+    eye.name = side < 0 ? 'anime-left-eye' : 'anime-right-eye';
+    // Larger irises, an upward gaze and gently arched lids soften the stare.
+    eye.position.set(side * 0.036, 0.034, 0.088);
+    eye.scale.set(1.08, 0.88, 0.56);
     eye.castShadow = true;
-    const iris = new THREE.Mesh(new THREE.SphereGeometry(0.0065, 12, 10), material(0x543b2b, 0.62));
-    iris.position.set(0, 0, 0.0065);
+    const iris = new THREE.Mesh(new THREE.SphereGeometry(0.010, 16, 12),
+      animeMaterial(isWta ? 0x815e9e : 0x6f8461));
+    iris.name = 'anime-colored-iris';
+    iris.position.set(-side * 0.0015, 0.0015, 0.0085);
     eye.add(iris);
-    const pupil = new THREE.Mesh(new THREE.SphereGeometry(0.0036, 10, 8), material(0x171514, 0.38));
-    pupil.position.set(0, 0, 0.011);
+    const pupil = new THREE.Mesh(new THREE.SphereGeometry(0.0055, 12, 10), animeMaterial(0x282531));
+    pupil.name = 'anime-pupil';
+    pupil.position.set(-side * 0.0015, 0.002, 0.017);
     eye.add(pupil);
-    const glint = new THREE.Mesh(new THREE.SphereGeometry(0.0018, 8, 6), material(0xffffff, 0.2));
-    glint.position.set(-0.002, 0.002, 0.014);
+    const glint = new THREE.Mesh(new THREE.SphereGeometry(0.0027, 10, 8), animeMaterial(0xffffff));
+    glint.position.set(-0.003, 0.005, 0.022);
     eye.add(glint);
+    const upperLid = new THREE.CatmullRomCurve3([
+      new THREE.Vector3(-0.018, 0.006, 0.008),
+      new THREE.Vector3(-0.01, 0.015, 0.012),
+      new THREE.Vector3(0, 0.018, 0.013),
+      new THREE.Vector3(0.01, 0.015, 0.012),
+      new THREE.Vector3(0.018, 0.006, 0.008),
+    ]);
+    const lashes = new THREE.Mesh(
+      new THREE.TubeGeometry(upperLid, 12, 0.0023, 5, false),
+      outline,
+    );
+    lashes.name = 'anime-upper-eyelid';
+    eye.add(lashes);
     head.add(eye);
     if (side < 0) leftEye = eye;
     else rightEye = eye;
   }
   if (!leftEye || !rightEye) throw new Error('Player face requires two eyes.');
-  const noseBridge = new THREE.Mesh(new THREE.SphereGeometry(0.022, 14, 12), skin);
-  noseBridge.position.set(0, -0.005, 0.079);
-  noseBridge.scale.set(0.62, 1.45, 0.82);
+  const noseBridge = new THREE.Mesh(new THREE.SphereGeometry(0.013, 14, 12), skin);
+  noseBridge.position.set(0, -0.005, 0.084);
+  noseBridge.scale.set(0.55, 0.9, 0.55);
   head.add(noseBridge);
-  const nose = new THREE.Mesh(new THREE.SphereGeometry(0.019, 14, 10), skin);
-  nose.position.set(0, -0.045, 0.095);
-  nose.scale.set(0.82, 0.62, 0.8);
+  const nose = new THREE.Mesh(new THREE.SphereGeometry(0.011, 14, 10), skin);
+  nose.position.set(0, -0.038, 0.09);
+  nose.scale.set(0.76, 0.45, 0.55);
   head.add(nose);
-  const leftBrow = new THREE.Mesh(new THREE.CapsuleGeometry(0.006, 0.038, 2, 8), outline);
-  leftBrow.position.set(-0.034, 0.062, 0.081);
-  leftBrow.rotation.z = Math.PI / 2 + 0.12;
+  const blushMaterial = new THREE.MeshBasicMaterial({
+    color: 0xec8d83,
+    transparent: true,
+    opacity: 0.28,
+    depthWrite: false,
+  });
+  for (const side of [-1, 1]) {
+    const blush = new THREE.Mesh(new THREE.SphereGeometry(0.014, 12, 8), blushMaterial);
+    blush.name = 'anime-cheek-blush';
+    blush.position.set(side * 0.058, -0.041, 0.064);
+    blush.scale.set(1.2, 0.46, 0.18);
+    head.add(blush);
+  }
+  const browMaterial = animeMaterial(isWta ? 0x604151 : 0x51443e);
+  const makeAnimeBrow = (side: -1 | 1) => new THREE.Mesh(
+    new THREE.TubeGeometry(new THREE.CatmullRomCurve3([
+      new THREE.Vector3(side * 0.019, 0, 0.002),
+      new THREE.Vector3(side * 0.01, 0.009, 0.006),
+      new THREE.Vector3(0, 0.01, 0.008),
+      new THREE.Vector3(-side * 0.01, 0.007, 0.006),
+      new THREE.Vector3(-side * 0.019, 0.002, 0.002),
+    ]), 12, 0.0035, 6, false),
+    browMaterial,
+  );
+  const leftBrow = makeAnimeBrow(-1);
+  leftBrow.name = 'anime-left-brow';
+  leftBrow.position.set(-0.036, 0.066, 0.091);
   head.add(leftBrow);
-  const rightBrow = new THREE.Mesh(new THREE.CapsuleGeometry(0.006, 0.038, 2, 8), outline);
-  rightBrow.position.set(0.034, 0.062, 0.081);
-  rightBrow.rotation.z = Math.PI / 2 - 0.12;
+  const rightBrow = makeAnimeBrow(1);
+  rightBrow.name = 'anime-right-brow';
+  rightBrow.position.set(0.036, 0.066, 0.091);
   head.add(rightBrow);
-  const mouth = new THREE.Mesh(new THREE.SphereGeometry(0.018, 12, 8), material(0x4b2525, 0.88));
-  mouth.position.set(0, -0.083, 0.079);
-  mouth.scale.set(0.82, 0.16, 0.28);
+  const smile = new THREE.CatmullRomCurve3([
+    new THREE.Vector3(-0.012, 0.002, 0),
+    new THREE.Vector3(-0.006, -0.002, 0.002),
+    new THREE.Vector3(0, -0.003, 0.003),
+    new THREE.Vector3(0.006, -0.002, 0.002),
+    new THREE.Vector3(0.012, 0.002, 0),
+  ]);
+  const mouth = new THREE.Mesh(
+    new THREE.TubeGeometry(smile, 12, 0.0022, 5, false),
+    animeMaterial(0x8c4847),
+  );
+  mouth.position.set(0, -0.082, 0.088);
+  mouth.name = 'anime-smile';
   head.add(mouth);
-  // A fitted scalp shell follows the cranium with a consistent 6mm clearance.
-  // This replaces intersecting sphere caps that produced visible z-fighting.
-  const hair = new THREE.Mesh(ellipticalBodyGeometry([
-    [0.056, 0.100, 0.093],
-    [0.074, 0.094, 0.089],
-    [0.096, 0.084, 0.081],
-    [0.118, 0.064, 0.067],
-    [0.136, 0.028, 0.034],
-    [0.143, 0.008, 0.012],
-  ], 28), outline);
+  // A close-fitting domed hairstyle leaves room for brows and expressive eyes.
+  const hair = new THREE.Mesh(
+    new THREE.SphereGeometry(1, 32, 20, 0, Math.PI * 2, 0, 1.3),
+    hairMaterial,
+  );
+  hair.name = 'anime-scalp';
+  hair.scale.set(0.104, 0.1, 0.096);
+  hair.position.set(0, 0.04, -0.014);
   head.add(hair);
+  for (const [side, length, radius] of [
+    [-1, 0.042, 0.012],
+    [0, 0.048, 0.013],
+    [1, 0.042, 0.012],
+  ] as const) {
+    const spike = new THREE.Mesh(new THREE.ConeGeometry(radius, length, 7), hairMaterial);
+    spike.name = 'anime-hair-spike';
+    spike.position.set(side * 0.038, 0.125, 0.068);
+    spike.rotation.z = -side * 0.24;
+    spike.castShadow = true;
+    head.add(spike);
+  }
+  const frontLock = new THREE.Mesh(new THREE.ConeGeometry(0.02, 0.06, 8), hairMaterial);
+  frontLock.name = 'anime-swept-fringe';
+  frontLock.position.set(-0.023, 0.094, 0.071);
+  frontLock.rotation.set(0.08, 0, Math.PI + 0.18);
+  frontLock.castShadow = true;
+  head.add(frontLock);
   if (isWta) {
-    const ponytail = new THREE.Mesh(new THREE.CapsuleGeometry(0.028, 0.13, 3, 8), outline);
+    const sweep = new THREE.Mesh(new THREE.ConeGeometry(0.019, 0.055, 8), hairMaterial);
+    sweep.name = 'anime-side-fringe';
+    sweep.position.set(0.028, 0.095, 0.074);
+    sweep.rotation.set(0.04, 0, Math.PI - 0.2);
+    sweep.castShadow = true;
+    head.add(sweep);
+    const ponytail = new THREE.Mesh(new THREE.CapsuleGeometry(0.028, 0.13, 3, 8), hairMaterial);
     ponytail.position.set(-0.065, -0.085, -0.072);
     ponytail.rotation.z = -0.18;
     head.add(ponytail);
@@ -1192,7 +1284,7 @@ export function makePlayer(shirtColor: number, shortsColor: number, isWta = fals
   const rightLeg = new THREE.Mesh(legGeometry, skin);
   const leftCalf = new THREE.Mesh(calfGeometry, skin);
   const rightCalf = new THREE.Mesh(calfGeometry, skin);
-  const trimMaterial = material(0xece7d9, 0.72);
+  const trimMaterial = animeMaterial(0xf4ead9);
   for (const sleeve of [leftArm, rightArm]) {
     const shirtSleeve = new THREE.Mesh(ellipticalBodyGeometry([
       [-0.535, 0.043, 0.042],
@@ -1209,7 +1301,7 @@ export function makePlayer(shirtColor: number, shortsColor: number, isWta = fals
     cuff.position.y = 0.02;
     sleeve.add(cuff);
   }
-  const sockMaterial = material(0xe7e3d8, 0.88);
+  const sockMaterial = animeMaterial(0xf4ead9);
   for (const calf of [leftCalf, rightCalf]) {
     const sockBand = new THREE.Mesh(new THREE.TorusGeometry(0.034, 0.005, 6, 16), sockMaterial);
     sockBand.rotation.x = Math.PI / 2;
