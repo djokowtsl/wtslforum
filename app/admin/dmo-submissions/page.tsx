@@ -53,6 +53,7 @@ export default async function AdminDmoSubmissions() {
                     player1={submission.player1}
                     player2={submission.player2}
                     submissionDate={submissionDate}
+                    coachShareUrl={submission.coach_share_url}
                   />
                   {submission.private_blob_pathname && (
                     <a className="btn btn-sm" href={`/api/admin/dmo-submissions/${id}/file`}>

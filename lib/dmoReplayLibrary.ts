@@ -1,4 +1,5 @@
 import { sql } from '@/lib/db';
+import { parseTe4CoachShareUrl } from '@/lib/te4CoachEmbed';
 
 const PUBLIC_DMO_PATH = /^dmo\/[^/][^\\]*\.dmo$/i;
 const MAX_DATABASE_ID = '9223372036854775807';
@@ -11,6 +12,7 @@ export type PublicDmoReplay = {
   player2: string;
   submissionDate: string;
   source: 'discord' | 'forum';
+  coachShareUrl?: string;
 };
 
 export type StoredDmoReplay = PublicDmoReplay & {
@@ -26,6 +28,7 @@ export function isPublicDmoPath(value: unknown): value is string {
 }
 
 function toPublicReplay(row: Record<string, unknown>): PublicDmoReplay {
+  const coachShare = parseTe4CoachShareUrl(row.coach_share_url);
   return {
     id: String(row.id),
     tournament: String(row.tournament ?? ''),
@@ -34,6 +37,7 @@ function toPublicReplay(row: Record<string, unknown>): PublicDmoReplay {
     player2: String(row.player2 ?? ''),
     submissionDate: String(row.submission_date ?? ''),
     source: row.source === 'discord' ? 'discord' : 'forum',
+    ...(coachShare.valid && coachShare.url ? { coachShareUrl: coachShare.url } : {}),
   };
 }
 
@@ -60,7 +64,7 @@ export async function listPublicDmoReplays(input: {
   const pattern = query ? `%${query.replace(/[\\%_]/g, '\\$&')}%` : null;
   const rows = await sql`
     SELECT id::text AS id,tournament,round_name,player1,player2,
-      submission_date::text AS submission_date,source
+      submission_date::text AS submission_date,source,coach_share_url
     FROM dmo_submissions
     WHERE (
         public_share_consent IS TRUE
@@ -93,7 +97,7 @@ export async function listPublicDmoReplays(input: {
 export async function getPublicDmoReplay(id: string): Promise<StoredDmoReplay | null> {
   const rows = await sql`
     SELECT id::text AS id,tournament,round_name,player1,player2,
-      submission_date::text AS submission_date,source,
+      submission_date::text AS submission_date,source,coach_share_url,
       private_blob_pathname,file_name
     FROM dmo_submissions
     WHERE id=${id}::bigint
@@ -121,6 +125,15 @@ export async function getPublicDmoReplay(id: string): Promise<StoredDmoReplay | 
 }
 
 export function publicDmoReplayMetadata(replay: StoredDmoReplay): PublicDmoReplay {
-  const { id, tournament, roundName, player1, player2, submissionDate, source } = replay;
-  return { id, tournament, roundName, player1, player2, submissionDate, source };
+  const { id, tournament, roundName, player1, player2, submissionDate, source, coachShareUrl } = replay;
+  return {
+    id,
+    tournament,
+    roundName,
+    player1,
+    player2,
+    submissionDate,
+    source,
+    ...(coachShareUrl ? { coachShareUrl } : {}),
+  };
 }

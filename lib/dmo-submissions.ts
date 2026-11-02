@@ -15,6 +15,7 @@ export type DmoSubmission = {
   player2: string;
   file_name: string | null;
   public_share_consent: boolean;
+  coach_share_url: string | null;
   private_blob_pathname: string | null;
   private_blob_content_type: string | null;
   external_url: string | null;
@@ -57,6 +58,7 @@ export type DmoSubmissionTags = {
   player1: string;
   player2: string;
   submissionDate: string;
+  coachShareUrl?: string | null;
 };
 
 export function submissionDateInLondon(timestamp: unknown): string | null {
@@ -90,6 +92,7 @@ export async function ensureDmoSubmissionSchema() {
           player2 TEXT NOT NULL,
           file_name TEXT,
           public_share_consent BOOLEAN NOT NULL DEFAULT FALSE,
+          coach_share_url TEXT,
           private_blob_pathname TEXT,
           private_blob_content_type TEXT,
           external_url TEXT,
@@ -109,6 +112,10 @@ export async function ensureDmoSubmissionSchema() {
       await sql`
         ALTER TABLE dmo_submissions
         ADD COLUMN IF NOT EXISTS public_share_consent BOOLEAN NOT NULL DEFAULT FALSE
+      `;
+      await sql`
+        ALTER TABLE dmo_submissions
+        ADD COLUMN IF NOT EXISTS coach_share_url TEXT
       `;
       await sql`
         ALTER TABLE dmo_submissions
@@ -234,7 +241,11 @@ export async function updateDmoSubmissionTags(
         round_name=${tags.roundName},
         player1=${tags.player1},
         player2=${tags.player2},
-        submission_date=${tags.submissionDate}::date
+        submission_date=${tags.submissionDate}::date,
+        coach_share_url=CASE
+          WHEN ${tags.coachShareUrl !== undefined} THEN ${tags.coachShareUrl ?? null}
+          ELSE coach_share_url
+        END
     WHERE id=${id}
     RETURNING *
   `;

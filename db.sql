@@ -625,6 +625,7 @@ CREATE TABLE IF NOT EXISTS dmo_submissions (
   player2 TEXT NOT NULL,
   file_name TEXT,
   public_share_consent BOOLEAN NOT NULL DEFAULT FALSE,
+  coach_share_url TEXT,
   private_blob_pathname TEXT,
   private_blob_content_type TEXT,
   external_url TEXT,

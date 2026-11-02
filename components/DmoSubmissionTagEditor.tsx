@@ -10,6 +10,7 @@ type DmoSubmissionTagEditorProps = {
   player1: string;
   player2: string;
   submissionDate: string;
+  coachShareUrl?: string | null;
 };
 
 export default function DmoSubmissionTagEditor({
@@ -19,6 +20,7 @@ export default function DmoSubmissionTagEditor({
   player1,
   player2,
   submissionDate,
+  coachShareUrl = '',
 }: DmoSubmissionTagEditorProps) {
   const router = useRouter();
   const [editing, setEditing] = useState(false);
@@ -30,14 +32,29 @@ export default function DmoSubmissionTagEditor({
     player1,
     player2,
     submissionDate,
+    coachShareUrl: coachShareUrl ?? '',
   });
 
   useEffect(() => {
-    setTags({ tournament, roundName, player1, player2, submissionDate });
-  }, [tournament, roundName, player1, player2, submissionDate]);
+    setTags({
+      tournament,
+      roundName,
+      player1,
+      player2,
+      submissionDate,
+      coachShareUrl: coachShareUrl ?? '',
+    });
+  }, [tournament, roundName, player1, player2, submissionDate, coachShareUrl]);
 
   function cancelEdit() {
-    setTags({ tournament, roundName, player1, player2, submissionDate });
+    setTags({
+      tournament,
+      roundName,
+      player1,
+      player2,
+      submissionDate,
+      coachShareUrl: coachShareUrl ?? '',
+    });
     setError('');
     setEditing(false);
   }
@@ -50,7 +67,10 @@ export default function DmoSubmissionTagEditor({
       const response = await fetch(`/api/admin/dmo-submissions/${id}`, {
         method: 'PATCH',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(tags),
+        body: JSON.stringify({
+          ...tags,
+          coachShareUrl: tags.coachShareUrl.trim() || null,
+        }),
       });
       const body = await response.json().catch(() => null);
       if (!response.ok) throw new Error(body?.error || 'DMO tags could not be saved.');
@@ -60,6 +80,7 @@ export default function DmoSubmissionTagEditor({
         player1: tags.player1.trim(),
         player2: tags.player2.trim(),
         submissionDate: tags.submissionDate,
+        coachShareUrl: tags.coachShareUrl.trim(),
       });
       setEditing(false);
       router.refresh();
@@ -148,6 +169,21 @@ export default function DmoSubmissionTagEditor({
               />
             </label>
           </div>
+          <label style={{ display: 'grid', gap: 5 }}>
+            TE4 Coach match link
+            <input
+              type="url"
+              maxLength={500}
+              placeholder="https://replays.knowthew.net/m/…"
+              style={inputStyle}
+              value={tags.coachShareUrl}
+              onChange={(event) => setTags({ ...tags, coachShareUrl: event.target.value })}
+            />
+            <span className="notice">
+              Optional. Adds a public Coach embed to this replay; the stored .dmo stays private.
+              Prefer public /m or /tv links; /w dashboard links may require the player’s access.
+            </span>
+          </label>
           <div style={{ display: 'flex', gap: 8 }}>
             <button className="btn btn-sm" type="submit" disabled={busy}>
               {busy ? 'Saving…' : 'Save tags'}
