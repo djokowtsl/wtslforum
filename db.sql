@@ -557,6 +557,12 @@ CREATE TABLE IF NOT EXISTS direct_messages (
 CREATE INDEX IF NOT EXISTS direct_messages_conversation_idx ON direct_messages(conversation_key, created_at);
 CREATE INDEX IF NOT EXISTS direct_messages_recipient_unread_idx ON direct_messages(recipient_id) WHERE read_at IS NULL;
 
+CREATE TABLE IF NOT EXISTS forum_dm_discord_notification_cooldowns (
+  recipient_user_id BIGINT PRIMARY KEY REFERENCES users(id) ON DELETE CASCADE,
+  claim_id UUID NOT NULL,
+  notified_at TIMESTAMPTZ NOT NULL
+);
+
 -- Versioned screenshot workbook rows. A complete snapshot is switched into view atomically.
 CREATE TABLE IF NOT EXISTS screenshot_record_sync_state (
   tour TEXT PRIMARY KEY,
