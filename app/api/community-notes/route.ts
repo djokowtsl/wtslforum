@@ -4,6 +4,7 @@ import { sql } from '@/lib/db';
 import { getPrivateCommunityNoteProposals } from '@/lib/communityNotes';
 import { moderateTextAndImages, ModerationUnavailableError } from '@/lib/moderation';
 import { spoilerMarkupError } from '@/lib/spoilers';
+import { notifyForumAdminsForReview } from '@/lib/discord';
 
 export const dynamic = 'force-dynamic';
 
@@ -72,6 +73,9 @@ export async function POST(req: Request) {
         ON CONFLICT DO NOTHING RETURNING id
       `;
   if (!rows[0]) return NextResponse.json({ error: 'You have already submitted a note for this item.' }, { status: 409 });
+  if (decision.status === 'pending') {
+    await notifyForumAdminsForReview('A community note needs moderator review.', '/admin/moderation');
+  }
   return NextResponse.json({
     ok: true,
     pending: decision.status === 'pending',

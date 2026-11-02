@@ -13,6 +13,8 @@ import EditableArticleComment from '@/components/EditableArticleComment';
 import ReplyToComment from '@/components/ReplyToComment';
 import { buildCommentTree, type CommentNode } from '@/lib/commentTree';
 import { getArticleComments, getArticleCommentReactions, getArticleReactions, type ReactionSummary } from '@/lib/queries';
+import ForumRoleBadges from '@/components/ForumRoleBadges';
+import { getForumRoleBadgeMap, type ForumRoleBadge } from '@/lib/forumRoles';
 
 export const dynamic = 'force-dynamic';
 
@@ -56,6 +58,12 @@ export default async function Article({ params }: { params: Promise<{ slug: stri
       commentReactionsUnavailable = true;
     }
   }
+  const roleBadgeMap = await safe(
+    () => getForumRoleBadgeMap([a.author_id, ...comments.map((comment: any) => comment.author_id)]),
+    new Map<string, ForumRoleBadge[]>(),
+  );
+  const authorRoles = (authorId: string | number | null | undefined) =>
+    authorId == null ? [] : roleBadgeMap.get(String(authorId)) || [];
   const commentTree = buildCommentTree(comments, 'parent_comment_id');
   const recentCommentCount = comments.filter((comment) => comment.is_recent !== false).length;
   const renderComment = (node: CommentNode<any>): ReactNode => {
@@ -72,6 +80,7 @@ export default async function Article({ params }: { params: Promise<{ slug: stri
           <img src={discordAvatar(comment.avatar, author)} alt="" />
           <div className="article-comment-author">
             {officialProfile ? <Link href={officialProfile}>{author}</Link> : <strong>{author}</strong>}
+            <ForumRoleBadges roles={authorRoles(comment.author_id)} />
             <time dateTime={new Date(comment.created_at).toISOString()}>{fmtDate(comment.created_at)}</time>
           </div>
         </header>
@@ -110,7 +119,11 @@ export default async function Article({ params }: { params: Promise<{ slug: stri
       <article className="thread-head">
         <div className="eyebrow">WTSL Editorial</div>
         {content ? <ArticleRichText doc={content.titleDoc} title className="article-public-title" /> : <h1 className="display">{a.title}</h1>}
-        <div className="topic-meta"><span>By {a.author || 'WTSL Forum'}</span><span>{fmtDate(a.created_at)}</span></div>
+        <div className="topic-meta">
+          <span>By {a.author || 'WTSL Forum'}</span>
+          <ForumRoleBadges roles={authorRoles(a.author_id)} />
+          <span>{fmtDate(a.created_at)}</span>
+        </div>
       </article>
       {coverUrl && <img className="article-public-cover" src={coverUrl} alt="" />}
       <article className="article-long">{content ? <ArticleRichText doc={content.bodyDoc} /> : <RichText text={a.body} />}</article>

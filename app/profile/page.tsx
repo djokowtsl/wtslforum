@@ -12,6 +12,9 @@ import PlayerClaimForm from '@/components/PlayerClaimForm';
 import ChallongeClaimForm from '@/components/ChallongeClaimForm';
 import StatusPicker from '@/components/StatusPicker';
 import DefaultPlayerIdentityPicker from '@/components/DefaultPlayerIdentityPicker';
+import CommunityRoleRequestForm from '@/components/CommunityRoleRequestForm';
+import ForumRoleBadges from '@/components/ForumRoleBadges';
+import { getForumRoleBadgeMap, getForumRoleRequestsForUser } from '@/lib/forumRoles';
 
 export const dynamic = 'force-dynamic';
 export const metadata: Metadata = { title: 'Your profile' };
@@ -19,17 +22,23 @@ export const metadata: Metadata = { title: 'Your profile' };
 export default async function Profile() {
   const u = await getSession();
   if (!u) redirect('/api/auth/discord');
-  const [claims, approvedIdentities, defaultPlayerClaimId, challongeClaim, status] = await Promise.all([
+  const [claims, approvedIdentities, defaultPlayerClaimId, challongeClaim, status, roleRequests, roleBadgeMap] = await Promise.all([
     safe(() => getClaimsForUser(u.id), [] as PlayerClaim[]),
     safe(() => getApprovedPlayerIdentities(u.id), [] as ApprovedPlayerIdentity[]),
     safe(() => getDefaultPlayerClaimId(u.id), null as string | null),
     safe(() => getLatestChallongeClaimForUser(u.id), null as ChallongeClaim | null),
     safe(() => getUserStatus(u.id), 'offline' as const),
+    safe(() => getForumRoleRequestsForUser(u.id), []),
+    safe(() => getForumRoleBadgeMap([u.id]), new Map()),
   ]);
   const claimByTour = new Map(claims.map((c) => [c.tour, c]));
   const selectedDefaultClaimId = approvedIdentities.some((c) => c.id === defaultPlayerClaimId)
     ? defaultPlayerClaimId!
     : approvedIdentities[0]?.id ?? '';
+  const roleRequestStatuses = Object.fromEntries(
+    roleRequests.map((request) => [request.role_key, request.status]),
+  );
+  const communityRoles = roleBadgeMap.get(String(u.id)) || [];
 
   return (
     <>
@@ -40,12 +49,24 @@ export default async function Profile() {
           <h3 className="display" style={{ marginTop: 14, fontSize: 34 }}>{u.username}</h3>
           <p>Discord-connected WTSL community account</p>
           {u.isAdmin && <p><span className="pill cyan">Admin</span></p>}
+          {!u.isAdmin && u.isModerator && <p><span className="pill cyan">Moderator</span></p>}
+          <ForumRoleBadges roles={communityRoles} />
           <div className="status-row">
             <span>Your status:</span>
             <StatusPicker initial={status} />
           </div>
           <p><small>Online updates while the forum tab is visible and clears after five minutes without a heartbeat. Away, Busy, and Offline remain manual choices.</small></p>
           <form action="/api/auth/logout" method="post"><button className="btn">Sign out</button></form>
+        </div>
+
+        <div className="sidebar-card" style={{ padding: 28, marginTop: 20 }}>
+          <h3 className="display" style={{ fontSize: 22 }}>Community roles</h3>
+          <p>
+            Request Tour Player, Coach, or Doubles Player for admin verification.
+            Writer is added after your first article, and Yapper after 25 approved discussions or replies.
+          </p>
+          <p><ForumRoleBadges roles={communityRoles} /></p>
+          <CommunityRoleRequestForm initialRequests={roleRequestStatuses} />
         </div>
 
         <div className="sidebar-card" style={{ padding: 28, marginTop: 20 }}>

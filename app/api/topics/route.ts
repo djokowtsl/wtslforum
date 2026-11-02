@@ -1,7 +1,7 @@
 import { NextResponse } from 'next/server';
 import { getSession } from '@/lib/auth';
 import { sql } from '@/lib/db';
-import { announceAdminTopic, announceTopic } from '@/lib/discord';
+import { announceAdminTopic, announceTopic, notifyForumAdminsForReview } from '@/lib/discord';
 import { claimMatchThread } from '@/lib/matchThreads';
 import { looksLikeImageUrl, moderateTextAndImages, ModerationUnavailableError } from '@/lib/moderation';
 import { spoilerMarkupError } from '@/lib/spoilers';
@@ -89,6 +89,7 @@ export async function POST(req: Request) {
     });
   }
   if (decision.status === 'pending' && won) {
+    await notifyForumAdminsForReview('A discussion post needs moderator review.', '/admin/moderation');
     return NextResponse.json({ id, pending: true, message: 'Your discussion is waiting for moderator review.' }, { status: 202 });
   }
   return NextResponse.json({ id }, { status: 201 });

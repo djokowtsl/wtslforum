@@ -20,6 +20,8 @@ import ForumAvatar from '@/components/ForumAvatar';
 import { getThreadCommunityNotes, type CommunityNote } from '@/lib/communityNotes';
 import DiscussionVideo from '@/components/DiscussionVideo';
 import ReplyToComment from '@/components/ReplyToComment';
+import ForumRoleBadges from '@/components/ForumRoleBadges';
+import { getForumRoleBadgeMap, type ForumRoleBadge } from '@/lib/forumRoles';
 
 export const dynamic = 'force-dynamic';
 export const metadata: Metadata = { title: 'Discussion' };
@@ -34,6 +36,12 @@ export default async function Thread({ params }: { params: Promise<{ id: string 
   const data = await safe(() => getTopic(decodeURIComponent(id)), null as any);
   if (!data) notFound();
   const { topic, replies, video } = data;
+  const roleBadgeMap = await safe(
+    () => getForumRoleBadgeMap([topic.author_id, ...replies.map((reply: any) => reply.author_id)]),
+    new Map<string, ForumRoleBadge[]>(),
+  );
+  const authorRoles = (authorId: string | number | null | undefined) =>
+    authorId == null ? [] : roleBadgeMap.get(String(authorId)) || [];
   const replyTree = buildCommentTree(replies, 'parent_reply_id');
   const topicAuthorHref = officialAuthorHref(topic);
   const u = await getSession();
@@ -58,6 +66,7 @@ export default async function Thread({ params }: { params: Promise<{ id: string 
           <strong><StatusDot status={r.author_status} /> {replyAuthorHref ? <Link className='post-author-link' href={replyAuthorHref}>{r.author}</Link> : r.author || 'WTSL'}</strong>
           {r.is_admin && <span className='pill cyan role'>Admin</span>}
           {!r.is_admin && r.is_moderator && <span className='pill cyan role'>Moderator</span>}
+          <ForumRoleBadges roles={authorRoles(r.author_id)} />
           {u && r.author_id && Number(r.author_id) !== Number(u.id) && (
             <Link href={`/messages/${r.author_id}`} className='pill'>Message</Link>
           )}
@@ -115,6 +124,7 @@ export default async function Thread({ params }: { params: Promise<{ id: string 
           <strong>{topic.author && <StatusDot status={topic.author_status} />} {topicAuthorHref ? <Link className="post-author-link" href={topicAuthorHref}>{topic.author}</Link> : topic.author || 'WTSL'}</strong>
           {topic.author_is_admin && <span className="pill cyan role">Admin</span>}
           {!topic.author_is_admin && topic.author_is_moderator && <span className="pill cyan role">Moderator</span>}
+          <ForumRoleBadges roles={authorRoles(topic.author_id)} />
           <span className="pill role">Original poster</span>
           {u && topic.author_id && Number(topic.author_id) !== Number(u.id) && (
             <Link href={`/messages/${topic.author_id}`} className="pill">Message</Link>

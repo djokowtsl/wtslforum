@@ -59,6 +59,7 @@ test('published articles and admin threads use their configured Discord destinat
 function topicRoute(user, moderationStatus = 'approved') {
   const announcements = [];
   const mentions = [];
+  const reviewNotifications = [];
   const handlers = loadModule('app/api/topics/route.ts', {
     'next/server': nextServer,
     '@/lib/auth': { getSession: async () => user },
@@ -66,6 +67,7 @@ function topicRoute(user, moderationStatus = 'approved') {
     '@/lib/discord': {
       announceTopic: async (...args) => announcements.push(['community', ...args]),
       announceAdminTopic: async (...args) => announcements.push(['admin', ...args]),
+      notifyForumAdminsForReview: async (...args) => reviewNotifications.push(args),
     },
     '@/lib/matchThreads': { claimMatchThread: async (_key, id) => id },
     '@/lib/moderation': {
@@ -78,7 +80,7 @@ function topicRoute(user, moderationStatus = 'approved') {
     '@/lib/media': { ensureTopicVideoSchema: async () => {} },
     '@/lib/forumNotifications': { notifyForumMentions: async (input) => mentions.push(input) },
   });
-  return { handlers, announcements, mentions };
+  return { handlers, announcements, mentions, reviewNotifications };
 }
 
 const topicRequest = () => new Request('https://forum.test/api/topics', {
@@ -107,7 +109,7 @@ test('new admin threads use the dedicated channel while member threads keep thei
 });
 
 test('pending admin threads wait until approval before being announced', async () => {
-  const { handlers, announcements, mentions } = topicRoute(
+  const { handlers, announcements, mentions, reviewNotifications } = topicRoute(
     { id: '7', username: 'Editor', isAdmin: true },
     'pending',
   );
@@ -115,6 +117,7 @@ test('pending admin threads wait until approval before being announced', async (
   assert.equal(response.status, 202);
   assert.deepEqual(announcements, []);
   assert.deepEqual(mentions, []);
+  assert.deepEqual(reviewNotifications, [['A discussion post needs moderator review.', '/admin/moderation']]);
 });
 
 function moderationReview(author) {

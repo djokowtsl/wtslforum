@@ -3,6 +3,9 @@ import type { Metadata } from 'next';
 import { getSession, discordAvatar } from '@/lib/auth';
 import { FORUM_MEMBER_PAGE_SIZE, listForumMembers } from '@/lib/member-directory';
 import PageHero from '@/components/PageHero';
+import ForumRoleBadges from '@/components/ForumRoleBadges';
+import { getForumRoleBadgeMap } from '@/lib/forumRoles';
+import { safe } from '@/lib/db';
 
 export const dynamic = 'force-dynamic';
 export const metadata: Metadata = { title: 'Members' };
@@ -32,6 +35,10 @@ export default async function MembersPage({
     getSession(),
     listForumMembers(query, requestedPage, FORUM_MEMBER_PAGE_SIZE),
   ]);
+  const roleBadgeMap = await safe(
+    () => getForumRoleBadgeMap(directory.members.map((member) => member.id)),
+    new Map(),
+  );
 
   const firstMember = directory.total === 0
     ? 0
@@ -95,6 +102,7 @@ export default async function MembersPage({
                       {memberName}
                     </>
                   )}
+                  <ForumRoleBadges roles={roleBadgeMap.get(String(member.id)) || []} />
                   {isSelf ? (
                     <span className="pill cyan">You</span>
                   ) : user ? (

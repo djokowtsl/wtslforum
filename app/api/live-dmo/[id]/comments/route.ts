@@ -5,6 +5,7 @@ import { sql } from '@/lib/db';
 import { moderateTextAndImages, ModerationUnavailableError, type ModerationOutcome } from '@/lib/moderation';
 import { spoilerMarkupError } from '@/lib/spoilers';
 import { isSameSiteMutation } from '@/lib/liveRequestSecurity';
+import { notifyForumAdminsForReview } from '@/lib/discord';
 
 export const dynamic = 'force-dynamic';
 
@@ -146,6 +147,7 @@ export async function POST(request: Request, context: RouteContext) {
       RETURNING id, created_at
     `;
     if (decision.status === 'pending') {
+      await notifyForumAdminsForReview('A live chat message needs moderator review.', '/admin/moderation');
       return NextResponse.json(
         { pending: true, message: 'Your message is waiting for moderator review.' },
         { status: 202, headers: PRIVATE_HEADERS },

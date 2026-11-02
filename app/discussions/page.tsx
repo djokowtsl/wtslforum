@@ -6,6 +6,8 @@ import { getSession, discordAvatar } from '@/lib/auth';
 import { timeAgo } from '@/lib/format';
 import PageHero from '@/components/PageHero';
 import ForumAvatar from '@/components/ForumAvatar';
+import ForumRoleBadges from '@/components/ForumRoleBadges';
+import { getForumRoleBadgeMap, type ForumRoleBadge } from '@/lib/forumRoles';
 
 export const dynamic = 'force-dynamic';
 export const metadata: Metadata = { title: 'Discussions' };
@@ -17,6 +19,10 @@ export default async function Discussions({ searchParams }: { searchParams: Prom
     safe(() => getTopics({ category: c }), [] as any[]),
     safe(() => getCategoriesWithCounts(), [] as any[]),
   ]);
+  const roleBadgeMap = await safe(
+    () => getForumRoleBadgeMap(topics.map((topic: any) => topic.author_id)),
+    new Map<string, ForumRoleBadge[]>(),
+  );
   const active = cats.find((x: any) => x.slug === c);
   const total = cats.reduce((n: number, x: any) => n + x.topics, 0);
 
@@ -56,7 +62,9 @@ export default async function Discussions({ searchParams }: { searchParams: Prom
                   {t.pinned && <span className="pill pin">Pinned</span>}
                   {t.locked && <span className="pill cyan">Locked</span>}
                   {t.category && <span className="pill">{t.category}</span>}
-                  <span>{t.author || 'WTSL'}</span><span>{timeAgo(t.created_at)}</span>
+                  <span>{t.author || 'WTSL'}</span>
+                  <ForumRoleBadges roles={roleBadgeMap.get(String(t.author_id)) || []} />
+                  <span>{timeAgo(t.created_at)}</span>
                 </div>
               </div>
               <div className="topic-stat">{t.replies}<span>replies</span></div>
