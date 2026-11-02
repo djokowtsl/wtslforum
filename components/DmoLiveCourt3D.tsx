@@ -10,11 +10,13 @@ import {
   type Te4LiveSnapshot,
 } from '@/lib/te4DmoLive';
 import type { Te4CourtSurface } from '@/lib/te4DmoTypes';
-import { courtSurfaceDisplayName, courtSurfaceSoundProfile } from '@/lib/te4DmoSurface';
+import { courtSurfaceDisplayName, isIndoorDmoVenue } from '@/lib/te4DmoSurface';
+import { deriveLiveCourtSoundEvents, playLiveCourtEffect as playCue } from '@/lib/liveCourtAudio';
 import {
   advanceLiveCourtPlayhead,
   clampPlayerCameraLateralPan,
   deriveLiveCourtFootworkEvents,
+  deriveLiveCourtSkidMarks,
   findLiveCourtShotInRange,
   findPlayerShotEvent,
   inferLiveCourtContactCue,
@@ -30,6 +32,7 @@ import {
   type LiveCourtFootworkEvent,
   type LiveCourtMotionEvent,
   type LiveCourtSample,
+  type LiveCourtSkidMark,
 } from '@/lib/liveCourtMotion';
 import {
   clampPointToReach,
@@ -52,6 +55,7 @@ import {
   buildCourt,
   buildCourtFixtures,
   buildCrowd,
+  buildStadiumEnvironment,
   makePlayer,
   poseLimb,
   type PlayerRig,
@@ -97,85 +101,6 @@ function firstEventAfterFrame<T extends { frame: number }>(events: T[], frame: n
     else high = middle;
   }
   return low;
-}
-
-const noiseBuffers = new WeakMap<AudioContext, AudioBuffer>();
-
-function courtNoiseBuffer(context: AudioContext) {
-  const existing = noiseBuffers.get(context);
-  if (existing) return existing;
-  const buffer = context.createBuffer(1, Math.floor(context.sampleRate * 0.18), context.sampleRate);
-  const samples = buffer.getChannelData(0);
-  for (let index = 0; index < samples.length; index += 1) {
-    const fade = 1 - index / samples.length;
-    samples[index] = (Math.random() * 2 - 1) * fade;
-  }
-  noiseBuffers.set(context, buffer);
-  return buffer;
-}
-
-function playCue(
-  context: AudioContext,
-  kind: 'racket' | 'bounce' | 'footstep' | 'slide',
-  surface: Te4CourtSurface,
-) {
-  const now = context.currentTime;
-  const soundProfile = courtSurfaceSoundProfile(surface);
-  if (kind === 'footstep' || kind === 'slide') {
-    const duration = kind === 'footstep' ? 0.11 : 0.2;
-    const noise = context.createBufferSource();
-    const filter = context.createBiquadFilter();
-    const gain = context.createGain();
-    noise.buffer = courtNoiseBuffer(context);
-    filter.type = 'bandpass';
-    filter.frequency.setValueAtTime(
-      kind === 'slide' ? soundProfile.slideNoiseHz : soundProfile.stepNoiseHz,
-      now,
-    );
-    filter.Q.value = kind === 'slide' ? 0.55 : 0.8;
-    gain.gain.setValueAtTime(kind === 'footstep' ? 0.095 : 0.06, now);
-    gain.gain.exponentialRampToValueAtTime(0.0001, now + duration);
-    noise.connect(filter).connect(gain).connect(context.destination);
-    noise.start(now);
-    noise.stop(now + duration);
-
-    const tone = context.createOscillator();
-    const toneGain = context.createGain();
-    tone.type = 'sine';
-    if (kind === 'footstep') {
-      tone.frequency.setValueAtTime(soundProfile.stepToneHz[0], now);
-      tone.frequency.exponentialRampToValueAtTime(soundProfile.stepToneHz[1], now + 0.09);
-      toneGain.gain.setValueAtTime(0.035, now);
-      toneGain.gain.exponentialRampToValueAtTime(0.0001, now + 0.09);
-      tone.connect(toneGain).connect(context.destination);
-      tone.start(now);
-      tone.stop(now + 0.1);
-    } else {
-      tone.frequency.setValueAtTime(soundProfile.slideToneHz[0], now);
-      tone.frequency.exponentialRampToValueAtTime(soundProfile.slideToneHz[1], now + 0.12);
-      toneGain.gain.setValueAtTime(soundProfile.slideToneGain, now);
-      toneGain.gain.exponentialRampToValueAtTime(0.0001, now + 0.12);
-      tone.connect(toneGain).connect(context.destination);
-      tone.start(now);
-      tone.stop(now + 0.13);
-    }
-    return;
-  }
-
-  const gain = context.createGain();
-  const oscillator = context.createOscillator();
-  const frequency = kind === 'racket' ? soundProfile.racketHz : soundProfile.bounceHz;
-  const volume = kind === 'racket' ? soundProfile.racketGain : soundProfile.bounceGain;
-  const duration = kind === 'racket' ? soundProfile.racketDuration : soundProfile.bounceDuration;
-  oscillator.type = kind === 'racket' ? 'triangle' : 'sine';
-  oscillator.frequency.setValueAtTime(frequency[0], now);
-  oscillator.frequency.exponentialRampToValueAtTime(frequency[1], now + duration);
-  gain.gain.setValueAtTime(volume, now);
-  gain.gain.exponentialRampToValueAtTime(0.0001, now + duration);
-  oscillator.connect(gain);
-  gain.connect(context.destination);
-  oscillator.start(now);
-  oscillator.stop(now + duration);
 }
 
 function formatReplayClock(frame: number, frameRate: number) {
@@ -224,6 +149,8 @@ function ThreeCourt({
   const gruntsEnabledRef = useRef(gruntsEnabled);
   gruntsEnabledRef.current = gruntsEnabled;
   const soundEventsRef = useRef<Array<{ frame: number; kind: 'racket' | 'bounce' | 'footstep' | 'slide' }>>([]);
+  const skidMarksRef = useRef<LiveCourtSkidMark[]>([]);
+  const effectsVolumeRef = useRef(0.9);
   const footworkEventsRef = useRef<LiveCourtFootworkEvent[]>([]);
   const transitionRef = useRef<HTMLDivElement>(null);
   const sampleBufferRef = useRef<LiveCourtSample[]>([]);
@@ -260,7 +187,8 @@ function ThreeCourt({
   const [playerCameraPan, setPlayerCameraPan] = useState(0);
   const [soundEnabled, setSoundEnabled] = useState(false);
   const [soundError, setSoundError] = useState('');
-  const [crowdVolume, setCrowdVolume] = useState(0.38);
+  const [crowdVolume, setCrowdVolume] = useState(0.24);
+  const [effectsVolume, setEffectsVolume] = useState(0.9);
   const [hasCourtData, setHasCourtData] = useState(snapshot.court.length > 0);
   const surfaceLabel = courtSurfaceDisplayName(surface);
   const [shotCallout, setShotCallout] = useState<{
@@ -280,6 +208,7 @@ function ThreeCourt({
       sampleBufferRef.current = [];
       trajectoryEventsRef.current = [];
       soundEventsRef.current = [];
+      skidMarksRef.current = [];
       footworkEventsRef.current = [];
       playheadRef.current = null;
       lastCalloutFrameRef.current = null;
@@ -325,14 +254,22 @@ function ThreeCourt({
       snapshot.frameRate ?? TE4_DMO_FRAMES_PER_SECOND,
     );
     footworkEventsRef.current = footworkEvents;
-    const soundMap = new Map(
-      [...soundEventsRef.current, ...(snapshot.soundEvents ?? []), ...footworkEvents]
-        .filter(e => e.frame >= earliestFrame)
-        .map(e => [`${e.frame}:${e.kind}`, e]),
+    soundEventsRef.current = deriveLiveCourtSoundEvents(
+      [...soundEventsRef.current, ...(snapshot.soundEvents ?? [])].filter(e => e.frame >= earliestFrame),
+      trajectoryEventsRef.current,
+      footworkEvents,
+      sampleBufferRef.current,
+      snapshot.frameRate ?? TE4_DMO_FRAMES_PER_SECOND,
     );
-    soundEventsRef.current = [...soundMap.values()].sort((first, second) =>
-      first.frame - second.frame || first.kind.localeCompare(second.kind),
-    );
+    const skidHistory = new Map(skidMarksRef.current.map(mark => [`${mark.frame}:${mark.player}`, mark]));
+    for (const mark of deriveLiveCourtSkidMarks(
+      sampleBufferRef.current, footworkEvents, snapshot.frameRate ?? TE4_DMO_FRAMES_PER_SECOND,
+    )) skidHistory.set(`${mark.frame}:${mark.player}`, mark);
+    const nextSkids = [...skidHistory.values()].sort((a, b) => a.frame - b.frame || a.player - b.player).slice(-2048);
+    if (nextSkids.length !== skidMarksRef.current.length
+      || nextSkids.at(-1)?.frame !== skidMarksRef.current.at(-1)?.frame) {
+      skidMarksRef.current = nextSkids;
+    }
     if (playheadRef.current === null && sampleBufferRef.current.length) {
       playheadRef.current = sampleBufferRef.current[0].frame;
       lastCalloutFrameRef.current = sampleBufferRef.current[0].frame;
@@ -404,8 +341,7 @@ function ThreeCourt({
     host.appendChild(renderer.domElement);
 
     const scene = new THREE.Scene();
-    scene.background = new THREE.Color(0x4c5665);
-    scene.fog = new THREE.Fog(0x4c5665, 42, 95);
+    buildStadiumEnvironment(scene, isIndoorDmoVenue(sceneDataRef.current.snapshot.stadium));
     const camera = new THREE.PerspectiveCamera(34, 1, 0.1, 260);
     camera.position.copy(DEFAULT_CAMERA);
     camera.lookAt(0, 0.3, 0);
@@ -442,7 +378,7 @@ function ThreeCourt({
     scene.add(fillLight);
 
     const courtEffects = buildCourt(scene, sceneDataRef.current.surface);
-    buildCourtFixtures(scene);
+    const fixtureRig = buildCourtFixtures(scene);
     const crowdRig = buildCrowd(scene);
     const players = [
       makePlayer(PALETTE.shirtOne, 0x335d58, isWta),
@@ -514,7 +450,9 @@ function ThreeCourt({
     let changeoverUntil = 0;
     let lastCrowdEventFrame: number | null = null;
     let crowdApplauseUntil = 0;
-    const lastSkidMarkBucket = [-1, -1];
+    let skidTimeline = skidMarksRef.current;
+    let nextSkidMark = 0;
+    let lastSkidFrame: number | null = null;
     const updatePlayer = (
       rig: PlayerRig,
       x: number,
@@ -640,20 +578,6 @@ function ThreeCourt({
       const slideWeight = liveCourtSlideWeight(footworkEventsRef.current, eventPlayer, frame, frameRate);
       const lateralVelocity = velocityX * localXAxis[0] + velocityZ * localXAxis[1];
       const slideDirection = Math.sign(lateralVelocity);
-      const skidMarkBucket = Math.floor(frame / 8);
-      if (
-        sceneDataRef.current.surface === 'clay'
-        && slideWeight > 0.3
-        && skidMarkBucket > lastSkidMarkBucket[index]
-      ) {
-        courtEffects.addSkidMark(
-          rig.root.position.x - velocityX * 0.14,
-          rig.root.position.z - velocityZ * 0.14,
-          Math.atan2(velocityZ, velocityX),
-          slideWeight,
-        );
-        lastSkidMarkBucket[index] = skidMarkBucket;
-      }
       const phase = frame * 0.22 + index * Math.PI;
       const gaitSpeed = speed > 0.12 ? speed : 0;
       const leftCycle = Math.sin(phase);
@@ -678,9 +602,9 @@ function ThreeCourt({
       );
       rig.body.rotation.x = crouch * 0.5 + shapedFollowThrough * 0.08 - serveFollowThrough * 0.05;
       rig.body.rotation.y = trunkTurn;
-      rig.hip.position.y = 0.79 + bodyBounce - crouch * 0.75;
+      rig.hip.position.y = 0.90 + bodyBounce - crouch * 0.75;
       rig.hip.rotation.y = trunkTurn * 0.42;
-      rig.head.position.set(0, 1.78 + bodyBounce * 0.8 - crouch * 0.3, 0);
+      rig.head.position.set(0, 1.73 + bodyBounce * 0.8 - crouch * 0.3, 0);
       rig.head.rotation.y = THREE.MathUtils.clamp(localX * 0.72, -0.28, 0.28);
       rig.head.rotation.x = THREE.MathUtils.clamp(-(ballY - 1.45) * 0.08, -0.18, 0.18);
       const effort = THREE.MathUtils.clamp(
@@ -693,8 +617,8 @@ function ThreeCourt({
       rig.face.mouth.scale.y = 0.16 + effort * 0.84;
       rig.face.leftBrow.rotation.z = Math.PI / 2 + 0.12 + effort * 0.1;
       rig.face.rightBrow.rotation.z = Math.PI / 2 - 0.12 - effort * 0.1;
-      const leftHip = new THREE.Vector3(-0.15, 0.79 + bodyBounce - crouch * 0.75, 0);
-      const rightHip = new THREE.Vector3(0.15, 0.79 + bodyBounce - crouch * 0.75, 0);
+      const leftHip = new THREE.Vector3(-0.13, 0.90 + bodyBounce - crouch * 0.75, 0);
+      const rightHip = new THREE.Vector3(0.13, 0.90 + bodyBounce - crouch * 0.75, 0);
       const leftFoot = new THREE.Vector3(
         -0.15 + leftCycle * stride - slideSpread * 0.35,
         0.1 + leftLift,
@@ -721,8 +645,8 @@ function ThreeCourt({
       poseLimb(rig.rightCalf, rightKnee, rightFoot);
       rig.leftKnee.position.copy(leftKnee);
       rig.rightKnee.position.copy(rightKnee);
-      rig.leftShoe.position.set(leftFoot.x, 0.032 + leftLift, leftFoot.z + 0.05);
-      rig.rightShoe.position.set(rightFoot.x, 0.032 + rightLift, rightFoot.z + 0.05);
+      rig.leftShoe.position.set(leftFoot.x, 0.052 + leftLift, leftFoot.z + 0.05);
+      rig.rightShoe.position.set(rightFoot.x, 0.052 + rightLift, rightFoot.z + 0.05);
       rig.leftShoe.rotation.y = leftCycle * gaitSpeed * 0.12;
       rig.rightShoe.rotation.y = rightCycle * gaitSpeed * 0.12;
       rig.leftShoe.rotation.z = -slideDirection * slideWeight * 0.08;
@@ -841,6 +765,9 @@ function ThreeCourt({
       if (impactWeight > 0) rig.racket.quaternion.slerp(contactRotation, impactWeight);
       if (shapedFollowThrough > 0) rig.racket.quaternion.slerp(followRotation, shapedFollowThrough);
       if (serveFollowThrough > 0) rig.racket.quaternion.slerp(serveFollowRotation, serveFollowThrough);
+      // Keep the dominant palm and curled fingers aligned with the grip as
+      // the racket turns through serves and groundstrokes.
+      dominantMesh.quaternion.copy(rig.racket.quaternion);
     };
 
     const animate = (now: number) => {
@@ -890,11 +817,21 @@ function ThreeCourt({
           ) ?? firstFrame;
         }
         playheadRef.current = currentFrame;
+        // Court wear survives point/game breaks. Reconstruct it only on a
+        // recording reset/seek or when newly received source marks arrive.
+        if (skidTimeline !== skidMarksRef.current || (lastSkidFrame !== null && currentFrame < lastSkidFrame)) {
+          courtEffects.clearSkidMarks();
+          skidTimeline = skidMarksRef.current;
+          nextSkidMark = 0;
+        }
+        while (nextSkidMark < skidTimeline.length && skidTimeline[nextSkidMark].frame <= currentFrame) {
+          const mark = skidTimeline[nextSkidMark++];
+          courtEffects.addSkidMark(mark.x, mark.z, mark.heading, mark.intensity);
+        }
+        lastSkidFrame = currentFrame;
         if (lastCrowdEventFrame === null) {
           lastCrowdEventFrame = currentFrame;
         } else if (currentFrame < lastCrowdEventFrame) {
-          courtEffects.clearSkidMarks();
-          lastSkidMarkBucket.fill(-1);
           crowdApplauseUntil = 0;
           lastCrowdEventFrame = currentFrame;
         } else {
@@ -907,14 +844,11 @@ function ThreeCourt({
             )) {
               if (liveCourtTrajectoryCue(cue, false) === 'cheer') {
                 crowdApplauseUntil = now + 1_800;
-                courtEffects.clearSkidMarks();
-                lastSkidMarkBucket.fill(-1);
               }
             }
           }
           lastCrowdEventFrame = currentFrame;
         }
-        crowdRig.update(now / 1000, now < crowdApplauseUntil);
         const context = audioContextRef.current;
         if (soundOnRef.current && context?.state === 'running') {
           const previous = lastSoundFrameRef.current;
@@ -925,7 +859,7 @@ function ThreeCourt({
               index += 1) {
               const cue = soundCues[index];
               if (crossedFrame(cue.frame, previous, currentFrame)) {
-                playCue(context, cue.kind, sceneDataRef.current.surface);
+                playCue(context, cue.kind, sceneDataRef.current.surface, effectsVolumeRef.current);
               }
             }
             for (const cue of liveCourtEventsBetween(trajectoryEventsRef.current, previous, currentFrame)) {
@@ -997,6 +931,9 @@ function ThreeCourt({
             : -1;
         updatePlayer(players[0], values[3], values[4], 0, values, currentFrame, samples, lastFrame, firstFrame, trajectoryEventsRef.current, strikingPlayer === 0, elapsed, sceneDataRef.current.snapshot.handedness?.[0] ?? 'right');
         updatePlayer(players[1], values[5], values[6], 1, values, currentFrame, samples, lastFrame, firstFrame, trajectoryEventsRef.current, strikingPlayer === 1, elapsed, sceneDataRef.current.snapshot.handedness?.[1] ?? 'right');
+        const gazeTarget = trailAllowed(trajectoryEventsRef.current, currentFrame) ? ball.position : undefined;
+        crowdRig.update(now / 1000, now < crowdApplauseUntil, gazeTarget);
+        fixtureRig.update(gazeTarget);
         const activeView = cameraViewRef.current;
         if (activeView.startsWith('player-')) {
           const playerIndex = activeView.startsWith('player-two') ? 1 : 0;
@@ -1191,6 +1128,13 @@ function ThreeCourt({
       if (!audioContextRef.current) audioContextRef.current = new AudioContext();
       const context = audioContextRef.current;
       await context.resume();
+      if (context.state !== 'running') throw new Error('Audio context is not running');
+      // Core court effects must not wait for, or fail with, optional MP3 layers.
+      lastSoundFrameRef.current = playheadRef.current ?? snapshot.frameCount;
+      soundOnRef.current = true;
+      setSoundError('');
+      setSoundEnabled(true);
+      const layers: Array<Promise<unknown>> = [];
       if (stadiumAtmosphere) {
         if (!crowdAudioRef.current) {
           const crowdAudio = new Audio('/audio/te4-crowd-ambience.mp3');
@@ -1199,22 +1143,31 @@ function ThreeCourt({
           crowdAudioRef.current = crowdAudio;
         }
         crowdAudioRef.current.volume = crowdVolume;
-        await crowdAudioRef.current.play();
+        layers.push(crowdAudioRef.current.play().catch(() => {
+          if (soundOnRef.current) setSoundError('Court effects are on; crowd audio could not be loaded.');
+        }));
       }
       if (gruntAudioRef.current?.isWta !== isWta) {
-        gruntAudioRef.current = { isWta, buffer: await loadGruntSample(context, isWta) };
+        layers.push(loadGruntSample(context, isWta).then(buffer => {
+          gruntAudioRef.current = { isWta, buffer };
+        }).catch(() => {
+          if (soundOnRef.current) setSoundError('Court effects are on; player grunt audio could not be loaded.');
+        }));
       }
       if (!applauseAudioRef.current) {
-        const response = await fetch('/audio/te4-point-applause.mp3');
-        if (!response.ok) throw new Error('Applause sample unavailable');
-        applauseAudioRef.current = await context.decodeAudioData(await response.arrayBuffer());
+        layers.push((async () => {
+          const response = await fetch('/audio/te4-point-applause.mp3');
+          if (!response.ok) throw new Error('Applause sample unavailable');
+          applauseAudioRef.current = await context.decodeAudioData(await response.arrayBuffer());
+        })().catch(() => {
+          if (soundOnRef.current) setSoundError('Court effects are on; applause audio could not be loaded.');
+        }));
       }
-      lastSoundFrameRef.current = playheadRef.current ?? snapshot.frameCount;
-      soundOnRef.current = true;
-      setSoundError('');
-      setSoundEnabled(true);
+      await Promise.all(layers);
     } catch {
       crowdAudioRef.current?.pause();
+      soundOnRef.current = false;
+      setSoundEnabled(false);
       setSoundError('Sound could not be enabled in this browser.');
     }
   };
@@ -1371,6 +1324,30 @@ function ThreeCourt({
                 onChange={(event) => changeCrowdVolume(Number(event.currentTarget.value))}
               />
             </label>
+          )}
+          {soundEnabled && (
+            <>
+              <label className={styles.volumeControl}>
+                <span>Court effects</span>
+                <input type="range" min="0" max="1" step="0.01" value={effectsVolume}
+                  aria-label="Court effects volume"
+                  onChange={(event) => {
+                    const volume = Number(event.currentTarget.value);
+                    effectsVolumeRef.current = volume;
+                    setEffectsVolume(volume);
+                  }} />
+              </label>
+              <button type="button" className={styles.soundButton} onClick={() => {
+                (['racket', 'bounce', 'footstep', 'slide'] as const).forEach((kind, index) => {
+                  window.setTimeout(() => {
+                    const context = audioContextRef.current;
+                    if (soundOnRef.current && context?.state === 'running') {
+                      playCue(context, kind, surface, effectsVolumeRef.current);
+                    }
+                  }, index * 400);
+                });
+              }}>Test court sounds</button>
+            </>
           )}
         </div>
       </div>

@@ -123,6 +123,12 @@ export function courtSurfaceDisplayName(surface: Te4CourtSurface): string {
   return surface === 'unknown' ? 'SURFACE UNKNOWN' : `${surface.toUpperCase()} COURT`;
 }
 
+/** Decorative venue treatment; never changes the recorded surface or ball physics. */
+export function isIndoorDmoVenue(stadium: string | null | undefined): boolean {
+  return /\b(indoor|bercy|paris masters|atp finals|rotterdam|vienna|basel|stockholm|metz|antwerp)\b/i
+    .test(stadium ?? '');
+}
+
 export function courtSurfaceSoundProfile(surface: Te4CourtSurface) {
   const profiles = {
     clay: {
