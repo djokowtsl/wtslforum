@@ -17,13 +17,19 @@ function formatDate(value: string) {
     : new Intl.DateTimeFormat('en-GB', { day: 'numeric', month: 'short', year: 'numeric' }).format(parsed);
 }
 
-export default function DmoReplayLibrary({ initialMatchId = '' }: { initialMatchId?: string }) {
-  const [matches, setMatches] = useState<PublicDmoReplay[]>([]);
+export default function DmoReplayLibrary({
+  initialMatchId = '',
+  initialPage = null,
+}: {
+  initialMatchId?: string;
+  initialPage?: ReplayPage | null;
+}) {
+  const [matches, setMatches] = useState<PublicDmoReplay[]>(initialPage?.matches ?? []);
   const [selected, setSelected] = useState<PublicDmoReplay | null>(null);
   const [query, setQuery] = useState('');
-  const [cursor, setCursor] = useState<string | null>(null);
-  const [hasMore, setHasMore] = useState(false);
-  const [loading, setLoading] = useState(true);
+  const [cursor, setCursor] = useState<string | null>(initialPage?.nextCursor ?? null);
+  const [hasMore, setHasMore] = useState(Boolean(initialPage?.nextCursor));
+  const [loading, setLoading] = useState(!initialPage);
   const [loadingMore, setLoadingMore] = useState(false);
   const [error, setError] = useState('');
 
@@ -38,6 +44,14 @@ export default function DmoReplayLibrary({ initialMatchId = '' }: { initialMatch
   }, []);
 
   useEffect(() => {
+    if (initialPage && !query) {
+      setMatches(initialPage.matches);
+      setCursor(initialPage.nextCursor);
+      setHasMore(Boolean(initialPage.nextCursor));
+      setError('');
+      setLoading(false);
+      return;
+    }
     let active = true;
     const timer = window.setTimeout(() => {
       setLoading(true);
@@ -58,7 +72,7 @@ export default function DmoReplayLibrary({ initialMatchId = '' }: { initialMatch
       active = false;
       window.clearTimeout(timer);
     };
-  }, [query, loadPage]);
+  }, [query, loadPage, initialPage]);
 
   useEffect(() => {
     if (!initialMatchId) return;

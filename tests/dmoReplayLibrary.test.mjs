@@ -21,6 +21,25 @@ function loadModule(path, mocks) {
   return module.exports;
 }
 
+function loadTsxModule(path, mocks) {
+  const source = readFileSync(new URL(`../${path}`, import.meta.url), 'utf8');
+  const { code } = transformSync(source, {
+    jsc: {
+      parser: { syntax: 'typescript', tsx: true },
+      target: 'es2022',
+      transform: { react: { runtime: 'automatic' } },
+    },
+    module: { type: 'commonjs' },
+  });
+  const module = { exports: {} };
+  new Function('require', 'module', 'exports', code)((name) => {
+    if (name in mocks) return mocks[name];
+    if (name === 'react/jsx-runtime' || name.startsWith('node:')) return require(name);
+    throw new Error(`Unexpected dependency: ${name}`);
+  }, module, module.exports);
+  return module.exports;
+}
+
 const nextServer = { NextResponse: { json: (body, init) => Response.json(body, init) } };
 
 test('public DMO paths must be private-store paths with a DMO filename', () => {
@@ -100,6 +119,44 @@ test('replay listing returns only safe metadata and paginates uploaded DMO files
   assert.match(queries[0].text, /ORDER BY id DESC/);
   assert.ok(queries[0].values.includes('%Open%'));
   assert.ok(!JSON.stringify(page).includes('private_blob_pathname'));
+});
+
+test('replay page server-renders the current public replay page on first load', async () => {
+  const initialPage = {
+    matches: [{
+      id: '41',
+      tournament: 'WTSL Open',
+      roundName: 'Final',
+      player1: 'One',
+      player2: 'Two',
+      submissionDate: '2026-10-30',
+      source: 'discord',
+    }],
+    nextCursor: null,
+  };
+  let requestedPage;
+  function PageHero() {}
+  function DmoReplayLibrary() {}
+  function Link() {}
+  const pageModule = loadTsxModule('app/replays/page.tsx', {
+    'next/link': { __esModule: true, default: Link },
+    '@/components/PageHero': { __esModule: true, default: PageHero },
+    '@/components/DmoReplayLibrary': { __esModule: true, default: DmoReplayLibrary },
+    '@/lib/dmoReplayLibrary': {
+      listPublicDmoReplays: async (input) => {
+        requestedPage = input;
+        return initialPage;
+      },
+    },
+  });
+
+  const page = await pageModule.default({ searchParams: Promise.resolve({}) });
+  const [hero, main] = page.props.children;
+  assert.equal(hero.type, PageHero);
+  assert.equal(main.type, 'main');
+  assert.equal(main.props.children.type, DmoReplayLibrary);
+  assert.deepEqual(main.props.children.props.initialPage, initialPage);
+  assert.deepEqual(requestedPage, { limit: 24 });
 });
 
 test('replay detail lookup excludes submissions without explicit sharing consent', async () => {
