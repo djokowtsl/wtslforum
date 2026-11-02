@@ -1385,40 +1385,31 @@ export function makePlayer(shirtColor: number, shortsColor: number, isWta = fals
   const kneeGeometry = new THREE.SphereGeometry(0.061, 20, 16);
   const leftKnee = new THREE.Mesh(kneeGeometry, skin);
   const rightKnee = new THREE.Mesh(kneeGeometry, skin);
-  const handGeometry = new THREE.SphereGeometry(0.05, 20, 16);
-  handGeometry.scale(0.84, 0.92, 0.7);
-  handGeometry.translate(0, 0.015, -0.018);
+  // A continuous closed fist reads cleanly at broadcast scale. Separate
+  // curved finger tubes looked like loose loops wrapped around the shaft.
+  const handGeometry = ellipticalBodyGeometry([
+    [-0.043, 0.019, 0.017],
+    [-0.037, 0.03, 0.025],
+    [-0.025, 0.037, 0.028],
+    [-0.012, 0.039, 0.029],
+    [0.002, 0.04, 0.03],
+    [0.016, 0.039, 0.03],
+    [0.03, 0.034, 0.027],
+    [0.041, 0.024, 0.021],
+    [0.046, 0.015, 0.014],
+  ], 28);
+  handGeometry.translate(0, 0, -0.004);
+  handGeometry.userData.closedGrip = true;
   const leftHand = new THREE.Mesh(handGeometry, skin);
   const rightHand = new THREE.Mesh(handGeometry, skin);
   leftHand.name = 'anime-left-palm';
   rightHand.name = 'dominant-right-hand';
   for (const [hand, side] of [[leftHand, -1], [rightHand, 1]] as const) {
-    for (let finger = 0; finger < 4; finger += 1) {
-      const gripY = (finger - 1.5) * 0.014;
-      // Each finger curls over the racket's narrow grip instead of ending
-      // invisibly inside an oversized handle.
-      const fingerCurve = new THREE.CatmullRomCurve3([
-        new THREE.Vector3(-0.035, gripY, 0.004),
-        new THREE.Vector3(-0.02, gripY + 0.004, 0.015),
-        new THREE.Vector3(0, gripY + 0.006, 0.021),
-        new THREE.Vector3(0.02, gripY + 0.004, 0.015),
-        new THREE.Vector3(0.035, gripY, 0.004),
-      ]);
-      const digit = new THREE.Mesh(
-        new THREE.TubeGeometry(fingerCurve, 12, 0.006, 6, false),
-        skin,
-      );
-      digit.name = `anime-grip-finger-${finger + 1}`;
-      hand.add(digit);
-    }
-    const thumbCurve = new THREE.CatmullRomCurve3([
-      new THREE.Vector3(side * 0.04, -0.006, 0.002),
-      new THREE.Vector3(side * 0.027, 0.012, 0.015),
-      new THREE.Vector3(side * 0.008, 0.022, 0.023),
-      new THREE.Vector3(-side * 0.004, 0.006, 0.021),
-    ]);
-    const thumb = new THREE.Mesh(new THREE.TubeGeometry(thumbCurve, 10, 0.007, 6, false), skin);
+    const thumb = new THREE.Mesh(new THREE.CapsuleGeometry(0.012, 0.026, 5, 12), skin);
     thumb.name = 'anime-grip-thumb';
+    thumb.position.set(side * 0.02, 0.009, 0.02);
+    thumb.rotation.z = side * 0.7;
+    thumb.castShadow = true;
     hand.add(thumb);
   }
   for (const part of [
@@ -1467,7 +1458,7 @@ export function makePlayer(shirtColor: number, shortsColor: number, isWta = fals
   handle.name = 'racket-handle';
   handle.position.y = -0.36;
   racketVisual.add(handle);
-  const gripTape = new THREE.Mesh(new THREE.CylinderGeometry(0.019, 0.02, 0.28, 10), material(0x293a35, 0.88));
+  const gripTape = new THREE.Mesh(new THREE.CylinderGeometry(0.0205, 0.0215, 0.28, 10), material(0x293a35, 0.88));
   gripTape.name = 'racket-grip-tape';
   gripTape.position.y = -0.36;
   racketVisual.add(gripTape);

@@ -47,12 +47,24 @@ test('human player proportions and visible eyes replace the oversized toy head',
     assert.equal(rig.head.children.filter(child => child.name === 'anime-fringe-strand').length, 2);
     assert.ok(rig.head.getObjectByName('anime-swept-fringe'));
     assert.ok(rig.head.children.filter(child => child.name === 'anime-hair-spike').length >= 3);
-    assert.equal(rig.rightHand.children.filter(child => child.name.startsWith('anime-grip-finger-')).length, 4);
-    assert.ok(rig.rightHand.getObjectByName('anime-grip-thumb'));
+    for (const hand of [rig.leftHand, rig.rightHand]) {
+      assert.equal(hand.geometry.userData.closedGrip, true, 'grip uses one continuous fist surface');
+      assert.equal(hand.children.filter(child => child.geometry?.type === 'TubeGeometry').length, 0,
+        'no detached finger loops');
+      const thumb = hand.getObjectByName('anime-grip-thumb');
+      assert.ok(thumb && thumb.geometry.type === 'CapsuleGeometry');
+      hand.updateMatrixWorld(true);
+      const palmBounds = new THREE.Box3().setFromBufferAttribute(hand.geometry.getAttribute('position'))
+        .applyMatrix4(hand.matrixWorld);
+      assert.ok(palmBounds.intersectsBox(new THREE.Box3().setFromObject(thumb)),
+        'the thumb joins the fist instead of floating beside it');
+    }
     const handle = rig.racket.getObjectByName('racket-handle');
     const tape = rig.racket.getObjectByName('racket-grip-tape');
     assert.ok(handle && handle.geometry.parameters.radiusTop <= 0.02, 'the grip is narrow enough to show the hand');
-    assert.ok(tape && tape.geometry.parameters.radiusTop <= 0.02);
+    assert.ok(tape && tape.geometry.parameters.radiusTop <= 0.022);
+    assert.ok(tape.geometry.parameters.radiusTop > handle.geometry.parameters.radiusBottom,
+      'grip tape clears the shaft surface instead of flickering over it');
     assert.ok(rig.rightElbow.geometry.parameters.radius > 0.04, 'muscle segments blend into rounded elbows');
     rig.leftArm.geometry.computeBoundingBox();
     assert.ok(rig.leftArm.geometry.boundingBox.max.x - rig.leftArm.geometry.boundingBox.min.x > 0.14);
