@@ -296,6 +296,91 @@
   font-size: 12px;
 }
 
+.replayControls {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 10px 14px 12px;
+  border-top: 1px solid rgba(152, 174, 207, .17);
+  background: rgba(6, 13, 29, .7);
+}
+
+.replayToggle,
+.replaySpeedControl select {
+  min-height: 32px;
+  border: 1px solid rgba(152, 174, 207, .24);
+  border-radius: 7px;
+  background: rgba(3, 9, 20, .72);
+  color: #e7eef8;
+}
+
+.replayToggle {
+  display: inline-flex;
+  flex: 0 0 auto;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  padding: 0 10px;
+  cursor: pointer;
+}
+
+.replayToggle:hover {
+  border-color: rgba(176, 244, 59, .5);
+  color: #b0f43b;
+}
+
+.replayToggle:focus-visible,
+.replaySpeedControl select:focus-visible,
+.replaySeek input:focus-visible {
+  outline: 2px solid #b0f43b;
+  outline-offset: 2px;
+}
+
+.replaySeek {
+  flex: 1;
+  min-width: 80px;
+}
+
+.replaySeek input {
+  display: block;
+  width: 100%;
+  accent-color: #b0f43b;
+}
+
+.replayClock {
+  flex: 0 0 auto;
+  color: #c4d0e2;
+  font: 700 10px/1 system-ui, sans-serif;
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
+
+.replaySpeedControl {
+  display: inline-flex;
+  flex: 0 0 auto;
+  align-items: center;
+  gap: 5px;
+  color: #aab9cf;
+  font: 700 9px/1 system-ui, sans-serif;
+}
+
+.replaySpeedControl select {
+  padding: 0 7px;
+  cursor: pointer;
+}
+
+.visuallyHidden {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  padding: 0;
+  margin: -1px;
+  overflow: hidden;
+  clip: rect(0, 0, 0, 0);
+  white-space: nowrap;
+  border: 0;
+}
+
 @media (max-width: 720px) {
   .toolbar {
     align-items: flex-start;
@@ -335,6 +420,17 @@
   .hint {
     width: 100%;
     margin-left: 0;
+  }
+
+  .replayControls {
+    flex-wrap: wrap;
+    gap: 8px;
+    padding: 9px;
+  }
+
+  .replaySeek {
+    order: 3;
+    flex-basis: 100%;
   }
 }
 

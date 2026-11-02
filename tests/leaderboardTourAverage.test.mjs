@@ -4,7 +4,50 @@ import {
   calculateTourAverage,
   calculateTourMetricAverages,
   formatLeaderboardMetric,
+  DEFAULT_LEADERBOARD_METRIC,
+  resolveLeaderboardLeader,
 } from '../lib/leaderboardTourAverage.mjs';
+
+test('Serve is the default leaderboard metric when no metric is selected', () => {
+  assert.equal(DEFAULT_LEADERBOARD_METRIC, 'serve');
+});
+
+test('leader spotlight uses the top screenshot-rating row and its player identity', () => {
+  const leader = resolveLeaderboardLeader([
+    {
+      name: 'Serve Leader',
+      wtsl_player_id: 'player-1',
+      avatar_url: 'https://example.com/avatar.png',
+      flag_url: 'https://example.com/flag.png',
+      country: 'GBR',
+      matches: 42,
+      value: 9.4,
+    },
+    { name: 'Second Place', wtsl_player_id: 'player-2', matches: 40, value: 8.9 },
+  ], true, true);
+
+  assert.equal(leader.name, 'Serve Leader');
+  assert.equal(leader.playerId, 'player-1');
+  assert.equal(leader.avatarUrl, 'https://example.com/avatar.png');
+  assert.equal(leader.flagUrl, 'https://example.com/flag.png');
+  assert.equal(leader.row.value, 9.4);
+});
+
+test('leader spotlight supports unlinked aggregate players and official rows', () => {
+  const screenshotLeader = resolveLeaderboardLeader([
+    { player: 'Unlinked Player', wtslPlayerId: null, avatarUrl: null, matches: 25, value: 8.1 },
+  ], true, false);
+  assert.equal(screenshotLeader.name, 'Unlinked Player');
+  assert.equal(screenshotLeader.playerId, null);
+
+  const officialLeader = resolveLeaderboardLeader([
+    { name: 'Official Leader', wtsl_player_id: 'player-3', avatar_url: 'avatar.jpg', matches: 31, wins: 27 },
+  ], false, false);
+  assert.equal(officialLeader.name, 'Official Leader');
+  assert.equal(officialLeader.playerId, 'player-3');
+  assert.equal(officialLeader.row.wins, 27);
+  assert.equal(resolveLeaderboardLeader([], false, false), null);
+});
 
 test('official result averages use the selected leaderboard metric and count numeric rows', () => {
   const result = calculateTourAverage([
