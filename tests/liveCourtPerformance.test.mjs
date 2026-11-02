@@ -2,9 +2,12 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import {
   defaultPlayerStrokeStyles,
+  clampPointToReach,
   dominantHandX,
   groundstrokeForBallSide,
   racketContact,
+  racketContactWithinReach,
+  MAX_PLAYER_ARM_REACH,
   RACKET_HEAD_OFFSET,
   RIGHT_HAND_X,
   secondHandGripPosition,
@@ -43,6 +46,20 @@ test('racket string-bed centre reaches ball on overhead and both rally sides', (
     const pose = racketContact(ball, [RIGHT_HAND_X, 1.4, 0]);
     ball.forEach((v, i) => assert.ok(Math.abs(pose.grip[i] + pose.axis[i] * RACKET_HEAD_OFFSET - v) < 1e-10));
   }
+});
+test('racket contact never pulls the hitting hand beyond a realistic arm reach', () => {
+  const shoulder = [RIGHT_HAND_X * 0.59, 1.4, 0];
+  const ball = [4, 2, 0];
+  const preferredGrip = [RIGHT_HAND_X, 1.1, 0];
+  const unconstrained = racketContact(ball, preferredGrip);
+  const pose = racketContactWithinReach(ball, preferredGrip, shoulder);
+  const reach = Math.hypot(...pose.grip.map((value, index) => value - shoulder[index]));
+  const axisLength = Math.hypot(...pose.axis);
+
+  assert.ok(reach <= MAX_PLAYER_ARM_REACH + 1e-10);
+  assert.ok(reach < Math.hypot(...unconstrained.grip.map((value, index) => value - shoulder[index])));
+  assert.ok(Math.abs(axisLength - 1) < 1e-10);
+  assert.deepEqual(clampPointToReach(preferredGrip, shoulder), preferredGrip);
 });
 test('serve jumps at contact and lands after follow-through', () => {
   assert.equal(serveLift(0), .45);

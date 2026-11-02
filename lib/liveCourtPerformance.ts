@@ -8,6 +8,7 @@ export type PlayerStrokeStyle = {
 export type PlayerStrokeStylePair = [PlayerStrokeStyle, PlayerStrokeStyle];
 export const RACKET_HEAD_OFFSET = 0.36;
 export const TWO_HANDED_GRIP_SEPARATION = 0.13;
+export const MAX_PLAYER_ARM_REACH = 0.9;
 // The face points along local +Z: anatomical right is local -X.
 export const RIGHT_HAND_X = -0.39;
 export function dominantHandX(handedness: PlayerHandedness) {
@@ -43,6 +44,36 @@ export function racketContact(ball: Point3, preferredGrip: Point3) {
     axis,
     grip: ball.map((v, i) => v - axis[i] * RACKET_HEAD_OFFSET) as Point3,
   };
+}
+
+export function clampPointToReach(
+  point: Point3,
+  shoulder: Point3,
+  maximumReach = MAX_PLAYER_ARM_REACH,
+): Point3 {
+  const delta = point.map((value, index) => value - shoulder[index]);
+  const distance = Math.hypot(...delta);
+  const limit = Number.isFinite(maximumReach) ? Math.max(0, maximumReach) : MAX_PLAYER_ARM_REACH;
+  if (!Number.isFinite(distance) || distance <= limit || distance < 0.0001) {
+    return [...point] as Point3;
+  }
+  return delta.map((value, index) => shoulder[index] + value * limit / distance) as Point3;
+}
+
+export function racketContactWithinReach(
+  ball: Point3,
+  preferredGrip: Point3,
+  shoulder: Point3,
+  maximumReach = MAX_PLAYER_ARM_REACH,
+) {
+  const original = racketContact(ball, preferredGrip);
+  const grip = clampPointToReach(original.grip, shoulder, maximumReach);
+  const toBall = ball.map((value, index) => value - grip[index]);
+  const distance = Math.hypot(...toBall);
+  const axis = distance > 0.0001
+    ? toBall.map((value) => value / distance) as Point3
+    : original.axis;
+  return { grip, axis };
 }
 
 export function serveLift(offset: number) {

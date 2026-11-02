@@ -4,7 +4,11 @@ import { useCallback, useEffect, useRef, useState } from 'react';
 import { AlertTriangle, ChevronLeft, ChevronRight, Eye, Radio } from 'lucide-react';
 import { LIVE_DMO_UPDATE_INTERVAL_MS } from '@/lib/te4DmoLive';
 import type { Te4LivePoint, Te4LiveSnapshot } from '@/lib/te4DmoLive';
-import type { LivePreMatchProbability, LiveStream } from '@/lib/liveBroadcast';
+import {
+  liveBroadcastMediaMode,
+  type LivePreMatchProbability,
+  type LiveStream,
+} from '@/lib/liveBroadcast';
 import type { LiveBroadcastScore } from '@/lib/liveBroadcastScore';
 import DmoLiveDisplay from './DmoLiveDisplay';
 import LiveBroadcastChat from './LiveBroadcastComments';
@@ -370,7 +374,7 @@ export default function DmoLiveViewer({ canWatch }: Props) {
       <header className={styles.heading}>
         <p className={styles.kicker}>WTSL FORUM / LIVE</p>
         {canWatch ? <h2>Watching <em>now</em></h2> : <h1>Live Streams</h1>}
-        <p>Live matches and replays appear with a court view, video stream, or both.</p>
+        <p>Live matches and replays appear with a court view or video stream.</p>
       </header>
       {!canWatch ? (
         <div className={styles.empty}>
@@ -418,6 +422,7 @@ export default function DmoLiveViewer({ canWatch }: Props) {
         >
           {broadcasts.map((broadcast) => {
             const players = broadcast.snapshot?.players ?? broadcast.players;
+            const mediaMode = liveBroadcastMediaMode(broadcast.stream, Boolean(broadcast.snapshot));
             return (
               <article
                 className="live-broadcast-card"
@@ -512,10 +517,18 @@ export default function DmoLiveViewer({ canWatch }: Props) {
                     <small className={styles.tourError} role="alert">{tourSaveError}</small>
                   )}
                 </div>
-                {broadcast.stream && broadcast.status === 'live' && (
-                  <LiveStreamEmbed stream={broadcast.stream} title={`Live stream by ${broadcast.ownerName}`} />
-                )}
-                {broadcast.snapshot ? (
+                {mediaMode === 'external-stream' && broadcast.stream ? (
+                  broadcast.status === 'live' ? (
+                    <LiveStreamEmbed stream={broadcast.stream} title={`Live stream by ${broadcast.ownerName}`} />
+                  ) : (
+                    <p className="live-broadcast-stream-note">
+                      This external stream has ended.{' '}
+                      <a href={broadcast.stream.sourceUrl} target="_blank" rel="noopener noreferrer">
+                        Open original stream ↗
+                      </a>
+                    </p>
+                  )
+                ) : mediaMode === 'dmo-court' && broadcast.snapshot ? (
                   broadcast.replay && broadcast.replayDataReady ? (
                     <Te4DmoReplayPlayer
                       broadcastId={broadcast.id}
@@ -552,8 +565,6 @@ export default function DmoLiveViewer({ canWatch }: Props) {
                       pointLogLoaded={pointLogs[broadcast.id]?.loaded}
                     />
                   )
-                ) : broadcast.stream && broadcast.status === 'live' ? (
-                  <p className="live-broadcast-stream-note">This broadcast is sharing a video stream without DMO court data.</p>
                 ) : (
                   <div className={styles.empty}>
                     <span className={styles.icon}><Radio size={23} /></span>

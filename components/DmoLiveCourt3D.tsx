@@ -18,20 +18,23 @@ import {
   findPlayerShotEvent,
   interpolateLiveCourtFrame,
   latestLiveCourtShotEvent,
+  liveCourtSlideWeight,
   liveCourtEventsBetween,
   liveCourtTrajectoryCue,
   liveCourtFacingAngle,
   mergeLiveCourtEvents,
   mergeLiveCourtSamples,
   type LiveCourtCoordinates,
+  type LiveCourtFootworkEvent,
   type LiveCourtMotionEvent,
   type LiveCourtSample,
 } from '@/lib/liveCourtMotion';
 import {
+  clampPointToReach,
   crossedFrame,
   dominantHandX,
   groundstrokeForBallSide,
-  racketContact,
+  racketContactWithinReach,
   secondHandGripPosition,
   serveLift,
   trailAllowed,
@@ -215,6 +218,7 @@ function ThreeCourt({
   const gruntsEnabledRef = useRef(gruntsEnabled);
   gruntsEnabledRef.current = gruntsEnabled;
   const soundEventsRef = useRef<Array<{ frame: number; kind: 'racket' | 'bounce' | 'footstep' | 'slide' }>>([]);
+  const footworkEventsRef = useRef<LiveCourtFootworkEvent[]>([]);
   const transitionRef = useRef<HTMLDivElement>(null);
   const sampleBufferRef = useRef<LiveCourtSample[]>([]);
   const trajectoryEventsRef = useRef<LiveCourtMotionEvent[]>([]);
@@ -269,6 +273,7 @@ function ThreeCourt({
       sampleBufferRef.current = [];
       trajectoryEventsRef.current = [];
       soundEventsRef.current = [];
+      footworkEventsRef.current = [];
       playheadRef.current = null;
       lastCalloutFrameRef.current = null;
       setShotCallout(null);
@@ -312,6 +317,7 @@ function ThreeCourt({
       sampleBufferRef.current,
       snapshot.frameRate ?? TE4_DMO_FRAMES_PER_SECOND,
     );
+    footworkEventsRef.current = footworkEvents;
     const soundMap = new Map(
       [...soundEventsRef.current, ...(snapshot.soundEvents ?? []), ...footworkEvents]
         .filter(e => e.frame >= earliestFrame)
@@ -583,30 +589,39 @@ function ThreeCourt({
         (ballX - rig.root.position.x) * Math.sin(facing)
         + (ballZ - rig.root.position.z) * Math.cos(facing)
       ) / rig.root.scale.x;
+      const slideWeight = liveCourtSlideWeight(footworkEventsRef.current, eventPlayer, frame, frameRate);
+      const lateralVelocity = velocityX * localXAxis[0] + velocityZ * localXAxis[1];
+      const slideDirection = Math.sign(lateralVelocity);
       const phase = frame * 0.22 + index * Math.PI;
       const gaitSpeed = speed > 0.12 ? speed : 0;
       const leftCycle = Math.sin(phase);
       const rightCycle = Math.sin(phase + Math.PI);
-      const stride = gaitSpeed * 0.19;
-      const leftLift = Math.max(0, leftCycle) * gaitSpeed * 0.13 + jump;
-      const rightLift = Math.max(0, rightCycle) * gaitSpeed * 0.13 + jump;
+      const stride = gaitSpeed * 0.19 * (1 - slideWeight * 0.45);
+      const slideSpread = slideDirection * slideWeight * 0.15;
+      const leftLift = (Math.max(0, leftCycle) * gaitSpeed * 0.13 + jump) * (1 - slideWeight * 0.8);
+      const rightLift = (Math.max(0, rightCycle) * gaitSpeed * 0.13 + jump) * (1 - slideWeight * 0.8);
       const bodyBounce = gaitSpeed * Math.abs(Math.sin(phase * 2)) * 0.035 + jump;
-      const crouch = strikeWeight * THREE.MathUtils.clamp((1.05 - ballY) / 0.95, 0, 1) * 0.18;
+      const crouch = strikeWeight * THREE.MathUtils.clamp((1.05 - ballY) / 0.95, 0, 1) * 0.18
+        + slideWeight * 0.13;
       rig.root.rotation.y = facing;
       rig.body.position.set(Math.sin(phase * 0.5) * gaitSpeed * 0.02, 1.22 + bodyBounce - crouch * 0.45, 0);
-      rig.body.rotation.z = THREE.MathUtils.clamp(-velocityX * 0.18, -0.22, 0.22);
+      rig.body.rotation.z = THREE.MathUtils.clamp(
+        -lateralVelocity * 1.8 - slideDirection * slideWeight * 0.09,
+        -0.3,
+        0.3,
+      );
       rig.body.rotation.x = crouch * 0.5;
       rig.hip.position.y = 0.79 + bodyBounce - crouch * 0.75;
       rig.head.position.set(0, 1.78 + bodyBounce * 0.8 - crouch * 0.3, 0);
       const leftHip = new THREE.Vector3(-0.15, 0.79 + bodyBounce - crouch * 0.75, 0);
       const rightHip = new THREE.Vector3(0.15, 0.79 + bodyBounce - crouch * 0.75, 0);
       const leftFoot = new THREE.Vector3(
-        -0.15 + leftCycle * stride,
+        -0.15 + leftCycle * stride - slideSpread * 0.35,
         0.1 + leftLift,
         Math.max(0, leftCycle) * 0.05,
       );
       const rightFoot = new THREE.Vector3(
-        0.15 + rightCycle * stride,
+        0.15 + rightCycle * stride + slideSpread * 0.35,
         0.1 + rightLift,
         Math.max(0, rightCycle) * 0.05,
       );
@@ -616,6 +631,8 @@ function ThreeCourt({
       rig.rightShoe.position.set(rightFoot.x, 0.032 + rightLift, rightFoot.z + 0.05);
       rig.leftShoe.rotation.y = leftCycle * gaitSpeed * 0.12;
       rig.rightShoe.rotation.y = rightCycle * gaitSpeed * 0.12;
+      rig.leftShoe.rotation.z = -slideDirection * slideWeight * 0.08;
+      rig.rightShoe.rotation.z = slideDirection * slideWeight * 0.08;
       const swing = strikeWeight > 0 ? 0.72 * strikeWeight : Math.sin(phase * 0.55) * gaitSpeed * 0.2;
       const dominantX = dominantHandX(handedness);
       const playerStrokeStyle = sceneDataRef.current.snapshot.strokeStyles?.[index];
@@ -632,22 +649,29 @@ function ThreeCourt({
         dominantHand.y += preparation * 0.65;
         dominantHand.z -= preparation * 0.2;
       }
-      const contact = racketContact(
+      const dominantShoulder = new THREE.Vector3(dominantX * 0.59, 1.4 + bodyBounce, 0);
+      const nonDominantShoulder = new THREE.Vector3(-dominantX * 0.59, 1.42 + bodyBounce, 0);
+      const contact = racketContactWithinReach(
         [localX, ballY / rig.root.scale.y, localZ],
         [dominantHand.x, dominantHand.y, dominantHand.z],
+        [dominantShoulder.x, dominantShoulder.y, dominantShoulder.z],
       );
       const contactHand = new THREE.Vector3(...contact.grip);
       dominantHand.lerp(contactHand, strikeWeight);
       if (twoHandedStroke) {
         const secondGrip = secondHandGripPosition(contact.grip, contact.axis);
-        nonDominantHand.lerp(new THREE.Vector3(...secondGrip), strikeWeight);
+        const reachableSecondGrip = clampPointToReach(
+          secondGrip,
+          [nonDominantShoulder.x, nonDominantShoulder.y, nonDominantShoulder.z],
+        );
+        nonDominantHand.lerp(new THREE.Vector3(...reachableSecondGrip), strikeWeight);
       }
       const dominantArm = handedness === 'right' ? rig.rightArm : rig.leftArm;
       const nonDominantArm = handedness === 'right' ? rig.leftArm : rig.rightArm;
       const dominantMesh = handedness === 'right' ? rig.rightHand : rig.leftHand;
       const nonDominantMesh = handedness === 'right' ? rig.leftHand : rig.rightHand;
-      poseLimb(nonDominantArm, new THREE.Vector3(-dominantX * 0.59, 1.42 + bodyBounce, 0), nonDominantHand);
-      poseLimb(dominantArm, new THREE.Vector3(dominantX * 0.59, 1.4 + bodyBounce, 0), dominantHand);
+      poseLimb(nonDominantArm, nonDominantShoulder, nonDominantHand);
+      poseLimb(dominantArm, dominantShoulder, dominantHand);
       dominantMesh.position.copy(dominantHand);
       nonDominantMesh.position.copy(nonDominantHand);
       rig.racket.position.copy(dominantHand);

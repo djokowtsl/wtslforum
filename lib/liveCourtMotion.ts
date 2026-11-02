@@ -10,6 +10,7 @@ export type LiveCourtMotionEvent = {
 export type LiveCourtFootworkEvent = {
   frame: number;
   kind: 'footstep' | 'slide';
+  player: 1 | 2;
 };
 
 export function liveCourtTrajectoryCue(
@@ -53,11 +54,11 @@ export function deriveLiveCourtFootworkEvents(
         && lateralRatio >= 0.78
         && current.frame - lastSlide[player] >= frameRate * 0.75
       ) {
-        events.push({ frame: current.frame, kind: 'slide' });
+        events.push({ frame: current.frame, kind: 'slide', player: (player + 1) as 1 | 2 });
         lastSlide[player] = current.frame;
         lastFootstep[player] = current.frame;
       } else if (current.frame - lastFootstep[player] >= frameRate * 0.27) {
-        events.push({ frame: current.frame, kind: 'footstep' });
+        events.push({ frame: current.frame, kind: 'footstep', player: (player + 1) as 1 | 2 });
         lastFootstep[player] = current.frame;
       }
     }
@@ -66,6 +67,26 @@ export function deriveLiveCourtFootworkEvents(
   return events.sort((first, second) =>
     first.frame - second.frame || first.kind.localeCompare(second.kind),
   );
+}
+
+export function liveCourtSlideWeight(
+  events: LiveCourtFootworkEvent[],
+  player: 1 | 2,
+  frame: number,
+  framesPerSecond = 60,
+): number {
+  if (!Number.isFinite(frame)) return 0;
+  const frameRate = Number.isFinite(framesPerSecond) && framesPerSecond > 0
+    ? framesPerSecond
+    : 60;
+  const duration = Math.max(1, frameRate * 0.42);
+  for (let index = events.length - 1; index >= 0; index -= 1) {
+    const event = events[index];
+    if (event.frame > frame || event.player !== player || event.kind !== 'slide') continue;
+    const age = frame - event.frame;
+    if (age <= duration) return Math.max(0, 1 - age / duration);
+  }
+  return 0;
 }
 
 // The DMO court runs along X, with the net at X=0. Player-local +Z points
