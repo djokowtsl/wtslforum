@@ -17,6 +17,7 @@ const {
   parseDiscordMessageUrl,
   parseLiveStreamUrl,
   sameLiveMatch,
+  liveBroadcastMediaMode,
   streamLinksInDiscordMessage,
   findMatchingWtslLiveMatch,
   isLikelyOfficialWtslMatch,
@@ -79,6 +80,13 @@ test('normalizes supported YouTube and Twitch links for embedding and rejects ot
   });
   assert.equal(parseLiveStreamUrl('https://example.com/video'), null);
   assert.equal(parseLiveStreamUrl('javascript:alert(1)'), null);
+});
+
+test('an external stream takes precedence over any reconstructed court snapshot', () => {
+  const stream = parseLiveStreamUrl('https://youtu.be/dQw4w9WgXcQ');
+  assert.equal(liveBroadcastMediaMode(stream, true), 'external-stream');
+  assert.equal(liveBroadcastMediaMode(null, true), 'dmo-court');
+  assert.equal(liveBroadcastMediaMode(null, false), 'waiting');
 });
 
 test('extracts stream links from message text and embeds without duplicating the same stream', () => {

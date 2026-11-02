@@ -10,6 +10,7 @@ import {
   liveCourtEventsBetween,
   latestLiveCourtShotEvent,
   latestLiveCourtMotionEvent,
+  liveCourtSlideWeight,
   mergeLiveCourtEvents,
   mergeLiveCourtSamples,
 } from '../lib/liveCourtMotion.ts';
@@ -84,18 +85,30 @@ test('footwork events distinguish normal steps from lateral slides and ignore te
     playerSample(0),
     playerSample(6, 20, 0),
   ], 60);
-  assert.deepEqual(footsteps, [{ frame: 6, kind: 'footstep' }]);
+  assert.deepEqual(footsteps, [{ frame: 6, kind: 'footstep', player: 1 }]);
 
   const slides = deriveLiveCourtFootworkEvents([
     playerSample(0),
     playerSample(6, 0, 30),
   ], 60);
-  assert.deepEqual(slides, [{ frame: 6, kind: 'slide' }]);
+  assert.deepEqual(slides, [{ frame: 6, kind: 'slide', player: 1 }]);
+  assert.deepEqual(deriveLiveCourtFootworkEvents([
+    playerSample(0),
+    playerSample(6, 0, 0, 0, 30),
+  ], 60), [{ frame: 6, kind: 'slide', player: 2 }]);
 
   assert.deepEqual(deriveLiveCourtFootworkEvents([
     playerSample(0),
     playerSample(120, 300, 0),
   ], 60), []);
+});
+
+test('visual sliding is attributed to one player and eases out after the lateral burst', () => {
+  const events = [{ frame: 100, kind: 'slide', player: 2 }];
+  assert.equal(liveCourtSlideWeight(events, 1, 100), 0);
+  assert.equal(liveCourtSlideWeight(events, 2, 100), 1);
+  assert.ok(liveCourtSlideWeight(events, 2, 112) < 1);
+  assert.equal(liveCourtSlideWeight(events, 2, 126), 0);
 });
 
 test('motion event lookups stay scoped to the requested frames and player', () => {
