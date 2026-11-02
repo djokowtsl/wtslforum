@@ -434,7 +434,7 @@ h1, h2, h3 { margin: 0; }
 .admin-topic-controls { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 14px; }
 .post { display: grid; grid-template-columns: 170px minmax(0, 1fr); margin-bottom: 14px; overflow: hidden; }
 .post.op { border-color: rgba(176, 244, 59, 0.3); }
-.post-user { padding: 22px 16px; background: var(--bg-2); border-right: 1px solid var(--line); text-align: center; }
+.post-user { min-width: 0; padding: 22px 16px; background: var(--bg-2); border-right: 1px solid var(--line); text-align: center; }
 .avatar-img { width: 64px; height: 64px; border-radius: 50%; object-fit: cover; border: 2px solid var(--line-2); }
 .av-wtsl, .avatar-img.av-wtsl { background: #010c20; border-color: var(--lime); object-fit: contain; }
 .post-user .avatar-img { margin: 0 auto 10px; display: block; }
@@ -443,6 +443,11 @@ h1, h2, h3 { margin: 0; }
 .post-author-link:hover, .post-author-link:focus-visible { color: var(--lime); text-decoration-style: solid; }
 .post-user .role { display: inline-block; margin-top: 8px; }
 .post-content { padding: 22px 26px; color: var(--soft); line-height: 1.75; font-size: 15.5px; min-width: 0; overflow-wrap: anywhere; }
+.post-moderation-actions { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; min-width: 0; margin-top: 12px; }
+.post-moderation-actions .spoiler-correction,
+.post-moderation-actions .community-note-private-action,
+.post-moderation-actions .community-note-public-flag { margin-top: 0; }
+.post-moderation-actions .community-note-public-flag[open] { flex-basis: 100%; }
 .post-date { font-size: 11.5px; color: var(--muted); margin-bottom: 14px; letter-spacing: 0.04em; }
 .reaction-bar { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 16px; }
 .reaction-chip { display: inline-flex; align-items: center; border-radius: 999px; border: 1px solid var(--line-2); background: var(--panel); color: var(--soft); font-size: 13px; font-weight: 700; }
@@ -860,11 +865,14 @@ h1, h2, h3 { margin: 0; }
   .topic { grid-template-columns: 40px minmax(0, 1fr) 56px; gap: 12px; padding: 14px 16px; }
   .topic .av { width: 40px; height: 40px; }
   .topic-last { display: none; }
-  .post { grid-template-columns: 1fr; }
-  .post-user { border-right: 0; border-bottom: 1px solid var(--line); display: flex; align-items: center; gap: 12px; text-align: left; padding: 14px 16px; }
+  .post { min-width: 0; grid-template-columns: minmax(0, 1fr); }
+  .post-user { border-right: 0; border-bottom: 1px solid var(--line); display: flex; flex-wrap: wrap; align-items: center; gap: 8px 10px; text-align: left; padding: 14px 16px; }
   .post-user .avatar-img { margin: 0; width: 44px; height: 44px; }
-  .post-user .role { margin: 0 0 0 auto; }
-  .post-content { padding: 18px 16px; }
+  .post-user strong { flex: 1 1 120px; min-width: 0; overflow-wrap: anywhere; }
+  .post-user .role { margin: 0; }
+  .post-user .community-role-badges { flex: 1 1 calc(100% - 56px); min-width: 0; max-width: 100%; margin: 0 0 0 56px; justify-content: flex-start; }
+  .post-user > a.pill { max-width: 100%; white-space: normal; }
+  .post-content { min-width: 0; max-width: 100%; padding: 18px 16px; overflow-wrap: anywhere; }
   .thread-head, .tournament-hero { padding: 22px 18px; }
   .thread-title-row { flex-direction: column; align-items: flex-start; gap: 8px; }
   .hero-actions .btn { width: 100%; }

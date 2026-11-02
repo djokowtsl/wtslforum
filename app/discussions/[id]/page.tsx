@@ -55,8 +55,10 @@ export default async function Thread({ params }: { params: Promise<{ id: string 
   const allUsernames = [topic.body, ...replies.map((r: any) => r.body)].flatMap((b: string) => [...(b || '').matchAll(/@(\w+)/g)].map((m) => m[1]));
   const mentionables = await safe(() => resolveMentions(allUsernames), {});
   const canReply = !!u && (!topic.locked || u.isAdmin);
+  const topicNotes = notesByTarget.get(`topic:${topic.id}`) || [];
   const renderReply = (node: CommentNode<any>): ReactNode => {
     const r = node.comment;
+    const replyNotes = notesByTarget.get(`reply:${r.id}`) || [];
     const replyAuthorHref = officialAuthorHref(r);
     const ownsReply = !!u && String(r.author_id) === String(u.id);
     return (
@@ -83,8 +85,12 @@ export default async function Thread({ params }: { params: Promise<{ id: string 
             <RichText text={r.body} mentionables={mentionables} />
             <ReactionBar replyId={Number(r.id)} initial={reactions.replies[Number(r.id)] || []} signedIn={!!u} />
             {canReply && <ReplyToComment target="discussion" topicId={Number(topic.id)} parentId={Number(r.id)} />}
-            {canModerateReplies && <SpoilerCorrection kind="reply" id={Number(r.id)} body={r.body} />}
-            <CommunityNotes targetType="reply" targetId={Number(r.id)} notes={notesByTarget.get(`reply:${r.id}`) || []} viewerId={u?.id ?? null} canModerate={canModerateReplies} />
+            {(canModerateReplies || !!u || replyNotes.length > 0) && (
+              <div className="post-moderation-actions" role="group" aria-label="Comment actions">
+                {canModerateReplies && <SpoilerCorrection kind="reply" id={Number(r.id)} body={r.body} />}
+                <CommunityNotes targetType="reply" targetId={Number(r.id)} notes={replyNotes} viewerId={u?.id ?? null} canModerate={canModerateReplies} />
+              </div>
+            )}
           </>
         </EditableReply>
         {node.children.length > 0 && (
@@ -135,8 +141,12 @@ export default async function Thread({ params }: { params: Promise<{ id: string 
           <RichText text={topic.body} mentionables={mentionables} />
           {video && <DiscussionVideo video={video} />}
           <ReactionBar topicId={Number(topic.id)} initial={reactions.topic} signedIn={!!u} />
-          {canModerateReplies && <SpoilerCorrection kind="topic" id={Number(topic.id)} body={topic.body} />}
-          <CommunityNotes targetType="topic" targetId={Number(topic.id)} notes={notesByTarget.get(`topic:${topic.id}`) || []} viewerId={u?.id ?? null} canModerate={canModerateReplies} />
+          {(canModerateReplies || !!u || topicNotes.length > 0) && (
+            <div className="post-moderation-actions" role="group" aria-label="Post actions">
+              {canModerateReplies && <SpoilerCorrection kind="topic" id={Number(topic.id)} body={topic.body} />}
+              <CommunityNotes targetType="topic" targetId={Number(topic.id)} notes={topicNotes} viewerId={u?.id ?? null} canModerate={canModerateReplies} />
+            </div>
+          )}
         </div>
       </article>
 
