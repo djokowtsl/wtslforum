@@ -194,18 +194,11 @@ export function buildCourt(scene: THREE.Scene, surface: Te4CourtSurface) {
   ground.receiveShadow = true;
   scene.add(ground);
 
-  const apron = new THREE.Mesh(
-    new THREE.PlaneGeometry(31.8, 18.4),
-    material(PALETTE.outside),
-  );
-  apron.rotation.x = -Math.PI / 2;
-  apron.position.y = -0.065;
-  apron.receiveShadow = true;
-  scene.add(apron);
-
   const texture = courtSurfaceTexture(surface);
   const court = new THREE.Mesh(
-    new THREE.PlaneGeometry(COURT_LENGTH, COURT_WIDTH),
+    // The playing surface continues behind both baselines and beyond the
+    // sidelines. One continuous mesh avoids a different-material runoff seam.
+    new THREE.PlaneGeometry(31.8, 18.4),
     new THREE.MeshStandardMaterial({
       color: texture ? 0xffffff : courtColor(surface),
       map: texture ?? undefined,
@@ -767,27 +760,31 @@ export function makePlayer(shirtColor: number, shortsColor: number, isWta = fals
   const shirt = material(shirtColor, 0.78);
   const shorts = material(shortsColor, 0.8);
   const shoe = material(0xe9e6d9);
+  // A tapered athletic torso: narrow waist, broad upper back/chest, and a
+  // defined shoulder line read more clearly at the existing broadcast scale.
   const body = new THREE.Mesh(new THREE.LatheGeometry([
     new THREE.Vector2(0.025, -0.4),
-    new THREE.Vector2(0.17, -0.37),
-    new THREE.Vector2(0.205, -0.27),
-    new THREE.Vector2(0.19, -0.12),
-    new THREE.Vector2(0.215, 0.02),
-    new THREE.Vector2(0.275, 0.18),
-    new THREE.Vector2(0.29, 0.27),
-    new THREE.Vector2(0.23, 0.37),
-    new THREE.Vector2(0.13, 0.425),
+    new THREE.Vector2(0.145, -0.39),
+    new THREE.Vector2(0.19, -0.33),
+    new THREE.Vector2(0.18, -0.24),
+    new THREE.Vector2(0.165, -0.12),
+    new THREE.Vector2(0.19, 0.015),
+    new THREE.Vector2(0.245, 0.13),
+    new THREE.Vector2(0.29, 0.23),
+    new THREE.Vector2(0.275, 0.31),
+    new THREE.Vector2(0.205, 0.375),
+    new THREE.Vector2(0.12, 0.415),
     new THREE.Vector2(0.025, 0.43),
-  ], 28), shirt);
-  body.scale.set(0.96, 1.02, 0.82);
+  ], 32), shirt);
+  body.scale.set(0.96, 1.02, 0.72);
   body.position.y = 1.22;
   body.castShadow = true;
   body.material = shirt;
   const shoulderGeometry = new THREE.SphereGeometry(0.15, 16, 12);
   for (const side of [-1, 1]) {
     const shoulder = new THREE.Mesh(shoulderGeometry, shirt);
-    shoulder.position.set(side * 0.22, 0.22, 0);
-    shoulder.scale.set(0.94, 0.68, 0.82);
+    shoulder.position.set(side * 0.225, 0.245, 0);
+    shoulder.scale.set(0.9, 0.72, 0.74);
     shoulder.castShadow = true;
     body.add(shoulder);
   }
@@ -881,10 +878,13 @@ export function makePlayer(shirtColor: number, shortsColor: number, isWta = fals
     head.add(ponytail);
   }
 
-  const limbGeometry = new THREE.CapsuleGeometry(0.074, 0.84, 4, 12);
-  const forearmGeometry = new THREE.CapsuleGeometry(0.055, 0.84, 4, 12);
-  const legGeometry = new THREE.CapsuleGeometry(0.085, 0.83, 4, 12);
-  const calfGeometry = new THREE.CapsuleGeometry(0.075, 0.83, 4, 12);
+  // poseLimb scales geometry to the measured joint-to-joint length; unit
+  // capsules keep segment endpoints at the actual elbow/knee instead of
+  // letting long built-in cylinders extend through the joints.
+  const limbGeometry = new THREE.CapsuleGeometry(0.095, 0.81, 4, 12);
+  const forearmGeometry = new THREE.CapsuleGeometry(0.068, 0.864, 4, 12);
+  const legGeometry = new THREE.CapsuleGeometry(0.115, 0.77, 4, 12);
+  const calfGeometry = new THREE.CapsuleGeometry(0.085, 0.83, 4, 12);
   const leftArm = new THREE.Mesh(limbGeometry, shirt);
   const rightArm = new THREE.Mesh(limbGeometry, shirt);
   const leftForearm = new THREE.Mesh(forearmGeometry, skin);

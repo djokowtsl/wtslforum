@@ -13,6 +13,62 @@ export type LiveCourtFootworkEvent = {
   player: 1 | 2;
 };
 
+export type LiveCourtContactCue = 'standard' | 'low-contact' | 'close-net' | 'soft-touch';
+
+/**
+ * DMO only identifies serves/rallies, not groundstroke technique. These are
+ * conservative animation cues from the recorded ball/player positions, not
+ * asserted slice, drop-shot, or volley labels.
+ */
+export function inferLiveCourtContactCue(
+  event: Pick<LiveCourtMotionEvent, 'frame' | 'player' | 'shotType'>,
+  samples: LiveCourtSample[],
+  framesPerSecond = 60,
+): LiveCourtContactCue {
+  if (event.shotType === 'serve' || !event.player) return 'standard';
+  let low = 0;
+  let high = samples.length;
+  while (low < high) {
+    const middle = (low + high) >> 1;
+    if (samples[middle].frame < event.frame) low = middle + 1;
+    else high = middle;
+  }
+  const after = samples[low];
+  const before = samples[low - 1];
+  const nearest = !before ? after
+    : !after ? before
+      : event.frame - before.frame <= after.frame - event.frame ? before : after;
+  const nearestDistance = nearest ? Math.abs(nearest.frame - event.frame) : Number.POSITIVE_INFINITY;
+  // Do not infer technique across sparse gaps or from unrelated samples.
+  if (!nearest || nearestDistance > 3) return 'standard';
+  const playerX = nearest.values[event.player === 1 ? 3 : 5] * 0.01;
+  const ballY = Math.max(0, nearest.values[2] * 0.01);
+  if (Math.abs(playerX) <= 4.2) return 'close-net';
+  if (ballY <= 0.72) return 'low-contact';
+  const contactIndex = samples[low]?.frame === nearest.frame ? low : low - 1;
+  const following = samples[contactIndex + 1];
+  const frameRate = Number.isFinite(framesPerSecond) && framesPerSecond > 0
+    ? framesPerSecond
+    : 60;
+  if (
+    nearest.frame === event.frame
+    && following
+    && following.frame > event.frame
+    && following.frame - event.frame <= 8
+  ) {
+    const flightSeconds = (following.frame - event.frame) / frameRate;
+    const outgoingSpeed = Math.hypot(
+      (following.values[0] - nearest.values[0]) * 0.01,
+      (following.values[1] - nearest.values[1]) * 0.01,
+      (following.values[2] - nearest.values[2]) * 0.01,
+    ) / flightSeconds;
+    // A gentle, short ball flight suggests a soft-touch animation. It does
+    // not establish a drop shot because the source has no technique labels.
+    if (Number.isFinite(outgoingSpeed) && outgoingSpeed < 5.5 && ballY <= 1.2) return 'soft-touch';
+  }
+  return 'standard';
+}
+
 export function liveCourtTrajectoryCue(
   event: Pick<LiveCourtMotionEvent, 'kind' | 'shotType'>,
   gruntsEnabled: boolean,

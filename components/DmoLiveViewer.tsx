@@ -1,7 +1,7 @@
 'use client';
 
-import { useCallback, useEffect, useRef, useState } from 'react';
-import { AlertTriangle, ChevronLeft, ChevronRight, Eye, Radio } from 'lucide-react';
+import { useEffect, useRef, useState } from 'react';
+import { AlertTriangle, Eye, Radio } from 'lucide-react';
 import { LIVE_DMO_UPDATE_INTERVAL_MS } from '@/lib/te4DmoLive';
 import type { Te4LivePoint, Te4LiveSnapshot } from '@/lib/te4DmoLive';
 import {
@@ -76,8 +76,6 @@ export default function DmoLiveViewer({ canWatch }: Props) {
   const [tourSaveErrorId, setTourSaveErrorId] = useState<string | null>(null);
   const [savingTourId, setSavingTourId] = useState<string | null>(null);
   const [focusedBroadcastId, setFocusedBroadcastId] = useState<string | null>(null);
-  const [activeBroadcastIndex, setActiveBroadcastIndex] = useState(0);
-  const broadcastTrackRef = useRef<HTMLDivElement>(null);
   const focusedOnce = useRef<string | null>(null);
   const preMatchResolved = useRef(new Set<string>());
   const preMatchAttempts = useRef(new Map<string, number>());
@@ -274,47 +272,55 @@ export default function DmoLiveViewer({ canWatch }: Props) {
     };
   }, [canWatch, hasActiveDmo]);
 
-  const activeStreamId = broadcasts[activeBroadcastIndex]?.status === 'live'
-    && !broadcasts[activeBroadcastIndex]?.replay
-    ? broadcasts[activeBroadcastIndex].id
-    : null;
+  const activeStreamIdsKey = broadcasts
+    .filter((broadcast) => broadcast.status === 'live' && !broadcast.replay)
+    .map((broadcast) => broadcast.id)
+    .join('|');
 
   useEffect(() => {
-    if (!canWatch || !activeStreamId) return;
+    if (!canWatch || !activeStreamIdsKey) return;
+    const activeStreamIds = activeStreamIdsKey.split('|');
     let cancelled = false;
-    let inFlight = false;
+    const inFlight = new Set<string>();
     const sendHeartbeat = async () => {
-      if (cancelled || inFlight || document.visibilityState !== 'visible') return;
-      inFlight = true;
-      try {
-        const response = await fetch('/api/live-dmo/current', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          cache: 'no-store',
-          body: JSON.stringify({ broadcastId: activeStreamId }),
-        });
-        const body = await response.json().catch(() => null);
-        if (!response.ok || !Number.isInteger(body?.viewerCount) || body.viewerCount < 1) {
-          throw new Error('Viewer count unavailable.');
+      if (cancelled || document.visibilityState !== 'visible') return;
+      await Promise.all(activeStreamIds.map(async (broadcastId) => {
+        const card = document.getElementById(`broadcast-${broadcastId}`);
+        const bounds = card?.getBoundingClientRect();
+        // Count every visible live card, without registering off-screen streams
+        // merely because they are present further down the page.
+        if (!bounds || bounds.bottom <= 0 || bounds.top >= window.innerHeight || inFlight.has(broadcastId)) return;
+        inFlight.add(broadcastId);
+        try {
+          const response = await fetch('/api/live-dmo/current', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            cache: 'no-store',
+            body: JSON.stringify({ broadcastId }),
+          });
+          const body = await response.json().catch(() => null);
+          if (!response.ok || !Number.isInteger(body?.viewerCount) || body.viewerCount < 1) {
+            throw new Error('Viewer count unavailable.');
+          }
+          if (!cancelled) {
+            setBroadcasts((current) => current.map((broadcast) =>
+              broadcast.id === broadcastId
+                ? { ...broadcast, viewerCount: body.viewerCount, viewers: body.viewers }
+                : broadcast,
+            ));
+          }
+        } catch {
+          if (!cancelled) {
+            setBroadcasts((current) => current.map((broadcast) =>
+              broadcast.id === broadcastId
+                ? { ...broadcast, viewerCount: null, viewers: undefined }
+                : broadcast,
+            ));
+          }
+        } finally {
+          inFlight.delete(broadcastId);
         }
-        if (!cancelled) {
-          setBroadcasts((current) => current.map((broadcast) =>
-            broadcast.id === activeStreamId
-              ? { ...broadcast, viewerCount: body.viewerCount, viewers: body.viewers }
-              : broadcast,
-          ));
-        }
-      } catch {
-        if (!cancelled) {
-          setBroadcasts((current) => current.map((broadcast) =>
-            broadcast.id === activeStreamId
-              ? { ...broadcast, viewerCount: null, viewers: undefined }
-              : broadcast,
-          ));
-        }
-      } finally {
-        inFlight = false;
-      }
+      }));
     };
     const onVisibilityChange = () => {
       if (document.visibilityState === 'visible') void sendHeartbeat();
@@ -327,33 +333,7 @@ export default function DmoLiveViewer({ canWatch }: Props) {
       window.clearInterval(timer);
       document.removeEventListener('visibilitychange', onVisibilityChange);
     };
-  }, [activeStreamId, canWatch]);
-
-  const scrollToBroadcast = useCallback((index: number) => {
-    const track = broadcastTrackRef.current;
-    const target = track?.children.item(index);
-    if (!track || !target) return;
-    const trackLeft = track.getBoundingClientRect().left;
-    const targetLeft = target.getBoundingClientRect().left;
-    const behavior: ScrollBehavior = window.matchMedia('(prefers-reduced-motion: reduce)').matches ? 'auto' : 'smooth';
-    track.scrollTo({ left: track.scrollLeft + targetLeft - trackLeft, behavior });
-  }, []);
-
-  const updateActiveBroadcast = () => {
-    const track = broadcastTrackRef.current;
-    if (!track || !track.children.length) return;
-    const trackLeft = track.getBoundingClientRect().left;
-    let nearestIndex = 0;
-    let nearestDistance = Number.POSITIVE_INFINITY;
-    Array.from(track.children).forEach((slide, index) => {
-      const distance = Math.abs(slide.getBoundingClientRect().left - trackLeft);
-      if (distance < nearestDistance) {
-        nearestIndex = index;
-        nearestDistance = distance;
-      }
-    });
-    setActiveBroadcastIndex((current) => current === nearestIndex ? current : nearestIndex);
-  };
+  }, [activeStreamIdsKey, canWatch]);
 
   useEffect(() => {
     if (!focusedBroadcastId || !broadcasts.length || focusedOnce.current === focusedBroadcastId) return;
@@ -363,18 +343,17 @@ export default function DmoLiveViewer({ canWatch }: Props) {
       const target = document.getElementById(`broadcast-${focusedBroadcastId}`);
       if (!target) return;
       focusedOnce.current = focusedBroadcastId;
-      scrollToBroadcast(targetIndex);
       target.scrollIntoView({ behavior: window.matchMedia('(prefers-reduced-motion: reduce)').matches ? 'auto' : 'smooth', block: 'start' });
     }, 50);
     return () => window.clearTimeout(timer);
-  }, [focusedBroadcastId, broadcasts, scrollToBroadcast]);
+  }, [focusedBroadcastId, broadcasts]);
 
   return (
     <section className={styles.page} aria-label="Live Streams">
       <header className={styles.heading}>
         <p className={styles.kicker}>WTSL FORUM / LIVE</p>
         {canWatch ? <h2>Watching <em>now</em></h2> : <h1>Live Streams</h1>}
-        <p>Live matches and replays appear with a court view or video stream.</p>
+        <p>Watch video streams and DMO court views together. Each broadcast stays available on this page.</p>
       </header>
       {!canWatch ? (
         <div className={styles.empty}>
@@ -387,38 +366,10 @@ export default function DmoLiveViewer({ canWatch }: Props) {
         <>
       {error && <p className={styles.error} role="alert"><AlertTriangle size={16} />{error}</p>}
       {broadcasts.length ? (
-        <div className="live-broadcast-carousel">
-          {broadcasts.length > 1 && (
-            <div className={styles.carouselControls}>
-              <span aria-live="polite" aria-atomic="true">
-                Broadcast {Math.min(activeBroadcastIndex + 1, broadcasts.length)} of {broadcasts.length}
-              </span>
-              <button
-                type="button"
-                aria-label="Previous broadcast"
-                onClick={() => scrollToBroadcast(activeBroadcastIndex - 1)}
-                disabled={activeBroadcastIndex === 0}
-              >
-                <ChevronLeft size={18} aria-hidden="true" />
-              </button>
-              <button
-                type="button"
-                aria-label="Next broadcast"
-                onClick={() => scrollToBroadcast(activeBroadcastIndex + 1)}
-                disabled={activeBroadcastIndex >= broadcasts.length - 1}
-              >
-                <ChevronRight size={18} aria-hidden="true" />
-              </button>
-            </div>
-          )}
         <div
           className="live-broadcast-list"
-          ref={broadcastTrackRef}
-          role={broadcasts.length > 1 ? 'region' : undefined}
-          aria-label={broadcasts.length > 1 ? 'Live broadcasts and replays' : undefined}
-          aria-roledescription={broadcasts.length > 1 ? 'carousel' : undefined}
-          tabIndex={broadcasts.length > 1 ? 0 : undefined}
-          onScroll={updateActiveBroadcast}
+          role="list"
+          aria-label="Live broadcasts and replays"
         >
           {broadcasts.map((broadcast) => {
             const players = broadcast.snapshot?.players ?? broadcast.players;
@@ -428,9 +379,8 @@ export default function DmoLiveViewer({ canWatch }: Props) {
                 className="live-broadcast-card"
                 id={`broadcast-${broadcast.id}`}
                 key={broadcast.id}
-                role={broadcasts.length > 1 ? 'group' : undefined}
-                aria-roledescription={broadcasts.length > 1 ? 'slide' : undefined}
-                aria-label={broadcasts.length > 1 ? `${broadcast.replay ? 'Replay' : 'Broadcast'}: ${players?.join(' vs ') ?? broadcast.ownerName}` : undefined}
+                role="listitem"
+                aria-label={`${broadcast.replay ? 'Replay' : 'Broadcast'}: ${players?.join(' vs ') ?? broadcast.ownerName}`}
               >
                 <div className="live-broadcast-card-heading">
                   <div className={styles.cardStatus}>
@@ -517,7 +467,12 @@ export default function DmoLiveViewer({ canWatch }: Props) {
                     <small className={styles.tourError} role="alert">{tourSaveError}</small>
                   )}
                 </div>
-                {mediaMode === 'external-stream' && broadcast.stream ? (
+                {mediaMode !== 'waiting' ? (
+                  <div className={styles.mediaGrid} data-media-mode={mediaMode}>
+                  {broadcast.stream && (
+                    <div className={styles.mediaPanel}>
+                    {mediaMode === 'both' && <h3 className={styles.mediaHeading}>Video stream</h3>}
+                    {
                   broadcast.status === 'live' ? (
                     <LiveStreamEmbed stream={broadcast.stream} title={`Live stream by ${broadcast.ownerName}`} />
                   ) : (
@@ -527,8 +482,13 @@ export default function DmoLiveViewer({ canWatch }: Props) {
                         Open original stream ↗
                       </a>
                     </p>
-                  )
-                ) : mediaMode === 'dmo-court' && broadcast.snapshot ? (
+                  )}
+                    </div>
+                  )}
+                  {broadcast.snapshot && (
+                    <div className={styles.mediaPanel}>
+                    {mediaMode === 'both' && <h3 className={styles.mediaHeading}>DMO court</h3>}
+                    {
                   broadcast.replay && broadcast.replayDataReady ? (
                     <Te4DmoReplayPlayer
                       broadcastId={broadcast.id}
@@ -564,7 +524,10 @@ export default function DmoLiveViewer({ canWatch }: Props) {
                       pointLog={pointLogs[broadcast.id]?.points}
                       pointLogLoaded={pointLogs[broadcast.id]?.loaded}
                     />
-                  )
+                  )}
+                    </div>
+                  )}
+                  </div>
                 ) : (
                   <div className={styles.empty}>
                     <span className={styles.icon}><Radio size={23} /></span>
@@ -578,7 +541,6 @@ export default function DmoLiveViewer({ canWatch }: Props) {
               </article>
             );
           })}
-        </div>
         </div>
       ) : (
         <div className={styles.empty}>

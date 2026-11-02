@@ -82,9 +82,10 @@ test('normalizes supported YouTube and Twitch links for embedding and rejects ot
   assert.equal(parseLiveStreamUrl('javascript:alert(1)'), null);
 });
 
-test('an external stream takes precedence over any reconstructed court snapshot', () => {
+test('an external stream and reconstructed court remain available together', () => {
   const stream = parseLiveStreamUrl('https://youtu.be/dQw4w9WgXcQ');
-  assert.equal(liveBroadcastMediaMode(stream, true), 'external-stream');
+  assert.equal(liveBroadcastMediaMode(stream, true), 'both');
+  assert.equal(liveBroadcastMediaMode(stream, false), 'external-stream');
   assert.equal(liveBroadcastMediaMode(null, true), 'dmo-court');
   assert.equal(liveBroadcastMediaMode(null, false), 'waiting');
 });

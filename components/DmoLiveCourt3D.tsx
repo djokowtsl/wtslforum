@@ -17,6 +17,7 @@ import {
   deriveLiveCourtFootworkEvents,
   findLiveCourtShotInRange,
   findPlayerShotEvent,
+  inferLiveCourtContactCue,
   interpolateLiveCourtFrame,
   latestLiveCourtShotEvent,
   liveCourtSlideWeight,
@@ -583,6 +584,13 @@ function ThreeCourt({
       const eventPlayer = index === 0 ? 1 : 2;
       const event = findPlayerShotEvent(events, eventPlayer, frame, 16);
       const serving = event?.shotType === 'serve';
+      const contactCue = event
+        ? inferLiveCourtContactCue(
+          event,
+          samples,
+          sceneDataRef.current.snapshot.frameRate ?? TE4_DMO_FRAMES_PER_SECOND,
+        )
+        : 'standard';
       const jump = serving ? serveLift(frame - event.frame) : 0;
       const strokeDelta = event ? frame - event.frame : Number.POSITIVE_INFINITY;
       const strikeWeight = event
@@ -593,9 +601,21 @@ function ThreeCourt({
         ? THREE.MathUtils.smoothstep(strokeDelta, -13, -5)
           * (1 - THREE.MathUtils.smoothstep(strokeDelta, -4, 0))
         : 0;
+      const backswingShape = contactCue === 'close-net' ? 0.58
+        : contactCue === 'low-contact' ? 0.82
+          : contactCue === 'soft-touch' ? 0.5 : 1;
+      const followThroughShape = contactCue === 'close-net' ? 0.72
+        : contactCue === 'low-contact' ? 0.66
+          : contactCue === 'soft-touch' ? 0.35 : 1;
+      const shapedBackswing = backswing * backswingShape;
       const followThrough = event && !serving
         ? THREE.MathUtils.smoothstep(strokeDelta, 0, 4)
           * (1 - THREE.MathUtils.smoothstep(strokeDelta, 12, 21))
+        : 0;
+      const shapedFollowThrough = followThrough * followThroughShape;
+      const serveFollowThrough = serving
+        ? THREE.MathUtils.smoothstep(strokeDelta, 0, 4)
+          * (1 - THREE.MathUtils.smoothstep(strokeDelta, 11, 19))
         : 0;
       const servePreparation = serving
         ? THREE.MathUtils.smoothstep(strokeDelta, -24, -12)
@@ -648,14 +668,15 @@ function ThreeCourt({
       rig.root.rotation.y = facing;
       const bodyY = 1.22 + bodyBounce - crouch * 0.45;
       const strokeSide = Math.sign(localX || dominantHandX(handedness));
-      const trunkTurn = (backswing * 0.36 - followThrough * 0.28 + servePreparation * 0.22) * strokeSide;
+      const trunkTurn = (shapedBackswing * 0.36 - shapedFollowThrough * 0.28
+        + servePreparation * 0.22 - serveFollowThrough * 0.16) * strokeSide;
       rig.body.position.set(Math.sin(phase * 0.5) * gaitSpeed * 0.02, bodyY, 0);
       rig.body.rotation.z = THREE.MathUtils.clamp(
         -lateralVelocity * 1.8 - slideDirection * slideWeight * 0.09,
         -0.3,
         0.3,
       );
-      rig.body.rotation.x = crouch * 0.5 + followThrough * 0.08;
+      rig.body.rotation.x = crouch * 0.5 + shapedFollowThrough * 0.08 - serveFollowThrough * 0.05;
       rig.body.rotation.y = trunkTurn;
       rig.hip.position.y = 0.79 + bodyBounce - crouch * 0.75;
       rig.hip.rotation.y = trunkTurn * 0.42;
@@ -663,7 +684,7 @@ function ThreeCourt({
       rig.head.rotation.y = THREE.MathUtils.clamp(localX * 0.72, -0.28, 0.28);
       rig.head.rotation.x = THREE.MathUtils.clamp(-(ballY - 1.45) * 0.08, -0.18, 0.18);
       const effort = THREE.MathUtils.clamp(
-        impactWeight * 0.35 + backswing * 0.18 + followThrough * 0.48 + gaitSpeed * 0.16 + jump * 0.32,
+        impactWeight * 0.35 + shapedBackswing * 0.18 + shapedFollowThrough * 0.48 + gaitSpeed * 0.16 + jump * 0.32,
         0,
         1,
       );
@@ -714,9 +735,23 @@ function ThreeCourt({
       const armPump = Math.sin(phase * 0.55) * gaitSpeed * 0.12;
       const dominantHand = new THREE.Vector3(dominantX, 0.98 + bodyBounce + armPump, 0.06);
       const nonDominantHand = new THREE.Vector3(-dominantX * 0.72, 0.96 + bodyBounce - armPump, 0.1);
-      dominantHand.x += dominantX * backswing * 0.48 - strokeSide * followThrough * 0.42;
-      dominantHand.y += backswing * 0.12 + followThrough * 0.24;
-      dominantHand.z += -backswing * 0.22 + followThrough * 0.12;
+      dominantHand.x += dominantX * shapedBackswing * 0.48
+        - strokeSide * shapedFollowThrough * 0.42
+        - strokeSide * serveFollowThrough * 0.2;
+      dominantHand.y += shapedBackswing * 0.12 + shapedFollowThrough * 0.24
+        + serveFollowThrough * 0.2;
+      dominantHand.z += -shapedBackswing * 0.22 + shapedFollowThrough * 0.12
+        + serveFollowThrough * 0.17;
+      if (contactCue === 'low-contact') {
+        dominantHand.y -= (shapedBackswing + shapedFollowThrough) * 0.07 * (1 - impactWeight);
+      }
+      if (contactCue === 'close-net') {
+        dominantHand.z += shapedBackswing * 0.16 + shapedFollowThrough * 0.08;
+      }
+      if (contactCue === 'soft-touch') {
+        dominantHand.z += shapedBackswing * 0.08;
+        dominantHand.y += shapedBackswing * 0.04;
+      }
       if (serving) {
         // The toss hand reaches above the head while the racket arm loads behind
         // the shoulder; both return through contact and follow-through.
@@ -740,7 +775,7 @@ function ThreeCourt({
       );
       const contactHand = new THREE.Vector3(...contact.grip);
       dominantHand.lerp(contactHand, impactWeight);
-      if (twoHandedStroke && (impactWeight > 0 || backswing > 0 || followThrough > 0)) {
+      if (twoHandedStroke && (impactWeight > 0 || shapedBackswing > 0 || shapedFollowThrough > 0)) {
         const secondGrip = secondHandGripPosition(contact.grip, contact.axis);
         const reachableSecondGrip = clampPointToReach(
           secondGrip,
@@ -748,7 +783,7 @@ function ThreeCourt({
         );
         nonDominantHand.lerp(
           new THREE.Vector3(...reachableSecondGrip),
-          Math.max(impactWeight, backswing * 0.88, followThrough * 0.8),
+          Math.max(impactWeight, shapedBackswing * 0.88, shapedFollowThrough * 0.8),
         );
       }
       const dominantUpperArm = handedness === 'right' ? rig.rightArm : rig.leftArm;
@@ -761,7 +796,7 @@ function ThreeCourt({
       const nonDominantMesh = handedness === 'right' ? rig.leftHand : rig.rightHand;
       const elbowPosition = (shoulder: THREE.Vector3, hand: THREE.Vector3) => {
         const elbow = shoulder.clone().lerp(hand, 0.48);
-        elbow.x += Math.sign(shoulder.x) * (0.045 + backswing * 0.025);
+        elbow.x += Math.sign(shoulder.x) * (0.045 + shapedBackswing * 0.025);
         elbow.y += 0.015;
         elbow.z += 0.07 + impactWeight * 0.018;
         return elbow;
@@ -784,16 +819,28 @@ function ThreeCourt({
       const backswingRotation = resting.clone().multiply(
         new THREE.Quaternion().setFromEuler(new THREE.Euler(0, 0, -strokeSide * 0.9)),
       );
+      const serveLoadRotation = resting.clone().multiply(
+        new THREE.Quaternion().setFromEuler(new THREE.Euler(-strokeSide * 0.72, 0, -strokeSide * 0.78)),
+      );
       const contactRotation = new THREE.Quaternion().setFromUnitVectors(
         new THREE.Vector3(0, 1, 0), new THREE.Vector3(...contact.axis),
       );
       const followRotation = contactRotation.clone().multiply(
-        new THREE.Quaternion().setFromEuler(new THREE.Euler(0, 0, -strokeSide * 0.58)),
+        new THREE.Quaternion().setFromEuler(new THREE.Euler(
+          0,
+          0,
+          -strokeSide * (contactCue === 'low-contact' ? 0.36 : contactCue === 'soft-touch' ? 0.08 : 0.16),
+        )),
+      );
+      const serveFollowRotation = contactRotation.clone().multiply(
+        new THREE.Quaternion().setFromEuler(new THREE.Euler(strokeSide * 0.28, 0, -strokeSide * 0.88)),
       );
       rig.racket.quaternion.copy(resting);
-      if (backswing > 0) rig.racket.quaternion.slerp(backswingRotation, backswing);
+      if (serving && servePreparation > 0) rig.racket.quaternion.slerp(serveLoadRotation, servePreparation);
+      if (shapedBackswing > 0) rig.racket.quaternion.slerp(backswingRotation, shapedBackswing);
       if (impactWeight > 0) rig.racket.quaternion.slerp(contactRotation, impactWeight);
-      if (followThrough > 0) rig.racket.quaternion.slerp(followRotation, followThrough);
+      if (shapedFollowThrough > 0) rig.racket.quaternion.slerp(followRotation, shapedFollowThrough);
+      if (serveFollowThrough > 0) rig.racket.quaternion.slerp(serveFollowRotation, serveFollowThrough);
     };
 
     const animate = (now: number) => {
