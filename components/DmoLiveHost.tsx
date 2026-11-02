@@ -21,7 +21,12 @@ import { consumePendingDmoReaderReset } from '@/lib/dmoReaderState';
 import { hasPlayerPositionData } from '@/lib/te4LiveSetup';
 import { isPresignedUrlRetrievalFailure } from '@/lib/dmoUploadErrors';
 import { attemptFullReplayPreparation } from '@/lib/liveReplayPreparation';
-import type { PlayerHandedness } from '@/lib/liveCourtPerformance';
+import {
+  defaultPlayerStrokeStyles,
+  type PlayerHandedness,
+  type PlayerStrokeStylePair,
+  type StrokeHandCount,
+} from '@/lib/liveCourtPerformance';
 import {
   loadDmoDirectory,
   saveDmoDirectory,
@@ -135,6 +140,7 @@ export default function DmoLiveHost({ displayName, canPrepareFullReplay }: Props
   const [realTimeObserved, setRealTimeObserved] = useState(false);
   const [positionsPresent, setPositionsPresent] = useState<boolean | null>(null);
   const [bestOf, setBestOf] = useState<Te4LiveBestOf>(3);
+  const [isWta, setIsWta] = useState(false);
   const [broadcastId, setBroadcastId] = useState<string | null>(null);
   const [broadcastMode, setBroadcastMode] = useState<'manual' | 'auto' | null>(null);
   const [characterChoices, setCharacterChoices] = useState<string[]>([]);
@@ -150,6 +156,11 @@ export default function DmoLiveHost({ displayName, canPrepareFullReplay }: Props
   const [playerHands, setPlayerHands] = useState<[PlayerHandedness, PlayerHandedness]>(['right', 'right']);
   const playerHandsRef = useRef(playerHands);
   playerHandsRef.current = playerHands;
+  const [playerStrokeStyles, setPlayerStrokeStyles] = useState<PlayerStrokeStylePair>(
+    defaultPlayerStrokeStyles,
+  );
+  const playerStrokeStylesRef = useRef(playerStrokeStyles);
+  playerStrokeStylesRef.current = playerStrokeStyles;
   const [notice, setNotice] = useState('Choose the folder where TE4 is writing its DMO recording.');
   const [error, setError] = useState('');
   const [busy, setBusy] = useState(false);
@@ -158,6 +169,7 @@ export default function DmoLiveHost({ displayName, canPrepareFullReplay }: Props
   const readBytes = useRef(0);
   const lastSentVersion = useRef(-1);
   const lastHeartbeat = useRef(0);
+  const lastPresentationSignature = useRef('');
   const sequence = useRef(0);
   const pointLogSeeded = useRef(new Set<string>());
   const polling = useRef(false);
@@ -446,6 +458,9 @@ export default function DmoLiveHost({ displayName, canPrepareFullReplay }: Props
     setError('');
     playerHandsRef.current = ['right', 'right'];
     setPlayerHands(['right', 'right']);
+    playerStrokeStylesRef.current = defaultPlayerStrokeStyles();
+    setPlayerStrokeStyles(playerStrokeStylesRef.current);
+    lastPresentationSignature.current = '';
     if (mode === 'manual') {
       liveDmoGrowthDetected.current = false;
       setRealTimeObserved(false);
@@ -493,6 +508,7 @@ export default function DmoLiveHost({ displayName, canPrepareFullReplay }: Props
           character: character.trim() || null,
           mode,
           bestOf: broadcastBestOf,
+          isWta: mode === 'manual' && isWta,
           officialByBroadcaster: officialByBroadcaster && broadcastBestOf !== 1,
         }),
       });
@@ -584,10 +600,15 @@ export default function DmoLiveHost({ displayName, canPrepareFullReplay }: Props
               ...firstFrame,
               players: canonicalPlayers ?? firstFrame.players,
               handedness: playerHandsRef.current,
+              strokeStyles: playerStrokeStylesRef.current,
             },
           }),
         });
         if (!initialResponse.ok) throw new Error(await responseError(initialResponse));
+        lastPresentationSignature.current = JSON.stringify({
+          handedness: playerHandsRef.current,
+          strokeStyles: playerStrokeStylesRef.current,
+        });
         sequence.current = 1;
         lastSentVersion.current = replaySource.parser.version;
         lastHeartbeat.current = Date.now();
@@ -684,6 +705,36 @@ export default function DmoLiveHost({ displayName, canPrepareFullReplay }: Props
     const sendUpdate = async (current?: Te4LiveSnapshot) => {
       if (!broadcastId) return;
       const nextSequence = sequence.current + 1;
+      const presentationSignature = JSON.stringify({
+        handedness: playerHandsRef.current,
+        strokeStyles: playerStrokeStylesRef.current,
+      });
+      const presentationChanged = presentationSignature !== lastPresentationSignature.current;
+      const replayState = replay.current;
+      const settingsSnapshot = !current && presentationChanged && parser.current
+        ? replayState
+          ? parser.current.snapshot(
+            replayState.filename,
+            replayState.bestOf,
+            replayFrameAtElapsedTime(
+              replayState.totalFrames,
+              Date.now() - replayState.startedAt,
+              replayState.speed,
+            ),
+            replayCourtWindowFrames(replayState.speed),
+            LIVE_DMO_COURT_SAMPLES,
+            true,
+          )
+          : parser.current.snapshot(
+            activeFilename.current,
+            bestOf,
+            parser.current.frameCount,
+            replayCourtWindowFrames(1),
+            LIVE_DMO_COURT_SAMPLES,
+            true,
+          )
+        : undefined;
+      const snapshotSource = current ?? settingsSnapshot;
       const pointHistory = current && !pointLogSeeded.current.has(broadcastId)
         ? parser.current?.snapshot(
           current.filename,
@@ -695,12 +746,13 @@ export default function DmoLiveHost({ displayName, canPrepareFullReplay }: Props
           true,
         )?.pointHistory
         : undefined;
-      const snapshot = current
+      const snapshot = snapshotSource
         ? {
-          ...current,
+          ...snapshotSource,
           pointHistory: undefined,
-          players: canonicalBroadcastPlayers.current ?? current.players,
+          players: canonicalBroadcastPlayers.current ?? snapshotSource.players,
           handedness: playerHandsRef.current,
+          strokeStyles: playerStrokeStylesRef.current,
         }
         : undefined;
       if (pointHistory?.length) {
@@ -725,9 +777,10 @@ export default function DmoLiveHost({ displayName, canPrepareFullReplay }: Props
       if (!response.ok) throw new Error(await responseError(response));
       sequence.current = nextSequence;
       if (current && parser.current) lastSentVersion.current = parser.current.version;
+      if (snapshot) lastPresentationSignature.current = presentationSignature;
       lastHeartbeat.current = Date.now();
       setError('');
-      if (current) setNotice(`Sharing ${current.filename} with signed-in viewers.`);
+      if (snapshotSource) setNotice(`Sharing ${snapshotSource.filename} with signed-in viewers.`);
       else if (!directory) setNotice('Stream broadcast is live for signed-in viewers.');
     };
 
@@ -1002,6 +1055,19 @@ export default function DmoLiveHost({ displayName, canPrepareFullReplay }: Props
             <option value={5}>Best of 5 sets</option>
           </select>
         </label>
+        <label className={styles.bestOf}>
+          <span>Match tour</span>
+          <select
+            value={isWta ? 'WTA' : 'ATP'}
+            onChange={(event) => setIsWta(event.currentTarget.value === 'WTA')}
+            disabled={busy || Boolean(broadcastId)}
+            aria-label="Match tour"
+          >
+            <option value="ATP">ATP</option>
+            <option value="WTA">WTA</option>
+          </select>
+          <small>Manual broadcasts use this player model and grunt audio. Automatic WTSL matches use the verified tour.</small>
+        </label>
         <div className={styles.characterControl}>
           <label className={styles.bestOf}>
             <span>Your TE4 character (optional)</span>
@@ -1148,25 +1214,49 @@ export default function DmoLiveHost({ displayName, canPrepareFullReplay }: Props
         </label>
         {broadcastId && directory && activeBroadcastPlayers && (
           <fieldset className={styles.handednessControls}>
-            <legend>Player handedness · shared with all viewers</legend>
-            <p>Set both players for this live match. The DMO does not identify handedness automatically.</p>
+            <legend>Player stroke setup · shared with all viewers</legend>
+            <p>The DMO does not identify handedness or grip automatically. Changes are included in the next live snapshot.</p>
             {activeBroadcastPlayers.map((name, index) => (
-              <label key={`${index}-${name}`}>
-                <span>{name}</span>
-                <select
-                  value={playerHands[index]}
-                  aria-label={`${name} handedness for viewers`}
-                  onChange={(event) => {
-                    const next = [...playerHandsRef.current] as [PlayerHandedness, PlayerHandedness];
-                    next[index] = event.currentTarget.value as PlayerHandedness;
-                    playerHandsRef.current = next;
-                    setPlayerHands(next);
-                  }}
-                >
-                  <option value="right">Right-handed</option>
-                  <option value="left">Left-handed</option>
-                </select>
-              </label>
+              <div className={styles.playerStyleRow} key={`${index}-${name}`}>
+                <strong>{name}</strong>
+                <label>
+                  <span>Dominant hand</span>
+                  <select
+                    value={playerHands[index]}
+                    aria-label={`${name} dominant hand`}
+                    onChange={(event) => {
+                      const next = [...playerHandsRef.current] as [PlayerHandedness, PlayerHandedness];
+                      next[index] = event.currentTarget.value as PlayerHandedness;
+                      playerHandsRef.current = next;
+                      setPlayerHands(next);
+                    }}
+                  >
+                    <option value="right">Right-handed</option>
+                    <option value="left">Left-handed</option>
+                  </select>
+                </label>
+                {(['forehand', 'backhand'] as const).map((stroke) => (
+                  <label key={stroke}>
+                    <span>{stroke} grip</span>
+                    <select
+                      value={playerStrokeStyles[index][stroke]}
+                      aria-label={`${name} ${stroke} grip`}
+                      onChange={(event) => {
+                        const next = playerStrokeStylesRef.current.map((style, playerIndex) =>
+                          playerIndex === index
+                            ? { ...style, [stroke]: event.currentTarget.value as StrokeHandCount }
+                            : style,
+                        ) as PlayerStrokeStylePair;
+                        playerStrokeStylesRef.current = next;
+                        setPlayerStrokeStyles(next);
+                      }}
+                    >
+                      <option value="one">One-handed</option>
+                      <option value="two">Two-handed</option>
+                    </select>
+                  </label>
+                ))}
+              </div>
             ))}
           </fieldset>
         )}

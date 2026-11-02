@@ -3,6 +3,8 @@ import { getSession } from '@/lib/auth';
 import { sql } from '@/lib/db';
 import { moderateTextAndImages, ModerationUnavailableError } from '@/lib/moderation';
 import { spoilerMarkupError } from '@/lib/spoilers';
+import { notifyForumMentions } from '@/lib/forumNotifications';
+import { notifyForumAdminsForReview } from '@/lib/discord';
 
 type RouteContext = { params: Promise<{ id: string }> };
 
@@ -27,7 +29,7 @@ export async function POST(req: Request, { params }: RouteContext) {
   const spoilerError = spoilerMarkupError(text);
   if (spoilerError) return NextResponse.json({ error: spoilerError }, { status: 400 });
 
-  const article = await sql`SELECT id FROM articles WHERE id=${articleId} AND published=TRUE LIMIT 1`;
+  const article = await sql`SELECT id,slug FROM articles WHERE id=${articleId} AND published=TRUE LIMIT 1`;
   if (!article[0]) return NextResponse.json({ error: 'Article not found.' }, { status: 404 });
   if (parentCommentId !== null) {
     const parent = await sql`
@@ -55,10 +57,18 @@ export async function POST(req: Request, { params }: RouteContext) {
     RETURNING id
   `;
   if (decision.status === 'pending') {
+    await notifyForumAdminsForReview('An article comment needs moderator review.', '/admin/moderation');
     return NextResponse.json(
       { id: rows[0].id, pending: true, message: 'Your comment is waiting for moderator review.' },
       { status: 202 },
     );
   }
+  await notifyForumMentions({
+    body: text,
+    authorUserId: user.id,
+    authorName: user.username,
+    context: 'in an article comment',
+    href: `/articles/${encodeURIComponent(String(article[0].slug))}`,
+  });
   return NextResponse.json({ id: rows[0].id }, { status: 201 });
 }

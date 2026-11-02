@@ -1,12 +1,13 @@
 import { NextResponse } from 'next/server';
 import { getSession } from '@/lib/auth';
 import { sql } from '@/lib/db';
-import { announceTopic } from '@/lib/discord';
+import { announceAdminTopic, announceTopic, notifyForumAdminsForReview } from '@/lib/discord';
 import { claimMatchThread } from '@/lib/matchThreads';
 import { looksLikeImageUrl, moderateTextAndImages, ModerationUnavailableError } from '@/lib/moderation';
 import { spoilerMarkupError } from '@/lib/spoilers';
 import { isTourCode } from '@/lib/wtsl';
 import { ensureTopicVideoSchema } from '@/lib/media';
+import { notifyForumMentions } from '@/lib/forumNotifications';
 
 const slugify = (s: string) => s.toLowerCase().trim().replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '').slice(0, 90);
 
@@ -76,8 +77,19 @@ export async function POST(req: Request) {
       won = false;
     }
   }
-  if (won && decision.status === 'approved') await announceTopic(title, id, user.username).catch(() => {});
+  if (won && decision.status === 'approved') {
+    const announce = user.isAdmin ? announceAdminTopic : announceTopic;
+    await announce(title, id, user.username).catch(() => {});
+    await notifyForumMentions({
+      body: text,
+      authorUserId: user.id,
+      authorName: user.username,
+      context: 'in a discussion',
+      href: `/discussions/${id}`,
+    });
+  }
   if (decision.status === 'pending' && won) {
+    await notifyForumAdminsForReview('A discussion post needs moderator review.', '/admin/moderation');
     return NextResponse.json({ id, pending: true, message: 'Your discussion is waiting for moderator review.' }, { status: 202 });
   }
   return NextResponse.json({ id }, { status: 201 });

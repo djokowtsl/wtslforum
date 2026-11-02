@@ -27,6 +27,17 @@ CREATE TABLE IF NOT EXISTS articles (
  excerpt TEXT DEFAULT '', body TEXT NOT NULL, cover_url TEXT, published BOOLEAN NOT NULL DEFAULT FALSE,
  created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(), updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );
+CREATE TABLE IF NOT EXISTS forum_role_requests (
+ id BIGSERIAL PRIMARY KEY, user_id BIGINT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+ role_key TEXT NOT NULL CHECK (role_key IN ('tour_player','coach','doubles_player')),
+ status TEXT NOT NULL DEFAULT 'pending' CHECK (status IN ('pending','approved','rejected')),
+ requested_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+ reviewed_by BIGINT REFERENCES users(id) ON DELETE SET NULL,
+ reviewed_at TIMESTAMPTZ, review_note TEXT NOT NULL DEFAULT '',
+ UNIQUE (user_id,role_key)
+);
+CREATE INDEX IF NOT EXISTS forum_role_requests_status_created_idx
+ ON forum_role_requests (status,requested_at,id);
 CREATE TABLE IF NOT EXISTS article_comments (
  id BIGSERIAL PRIMARY KEY, article_id BIGINT NOT NULL REFERENCES articles(id) ON DELETE CASCADE,
  author_id BIGINT REFERENCES users(id) ON DELETE SET NULL, body TEXT NOT NULL,
@@ -556,6 +567,12 @@ CREATE TABLE IF NOT EXISTS direct_messages (
 );
 CREATE INDEX IF NOT EXISTS direct_messages_conversation_idx ON direct_messages(conversation_key, created_at);
 CREATE INDEX IF NOT EXISTS direct_messages_recipient_unread_idx ON direct_messages(recipient_id) WHERE read_at IS NULL;
+
+CREATE TABLE IF NOT EXISTS forum_dm_discord_notification_cooldowns (
+  recipient_user_id BIGINT PRIMARY KEY REFERENCES users(id) ON DELETE CASCADE,
+  claim_id UUID NOT NULL,
+  notified_at TIMESTAMPTZ NOT NULL
+);
 
 -- Versioned screenshot workbook rows. A complete snapshot is switched into view atomically.
 CREATE TABLE IF NOT EXISTS screenshot_record_sync_state (

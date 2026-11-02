@@ -38,6 +38,7 @@ const startSchema = z.object({
   replay: z.boolean().optional().default(false),
   replaySpeed: z.union([z.literal(1), z.literal(2), z.literal(4)]).optional().default(1),
   bestOf: z.union([z.literal(1), z.literal(3), z.literal(5)]).optional(),
+  isWta: z.boolean().optional().default(false),
   officialByBroadcaster: z.boolean().optional().default(false),
 }).strict();
 const MAX_BODY_BYTES = 4_000;
@@ -110,7 +111,7 @@ export async function POST(request: Request) {
 
   let broadcastBestOf = body.bestOf ?? 3;
   let broadcastPlayers = body.players;
-  let isWta = false;
+  let isWta = body.mode === 'manual' && body.isWta;
   if (body.players) {
     try {
       broadcastPlayers = await canonicalizeRankedDmoPlayers(body.players);

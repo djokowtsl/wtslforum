@@ -431,6 +431,7 @@ test('external stream announcements ping viewers in the source channel but not t
     assert.match(calls[1].url, /channels\/1293144531855872074\/messages$/);
     const rolePing = JSON.parse(calls[1].options.body);
     assert.match(rolePing.content, /<@&1439615663860879501>/);
+    assert.match(rolePing.content, /\*\*Verified Member\*\* started a live stream:/);
     assert.deepEqual(rolePing.allowed_mentions, { parse: [], users: [], roles: ['1439615663860879501'] });
 
     assert.match(calls[2].url, /channels\/1562898541238554765\/messages$/);
@@ -800,12 +801,14 @@ test('manual DMO replay stores ranked player names without requiring a current l
     players: ['[Fake] Squeaky', 'Player Two'],
     mode: 'manual',
     bestOf: 3,
+    isWta: true,
   }));
   const body = await response.json();
   assert.equal(response.status, 201);
   assert.deepEqual(body.players, ['Squeaky', 'Player Two']);
   assert.equal(body.replay, true);
   assert.equal(body.replaySpeed, 2);
+  assert.equal(body.isWta, true);
   assert.equal(liveFeedLookups, 0);
   const insertedBroadcast = inserts.find((item) => item.query.includes('INSERT INTO dmo_live_broadcasts'));
   const storedPayload = insertedBroadcast?.values.find((value) => typeof value === 'string' && value.includes('"mode":"manual"'));
@@ -813,6 +816,7 @@ test('manual DMO replay stores ranked player names without requiring a current l
   assert.deepEqual(JSON.parse(storedPayload).players, ['Squeaky', 'Player Two']);
   assert.equal(JSON.parse(storedPayload).replay, true);
   assert.equal(JSON.parse(storedPayload).replaySpeed, 2);
+  assert.equal(JSON.parse(storedPayload).isWta, true);
   assert.equal(JSON.parse(storedPayload).likelyOfficial, true);
 });
 
@@ -928,6 +932,10 @@ test('broadcast owners can heartbeat and end only their own active broadcast', a
     filename: 'match.dmo',
     stadium: null,
     players: ['One', 'Two'],
+    strokeStyles: [
+      { forehand: 'one', backhand: 'two' },
+      { forehand: 'two', backhand: 'one' },
+    ],
     frameCount: 10,
     courtFrameCount: 10,
     pointCount: 1,
@@ -966,6 +974,10 @@ test('broadcast owners can heartbeat and end only their own active broadcast', a
   assert.equal(snapshotUpdate.status, 200);
   const savedSnapshot = JSON.parse(queries[1].values[0]);
   assert.deepEqual(savedSnapshot.courtFrameIndices, [8, 9]);
+  assert.deepEqual(savedSnapshot.strokeStyles, [
+    { forehand: 'one', backhand: 'two' },
+    { forehand: 'two', backhand: 'one' },
+  ]);
   assert.deepEqual(savedSnapshot.trajectoryEvents[0], {
     frame: 8,
     kind: 'shot',
@@ -974,6 +986,22 @@ test('broadcast owners can heartbeat and end only their own active broadcast', a
     speedKmh: 195,
   });
   assert.equal(savedSnapshot.trajectoryEvents[1].kind, 'point-end');
+
+  const invalidStrokeStyle = await route.PATCH(
+    request({
+      sequence: 3,
+      snapshot: {
+        ...snapshot,
+        strokeStyles: [
+          { forehand: 'three', backhand: 'two' },
+          { forehand: 'one', backhand: 'two' },
+        ],
+      },
+    }, `/api/live-dmo/${id}`, 'PATCH'),
+    context,
+  );
+  assert.equal(invalidStrokeStyle.status, 400);
+  assert.equal(queries.length, 2);
 
   const ended = await route.DELETE(request(undefined, `/api/live-dmo/${id}`, 'DELETE'), context);
   assert.equal(ended.status, 200);

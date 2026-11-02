@@ -13,6 +13,7 @@ export default async function AdminDmoAnalysis() {
     <>
       <div className="container" style={{ paddingTop: 16 }}>
         <Link className="btn btn-sm btn-ghost" href="/livestreams">Open Live Streams</Link>
+        <Link className="btn btn-sm btn-ghost" href="/admin/coaching-reports" style={{ marginLeft: 8 }}>Manage coaching reports</Link>
       </div>
       <DmoAnalysisWorkspace />
     </>

@@ -10,6 +10,7 @@ import {
 import { claimMatchThread, findMatchThread } from '@/lib/matchThreads';
 import { moderateTextAndImages, ModerationUnavailableError } from '@/lib/moderation';
 import { spoilerMarkupError } from '@/lib/spoilers';
+import { notifyForumAdminsForReview } from '@/lib/discord';
 
 export const dynamic = 'force-dynamic';
 export const maxDuration = 60;
@@ -296,7 +297,12 @@ export async function POST(req: NextRequest) {
     if (!reply || reply.topicId !== linkedTopicId) {
       return NextResponse.json({ error: 'Transcript idempotency check failed.' }, { status: 409 });
     }
-    if (reply.moderationStatus === 'pending') return pending('The interview is waiting for moderator review.');
+    if (reply.moderationStatus === 'pending') {
+      if (reply.created) {
+        await notifyForumAdminsForReview('An interview transcript needs moderator review.', '/admin/moderation');
+      }
+      return pending('The interview is waiting for moderator review.');
+    }
     if (reply.moderationStatus === 'rejected') {
       return NextResponse.json({ error: 'The interview transcript was rejected by moderation.' }, { status: 422 });
     }
@@ -343,7 +349,10 @@ export async function POST(req: NextRequest) {
   }
 
   const topicId = Number(inserted[0].id);
-  if (decision.status === 'pending') return pending('The interview is waiting for moderator review.');
+  if (decision.status === 'pending') {
+    await notifyForumAdminsForReview('An interview transcript needs moderator review.', '/admin/moderation');
+    return pending('The interview is waiting for moderator review.');
+  }
   linkedTopicId = await claimMatchThread(matchKey, topicId, match.tour);
   if (linkedTopicId === topicId) return published(req, topicId, matchKey, 'topic');
 

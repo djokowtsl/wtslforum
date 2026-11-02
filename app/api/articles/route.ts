@@ -1,7 +1,7 @@
-import { NextResponse } from 'next/server';
+import { after, NextResponse } from 'next/server';
 import { getSession } from '@/lib/auth';
 import { sql } from '@/lib/db';
-import { announceArticle } from '@/lib/discord';
+import { announceArticle, ensureDiscordWriterRole } from '@/lib/discord';
 import { validateArticleInput } from '@/lib/articleContent';
 
 export const dynamic = 'force-dynamic';
@@ -31,6 +31,7 @@ export async function POST(req: Request) {
   try {
     const slug = article.title.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '').slice(0, 90) || 'article';
     const rows = await sql`INSERT INTO articles(author_id,title,slug,excerpt,body,cover_url,published) VALUES (${Number(user.id)},${article.title},${slug + '-' + crypto.randomUUID()},${article.excerpt},${article.body},${article.coverUrl},${article.published}) RETURNING id,slug`;
+    after(() => ensureDiscordWriterRole(user.discordId));
     if (article.published) await announceArticle(article.title, String(rows[0].slug), user.username).catch(console.error);
     return NextResponse.json({ id: rows[0].id, slug: rows[0].slug, published: article.published }, { status: 201 });
   } catch {

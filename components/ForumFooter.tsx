@@ -32,6 +32,7 @@ export function ForumFooter() {
           <h4>Forum</h4>
           <Link href="/discussions">Discussions</Link>
           <Link href="/discussions/new">Start a thread</Link>
+          <Link href="/members">Members</Link>
           <Link href="/articles">Articles</Link>
           <Link href="/awards">Awards</Link>
         </div>

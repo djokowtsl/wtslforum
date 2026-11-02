@@ -1,0 +1,109 @@
+.list {
+  display: grid;
+  gap: 14px;
+}
+
+.top {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 14px;
+}
+
+.top h2 {
+  margin: 10px 0 6px;
+  font-size: 20px;
+}
+
+.top p,
+.privateNote,
+.timestamps,
+.confirm p {
+  color: var(--muted);
+  font-size: 12px;
+  line-height: 1.6;
+}
+
+.state {
+  display: inline-block;
+  padding: 5px 9px;
+  border-radius: 999px;
+  font-size: 10px;
+  font-weight: 800;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+
+.public {
+  background: rgba(176, 244, 59, 0.13);
+  color: var(--lime);
+}
+
+.removed {
+  background: rgba(255, 255, 255, 0.08);
+  color: var(--muted);
+}
+
+.audit {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 7px;
+  margin-top: 14px;
+}
+
+.audit span {
+  padding: 6px 9px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  color: var(--soft);
+  font-size: 11px;
+}
+
+.privateNote {
+  margin: 14px 0 0;
+  padding: 10px 12px;
+  border-left: 2px solid var(--amber);
+  background: var(--bg-2);
+}
+
+.timestamps {
+  margin: 10px 0 14px;
+  font-size: 10px;
+}
+
+.confirm {
+  padding-top: 12px;
+  border-top: 1px solid var(--line);
+}
+
+.confirm p {
+  margin: 0 0 10px;
+}
+
+.confirm button + button {
+  margin-left: 8px;
+}
+
+.error,
+.warning {
+  margin: 0;
+  padding: 12px 14px;
+  border-radius: 10px;
+  font-size: 13px;
+}
+
+.error {
+  background: rgba(255, 70, 70, 0.1);
+  color: var(--danger, #ff7a7a);
+}
+
+.warning {
+  background: rgba(242, 184, 75, 0.1);
+  color: var(--amber);
+}
+
+@media (max-width: 650px) {
+  .top {
+    flex-direction: column;
+  }
+}

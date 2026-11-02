@@ -1,4 +1,5 @@
 import type { CoreCharacterRecommendation } from '@/lib/wtsl-core';
+import { formatRecommendationMetricValue } from '@/lib/characterRecommendationMetrics.mjs';
 
 function groupName(value: string) {
   return value.charAt(0).toUpperCase() + value.slice(1);
@@ -17,7 +18,8 @@ function metricEvidence(
   metric?: { metric: string; value?: number; percentile: number } | null,
 ) {
   if (!metric) return '';
-  const value = metric.value == null ? '' : ` (${metric.value})`;
+  const formattedValue = formatRecommendationMetricValue(metric.metric, metric.value);
+  const value = formattedValue ? ` (${formattedValue})` : '';
   return `${metric.metric}${value}, ${ordinal(metric.percentile)} field percentile`;
 }
 

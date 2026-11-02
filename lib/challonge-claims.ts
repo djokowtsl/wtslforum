@@ -1,5 +1,5 @@
 import { sql } from './db';
-import { notifyChallongeVerified } from './discord';
+import { notifyChallongeVerified, notifyForumAdminsForReview } from './discord';
 
 export type ChallongeClaim = {
   id: string;
@@ -30,6 +30,7 @@ export async function submitChallongeClaim(userId: string, challongeUsername: st
   const alreadyOwned = await sql`SELECT id FROM challonge_claims WHERE LOWER(challonge_username)=LOWER(${username}) AND status='approved'`;
   if (alreadyOwned.length) throw new Error('That Challonge username is already verified to another account.');
   await sql`INSERT INTO challonge_claims (user_id, challonge_username, note) VALUES (${userId}, ${username}, ${note})`;
+  await notifyForumAdminsForReview('A Challonge verification request needs review.', '/admin/claims');
 }
 
 export async function listChallongeClaims(status?: string): Promise<(ChallongeClaim & { username: string; discord_id: string })[]> {

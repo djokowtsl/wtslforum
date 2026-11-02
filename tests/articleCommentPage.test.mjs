@@ -47,7 +47,9 @@ function loadPage() {
     '@/components/ArticleCommentForm': function ArticleCommentForm() { return null; },
     '@/components/EditableArticleComment': function EditableArticleComment() { return null; },
     '@/components/ReplyToComment': function ReplyToComment() { return null; },
+    '@/components/ForumRoleBadges': function ForumRoleBadges() { return null; },
     '@/lib/articleContent': { readArticleContent: () => null, safeArticleUrl: () => null },
+    '@/lib/forumRoles': { getForumRoleBadgeMap: async () => new Map() },
     '@/lib/commentTree': {
       buildCommentTree: (comments) => comments.map((item) => ({ comment: item, children: [] })),
     },

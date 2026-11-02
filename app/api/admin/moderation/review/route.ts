@@ -2,7 +2,8 @@ import { NextResponse } from 'next/server';
 import { del, get, put } from '@vercel/blob';
 import { canModerateComments, getSession } from '@/lib/auth';
 import { sql } from '@/lib/db';
-import { announceTopic } from '@/lib/discord';
+import { announceAdminTopic, announceTopic } from '@/lib/discord';
+import { notifyForumMentions } from '@/lib/forumNotifications';
 
 const contentKinds = ['topic', 'reply', 'media', 'note', 'article_comment', 'live_comment'] as const;
 type ContentKind = typeof contentKinds[number];
@@ -23,13 +24,24 @@ export async function POST(req: Request) {
     const rows = await sql`
       UPDATE topics SET moderation_status=${nextStatus},moderation_reason=NULL,moderated_by=${Number(user!.id)},moderated_at=NOW(),updated_at=NOW()
       WHERE id=${id} AND moderation_status='pending'
-      RETURNING id,title,author_id
+      RETURNING id,title,body,author_id
     `;
     if (!rows[0]) return NextResponse.json({ error: 'This discussion is no longer awaiting review.' }, { status: 409 });
     if (action === 'approve') {
       if (rows[0].author_id) {
-        const author = await sql`SELECT display_name FROM users WHERE id=${rows[0].author_id} LIMIT 1`;
-        await announceTopic(rows[0].title, id, author[0]?.display_name || 'WTSL').catch(() => {});
+        const author = await sql`SELECT display_name,discord_id,is_admin FROM users WHERE id=${rows[0].author_id} LIMIT 1`;
+        const configuredAdmins = (process.env.ADMIN_DISCORD_IDS || '').split(',').map((value) => value.trim()).filter(Boolean);
+        const isAdminAuthor = Boolean(author[0]?.is_admin)
+          || configuredAdmins.includes(String(author[0]?.discord_id || ''));
+        const announce = isAdminAuthor ? announceAdminTopic : announceTopic;
+        await announce(rows[0].title, id, author[0]?.display_name || 'WTSL').catch(() => {});
+        await notifyForumMentions({
+          body: rows[0].body,
+          authorUserId: rows[0].author_id,
+          authorName: author[0]?.display_name || 'Forum member',
+          context: 'in a discussion',
+          href: `/discussions/${id}`,
+        });
       }
     } else {
       await sql`DELETE FROM match_threads WHERE topic_id=${id}`;
@@ -38,18 +50,43 @@ export async function POST(req: Request) {
     const rows = await sql`
       UPDATE replies SET moderation_status=${nextStatus},moderation_reason=NULL,moderated_by=${Number(user!.id)},moderated_at=NOW(),updated_at=NOW()
       WHERE id=${id} AND moderation_status='pending'
-      RETURNING topic_id
+      RETURNING topic_id,body,author_id
     `;
     if (!rows[0]) return NextResponse.json({ error: 'This reply is no longer awaiting review.' }, { status: 409 });
-    if (action === 'approve') await sql`UPDATE topics SET updated_at=NOW() WHERE id=${rows[0].topic_id}`;
+    if (action === 'approve') {
+      await sql`UPDATE topics SET updated_at=NOW() WHERE id=${rows[0].topic_id}`;
+      if (rows[0].author_id) {
+        const author = await sql`SELECT display_name FROM users WHERE id=${rows[0].author_id} LIMIT 1`;
+        await notifyForumMentions({
+          body: rows[0].body,
+          authorUserId: rows[0].author_id,
+          authorName: author[0]?.display_name || 'Forum member',
+          context: 'in a discussion reply',
+          href: `/discussions/${rows[0].topic_id}`,
+        });
+      }
+    }
   } else if (kind === 'article_comment') {
     const rows = await sql`
       UPDATE article_comments
       SET moderation_status=${nextStatus},moderation_reason=NULL,moderated_by=${Number(user!.id)},moderated_at=NOW(),updated_at=NOW()
       WHERE id=${id} AND moderation_status='pending'
-      RETURNING id
+      RETURNING id,article_id,body,author_id
     `;
     if (!rows[0]) return NextResponse.json({ error: 'This article comment is no longer awaiting review.' }, { status: 409 });
+    if (action === 'approve' && rows[0].author_id) {
+      const [author, article] = await Promise.all([
+        sql`SELECT display_name FROM users WHERE id=${rows[0].author_id} LIMIT 1`,
+        sql`SELECT slug FROM articles WHERE id=${rows[0].article_id} LIMIT 1`,
+      ]);
+      await notifyForumMentions({
+        body: rows[0].body,
+        authorUserId: rows[0].author_id,
+        authorName: author[0]?.display_name || 'Forum member',
+        context: 'in an article comment',
+        href: `/articles/${encodeURIComponent(String(article[0]?.slug || rows[0].article_id))}`,
+      });
+    }
   } else if (kind === 'live_comment') {
     const rows = await sql`
       UPDATE dmo_live_broadcast_comments
