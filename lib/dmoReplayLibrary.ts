@@ -62,7 +62,15 @@ export async function listPublicDmoReplays(input: {
     SELECT id::text AS id,tournament,round_name,player1,player2,
       submission_date::text AS submission_date,source
     FROM dmo_submissions
-    WHERE public_share_consent IS TRUE
+    WHERE (
+        public_share_consent IS TRUE
+        OR EXISTS (
+          SELECT 1
+          FROM dmo_replay_publication_overrides AS publication_override
+          WHERE publication_override.submission_id=dmo_submissions.id
+            AND publication_override.revoked_at IS NULL
+        )
+      )
       AND private_blob_pathname LIKE 'dmo/%'
       AND LOWER(COALESCE(file_name, private_blob_pathname)) LIKE '%.dmo'
       AND (${input.cursor ?? null}::bigint IS NULL OR id < ${input.cursor ?? null}::bigint)
@@ -89,7 +97,15 @@ export async function getPublicDmoReplay(id: string): Promise<StoredDmoReplay | 
       private_blob_pathname,file_name
     FROM dmo_submissions
     WHERE id=${id}::bigint
-      AND public_share_consent IS TRUE
+      AND (
+        public_share_consent IS TRUE
+        OR EXISTS (
+          SELECT 1
+          FROM dmo_replay_publication_overrides AS publication_override
+          WHERE publication_override.submission_id=dmo_submissions.id
+            AND publication_override.revoked_at IS NULL
+        )
+      )
       AND private_blob_pathname LIKE 'dmo/%'
       AND LOWER(COALESCE(file_name, private_blob_pathname)) LIKE '%.dmo'
     LIMIT 1
