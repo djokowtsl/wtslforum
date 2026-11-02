@@ -5,6 +5,7 @@ import { createRequire } from 'node:module';
 
 const require = createRequire(import.meta.url);
 const { transformSync } = require('next/dist/build/swc');
+let te4CoachEmbedModule;
 
 function loadModule(path, mocks) {
   const source = readFileSync(new URL(`../${path}`, import.meta.url), 'utf8');
@@ -15,11 +16,14 @@ function loadModule(path, mocks) {
   const module = { exports: {} };
   new Function('require', 'module', 'exports', code)((name) => {
     if (name in mocks) return mocks[name];
+    if (name === '@/lib/te4CoachEmbed') return te4CoachEmbedModule;
     if (name.startsWith('node:')) return require(name);
     throw new Error(`Unexpected dependency: ${name}`);
   }, module, module.exports);
   return module.exports;
 }
+
+te4CoachEmbedModule = loadModule('lib/te4CoachEmbed.ts', {});
 
 function loadTsxModule(path, mocks) {
   const source = readFileSync(new URL(`../${path}`, import.meta.url), 'utf8');
@@ -41,6 +45,43 @@ function loadTsxModule(path, mocks) {
 }
 
 const nextServer = { NextResponse: { json: (body, init) => Response.json(body, init) } };
+
+test('TE4 Coach links accept only supported public match URLs', () => {
+  const {
+    parseTe4CoachShareUrl,
+    buildTe4CoachEmbedUrl,
+    buildTe4CoachAnalysisUrl,
+  } = te4CoachEmbedModule;
+  const shareUrl = 'https://replays.knowthew.net/m/3f9a1c07b2e4d5a6';
+  const liveUrl = 'https://replays.knowthew.net/tv/3f9a1c07b2e4d5a6';
+  const dashboardUrl = 'https://replays.knowthew.net/w/0123456789abcdef01234567/?m=2&p=4';
+
+  assert.deepEqual(parseTe4CoachShareUrl(shareUrl), { valid: true, url: shareUrl });
+  assert.deepEqual(parseTe4CoachShareUrl(liveUrl), { valid: true, url: liveUrl });
+  assert.deepEqual(parseTe4CoachShareUrl(dashboardUrl), { valid: true, url: dashboardUrl });
+
+  const embed = new URL(buildTe4CoachEmbedUrl(shareUrl));
+  assert.equal(embed.origin, 'https://replays.knowthew.net');
+  assert.equal(embed.pathname, '/embed');
+  assert.equal(embed.searchParams.get('share'), shareUrl);
+
+  const analysis = new URL(buildTe4CoachAnalysisUrl(shareUrl));
+  assert.equal(analysis.pathname, '/');
+  assert.equal(analysis.searchParams.get('share'), shareUrl);
+
+  for (const invalid of [
+    'http://replays.knowthew.net/m/3f9a1c07b2e4d5a6',
+    'https://replays.knowthew.net.evil.test/m/3f9a1c07b2e4d5a6',
+    'https://replays.knowthew.net/embed?share=https://example.test/a.dmo',
+    'https://replays.knowthew.net/w/0123456789abcdef01234567/',
+    'https://replays.knowthew.net/w/0123456789abcdef01234567/?m=2&next=https://evil.test',
+    'https://user@replays.knowthew.net/m/3f9a1c07b2e4d5a6',
+  ]) {
+    assert.equal(parseTe4CoachShareUrl(invalid).valid, false);
+    assert.equal(buildTe4CoachEmbedUrl(invalid), null);
+  }
+  assert.deepEqual(parseTe4CoachShareUrl(''), { valid: true, url: null });
+});
 
 test('public DMO paths must be private-store paths with a DMO filename', () => {
   const { isPublicDmoPath, isDmoReplayId } = loadModule('lib/dmoReplayLibrary.ts', {
@@ -81,6 +122,7 @@ test('replay listing returns only safe metadata and paginates uploaded DMO files
             player2: 'Two',
             submission_date: '2026-10-30',
             source: 'discord',
+            coach_share_url: 'https://replays.knowthew.net/m/3f9a1c07b2e4d5a6',
           },
           { id: '40', tournament: 'WTSL Open', round_name: 'Semi', player1: 'Three', player2: 'Four', submission_date: '2026-10-29', source: 'forum' },
           { id: '39', tournament: 'WTSL Open', round_name: 'Quarter', player1: 'Five', player2: 'Six', submission_date: '2026-10-28', source: 'forum' },
@@ -100,6 +142,7 @@ test('replay listing returns only safe metadata and paginates uploaded DMO files
         player2: 'Two',
         submissionDate: '2026-10-30',
         source: 'discord',
+        coachShareUrl: 'https://replays.knowthew.net/m/3f9a1c07b2e4d5a6',
       },
       {
         id: '40',
@@ -118,6 +161,7 @@ test('replay listing returns only safe metadata and paginates uploaded DMO files
   assert.match(queries[0].text, /dmo_replay_publication_overrides/);
   assert.match(queries[0].text, /publication_override\.revoked_at IS NULL/);
   assert.match(queries[0].text, /file_name, private_blob_pathname/);
+  assert.match(queries[0].text, /coach_share_url/);
   assert.match(queries[0].text, /ORDER BY id DESC/);
   assert.ok(queries[0].values.includes('%Open%'));
   assert.ok(!JSON.stringify(page).includes('private_blob_pathname'));
@@ -176,6 +220,7 @@ test('replay detail lookup requires consent or an active owner publication overr
   assert.match(queries[0].text, /public_share_consent IS TRUE/);
   assert.match(queries[0].text, /dmo_replay_publication_overrides/);
   assert.match(queries[0].text, /publication_override\.revoked_at IS NULL/);
+  assert.match(queries[0].text, /coach_share_url/);
 });
 
 test('Discord consent endpoint requires authorization and matches the original submitter', async () => {
