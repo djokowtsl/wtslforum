@@ -2,6 +2,7 @@ import assert from 'node:assert/strict';
 import { stat, readFile } from 'node:fs/promises';
 import { createRequire } from 'node:module';
 import test from 'node:test';
+import { courtSurfaceSoundProfile, courtSurfaceDisplayName } from '../lib/te4DmoSurface.ts';
 
 const require = createRequire(import.meta.url);
 const { transformSync } = require('next/dist/build/swc');
@@ -40,4 +41,20 @@ test('the 2D fallback uses the same WTA sample and a higher-register synthetic f
   assert.match(fallbackCourt, /isWta \? 520 : 340/);
   assert.match(fallbackCourt, /fetch\(liveGruntAudioUrl\(true\)\)/);
   assert.match(fallbackCourt, /playLiveCourtCue\(context, cue, activeGruntVoicesRef\.current, isWta, wtaGruntAudioRef\.current\)/);
+});
+
+test('court surface labels and procedural impact sounds stay distinct', () => {
+  const surfaces = ['clay', 'grass', 'hard', 'unknown'];
+  const profiles = surfaces.map((surface) => courtSurfaceSoundProfile(surface));
+
+  assert.deepEqual(surfaces.map((surface) => courtSurfaceDisplayName(surface)), [
+    'CLAY COURT',
+    'GRASS COURT',
+    'HARD COURT',
+    'SURFACE UNKNOWN',
+  ]);
+  assert.equal(new Set(profiles.map((profile) => profile.stepNoiseHz)).size, 4);
+  assert.equal(new Set(profiles.map((profile) => profile.slideNoiseHz)).size, 4);
+  assert.equal(new Set(profiles.map((profile) => profile.bounceHz.join(':'))).size, 4);
+  assert.equal(new Set(profiles.map((profile) => profile.racketHz.join(':'))).size, 4);
 });

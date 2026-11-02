@@ -10,6 +10,7 @@ import {
   type Te4LiveSnapshot,
 } from '@/lib/te4DmoLive';
 import type { Te4CourtSurface } from '@/lib/te4DmoTypes';
+import { courtSurfaceDisplayName, courtSurfaceSoundProfile } from '@/lib/te4DmoSurface';
 import {
   advanceLiveCourtPlayhead,
   clampPlayerCameraLateralPan,
@@ -118,6 +119,7 @@ function playCue(
   surface: Te4CourtSurface,
 ) {
   const now = context.currentTime;
+  const soundProfile = courtSurfaceSoundProfile(surface);
   if (kind === 'footstep' || kind === 'slide') {
     const duration = kind === 'footstep' ? 0.11 : 0.2;
     const noise = context.createBufferSource();
@@ -125,9 +127,10 @@ function playCue(
     const gain = context.createGain();
     noise.buffer = courtNoiseBuffer(context);
     filter.type = 'bandpass';
-    filter.frequency.setValueAtTime(kind === 'slide'
-      ? surface === 'clay' ? 650 : surface === 'grass' ? 430 : 1_250
-      : surface === 'clay' ? 420 : surface === 'grass' ? 320 : 850, now);
+    filter.frequency.setValueAtTime(
+      kind === 'slide' ? soundProfile.slideNoiseHz : soundProfile.stepNoiseHz,
+      now,
+    );
     filter.Q.value = kind === 'slide' ? 0.55 : 0.8;
     gain.gain.setValueAtTime(kind === 'footstep' ? 0.095 : 0.06, now);
     gain.gain.exponentialRampToValueAtTime(0.0001, now + duration);
@@ -139,17 +142,17 @@ function playCue(
     const toneGain = context.createGain();
     tone.type = 'sine';
     if (kind === 'footstep') {
-      tone.frequency.setValueAtTime(105, now);
-      tone.frequency.exponentialRampToValueAtTime(58, now + 0.09);
+      tone.frequency.setValueAtTime(soundProfile.stepToneHz[0], now);
+      tone.frequency.exponentialRampToValueAtTime(soundProfile.stepToneHz[1], now + 0.09);
       toneGain.gain.setValueAtTime(0.035, now);
       toneGain.gain.exponentialRampToValueAtTime(0.0001, now + 0.09);
       tone.connect(toneGain).connect(context.destination);
       tone.start(now);
       tone.stop(now + 0.1);
-    } else if (surface === 'hard') {
-      tone.frequency.setValueAtTime(1_950, now);
-      tone.frequency.exponentialRampToValueAtTime(1_250, now + 0.12);
-      toneGain.gain.setValueAtTime(0.009, now);
+    } else {
+      tone.frequency.setValueAtTime(soundProfile.slideToneHz[0], now);
+      tone.frequency.exponentialRampToValueAtTime(soundProfile.slideToneHz[1], now + 0.12);
+      toneGain.gain.setValueAtTime(soundProfile.slideToneGain, now);
       toneGain.gain.exponentialRampToValueAtTime(0.0001, now + 0.12);
       tone.connect(toneGain).connect(context.destination);
       tone.start(now);
@@ -160,11 +163,13 @@ function playCue(
 
   const gain = context.createGain();
   const oscillator = context.createOscillator();
-  const duration = kind === 'racket' ? 0.075 : 0.12;
+  const frequency = kind === 'racket' ? soundProfile.racketHz : soundProfile.bounceHz;
+  const volume = kind === 'racket' ? soundProfile.racketGain : soundProfile.bounceGain;
+  const duration = kind === 'racket' ? soundProfile.racketDuration : soundProfile.bounceDuration;
   oscillator.type = kind === 'racket' ? 'triangle' : 'sine';
-  oscillator.frequency.setValueAtTime(kind === 'racket' ? 720 : 390, now);
-  oscillator.frequency.exponentialRampToValueAtTime(kind === 'racket' ? 260 : 150, now + duration);
-  gain.gain.setValueAtTime(kind === 'racket' ? 0.085 : 0.072, now);
+  oscillator.frequency.setValueAtTime(frequency[0], now);
+  oscillator.frequency.exponentialRampToValueAtTime(frequency[1], now + duration);
+  gain.gain.setValueAtTime(volume, now);
   gain.gain.exponentialRampToValueAtTime(0.0001, now + duration);
   oscillator.connect(gain);
   gain.connect(context.destination);
@@ -256,6 +261,7 @@ function ThreeCourt({
   const [soundError, setSoundError] = useState('');
   const [crowdVolume, setCrowdVolume] = useState(0.38);
   const [hasCourtData, setHasCourtData] = useState(snapshot.court.length > 0);
+  const surfaceLabel = courtSurfaceDisplayName(surface);
   const [shotCallout, setShotCallout] = useState<{
     player: string;
     shotType: 'serve' | 'rally';
@@ -385,7 +391,7 @@ function ThreeCourt({
     renderer.toneMapping = THREE.ACESFilmicToneMapping;
     renderer.toneMappingExposure = 1.12;
     renderer.shadowMap.enabled = true;
-    renderer.shadowMap.type = THREE.PCFSoftShadowMap;
+    renderer.shadowMap.type = THREE.PCFShadowMap;
     renderer.domElement.className = styles.canvas;
     renderer.domElement.setAttribute('role', 'img');
     const initialPlayers = sceneDataRef.current.snapshot.players;
@@ -434,9 +440,9 @@ function ThreeCourt({
     fillLight.position.set(17, 9, -14);
     scene.add(fillLight);
 
-    buildCourt(scene, sceneDataRef.current.surface);
+    const courtEffects = buildCourt(scene, sceneDataRef.current.surface);
     buildCourtFixtures(scene);
-    buildCrowd(scene);
+    const crowdRig = buildCrowd(scene);
     const players = [
       makePlayer(PALETTE.shirtOne, 0x335d58, isWta),
       makePlayer(PALETTE.shirtTwo, 0x514b61, isWta),
@@ -505,6 +511,9 @@ function ThreeCourt({
     const motionPreference = window.matchMedia('(prefers-reduced-motion: reduce)');
     let graphicsFailed = false;
     let changeoverUntil = 0;
+    let lastCrowdEventFrame: number | null = null;
+    let crowdApplauseUntil = 0;
+    const lastSkidMarkBucket = [-1, -1];
     const updatePlayer = (
       rig: PlayerRig,
       x: number,
@@ -572,12 +581,31 @@ function ThreeCourt({
         : targetFacing;
       rig.root.userData.facingInitialized = true;
       const eventPlayer = index === 0 ? 1 : 2;
-      const event = findPlayerShotEvent(events, eventPlayer, frame);
+      const event = findPlayerShotEvent(events, eventPlayer, frame, 16);
       const serving = event?.shotType === 'serve';
       const jump = serving ? serveLift(frame - event.frame) : 0;
+      const strokeDelta = event ? frame - event.frame : Number.POSITIVE_INFINITY;
       const strikeWeight = event
-        ? THREE.MathUtils.clamp(1 - Math.abs(event.frame - frame) / 6, 0, 1)
+        ? THREE.MathUtils.smoothstep(strokeDelta, -5, 0)
+          * (1 - THREE.MathUtils.smoothstep(strokeDelta, 0, 5))
         : 0;
+      const backswing = event && !serving
+        ? THREE.MathUtils.smoothstep(strokeDelta, -13, -5)
+          * (1 - THREE.MathUtils.smoothstep(strokeDelta, -4, 0))
+        : 0;
+      const followThrough = event && !serving
+        ? THREE.MathUtils.smoothstep(strokeDelta, 0, 4)
+          * (1 - THREE.MathUtils.smoothstep(strokeDelta, 12, 21))
+        : 0;
+      const servePreparation = serving
+        ? THREE.MathUtils.smoothstep(strokeDelta, -24, -12)
+          * (1 - THREE.MathUtils.smoothstep(strokeDelta, -3, 0))
+        : 0;
+      const serveToss = serving
+        ? THREE.MathUtils.smoothstep(strokeDelta, -18, -7)
+          * (1 - THREE.MathUtils.smoothstep(strokeDelta, -3, 0))
+        : 0;
+      const impactWeight = Math.max(strikeWeight, striking ? 0.72 : 0);
       // Convert world X/Z into rig-local X/Z. With its face along +Z,
       // this local +X basis is anatomical LEFT, not the racket arm.
       const localXAxis = [Math.cos(facing), -Math.sin(facing)];
@@ -592,6 +620,20 @@ function ThreeCourt({
       const slideWeight = liveCourtSlideWeight(footworkEventsRef.current, eventPlayer, frame, frameRate);
       const lateralVelocity = velocityX * localXAxis[0] + velocityZ * localXAxis[1];
       const slideDirection = Math.sign(lateralVelocity);
+      const skidMarkBucket = Math.floor(frame / 8);
+      if (
+        sceneDataRef.current.surface === 'clay'
+        && slideWeight > 0.3
+        && skidMarkBucket > lastSkidMarkBucket[index]
+      ) {
+        courtEffects.addSkidMark(
+          rig.root.position.x - velocityX * 0.14,
+          rig.root.position.z - velocityZ * 0.14,
+          Math.atan2(velocityZ, velocityX),
+          slideWeight,
+        );
+        lastSkidMarkBucket[index] = skidMarkBucket;
+      }
       const phase = frame * 0.22 + index * Math.PI;
       const gaitSpeed = speed > 0.12 ? speed : 0;
       const leftCycle = Math.sin(phase);
@@ -601,18 +643,35 @@ function ThreeCourt({
       const leftLift = (Math.max(0, leftCycle) * gaitSpeed * 0.13 + jump) * (1 - slideWeight * 0.8);
       const rightLift = (Math.max(0, rightCycle) * gaitSpeed * 0.13 + jump) * (1 - slideWeight * 0.8);
       const bodyBounce = gaitSpeed * Math.abs(Math.sin(phase * 2)) * 0.035 + jump;
-      const crouch = strikeWeight * THREE.MathUtils.clamp((1.05 - ballY) / 0.95, 0, 1) * 0.18
+      const crouch = impactWeight * THREE.MathUtils.clamp((1.05 - ballY) / 0.95, 0, 1) * 0.18
         + slideWeight * 0.13;
       rig.root.rotation.y = facing;
-      rig.body.position.set(Math.sin(phase * 0.5) * gaitSpeed * 0.02, 1.22 + bodyBounce - crouch * 0.45, 0);
+      const bodyY = 1.22 + bodyBounce - crouch * 0.45;
+      const strokeSide = Math.sign(localX || dominantHandX(handedness));
+      const trunkTurn = (backswing * 0.36 - followThrough * 0.28 + servePreparation * 0.22) * strokeSide;
+      rig.body.position.set(Math.sin(phase * 0.5) * gaitSpeed * 0.02, bodyY, 0);
       rig.body.rotation.z = THREE.MathUtils.clamp(
         -lateralVelocity * 1.8 - slideDirection * slideWeight * 0.09,
         -0.3,
         0.3,
       );
-      rig.body.rotation.x = crouch * 0.5;
+      rig.body.rotation.x = crouch * 0.5 + followThrough * 0.08;
+      rig.body.rotation.y = trunkTurn;
       rig.hip.position.y = 0.79 + bodyBounce - crouch * 0.75;
+      rig.hip.rotation.y = trunkTurn * 0.42;
       rig.head.position.set(0, 1.78 + bodyBounce * 0.8 - crouch * 0.3, 0);
+      rig.head.rotation.y = THREE.MathUtils.clamp(localX * 0.72, -0.28, 0.28);
+      rig.head.rotation.x = THREE.MathUtils.clamp(-(ballY - 1.45) * 0.08, -0.18, 0.18);
+      const effort = THREE.MathUtils.clamp(
+        impactWeight * 0.35 + backswing * 0.18 + followThrough * 0.48 + gaitSpeed * 0.16 + jump * 0.32,
+        0,
+        1,
+      );
+      rig.face.leftEye.scale.y = 0.82 - effort * 0.16;
+      rig.face.rightEye.scale.y = 0.82 - effort * 0.16;
+      rig.face.mouth.scale.y = 0.16 + effort * 0.84;
+      rig.face.leftBrow.rotation.z = Math.PI / 2 + 0.12 + effort * 0.1;
+      rig.face.rightBrow.rotation.z = Math.PI / 2 - 0.12 - effort * 0.1;
       const leftHip = new THREE.Vector3(-0.15, 0.79 + bodyBounce - crouch * 0.75, 0);
       const rightHip = new THREE.Vector3(0.15, 0.79 + bodyBounce - crouch * 0.75, 0);
       const leftFoot = new THREE.Vector3(
@@ -625,62 +684,116 @@ function ThreeCourt({
         0.1 + rightLift,
         Math.max(0, rightCycle) * 0.05,
       );
-      poseLimb(rig.leftLeg, leftHip, leftFoot);
-      poseLimb(rig.rightLeg, rightHip, rightFoot);
+      const leftKnee = new THREE.Vector3(
+        leftHip.x + (leftFoot.x - leftHip.x) * 0.38,
+        0.46 + bodyBounce - crouch * 0.35 + leftLift * 0.28,
+        leftFoot.z * 0.42 + 0.035,
+      );
+      const rightKnee = new THREE.Vector3(
+        rightHip.x + (rightFoot.x - rightHip.x) * 0.38,
+        0.46 + bodyBounce - crouch * 0.35 + rightLift * 0.28,
+        rightFoot.z * 0.42 + 0.035,
+      );
+      poseLimb(rig.leftLeg, leftHip, leftKnee);
+      poseLimb(rig.rightLeg, rightHip, rightKnee);
+      poseLimb(rig.leftCalf, leftKnee, leftFoot);
+      poseLimb(rig.rightCalf, rightKnee, rightFoot);
+      rig.leftKnee.position.copy(leftKnee);
+      rig.rightKnee.position.copy(rightKnee);
       rig.leftShoe.position.set(leftFoot.x, 0.032 + leftLift, leftFoot.z + 0.05);
       rig.rightShoe.position.set(rightFoot.x, 0.032 + rightLift, rightFoot.z + 0.05);
       rig.leftShoe.rotation.y = leftCycle * gaitSpeed * 0.12;
       rig.rightShoe.rotation.y = rightCycle * gaitSpeed * 0.12;
       rig.leftShoe.rotation.z = -slideDirection * slideWeight * 0.08;
       rig.rightShoe.rotation.z = slideDirection * slideWeight * 0.08;
-      const swing = strikeWeight > 0 ? 0.72 * strikeWeight : Math.sin(phase * 0.55) * gaitSpeed * 0.2;
       const dominantX = dominantHandX(handedness);
       const playerStrokeStyle = sceneDataRef.current.snapshot.strokeStyles?.[index];
       const stroke = groundstrokeForBallSide(localX, handedness);
       const twoHandedStroke = !serving
         && (playerStrokeStyle?.[stroke] ?? (stroke === 'backhand' ? 'two' : 'one')) === 'two';
-      const dominantHand = new THREE.Vector3(dominantX, 1.1 + bodyBounce + swing, 0.04);
-      const nonDominantHand = new THREE.Vector3(-dominantX, 1.08 + bodyBounce + swing * 0.2, 0.05);
+      const armPump = Math.sin(phase * 0.55) * gaitSpeed * 0.12;
+      const dominantHand = new THREE.Vector3(dominantX, 0.98 + bodyBounce + armPump, 0.06);
+      const nonDominantHand = new THREE.Vector3(-dominantX * 0.72, 0.96 + bodyBounce - armPump, 0.1);
+      dominantHand.x += dominantX * backswing * 0.48 - strokeSide * followThrough * 0.42;
+      dominantHand.y += backswing * 0.12 + followThrough * 0.24;
+      dominantHand.z += -backswing * 0.22 + followThrough * 0.12;
       if (serving) {
-        const preparation = Math.max(0, 1 - Math.abs(frame - event.frame) / 24);
-        // Toss arm lowers as the striking arm extends through contact.
-        const toss = Math.max(0, Math.min(1, -(frame - event.frame) / 8));
-        nonDominantHand.y += preparation * toss * 0.9;
-        dominantHand.y += preparation * 0.65;
-        dominantHand.z -= preparation * 0.2;
+        // The toss hand reaches above the head while the racket arm loads behind
+        // the shoulder; both return through contact and follow-through.
+        nonDominantHand.y += serveToss * 0.82;
+        nonDominantHand.z += serveToss * 0.08;
+        dominantHand.y += servePreparation * 0.42;
+        dominantHand.z -= servePreparation * 0.24;
       }
-      const dominantShoulder = new THREE.Vector3(dominantX * 0.59, 1.4 + bodyBounce, 0);
-      const nonDominantShoulder = new THREE.Vector3(-dominantX * 0.59, 1.42 + bodyBounce, 0);
+      const bodyPivot = new THREE.Vector3(0, bodyY, 0);
+      const shoulderAxis = new THREE.Vector3(0, 1, 0);
+      const rotateShoulder = (x: number) => new THREE.Vector3(x, bodyY + 0.22, 0)
+        .sub(bodyPivot)
+        .applyAxisAngle(shoulderAxis, trunkTurn)
+        .add(bodyPivot);
+      const dominantShoulder = rotateShoulder(dominantX * 0.59);
+      const nonDominantShoulder = rotateShoulder(-dominantX * 0.59);
       const contact = racketContactWithinReach(
         [localX, ballY / rig.root.scale.y, localZ],
         [dominantHand.x, dominantHand.y, dominantHand.z],
         [dominantShoulder.x, dominantShoulder.y, dominantShoulder.z],
       );
       const contactHand = new THREE.Vector3(...contact.grip);
-      dominantHand.lerp(contactHand, strikeWeight);
-      if (twoHandedStroke) {
+      dominantHand.lerp(contactHand, impactWeight);
+      if (twoHandedStroke && (impactWeight > 0 || backswing > 0 || followThrough > 0)) {
         const secondGrip = secondHandGripPosition(contact.grip, contact.axis);
         const reachableSecondGrip = clampPointToReach(
           secondGrip,
           [nonDominantShoulder.x, nonDominantShoulder.y, nonDominantShoulder.z],
         );
-        nonDominantHand.lerp(new THREE.Vector3(...reachableSecondGrip), strikeWeight);
+        nonDominantHand.lerp(
+          new THREE.Vector3(...reachableSecondGrip),
+          Math.max(impactWeight, backswing * 0.88, followThrough * 0.8),
+        );
       }
-      const dominantArm = handedness === 'right' ? rig.rightArm : rig.leftArm;
-      const nonDominantArm = handedness === 'right' ? rig.leftArm : rig.rightArm;
+      const dominantUpperArm = handedness === 'right' ? rig.rightArm : rig.leftArm;
+      const nonDominantUpperArm = handedness === 'right' ? rig.leftArm : rig.rightArm;
+      const dominantForearm = handedness === 'right' ? rig.rightForearm : rig.leftForearm;
+      const nonDominantForearm = handedness === 'right' ? rig.leftForearm : rig.rightForearm;
+      const dominantElbowMesh = handedness === 'right' ? rig.rightElbow : rig.leftElbow;
+      const nonDominantElbowMesh = handedness === 'right' ? rig.leftElbow : rig.rightElbow;
       const dominantMesh = handedness === 'right' ? rig.rightHand : rig.leftHand;
       const nonDominantMesh = handedness === 'right' ? rig.leftHand : rig.rightHand;
-      poseLimb(nonDominantArm, nonDominantShoulder, nonDominantHand);
-      poseLimb(dominantArm, dominantShoulder, dominantHand);
+      const elbowPosition = (shoulder: THREE.Vector3, hand: THREE.Vector3) => {
+        const elbow = shoulder.clone().lerp(hand, 0.48);
+        elbow.x += Math.sign(shoulder.x) * (0.045 + backswing * 0.025);
+        elbow.y += 0.015;
+        elbow.z += 0.07 + impactWeight * 0.018;
+        return elbow;
+      };
+      const dominantElbow = elbowPosition(dominantShoulder, dominantHand);
+      const nonDominantElbow = elbowPosition(nonDominantShoulder, nonDominantHand);
+      poseLimb(nonDominantUpperArm, nonDominantShoulder, nonDominantElbow);
+      poseLimb(nonDominantForearm, nonDominantElbow, nonDominantHand);
+      poseLimb(dominantUpperArm, dominantShoulder, dominantElbow);
+      poseLimb(dominantForearm, dominantElbow, dominantHand);
+      dominantElbowMesh.position.copy(dominantElbow);
+      nonDominantElbowMesh.position.copy(nonDominantElbow);
       dominantMesh.position.copy(dominantHand);
+      dominantMesh.quaternion.copy(dominantForearm.quaternion);
       nonDominantMesh.position.copy(nonDominantHand);
+      nonDominantMesh.quaternion.copy(nonDominantForearm.quaternion);
       rig.racket.position.copy(dominantHand);
       const restingRacketAngle = -0.12 + Math.sin(phase * 0.55) * speed * 0.14;
       const resting = new THREE.Quaternion().setFromEuler(new THREE.Euler(0, 0, -restingRacketAngle));
+      const backswingRotation = resting.clone().multiply(
+        new THREE.Quaternion().setFromEuler(new THREE.Euler(0, 0, -strokeSide * 0.9)),
+      );
       const contactRotation = new THREE.Quaternion().setFromUnitVectors(
         new THREE.Vector3(0, 1, 0), new THREE.Vector3(...contact.axis),
       );
-      rig.racket.quaternion.slerpQuaternions(resting, contactRotation, strikeWeight);
+      const followRotation = contactRotation.clone().multiply(
+        new THREE.Quaternion().setFromEuler(new THREE.Euler(0, 0, -strokeSide * 0.58)),
+      );
+      rig.racket.quaternion.copy(resting);
+      if (backswing > 0) rig.racket.quaternion.slerp(backswingRotation, backswing);
+      if (impactWeight > 0) rig.racket.quaternion.slerp(contactRotation, impactWeight);
+      if (followThrough > 0) rig.racket.quaternion.slerp(followRotation, followThrough);
     };
 
     const animate = (now: number) => {
@@ -730,6 +843,31 @@ function ThreeCourt({
           ) ?? firstFrame;
         }
         playheadRef.current = currentFrame;
+        if (lastCrowdEventFrame === null) {
+          lastCrowdEventFrame = currentFrame;
+        } else if (currentFrame < lastCrowdEventFrame) {
+          courtEffects.clearSkidMarks();
+          lastSkidMarkBucket.fill(-1);
+          crowdApplauseUntil = 0;
+          lastCrowdEventFrame = currentFrame;
+        } else {
+          const skippedFrames = currentFrame - lastCrowdEventFrame;
+          if (skippedFrames <= frameRate * 3) {
+            for (const cue of liveCourtEventsBetween(
+              trajectoryEventsRef.current,
+              lastCrowdEventFrame,
+              currentFrame,
+            )) {
+              if (liveCourtTrajectoryCue(cue, false) === 'cheer') {
+                crowdApplauseUntil = now + 1_800;
+                courtEffects.clearSkidMarks();
+                lastSkidMarkBucket.fill(-1);
+              }
+            }
+          }
+          lastCrowdEventFrame = currentFrame;
+        }
+        crowdRig.update(now / 1000, now < crowdApplauseUntil);
         const context = audioContextRef.current;
         if (soundOnRef.current && context?.state === 'running') {
           const previous = lastSoundFrameRef.current;
@@ -1093,6 +1231,9 @@ function ThreeCourt({
         <div className={styles.title}>
           <span className={styles.liveDot} aria-hidden="true" />
           <strong>{fullReplay ? 'FULL MATCH REPLAY' : 'LIVE COURT'}</strong>
+          <span className={styles.surfaceBadge} data-surface={surface} aria-label={`Court surface: ${surfaceLabel.toLowerCase()}`}>
+            {surfaceLabel}
+          </span>
         </div>
         <div className={styles.controls} aria-label="Court view controls">
           <div className={styles.presets} role="group" aria-label="Camera angle">
