@@ -13,6 +13,48 @@ export type LiveCourtFootworkEvent = {
   player: 1 | 2;
 };
 
+export type LiveCourtSkidMark = {
+  frame: number;
+  player: 1 | 2;
+  x: number;
+  z: number;
+  heading: number;
+  intensity: number;
+};
+
+/** Source-positioned marks can be replayed after a seek and retained across points. */
+export function deriveLiveCourtSkidMarks(
+  samples: LiveCourtSample[],
+  events: LiveCourtFootworkEvent[],
+  framesPerSecond = 60,
+): LiveCourtSkidMark[] {
+  const fps = Number.isFinite(framesPerSecond) && framesPerSecond > 0 ? framesPerSecond : 60;
+  const marks: LiveCourtSkidMark[] = [];
+  let sampleIndex = 1;
+  for (const event of events) {
+    if (event.kind !== 'slide') continue;
+    while (sampleIndex < samples.length && samples[sampleIndex].frame < event.frame) sampleIndex += 1;
+    const current = samples[sampleIndex];
+    const before = samples[sampleIndex - 1];
+    if (!current || !before || current.frame !== event.frame) continue;
+    const seconds = (current.frame - before.frame) / fps;
+    if (seconds <= 0 || seconds > 0.4) continue;
+    const xIndex = event.player === 1 ? 3 : 5;
+    const zIndex = xIndex + 1;
+    const dx = (current.values[xIndex] - before.values[xIndex]) * 0.01;
+    const dz = (current.values[zIndex] - before.values[zIndex]) * 0.01;
+    const speed = Math.hypot(dx, dz) / seconds;
+    if (speed < 1.5 || speed > 9) continue;
+    marks.push({
+      frame: event.frame, player: event.player,
+      x: (before.values[xIndex] + current.values[xIndex]) * 0.005,
+      z: (before.values[zIndex] + current.values[zIndex]) * 0.005,
+      heading: Math.atan2(dz, dx), intensity: Math.min(1, speed / 6),
+    });
+  }
+  return marks;
+}
+
 export type LiveCourtContactCue = 'standard' | 'low-contact' | 'close-net' | 'soft-touch';
 
 /**
@@ -105,9 +147,19 @@ export function deriveLiveCourtFootworkEvents(
       if (distance > seconds * 7.5 || speed < 1.25) continue;
 
       const lateralRatio = distance > 0 ? Math.abs(lateral) / distance : 0;
+      const next = samples[index + 1];
+      const nextSeconds = next ? (next.frame - current.frame) / frameRate : 0;
+      const nextLateral = next ? (next.values[zIndex] - current.values[zIndex]) * 0.01 : 0;
+      const nextLength = next ? (next.values[xIndex] - current.values[xIndex]) * 0.01 : 0;
+      const nextDistance = Math.hypot(nextLength, nextLateral);
+      const nextSpeed = nextSeconds > 0 ? nextDistance / nextSeconds : speed;
+      const braking = nextSeconds > 0 && nextSeconds <= 0.3
+        && nextSpeed < speed * 0.58;
+      const turning = nextSeconds > 0 && nextSeconds <= 0.3 && nextDistance > 0.01
+        && (length * nextLength + lateral * nextLateral) / (distance * nextDistance) < 0.45;
       if (
         speed >= 2.2
-        && lateralRatio >= 0.78
+        && (lateralRatio >= 0.78 || braking || turning)
         && current.frame - lastSlide[player] >= frameRate * 0.75
       ) {
         events.push({ frame: current.frame, kind: 'slide', player: (player + 1) as 1 | 2 });
