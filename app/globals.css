@@ -548,18 +548,96 @@ h1, h2, h3 { margin: 0; }
 
 /* ---------- Tournaments ---------- */
 .tournament-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 14px; }
-.tournament-card { --tournament-accent: var(--cyan); --tournament-glow: rgba(34, 194, 218, 0.12); --tournament-flare: transparent; position: relative; display: flex; gap: 16px; align-items: center; overflow: hidden; background: radial-gradient(circle at 100% 0%, var(--tournament-flare) 0, transparent 32%), radial-gradient(circle at 94% 6%, var(--tournament-glow) 0, transparent 52%), linear-gradient(120deg, var(--panel-2), var(--panel) 72%); border: 1px solid var(--line); border-left: 3px solid var(--tournament-accent); border-radius: var(--radius); padding: 20px; transition: 0.18s; }
+.tournament-card {
+  --tournament-accent: var(--cyan);
+  --tournament-wash: #10283c;
+  --tournament-light-wash: #eef5fb;
+  --tournament-mark: rgba(34, 194, 218, 0.2);
+  --tournament-light-mark: rgba(16, 133, 160, 0.16);
+  --tournament-art:
+    radial-gradient(circle at 88% 16%, rgba(34, 194, 218, 0.3), transparent 38%),
+    repeating-linear-gradient(135deg, transparent 0 16px, rgba(82, 206, 225, 0.11) 17px 18px);
+  position: relative;
+  isolation: isolate;
+  display: flex;
+  min-width: 0;
+  min-height: 122px;
+  gap: 16px;
+  align-items: center;
+  overflow: hidden;
+  border: 1px solid var(--line);
+  border-left: 5px solid var(--tournament-accent);
+  border-radius: var(--radius);
+  padding: 20px 48px 20px 20px;
+  background: linear-gradient(112deg, var(--tournament-wash) 0%, var(--panel-2) 60%, var(--panel) 100%);
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.05);
+  transition: 0.18s;
+}
+.tournament-card::before {
+  content: "";
+  position: absolute;
+  z-index: 0;
+  inset: 0 0 0 auto;
+  width: 46%;
+  background: var(--tournament-art);
+  opacity: 0.58;
+  pointer-events: none;
+  -webkit-mask-image: linear-gradient(90deg, transparent 0%, #000 30%);
+  mask-image: linear-gradient(90deg, transparent 0%, #000 30%);
+}
+.tournament-card::after {
+  content: "";
+  position: absolute;
+  z-index: 0;
+  top: 50%;
+  right: 18px;
+  transform: translateY(-50%);
+  color: var(--tournament-mark);
+  font: italic 900 clamp(48px, 6vw, 72px)/0.8 var(--font-display);
+  letter-spacing: -0.08em;
+  white-space: nowrap;
+  pointer-events: none;
+  user-select: none;
+}
+.tournament-card > * { position: relative; z-index: 1; }
+.tournament-card > div:not(.status-dot) { min-width: 0; }
 .tournament-card:hover { transform: translateY(-2px); border-color: var(--tournament-accent); }
-.tournament-card--australian-open { --tournament-accent: #21a4db; --tournament-glow: rgba(15, 137, 211, 0.2); --tournament-flare: rgba(16, 196, 205, 0.12); }
-.tournament-card--roland-garros { --tournament-accent: #d36a3d; --tournament-glow: rgba(202, 82, 47, 0.2); --tournament-flare: rgba(242, 172, 89, 0.12); }
-.tournament-card--wimbledon { --tournament-accent: #438a62; --tournament-glow: rgba(49, 120, 78, 0.2); --tournament-flare: rgba(130, 98, 174, 0.13); }
-.tournament-card--us-open { --tournament-accent: #4784d4; --tournament-glow: rgba(41, 100, 194, 0.2); --tournament-flare: rgba(224, 175, 69, 0.12); }
-.tournament-card--indian-wells { --tournament-accent: #d2a34f; --tournament-glow: rgba(207, 149, 61, 0.2); --tournament-flare: rgba(59, 160, 151, 0.12); }
-.tournament-card--clay { --tournament-accent: #c76543; --tournament-glow: rgba(195, 87, 52, 0.18); }
-.tournament-card--grass { --tournament-accent: #4b965e; --tournament-glow: rgba(48, 135, 73, 0.18); }
-.tournament-card--hard { --tournament-accent: #4388d3; --tournament-glow: rgba(45, 113, 197, 0.18); }
-.tournament-card--indoor { --tournament-accent: #8a76bf; --tournament-glow: rgba(112, 89, 175, 0.19); --tournament-flare: rgba(44, 152, 176, 0.1); }
-.tournament-card--classic { --tournament-accent: var(--cyan); --tournament-glow: rgba(34, 194, 218, 0.1); }
+.tournament-card:focus-visible { outline: 3px solid var(--tournament-accent); outline-offset: 3px; }
+.tournament-card .arrow {
+  position: absolute;
+  z-index: 2;
+  top: 14px;
+  right: 16px;
+  margin: 0;
+  color: var(--tournament-accent);
+  font-size: 16px;
+}
+.tournament-card--australian-open { --tournament-accent: #35cadb; --tournament-wash: #0d3b53; --tournament-light-wash: #e8f7fa; --tournament-mark: rgba(70, 216, 226, 0.27); --tournament-light-mark: rgba(5, 139, 153, 0.15); }
+.tournament-card--roland-garros { --tournament-accent: #ec8150; --tournament-wash: #48291f; --tournament-light-wash: #fff0e8; --tournament-mark: rgba(244, 157, 108, 0.25); --tournament-light-mark: rgba(184, 81, 42, 0.15); --tournament-art: radial-gradient(ellipse at 88% 18%, rgba(238, 131, 73, 0.3), transparent 36%), repeating-linear-gradient(153deg, transparent 0 17px, rgba(247, 181, 132, 0.1) 18px 19px); }
+.tournament-card--wimbledon { --tournament-accent: #c4d966; --tournament-wash: #173c33; --tournament-light-wash: #eff7ee; --tournament-mark: rgba(177, 139, 219, 0.36); --tournament-light-mark: rgba(111, 76, 154, 0.16); --tournament-art: radial-gradient(circle at 92% 18%, rgba(145, 104, 190, 0.38), transparent 34%), linear-gradient(135deg, transparent 0 42%, rgba(188, 221, 98, 0.13) 43% 45%, transparent 46% 59%, rgba(180, 136, 214, 0.18) 60% 62%, transparent 63%); }
+.tournament-card--us-open { --tournament-accent: #edc45c; --tournament-wash: #182d59; --tournament-light-wash: #edf2ff; --tournament-mark: rgba(109, 167, 250, 0.3); --tournament-light-mark: rgba(51, 98, 176, 0.16); --tournament-art: radial-gradient(circle at 92% 16%, rgba(61, 132, 230, 0.34), transparent 36%), linear-gradient(135deg, transparent 0 52%, rgba(239, 195, 90, 0.16) 53% 55%, transparent 56% 68%, rgba(93, 152, 239, 0.14) 69% 71%, transparent 72%); }
+.tournament-card--indian-wells { --tournament-accent: #e1b65c; --tournament-wash: #3d3728; --tournament-light-wash: #fbf5e8; --tournament-mark: rgba(93, 190, 176, 0.3); --tournament-light-mark: rgba(29, 132, 119, 0.16); --tournament-art: radial-gradient(circle at 89% 15%, rgba(228, 178, 82, 0.3), transparent 36%), repeating-linear-gradient(90deg, transparent 0 20px, rgba(76, 187, 171, 0.12) 21px 22px); }
+.tournament-card--clay { --tournament-accent: #df7953; --tournament-wash: #432920; --tournament-light-wash: #fff0e9; --tournament-mark: rgba(234, 133, 94, 0.24); --tournament-light-mark: rgba(177, 75, 40, 0.15); --tournament-art: radial-gradient(ellipse at 89% 18%, rgba(220, 112, 72, 0.3), transparent 38%), repeating-linear-gradient(145deg, transparent 0 18px, rgba(238, 162, 125, 0.1) 19px 20px); }
+.tournament-card--grass { --tournament-accent: #8ed45d; --tournament-wash: #19432b; --tournament-light-wash: #edf7eb; --tournament-mark: rgba(154, 224, 112, 0.25); --tournament-light-mark: rgba(69, 133, 45, 0.15); --tournament-art: radial-gradient(circle at 90% 16%, rgba(118, 205, 82, 0.28), transparent 34%), repeating-linear-gradient(90deg, transparent 0 19px, rgba(145, 218, 104, 0.11) 20px 21px); }
+.tournament-card--hard { --tournament-accent: #63a8e6; --tournament-wash: #172f4a; --tournament-light-wash: #edf5ff; --tournament-mark: rgba(100, 166, 235, 0.25); --tournament-light-mark: rgba(42, 111, 180, 0.15); --tournament-art: radial-gradient(circle at 90% 15%, rgba(64, 144, 223, 0.3), transparent 36%), repeating-linear-gradient(0deg, transparent 0 18px, rgba(106, 177, 239, 0.1) 19px 20px); }
+.tournament-card--indoor { --tournament-accent: #a38bdf; --tournament-wash: #302848; --tournament-light-wash: #f3efff; --tournament-mark: rgba(173, 148, 231, 0.26); --tournament-light-mark: rgba(106, 78, 169, 0.15); --tournament-art: radial-gradient(circle at 90% 15%, rgba(142, 117, 207, 0.34), transparent 38%), repeating-linear-gradient(135deg, transparent 0 18px, rgba(188, 165, 241, 0.1) 19px 20px); }
+.tournament-card--classic { --tournament-accent: var(--cyan); --tournament-wash: #102338; --tournament-light-wash: #eef5fb; }
+.tournament-card--australian-open::after { content: "AO"; }
+.tournament-card--roland-garros::after { content: "RG"; }
+.tournament-card--wimbledon::after { content: "WIM"; }
+.tournament-card--us-open::after { content: "USO"; }
+.tournament-card--indian-wells::after { content: "IW"; }
+.tournament-card--clay::after { content: "CLAY"; font-size: clamp(40px, 5vw, 60px); }
+.tournament-card--grass::after { content: "GRASS"; font-size: clamp(36px, 4.5vw, 56px); }
+.tournament-card--hard::after { content: "HARD"; font-size: clamp(40px, 5vw, 60px); }
+.tournament-card--indoor::after { content: "INDOOR"; font-size: clamp(34px, 4.2vw, 54px); }
+.tournament-card--classic::after { content: none; }
+:root[data-theme='light'] .tournament-card {
+  background: linear-gradient(112deg, var(--tournament-light-wash) 0%, #fff 82%);
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.9);
+}
+:root[data-theme='light'] .tournament-card::before { opacity: 0.26; }
+:root[data-theme='light'] .tournament-card::after { color: var(--tournament-light-mark); }
 .t-name { font-size: 28px; line-height: 1; }
 .t-meta { color: var(--muted); font-size: 13px; margin-top: 6px; }
 .arrow { margin-left: auto; color: var(--muted); font-size: 18px; }
