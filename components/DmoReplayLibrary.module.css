@@ -242,6 +242,13 @@
   background: var(--panel);
 }
 
+.scorecardNote {
+  margin: 8px 2px 0;
+  color: var(--muted);
+  font-size: 11px;
+  line-height: 1.5;
+}
+
 .viewerHeading {
   margin-bottom: 14px;
 }

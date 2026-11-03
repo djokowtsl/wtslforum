@@ -419,6 +419,7 @@ export async function sendDmoSubmission(input: {
   player1: string;
   player2: string;
   externalUrl?: string | null;
+  coachShareUrl?: string | null;
   file?: Blob | null;
   fileName?: string | null;
 }): Promise<{ channelId: string; messageId: string }> {
@@ -435,6 +436,7 @@ export async function sendDmoSubmission(input: {
     `**Players:** ${input.player1} vs ${input.player2}`,
     input.fileName ? `**File:** ${input.fileName}` : null,
     input.externalUrl ? `**Link:** ${input.externalUrl}` : null,
+    input.coachShareUrl ? `**TE4 Coach match:** ${input.coachShareUrl}` : null,
   ].filter(Boolean).join('\n').slice(0, 1900);
   const payload = { content, allowed_mentions: { parse: [] } };
   const headers: Record<string, string> = { Authorization: `Bot ${token}` };

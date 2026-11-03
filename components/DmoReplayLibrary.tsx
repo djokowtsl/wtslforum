@@ -3,7 +3,11 @@
 import { useCallback, useEffect, useState } from 'react';
 import Te4DmoReplayPlayer from './Te4DmoReplayPlayer';
 import type { PublicDmoReplay } from '@/lib/dmoReplayLibrary';
-import { buildTe4CoachAnalysisUrl, buildTe4CoachEmbedUrl } from '@/lib/te4CoachEmbed';
+import {
+  buildTe4CoachAnalysisUrl,
+  buildTe4CoachEmbedUrl,
+  buildTe4CoachScorecardEmbedUrl,
+} from '@/lib/te4CoachEmbed';
 import styles from './DmoReplayLibrary.module.css';
 
 type ReplayPage = {
@@ -27,7 +31,7 @@ export default function DmoReplayLibrary({
 }) {
   const [matches, setMatches] = useState<PublicDmoReplay[]>(initialPage?.matches ?? []);
   const [selected, setSelected] = useState<PublicDmoReplay | null>(null);
-  const [viewerMode, setViewerMode] = useState<'forum' | 'coach'>('forum');
+  const [viewerMode, setViewerMode] = useState<'forum' | 'coach' | 'scorecard'>('forum');
   const [query, setQuery] = useState('');
   const [cursor, setCursor] = useState<string | null>(initialPage?.nextCursor ?? null);
   const [hasMore, setHasMore] = useState(Boolean(initialPage?.nextCursor));
@@ -126,6 +130,9 @@ export default function DmoReplayLibrary({
   const coachAnalysisUrl = selected?.coachShareUrl
     ? buildTe4CoachAnalysisUrl(selected.coachShareUrl)
     : null;
+  const coachScorecardEmbedUrl = selected?.coachShareUrl
+    ? buildTe4CoachScorecardEmbedUrl(selected.coachShareUrl)
+    : null;
 
   return (
     <section className={styles.library} aria-label="Submitted match replays">
@@ -205,6 +212,18 @@ export default function DmoReplayLibrary({
                 >
                   TE4 Coach player
                 </button>
+                {coachScorecardEmbedUrl && (
+                  <button
+                    className={`${styles.playerTab}${viewerMode === 'scorecard' ? ` ${styles.playerTabActive}` : ''}`}
+                    type="button"
+                    role="tab"
+                    aria-selected={viewerMode === 'scorecard'}
+                    aria-controls="selected-replay-player"
+                    onClick={() => setViewerMode('scorecard')}
+                  >
+                    Coach scorecard
+                  </button>
+                )}
                 {coachAnalysisUrl && (
                   <a className={styles.coachAnalysisLink} href={coachAnalysisUrl} target="_blank" rel="noopener noreferrer">
                     Full Coach analysis
@@ -213,7 +232,21 @@ export default function DmoReplayLibrary({
               </div>
             )}
             <div id="selected-replay-player" className={styles.playerPanel} role="tabpanel" tabIndex={0}>
-              {viewerMode === 'coach' && coachEmbedUrl ? (
+              {viewerMode === 'scorecard' && coachScorecardEmbedUrl ? (
+                <>
+                  <iframe
+                    className={styles.coachEmbed}
+                    src={coachScorecardEmbedUrl}
+                    title={`TE4 Coach scorecard: ${selected.player1} vs ${selected.player2}`}
+                    loading="lazy"
+                    referrerPolicy="strict-origin-when-cross-origin"
+                  />
+                  <p className={styles.scorecardNote}>
+                    Coach notes that some serve-speed, net-point and forced/unforced-error figures
+                    can differ slightly from the game screen. Click the scorecard to reveal it.
+                  </p>
+                </>
+              ) : viewerMode === 'coach' && coachEmbedUrl ? (
                 <iframe
                   className={styles.coachEmbed}
                   src={coachEmbedUrl}

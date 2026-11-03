@@ -162,6 +162,7 @@ test('replay listing returns only safe metadata and paginates uploaded DMO files
   assert.match(queries[0].text, /publication_override\.revoked_at IS NULL/);
   assert.match(queries[0].text, /file_name, private_blob_pathname/);
   assert.match(queries[0].text, /coach_share_url/);
+  assert.match(queries[0].text, /CASE WHEN coach_group_share_consent IS TRUE THEN coach_share_url ELSE NULL END/);
   assert.match(queries[0].text, /ORDER BY id DESC/);
   assert.ok(queries[0].values.includes('%Open%'));
   assert.ok(!JSON.stringify(page).includes('private_blob_pathname'));
@@ -221,6 +222,36 @@ test('replay detail lookup requires consent or an active owner publication overr
   assert.match(queries[0].text, /dmo_replay_publication_overrides/);
   assert.match(queries[0].text, /publication_override\.revoked_at IS NULL/);
   assert.match(queries[0].text, /coach_share_url/);
+  assert.match(queries[0].text, /CASE WHEN coach_group_share_consent IS TRUE THEN coach_share_url ELSE NULL END/);
+});
+
+test('public Coach group lookup requires its separate consent flag', async () => {
+  const queries = [];
+  const { getPublicDmoCoachReplay } = loadModule('lib/dmoReplayLibrary.ts', {
+    '@/lib/db': {
+      sql: async (strings, ...values) => {
+        queries.push({ text: strings.join('?'), values });
+        return [{
+          id: '42',
+          tournament: 'WTSL Open',
+          round_name: 'Final',
+          player1: 'One',
+          player2: 'Two',
+          submission_date: '2026-11-03',
+          source: 'forum',
+          coach_share_url: 'https://replays.knowthew.net/m/3f9a1c07b2e4d5a6',
+        }];
+      },
+    },
+  });
+
+  const replay = await getPublicDmoCoachReplay('42');
+  assert.equal(replay.id, '42');
+  assert.equal(replay.coachShareUrl, 'https://replays.knowthew.net/m/3f9a1c07b2e4d5a6');
+  assert.equal('privateBlobPathname' in replay, false);
+  assert.match(queries[0].text, /coach_group_share_consent IS TRUE/);
+  assert.match(queries[0].text, /public_share_consent IS TRUE/);
+  assert.match(queries[0].text, /dmo_replay_publication_overrides/);
 });
 
 test('Discord consent endpoint requires authorization and matches the original submitter', async () => {
@@ -235,6 +266,10 @@ test('Discord consent endpoint requires authorization and matches the original s
         updates.push(input);
         return true;
       },
+      findDmoSubmissionByDiscordMessage: async () => ({ id: '88', coach_share_url: null }),
+    },
+    '@/lib/te4CoachGroupServer': {
+      syncPublicDmoSubmissionToTe4CoachGroup: async () => ({ status: 'skipped' }),
     },
   });
 
@@ -257,6 +292,8 @@ test('Discord consent endpoint requires authorization and matches the original s
       discordMessageId: '123456789012345678',
       submitterDiscordId: '223456789012345678',
       publicShareConsent: true,
+      coachGroupShareConsent: true,
+      coachShareUrl: 'https://replays.knowthew.net/m/3f9a1c07b2e4d5a6',
     }),
     headers: {
       'content-type': 'application/json',
@@ -268,7 +305,26 @@ test('Discord consent endpoint requires authorization and matches the original s
     discordChannelId: '1055277431398866995',
     discordMessageId: '123456789012345678',
     submitterDiscordId: '223456789012345678',
+    coachGroupShareConsent: true,
+    coachShareUrl: 'https://replays.knowthew.net/m/3f9a1c07b2e4d5a6',
   }]);
+
+  const replayOnly = await route.POST(new Request('https://forum.test/api/sync/dmo-submissions/consent', {
+    method: 'POST',
+    body: JSON.stringify({
+      discordChannelId: '1055277431398866995',
+      discordMessageId: '123456789012345678',
+      submitterDiscordId: '223456789012345678',
+      publicShareConsent: true,
+    }),
+    headers: {
+      'content-type': 'application/json',
+      'x-wtsl-sync-secret': 'test-secret',
+    },
+  }));
+  assert.equal(replayOnly.status, 200);
+  assert.equal(updates[1].coachGroupShareConsent, false);
+  assert.equal(updates[1].coachShareUrl, null);
 });
 
 test('replay metadata endpoint does not expose the private upload path', async () => {

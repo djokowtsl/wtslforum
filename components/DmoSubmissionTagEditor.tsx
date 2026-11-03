@@ -11,6 +11,7 @@ type DmoSubmissionTagEditorProps = {
   player2: string;
   submissionDate: string;
   coachShareUrl?: string | null;
+  coachGroupShareConsent: boolean;
 };
 
 export default function DmoSubmissionTagEditor({
@@ -21,11 +22,13 @@ export default function DmoSubmissionTagEditor({
   player2,
   submissionDate,
   coachShareUrl = '',
+  coachGroupShareConsent,
 }: DmoSubmissionTagEditorProps) {
   const router = useRouter();
   const [editing, setEditing] = useState(false);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState('');
+  const [notice, setNotice] = useState('');
   const [tags, setTags] = useState({
     tournament,
     roundName,
@@ -56,6 +59,7 @@ export default function DmoSubmissionTagEditor({
       coachShareUrl: coachShareUrl ?? '',
     });
     setError('');
+    setNotice('');
     setEditing(false);
   }
 
@@ -63,6 +67,7 @@ export default function DmoSubmissionTagEditor({
     event.preventDefault();
     setBusy(true);
     setError('');
+    setNotice('');
     try {
       const response = await fetch(`/api/admin/dmo-submissions/${id}`, {
         method: 'PATCH',
@@ -74,6 +79,19 @@ export default function DmoSubmissionTagEditor({
       });
       const body = await response.json().catch(() => null);
       if (!response.ok) throw new Error(body?.error || 'DMO tags could not be saved.');
+      if (body?.coachGroupConsentReset) {
+        setNotice('Coach match link changed. The prior group consent no longer applies; ask the submitter to consent to this link.');
+      } else if (body?.coachGroupSync === 'synced') {
+        setNotice('Tags saved and the public Coach group was updated.');
+      } else if (body?.coachGroupSync === 'failed') {
+        setNotice('Tags saved, but the public Coach group could not be updated.');
+      } else if (!coachGroupShareConsent && tags.coachShareUrl.trim()) {
+        setNotice('Tags saved. Public Coach stats remain blocked until the submitter records group consent.');
+      } else if (body?.coachGroupSync === 'not_configured') {
+        setNotice('Tags saved. Coach group updates are not configured in this environment.');
+      } else {
+        setNotice('Tags saved.');
+      }
       setTags({
         tournament: tags.tournament.trim(),
         roundName: tags.roundName.trim(),
@@ -115,6 +133,11 @@ export default function DmoSubmissionTagEditor({
       >
         {editing ? 'Close tag editor' : 'Edit tags'}
       </button>
+      {!editing && tags.coachShareUrl && (
+        <p className="notice" style={{ margin: '8px 0 0' }}>
+          Public Coach group consent: {coachGroupShareConsent ? 'confirmed' : 'not confirmed'}
+        </p>
+      )}
       {editing && (
         <form onSubmit={save} style={{ display: 'grid', gap: 10, marginTop: 12, maxWidth: 560 }}>
           <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(190px, 1fr))', gap: 10 }}>
@@ -180,7 +203,9 @@ export default function DmoSubmissionTagEditor({
               onChange={(event) => setTags({ ...tags, coachShareUrl: event.target.value })}
             />
             <span className="notice">
-              Optional. Adds a public Coach embed to this replay; the stored .dmo stays private.
+              Optional. Links the replay to TE4 Coach. The submitter’s separate consent is required
+              before the Coach match appears on the public replay or its stats join the public group;
+              Forum replay opt-in alone is not enough.
               Prefer public /m or /tv links; /w dashboard links may require the player’s access.
             </span>
           </label>
@@ -193,6 +218,7 @@ export default function DmoSubmissionTagEditor({
             </button>
           </div>
           {error && <p role="alert" className="notice">{error}</p>}
+          {notice && <p role="status" className="notice">{notice}</p>}
         </form>
       )}
     </div>
