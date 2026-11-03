@@ -541,10 +541,20 @@ test('DMO submission edits are admin-only and validate tags and Coach links', as
     '@/lib/auth': { getSession: async () => admin },
     '@/lib/te4CoachEmbed': te4CoachEmbed,
     '@/lib/dmo-submissions': {
+      getDmoSubmission: async () => ({ id: 41, coach_share_url: null, coach_group_share_consent: false }),
       updateDmoSubmissionTags: async (id, tags) => {
         calls.push({ id, tags });
-        return { id, ...tags };
+          return {
+            id,
+            ...tags,
+            coach_share_url: tags.coachShareUrl ?? null,
+            coach_group_share_consent: false,
+          };
       },
+    },
+    '@/lib/te4CoachGroupServer': {
+      removeTe4CoachLinkFromGroup: async () => ({ status: 'skipped' }),
+      syncPublicDmoSubmissionToTe4CoachGroup: async () => ({ status: 'skipped' }),
     },
   });
   const response = await handlers.PATCH(
@@ -590,6 +600,7 @@ test('DMO submission edits are admin-only and validate tags and Coach links', as
   );
   assert.equal(coachLink.status, 200);
   assert.equal(calls[1].tags.coachShareUrl, 'https://replays.knowthew.net/m/3f9a1c07b2e4d5a6');
+  assert.equal(calls[1].tags.resetCoachGroupConsent, true);
 
   const invalidCoachLink = await handlers.PATCH(
     new Request('https://forum.test/api/admin/dmo-submissions/41', {
@@ -632,6 +643,10 @@ test('DMO tag edits reject non-admins without updating metadata', async () => {
     'next/server': { NextResponse: { json: (body, init) => Response.json(body, init) } },
     '@/lib/auth': { getSession: async () => ({ ...admin, isAdmin: false }) },
     '@/lib/te4CoachEmbed': te4CoachEmbed,
+    '@/lib/te4CoachGroupServer': {
+      removeTe4CoachLinkFromGroup: async () => ({ status: 'skipped' }),
+      syncPublicDmoSubmissionToTe4CoachGroup: async () => ({ status: 'skipped' }),
+    },
     '@/lib/dmo-submissions': {
       updateDmoSubmissionTags: async () => {
         updated = true;
@@ -683,6 +698,7 @@ test('Discord DMO sync preserves the original London submission date', async () 
       },
       'next/server': { NextResponse: { json: (body, init) => Response.json(body, init) } },
       '@/lib/wtslSyncAuth': { isWtslSyncAuthorized: () => true },
+      '@/lib/te4CoachEmbed': te4CoachEmbed,
       '@/lib/dmo-submissions': {
         createDmoSubmission: async (input) => {
           created = input;
@@ -705,6 +721,7 @@ test('Discord DMO sync preserves the original London submission date', async () 
           submitterName: 'Player One',
           discordChannelId: '1055277431398866995',
           discordMessageId: '1001',
+          coachShareUrl: 'https://replays.knowthew.net/m/3f9a1c07b2e4d5a6',
         }),
       }),
     );
@@ -714,10 +731,94 @@ test('Discord DMO sync preserves the original London submission date', async () 
     assert.equal(created.roundName, 'Final');
     assert.equal(created.player1, 'Player One');
     assert.equal(created.player2, 'Player Two');
+    assert.equal(created.coachShareUrl, 'https://replays.knowthew.net/m/3f9a1c07b2e4d5a6');
+    assert.equal(created.coachGroupShareConsent, undefined);
   } finally {
     globalThis.fetch = originalFetch;
     if (originalToken === undefined) delete process.env.DISCORD_BOT_TOKEN;
     else process.env.DISCORD_BOT_TOKEN = originalToken;
+    if (originalStoreId === undefined) delete process.env.MODERATION_BLOB_STORE_ID;
+    else process.env.MODERATION_BLOB_STORE_ID = originalStoreId;
+  }
+});
+
+test('Forum DMO intake keeps Coach publication behind its own explicit consent', async () => {
+  const originalStoreId = process.env.MODERATION_BLOB_STORE_ID;
+  process.env.MODERATION_BLOB_STORE_ID = 'private-store-test';
+  const created = [];
+  const groupSyncs = [];
+  const deliveryUpdates = [];
+  const coachUrl = 'https://replays.knowthew.net/m/3f9a1c07b2e4d5a6';
+
+  function makeForm({ file, publicConsent, coachConsent, includeCoach = true }) {
+    const form = new FormData();
+    form.set('tournament', 'Autumn Cup');
+    form.set('round', 'Final');
+    form.set('player1', 'Player One');
+    form.set('player2', 'Player Two');
+    form.set('coachShareUrl', includeCoach ? coachUrl : '');
+    form.set('publicShareConsent', String(publicConsent));
+    form.set('coachGroupShareConsent', String(coachConsent));
+    if (file) form.set('file', new File([Buffer.from('dmo')], 'match.dmo', { type: 'application/octet-stream' }));
+    else form.set('externalUrl', 'https://recordings.example/match');
+    return form;
+  }
+
+  try {
+    const route = loadRoute('app/api/dmo-submissions/route.ts', {
+      '@vercel/blob': {
+        put: async () => ({ pathname: `dmo/${created.length + 1}-match.dmo` }),
+        del: async () => {},
+      },
+      'next/server': { NextResponse: { json: (body, init) => Response.json(body, init) } },
+      '@/lib/auth': { getSession: async () => ({ ...admin, discordId: '123456789012345678' }) },
+      '@/lib/discord': {
+        sendDmoSubmission: async () => ({ messageId: '987654321098765432' }),
+      },
+      '@/lib/dmo-submissions': {
+        createDmoSubmission: async (input) => {
+          created.push(input);
+          return { id: String(created.length) };
+        },
+        submissionDateInLondon: () => '2026-11-03',
+        updateDmoDiscordDelivery: async (_id, update) => deliveryUpdates.push(update),
+      },
+      '@/lib/te4CoachEmbed': te4CoachEmbed,
+      '@/lib/te4CoachGroupServer': {
+        syncPublicDmoSubmissionToTe4CoachGroup: async (id) => {
+          groupSyncs.push(id);
+          return { status: 'synced' };
+        },
+      },
+    });
+
+    const replayOnly = await route.POST(new Request('https://forum.test/api/dmo-submissions', {
+      method: 'POST',
+      body: makeForm({ file: true, publicConsent: true, coachConsent: false }),
+    }));
+    assert.equal(replayOnly.status, 201);
+    assert.equal(created[0].publicShareConsent, true);
+    assert.equal(created[0].coachGroupShareConsent, false);
+    assert.deepEqual(groupSyncs, []);
+
+    const replayAndCoach = await route.POST(new Request('https://forum.test/api/dmo-submissions', {
+      method: 'POST',
+      body: makeForm({ file: true, publicConsent: true, coachConsent: true }),
+    }));
+    assert.equal(replayAndCoach.status, 201);
+    assert.equal(created[1].coachGroupShareConsent, true);
+    assert.deepEqual(groupSyncs, ['2']);
+
+    const linkOnly = await route.POST(new Request('https://forum.test/api/dmo-submissions', {
+      method: 'POST',
+      body: makeForm({ file: false, publicConsent: true, coachConsent: true }),
+    }));
+    assert.equal(linkOnly.status, 201);
+    assert.equal(created[2].publicShareConsent, false);
+    assert.equal(created[2].coachGroupShareConsent, false);
+    assert.deepEqual(groupSyncs, ['2']);
+    assert.equal(deliveryUpdates.length, 3);
+  } finally {
     if (originalStoreId === undefined) delete process.env.MODERATION_BLOB_STORE_ID;
     else process.env.MODERATION_BLOB_STORE_ID = originalStoreId;
   }

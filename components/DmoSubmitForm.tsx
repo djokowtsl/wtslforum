@@ -10,8 +10,10 @@ export default function DmoSubmitForm() {
   const [player1, setPlayer1] = useState('');
   const [player2, setPlayer2] = useState('');
   const [externalUrl, setExternalUrl] = useState('');
+  const [coachShareUrl, setCoachShareUrl] = useState('');
   const [file, setFile] = useState<File | null>(null);
   const [publicShareConsent, setPublicShareConsent] = useState(false);
+  const [coachGroupShareConsent, setCoachGroupShareConsent] = useState(false);
   const [fileInputKey, setFileInputKey] = useState(0);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState('');
@@ -46,7 +48,12 @@ export default function DmoSubmitForm() {
       form.append('player1', player1);
       form.append('player2', player2);
       form.append('externalUrl', externalUrl.trim());
+      form.append('coachShareUrl', coachShareUrl.trim());
       form.append('publicShareConsent', String(publicShareConsent && Boolean(file)));
+      form.append(
+        'coachGroupShareConsent',
+        String(coachGroupShareConsent && Boolean(file) && publicShareConsent && Boolean(coachShareUrl.trim())),
+      );
       if (file) form.append('file', file);
 
       const response = await fetch('/api/dmo-submissions', { method: 'POST', body: form });
@@ -58,13 +65,20 @@ export default function DmoSubmitForm() {
       setPlayer1('');
       setPlayer2('');
       setExternalUrl('');
+      setCoachShareUrl('');
       setFile(null);
       setPublicShareConsent(false);
+      setCoachGroupShareConsent(false);
       setFileInputKey((value) => value + 1);
+      const savedMessage = data.discordDelivered
+        ? 'Submitted to the private Forum admin store and the Discord DMO admin channel.'
+        : data.message || 'Saved privately for Forum admins.';
       setNotice(
-        data.discordDelivered
-          ? 'Submitted to the private Forum admin store and the Discord DMO admin channel.'
-          : data.message || 'Saved privately for Forum admins.',
+        data.coachGroupSync === 'failed'
+          ? `${savedMessage} The public Coach group could not be updated.`
+          : data.coachGroupSync === 'synced'
+            ? `${savedMessage} Coach stats were added to the public WTSL group.`
+            : savedMessage,
       );
       router.refresh();
     } catch (cause) {
@@ -79,8 +93,9 @@ export default function DmoSubmitForm() {
       <h3>Submit a match recording</h3>
       <p className="notice" style={{ marginBottom: 14 }}>
         Add the tournament, round, and players, then attach a .dmo file or provide a recording link.
-        The uploaded .dmo file stays private for admins. If you opt in, a replay generated from it
-        can appear in the public archive; recording links are not published.
+        The uploaded .dmo file stays private for admins. The first opt-in controls the public Forum
+        replay; a separate opt-in controls whether the linked TE4 Coach match and its stats appear
+        publicly on the replay and in the WTSL Coach group. Recording links are not published.
       </p>
       {error && <div className="notice" role="alert" style={{ borderColor: '#ffb3bb', marginBottom: 14 }}>{error}</div>}
       {notice && <div className="notice" role="status" style={{ marginBottom: 14 }}>{notice}</div>}
@@ -127,6 +142,17 @@ export default function DmoSubmitForm() {
           onChange={(event) => setExternalUrl(event.target.value)}
           style={inputStyle}
         />
+        <input
+          type="url"
+          maxLength={500}
+          placeholder="TE4 Coach match link (optional)"
+          value={coachShareUrl}
+          onChange={(event) => {
+            setCoachShareUrl(event.target.value);
+            setCoachGroupShareConsent(false);
+          }}
+          style={inputStyle}
+        />
         <label style={{ display: 'grid', gap: 6 }}>
           <span>Or attach a .dmo file (20MB max)</span>
           <input
@@ -136,6 +162,7 @@ export default function DmoSubmitForm() {
             onChange={(event) => {
               setFile(event.target.files?.[0] ?? null);
               setPublicShareConsent(false);
+              setCoachGroupShareConsent(false);
             }}
           />
         </label>
@@ -144,11 +171,27 @@ export default function DmoSubmitForm() {
             type="checkbox"
             checked={publicShareConsent}
             disabled={!file}
-            onChange={(event) => setPublicShareConsent(event.target.checked)}
+            onChange={(event) => {
+              setPublicShareConsent(event.target.checked);
+              if (!event.target.checked) setCoachGroupShareConsent(false);
+            }}
             style={{ marginTop: 3 }}
           />
           <span>
             I confirm this is an official WTSL match and both players agree to share its replay publicly.
+          </span>
+        </label>
+        <label style={{ display: 'flex', alignItems: 'flex-start', gap: 9 }}>
+          <input
+            type="checkbox"
+            checked={coachGroupShareConsent}
+            disabled={!file || !publicShareConsent || !coachShareUrl.trim()}
+            onChange={(event) => setCoachGroupShareConsent(event.target.checked)}
+            style={{ marginTop: 3 }}
+          />
+          <span>
+            Separately, I confirm both players agree to show this linked TE4 Coach match and its
+            stats on the public replay page and in the public WTSL Coach group.
           </span>
         </label>
         <button className="btn btn-sm" type="submit" disabled={busy}>

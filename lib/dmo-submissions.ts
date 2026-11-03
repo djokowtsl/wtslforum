@@ -15,6 +15,7 @@ export type DmoSubmission = {
   player2: string;
   file_name: string | null;
   public_share_consent: boolean;
+  coach_group_share_consent: boolean;
   coach_share_url: string | null;
   private_blob_pathname: string | null;
   private_blob_content_type: string | null;
@@ -41,6 +42,8 @@ export type NewDmoSubmission = {
   player2: string;
   fileName?: string | null;
   publicShareConsent?: boolean;
+  coachGroupShareConsent?: boolean;
+  coachShareUrl?: string | null;
   privateBlobPathname?: string | null;
   privateBlobContentType?: string | null;
   externalUrl?: string | null;
@@ -59,6 +62,7 @@ export type DmoSubmissionTags = {
   player2: string;
   submissionDate: string;
   coachShareUrl?: string | null;
+  resetCoachGroupConsent?: boolean;
 };
 
 export function submissionDateInLondon(timestamp: unknown): string | null {
@@ -92,6 +96,7 @@ export async function ensureDmoSubmissionSchema() {
           player2 TEXT NOT NULL,
           file_name TEXT,
           public_share_consent BOOLEAN NOT NULL DEFAULT FALSE,
+          coach_group_share_consent BOOLEAN NOT NULL DEFAULT FALSE,
           coach_share_url TEXT,
           private_blob_pathname TEXT,
           private_blob_content_type TEXT,
@@ -167,13 +172,15 @@ export async function createDmoSubmission(
   const rows = await sql`
     INSERT INTO dmo_submissions (
       submitted_by,submitter_discord_id,submitter_name,source,tournament,round_name,
-      player1,player2,file_name,public_share_consent,private_blob_pathname,private_blob_content_type,
-      external_url,source_discord_channel_id,source_discord_message_id,
+      player1,player2,file_name,public_share_consent,coach_group_share_consent,
+      coach_share_url,private_blob_pathname,private_blob_content_type,external_url,
+      source_discord_channel_id,source_discord_message_id,
       submission_thread_id,discord_message_id,discord_delivery_status,submission_date
     ) VALUES (
       ${input.submittedBy},${input.submitterDiscordId},${input.submitterName},
       ${input.source},${input.tournament},${input.roundName},${input.player1},
       ${input.player2},${input.fileName ?? null},${input.publicShareConsent ?? false},
+      ${input.coachGroupShareConsent ?? false},${input.coachShareUrl ?? null},
       ${input.privateBlobPathname ?? null},
       ${input.privateBlobContentType ?? null},${input.externalUrl ?? null},
       ${input.sourceDiscordChannelId ?? null},${input.sourceDiscordMessageId ?? null},
@@ -198,11 +205,18 @@ export async function setDmoSubmissionPublicShareConsent(input: {
   discordChannelId: string;
   discordMessageId: string;
   submitterDiscordId: string;
+  coachGroupShareConsent: boolean;
+  coachShareUrl: string | null;
 }): Promise<boolean> {
   await ensureDmoSubmissionSchema();
   const rows = await sql`
     UPDATE dmo_submissions
-    SET public_share_consent=TRUE
+    SET public_share_consent=TRUE,
+        coach_group_share_consent=(
+          ${input.coachGroupShareConsent}
+          AND coach_share_url IS NOT NULL
+          AND coach_share_url=${input.coachShareUrl}
+        )
     WHERE source='discord'
       AND source_discord_channel_id=${input.discordChannelId}
       AND source_discord_message_id=${input.discordMessageId}
@@ -242,6 +256,10 @@ export async function updateDmoSubmissionTags(
         player1=${tags.player1},
         player2=${tags.player2},
         submission_date=${tags.submissionDate}::date,
+        coach_group_share_consent=CASE
+          WHEN ${tags.resetCoachGroupConsent ?? false} THEN FALSE
+          ELSE coach_group_share_consent
+        END,
         coach_share_url=CASE
           WHEN ${tags.coachShareUrl !== undefined} THEN ${tags.coachShareUrl ?? null}
           ELSE coach_share_url

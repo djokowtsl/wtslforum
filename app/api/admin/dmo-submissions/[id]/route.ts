@@ -1,7 +1,12 @@
 import { NextResponse } from 'next/server';
 import { getSession } from '@/lib/auth';
-import { updateDmoSubmissionTags } from '@/lib/dmo-submissions';
+import { getDmoSubmission, updateDmoSubmissionTags } from '@/lib/dmo-submissions';
 import { parseTe4CoachShareUrl } from '@/lib/te4CoachEmbed';
+import {
+  removeTe4CoachLinkFromGroup,
+  syncPublicDmoSubmissionToTe4CoachGroup,
+} from '@/lib/te4CoachGroupServer';
+import { buildTe4CoachGroupMatchUrl } from '@/lib/te4CoachEmbed';
 
 export const dynamic = 'force-dynamic';
 
@@ -57,16 +62,54 @@ export async function PATCH(
     );
   }
 
+  const previous = await getDmoSubmission(submissionId);
+  if (!previous) {
+    return NextResponse.json({ error: 'DMO submission not found.' }, { status: 404 });
+  }
+  const oldGroupLink = buildTe4CoachGroupMatchUrl(previous.coach_share_url);
+  const newGroupLink = coachShare
+    ? buildTe4CoachGroupMatchUrl(coachShare.url)
+    : oldGroupLink;
+  const resetCoachGroupConsent = Boolean(coachShare && oldGroupLink !== newGroupLink);
   const updated = await updateDmoSubmissionTags(submissionId, {
     tournament,
     roundName,
     player1,
     player2,
     submissionDate,
-    ...(coachShare ? { coachShareUrl: coachShare.url } : {}),
+    ...(coachShare
+      ? { coachShareUrl: coachShare.url, resetCoachGroupConsent }
+      : {}),
   });
   if (!updated) {
     return NextResponse.json({ error: 'DMO submission not found.' }, { status: 404 });
   }
-  return NextResponse.json({ ok: true });
+
+  let oldLinkRemovalFailed = false;
+  if (oldGroupLink && oldGroupLink !== newGroupLink) {
+    oldLinkRemovalFailed = (
+      await removeTe4CoachLinkFromGroup(oldGroupLink)
+    ).status === 'failed';
+  }
+  let coachGroupSync: 'synced' | 'skipped' | 'not_configured' | 'failed' = 'skipped';
+  try {
+    coachGroupSync = (
+      await syncPublicDmoSubmissionToTe4CoachGroup(String(submissionId))
+    ).status;
+  } catch (error) {
+    coachGroupSync = 'failed';
+    console.error('[dmo] admin tag saved; Coach group sync failed', {
+      id: submissionId,
+      errorType: error instanceof Error ? error.name : 'UnknownError',
+    });
+  }
+  return NextResponse.json({
+    ok: true,
+    coachGroupSync: oldLinkRemovalFailed ? 'failed' : coachGroupSync,
+    coachGroupConsentReset: Boolean(
+      resetCoachGroupConsent
+      && previous.coach_group_share_consent
+      && updated.coach_share_url,
+    ),
+  });
 }

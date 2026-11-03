@@ -6,6 +6,7 @@ import {
   findDmoSubmissionByDiscordMessage,
   submissionDateInLondon,
 } from '@/lib/dmo-submissions';
+import { parseTe4CoachShareUrl } from '@/lib/te4CoachEmbed';
 
 export const dynamic = 'force-dynamic';
 export const maxDuration = 60;
@@ -46,6 +47,7 @@ export async function POST(req: NextRequest) {
   const messageId = cleanText(body?.discordMessageId, 32);
   const submissionThreadId = cleanText(body?.submissionThreadId, 32) || null;
   const externalUrl = validHttpUrl(cleanText(body?.externalUrl, 1000));
+  const coachShare = parseTe4CoachShareUrl(cleanText(body?.coachShareUrl, 500));
 
   if (!tournament || !roundName || !player1 || !player2 || !channelId || !messageId) {
     return NextResponse.json({ error: 'The DMO submission details are incomplete.' }, { status: 400 });
@@ -55,6 +57,12 @@ export async function POST(req: NextRequest) {
   }
   if (body?.externalUrl && !externalUrl) {
     return NextResponse.json({ error: 'The recording link is invalid.' }, { status: 400 });
+  }
+  if (!coachShare.valid) {
+    return NextResponse.json(
+      { error: 'The TE4 Coach match link is invalid.' },
+      { status: 400 },
+    );
   }
 
   const existing = await findDmoSubmissionByDiscordMessage(channelId, messageId);
@@ -142,6 +150,7 @@ export async function POST(req: NextRequest) {
       player1,
       player2,
       fileName,
+      coachShareUrl: coachShare.url,
       privateBlobPathname: privatePathname,
       privateBlobContentType: privateContentType,
       externalUrl,

@@ -2,6 +2,7 @@ import type { Metadata } from 'next';
 import Link from 'next/link';
 import PageHero from '@/components/PageHero';
 import { getPublishedCoachingReports, type PublicCoachingReport } from '@/lib/coachingReports';
+import Te4CoachInsights from '@/components/Te4CoachInsights';
 import styles from './coaching-hub.module.css';
 
 export const dynamic = 'force-dynamic';
@@ -108,6 +109,7 @@ export default async function CoachingHubPage() {
             >
               Open TE4 Coach <span aria-hidden="true">↗</span>
             </a>
+            <a className="btn btn-ghost" href="#coach-insights">Shared insights</a>
             <a className="btn btn-ghost" href="#forum-reports">Forum reports</a>
           </div>
         </section>
@@ -142,6 +144,8 @@ export default async function CoachingHubPage() {
             ))}
           </div>
         </section>
+
+        <Te4CoachInsights />
 
         <section className={styles.reports} id="forum-reports" aria-labelledby="forum-reports-title">
           <div className={styles.sectionHeading}>

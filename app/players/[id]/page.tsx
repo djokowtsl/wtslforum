@@ -14,6 +14,7 @@ import { DEFAULT_TOUR, getTourEloDesignation, isTourCode, tourLabel, type TourCo
 import PlayerAvatar from '@/components/PlayerAvatar';
 import { getTournaments } from '@/lib/tournaments';
 import { buildWtslTournamentNameLookup, lookupWtslTournamentName } from '@/lib/wtslResultDisplay';
+import Te4CoachPlayerCard from '@/components/Te4CoachPlayerCard';
 
 export const dynamic = 'force-dynamic';
 
@@ -191,6 +192,12 @@ export default async function PlayerDashboard({ params, searchParams }: Props) {
             ))}
           </div>
         </section>}
+        {(tour === 'TE4' || tour === 'TE4_(F)') && (
+          <Te4CoachPlayerCard
+            groupId={process.env.TE4_COACH_GROUP_ID ?? ''}
+            playerName={p.name}
+          />
+        )}
       </main>
     </>
   );
