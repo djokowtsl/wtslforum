@@ -29,13 +29,6 @@
   font-size: clamp(23px, 3vw, 32px);
 }
 
-.heading > a {
-  color: var(--lime);
-  font-size: 12px;
-  font-weight: 750;
-  white-space: nowrap;
-}
-
 .kicker {
   display: block;
   margin-bottom: 6px;
@@ -95,8 +88,7 @@
   background: var(--panel-2);
 }
 
-.insightCard:focus-visible,
-.heading > a:focus-visible {
+.insightCard:focus-visible {
   outline: 2px solid var(--lime);
   outline-offset: 2px;
 }
@@ -129,6 +121,19 @@
   font-size: 18px;
 }
 
+.scopeBadge {
+  display: inline-flex;
+  margin-bottom: 8px;
+  padding: 4px 7px;
+  border: 1px solid rgba(176, 244, 59, .35);
+  border-radius: 999px;
+  color: var(--lime);
+  font-size: 10px;
+  font-weight: 800;
+  letter-spacing: .04em;
+  text-transform: uppercase;
+}
+
 .sentence {
   margin: 10px 0 0;
   color: var(--text);
@@ -152,13 +157,50 @@
   line-height: 1.5;
 }
 
-.embed {
-  display: block;
+.tableWrap {
   width: 100%;
-  min-height: 350px;
+  max-height: 440px;
+  overflow: auto;
   border: 1px solid var(--line);
   border-radius: 10px;
-  background: transparent;
+  background: var(--panel);
+}
+
+.insightTable {
+  width: 100%;
+  border-collapse: collapse;
+  color: var(--text);
+  font-size: 12px;
+  text-align: left;
+}
+
+.insightTable th,
+.insightTable td {
+  padding: 9px 10px;
+  border-bottom: 1px solid var(--line);
+  white-space: nowrap;
+}
+
+.insightTable thead th {
+  position: sticky;
+  top: 0;
+  z-index: 1;
+  background: var(--panel-2);
+  color: var(--muted);
+  font-size: 10px;
+  font-weight: 800;
+  letter-spacing: .05em;
+  text-transform: uppercase;
+}
+
+.insightTable tbody th {
+  color: var(--text-strong);
+  font-weight: 750;
+}
+
+.insightTable tbody tr:last-child th,
+.insightTable tbody tr:last-child td {
+  border-bottom: 0;
 }
 
 .disclaimer {
@@ -175,7 +217,7 @@
     grid-template-columns: minmax(0, 1fr);
   }
 
-  .embed {
-    min-height: 320px;
+  .tableWrap {
+    max-height: 360px;
   }
 }

@@ -93,6 +93,13 @@ export default function DmoSubmitForm() {
       <h3>Submit a match recording</h3>
       <p className="notice" style={{ marginBottom: 14 }}>
         Add the tournament, round, and players, then attach a .dmo file or provide a recording link.
+        For a match played across multiple sessions,{' '}
+        <a href="https://replays.knowthew.net/join" target="_blank" rel="noopener noreferrer">
+          join the replay parts first
+        </a>
+        . Use the same two players, keep the sessions in order, and ensure each replay has
+        <code> RecordDebugInfo = 1</code>. Check the joined file for repeated or returned points,
+        then attach the full-match .dmo.
         The uploaded .dmo file stays private for admins. The first opt-in controls the public Forum
         replay; a separate opt-in controls whether the linked TE4 Coach match and its stats appear
         publicly on the replay and in the WTSL Coach group. Recording links are not published.

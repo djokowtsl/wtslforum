@@ -69,7 +69,7 @@ test('group entries preserve match labels and exclude point-specific replay link
   }), null);
 });
 
-test('player cards and insight embeds use documented public endpoints', () => {
+test('player cards and WTSL insights use mod-filtered documented endpoints', () => {
   const playersUrl = new URL(embed.buildTe4CoachGroupPlayersApiUrl('g337hxh'));
   assert.equal(playersUrl.pathname, '/api/groups/g337hxh/players');
 
@@ -77,33 +77,82 @@ test('player cards and insight embeds use documented public endpoints', () => {
   assert.equal(player.pathname, '/embed/player');
   assert.equal(player.searchParams.get('group'), 'g337hxh');
   assert.equal(player.searchParams.get('player'), 'player-42');
+  assert.equal(player.searchParams.get('mod'), 'wtsl');
 
-  const insight = new URL(embed.buildTe4CoachInsightEmbedUrl('danger-zone'));
-  assert.equal(insight.pathname, '/embed/insight');
-  assert.equal(insight.searchParams.get('id'), 'danger-zone');
-  assert.equal(embed.buildTe4CoachInsightEmbedUrl('bad/id'), null);
+  const insightApi = new URL(embed.buildTe4CoachInsightApiUrl('danger-zone'));
+  assert.equal(insightApi.pathname, '/api/insights/danger-zone');
+  assert.equal(insightApi.searchParams.get('mod'), 'wtsl');
+  assert.equal(embed.buildTe4CoachInsightApiUrl('bad/id'), null);
 });
 
-test('insight parsers retain the provider caveat, sample, and date', () => {
+test('insight index omits the provider’s unfiltered global totals', () => {
   const index = insights.parseTe4CoachInsightIndex({
     insights: [{ id: 'danger-zone', question: 'How costly is a ball in the Danger Zone?' }],
     everyone: { matches: 1379, players: 449, shots: 507803, as_of: '2026-11-03' },
   });
-  assert.equal(index.everyone.shots, 507803);
-  assert.equal(index.everyone.asOf, '2026-11-03');
+  assert.deepEqual(index, {
+    insights: [{ id: 'danger-zone', question: 'How costly is a ball in the Danger Zone?' }],
+  });
+});
 
+test('insight parser accepts only explicit WTSL detail and keeps its result rows', () => {
   const detail = insights.parseTe4CoachInsightDetail({
     id: 'danger-zone',
+    mod: 'WTSL',
     question: 'How costly is a ball in the Danger Zone?',
-    sentence: 'Players win 54% of points from a clean ball.',
-    caveat: 'These patterns are not proof of cause.',
-    shots: 328756,
+    sentence: 'These percentages cover everyone’s matches.',
+    caveat: 'Across everyone’s matches, these patterns are not proof of cause.',
+    shots: 1200,
     matches: 1379,
     as_of: '2026-11-03',
+    rows: [{
+      label: 'clean',
+      shots: 1200,
+      shots_display: '1,200',
+      won: { value: 53.4, display: '53%' },
+      missed: { value: 6.9, display: '7%' },
+      worth: { value: 0.8, display: '0.8' },
+    }],
   });
-  assert.equal(detail.shots, 328756);
-  assert.equal(detail.caveat, 'These patterns are not proof of cause.');
+  assert.equal(detail.shots, 1200);
   assert.equal(detail.asOf, '2026-11-03');
+  assert.equal(detail.mod, 'WTSL');
+  assert.equal('sentence' in detail, false);
+  assert.equal('caveat' in detail, false);
+  assert.deepEqual(detail.rows[0], {
+    label: 'clean',
+    shots: 1200,
+    shotsDisplay: '1,200',
+    wonDisplay: '53%',
+    missedDisplay: '7%',
+    worthDisplay: '0.8',
+  });
+  assert.equal(insights.parseTe4CoachInsightDetail({
+    id: 'danger-zone',
+    mod: 'XKT',
+    question: 'Question',
+    shots: 1,
+    matches: 1,
+    as_of: '2026-11-03',
+    rows: [{ label: 'x', shots: 1, won: { display: '50%' } }],
+  }), null);
+  assert.equal(insights.parseTe4CoachInsightDetail({
+    id: 'danger-zone',
+    question: 'Question',
+    shots: 1,
+    matches: 1,
+    as_of: '2026-11-03',
+    rows: [{ label: 'x', shots: 1, won: { display: '50%' } }],
+  }), null);
+  assert.equal(insights.parseTe4CoachInsightDetail({
+    id: 'danger-zone',
+    mod: 'WTSL',
+    question: 'Question',
+    shots: 2,
+    matches: 1,
+    as_of: '2026-11-03',
+    rows: [{ label: 'x', shots: 1, won: { display: '50%' } }],
+  }), null);
   assert.equal(insights.parseTe4CoachInsightDetail({ id: 'danger-zone' }), null);
 });
 

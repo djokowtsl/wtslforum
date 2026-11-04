@@ -104,19 +104,18 @@ export function buildTe4CoachPlayerEmbedUrl(groupId: unknown, playerId: unknown)
   const embed = new URL('/embed/player', TE4_COACH_ORIGIN);
   embed.searchParams.set('group', groupId);
   embed.searchParams.set('player', playerId);
+  embed.searchParams.set('mod', 'wtsl');
   embed.searchParams.set('layout', 'profile');
   embed.searchParams.set('bg', 'transparent');
   embed.searchParams.set('font', 'dm-sans');
   return embed.toString();
 }
 
-export function buildTe4CoachInsightEmbedUrl(insightId: unknown): string | null {
+export function buildTe4CoachInsightApiUrl(insightId: unknown): string | null {
   if (typeof insightId !== 'string' || !/^[a-z0-9]+(?:-[a-z0-9]+)*$/.test(insightId)) {
     return null;
   }
-  const embed = new URL('/embed/insight', TE4_COACH_ORIGIN);
-  embed.searchParams.set('id', insightId);
-  embed.searchParams.set('bg', 'transparent');
-  embed.searchParams.set('font', 'dm-sans');
-  return embed.toString();
+  const api = new URL(`/api/insights/${encodeURIComponent(insightId)}`, TE4_COACH_ORIGIN);
+  api.searchParams.set('mod', 'wtsl');
+  return api.toString();
 }
