@@ -6,26 +6,27 @@ export type Te4CoachInsight = {
   question: string;
 };
 
-export type Te4CoachCorpus = {
-  asOf: string;
-  matches: number;
-  players: number;
-  shots: number;
-};
-
 export type Te4CoachInsightIndex = {
   insights: Te4CoachInsight[];
-  everyone: Te4CoachCorpus | null;
+};
+
+export type Te4CoachInsightRow = {
+  label: string;
+  shots: number;
+  shotsDisplay: string;
+  wonDisplay: string | null;
+  missedDisplay: string | null;
+  worthDisplay: string | null;
 };
 
 export type Te4CoachInsightDetail = {
   id: string;
+  mod: 'WTSL';
   question: string;
-  sentence: string;
-  caveat: string;
   asOf: string;
   matches: number;
   shots: number;
+  rows: Te4CoachInsightRow[];
 };
 
 function nonNegativeInteger(value: unknown): number | null {
@@ -62,19 +63,46 @@ export function parseTe4CoachInsightIndex(value: unknown): Te4CoachInsightIndex 
     return [{ id: row.id, question: row.question.trim() }];
   });
 
-  const rawEveryone = data.everyone;
-  let everyone: Te4CoachCorpus | null = null;
-  if (rawEveryone && typeof rawEveryone === 'object') {
-    const corpus = rawEveryone as Record<string, unknown>;
-    const matches = nonNegativeInteger(corpus.matches);
-    const players = nonNegativeInteger(corpus.players);
-    const shots = nonNegativeInteger(corpus.shots);
-    if (matches !== null && players !== null && shots !== null && validDate(corpus.as_of)) {
-      everyone = { matches, players, shots, asOf: corpus.as_of };
-    }
-  }
+  return insights.length ? { insights } : null;
+}
 
-  return insights.length ? { insights, everyone } : null;
+function rowMetricDisplay(value: unknown): string | null {
+  if (!value || typeof value !== 'object') return null;
+  const display = (value as Record<string, unknown>).display;
+  return typeof display === 'string' && display.length <= 40 ? display : null;
+}
+
+function parseInsightRows(value: unknown): Te4CoachInsightRow[] | null {
+  if (!Array.isArray(value) || value.length === 0 || value.length > 100) return null;
+  const rows = value.flatMap((item): Te4CoachInsightRow[] => {
+    if (!item || typeof item !== 'object') return [];
+    const row = item as Record<string, unknown>;
+    const shots = nonNegativeInteger(row.shots);
+    if (
+      typeof row.label !== 'string'
+      || !row.label.trim()
+      || row.label.length > 120
+      || shots === null
+    ) {
+      return [];
+    }
+    const wonDisplay = rowMetricDisplay(row.won);
+    const missedDisplay = rowMetricDisplay(row.missed);
+    const worthDisplay = rowMetricDisplay(row.worth);
+    if (!wonDisplay && !missedDisplay && !worthDisplay) return [];
+    const shotsDisplay = typeof row.shots_display === 'string' && row.shots_display.length <= 40
+      ? row.shots_display
+      : shots.toLocaleString('en-GB');
+    return [{
+      label: row.label.trim(),
+      shots,
+      shotsDisplay,
+      wonDisplay,
+      missedDisplay,
+      worthDisplay,
+    }];
+  });
+  return rows.length === value.length ? rows : null;
 }
 
 export function parseTe4CoachInsightDetail(value: unknown): Te4CoachInsightDetail | null {
@@ -82,27 +110,28 @@ export function parseTe4CoachInsightDetail(value: unknown): Te4CoachInsightDetai
   const data = value as Record<string, unknown>;
   const shots = nonNegativeInteger(data.shots);
   const matches = nonNegativeInteger(data.matches);
+  const rows = parseInsightRows(data.rows);
   if (
     typeof data.id !== 'string'
     || !INSIGHT_ID.test(data.id)
+    || typeof data.mod !== 'string'
+    || data.mod.trim().toUpperCase() !== 'WTSL'
     || typeof data.question !== 'string'
-    || typeof data.sentence !== 'string'
-    || !data.sentence.trim()
-    || typeof data.caveat !== 'string'
-    || !data.caveat.trim()
     || !validDate(data.as_of)
     || shots === null
     || matches === null
+    || !rows
+    || rows.reduce((total, row) => total + row.shots, 0) !== shots
   ) {
     return null;
   }
   return {
     id: data.id,
+    mod: 'WTSL',
     question: data.question.trim(),
-    sentence: data.sentence.trim(),
-    caveat: data.caveat.trim(),
     asOf: data.as_of,
     matches,
     shots,
+    rows,
   };
 }

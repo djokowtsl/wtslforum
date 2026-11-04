@@ -35,16 +35,23 @@ const coachDestinations = [
     action: 'Open broadcast',
   },
   {
-    eyebrow: 'SHOT LIBRARY',
-    title: 'Explore everyone’s shots',
-    description: 'Look up how players use different shots and situations across replays.',
-    href: 'https://replays.knowthew.net/all/',
-    action: 'Explore the library',
+    eyebrow: 'WTSL INSIGHTS',
+    title: 'Read WTSL-only insights',
+    description: 'Compare shot outcomes using only matches the replay identifies as played on the WTSL mod.',
+    href: '#coach-insights',
+    action: 'View WTSL insights',
   },
   {
-    eyebrow: 'MATCH DASHBOARD',
-    title: 'Build a replay dashboard',
-    description: 'Upload a replay folder to collect matches and review player patterns.',
+    eyebrow: 'MULTI-SESSION MATCH',
+    title: 'Join replay sessions',
+    description: 'Join replay files from a multi-session match before submitting the full recording for analysis.',
+    href: 'https://replays.knowthew.net/join',
+    action: 'Join replay parts',
+  },
+  {
+    eyebrow: 'PRIVATE DASHBOARD',
+    title: 'Build your replay dashboard',
+    description: 'Create a personal dashboard. Its matches do not contribute to the Forum’s shared WTSL analysis.',
     href: 'https://replays.knowthew.net/#folder',
     action: 'Create a dashboard',
   },
@@ -95,7 +102,7 @@ export default async function CoachingHubPage() {
             <span className={styles.kicker}>TE4 COACH &amp; FORUM REPORTS</span>
             <h2 id="coaching-intro-title">Match analysis built around real points.</h2>
             <p>
-              Explore TE4 Coach’s replay tools, live broadcasts, and shared shot library.
+              Explore TE4 Coach’s replay tools and WTSL-only shared insights.
               Forum reports add reviewed DMO replays and coaching notes, published only with
               both players’ consent.
             </p>
@@ -109,7 +116,7 @@ export default async function CoachingHubPage() {
             >
               Open TE4 Coach <span aria-hidden="true">↗</span>
             </a>
-            <a className="btn btn-ghost" href="#coach-insights">Shared insights</a>
+            <a className="btn btn-ghost" href="#coach-insights">WTSL insights</a>
             <a className="btn btn-ghost" href="#forum-reports">Forum reports</a>
           </div>
         </section>
@@ -126,22 +133,25 @@ export default async function CoachingHubPage() {
           </div>
 
           <div className={styles.toolGrid}>
-            {coachDestinations.map((destination) => (
-              <a
-                className={styles.toolCard}
-                href={destination.href}
-                key={destination.href}
-                target="_blank"
-                rel="noopener noreferrer"
-              >
-                <span className={styles.cardEyebrow}>{destination.eyebrow}</span>
-                <h3>{destination.title}</h3>
-                <p>{destination.description}</p>
-                <span className={styles.cardAction}>
-                  {destination.action} <span aria-hidden="true">↗</span>
-                </span>
-              </a>
-            ))}
+            {coachDestinations.map((destination) => {
+              const external = destination.href.startsWith('https://');
+              return (
+                <a
+                  className={styles.toolCard}
+                  href={destination.href}
+                  key={destination.href}
+                  target={external ? '_blank' : undefined}
+                  rel={external ? 'noopener noreferrer' : undefined}
+                >
+                  <span className={styles.cardEyebrow}>{destination.eyebrow}</span>
+                  <h3>{destination.title}</h3>
+                  <p>{destination.description}</p>
+                  <span className={styles.cardAction}>
+                    {destination.action} <span aria-hidden="true">{external ? '↗' : '→'}</span>
+                  </span>
+                </a>
+              );
+            })}
           </div>
         </section>
 
