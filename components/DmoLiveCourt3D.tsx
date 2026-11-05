@@ -12,9 +12,9 @@ import {
 import type { Te4CourtSurface } from '@/lib/te4DmoTypes';
 import {
   groundstrokeCaptureWeight,
-  readyPosePlayback,
   serveCaptureWeight,
 } from './DmoCapturedGroundstroke';
+import { isWaitingPose } from './DmoWaitingPose';
 import { courtSurfaceDisplayName, isIndoorDmoVenue } from '@/lib/te4DmoSurface';
 import { deriveLiveCourtSoundEvents, playLiveCourtEffect as playCue } from '@/lib/liveCourtAudio';
 import {
@@ -770,11 +770,12 @@ function ThreeCourt({
       } else {
         delete rig.root.userData.groundstrokePlayback;
       }
-      if (!event && !capturedEvent) {
-        // Between shots, hold the authored pre-serve ready pose for the upper
-        // body. Scope it above the waist so the accepted footwork is untouched.
-        rig.root.userData.groundstrokePlayback = readyPosePlayback(handedness, 'upper');
-      }
+      // A nearby event can have zero pose influence. Do not leave those gaps
+      // in the old dangling-arm fallback, or partially retarget a serve as idle.
+      rig.root.userData.waitingPose = isWaitingPose(rig.root.userData.groundstrokePlayback, [
+        impactWeight, shapedBackswing, shapedFollowThrough,
+        servePreparation, serveToss, serveFollowThrough, jump,
+      ]);
       const twoHandedStroke = !serving
         && (capturedEvent?.stroke !== 'serve' && capturedEvent
           ? capturedEvent.hands === 'two'
