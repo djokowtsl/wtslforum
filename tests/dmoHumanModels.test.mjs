@@ -18,7 +18,7 @@ async function loadTs(file, overrides = {}) {
 }
 const sceneApi = await loadTs('../components/DmoLiveCourt3DScene.ts');
 const racketPose = await loadTs('../components/DmoRacketOrientation.ts');
-const articulated = await loadTs('../components/DmoArticulatedHands.ts');
+const articulated = await loadTs('../components/DmoArticulatedHands.ts', { './DmoRacketOrientation': racketPose });
 const humans = await loadTs('../components/DmoHumanModels.ts', { './DmoRacketOrientation': racketPose, './DmoArticulatedHands': articulated });
 const crowds = await loadTs('../components/DmoHumanCrowd.ts', { './DmoHumanModels': humans });
 
@@ -126,25 +126,48 @@ for (const gender of ['male', 'female']) {
   });
 }
 
-test('tennis hand frame follows the shaft with full-scene palm rolls', () => {
+test('tennis handle crosses the palm while the ready palm faces down', () => {
   const racket = new THREE.Quaternion().setFromEuler(new THREE.Euler(0.4, -0.25, 0.3));
   const shaft = new THREE.Vector3(0, 1, 0).applyQuaternion(racket);
   const right = racketPose.racketHandFrame(racket, false);
   const left = racketPose.racketHandFrame(racket, true);
-  close(new THREE.Vector3(0, 1, 0).applyQuaternion(right), shaft);
-  close(new THREE.Vector3(0, 1, 0).applyQuaternion(left), shaft);
-  const rightPalm = new THREE.Vector3(0, 0, 1).applyQuaternion(right);
-  const leftPalm = new THREE.Vector3(0, 0, 1).applyQuaternion(left);
+  close(racketPose.HAND_GRIP_SHAFT.clone().applyQuaternion(right), shaft);
+  const mirroredShaft = racketPose.HAND_GRIP_SHAFT.clone(); mirroredShaft.x *= -1;
+  close(mirroredShaft.applyQuaternion(left), shaft);
+  const rightPalm = new THREE.Vector3(0, 0, -1).applyQuaternion(right);
+  const leftPalm = new THREE.Vector3(0, 0, -1).applyQuaternion(left);
   const racketFace = new THREE.Vector3(0, 0, 1).applyQuaternion(racket);
-  assert.ok(rightPalm.dot(racketFace) > 0.999, 'the right palm must face the string side in the full-scene view');
-  assert.ok(leftPalm.dot(racketFace) < -0.999, 'the mirrored left palm must face the opposite side');
-  assert.ok(rightPalm.dot(leftPalm) < -0.999, 'right and left grips must roll to opposite palm sides');
+  assert.ok(rightPalm.dot(racketFace) > 0.999);
+  assert.ok(leftPalm.dot(racketFace) > 0.999);
+  const fingerDirection = new THREE.Vector3(0, 1, 0).applyQuaternion(right);
+  assert.ok(Math.abs(fingerDirection.dot(shaft)) < 0.4, 'fingers must wrap across, not run along, the shaft');
+  const ready = new THREE.Quaternion().setFromEuler(new THREE.Euler(0.42, 0, 0));
+  for (const left of [false, true]) {
+    const palm = new THREE.Vector3(0, 0, -1).applyQuaternion(racketPose.racketHandFrame(ready, left));
+    assert.ok(palm.y < -0.4, 'the ready palm must cover the handle from above');
+  }
+});
+
+test('ready grip bends the arm instead of forcing a right-angle wrist', () => {
+  for (const left of [false, true]) {
+    const side = left ? 1 : -1;
+    const shoulder = new THREE.Vector3(side * 0.39 * 0.59, 1.44, 0);
+    const grip = new THREE.Vector3(side * 0.39, 1.12, 0.06);
+    const rotation = new THREE.Quaternion().setFromEuler(new THREE.Euler(0.42, 0, -side * 0.12));
+    const wrist = racketPose.racketGripWrist(grip, rotation, left);
+    const elbow = racketPose.racketGripElbow(shoulder, wrist, rotation, left);
+    assert.ok(Math.abs(elbow.distanceTo(shoulder) - 0.31) < 1e-6);
+    assert.ok(Math.abs(elbow.distanceTo(wrist) - 0.29) < 1e-6);
+    const forearm = wrist.clone().sub(elbow).normalize();
+    const handDirection = new THREE.Vector3(0, 1, 0).applyQuaternion(racketPose.racketHandFrame(rotation, left));
+    assert.ok(forearm.dot(handDirection) > 0.85, 'the hand must continue the forearm without a sharp wrist bend');
+  }
 });
 
 test('finger-jointed hands wrap the actual shaft and oppose it with the thumb', async () => {
     const template = await articulatedHandAsset();
-    const center = new THREE.Vector3(0, 0.075, -0.035);
-    const shaft = new THREE.Vector3(0, 1, 0);
+    const center = racketPose.HAND_GRIP_CENTER.clone();
+    const shaft = racketPose.HAND_GRIP_SHAFT.clone();
     const radius = 0.019;
     const point = (hand, name) => hand.joints.get(name).bone.position.clone()
       .sub(hand.joints.get('wrist').bone.position).applyQuaternion(handCanonical);
@@ -223,12 +246,12 @@ test('attached dominant hand tracks the transformed racket grip', async () => {
   assert.ok(hand, 'dominant articulated hand should be attached');
   const gripWorld = rig.racket.getWorldPosition(new THREE.Vector3());
   const localGrip = hand.worldToLocal(gripWorld.clone());
-  close(localGrip, new THREE.Vector3(0, 0.075, -0.035));
+  close(localGrip, racketPose.HAND_GRIP_CENTER);
   const racketRotation = rig.racket.getWorldQuaternion(new THREE.Quaternion());
   const shaft = new THREE.Vector3(0, 1, 0).applyQuaternion(racketRotation).normalize();
   const shaftEnd = hand.worldToLocal(gripWorld.clone().add(shaft));
   const localShaft = shaftEnd.sub(localGrip).normalize();
-  close(localShaft, new THREE.Vector3(0, 1, 0));
+  close(localShaft, racketPose.HAND_GRIP_SHAFT);
 
   const center = gripWorld;
   const radialDistance = point => {
