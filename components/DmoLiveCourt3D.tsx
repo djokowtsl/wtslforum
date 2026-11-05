@@ -714,7 +714,10 @@ function ThreeCourt({
           + (contactSample[1] - contactSample[zIndex]) * localXAxis[1]) * SCALE / rig.root.scale.x
         : localX;
       const stroke = groundstrokeForBallSide(contactSide, handedness);
-      type CapturedEvent = { frame: number; stroke: 'forehand' | 'backhand' | 'serve'; handedness: 'left' | 'right' };
+      type CapturedEvent = {
+        frame: number; stroke: 'forehand' | 'backhand' | 'serve'; handedness: 'left' | 'right';
+        hands: 'one' | 'two'; contactTarget?: [number, number, number];
+      };
       let capturedEvent = rig.root.userData.capturedGroundstrokeEvent as CapturedEvent | undefined;
       if (contactCue === 'close-net' || contactCue === 'soft-touch') {
         delete rig.root.userData.capturedGroundstrokeEvent;
@@ -726,6 +729,12 @@ function ThreeCourt({
             frame: event.frame,
             stroke: event.shotType === 'serve' ? 'serve' : stroke,
             handedness,
+            hands: (playerStrokeStyle?.[stroke] ?? (stroke === 'backhand' ? 'two' : 'one')) === 'two' ? 'two' : 'one',
+            contactTarget: contactSample ? new THREE.Vector3(
+              (contactSample[0] - contactSample[xIndex]) * SCALE / rig.root.scale.x,
+              (contactSample[2] * SCALE + BALL_RADIUS) / rig.root.scale.y,
+              (contactSample[1] - contactSample[zIndex]) * SCALE / rig.root.scale.z,
+            ).applyAxisAngle(new THREE.Vector3(0, 1, 0), -facing).toArray() as [number, number, number] : undefined,
           };
         }
         rig.root.userData.capturedGroundstrokeEvent = capturedEvent;
@@ -746,6 +755,8 @@ function ThreeCourt({
               weight,
               handedness: capturedEvent.handedness,
               rootOffset: false,
+              hands: capturedEvent.hands,
+              contactTarget: capturedEvent.contactTarget,
             };
           } else {
             delete rig.root.userData.groundstrokePlayback;
@@ -755,7 +766,9 @@ function ThreeCourt({
         delete rig.root.userData.groundstrokePlayback;
       }
       const twoHandedStroke = !serving
-        && (playerStrokeStyle?.[stroke] ?? (stroke === 'backhand' ? 'two' : 'one')) === 'two';
+        && (capturedEvent?.stroke !== 'serve' && capturedEvent
+          ? capturedEvent.hands === 'two'
+          : (playerStrokeStyle?.[stroke] ?? (stroke === 'backhand' ? 'two' : 'one')) === 'two');
       const armPump = Math.sin(phase * 0.55) * gaitSpeed * 0.12;
       const dominantHand = new THREE.Vector3(dominantX, 1.12 + bodyBounce + armPump, 0.06);
       const nonDominantHand = new THREE.Vector3(-dominantX * 0.72, 0.96 + bodyBounce - armPump, 0.1);
@@ -865,6 +878,7 @@ function ThreeCourt({
       // Both sides of the string bed are equivalent; keep a stable facing
       // sign so a transition from incoming to outgoing flight cannot flip it.
       if (flight.z < 0) flight.negate();
+      rig.root.userData.groundstrokeFlight = flight.clone();
       const contactRotation = racketContactOrientation(new THREE.Vector3(...contact.axis), flight);
       const followRotation = contactRotation.clone().multiply(
         new THREE.Quaternion().setFromEuler(new THREE.Euler(
