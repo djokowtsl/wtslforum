@@ -61,8 +61,11 @@ import {
   type PlayerRig,
 } from './DmoLiveCourt3DScene';
 import styles from './DmoLiveCourt3D.module.css';
+import { attachHumanPlayer, disposeHumanModel, loadHumanModel } from './DmoHumanModels';
+import { attachHumanCrowd } from './DmoHumanCrowd';
 
 type Props = {
+  modelAssetBase?: string;
   snapshot: Te4LiveSnapshot;
   surface: Te4CourtSurface;
   playbackSpeed: Te4DmoReplaySpeed;
@@ -128,6 +131,7 @@ function playSample(
 }
 
 function ThreeCourt({
+  modelAssetBase,
   snapshot,
   surface,
   playbackSpeed,
@@ -193,6 +197,7 @@ function ThreeCourt({
   const [crowdVolume, setCrowdVolume] = useState(0.24);
   const [effectsVolume, setEffectsVolume] = useState(0.9);
   const [hasCourtData, setHasCourtData] = useState(snapshot.court.length > 0);
+  const [modelStatus, setModelStatus] = useState<'loading' | 'ready' | 'failed'>('loading');
   const surfaceLabel = courtSurfaceDisplayName(surface);
   const [shotCallout, setShotCallout] = useState<{
     player: string;
@@ -392,6 +397,35 @@ function ThreeCourt({
       makePlayer(PALETTE.shirtTwo, 0x514b61, isWta),
     ];
     players.forEach(({ root }) => scene.add(root));
+    const modelLoad = new AbortController();
+    setModelStatus('loading');
+    Promise.allSettled([
+      loadHumanModel(isWta ? 'female' : 'male', 'player', modelLoad.signal, modelAssetBase),
+      loadHumanModel('male', 'crowd', modelLoad.signal, modelAssetBase),
+      loadHumanModel('female', 'crowd', modelLoad.signal, modelAssetBase),
+    ]).then((results) => {
+      try {
+        if (modelLoad.signal.aborted) return;
+        const [player, maleCrowd, femaleCrowd] = results;
+        if (player.status === 'fulfilled') {
+          attachHumanPlayer(player.value, players[0], PALETTE.shirtOne);
+          attachHumanPlayer(player.value, players[1], PALETTE.shirtTwo);
+        }
+        if (maleCrowd.status === 'fulfilled' && femaleCrowd.status === 'fulfilled') {
+          attachHumanCrowd(scene, crowdRig, [maleCrowd.value, femaleCrowd.value]);
+        }
+        const failed = results.find((result) => result.status === 'rejected');
+        if (failed?.status === 'rejected') throw failed.reason;
+        setModelStatus('ready');
+      } finally {
+        // Visible instances retain texture maps; discard only the unused template buffers.
+        results.forEach((result) => { if (result.status === 'fulfilled') disposeHumanModel(result.value, modelLoad.signal.aborted); });
+      }
+    }).catch((error: unknown) => {
+      if (modelLoad.signal.aborted) return;
+      console.error('Detailed DMO character models could not load.', error);
+      setModelStatus('failed');
+    });
     const ball = new THREE.Mesh(
       new THREE.SphereGeometry(BALL_RADIUS, 18, 14),
       new THREE.MeshStandardMaterial({
@@ -429,7 +463,8 @@ function ThreeCourt({
       const compactFrame = bounds.width <= 720;
       camera.fov = compactFrame ? 38 : 34;
       camera.updateProjectionMatrix();
-      const responsiveScale = compactFrame ? 0.82 : 1;
+      // Narrow screens must pull back, not crop out the near-baseline player.
+      const responsiveScale = compactFrame ? 1.22 : 1;
       const activeView = cameraViewRef.current;
       if (activeView === 'court') {
         camera.position.copy(DEFAULT_CAMERA).multiplyScalar(responsiveScale);
@@ -776,6 +811,7 @@ function ThreeCourt({
       // Keep the dominant palm and curled fingers aligned with the grip as
       // the racket turns through serves and groundstrokes.
       dominantMesh.quaternion.copy(rig.racket.quaternion);
+      rig.detailed?.update();
     };
 
     const animate = (now: number) => {
@@ -1035,7 +1071,7 @@ function ThreeCourt({
       controls.target.set(0, 0.5, 0);
       const compactFrame = viewportRef.current?.getBoundingClientRect().width ?? window.innerWidth;
       const compactViewport = compactFrame <= 720;
-      const narrowScale = compactViewport ? 0.82 : 1;
+      const narrowScale = compactViewport ? 1.22 : 1;
       if (view === 'aerial') camera.position.set(0, compactViewport ? 46 : 60, 0.1);
       else if (view === 'tv') camera.position.set(0, 24 * narrowScale, 46 * narrowScale);
       else if (view === 'court') camera.position.copy(DEFAULT_CAMERA).multiplyScalar(narrowScale);
@@ -1083,6 +1119,7 @@ function ThreeCourt({
     viewport.addEventListener('courtplayerpan', onPlayerPan);
 
     return () => {
+      modelLoad.abort();
       window.cancelAnimationFrame(animation);
       observer.disconnect();
       controls.dispose();
@@ -1099,7 +1136,11 @@ function ThreeCourt({
         if (object instanceof THREE.Mesh || object instanceof THREE.Line) {
           geometries.add(object.geometry);
           const objectMaterials = Array.isArray(object.material) ? object.material : [object.material];
-          objectMaterials.forEach((item) => materials.add(item));
+          objectMaterials.forEach((item) => {
+            materials.add(item);
+            Object.values(item).forEach((value) => { if (value instanceof THREE.Texture) textures.add(value); });
+          });
+          if (object instanceof THREE.SkinnedMesh) object.skeleton.dispose();
         }
         if (object instanceof THREE.Sprite) {
           materials.add(object.material);
@@ -1110,7 +1151,7 @@ function ThreeCourt({
       materials.forEach((item) => item.dispose());
       textures.forEach((texture) => texture.dispose());
     };
-  }, [fullReplay, isWta, onUnsupported, snapshot.filename]);
+  }, [fullReplay, isWta, modelAssetBase, onUnsupported, snapshot.filename]);
 
   const requestZoom = (factor: number) => {
     viewportRef.current?.dispatchEvent(new CustomEvent<number>('courtzoom', { detail: factor }));
@@ -1405,6 +1446,13 @@ function ThreeCourt({
         )}
         <DmoLiveBufferingOverlay buffering={buffering} />
       </div>
+      {modelStatus !== 'ready' && (
+        <p className={styles.modelStatus} role="status">
+          {modelStatus === 'loading'
+            ? 'Loading textured character models…'
+            : 'Detailed characters could not load. Simplified reconstruction is shown.'}
+        </p>
+      )}
       <div className={styles.legend}>
         <span><i className={styles.playerOne} />{snapshot.players[0]}</span>
         <span><i className={styles.playerTwo} />{snapshot.players[1]}</span>
