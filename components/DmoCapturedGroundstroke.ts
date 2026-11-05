@@ -41,7 +41,6 @@ type MotionClip = {
   duration: number;
   contactTime: number;
   contactRoot: THREE.Vector3;
-  sourceRestRotations: Map<string, THREE.Quaternion>;
   scale: number;
   rightPairs: RetargetPair[];
   leftPairs: RetargetPair[];
@@ -176,14 +175,6 @@ export class DmoCapturedGroundstroke {
     if (contactTime >= data.clip.duration) {
       throw new Error(`Captured ${stroke} contact time exceeds its BVH clip.`);
     }
-    mixer.setTime(0);
-    root.updateMatrixWorld(true);
-    const sourceRestRotations = new Map(
-      data.skeleton.bones.map((bone) => [
-        bone.name,
-        bone.getWorldQuaternion(new THREE.Quaternion()),
-      ]),
-    );
     mixer.setTime(contactTime);
     root.updateMatrixWorld(true);
     const contactRoot = root.position.clone();
@@ -201,7 +192,6 @@ export class DmoCapturedGroundstroke {
       duration: data.clip.duration,
       contactTime,
       contactRoot,
-      sourceRestRotations,
       scale,
       rightPairs: this.buildPairs(sourceBones, rest, false),
       leftPairs: this.buildPairs(sourceBones, rest, true),
@@ -219,7 +209,14 @@ export class DmoCapturedGroundstroke {
       const source = sourceBones.get(mirrored ? mirrorSide(sourceName) : sourceName);
       const targetRest = rest.get(name);
       if (!target || !source || !targetRest) continue;
-      pairs.push({ target, source, targetRest: targetRest.rotation.clone() });
+      // BVH offsets describe the source bind axes. Its first animated frame
+      // is an arbitrary tennis pose, not a rest pose to subtract from a swing.
+      const child = source.children.find(object => object instanceof THREE.Bone);
+      const sourceDirection = child?.position.clone().normalize() ?? new THREE.Vector3(0, 1, 0);
+      if (mirrored) sourceDirection.x *= -1;
+      const bindAlignment = new THREE.Quaternion()
+        .setFromUnitVectors(targetRest.direction.clone().normalize(), sourceDirection);
+      pairs.push({ target, source, targetRest: bindAlignment.multiply(targetRest.rotation) });
     }
     return pairs;
   }
@@ -257,15 +254,10 @@ export class DmoCapturedGroundstroke {
     for (const { target, source, targetRest } of pairs) {
       target.parent!.updateWorldMatrix(true, false);
       const sourceRotation = source.getWorldQuaternion(new THREE.Quaternion());
-      const sourceRest = motion.sourceRestRotations.get(source.name);
-      if (!sourceRest) continue;
-      const referenceRotation = sourceRest.clone();
       if (mirrored) {
         sourceRotation.copy(mirrorQuaternionX(sourceRotation));
-        referenceRotation.copy(mirrorQuaternionX(referenceRotation));
       }
-      const deltaRotation = sourceRotation.multiply(referenceRotation.invert());
-      const desiredWorld = spaceRotation.clone().multiply(deltaRotation).multiply(targetRest);
+      const desiredWorld = spaceRotation.clone().multiply(sourceRotation).multiply(targetRest);
       target.quaternion.copy(
         target.parent!.getWorldQuaternion(new THREE.Quaternion()).invert().multiply(desiredWorld),
       );

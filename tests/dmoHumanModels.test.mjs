@@ -4,6 +4,7 @@ import { readFile } from 'node:fs/promises';
 import { createRequire } from 'node:module';
 import * as THREE from 'three';
 import { GLTFLoader } from 'three/examples/jsm/loaders/GLTFLoader.js';
+import { BVHLoader } from 'three/examples/jsm/loaders/BVHLoader.js';
 
 const require = createRequire(import.meta.url);
 const { transformSync } = require('next/dist/build/swc');
@@ -160,6 +161,81 @@ for (const gender of ['male', 'female']) test(`${gender}: continuous native body
       const radius = delta.addScaledVector(grips[side].shaft,
         -THREE.MathUtils.clamp(delta.dot(grips[side].shaft), -0.045, 0.135)).length();
       assert.ok(radius >= 0.019, `${side} ${finger}: finger bone crosses the handle`);
+    }
+  }
+});
+
+test('retargeted limb directions match the capture rather than its first-frame deltas', async () => {
+  const template = await nativePlayerTemplate('male');
+  const rig = sceneApi.makePlayer(0x275c77, 0x333333);
+  const attached = humans.attachHumanPlayer(template, rig, 0x275c77);
+  const sources = Object.fromEntries(await Promise.all(['forehand', 'backhand', 'serve'].map(async stroke =>
+    [stroke, await readFile(new URL(`../public/models/dmo-humans/tennis-${stroke}.bvh`, import.meta.url), 'utf8')])));
+  attached.pose.reset();
+  const capture = new capturedGroundstroke.DmoCapturedGroundstroke(attached.model, rig.root, attached.pose.rest, sources);
+  const contact = { forehand: 13.4, backhand: 9.28, serve: 2.56 };
+  for (const stroke of Object.keys(sources)) {
+    const source = new BVHLoader().parse(sources[stroke]);
+    const mixer = new THREE.AnimationMixer(source.skeleton.bones[0]);
+    mixer.clipAction(source.clip).play();
+    for (const handedness of ['right', 'left']) for (const deltaSeconds of [-0.3, 0, 0.3]) {
+      attached.pose.reset();
+      capture.apply({ stroke, deltaSeconds, weight: 1, handedness, rootOffset: false });
+      mixer.setTime(contact[stroke] + deltaSeconds);
+      source.skeleton.bones[0].updateMatrixWorld(true);
+      for (const [a, b, c, d] of [
+        ['upperarm_l', 'lowerarm_l', 'LeftShoulder', 'LeftElbow'],
+        ['lowerarm_r', 'hand_r', 'RightElbow', 'RightWrist'],
+        ['thigh_l', 'calf_l', 'LeftHip', 'LeftKnee'],
+        ['calf_r', 'foot_r', 'RightKnee', 'RightAnkle'],
+        ['neck_01', 'head', 'Neck', 'Head'],
+      ]) {
+        const name = n => handedness === 'left' ? n.replace(/Left|Right/g, s => s === 'Left' ? 'Right' : 'Left') : n;
+        const position = n => source.skeleton.bones.find(bone => bone.name === name(n))
+          .getWorldPosition(new THREE.Vector3());
+        const expected = position(d).sub(position(c)).normalize();
+        if (handedness === 'left') expected.x *= -1;
+        const actual = attached.pose.point(b).sub(attached.pose.point(a)).normalize();
+        assert.ok(actual.dot(expected) > 0.999, `${stroke}/${handedness}/${deltaSeconds}: ${a} must follow capture axes`);
+      }
+    }
+  }
+});
+
+test('native grip survives repeated full-body resets and shoes use bind-relative axes', async () => {
+  const template = await nativePlayerTemplate('male');
+  for (const handedness of ['right', 'left']) {
+    const rig = sceneApi.makePlayer(0x275c77, 0x333333);
+    rig.root.userData.dominantHandedness = handedness;
+    const attached = humans.attachHumanPlayer(template, rig, 0x275c77);
+    const side = handedness === 'right' ? 'r' : 'l';
+    const names = [...attached.pose.bones.keys()].filter(name =>
+      /^(index|middle|ring|pinky|thumb)_/.test(name) && name.endsWith(`_${side}`));
+    attached.grips[side].setClosed(true);
+    const closed = names.map(name => attached.pose.bones.get(name).quaternion.clone());
+    assert.ok(names.some((name, i) =>
+      closed[i].angleTo(attached.pose.rest.get(name).local) > 0.1),
+    'closed fingers must differ from the open bind pose');
+    for (const stroke of [null, 'forehand', 'backhand', 'serve', null]) {
+      rig.root.userData.groundstrokePlayback = stroke
+        ? { stroke, deltaSeconds: 0, weight: 1, handedness, rootOffset: false }
+        : undefined;
+      for (let frame = 0; frame < 3; frame++) {
+        attached.update();
+        names.forEach((name, i) => assert.ok(
+          attached.pose.bones.get(name).quaternion.toArray().every((value, j) =>
+            Math.abs(value - closed[i].toArray()[j]) < 1e-9),
+          `${stroke}/${handedness}/${frame}: pose reset must not reopen ${name}`,
+        ));
+        for (const [shoe, name] of [[rig.leftShoe, 'foot_r'], [rig.rightShoe, 'foot_l']]) {
+          const expected = rig.root.getWorldQuaternion(new THREE.Quaternion()).invert()
+            .multiply(attached.pose.bones.get(name).getWorldQuaternion(new THREE.Quaternion()))
+            .multiply(attached.pose.rest.get(name).rotation.clone().invert()).normalize();
+          assert.ok(shoe.quaternion.angleTo(expected) < 1e-6, 'shoes must remove the foot bind rotation');
+          if (!stroke) assert.ok(shoe.quaternion.angleTo(new THREE.Quaternion()) < 1e-6,
+            'neutral feet must leave the horizontal shoe geometry flat');
+        }
+      }
     }
   }
 });
