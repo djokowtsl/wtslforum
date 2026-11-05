@@ -10,6 +10,7 @@ import {
   type Te4LiveSnapshot,
 } from '@/lib/te4DmoLive';
 import type { Te4CourtSurface } from '@/lib/te4DmoTypes';
+import { groundstrokeCaptureWeight } from './DmoCapturedGroundstroke';
 import { courtSurfaceDisplayName, isIndoorDmoVenue } from '@/lib/te4DmoSurface';
 import { deriveLiveCourtSoundEvents, playLiveCourtEffect as playCue } from '@/lib/liveCourtAudio';
 import {
@@ -700,6 +701,37 @@ function ThreeCourt({
       const dominantX = dominantHandX(handedness);
       const playerStrokeStyle = sceneDataRef.current.snapshot.strokeStyles?.[index];
       const stroke = groundstrokeForBallSide(localX, handedness);
+      type CapturedEvent = { frame: number; stroke: 'forehand' | 'backhand'; handedness: 'left' | 'right' };
+      let capturedEvent = rig.root.userData.capturedGroundstrokeEvent as CapturedEvent | undefined;
+      if (serving || contactCue === 'close-net' || contactCue === 'soft-touch') {
+        delete rig.root.userData.capturedGroundstrokeEvent;
+        delete rig.root.userData.groundstrokePlayback;
+        capturedEvent = undefined;
+      } else if (event) {
+        capturedEvent = { frame: event.frame, stroke, handedness };
+        rig.root.userData.capturedGroundstrokeEvent = capturedEvent;
+      }
+      if (capturedEvent) {
+        const captureDelta = frame - capturedEvent.frame;
+        if (captureDelta < -16 || captureDelta > 21) {
+          delete rig.root.userData.capturedGroundstrokeEvent;
+          delete rig.root.userData.groundstrokePlayback;
+        } else {
+          const weight = groundstrokeCaptureWeight(captureDelta);
+          if (weight > 0) {
+            rig.root.userData.groundstrokePlayback = {
+              stroke: capturedEvent.stroke,
+              deltaSeconds: captureDelta / frameRate,
+              weight,
+              handedness: capturedEvent.handedness,
+            };
+          } else {
+            delete rig.root.userData.groundstrokePlayback;
+          }
+        }
+      } else {
+        delete rig.root.userData.groundstrokePlayback;
+      }
       const twoHandedStroke = !serving
         && (playerStrokeStyle?.[stroke] ?? (stroke === 'backhand' ? 'two' : 'one')) === 'two';
       const armPump = Math.sin(phase * 0.55) * gaitSpeed * 0.12;

@@ -5,20 +5,38 @@ import type { PlayerRig } from './DmoLiveCourt3DScene';
 import { racketHandFrame } from './DmoRacketOrientation';
 import { attachArticulatedHands } from './DmoArticulatedHands';
 import { attachNativePlayer } from './DmoNativePlayer';
+import type { GroundstrokeMotionSources } from './DmoCapturedGroundstroke';
 
 type Gender = 'male' | 'female';
 const UP = new THREE.Vector3(0, 1, 0);
+const nativeMotionSources = new WeakMap<THREE.Group, GroundstrokeMotionSources>();
+
+async function loadGroundstrokeMotionSources(base: string, signal: AbortSignal): Promise<GroundstrokeMotionSources> {
+  const load = async (stroke: 'forehand' | 'backhand') => {
+    const response = await fetch(`${base}/tennis-${stroke}.bvh`, { signal });
+    if (!response.ok) throw new Error(`Captured ${stroke} motion request failed (${response.status}).`);
+    return response.text();
+  };
+  const [forehand, backhand] = await Promise.all([load('forehand'), load('backhand')]);
+  return { forehand, backhand };
+}
 
 export async function loadHumanModel(gender: Gender, detail: 'player' | 'crowd', signal: AbortSignal, base = '/models/dmo-humans') {
   const filename = detail === 'player' ? 'native-player.glb' : `${gender}-${detail}.glb`;
-  const response = await fetch(`${base}/${filename}`, { signal });
+  const [response, motionSources] = await Promise.all([
+    fetch(`${base}/${filename}`, { signal }),
+    detail === 'player' ? loadGroundstrokeMotionSources(base, signal) : Promise.resolve(undefined),
+  ]);
   if (!response.ok) throw new Error(`Character model request failed (${response.status}).`);
   const gltf = await new GLTFLoader().parseAsync(await response.arrayBuffer(), '');
   if (signal.aborted) {
     disposeHumanModel(gltf.scene);
     throw new DOMException('Character load cancelled.', 'AbortError');
   }
-  if (detail === 'player') Object.assign(gltf.scene.userData, { continuousPlayer: true, gender });
+  if (detail === 'player') {
+    Object.assign(gltf.scene.userData, { continuousPlayer: true, gender });
+    nativeMotionSources.set(gltf.scene, motionSources!);
+  }
   return gltf.scene;
 }
 
@@ -141,7 +159,11 @@ function tintKit(mesh: THREE.SkinnedMesh, tint: number) {
 }
 
 export function attachHumanPlayer(template: THREE.Group, rig: PlayerRig, shirtColor: number, handTemplate?: THREE.Group) {
-  if (template.userData.continuousPlayer) return attachNativePlayer(template, rig, shirtColor);
+  if (template.userData.continuousPlayer) {
+    const motions = nativeMotionSources.get(template);
+    if (!motions) throw new Error('Captured forehand and backhand motion data was not loaded.');
+    return attachNativePlayer(template, rig, shirtColor, motions);
+  }
   const model = clone(template) as THREE.Group;
   model.name = 'wtsl-textured-rigged-player';
   model.traverse((object) => {

@@ -4,6 +4,11 @@ import type { PlayerRig } from './DmoLiveCourt3DScene';
 import { racketContactOrientation } from './DmoRacketOrientation';
 import { makeNativeGrip } from './DmoNativeGrip';
 import { dressNativePlayer } from './DmoNativeKit';
+import {
+  DmoCapturedGroundstroke,
+  type GroundstrokeMotionSources,
+  type GroundstrokePlayback,
+} from './DmoCapturedGroundstroke';
 
 const UP = new THREE.Vector3(0, 1, 0);
 const BODY_SCALE = 1.075;
@@ -86,7 +91,12 @@ export function nativeTwoBone(
   return { elbow, wrist };
 }
 
-export function attachNativePlayer(template: THREE.Group, rig: PlayerRig, shirtColor: number) {
+export function attachNativePlayer(
+  template: THREE.Group,
+  rig: PlayerRig,
+  shirtColor: number,
+  motionSources: GroundstrokeMotionSources,
+) {
   const model = clone(template) as THREE.Group;
   model.name = 'wtsl-continuous-player';
   dressNativePlayer(model, shirtColor, template.userData.gender === 'female');
@@ -113,6 +123,7 @@ export function attachNativePlayer(template: THREE.Group, rig: PlayerRig, shirtC
   ]])) as Record<'l' | 'r', number[]>;
   const localRacket = { l: racketContactOrientation(grips.l.shaft, grips.l.palm),
     r: racketContactOrientation(grips.r.shaft, grips.r.palm) };
+  const capturedGroundstroke = new DmoCapturedGroundstroke(model, rig.root, pose.rest, motionSources);
   const update = () => {
     const delta = rig.hip.position.clone().sub(pose.point('pelvis'));
     model.position.add(delta);
@@ -128,6 +139,8 @@ export function attachNativePlayer(template: THREE.Group, rig: PlayerRig, shirtC
     headDirection.y = Math.max(0.08, headDirection.y);
     pose.aim('neck_01', neckPosition.add(headDirection));
     pose.orient('head', rig.head.quaternion.clone().multiply(pose.rest.get('head')!.rotation));
+    const playback = rig.root.userData.groundstrokePlayback as GroundstrokePlayback | undefined;
+    const capturedElbows = playback ? capturedGroundstroke.apply(playback) : null;
     const dominant = rig.root.userData.dominantHandedness === 'left' ? 'l' : 'r';
     const sides = [dominant, dominant === 'l' ? 'r' : 'l'] as const;
     for (const side of sides) {
@@ -153,6 +166,8 @@ export function attachNativePlayer(template: THREE.Group, rig: PlayerRig, shirtC
         target = centre.sub(grip.centre.clone().multiplyScalar(BODY_SCALE).applyQuaternion(orientation));
         preference = target.clone().addScaledVector(grip.forward.clone().applyQuaternion(orientation), -armLengths[side][1]);
       }
+      const capturedElbow = capturedElbows?.[side];
+      if (capturedElbow) preference.lerp(capturedElbow, THREE.MathUtils.clamp(playback?.weight ?? 0, 0, 1));
       const solved = nativeTwoBone(shoulder, target, armLengths[side][0], armLengths[side][1], preference);
       pose.aim(`upperarm_${side}`, solved.elbow);
       const lowerRoll = orientation?.clone().multiply(pose.rest.get(`hand_${side}`)!.local.clone().invert());
@@ -168,17 +183,33 @@ export function attachNativePlayer(template: THREE.Group, rig: PlayerRig, shirtC
       if (primary) rig.racket.position.copy(pose.point(`hand_${side}`))
         .add(grip.centre.clone().multiplyScalar(BODY_SCALE).applyQuaternion(orientation!));
     }
-    for (const side of ['l', 'r'] as const) {
-      // Legacy legs use screen-space labels, opposite anatomical asset labels.
-      const thigh = side === 'l' ? rig.rightLeg : rig.leftLeg;
-      const calf = side === 'l' ? rig.rightCalf : rig.leftCalf;
-      const [, knee] = ends(thigh), [, ankle] = ends(calf);
-      const solved = nativeTwoBone(pose.point(`thigh_${side}`), ankle, legLengths[side][0], legLengths[side][1], knee);
-      pose.aim(`thigh_${side}`, solved.elbow);
-      pose.aim(`calf_${side}`, solved.wrist);
-      pose.orient(`foot_${side}`, pose.rest.get(`foot_${side}`)!.rotation);
+    if (!capturedElbows) {
+      for (const side of ['l', 'r'] as const) {
+        // Legacy legs use screen-space labels, opposite anatomical asset labels.
+        const thigh = side === 'l' ? rig.rightLeg : rig.leftLeg;
+        const calf = side === 'l' ? rig.rightCalf : rig.leftCalf;
+        const [, knee] = ends(thigh), [, ankle] = ends(calf);
+        const solved = nativeTwoBone(pose.point(`thigh_${side}`), ankle, legLengths[side][0], legLengths[side][1], knee);
+        pose.aim(`thigh_${side}`, solved.elbow);
+        pose.aim(`calf_${side}`, solved.wrist);
+        pose.orient(`foot_${side}`, pose.rest.get(`foot_${side}`)!.rotation);
+      }
     }
     pose.finish();
+    if (capturedElbows) {
+      const placeCapturedShoe = (shoe: THREE.Object3D, footName: string) => {
+        const foot = pose.bones.get(footName)!;
+        const ankle = pose.point(footName);
+        shoe.position.set(ankle.x, ankle.y - 0.045, ankle.z + 0.05);
+        shoe.quaternion.copy(
+          rig.root.getWorldQuaternion(new THREE.Quaternion()).invert()
+            .multiply(foot.getWorldQuaternion(new THREE.Quaternion())),
+        );
+      };
+      // The legacy shoe groups use screen-space labels, opposite anatomical sides.
+      placeCapturedShoe(rig.leftShoe, 'foot_r');
+      placeCapturedShoe(rig.rightShoe, 'foot_l');
+    }
   };
   rig.detailed = { update };
   return { model, pose, grips, update };
