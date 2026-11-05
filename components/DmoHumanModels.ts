@@ -2,6 +2,8 @@ import * as THREE from 'three';
 import { GLTFLoader } from 'three/examples/jsm/loaders/GLTFLoader.js';
 import { clone } from 'three/examples/jsm/utils/SkeletonUtils.js';
 import type { PlayerRig } from './DmoLiveCourt3DScene';
+import { racketHandFrame } from './DmoRacketOrientation';
+import { attachArticulatedHands } from './DmoArticulatedHands';
 
 type Gender = 'male' | 'female';
 const UP = new THREE.Vector3(0, 1, 0);
@@ -77,6 +79,22 @@ export class HumanPose {
     bone.updateMatrixWorld(true);
   }
 
+  /** Rigid anatomical wrist frame; this does not alter any hand vertices. */
+  placeFrame(name: string, from: THREE.Vector3, orientation: THREE.Quaternion) {
+    const joint = this.bones.get(name);
+    if (!joint?.bone.parent) return;
+    const { bone } = joint;
+    const parent = bone.parent!;
+    parent.updateWorldMatrix(true, false);
+    this.target.copy(from);
+    this.space.localToWorld(this.target);
+    bone.position.copy(parent.worldToLocal(this.target));
+    this.rotation.copy(orientation).premultiply(this.spaceRotation);
+    parent.getWorldQuaternion(this.parentRotation).invert();
+    bone.quaternion.copy(this.parentRotation.multiply(this.rotation));
+    bone.updateMatrixWorld(true);
+  }
+
   finish() {
     // SkinnedMesh overrides updateMatrixWorld (not updateWorldMatrix) to refresh
     // bindMatrixInverse. This matters when baking cloned centimetre-scale rigs.
@@ -119,7 +137,7 @@ function tintKit(mesh: THREE.SkinnedMesh, tint: number) {
   material.vertexColors = true;
 }
 
-export function attachHumanPlayer(template: THREE.Group, rig: PlayerRig, shirtColor: number) {
+export function attachHumanPlayer(template: THREE.Group, rig: PlayerRig, shirtColor: number, handTemplate?: THREE.Group) {
   const model = clone(template) as THREE.Group;
   model.name = 'wtsl-textured-rigged-player';
   model.traverse((object) => {
@@ -128,12 +146,23 @@ export function attachHumanPlayer(template: THREE.Group, rig: PlayerRig, shirtCo
     // The free base meshes are barefoot. Remove the hidden foot surface rather
     // than letting textured toes protrude through the separate tennis shoes.
     const positions = object.geometry.getAttribute('position');
+    const skinIndex = object.geometry.getAttribute('skinIndex');
+    const skinWeight = object.geometry.getAttribute('skinWeight');
+    const handBones = new Set(object.skeleton.bones.map((bone, i) =>
+      bone.name === 'LeftHand' || bone.name === 'RightHand' ? i : -1).filter(i => i >= 0));
+    const replaced = (vertex: number) => {
+      if (!handTemplate) return false;
+      let weight = 0;
+      for (let j = 0; j < 4; j++) if (handBones.has(skinIndex.getComponent(vertex, j))) weight += skinWeight.getComponent(vertex, j);
+      return weight > 0.35;
+    };
     const index = object.geometry.index;
     if (index) {
       const visible: number[] = [];
       for (let i = 0; i < index.count; i += 3) {
         const a = index.getX(i), b = index.getX(i + 1), c = index.getX(i + 2);
-        if (Math.max(positions.getY(a), positions.getY(b), positions.getY(c)) >= 0.115) visible.push(a, b, c);
+        if (Math.max(positions.getY(a), positions.getY(b), positions.getY(c)) >= 0.115
+          && ![a, b, c].some(replaced)) visible.push(a, b, c);
       }
       object.geometry.setIndex(visible);
     }
@@ -158,6 +187,7 @@ export function attachHumanPlayer(template: THREE.Group, rig: PlayerRig, shirtCo
   const pose = new HumanPose(model, rig.root);
   const hidden = rig.root.children.filter((child) => ![model, rig.racket, rig.leftShoe, rig.rightShoe].includes(child as THREE.Group));
   hidden.forEach((child) => { child.visible = false; });
+  const updateHands = handTemplate ? attachArticulatedHands(handTemplate, rig, model) : undefined;
   const hip = new THREE.Vector3(), chest = new THREE.Vector3(), neck = new THREE.Vector3(), head = new THREE.Vector3();
   const start = new THREE.Vector3(), end = new THREE.Vector3(), axis = new THREE.Vector3();
   const spine = new THREE.Vector3();
@@ -189,12 +219,15 @@ export function attachHumanPlayer(template: THREE.Group, rig: PlayerRig, shirtCo
       pose.place(`${side}ForeArm`, start, end);
       const hand = left ? rig.leftHand : rig.rightHand;
       axis.copy(UP).applyQuaternion(hand.quaternion).multiplyScalar(0.12);
-      // The asset's hand joint is at the wrist; the DMO target is the grip centre.
-      start.copy(end).addScaledVector(axis, -0.38);
-      end.copy(start).add(axis);
-      // Preserve the asset's hand shape and bind-pose roll. This rig has no
-      // finger joints; bending its surface is not a valid substitute for a grip.
-      pose.place(`${side}Hand`, start, end);
+      // Forearm ends at the actual wrist. Palm and grip are separate landmarks.
+      // The fingers run across the shaft, not along it into the handle.
+      const holding = left === (rig.root.userData.dominantHandedness === 'left') || !!rig.root.userData.twoHandedGrip;
+      if (holding) {
+        pose.placeFrame(`${side}Hand`, end, racketHandFrame(rig.racket.quaternion, left));
+      } else {
+        start.copy(end); end.add(axis);
+        pose.place(`${side}Hand`, start, end);
+      }
       // Legacy leg labels are screen-space; asset names are anatomical (+X left).
       const upper = left ? rig.rightLeg : rig.leftLeg;
       const calf = left ? rig.rightCalf : rig.leftCalf;
@@ -207,6 +240,7 @@ export function attachHumanPlayer(template: THREE.Group, rig: PlayerRig, shirtCo
       pose.place(`${side}ToeBase`, end, undefined);
     }
     pose.finish();
+    updateHands?.();
   };
   rig.detailed = { update };
   return { model, pose, update };
