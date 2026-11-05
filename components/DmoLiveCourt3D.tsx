@@ -18,6 +18,7 @@ import { isWaitingPose } from './DmoWaitingPose';
 import { courtSurfaceDisplayName, isIndoorDmoVenue } from '@/lib/te4DmoSurface';
 import { deriveLiveCourtSoundEvents, playLiveCourtEffect as playCue } from '@/lib/liveCourtAudio';
 import {
+  advanceLiveCourtPlayerPosition,
   advanceLiveCourtPlayhead,
   clampPlayerCameraLateralPan,
   deriveLiveCourtFootworkEvents,
@@ -26,6 +27,7 @@ import {
   findPlayerShotEvent,
   inferLiveCourtContactCue,
   interpolateLiveCourtFrame,
+  isLiveCourtBetweenPoints,
   latestLiveCourtShotEvent,
   liveCourtSlideWeight,
   liveCourtEventsBetween,
@@ -536,6 +538,10 @@ function ThreeCourt({
       handedness: PlayerHandedness,
     ) => {
       const position = new THREE.Vector3(x * SCALE, 0, z * SCALE);
+      const repositioning = isLiveCourtBetweenPoints(events, frame);
+      const playbackRate = Number.isFinite(sceneDataRef.current.playbackSpeed)
+        ? Math.max(0, sceneDataRef.current.playbackSpeed)
+        : 1;
       const oldSide = rig.root.userData.courtSide;
       const changedEnds = (oldSide === 1 || oldSide === -1)
         && Math.abs(position.x) > 1 && Math.sign(position.x) !== oldSide;
@@ -552,13 +558,17 @@ function ThreeCourt({
         rig.root.position.copy(position);
         rig.root.userData.positionInitialized = true;
       } else {
-        const movement = position.clone().sub(rig.root.position);
-        const distance = movement.length();
-        // Limit location changes to a plausible court movement speed to avoid
-        // teleport flashes when the recording shifts between sampled positions.
-        const maximumStep = Math.max(0.04, elapsedMs / 1000 * 7);
-        if (distance <= maximumStep) rig.root.position.copy(position);
-        else if (distance > 0) rig.root.position.addScaledVector(movement, maximumStep / distance);
+        // After a point, players physically walk to their next positions.
+        // Changeovers remain editorial scene cuts above, rather than walking
+        // through the net.
+        const maximumSpeed = repositioning ? 1.8 : 7;
+        const maximumStep = elapsedMs / 1000 * maximumSpeed * playbackRate;
+        const [nextX, nextZ] = advanceLiveCourtPlayerPosition(
+          [rig.root.position.x, rig.root.position.z],
+          [position.x, position.z],
+          maximumStep,
+        );
+        rig.root.position.set(nextX, 0, nextZ);
       }
       const frameRate = sceneDataRef.current.snapshot.frameRate ?? TE4_DMO_FRAMES_PER_SECOND;
       const maxGapFrames = frameRate * sceneDataRef.current.playbackSpeed / 2;
@@ -568,7 +578,6 @@ function ThreeCourt({
       const zIndex = index === 0 ? 4 : 6;
       const velocityX = (later[xIndex] - prior[xIndex]) * SCALE;
       const velocityZ = (later[zIndex] - prior[zIndex]) * SCALE;
-      const speed = Math.min(1, Math.hypot(velocityX, velocityZ) / 0.35);
       const ballX = values[0] * SCALE;
       const ballZ = values[1] * SCALE;
       const ballY = Math.max(0, values[2] * SCALE) + BALL_RADIUS;
@@ -655,16 +664,22 @@ function ThreeCourt({
       const lastRoot = rig.root.userData.lastRootPosition as THREE.Vector3 | undefined;
       const moved = lastRoot ? rig.root.position.clone().sub(lastRoot) : new THREE.Vector3();
       rig.root.userData.lastRootPosition = rig.root.position.clone();
+      const actualMovementSpeed = moved.length() > 0.6 || elapsedMs <= 0
+        ? 0
+        : moved.length() * 1000 / elapsedMs;
+      const locomotionSpeed = repositioning
+        ? actualMovementSpeed
+        : Math.max(speedMs * playbackRate, actualMovementSpeed);
       const travel: [number, number] = moved.length() > 0.6 ? [0, 0] : [
         (moved.x * localXAxis[0] + moved.z * localXAxis[1]) / rig.root.scale.x,
         (moved.x * Math.sin(facing) + moved.z * Math.cos(facing)) / rig.root.scale.x,
       ];
-      const steppingSpeed = speedMs * (1 - slideWeight);
+      const steppingSpeed = locomotionSpeed * (1 - slideWeight);
       advanceGait(gait, travel, steppingSpeed);
       const [stepA, stepB] = gaitFeet(gait, steppingSpeed);
       rig.root.userData.locomotionSpeed = steppingSpeed;
       const phase = gait.phase * Math.PI * 2 + index * Math.PI;
-      const gaitSpeed = gait.amount * Math.min(1, speedMs / 4);
+      const gaitSpeed = gait.amount * Math.min(1, steppingSpeed / 4);
       const opponentServe = findPlayerShotEvent(events, eventPlayer === 1 ? 2 : 1, frame, 90, 'serve');
       const framesToServe = opponentServe ? opponentServe.frame - frame : Number.POSITIVE_INFINITY;
       const ownShotBusy = Boolean(event && frame - event.frame < 14);
@@ -683,7 +698,7 @@ function ThreeCourt({
       const strokeSide = Math.sign(localX || dominantHandX(handedness));
       const trunkTurn = (shapedBackswing * 0.36 - shapedFollowThrough * 0.28
         + servePreparation * 0.22 - serveFollowThrough * 0.16) * strokeSide;
-      const runLean = gait.amount * Math.min(0.16, speedMs * 0.045);
+      const runLean = gait.amount * Math.min(0.16, steppingSpeed * 0.045);
       rig.body.position.set(Math.sin(phase * 0.5) * gaitSpeed * 0.02, bodyY, 0);
       rig.body.rotation.z = THREE.MathUtils.clamp(
         -lateralVelocity * 1.8 - slideDirection * slideWeight * 0.09,
@@ -926,7 +941,7 @@ function ThreeCourt({
       nonDominantMesh.position.copy(nonDominantHand);
       nonDominantMesh.quaternion.copy(nonDominantForearm.quaternion);
       rig.racket.position.copy(dominantHand);
-      const restingRacketAngle = -0.12 + Math.sin(phase * 0.55) * speed * 0.14;
+      const restingRacketAngle = -0.12 + Math.sin(phase * 0.55) * gaitSpeed * 0.14;
       // Present the shaft forward of the forearm, not apparently through it.
       const resting = new THREE.Quaternion().setFromEuler(new THREE.Euler(0.42, 0, -restingRacketAngle));
       const backswingRotation = resting.clone().multiply(

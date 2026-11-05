@@ -45,6 +45,32 @@ test('zero-influence lookup-buffer frames also select waiting instead of the old
   }
 });
 
+test('between-point repositioning walks with grounded steps instead of sliding', async () => {
+  const p = await productionPlayer();
+  const samples = syntheticSamples().map(sample => ({
+    ...sample,
+    values: [...sample.values],
+  }));
+  for (const sample of samples) sample.values[4] = Math.max(0, sample.frame - 50) * 50;
+  const events = [
+    { frame: 10, kind: 'point-end' },
+    { frame: 100, kind: 'shot', player: 1, shotType: 'serve' },
+  ];
+  p.updateFrame(50, { samples, events });
+  let maximumStep = 0;
+  for (let frame = 51; frame <= 60; frame++) {
+    const before = p.rig.root.position.clone();
+    p.updateFrame(frame, { samples, events });
+    maximumStep = Math.max(maximumStep, before.distanceTo(p.rig.root.position));
+  }
+  assert.ok(maximumStep <= 1.8 * 0.01667 + 1e-4,
+    `between-point movement exceeded walking pace: ${maximumStep.toFixed(4)} m/frame`);
+  assert.ok(p.rig.root.userData.locomotionSpeed > 1.7,
+    'the feet receive the actual repositioning speed');
+  assert.ok(p.rig.root.userData.gait.amount > 0.7,
+    'the stepping gait engages while the root walks');
+});
+
 test('leaving a waiting pose restores the complete forehand, backhand, and serve capture', async () => {
   for (const handedness of ['right', 'left']) {
     const before = await productionPlayer({ handedness });

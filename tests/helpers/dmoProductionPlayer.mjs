@@ -23,6 +23,7 @@ async function load(path, overrides = {}, baseline = false) {
 const scene = await load('components/DmoLiveCourt3DScene.ts');
 const motion = await load('lib/liveCourtMotion.ts');
 const performance = await load('lib/liveCourtPerformance.ts');
+const gait = await load('lib/liveCourtGait.ts');
 const racket = await load('components/DmoRacketOrientation.ts');
 const grip = await load('components/DmoNativeGrip.ts');
 const twist = await load('components/DmoNativeTwist.ts');
@@ -58,7 +59,7 @@ export async function productionPlayer({ handedness = 'right', baseline = false 
   if (start < 0 || end < 0) throw new Error('Production player updater boundaries changed.');
   const footworkEventsRef = { current: [] };
   const env = {
-    THREE, ...scene, ...motion, ...performance, ...racket, ...capture, ...waiting,
+    THREE, ...scene, ...motion, ...performance, ...gait, ...racket, ...capture, ...waiting,
     TE4_DMO_FRAMES_PER_SECOND: 60,
     sceneDataRef: { current: { snapshot: { frameRate: 60 }, playbackSpeed: 1 } },
     footworkEventsRef, transitionRef: { current: null },

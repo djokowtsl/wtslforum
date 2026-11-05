@@ -154,9 +154,11 @@ for (const gender of ['male', 'female']) test(`${gender}: continuous native body
   });
   const offsets = new Map([...pose.bones].map(([name, bone]) => [name, bone.position.clone()]));
   for (const handedness of ['right', 'left']) for (const twoHanded of [false, true]) for (const angle of [0, 0.6, -0.8, 1.4]) {
+    const waitingPose = !twoHanded && angle === 0;
     rig.root.userData.dominantHandedness = handedness;
     rig.root.userData.twoHandedGrip = twoHanded;
-    rig.root.userData.supportGripOffset = twoHanded ? 0.2 : undefined;
+    rig.root.userData.waitingPose = waitingPose;
+    rig.root.userData.supportGripOffset = twoHanded || waitingPose ? 0.2 : undefined;
     const side = handedness === 'right' ? 'r' : 'l';
     rig.racket.position.set(side === 'r' ? -0.39 : 0.39, 1.12 + Math.sin(angle) * 0.2, 0.06);
     rig.racket.quaternion.setFromEuler(new THREE.Euler(0.42 + angle, angle * 0.2, 0.12));
@@ -166,7 +168,7 @@ for (const gender of ['male', 'female']) test(`${gender}: continuous native body
     close(actualGrip, rig.racket.position);
     assert.ok(actualGrip.distanceTo(requestedGrip) < 0.05,
       `${handedness} grip missed the requested racket position`);
-    if (twoHanded && angle === 0) {
+    if ((twoHanded || waitingPose) && angle === 0) {
       const support = side === 'r' ? 'l' : 'r';
       const target = rig.racket.position.clone().add(
         new THREE.Vector3(0, 0.2, 0).applyQuaternion(rig.racket.quaternion),
