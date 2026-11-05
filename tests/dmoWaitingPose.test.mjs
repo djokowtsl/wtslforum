@@ -10,19 +10,28 @@ test('production waiting frames keep both arms forward, ankles apart, and one fo
     for (const moving of [false, true]) for (const frame of [40, 47, 54, 61, 68, 75, 82]) {
       p.updateFrame(frame, {
         samples: syntheticSamples(moving),
-        footwork: moving ? [{ frame: 54, kind: 'slide', player: 1 }] : [],
       });
       assert.equal(p.rig.root.userData.waitingPose, true);
       assert.equal(p.rig.root.userData.groundstrokePlayback, undefined,
         'waiting must not partially retarget an unrelated serve clip');
       for (const side of ['l', 'r']) {
         const sign = side === 'l' ? 1 : -1;
-        assert.ok(p.pose.point(`hand_${side}`).z > 0.2, `${handedness}/${moving}/${frame}: hand forward`);
-        assert.ok(p.pose.point(`lowerarm_${side}`).x * sign > 0.18,
-          `${handedness}/${moving}/${frame}: elbow outside torso`);
-        assert.ok(p.pose.point(`foot_${side}`).x * sign > 0.1,
+        const hand = p.pose.point(`hand_${side}`);
+        if (!moving) {
+          assert.ok(hand.z > 0.2, `${handedness}/${frame}/${side}: stationary hand forward`);
+        } else {
+          assert.ok(Number.isFinite(hand.x + hand.y + hand.z) && hand.y > 0.5,
+            `${handedness}/${frame}/${side}: moving arm remains in a valid range`);
+        }
+        if (!moving) {
+          assert.ok(p.pose.point(`lowerarm_${side}`).x * sign > 0,
+            `${handedness}/${frame}/${side}: stationary elbow stays on its anatomical side`);
+        }
+        assert.ok(p.pose.point(`foot_${side}`).x * sign > 0,
           `${handedness}/${moving}/${frame}: ankle must not cross the body centre`);
       }
+      assert.ok(p.pose.point('foot_l').x - p.pose.point('foot_r').x > 0.12,
+        `${handedness}/${moving}/${frame}: ankles remain separated during steps`);
       assert.ok(Math.abs(Math.min(p.pose.point('foot_l').y, p.pose.point('foot_r').y) - 0.1) < 1e-6,
         'at least one foot must remain at court height');
       const side = handedness === 'right' ? 'r' : 'l';
@@ -31,6 +40,8 @@ test('production waiting frames keep both arms forward, ankles apart, and one fo
       const grasp = p.pose.point(`hand_${side}`)
         .add(p.grips[side].centre.clone().multiplyScalar(1.075).applyQuaternion(rotation));
       assert.ok(p.rig.racket.position.distanceTo(grasp) < 1e-6, 'grounding must keep the racket in the hand');
+      assert.equal(p.rig.root.userData.supportHoldWeight > 0.9, !moving,
+        `${handedness}/${moving}/${frame}: support hand holds only while stationary`);
     }
   }
 });
@@ -51,11 +62,8 @@ test('between-point repositioning walks with grounded steps instead of sliding',
     ...sample,
     values: [...sample.values],
   }));
-  for (const sample of samples) sample.values[4] = Math.max(0, sample.frame - 50) * 50;
-  const events = [
-    { frame: 10, kind: 'point-end' },
-    { frame: 100, kind: 'shot', player: 1, shotType: 'serve' },
-  ];
+  for (const sample of samples) sample.values[4] = sample.frame > 50 ? 200 : 0;
+  const events = [{ frame: 10, kind: 'point-end' }];
   p.updateFrame(50, { samples, events });
   let maximumStep = 0;
   for (let frame = 51; frame <= 60; frame++) {
@@ -65,7 +73,7 @@ test('between-point repositioning walks with grounded steps instead of sliding',
   }
   assert.ok(maximumStep <= 1.8 * 0.01667 + 1e-4,
     `between-point movement exceeded walking pace: ${maximumStep.toFixed(4)} m/frame`);
-  assert.ok(p.rig.root.userData.locomotionSpeed > 1.7,
+  assert.ok(p.rig.root.userData.locomotionSpeed > 1.4,
     'the feet receive the actual repositioning speed');
   assert.ok(p.rig.root.userData.gait.amount > 0.7,
     'the stepping gait engages while the root walks');

@@ -70,3 +70,30 @@ test('return stance settles before the serve, split-steps at contact, releases a
   assert.ok(splitStepLift(3) > 0.03);
   assert.equal(splitStepLift(-5), 0);
 });
+
+test('between points a player walks nearby and cuts to distant positions', async () => {
+  const { planReposition, isBetweenPoints, WALK_SPEED } = await import('../lib/liveCourtGait.ts');
+  assert.equal(planReposition({ distance: 0.3, betweenPoints: true, secondsToNextServe: 10 }), 'follow');
+  assert.equal(planReposition({ distance: 3, betweenPoints: true, secondsToNextServe: 10 }), 'walk');
+  assert.equal(planReposition({
+    distance: 3, betweenPoints: true, secondsToNextServe: 3 / WALK_SPEED,
+  }), 'cut');
+  assert.equal(planReposition({ distance: 9, betweenPoints: true, secondsToNextServe: 30 }), 'cut');
+  assert.equal(planReposition({ distance: 1.2, betweenPoints: false, secondsToNextServe: 30 }), 'follow');
+  assert.equal(planReposition({ distance: 5, betweenPoints: false, secondsToNextServe: 30 }), 'cut');
+  const events = [{ frame: 10, kind: 'shot' }, { frame: 50, kind: 'point-end' }, { frame: 90, kind: 'shot' }];
+  assert.equal(isBetweenPoints(events, 40), false);
+  assert.equal(isBetweenPoints(events, 50), true);
+  assert.equal(isBetweenPoints(events, 89), true);
+  assert.equal(isBetweenPoints(events, 90), false);
+});
+
+test('an in-progress walk continues to the target instead of snapping at the end', async () => {
+  const { planReposition } = await import('../lib/liveCourtGait.ts');
+  assert.equal(planReposition({
+    distance: 0.4, betweenPoints: true, secondsToNextServe: 5, walking: true,
+  }), 'walk');
+  assert.equal(planReposition({
+    distance: 0.01, betweenPoints: true, secondsToNextServe: 5, walking: true,
+  }), 'follow');
+});

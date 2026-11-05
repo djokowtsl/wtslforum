@@ -29,7 +29,6 @@ const grip = await load('components/DmoNativeGrip.ts');
 const twist = await load('components/DmoNativeTwist.ts');
 const kit = await load('components/DmoNativeKit.ts');
 const waiting = await load('components/DmoWaitingPose.ts');
-const strokes = await load('components/DmoGroundstrokeRig.ts', { './DmoRacketOrientation': racket });
 const bytes = await readFile(new URL('public/models/dmo-humans/native-player.glb', root));
 const template = (await new GLTFLoader().parseAsync(
   bytes.buffer.slice(bytes.byteOffset, bytes.byteOffset + bytes.byteLength), '',
@@ -45,10 +44,10 @@ export function syntheticSamples(moving = false) {
 
 export async function productionPlayer({ handedness = 'right', baseline = false } = {}) {
   const capture = await load('components/DmoCapturedGroundstroke.ts', {}, baseline);
-  const native = await load('components/DmoNativePlayer.ts', {
+  const native = await load('components/DmoNativePlayerClaude.ts', {
     './DmoRacketOrientation': racket, './DmoNativeGrip': grip, './DmoNativeKit': kit,
     './DmoNativeTwist': twist,
-    './DmoCapturedGroundstroke': capture, './DmoGroundstrokeRig': strokes,
+    './DmoCapturedGroundstroke': capture,
   }, baseline);
   const rig = scene.makePlayer(0x81b6b4, 0x202020);
   rig.root.userData.dominantHandedness = handedness;

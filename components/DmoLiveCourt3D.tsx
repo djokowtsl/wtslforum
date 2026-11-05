@@ -18,7 +18,6 @@ import { isWaitingPose } from './DmoWaitingPose';
 import { courtSurfaceDisplayName, isIndoorDmoVenue } from '@/lib/te4DmoSurface';
 import { deriveLiveCourtSoundEvents, playLiveCourtEffect as playCue } from '@/lib/liveCourtAudio';
 import {
-  advanceLiveCourtPlayerPosition,
   advanceLiveCourtPlayhead,
   clampPlayerCameraLateralPan,
   deriveLiveCourtFootworkEvents,
@@ -27,7 +26,6 @@ import {
   findPlayerShotEvent,
   inferLiveCourtContactCue,
   interpolateLiveCourtFrame,
-  isLiveCourtBetweenPoints,
   latestLiveCourtShotEvent,
   liveCourtSlideWeight,
   liveCourtEventsBetween,
@@ -42,9 +40,12 @@ import {
   type LiveCourtSkidMark,
 } from '@/lib/liveCourtMotion';
 import {
+  WALK_SPEED,
   advanceGait,
   gaitFeet,
+  isBetweenPoints,
   newGaitState,
+  planReposition,
   returnReadiness,
   splitStepLift,
   type GaitState,
@@ -538,10 +539,6 @@ function ThreeCourt({
       handedness: PlayerHandedness,
     ) => {
       const position = new THREE.Vector3(x * SCALE, 0, z * SCALE);
-      const repositioning = isLiveCourtBetweenPoints(events, frame);
-      const playbackRate = Number.isFinite(sceneDataRef.current.playbackSpeed)
-        ? Math.max(0, sceneDataRef.current.playbackSpeed)
-        : 1;
       const oldSide = rig.root.userData.courtSide;
       const changedEnds = (oldSide === 1 || oldSide === -1)
         && Math.abs(position.x) > 1 && Math.sign(position.x) !== oldSide;
@@ -554,21 +551,48 @@ function ThreeCourt({
           transitionRef.current.style.opacity = '1';
         }
       }
+      const replayRate = sceneDataRef.current.snapshot.frameRate ?? TE4_DMO_FRAMES_PER_SECOND;
+      const wasWalking = Boolean(rig.root.userData.walking);
+      // Walking advances with replay time, so pausing or scrubbing stops it.
+      const lastWalkFrame = Number(rig.root.userData.lastWalkFrame ?? frame);
+      const replaySeconds = Math.max(0, frame - lastWalkFrame) / replayRate;
+      rig.root.userData.lastWalkFrame = frame;
+      rig.root.userData.walking = false;
       if (!rig.root.userData.positionInitialized) {
         rig.root.position.copy(position);
         rig.root.userData.positionInitialized = true;
       } else {
-        // After a point, players physically walk to their next positions.
-        // Changeovers remain editorial scene cuts above, rather than walking
-        // through the net.
-        const maximumSpeed = repositioning ? 1.8 : 7;
-        const maximumStep = elapsedMs / 1000 * maximumSpeed * playbackRate;
-        const [nextX, nextZ] = advanceLiveCourtPlayerPosition(
-          [rig.root.position.x, rig.root.position.z],
-          [position.x, position.z],
-          maximumStep,
-        );
-        rig.root.position.set(nextX, 0, nextZ);
+        const movement = position.clone().sub(rig.root.position);
+        const distance = movement.length();
+        const nextServe = findLiveCourtShotInRange(events, frame, frame + replayRate * 90, 'serve');
+        const plan = changedEnds ? 'follow' : planReposition({
+          distance,
+          betweenPoints: isBetweenPoints(events, frame),
+          secondsToNextServe: nextServe ? (nextServe.frame - frame) / replayRate : Number.POSITIVE_INFINITY,
+          walking: wasWalking,
+        });
+        if (plan === 'cut') {
+          // Too far (or too little time) to walk before the next point: use a
+          // brief scene fade rather than sliding the player across court.
+          changeoverUntil = performance.now() + 450;
+          rig.root.position.copy(position);
+          rig.root.userData.lastRootPosition = position.clone();
+          if (transitionRef.current) {
+            transitionRef.current.style.transition = 'none';
+            transitionRef.current.style.opacity = '1';
+          }
+        } else if (plan === 'walk') {
+          const step = replaySeconds * WALK_SPEED;
+          rig.root.position.addScaledVector(movement, Math.min(1, step / distance));
+          rig.root.userData.walking = true;
+          rig.root.userData.walkHeading = distance > 0.5
+            ? Math.atan2(movement.x, movement.z)
+            : liveCourtFacingAngle(position.x < 0 ? -1 : 1);
+        } else {
+          const maximumStep = Math.max(0.04, elapsedMs / 1000 * 7);
+          if (distance <= maximumStep) rig.root.position.copy(position);
+          else if (distance > 0) rig.root.position.addScaledVector(movement, maximumStep / distance);
+        }
       }
       const frameRate = sceneDataRef.current.snapshot.frameRate ?? TE4_DMO_FRAMES_PER_SECOND;
       const maxGapFrames = frameRate * sceneDataRef.current.playbackSpeed / 2;
@@ -578,6 +602,7 @@ function ThreeCourt({
       const zIndex = index === 0 ? 4 : 6;
       const velocityX = (later[xIndex] - prior[xIndex]) * SCALE;
       const velocityZ = (later[zIndex] - prior[zIndex]) * SCALE;
+      const speed = Math.min(1, Math.hypot(velocityX, velocityZ) / 0.35);
       const ballX = values[0] * SCALE;
       const ballZ = values[1] * SCALE;
       const ballY = Math.max(0, values[2] * SCALE) + BALL_RADIUS;
@@ -586,7 +611,10 @@ function ThreeCourt({
         ? storedSide
         : position.x < 0 ? -1 : 1;
       rig.root.userData.courtSide = courtSide;
-      const targetFacing = liveCourtFacingAngle(courtSide);
+      const walking = Boolean(rig.root.userData.walking);
+      const targetFacing = walking
+        ? Number(rig.root.userData.walkHeading)
+        : liveCourtFacingAngle(courtSide);
       const facingDelta = Math.atan2(
         Math.sin(targetFacing - rig.root.rotation.y),
         Math.cos(targetFacing - rig.root.rotation.y),
@@ -664,22 +692,16 @@ function ThreeCourt({
       const lastRoot = rig.root.userData.lastRootPosition as THREE.Vector3 | undefined;
       const moved = lastRoot ? rig.root.position.clone().sub(lastRoot) : new THREE.Vector3();
       rig.root.userData.lastRootPosition = rig.root.position.clone();
-      const actualMovementSpeed = moved.length() > 0.6 || elapsedMs <= 0
-        ? 0
-        : moved.length() * 1000 / elapsedMs;
-      const locomotionSpeed = repositioning
-        ? actualMovementSpeed
-        : Math.max(speedMs * playbackRate, actualMovementSpeed);
       const travel: [number, number] = moved.length() > 0.6 ? [0, 0] : [
         (moved.x * localXAxis[0] + moved.z * localXAxis[1]) / rig.root.scale.x,
         (moved.x * Math.sin(facing) + moved.z * Math.cos(facing)) / rig.root.scale.x,
       ];
-      const steppingSpeed = locomotionSpeed * (1 - slideWeight);
+      const steppingSpeed = walking ? WALK_SPEED : speedMs * (1 - slideWeight);
       advanceGait(gait, travel, steppingSpeed);
       const [stepA, stepB] = gaitFeet(gait, steppingSpeed);
       rig.root.userData.locomotionSpeed = steppingSpeed;
       const phase = gait.phase * Math.PI * 2 + index * Math.PI;
-      const gaitSpeed = gait.amount * Math.min(1, steppingSpeed / 4);
+      const gaitSpeed = gait.amount * Math.min(1, speedMs / 4);
       const opponentServe = findPlayerShotEvent(events, eventPlayer === 1 ? 2 : 1, frame, 90, 'serve');
       const framesToServe = opponentServe ? opponentServe.frame - frame : Number.POSITIVE_INFINITY;
       const ownShotBusy = Boolean(event && frame - event.frame < 14);
@@ -848,7 +870,17 @@ function ThreeCourt({
           ? capturedEvent.hands === 'two'
           : (playerStrokeStyle?.[stroke] ?? (stroke === 'backhand' ? 'two' : 'one')) === 'two');
       const armPump = Math.sin(phase * 0.55) * gaitSpeed * 0.12;
-      const dominantHand = new THREE.Vector3(dominantX, 1.12 + bodyBounce + armPump, 0.06);
+      // Between shots carry the racket in front at waist height. On the move,
+      // keep it alongside in the dominant hand; during strokes use the capture.
+      const strokeActivity = THREE.MathUtils.clamp(1.5 * Math.max(
+        shapedBackswing, strikeWeight, shapedFollowThrough, servePreparation, serveToss, serveFollowThrough,
+      ), 0, 1);
+      const carry = 1 - strokeActivity;
+      const onTheMove = THREE.MathUtils.smoothstep(steppingSpeed, 1.0, 2.6);
+      const standingCarryHand = new THREE.Vector3(dominantX * 0.16, 1.0, 0.36);
+      const movingCarryHand = new THREE.Vector3(dominantX * 0.85, 0.98 + bodyBounce, 0.14);
+      const dominantHand = new THREE.Vector3(dominantX, 1.12 + bodyBounce + armPump, 0.06)
+        .lerp(standingCarryHand.lerp(movingCarryHand, onTheMove), carry);
       const nonDominantHand = new THREE.Vector3(-dominantX * 0.72, 0.96 + bodyBounce - armPump, 0.1);
       {
         // Running arm action: swing the free arm against its same-side leg
@@ -941,7 +973,7 @@ function ThreeCourt({
       nonDominantMesh.position.copy(nonDominantHand);
       nonDominantMesh.quaternion.copy(nonDominantForearm.quaternion);
       rig.racket.position.copy(dominantHand);
-      const restingRacketAngle = -0.12 + Math.sin(phase * 0.55) * gaitSpeed * 0.14;
+      const restingRacketAngle = -0.12 + Math.sin(phase * 0.55) * speed * 0.14;
       // Present the shaft forward of the forearm, not apparently through it.
       const resting = new THREE.Quaternion().setFromEuler(new THREE.Euler(0.42, 0, -restingRacketAngle));
       const backswingRotation = resting.clone().multiply(
@@ -980,7 +1012,11 @@ function ThreeCourt({
       const serveFollowRotation = contactRotation.clone().multiply(
         new THREE.Quaternion().setFromEuler(new THREE.Euler(strokeSide * 0.28, 0, -strokeSide * 0.88)),
       );
-      rig.racket.quaternion.copy(resting);
+      const standingShaft = new THREE.Vector3(-Math.sign(dominantX) * 0.35, 0.5, 0.79).normalize();
+      const movingShaft = new THREE.Vector3(-Math.sign(dominantX) * 0.1, -0.2, 0.97).normalize();
+      const carryRotation = racketContactOrientation(standingShaft, new THREE.Vector3(0, 1, 0).cross(standingShaft))
+        .slerp(racketContactOrientation(movingShaft, new THREE.Vector3(0, 1, 0).cross(movingShaft)), onTheMove);
+      rig.racket.quaternion.copy(resting).slerp(carryRotation, carry);
       if (serving && servePreparation > 0) rig.racket.quaternion.slerp(serveLoadRotation, servePreparation);
       if (shapedBackswing > 0) rig.racket.quaternion.slerp(backswingRotation, shapedBackswing);
       if (impactWeight > 0) rig.racket.quaternion.slerp(contactRotation, impactWeight);
@@ -1005,7 +1041,10 @@ function ThreeCourt({
       poseLimb(dominantForearm, dominantElbow, wrist);
       const strokeGrip = twoHandedStroke
         && (impactWeight > 0 || shapedBackswing > 0 || shapedFollowThrough > 0);
-      rig.root.userData.twoHandedGrip = strokeGrip || ready > 0.5;
+      rig.root.userData.twoHandedGrip = strokeGrip;
+      // The support hand holds the throat when waiting or receiving, but
+      // releases to swing naturally while the player runs or walks.
+      rig.root.userData.supportHoldWeight = strokeGrip ? 1 : Math.max(ready, carry * (1 - onTheMove));
       rig.root.userData.supportGripOffset = strokeGrip ? undefined : 0.2;
       rig.root.userData.baselineGuard = serving
         ? { weight: 1 - THREE.MathUtils.smoothstep(strokeDelta, 2, 14), baseline: COURT_LENGTH / 2 }

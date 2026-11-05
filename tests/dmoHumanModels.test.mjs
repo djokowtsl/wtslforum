@@ -159,6 +159,7 @@ for (const gender of ['male', 'female']) test(`${gender}: continuous native body
     rig.root.userData.twoHandedGrip = twoHanded;
     rig.root.userData.waitingPose = waitingPose;
     rig.root.userData.supportGripOffset = twoHanded || waitingPose ? 0.2 : undefined;
+    rig.root.userData.supportHoldWeight = waitingPose ? 1 : 0;
     const side = handedness === 'right' ? 'r' : 'l';
     rig.racket.position.set(side === 'r' ? -0.39 : 0.39, 1.12 + Math.sin(angle) * 0.2, 0.06);
     rig.racket.quaternion.setFromEuler(new THREE.Euler(0.42 + angle, angle * 0.2, 0.12));

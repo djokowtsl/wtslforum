@@ -95,3 +95,36 @@ export function splitStepLift(framesToServe: number) {
   const t = (-framesToServe + 8) / 10;
   return t > 0 && t < 1 ? Math.sin(Math.PI * t) * 0.06 : 0;
 }
+
+/** Walking pace between points (m/s). */
+export const WALK_SPEED = 1.5;
+
+export type RepositionPlan = 'follow' | 'walk' | 'cut';
+
+/** Choose normal tracking, a physical walk, or a short editorial cut. */
+export function planReposition(options: {
+  distance: number;
+  betweenPoints: boolean;
+  secondsToNextServe: number;
+  /** Keep a started walk continuous through its last half metre. */
+  walking?: boolean;
+}): RepositionPlan {
+  const { distance, betweenPoints, secondsToNextServe, walking } = options;
+  if (walking && betweenPoints && distance > 0.02 && distance / WALK_SPEED <= secondsToNextServe) return 'walk';
+  if (!Number.isFinite(distance) || distance <= 0.6) return 'follow';
+  if (!betweenPoints) return distance > 3 ? 'cut' : 'follow';
+  if (distance > 7) return 'cut';
+  if (distance / WALK_SPEED > secondsToNextServe - 0.4) return 'cut';
+  return 'walk';
+}
+
+/** True when the latest event at or before `frame` ended a point. */
+export function isBetweenPoints(events: { frame: number; kind: string }[], frame: number) {
+  let low = 0, high = events.length;
+  while (low < high) {
+    const middle = (low + high) >> 1;
+    if (events[middle].frame <= frame) low = middle + 1;
+    else high = middle;
+  }
+  return low > 0 && events[low - 1].kind === 'point-end';
+}
