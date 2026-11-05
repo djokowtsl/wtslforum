@@ -1474,30 +1474,39 @@ export function makePlayer(shirtColor: number, shortsColor: number, isWta = fals
   const racketVisual = new THREE.Group();
   // Pivot the racket at the grip, so the hand closes around the handle rather
   // than appearing to hold the hoop. The face is +Z; anatomical right is -X.
-  racketVisual.position.y = 0.36;
-  racketVisual.scale.setScalar(0.77);
+  racketVisual.position.y = 0;
   racket.add(racketVisual);
   const frame = new THREE.Mesh(new THREE.TorusGeometry(0.24, 0.015, 8, 32), material(0xe5dfc6, 0.55));
   frame.name = 'racket-head';
-  frame.scale.set(0.77, 0.95, 0.45);
+  frame.scale.set(0.5929, 0.7315, 0.3465);
+  frame.position.y = 0.36;
   racketVisual.add(frame);
-  const handle = new THREE.Mesh(new THREE.CylinderGeometry(0.019, 0.02, 0.5, 10), material(0xb6aa84));
+  const handle = new THREE.Mesh(new THREE.CylinderGeometry(0.014, 0.015, 0.18, 10), material(0x293a35, 0.88));
   handle.name = 'racket-handle';
-  handle.position.y = -0.36;
   racketVisual.add(handle);
-  const gripTape = new THREE.Mesh(new THREE.CylinderGeometry(0.0205, 0.0215, 0.28, 10), material(0x293a35, 0.88));
+  const gripTape = new THREE.Mesh(new THREE.CylinderGeometry(0.018, 0.019, 0.18, 10), material(0x293a35, 0.88));
   gripTape.name = 'racket-grip-tape';
-  gripTape.position.y = -0.36;
   racketVisual.add(gripTape);
+  const cap = new THREE.Mesh(new THREE.CylinderGeometry(0.02, 0.02, 0.012, 10), material(0x202724));
+  cap.position.y = -0.094;
+  racketVisual.add(cap);
+  // An open V throat ends at the hoop; no solid cylinder crosses the strings.
+  for (const side of [-1, 1]) {
+    const from = new THREE.Vector3(0, 0.09, 0);
+    const to = new THREE.Vector3(side * 0.055, 0.20, 0);
+    const stem = new THREE.Mesh(new THREE.CylinderGeometry(0.007, 0.008, 1, 8), material(0xe5dfc6, 0.55));
+    poseLimb(stem, from, to);
+    racketVisual.add(stem);
+  }
   const stringMaterial = new THREE.LineBasicMaterial({ color: 0xeae7d8, transparent: true, opacity: 0.55 });
   for (let index = -2; index <= 2; index += 1) {
     const vertical = new THREE.BufferGeometry().setFromPoints([
-      new THREE.Vector3(index * 0.06, -0.18, 0),
-      new THREE.Vector3(index * 0.06, 0.2, 0),
+      new THREE.Vector3(index * 0.035, 0.36 - 0.15 * Math.sqrt(1 - (index * 0.035 / 0.14) ** 2), 0),
+      new THREE.Vector3(index * 0.035, 0.36 + 0.15 * Math.sqrt(1 - (index * 0.035 / 0.14) ** 2), 0),
     ]);
     const horizontal = new THREE.BufferGeometry().setFromPoints([
-      new THREE.Vector3(-0.13, index * 0.07, 0),
-      new THREE.Vector3(0.13, index * 0.07, 0),
+      new THREE.Vector3(-0.13 * Math.sqrt(1 - (index * 0.05 / 0.175) ** 2), 0.36 + index * 0.05, 0),
+      new THREE.Vector3(0.13 * Math.sqrt(1 - (index * 0.05 / 0.175) ** 2), 0.36 + index * 0.05, 0),
     ]);
     racketVisual.add(new THREE.Line(vertical, stringMaterial), new THREE.Line(horizontal, stringMaterial));
   }
