@@ -9,7 +9,6 @@ export default function LivestreamMaintenance() {
         Please check back later.
       </PageHero>
       <main className="container">
-        <p>Access is currently limited to signed-in Forum admins.</p>
         <Link className="btn btn-sm" href="/">Back to the Forum</Link>
       </main>
     </>
