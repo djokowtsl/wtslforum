@@ -123,6 +123,15 @@ for (const gender of ['male', 'female']) test(`${gender}: continuous native body
     assert.ok(pose.point('head').y > pose.point('spine_03').y + 0.05,
       'serving and crouching must not fold the neck back into the shirt');
   }
+  rig.body.rotation.set(0.28, -0.42, 0.2);
+  attached.update();
+  const bodyWorld = rig.root.getWorldQuaternion(new THREE.Quaternion());
+  for (const name of ['spine_01', 'spine_02', 'spine_03']) {
+    const expected = bodyWorld.clone().multiply(rig.body.quaternion).multiply(pose.rest.get(name).rotation);
+    const actual = pose.bones.get(name).getWorldQuaternion(new THREE.Quaternion());
+    assert.ok(actual.angleTo(expected) < 1e-5,
+      `${name}: native torso must retain the DMO full-body lean and turn`);
+  }
   for (const side of ['l', 'r']) for (const finger of ['index', 'middle', 'ring', 'pinky']) {
     grips[side].setClosed(true);
     const points = [1, 2, 3].map(i =>
