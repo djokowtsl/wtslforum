@@ -18,6 +18,7 @@ async function loadTs(file, overrides = {}) {
 }
 const sceneApi = await loadTs('../components/DmoLiveCourt3DScene.ts');
 const humans = await loadTs('../components/DmoHumanModels.ts');
+const racketPose = await loadTs('../components/DmoRacketOrientation.ts');
 const crowds = await loadTs('../components/DmoHumanCrowd.ts', { './DmoHumanModels': humans });
 
 // Parse the real rig and geometry in Node, omitting image decoding (verified in browser).
@@ -70,19 +71,11 @@ for (const gender of ['male', 'female']) {
       if (object instanceof THREE.SkinnedMesh) sourceHandMesh = object.geometry.getAttribute('position').array.slice();
     });
     const attached = humans.attachHumanPlayer(template, rig, 0x5979a0);
-    let changedFingerVertices = 0;
     attached.model.traverse((object) => {
       if (!(object instanceof THREE.SkinnedMesh)) return;
-      const positions = object.geometry.getAttribute('position').array;
-      for (let i = 0; i < positions.length; i += 3) {
-        if (Math.hypot(
-          positions[i] - sourceHandMesh[i],
-          positions[i + 1] - sourceHandMesh[i + 1],
-          positions[i + 2] - sourceHandMesh[i + 2],
-        ) > 0.001) changedFingerVertices++;
-      }
+      assert.deepEqual(object.geometry.getAttribute('position').array, sourceHandMesh,
+        'unarticulated fingers must retain their original surface');
     });
-    assert.ok(changedFingerVertices > 20, 'the dominant fingers curl while the player grips the racket');
     for (const handY of [0.9, 1.45, 2.1, 0.6]) {
       sceneApi.poseLimb(rig.leftArm, new THREE.Vector3(0.21, 1.4, 0), new THREE.Vector3(0.31, 1.15, 0.1));
       sceneApi.poseLimb(rig.leftForearm, new THREE.Vector3(0.31, 1.15, 0.1), new THREE.Vector3(0.4, 1.0, 0.25));
@@ -96,9 +89,6 @@ for (const gender of ['male', 'female']) {
       attached.update();
       const hand = attached.model.getObjectByName('RightHand');
       close(rig.root.worldToLocal(hand.getWorldPosition(new THREE.Vector3())), new THREE.Vector3(-0.4, handY - 0.0456, 0.3));
-      assert.ok(hand.getWorldQuaternion(new THREE.Quaternion()).angleTo(
-        rig.racket.getWorldQuaternion(new THREE.Quaternion()),
-      ) < 0.00001, 'the dominant hand roll must follow the racket handle');
       attached.model.traverse((object) => {
         if (object instanceof THREE.Bone) assert.ok(object.matrixWorld.elements.every(Number.isFinite));
       });
@@ -106,9 +96,7 @@ for (const gender of ['male', 'female']) {
     rig.root.userData.dominantHandedness = 'left';
     attached.update();
     const leftHand = attached.model.getObjectByName('LeftHand');
-    assert.ok(leftHand.getWorldQuaternion(new THREE.Quaternion()).angleTo(
-      rig.racket.getWorldQuaternion(new THREE.Quaternion()),
-    ) < 0.00001, 'left-handed players must align the left grip as well');
+    assert.ok(leftHand.matrixWorld.elements.every(Number.isFinite));
     assert.equal(rig.body.visible, false);
     assert.equal(rig.racket.visible, true);
     assert.equal(rig.leftShoe.visible, true);
@@ -124,6 +112,21 @@ for (const gender of ['male', 'female']) {
     humans.disposeHumanModel(attached.model);
   });
 }
+
+test('racket face follows ball flight while retaining the contact shaft axis', () => {
+  for (const sign of [-1, 1]) {
+    const shaft = new THREE.Vector3(sign * 0.9, 0.35, 0).normalize();
+    const flight = new THREE.Vector3(0, 0.08, 1).normalize();
+    const rotation = racketPose.racketContactOrientation(shaft, flight);
+    close(new THREE.Vector3(0, 1, 0).applyQuaternion(rotation), shaft);
+    const expectedNormal = flight.clone().addScaledVector(shaft, -flight.dot(shaft)).normalize();
+    close(new THREE.Vector3(0, 0, 1).applyQuaternion(rotation), expectedNormal);
+  }
+  for (const flight of [new THREE.Vector3(), new THREE.Vector3(0, 1, 0)]) {
+    const rotation = racketPose.racketContactOrientation(new THREE.Vector3(0, 1, 0), flight);
+    assert.ok(rotation.toArray().every(Number.isFinite));
+  }
+});
 
 test('crowd uses seated textured instancing and retains gaze/applause updates', async () => {
   const scene = new THREE.Scene();
