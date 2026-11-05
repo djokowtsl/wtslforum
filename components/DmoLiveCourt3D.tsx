@@ -396,6 +396,9 @@ function ThreeCourt({
       makePlayer(PALETTE.shirtOne, 0x335d58, isWta),
       makePlayer(PALETTE.shirtTwo, 0x514b61, isWta),
     ];
+    players.forEach(({ root }, index) => {
+      root.userData.dominantHandedness = sceneDataRef.current.snapshot.handedness?.[index] ?? 'right';
+    });
     players.forEach(({ root }) => scene.add(root));
     const modelLoad = new AbortController();
     setModelStatus('loading');
@@ -810,6 +813,7 @@ function ThreeCourt({
       if (serveFollowThrough > 0) rig.racket.quaternion.slerp(serveFollowRotation, serveFollowThrough);
       // Keep the dominant palm and curled fingers aligned with the grip as
       // the racket turns through serves and groundstrokes.
+      rig.root.userData.dominantHandedness = handedness;
       dominantMesh.quaternion.copy(rig.racket.quaternion);
       rig.detailed?.update();
     };
