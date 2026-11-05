@@ -122,6 +122,8 @@ test('motion event lookups stay scoped to the requested frames and player', () =
 
   assert.equal(findPlayerShotEvent(events, 1, 102)?.frame, 80);
   assert.equal(findPlayerShotEvent(events, 2, 102)?.frame, 100);
+  assert.equal(findPlayerShotEvent(events, 1, 40, 64, 'serve')?.frame, 80,
+    'a serve event must remain discoverable during its preparation window');
   assert.equal(findLiveCourtShotInRange(events, 111, 121)?.frame, 120);
   assert.equal(latestLiveCourtShotEvent(events, 115)?.frame, 100);
   assert.deepEqual(

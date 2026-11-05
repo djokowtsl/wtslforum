@@ -20,7 +20,12 @@ function ends(mesh: THREE.Mesh) {
 /** Native offsets never change: each segment rotates about its own joint. */
 export class NativePlayerPose {
   readonly bones = new Map<string, THREE.Bone>();
-  readonly rest = new Map<string, { rotation: THREE.Quaternion; direction: THREE.Vector3; local: THREE.Quaternion }>();
+  readonly rest = new Map<string, {
+    position: THREE.Vector3;
+    rotation: THREE.Quaternion;
+    direction: THREE.Vector3;
+    local: THREE.Quaternion;
+  }>();
   constructor(readonly model: THREE.Group, readonly space: THREE.Group) {
     model.updateMatrixWorld(true);
     const inverse = space.getWorldQuaternion(new THREE.Quaternion()).invert();
@@ -32,12 +37,21 @@ export class NativePlayerPose {
       const direction = child
         ? child.getWorldPosition(new THREE.Vector3()).sub(bone.getWorldPosition(new THREE.Vector3())).normalize().applyQuaternion(inverse)
         : UP.clone();
-      this.rest.set(name, { rotation: inverse.clone().multiply(bone.getWorldQuaternion(new THREE.Quaternion())),
+      this.rest.set(name, { position: bone.position.clone(),
+        rotation: inverse.clone().multiply(bone.getWorldQuaternion(new THREE.Quaternion())),
         direction, local: bone.quaternion.clone() });
     });
     for (const name of ['pelvis', 'spine_03', 'head', 'hand_l', 'hand_r', 'middle_01_l', 'middle_01_r']) {
       if (!this.bones.has(name)) throw new Error(`Missing continuous player joint: ${name}`);
     }
+  }
+  reset() {
+    this.rest.forEach((rest, name) => {
+      const bone = this.bones.get(name)!;
+      bone.position.copy(rest.position);
+      bone.quaternion.copy(rest.local);
+    });
+    this.model.updateMatrixWorld(true);
   }
   point(name: string) {
     const bone = this.bones.get(name)!;
@@ -125,6 +139,7 @@ export function attachNativePlayer(
     r: racketContactOrientation(grips.r.shaft, grips.r.palm) };
   const capturedGroundstroke = new DmoCapturedGroundstroke(model, rig.root, pose.rest, motionSources);
   const update = () => {
+    pose.reset();
     const delta = rig.hip.position.clone().sub(pose.point('pelvis'));
     model.position.add(delta);
     pose.orient('pelvis', rig.hip.quaternion.clone().multiply(pose.rest.get('pelvis')!.rotation));
@@ -140,7 +155,7 @@ export function attachNativePlayer(
     pose.aim('neck_01', neckPosition.add(headDirection));
     pose.orient('head', rig.head.quaternion.clone().multiply(pose.rest.get('head')!.rotation));
     const playback = rig.root.userData.groundstrokePlayback as GroundstrokePlayback | undefined;
-    const capturedElbows = playback ? capturedGroundstroke.apply(playback) : null;
+    const capturedBody = playback ? capturedGroundstroke.apply(playback) : null;
     const dominant = rig.root.userData.dominantHandedness === 'left' ? 'l' : 'r';
     const sides = [dominant, dominant === 'l' ? 'r' : 'l'] as const;
     for (const side of sides) {
@@ -165,8 +180,12 @@ export function attachNativePlayer(
         if (!primary) centre.add(new THREE.Vector3(0, 0.11, 0).applyQuaternion(rig.racket.quaternion));
         target = centre.sub(grip.centre.clone().multiplyScalar(BODY_SCALE).applyQuaternion(orientation));
         preference = target.clone().addScaledVector(grip.forward.clone().applyQuaternion(orientation), -armLengths[side][1]);
+      } else if (capturedBody) {
+        target.lerp(capturedBody.wrists[side], THREE.MathUtils.clamp(playback?.weight ?? 0, 0, 1));
+        orientation = rig.root.getWorldQuaternion(new THREE.Quaternion()).invert()
+          .multiply(pose.bones.get(`hand_${side}`)!.getWorldQuaternion(new THREE.Quaternion()));
       }
-      const capturedElbow = capturedElbows?.[side];
+      const capturedElbow = capturedBody?.elbows[side];
       if (capturedElbow) preference.lerp(capturedElbow, THREE.MathUtils.clamp(playback?.weight ?? 0, 0, 1));
       const solved = nativeTwoBone(shoulder, target, armLengths[side][0], armLengths[side][1], preference);
       pose.aim(`upperarm_${side}`, solved.elbow);
@@ -183,7 +202,7 @@ export function attachNativePlayer(
       if (primary) rig.racket.position.copy(pose.point(`hand_${side}`))
         .add(grip.centre.clone().multiplyScalar(BODY_SCALE).applyQuaternion(orientation!));
     }
-    if (!capturedElbows) {
+    if (!capturedBody) {
       for (const side of ['l', 'r'] as const) {
         // Legacy legs use screen-space labels, opposite anatomical asset labels.
         const thigh = side === 'l' ? rig.rightLeg : rig.leftLeg;
@@ -196,7 +215,7 @@ export function attachNativePlayer(
       }
     }
     pose.finish();
-    if (capturedElbows) {
+    if (capturedBody) {
       const placeCapturedShoe = (shoe: THREE.Object3D, footName: string) => {
         const foot = pose.bones.get(footName)!;
         const ankle = pose.point(footName);

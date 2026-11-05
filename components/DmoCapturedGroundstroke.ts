@@ -1,12 +1,13 @@
 import * as THREE from 'three';
 import { BVHLoader } from 'three/examples/jsm/loaders/BVHLoader.js';
 
-export type GroundstrokeName = 'forehand' | 'backhand';
+export type GroundstrokeName = 'forehand' | 'backhand' | 'serve';
 export type DominantHandedness = 'left' | 'right';
 
 export interface GroundstrokeMotionSources {
   forehand: string;
   backhand: string;
+  serve: string;
 }
 
 export interface GroundstrokePlayback {
@@ -14,6 +15,13 @@ export interface GroundstrokePlayback {
   deltaSeconds: number;
   weight: number;
   handedness: DominantHandedness;
+  scope?: 'full' | 'upper';
+  rootOffset?: boolean;
+}
+
+export interface CapturedBodyHints {
+  elbows: Record<'l' | 'r', THREE.Vector3>;
+  wrists: Record<'l' | 'r', THREE.Vector3>;
 }
 
 type NativeRest = {
@@ -22,10 +30,9 @@ type NativeRest = {
 };
 
 type RetargetPair = {
-  name: string;
   target: THREE.Bone;
   source: THREE.Bone;
-  rest: THREE.Quaternion;
+  targetRest: THREE.Quaternion;
 };
 
 type MotionClip = {
@@ -34,17 +41,21 @@ type MotionClip = {
   duration: number;
   contactTime: number;
   contactRoot: THREE.Vector3;
+  sourceRestRotations: Map<string, THREE.Quaternion>;
   scale: number;
   rightPairs: RetargetPair[];
   leftPairs: RetargetPair[];
 };
 
 const CONTACT_SECONDS: Record<GroundstrokeName, number> = {
-  // The forehand sample is the captured right-wrist speed peak; the backhand
-  // contact pose is the 9.28-second phase used by the Design mechanics viewer.
+  // The serve time is the repeated right-wrist speed/height peak in the source
+  // clip; the source has no ball-contact marker, so this remains inferred.
   forehand: 13.4,
   backhand: 9.28,
+  serve: 2.56,
 };
+
+const READY_POSE_SECONDS = 0.5;
 
 const SOURCE_BONE_BY_TARGET: Record<string, string> = {
   pelvis: 'Hips',
@@ -73,18 +84,48 @@ const BODY_BONES = [
   'pelvis',
   'spine_01', 'spine_02', 'spine_03',
   'neck_01', 'head',
-  'clavicle_l', 'clavicle_r',
+  'clavicle_l', 'upperarm_l', 'lowerarm_l', 'hand_l',
+  'clavicle_r', 'upperarm_r', 'lowerarm_r', 'hand_r',
   'thigh_l', 'calf_l', 'foot_l',
   'thigh_r', 'calf_r', 'foot_r',
+];
+
+const UPPER_BODY_BONES = [
+  'spine_01', 'spine_02', 'spine_03',
+  'neck_01', 'head',
+  'clavicle_l', 'clavicle_r',
 ];
 
 export function groundstrokeCaptureWeight(frameDelta: number) {
   if (!Number.isFinite(frameDelta)) return 0;
   const smooth = THREE.MathUtils.smoothstep;
-  const backswing = smooth(frameDelta, -13, -5) * (1 - smooth(frameDelta, -4, 0));
-  const impact = smooth(frameDelta, -5, 0) * (1 - smooth(frameDelta, 0, 5));
-  const followThrough = smooth(frameDelta, 0, 4) * (1 - smooth(frameDelta, 12, 21));
+  const backswing = smooth(frameDelta, -22, -15) * (1 - smooth(frameDelta, -8, -3));
+  const impact = smooth(frameDelta, -8, -2) * (1 - smooth(frameDelta, 2, 8));
+  const followThrough = smooth(frameDelta, -1, 5) * (1 - smooth(frameDelta, 16, 22));
   return Math.max(backswing, impact, followThrough);
+}
+
+export function serveCaptureWeight(frameDelta: number) {
+  if (!Number.isFinite(frameDelta)) return 0;
+  const smooth = THREE.MathUtils.smoothstep;
+  const preparation = smooth(frameDelta, -64, -48) * (1 - smooth(frameDelta, -20, -6));
+  const contact = smooth(frameDelta, -6, -2) * (1 - smooth(frameDelta, 2, 8));
+  const recovery = smooth(frameDelta, -1, 5) * (1 - smooth(frameDelta, 16, 22));
+  return Math.max(preparation, contact, recovery);
+}
+
+export function readyPosePlayback(
+  handedness: DominantHandedness,
+  scope: 'full' | 'upper',
+): GroundstrokePlayback {
+  return {
+    stroke: 'serve',
+    deltaSeconds: READY_POSE_SECONDS - CONTACT_SECONDS.serve,
+    weight: 1,
+    handedness,
+    scope,
+    rootOffset: false,
+  };
 }
 
 function mirrorSide(name: string) {
@@ -122,6 +163,7 @@ export class DmoCapturedGroundstroke {
     this.motions = {
       forehand: this.prepare('forehand', sources.forehand, rest),
       backhand: this.prepare('backhand', sources.backhand, rest),
+      serve: this.prepare('serve', sources.serve, rest),
     };
   }
 
@@ -134,6 +176,14 @@ export class DmoCapturedGroundstroke {
     if (contactTime >= data.clip.duration) {
       throw new Error(`Captured ${stroke} contact time exceeds its BVH clip.`);
     }
+    mixer.setTime(0);
+    root.updateMatrixWorld(true);
+    const sourceRestRotations = new Map(
+      data.skeleton.bones.map((bone) => [
+        bone.name,
+        bone.getWorldQuaternion(new THREE.Quaternion()),
+      ]),
+    );
     mixer.setTime(contactTime);
     root.updateMatrixWorld(true);
     const contactRoot = root.position.clone();
@@ -151,6 +201,7 @@ export class DmoCapturedGroundstroke {
       duration: data.clip.duration,
       contactTime,
       contactRoot,
+      sourceRestRotations,
       scale,
       rightPairs: this.buildPairs(sourceBones, rest, false),
       leftPairs: this.buildPairs(sourceBones, rest, true),
@@ -168,21 +219,12 @@ export class DmoCapturedGroundstroke {
       const source = sourceBones.get(mirrored ? mirrorSide(sourceName) : sourceName);
       const targetRest = rest.get(name);
       if (!target || !source || !targetRest) continue;
-      const sourceChild = source.children.find((child) => child instanceof THREE.Bone);
-      const sourceDirection = sourceChild
-        ? sourceChild.position.clone()
-        : new THREE.Vector3(0, 1, 0);
-      if (mirrored) sourceDirection.x *= -1;
-      if (sourceDirection.lengthSq() < 1e-8) sourceDirection.set(0, 1, 0);
-      const restRotation = targetRest.rotation.clone().premultiply(
-        new THREE.Quaternion().setFromUnitVectors(targetRest.direction.clone().normalize(), sourceDirection.normalize()),
-      );
-      pairs.push({ name, target, source, rest: restRotation });
+      pairs.push({ target, source, targetRest: targetRest.rotation.clone() });
     }
     return pairs;
   }
 
-  apply(playback: GroundstrokePlayback) {
+  apply(playback: GroundstrokePlayback): CapturedBodyHints | null {
     const weight = THREE.MathUtils.clamp(playback.weight, 0, 1);
     if (weight <= 0 || !Number.isFinite(playback.deltaSeconds)) return null;
     const motion = this.motions[playback.stroke];
@@ -203,18 +245,27 @@ export class DmoCapturedGroundstroke {
     motion.root.updateMatrixWorld(true);
     const sourceRootPosition = mirrored ? mirrorVectorX(motion.root.position) : motion.root.position.clone();
     const contactRoot = mirrored ? mirrorVectorX(motion.contactRoot) : motion.contactRoot;
-    const rootOffset = sourceRootPosition.sub(contactRoot).multiplyScalar(motion.scale);
+    const rootOffset = playback.rootOffset === false
+      ? new THREE.Vector3()
+      : sourceRootPosition.sub(contactRoot).multiplyScalar(motion.scale);
     const pelvis = this.targets.get('pelvis')!;
     const pelvisSpacePosition = this.space.worldToLocal(pelvis.getWorldPosition(new THREE.Vector3()));
     pelvisSpacePosition.add(rootOffset);
     pelvis.position.copy(pelvis.parent!.worldToLocal(this.space.localToWorld(pelvisSpacePosition)));
 
     const spaceRotation = this.space.getWorldQuaternion(new THREE.Quaternion());
-    for (const { target, source, rest } of pairs) {
+    for (const { target, source, targetRest } of pairs) {
       target.parent!.updateWorldMatrix(true, false);
       const sourceRotation = source.getWorldQuaternion(new THREE.Quaternion());
-      if (mirrored) mirrorQuaternionX(sourceRotation);
-      const desiredWorld = spaceRotation.clone().multiply(sourceRotation.multiply(rest));
+      const sourceRest = motion.sourceRestRotations.get(source.name);
+      if (!sourceRest) continue;
+      const referenceRotation = sourceRest.clone();
+      if (mirrored) {
+        sourceRotation.copy(mirrorQuaternionX(sourceRotation));
+        referenceRotation.copy(mirrorQuaternionX(referenceRotation));
+      }
+      const deltaRotation = sourceRotation.multiply(referenceRotation.invert());
+      const desiredWorld = spaceRotation.clone().multiply(deltaRotation).multiply(targetRest);
       target.quaternion.copy(
         target.parent!.getWorldQuaternion(new THREE.Quaternion()).invert().multiply(desiredWorld),
       );
@@ -230,14 +281,18 @@ export class DmoCapturedGroundstroke {
       l: this.space.worldToLocal(this.targets.get('lowerarm_l')!.getWorldPosition(new THREE.Vector3())),
       r: this.space.worldToLocal(this.targets.get('lowerarm_r')!.getWorldPosition(new THREE.Vector3())),
     };
-
+    const wristHints = {
+      l: this.space.worldToLocal(this.targets.get('hand_l')!.getWorldPosition(new THREE.Vector3())),
+      r: this.space.worldToLocal(this.targets.get('hand_r')!.getWorldPosition(new THREE.Vector3())),
+    };
     for (const entry of base) {
       entry.bone.position.copy(entry.position);
       entry.bone.quaternion.copy(entry.rotation);
     }
     this.model.updateMatrixWorld(true);
 
-    for (const name of BODY_BONES) {
+    const bodyBones = playback.scope === 'upper' ? UPPER_BODY_BONES : BODY_BONES;
+    for (const name of bodyBones) {
       const target = this.targets.get(name);
       const sample = sampled.get(name);
       if (!target || !sample) continue;
@@ -245,6 +300,6 @@ export class DmoCapturedGroundstroke {
       if (name === 'pelvis') target.position.lerp(sample.position, weight);
     }
     this.model.updateMatrixWorld(true);
-    return elbowHints;
+    return { elbows: elbowHints, wrists: wristHints };
   }
 }
