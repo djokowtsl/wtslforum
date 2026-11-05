@@ -117,13 +117,11 @@ export function attachNativePlayer(template: THREE.Group, rig: PlayerRig, shirtC
     const delta = rig.hip.position.clone().sub(pose.point('pelvis'));
     model.position.add(delta);
     pose.orient('pelvis', rig.hip.quaternion.clone().multiply(pose.rest.get('pelvis')!.rotation));
-    const neck = rig.head.position.clone().add(new THREE.Vector3(0, -0.23, 0));
-    const trunk = neck.clone().sub(pose.point('pelvis'));
-    trunk.y = Math.max(0.2, trunk.y);
-    trunk.normalize();
+    // The DMO pose already gives the torso's pitch, roll and turn. Applying
+    // that same absolute body rotation to each native spine joint preserves
+    // its bind offsets while avoiding cumulative bends through the torso.
     for (const name of ['spine_01', 'spine_02', 'spine_03']) {
-      pose.aim(name, pose.point(name).add(trunk),
-        rig.body.quaternion.clone().multiply(pose.rest.get(name)!.rotation));
+      pose.orient(name, rig.body.quaternion.clone().multiply(pose.rest.get(name)!.rotation));
     }
     const neckPosition = pose.point('neck_01');
     const headDirection = rig.head.position.clone().sub(neckPosition);
