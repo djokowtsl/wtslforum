@@ -1,9 +1,9 @@
 import * as THREE from 'three';
 
-/** Keep fingers along the handle; right and left palms face opposite sides. */
+/** Keep fingers along the handle; the left palm mirrors the right in full-scene views. */
 export function racketHandFrame(rotation: THREE.Quaternion, left: boolean) {
   return rotation.clone().multiply(new THREE.Quaternion().setFromAxisAngle(
-    new THREE.Vector3(0, 1, 0), left ? 0 : Math.PI,
+    new THREE.Vector3(0, 1, 0), left ? Math.PI : 0,
   ));
 }
 

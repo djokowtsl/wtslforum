@@ -126,7 +126,7 @@ for (const gender of ['male', 'female']) {
   });
 }
 
-test('tennis hand frame follows the racket shaft and mirrors palm roll', () => {
+test('tennis hand frame follows the shaft with full-scene palm rolls', () => {
   const racket = new THREE.Quaternion().setFromEuler(new THREE.Euler(0.4, -0.25, 0.3));
   const shaft = new THREE.Vector3(0, 1, 0).applyQuaternion(racket);
   const right = racketPose.racketHandFrame(racket, false);
@@ -136,8 +136,8 @@ test('tennis hand frame follows the racket shaft and mirrors palm roll', () => {
   const rightPalm = new THREE.Vector3(0, 0, 1).applyQuaternion(right);
   const leftPalm = new THREE.Vector3(0, 0, 1).applyQuaternion(left);
   const racketFace = new THREE.Vector3(0, 0, 1).applyQuaternion(racket);
-  assert.ok(rightPalm.dot(racketFace) < -0.999, 'dominant right palm must sit opposite the string face');
-  assert.ok(leftPalm.dot(racketFace) > 0.999, 'mirrored left palm must face the string side');
+  assert.ok(rightPalm.dot(racketFace) > 0.999, 'the right palm must face the string side in the full-scene view');
+  assert.ok(leftPalm.dot(racketFace) < -0.999, 'the mirrored left palm must face the opposite side');
   assert.ok(rightPalm.dot(leftPalm) < -0.999, 'right and left grips must roll to opposite palm sides');
 });
 
