@@ -1,12 +1,14 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
 import {
+  advanceLiveCourtPlayerPosition,
   advanceLiveCourtPlayhead,
   deriveLiveCourtFootworkEvents,
   findLiveCourtShotInRange,
   findPlayerShotEvent,
   inferLiveCourtContactCue,
   interpolateLiveCourtFrame,
+  isLiveCourtBetweenPoints,
   liveCourtFacingAngle,
   liveCourtEventsBetween,
   latestLiveCourtShotEvent,
@@ -130,6 +132,26 @@ test('motion event lookups stay scoped to the requested frames and player', () =
     liveCourtEventsBetween(events, 100, 120).map((event) => event.frame),
     [110, 120],
   );
+});
+
+test('players are in repositioning mode after a point until the next serve', () => {
+  const events = [
+    { frame: 100, kind: 'point-end' },
+    { frame: 180, kind: 'shot', player: 1, shotType: 'serve' },
+  ];
+  assert.equal(isLiveCourtBetweenPoints(events, 99), false);
+  assert.equal(isLiveCourtBetweenPoints(events, 100), true);
+  assert.equal(isLiveCourtBetweenPoints(events, 179), true);
+  assert.equal(isLiveCourtBetweenPoints(events, 180), false);
+  assert.equal(isLiveCourtBetweenPoints([{ frame: 100, kind: 'point-end' }], 200), true);
+});
+
+test('player repositioning advances by a bounded physical step', () => {
+  const oneMeterStep = advanceLiveCourtPlayerPosition([0, 0], [3, 4], 1);
+  assert.ok(Math.abs(oneMeterStep[0] - 0.6) < 1e-12);
+  assert.ok(Math.abs(oneMeterStep[1] - 0.8) < 1e-12);
+  assert.deepEqual(advanceLiveCourtPlayerPosition([0, 0], [3, 4], 0), [0, 0]);
+  assert.deepEqual(advanceLiveCourtPlayerPosition([0, 0], [0.5, 0], 1), [0.5, 0]);
 });
 
 test('stroke variation cues use only nearby ball/player samples, never invented shot labels', () => {

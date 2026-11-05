@@ -421,7 +421,8 @@ export function attachNativePlayer(
     const captureWeight = THREE.MathUtils.clamp(playback?.weight ?? 0, 0, 1);
     const dominant: Side = rig.root.userData.dominantHandedness === 'left' ? 'l' : 'r';
     const support: Side = dominant === 'l' ? 'r' : 'l';
-    const twoHanded = Boolean(rig.root.userData.twoHandedGrip);
+    const twoHanded = Boolean(rig.root.userData.twoHandedGrip)
+      || Boolean(rig.root.userData.waitingPose);
 
     // 1. Procedural base pose (always), so captured motion blends from a
     //    plausible stance rather than from the bind A-pose.

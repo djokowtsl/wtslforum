@@ -348,6 +348,39 @@ export function mergeLiveCourtEvents(
   );
 }
 
+/** Keep player repositioning active after a point until the next serve begins. */
+export function isLiveCourtBetweenPoints(events: LiveCourtMotionEvent[], frame: number): boolean {
+  if (!Number.isFinite(frame)) return false;
+  let latestPointEnd = Number.NEGATIVE_INFINITY;
+  for (const event of events) {
+    if (event.kind === 'point-end' && event.frame <= frame) {
+      latestPointEnd = Math.max(latestPointEnd, event.frame);
+    }
+  }
+  if (!Number.isFinite(latestPointEnd)) return false;
+  return !events.some(event =>
+    event.kind === 'shot'
+    && event.shotType === 'serve'
+    && event.frame > latestPointEnd
+    && event.frame <= frame,
+  );
+}
+
+/** Move a player toward a recorded position without exceeding a physical step. */
+export function advanceLiveCourtPlayerPosition(
+  current: readonly [number, number],
+  target: readonly [number, number],
+  maximumDistance: number,
+): [number, number] {
+  const dx = target[0] - current[0];
+  const dz = target[1] - current[1];
+  const distance = Math.hypot(dx, dz);
+  const limit = Number.isFinite(maximumDistance) ? Math.max(0, maximumDistance) : 0;
+  if (distance <= limit || distance < 1e-8) return [target[0], target[1]];
+  const fraction = limit / distance;
+  return [current[0] + dx * fraction, current[1] + dz * fraction];
+}
+
 export function advanceLiveCourtPlayhead(
   currentFrame: number | null,
   elapsedMs: number,
