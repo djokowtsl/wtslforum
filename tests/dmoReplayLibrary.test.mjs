@@ -16,6 +16,7 @@ function loadModule(path, mocks) {
   const module = { exports: {} };
   new Function('require', 'module', 'exports', code)((name) => {
     if (name in mocks) return mocks[name];
+    if (name === '@/lib/auth') return { getSession: async () => ({ isAdmin: true }) };
     if (name === '@/lib/te4CoachEmbed') return te4CoachEmbedModule;
     if (name.startsWith('node:')) return require(name);
     throw new Error(`Unexpected dependency: ${name}`);
@@ -38,6 +39,8 @@ function loadTsxModule(path, mocks) {
   const module = { exports: {} };
   new Function('require', 'module', 'exports', code)((name) => {
     if (name in mocks) return mocks[name];
+    if (name === '@/lib/auth') return { getSession: async () => ({ isAdmin: true }) };
+    if (name === '@/components/LivestreamMaintenance') return { __esModule: true, default: () => null };
     if (name === 'react/jsx-runtime' || name.startsWith('node:')) return require(name);
     throw new Error(`Unexpected dependency: ${name}`);
   }, module, module.exports);

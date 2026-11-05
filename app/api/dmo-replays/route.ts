@@ -1,14 +1,22 @@
 import { NextResponse } from 'next/server';
+import { getSession } from '@/lib/auth';
 import { isDmoReplayId, listPublicDmoReplays } from '@/lib/dmoReplayLibrary';
 
 export const dynamic = 'force-dynamic';
 
 const PUBLIC_HEADERS = {
-  'Cache-Control': 'public, max-age=30, stale-while-revalidate=120',
+  'Cache-Control': 'private, no-store',
   'X-Content-Type-Options': 'nosniff',
 };
 
 export async function GET(request: Request) {
+  const user = await getSession();
+  if (!user?.isAdmin) {
+    return NextResponse.json(
+      { error: 'Match replays are temporarily unavailable. Access is limited to Forum admins.' },
+      { status: user ? 403 : 401, headers: PUBLIC_HEADERS },
+    );
+  }
   const url = new URL(request.url);
   const rawCursor = url.searchParams.get('cursor');
   const cursor = rawCursor && isDmoReplayId(rawCursor) ? rawCursor : null;

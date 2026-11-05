@@ -53,7 +53,7 @@ function request(method, body, origin = 'https://forum.test') {
 }
 
 function routeMocks({
-  user = { id: '22', username: 'Fan', avatar: 'https://cdn.discordapp.com/avatars/123/a.png' },
+  user = { id: '22', username: 'Fan', avatar: 'https://cdn.discordapp.com/avatars/123/a.png', isAdmin: true },
   decision = 'approved',
   sql,
 } = {}) {

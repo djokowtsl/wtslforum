@@ -1163,7 +1163,7 @@ test('verified replay openings can be shown before the first point; other DMO br
   }));
   const route = loadRoute('app/api/live-dmo/current/route.ts', {
     'next/server': nextServer,
-    '@/lib/auth': { getSession: async () => ({ id: '22' }) },
+    '@/lib/auth': { getSession: async () => ({ id: '22', isAdmin: true }) },
     '@/lib/db': { sql: async () => rows },
     '@/lib/te4DmoLive': {
       hasCompletedDmoPoints: (snapshot) => Boolean(snapshot && Number.isInteger(snapshot.pointCount) && snapshot.pointCount > 0),
@@ -1240,7 +1240,7 @@ test('current broadcasts show every live match per streamer and hide ended match
   let queryText = '';
   const route = loadRoute('app/api/live-dmo/current/route.ts', {
     'next/server': nextServer,
-    '@/lib/auth': { getSession: async () => ({ id: 'viewer' }) },
+    '@/lib/auth': { getSession: async () => ({ id: 'viewer', isAdmin: true }) },
     '@/lib/db': {
       sql: async (strings) => {
         queryText = strings.join('?');
@@ -1269,7 +1269,7 @@ test('signed-in viewers get the official pre-match estimate for a broadcast pair
   const route = loadRoute('app/api/live-dmo/[id]/pre-match/route.ts', {
     'next/server': nextServer,
     'zod': require('zod'),
-    '@/lib/auth': { getSession: async () => ({ discordId: 'viewer', isAdmin: false }) },
+    '@/lib/auth': { getSession: async () => ({ discordId: 'viewer', isAdmin: true }) },
     '@/lib/db': {
       sql: async () => [{
         payload: { players: ['Squeaky', 'Player Two'], bestOf: 5 },
