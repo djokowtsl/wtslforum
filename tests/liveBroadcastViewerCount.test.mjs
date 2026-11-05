@@ -6,7 +6,7 @@ import { createRequire } from 'node:module';
 const require = createRequire(import.meta.url);
 const nextServer = { NextResponse: { json: (body, init) => Response.json(body, init) } };
 
-function loadRoute({ user = { discordId: 'trusted-member' }, rows = [
+function loadRoute({ user = { discordId: 'trusted-member', isAdmin: true }, rows = [
   { viewer_count: 3, display_name: 'Ada Fan', avatar_url: 'https://cdn.discordapp.com/avatars/123/a.png' },
   { viewer_count: 3, display_name: 'Lee Rally', avatar_url: null },
   { viewer_count: 3, display_name: 'Sam Serve', avatar_url: null },

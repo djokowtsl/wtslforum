@@ -1,6 +1,7 @@
 import { createHash } from 'node:crypto';
 import { get, put } from '@vercel/blob';
 import { NextResponse } from 'next/server';
+import { getSession } from '@/lib/auth';
 import { analyzeDmoBuffer } from '@/lib/te4DmoAnalysis';
 import { MAX_DMO_BYTES, Te4DmoAnalysisError } from '@/lib/te4DmoParser';
 import { getPublicDmoReplay, isDmoReplayId, publicDmoReplayMetadata } from '@/lib/dmoReplayLibrary';
@@ -81,6 +82,13 @@ async function getViewerData(input: {
 }
 
 export async function GET(_request: Request, { params }: { params: Promise<{ id: string }> }) {
+  const user = await getSession();
+  if (!user?.isAdmin) {
+    return NextResponse.json(
+      { error: 'Match replays are temporarily unavailable. Access is limited to Forum admins.' },
+      { status: user ? 403 : 401, headers: PRIVATE_HEADERS },
+    );
+  }
   const { id } = await params;
   if (!isDmoReplayId(id)) {
     return NextResponse.json({ error: 'Match replay not found.' }, { status: 404, headers: PRIVATE_HEADERS });

@@ -3,6 +3,8 @@ import Link from 'next/link';
 import PageHero from '@/components/PageHero';
 import DmoReplayLibrary from '@/components/DmoReplayLibrary';
 import { listPublicDmoReplays } from '@/lib/dmoReplayLibrary';
+import { getSession } from '@/lib/auth';
+import LivestreamMaintenance from '@/components/LivestreamMaintenance';
 
 export const dynamic = 'force-dynamic';
 export const metadata: Metadata = { title: 'Match Replays' };
@@ -12,6 +14,8 @@ export default async function ReplaysPage({
 }: {
   searchParams: Promise<{ match?: string }>;
 }) {
+  const user = await getSession();
+  if (!user?.isAdmin) return <LivestreamMaintenance />;
   const params = await searchParams;
   const initialMatchId = params.match && /^\d{1,19}$/.test(params.match) ? params.match : '';
   let initialPage: Awaited<ReturnType<typeof listPublicDmoReplays>> | null = null;

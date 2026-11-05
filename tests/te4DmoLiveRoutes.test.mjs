@@ -94,14 +94,14 @@ test('admins can create a broadcast after expired rows are cleared', async () =>
   assert.match(queries[1].text, /INSERT INTO dmo_live_broadcasts/);
 });
 
-test('signed-in viewers can fetch the full private point log', async () => {
+test('signed-in admins can fetch the full private point log', async () => {
   const points = [
     { number: 1, scoreLabel: '0-0(15-0)', server: 1, winner: 1, rallyHits: 0, faults: 0 },
     { number: 2, scoreLabel: '0-0(15-15)', server: 2, winner: 2, rallyHits: 3, faults: 1 },
   ];
   const route = loadRoute('app/api/live-dmo/[id]/points/route.ts', {
     'next/server': nextServer,
-    '@/lib/auth': { getSession: async () => ({ discordId: 'member', isAdmin: false }) },
+    '@/lib/auth': { getSession: async () => ({ discordId: 'member', isAdmin: true }) },
     '@/lib/liveRequestSecurity': { isSameSiteMutation },
     '@/lib/db': {
       sql: async () => [{ point_log: points }],
@@ -234,7 +234,7 @@ test('live snapshot updates merge their recent points into the retained point lo
   assert.ok(queries[0].values.includes(JSON.stringify(recentPoints)));
 });
 
-test('signed-in members can read broadcasts while guests cannot', async () => {
+test('signed-in admins can read broadcasts while guests cannot', async () => {
   let databaseCalls = 0;
   const route = loadRoute('app/api/live-dmo/current/route.ts', {
     'next/server': nextServer,
@@ -249,7 +249,7 @@ test('signed-in members can read broadcasts while guests cannot', async () => {
   const updatedAt = new Date('2026-10-20T12:01:00Z');
   const memberRoute = loadRoute('app/api/live-dmo/current/route.ts', {
     'next/server': nextServer,
-    '@/lib/auth': { getSession: async () => ({ discordId: 'member', isAdmin: false }) },
+    '@/lib/auth': { getSession: async () => ({ discordId: 'member', isAdmin: true }) },
     '@/lib/db': {
       sql: async (strings) => {
         databaseCalls += 1;
@@ -382,7 +382,7 @@ test('broadcast owners and admins can correct the match tour, but other members 
   assert.deepEqual(await adminResponse.json(), { ok: true, isWta: false });
 });
 
-test('full replay files require sign-in and are served from the private store', async () => {
+test('full replay files require an admin session and are served from the private store', async () => {
   const originalStoreId = process.env.MODERATION_BLOB_STORE_ID;
   const id = '7e09e922-44c3-49d7-8211-48f13b8b865a';
   const pathname = `dmo-live-replays/${id}-5409358e-55c8-4e8a-a74d-e1edbfb751d5.json`;
@@ -412,7 +412,7 @@ test('full replay files require sign-in and are served from the private store', 
           };
         },
       },
-      '@/lib/auth': { getSession: async () => ({ discordId: 'member', isAdmin: false }) },
+    '@/lib/auth': { getSession: async () => ({ discordId: 'member', isAdmin: true }) },
       '@/lib/db': {
         sql: async () => [{
           payload: { mode: 'manual', replay: true, replayDataPath: pathname },

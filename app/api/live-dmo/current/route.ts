@@ -23,6 +23,9 @@ export async function GET() {
   if (!user) {
     return NextResponse.json({ error: 'Sign in to watch live broadcasts.' }, { status: 401, headers: PRIVATE_HEADERS });
   }
+  if (!user.isAdmin) {
+    return NextResponse.json({ error: 'Live streams are temporarily unavailable. Access is limited to Forum admins.' }, { status: 403, headers: PRIVATE_HEADERS });
+  }
   try {
     await cleanupExpiredLiveDmoBroadcasts();
     const rows = await sql`
@@ -145,6 +148,9 @@ export async function POST(request: Request) {
   const user = await getSession();
   if (!user) {
     return NextResponse.json({ error: 'Sign in to update viewer presence.' }, { status: 401, headers: PRIVATE_HEADERS });
+  }
+  if (!user.isAdmin) {
+    return NextResponse.json({ error: 'Live streams are temporarily unavailable. Access is limited to Forum admins.' }, { status: 403, headers: PRIVATE_HEADERS });
   }
   const contentLength = Number(request.headers.get('content-length') || 0);
   if (contentLength > MAX_HEARTBEAT_BYTES) {
