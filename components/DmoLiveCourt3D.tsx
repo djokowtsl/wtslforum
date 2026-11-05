@@ -441,6 +441,24 @@ function ThreeCourt({
         }
         if (maleCrowd.status === 'fulfilled' && femaleCrowd.status === 'fulfilled') {
           attachHumanCrowd(scene, crowdRig, [maleCrowd.value, femaleCrowd.value]);
+          void loadHumanModel(isWta ? 'female' : 'male', 'crowd-high', modelLoad.signal, modelAssetBase)
+            .then((template) => {
+              if (modelLoad.signal.aborted) {
+                disposeHumanModel(template, true);
+                return;
+              }
+              try {
+                crowdRig.setHighDetailModel(template, isWta ? 1 : 0);
+              } finally {
+                // Instanced geometry and cloned materials retain what they need.
+                disposeHumanModel(template, false);
+              }
+            })
+            .catch((error: unknown) => {
+              if (!modelLoad.signal.aborted) {
+                console.warn('High-detail DMO crowd model unavailable; using the standard crowd models.', error);
+              }
+            });
         }
         const failed = results.find((result) => result.status === 'rejected');
         if (failed?.status === 'rejected') throw failed.reason;

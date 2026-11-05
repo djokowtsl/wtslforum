@@ -9,6 +9,7 @@ import { attachNativePlayer as attachClaudeNativePlayer } from './DmoNativePlaye
 import type { GroundstrokeMotionSources } from './DmoCapturedGroundstroke';
 
 type Gender = 'male' | 'female';
+type HumanModelDetail = 'player' | 'crowd' | 'crowd-high';
 export type NativePlayerVariant = 'current' | 'claude';
 const UP = new THREE.Vector3(0, 1, 0);
 const nativeMotionSources = new WeakMap<THREE.Group, GroundstrokeMotionSources>();
@@ -25,8 +26,13 @@ async function loadGroundstrokeMotionSources(base: string, signal: AbortSignal):
   return { forehand, backhand, serve };
 }
 
-export async function loadHumanModel(gender: Gender, detail: 'player' | 'crowd', signal: AbortSignal, base = '/models/dmo-humans') {
-  const filename = detail === 'player' ? 'native-player.glb' : `${gender}-${detail}.glb`;
+export function humanModelAssetFilename(gender: Gender, detail: HumanModelDetail) {
+  if (detail === 'player') return 'native-player.glb';
+  return `${gender}-${detail === 'crowd-high' ? 'player' : 'crowd'}.glb`;
+}
+
+export async function loadHumanModel(gender: Gender, detail: HumanModelDetail, signal: AbortSignal, base = '/models/dmo-humans') {
+  const filename = humanModelAssetFilename(gender, detail);
   const [response, motionSources] = await Promise.all([
     fetch(`${base}/${filename}`, { signal }),
     detail === 'player' ? loadGroundstrokeMotionSources(base, signal) : Promise.resolve(undefined),

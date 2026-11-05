@@ -17,7 +17,10 @@ async function loadTs(file, overrides = {}) {
   new Function('module', 'exports', 'require', code)(module, module.exports, (name) => overrides[name] ?? require(name));
   return module.exports;
 }
-const sceneApi = await loadTs('../components/DmoLiveCourt3DScene.ts');
+const stadiumArchitectureApi = await loadTs('../components/DmoStadiumArchitecture.ts');
+const sceneApi = await loadTs('../components/DmoLiveCourt3DScene.ts', {
+  './DmoStadiumArchitecture': stadiumArchitectureApi,
+});
 const racketPose = await loadTs('../components/DmoRacketOrientation.ts');
 const articulated = await loadTs('../components/DmoArticulatedHands.ts', { './DmoRacketOrientation': racketPose });
 const nativeGrip = await loadTs('../components/DmoNativeGrip.ts');
@@ -40,7 +43,16 @@ const humans = await loadTs('../components/DmoHumanModels.ts', {
   './DmoRacketOrientation': racketPose, './DmoArticulatedHands': articulated, './DmoNativePlayer': nativePlayer,
   './DmoNativePlayerClaude': claudeNativePlayer,
 });
-const crowds = await loadTs('../components/DmoHumanCrowd.ts', { './DmoHumanModels': humans });
+const crowdLodApi = await loadTs('../lib/dmoCrowdLod.ts');
+const crowds = await loadTs('../components/DmoHumanCrowd.ts', {
+  './DmoHumanModels': humans, '../lib/dmoCrowdLod': crowdLodApi,
+});
+
+test('high-detail spectators use the clothed CC0 player assets', () => {
+  assert.equal(humans.humanModelAssetFilename('male', 'crowd-high'), 'male-player.glb');
+  assert.equal(humans.humanModelAssetFilename('female', 'crowd-high'), 'female-player.glb');
+  assert.equal(humans.humanModelAssetFilename('male', 'crowd'), 'male-crowd.glb');
+});
 
 // Parse the real rig and geometry in Node, omitting image decoding (verified in browser).
 async function asset(gender, detail = 'player') {
@@ -565,14 +577,37 @@ test('racket face follows ball flight while retaining the contact shaft axis', (
 test('crowd uses seated textured instancing and retains gaze/applause updates', async () => {
   const scene = new THREE.Scene();
   const oldCrowd = sceneApi.buildCrowd(scene);
-  const batches = crowds.attachHumanCrowd(scene, oldCrowd, [await asset('male', 'crowd'), await asset('female', 'crowd')]);
+  oldCrowd.setHighDetailEnabled(false);
+  const batches = crowds.attachHumanCrowd(scene, oldCrowd, [
+    await asset('male', 'crowd'), await asset('female', 'crowd'),
+  ]);
   assert.equal(batches.length, 12);
   assert.equal(batches.reduce((sum, mesh) => sum + mesh.count, 0), oldCrowd.seats.length);
+  oldCrowd.setHighDetailModel(await asset('male', 'player'), 0);
+  const highDetailBatches = scene.children.filter((object) => object.name.includes('high-detail'));
+  oldCrowd.update(0.1, false);
+  const totalInstances = () => [...batches, ...highDetailBatches]
+    .reduce((sum, mesh) => sum + mesh.count, 0);
+  assert.equal(highDetailBatches.reduce((sum, mesh) => sum + mesh.count, 0), 0);
+  assert.ok(highDetailBatches.every((mesh) => !mesh.visible));
+  assert.equal(totalInstances(), oldCrowd.seats.length);
+  oldCrowd.setHighDetailEnabled(true);
+  oldCrowd.update(0.2, false);
+  assert.equal(highDetailBatches.reduce((sum, mesh) => sum + mesh.count, 0), 24);
+  assert.equal(totalInstances(), oldCrowd.seats.length);
   assert.equal(scene.getObjectByName('wtsl-spectator-heads').visible, false);
   oldCrowd.update(2, true, new THREE.Vector3(11, 0.5, 5));
   assert.ok(batches.some((mesh, index) => index % 6 >= 3 && mesh.count > 0));
-  assert.equal(batches.reduce((sum, mesh) => sum + mesh.count, 0), oldCrowd.seats.length);
-  for (const mesh of batches) {
+  assert.equal(totalInstances(), oldCrowd.seats.length);
+  oldCrowd.setHighDetailEnabled(false);
+  oldCrowd.update(2.2, true, new THREE.Vector3(11, 0.5, 5));
+  assert.equal(highDetailBatches.reduce((sum, mesh) => sum + mesh.count, 0), 0);
+  assert.ok(highDetailBatches.every((mesh) => !mesh.visible));
+  assert.equal(totalInstances(), oldCrowd.seats.length);
+  oldCrowd.setHighDetailEnabled(true);
+  oldCrowd.update(2.4, true, new THREE.Vector3(11, 0.5, 5));
+  assert.equal(highDetailBatches.reduce((sum, mesh) => sum + mesh.count, 0), 24);
+  for (const mesh of [...batches, ...highDetailBatches]) {
     assert.ok(mesh.geometry.boundingBox.max.y > 1.2);
     assert.ok(mesh.geometry.boundingBox.max.y < 1.7);
     assert.equal(mesh.castShadow, false);
