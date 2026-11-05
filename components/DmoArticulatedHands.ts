@@ -2,6 +2,7 @@ import * as THREE from 'three';
 import { GLTFLoader } from 'three/examples/jsm/loaders/GLTFLoader.js';
 import { clone } from 'three/examples/jsm/utils/SkeletonUtils.js';
 import type { PlayerRig } from './DmoLiveCourt3DScene';
+import { HAND_GRIP_CENTER, HAND_GRIP_SHAFT } from './DmoRacketOrientation';
 
 // WebXR generic-hand, MIT, immersive-web/webxr-input-profiles. All 25 joints
 // are retained. Finger closure below is an authored joint pose, not mesh folding.
@@ -21,8 +22,8 @@ const prefixes = ['index-finger', 'middle-finger', 'ring-finger', 'pinky-finger'
 type GripTarget = { center: THREE.Vector3; shaft: THREE.Vector3; radius: number };
 
 const defaultGrip: GripTarget = {
-  center: new THREE.Vector3(0, 0.075, -0.035),
-  shaft: new THREE.Vector3(0, 1, 0),
+  center: HAND_GRIP_CENTER.clone(),
+  shaft: HAND_GRIP_SHAFT.clone(),
   radius: 0.019,
 };
 const preferredBends: Record<string, [number, number, number]> = {
@@ -66,9 +67,9 @@ function fitFinger(
   let bestScore = Infinity;
   let best = { angles: preferred, adduction: preferredAdduct };
   for (let adduction = 0; adduction <= 0.8; adduction += 0.1) {
-    for (let a = 0.05; a <= 1.2; a += 0.1) {
-      for (let b = 0.05; b <= 1.4; b += 0.1) {
-        for (let c = 0.05; c <= 0.9; c += 0.1) {
+    for (let a = 0.05; a <= 1.6; a += 0.1) {
+      for (let b = 0.05; b <= 1.7; b += 0.1) {
+        for (let c = 0.05; c <= 1.1; c += 0.1) {
           if (b < a * 0.8 || c > b * 0.9) continue;
           const angles: [number, number, number] = [a, b, c];
           let point = base.clone();
@@ -86,12 +87,12 @@ function fitFinger(
               );
               const penetration = Math.max(0, targetRadius - distance);
               const gap = Math.max(0, distance - targetRadius);
-              score += 500 * penetration ** 2 + 2 * gap ** 2;
+              score += 500 * penetration ** 2 + 15 * gap ** 2;
             }
             point.add(direction);
           }
-          score += 0.004 * angles.reduce((sum, value, index) => sum + (value - preferred[index]) ** 2, 0);
-          score += 0.002 * (adduction - preferredAdduct) ** 2;
+          score += 0.0001 * angles.reduce((sum, value, index) => sum + (value - preferred[index]) ** 2, 0);
+          score += 0.00005 * (adduction - preferredAdduct) ** 2;
           if (score < bestScore) {
             bestScore = score;
             best = { angles, adduction };
@@ -178,18 +179,10 @@ export function makeArticulatedHand(template: THREE.Group, left: boolean) {
     joints.forEach(j => { j.bone.position.copy(j.position); j.bone.quaternion.copy(j.rotation); });
     {
       const { center, shaft, radius } = nextGrip;
-      const bendAxis = new THREE.Vector3(1, 0, 0)
-        .addScaledVector(shaft, -shaft.x);
-      const adductionAxis = new THREE.Vector3(0, 0, 1)
-        .addScaledVector(shaft, -shaft.z);
-      if (bendAxis.lengthSq() < 1e-8) {
-        bendAxis.set(0, 0, 1).addScaledVector(shaft, -shaft.z);
-      }
-      if (adductionAxis.lengthSq() < 1e-8) {
-        adductionAxis.set(1, 0, 0).addScaledVector(shaft, -shaft.x);
-      }
-      bendAxis.normalize();
-      adductionAxis.normalize();
+      // Flex around the transverse handle axis. Projecting the bend axis
+      // perpendicular to the handle made the fingers fold alongside it.
+      const bendAxis = shaft.clone().negate();
+      const adductionAxis = new THREE.Vector3(0, 0, 1);
       const fingerSide = new THREE.Vector3();
       for (const prefix of prefixes) {
         const base = joints.get(`${prefix}-phalanx-proximal`)!.point;

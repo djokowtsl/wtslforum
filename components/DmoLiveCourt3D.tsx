@@ -63,8 +63,7 @@ import {
 import styles from './DmoLiveCourt3D.module.css';
 import { attachHumanPlayer, disposeHumanModel, loadHumanModel } from './DmoHumanModels';
 import { attachHumanCrowd } from './DmoHumanCrowd';
-import { racketContactOrientation, racketGripWrist } from './DmoRacketOrientation';
-import { loadArticulatedHand } from './DmoArticulatedHands';
+import { racketContactOrientation, racketGripElbow, racketGripWrist } from './DmoRacketOrientation';
 
 type Props = {
   modelAssetBase?: string;
@@ -408,14 +407,13 @@ function ThreeCourt({
       loadHumanModel(isWta ? 'female' : 'male', 'player', modelLoad.signal, modelAssetBase),
       loadHumanModel('male', 'crowd', modelLoad.signal, modelAssetBase),
       loadHumanModel('female', 'crowd', modelLoad.signal, modelAssetBase),
-      loadArticulatedHand(modelLoad.signal, modelAssetBase),
     ]).then((results) => {
       try {
         if (modelLoad.signal.aborted) return;
-        const [player, maleCrowd, femaleCrowd, hand] = results;
-        if (player.status === 'fulfilled' && hand.status === 'fulfilled') {
-          attachHumanPlayer(player.value, players[0], PALETTE.shirtOne, hand.value);
-          attachHumanPlayer(player.value, players[1], PALETTE.shirtTwo, hand.value);
+        const [player, maleCrowd, femaleCrowd] = results;
+        if (player.status === 'fulfilled') {
+          attachHumanPlayer(player.value, players[0], PALETTE.shirtOne);
+          attachHumanPlayer(player.value, players[1], PALETTE.shirtTwo);
         }
         if (maleCrowd.status === 'fulfilled' && femaleCrowd.status === 'fulfilled') {
           attachHumanCrowd(scene, crowdRig, [maleCrowd.value, femaleCrowd.value]);
@@ -705,7 +703,7 @@ function ThreeCourt({
       const twoHandedStroke = !serving
         && (playerStrokeStyle?.[stroke] ?? (stroke === 'backhand' ? 'two' : 'one')) === 'two';
       const armPump = Math.sin(phase * 0.55) * gaitSpeed * 0.12;
-      const dominantHand = new THREE.Vector3(dominantX, 0.98 + bodyBounce + armPump, 0.06);
+      const dominantHand = new THREE.Vector3(dominantX, 1.12 + bodyBounce + armPump, 0.06);
       const nonDominantHand = new THREE.Vector3(-dominantX * 0.72, 0.96 + bodyBounce - armPump, 0.1);
       dominantHand.x += dominantX * shapedBackswing * 0.48
         - strokeSide * shapedFollowThrough * 0.42
@@ -835,14 +833,14 @@ function ThreeCourt({
       rig.root.userData.dominantHandedness = handedness;
       dominantMesh.quaternion.copy(rig.racket.quaternion);
       const wrist = racketGripWrist(rig.racket.position, rig.racket.quaternion, handedness === 'left');
-      dominantElbow.copy(elbowPosition(dominantShoulder, wrist));
+      dominantElbow.copy(racketGripElbow(dominantShoulder, wrist, rig.racket.quaternion, handedness === 'left'));
       poseLimb(dominantUpperArm, dominantShoulder, dominantElbow);
       dominantElbowMesh.position.copy(dominantElbow);
       poseLimb(dominantForearm, dominantElbow, wrist);
       rig.root.userData.twoHandedGrip = twoHandedStroke && (impactWeight > 0 || shapedBackswing > 0 || shapedFollowThrough > 0);
       if (rig.root.userData.twoHandedGrip) {
         const supportWrist = racketGripWrist(nonDominantHand, rig.racket.quaternion, handedness !== 'left');
-        nonDominantElbow.copy(elbowPosition(nonDominantShoulder, supportWrist));
+        nonDominantElbow.copy(racketGripElbow(nonDominantShoulder, supportWrist, rig.racket.quaternion, handedness !== 'left'));
         poseLimb(nonDominantUpperArm, nonDominantShoulder, nonDominantElbow);
         nonDominantElbowMesh.position.copy(nonDominantElbow);
         poseLimb(nonDominantForearm, nonDominantElbow, supportWrist);

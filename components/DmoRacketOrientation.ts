@@ -1,16 +1,46 @@
 import * as THREE from 'three';
 
-/** Keep fingers along the handle; the left palm mirrors the right in full-scene views. */
+/** Wrist-to-knuckles is +Y; the handle crosses the palm from pinky to index. */
+export const HAND_GRIP_CENTER = new THREE.Vector3(0, 0.075, -0.035);
+export const HAND_GRIP_SHAFT = new THREE.Vector3(-0.94, 0.34, 0).normalize();
+
+/** Seat the handle across the palm, not parallel to outstretched fingers. */
 export function racketHandFrame(rotation: THREE.Quaternion, left: boolean) {
-  return rotation.clone().multiply(new THREE.Quaternion().setFromAxisAngle(
-    new THREE.Vector3(0, 1, 0), left ? Math.PI : 0,
-  ));
+  const across = Math.atan2(0.94, 0.34);
+  return rotation.clone()
+    .multiply(new THREE.Quaternion().setFromAxisAngle(new THREE.Vector3(0, 0, 1), left ? -across : across))
+    .multiply(new THREE.Quaternion().setFromAxisAngle(new THREE.Vector3(0, 1, 0), Math.PI));
 }
 
-/** Keep the wrist behind the grip while the fingers extend toward the racket head. */
+/** Place the wrist behind the palm while the shaft crosses the closed fingers. */
 export function racketGripWrist(grip: THREE.Vector3, rotation: THREE.Quaternion, left: boolean) {
   const hand = racketHandFrame(rotation, left);
-  return grip.clone().sub(new THREE.Vector3(0, 0.075, -0.035).applyQuaternion(hand));
+  const centre = HAND_GRIP_CENTER.clone();
+  if (left) centre.x *= -1;
+  return grip.clone().sub(centre.applyQuaternion(hand));
+}
+
+/** Bend the whole arm toward the grip, rather than kinking only the wrist. */
+export function racketGripElbow(
+  shoulder: THREE.Vector3, wrist: THREE.Vector3, rotation: THREE.Quaternion, left: boolean,
+) {
+  const upperLength = 0.31, lowerLength = 0.29;
+  const direction = wrist.clone().sub(shoulder);
+  const distance = direction.length();
+  if (distance < 1e-6) return shoulder.clone().add(new THREE.Vector3(0, -upperLength, 0));
+  direction.divideScalar(distance);
+  const along = THREE.MathUtils.clamp(
+    (distance * distance + upperLength ** 2 - lowerLength ** 2) / (2 * distance), 0, distance,
+  );
+  const centre = shoulder.clone().addScaledVector(direction, along);
+  const forward = new THREE.Vector3(0, 1, 0).applyQuaternion(racketHandFrame(rotation, left));
+  const bend = wrist.clone().addScaledVector(forward, -lowerLength).sub(centre);
+  bend.addScaledVector(direction, -bend.dot(direction));
+  if (bend.lengthSq() < 1e-8) {
+    bend.set(0, 0, 1).addScaledVector(direction, -direction.z);
+    if (bend.lengthSq() < 1e-8) bend.set(1, 0, 0);
+  }
+  return centre.addScaledVector(bend.normalize(), Math.sqrt(Math.max(0, upperLength ** 2 - along ** 2)));
 }
 
 /**
