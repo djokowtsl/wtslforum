@@ -85,6 +85,14 @@ for (const gender of ['male', 'female']) {
     assert.equal(rig.body.visible, false);
     assert.equal(rig.racket.visible, true);
     assert.equal(rig.leftShoe.visible, true);
+    assert.ok(rig.leftShoe.getObjectByName('tennis-sock'));
+    attached.model.traverse((object) => {
+      if (!(object instanceof THREE.SkinnedMesh)) return;
+      const indices = object.geometry.index, positions = object.geometry.getAttribute('position');
+      for (let i = 0; i < indices.count; i += 3) {
+        assert.ok(Math.max(...[0, 1, 2].map((j) => positions.getY(indices.getX(i + j)))) >= 0.115);
+      }
+    });
     assert.equal(attached.model.visible, true);
     humans.disposeHumanModel(attached.model);
   });
