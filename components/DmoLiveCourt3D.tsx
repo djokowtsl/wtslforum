@@ -63,6 +63,7 @@ import {
 import styles from './DmoLiveCourt3D.module.css';
 import { attachHumanPlayer, disposeHumanModel, loadHumanModel } from './DmoHumanModels';
 import { attachHumanCrowd } from './DmoHumanCrowd';
+import { racketContactOrientation } from './DmoRacketOrientation';
 
 type Props = {
   modelAssetBase?: string;
@@ -792,9 +793,25 @@ function ThreeCourt({
       const serveLoadRotation = resting.clone().multiply(
         new THREE.Quaternion().setFromEuler(new THREE.Euler(-strokeSide * 0.72, 0, -strokeSide * 0.78)),
       );
-      const contactRotation = new THREE.Quaternion().setFromUnitVectors(
-        new THREE.Vector3(0, 1, 0), new THREE.Vector3(...contact.axis),
-      );
+      // Resolve the string-bed roll from the outgoing flight at the shot,
+      // rather than pointing only the shaft at the ball and leaving its face
+      // in an arbitrary upright orientation. Use observed movement when the
+      // live buffer does not yet include the post-contact samples.
+      const flightStart = event
+        ? interpolateLiveCourtFrame(samples, Math.min(lastFrame, event.frame + 1), maxGapFrames) ?? prior
+        : prior;
+      const flightEnd = event
+        ? interpolateLiveCourtFrame(samples, Math.min(lastFrame, event.frame + 4), maxGapFrames) ?? later
+        : later;
+      const flight = new THREE.Vector3(
+        flightEnd[0] - flightStart[0],
+        flightEnd[2] - flightStart[2],
+        flightEnd[1] - flightStart[1],
+      ).applyAxisAngle(new THREE.Vector3(0, 1, 0), -facing);
+      // Both sides of the string bed are equivalent; keep a stable facing
+      // sign so a transition from incoming to outgoing flight cannot flip it.
+      if (flight.z < 0) flight.negate();
+      const contactRotation = racketContactOrientation(new THREE.Vector3(...contact.axis), flight);
       const followRotation = contactRotation.clone().multiply(
         new THREE.Quaternion().setFromEuler(new THREE.Euler(
           0,
@@ -811,8 +828,8 @@ function ThreeCourt({
       if (impactWeight > 0) rig.racket.quaternion.slerp(contactRotation, impactWeight);
       if (shapedFollowThrough > 0) rig.racket.quaternion.slerp(followRotation, shapedFollowThrough);
       if (serveFollowThrough > 0) rig.racket.quaternion.slerp(serveFollowRotation, serveFollowThrough);
-      // Keep the dominant palm and curled fingers aligned with the grip as
-      // the racket turns through serves and groundstrokes.
+      // Preserve the original unarticulated hand surface; do not sculpt
+      // fingertips or force a wrist roll to simulate missing finger joints.
       rig.root.userData.dominantHandedness = handedness;
       dominantMesh.quaternion.copy(rig.racket.quaternion);
       rig.detailed?.update();
