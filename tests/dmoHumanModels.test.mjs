@@ -17,8 +17,9 @@ async function loadTs(file, overrides = {}) {
   return module.exports;
 }
 const sceneApi = await loadTs('../components/DmoLiveCourt3DScene.ts');
-const humans = await loadTs('../components/DmoHumanModels.ts');
 const racketPose = await loadTs('../components/DmoRacketOrientation.ts');
+const articulated = await loadTs('../components/DmoArticulatedHands.ts');
+const humans = await loadTs('../components/DmoHumanModels.ts', { './DmoRacketOrientation': racketPose, './DmoArticulatedHands': articulated });
 const crowds = await loadTs('../components/DmoHumanCrowd.ts', { './DmoHumanModels': humans });
 
 // Parse the real rig and geometry in Node, omitting image decoding (verified in browser).
@@ -88,7 +89,7 @@ for (const gender of ['male', 'female']) {
       rig.racket.position.set(-0.4, handY, 0.3);
       attached.update();
       const hand = attached.model.getObjectByName('RightHand');
-      close(rig.root.worldToLocal(hand.getWorldPosition(new THREE.Vector3())), new THREE.Vector3(-0.4, handY - 0.0456, 0.3));
+      close(rig.root.worldToLocal(hand.getWorldPosition(new THREE.Vector3())), new THREE.Vector3(-0.4, handY, 0.3));
       attached.model.traverse((object) => {
         if (object instanceof THREE.Bone) assert.ok(object.matrixWorld.elements.every(Number.isFinite));
       });
@@ -112,6 +113,24 @@ for (const gender of ['male', 'female']) {
     humans.disposeHumanModel(attached.model);
   });
 }
+
+test('finger-jointed hands close through rigid joints, not folded surface vertices', async () => {
+    const bytes = await readFile(new URL('../public/models/dmo-humans/articulated-hand.glb', import.meta.url));
+    const template = (await new GLTFLoader().parseAsync(bytes.buffer.slice(bytes.byteOffset, bytes.byteOffset + bytes.byteLength), '')).scene;
+    for (const left of [false, true]) {
+      const hand = articulated.makeArticulatedHand(template, left);
+      assert.equal(hand.joints.size, 25);
+      const tip = hand.joints.get('middle-finger-tip'), before = tip.bone.position.clone();
+      let vertices;
+      hand.model.traverse(o => { if (o instanceof THREE.SkinnedMesh) vertices = o.geometry.getAttribute('position').array.slice(); });
+      hand.setGrip(true);
+      assert.ok(tip.bone.position.distanceTo(before) > 0.04);
+      hand.joints.forEach(j => assert.ok([...j.bone.position.toArray(), ...j.bone.quaternion.toArray()].every(Number.isFinite)));
+      hand.model.traverse(o => { if (o instanceof THREE.SkinnedMesh) assert.deepEqual(o.geometry.getAttribute('position').array, vertices); });
+      hand.setGrip(false);
+      close(tip.bone.position, before);
+    }
+});
 
 test('racket face follows ball flight while retaining the contact shaft axis', () => {
   for (const sign of [-1, 1]) {
