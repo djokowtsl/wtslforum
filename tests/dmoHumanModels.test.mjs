@@ -20,9 +20,11 @@ const sceneApi = await loadTs('../components/DmoLiveCourt3DScene.ts');
 const racketPose = await loadTs('../components/DmoRacketOrientation.ts');
 const articulated = await loadTs('../components/DmoArticulatedHands.ts', { './DmoRacketOrientation': racketPose });
 const nativeGrip = await loadTs('../components/DmoNativeGrip.ts');
+const capturedGroundstroke = await import('../components/DmoCapturedGroundstroke.ts');
 const nativeKit = await loadTs('../components/DmoNativeKit.ts');
 const nativePlayer = await loadTs('../components/DmoNativePlayer.ts', {
   './DmoRacketOrientation': racketPose, './DmoNativeGrip': nativeGrip, './DmoNativeKit': nativeKit,
+  './DmoCapturedGroundstroke': capturedGroundstroke,
 });
 const humans = await loadTs('../components/DmoHumanModels.ts', {
   './DmoRacketOrientation': racketPose, './DmoArticulatedHands': articulated, './DmoNativePlayer': nativePlayer,
@@ -50,6 +52,24 @@ async function asset(gender, detail = 'player') {
   return gltf.scene;
 }
 
+async function nativePlayerTemplate(gender) {
+  const originalFetch = globalThis.fetch;
+  globalThis.fetch = async (input) => {
+    const name = new URL(String(input), 'https://forum.test').pathname.split('/').pop();
+    const filename = name === 'native-player.glb' || name?.endsWith('.bvh')
+      ? name
+      : null;
+    if (!filename) throw new Error(`Unexpected native player asset: ${String(input)}`);
+    const bytes = await readFile(new URL(`../public/models/dmo-humans/${filename}`, import.meta.url));
+    return new Response(bytes);
+  };
+  try {
+    return await humans.loadHumanModel(gender, 'player', new AbortController().signal);
+  } finally {
+    globalThis.fetch = originalFetch;
+  }
+}
+
 async function articulatedHandAsset() {
   const bytes = await readFile(new URL('../public/models/dmo-humans/articulated-hand.glb', import.meta.url));
   const gltf = await new GLTFLoader().parseAsync(
@@ -65,10 +85,9 @@ const handCanonical = new THREE.Quaternion().setFromRotationMatrix(new THREE.Mat
 ));
 
 for (const gender of ['male', 'female']) test(`${gender}: continuous native body retains wrists, clothes and segment lengths`, async () => {
-  const bytes = await readFile(new URL('../public/models/dmo-humans/native-player.glb', import.meta.url));
-  assert.ok(bytes.length < 1_200_000);
-  const template = (await new GLTFLoader().parseAsync(bytes.buffer.slice(bytes.byteOffset, bytes.byteOffset + bytes.byteLength), '')).scene;
-  Object.assign(template.userData, { continuousPlayer: true, gender });
+    const template = await nativePlayerTemplate(gender);
+    const bytes = await readFile(new URL('../public/models/dmo-humans/native-player.glb', import.meta.url));
+    assert.ok(bytes.length < 1_200_000);
   let source;
   template.traverse(o => { if (o instanceof THREE.SkinnedMesh) source = o.geometry.getAttribute('position').array.slice(); });
   const rig = sceneApi.makePlayer(0x275c77, 0x333333, gender === 'female');
@@ -141,6 +160,49 @@ for (const gender of ['male', 'female']) test(`${gender}: continuous native body
       const radius = delta.addScaledVector(grips[side].shaft,
         -THREE.MathUtils.clamp(delta.dot(grips[side].shaft), -0.045, 0.135)).length();
       assert.ok(radius >= 0.019, `${side} ${finger}: finger bone crosses the handle`);
+    }
+  }
+});
+
+test('captured forehands, backhands, and serves animate the full body for either handedness', async () => {
+  const template = await nativePlayerTemplate('male');
+  const rig = sceneApi.makePlayer(0x275c77, 0x333333);
+  const attached = humans.attachHumanPlayer(template, rig, 0x275c77);
+  const inspected = ['spine_03', 'neck_01', 'upperarm_l', 'upperarm_r', 'lowerarm_l', 'lowerarm_r',
+    'thigh_l', 'thigh_r', 'calf_l', 'calf_r', 'foot_l', 'foot_r'];
+  for (const stroke of ['forehand', 'backhand', 'serve']) {
+    for (const handedness of ['right', 'left']) {
+      rig.root.userData.dominantHandedness = handedness;
+      rig.root.userData.groundstrokePlayback = {
+        stroke, deltaSeconds: 0, weight: 1, handedness, rootOffset: false,
+      };
+      const before = new Map(inspected.map((name) => {
+        const bone = attached.pose.bones.get(name);
+        return [name, {
+          position: attached.pose.point(name),
+          rotation: bone.getWorldQuaternion(new THREE.Quaternion()),
+        }];
+      }));
+      attached.update();
+      const changed = inspected.filter((name) => {
+        const bone = attached.pose.bones.get(name);
+        return attached.pose.point(name).distanceTo(before.get(name).position) > 0.005
+          || bone.getWorldQuaternion(new THREE.Quaternion()).angleTo(before.get(name).rotation) > 0.005;
+      });
+      assert.ok(changed.includes('neck_01'), `${stroke}/${handedness}: recorded motion must reach the neck`);
+      assert.ok(changed.some((name) => name.startsWith('upperarm_') || name.startsWith('lowerarm_')),
+        `${stroke}/${handedness}: recorded motion must guide the arm chains`);
+      assert.ok(changed.some((name) => name.startsWith('thigh_') || name.startsWith('calf_') || name.startsWith('foot_')),
+        `${stroke}/${handedness}: recorded motion must move the lower body`);
+      for (const [shoe, foot] of [[rig.leftShoe, 'foot_r'], [rig.rightShoe, 'foot_l']]) {
+        const shoePosition = rig.root.worldToLocal(shoe.getWorldPosition(new THREE.Vector3()));
+        assert.ok(shoePosition.distanceTo(attached.pose.point(foot)) < 0.1,
+          `${stroke}/${handedness}: shoes must stay attached to animated feet`);
+        assert.ok(shoe.quaternion.toArray().every(Number.isFinite));
+      }
+      for (const name of inspected) {
+        assert.ok(attached.pose.bones.get(name).matrixWorld.elements.every(Number.isFinite));
+      }
     }
   }
 });

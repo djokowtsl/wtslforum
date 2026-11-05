@@ -16,11 +16,11 @@ https://github.com/jdpulgarin/Tennis-MoCap/blob/main/Copyright.md
 Creative Commons Attribution-ShareAlike 3.0 Unported:
 https://creativecommons.org/licenses/by-sa/3.0/
 
-Original files: jarua_Derecha_18seg.bvh and jarua_Reves.bvh.
-Modified by retaining every fourth sample (100 Hz to 25 Hz); no joint rotations
-were changed in the supplied BVH derivatives. These motion derivatives remain
-CC BY-SA 3.0. Runtime retargeting and finger grasp are authored adaptations,
-not the original participant's hand capture or Federer/Nadal motion.
+Original files: jarua_Derecha_18seg.bvh, jarua_Reves.bvh, and jarua_Servicio.bvh.
+Motion files are sampled at 25 Hz by retaining every fourth 100 Hz source
+sample; joint rotations are unchanged. These motion derivatives remain CC BY-SA
+3.0. Runtime retargeting and finger grasp are authored adaptations, not the
+original participant's hand capture or Federer/Nadal motion.
 
 Citation: Pulgarin-Giraldo J.D., Alvarez-Meza A.M., Melo-Betancourt L.G.,
 Ramos-Bermudez S., Castellanos-Dominguez G. “A Similarity Indicator for

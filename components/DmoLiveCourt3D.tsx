@@ -10,7 +10,7 @@ import {
   type Te4LiveSnapshot,
 } from '@/lib/te4DmoLive';
 import type { Te4CourtSurface } from '@/lib/te4DmoTypes';
-import { groundstrokeCaptureWeight } from './DmoCapturedGroundstroke';
+import { groundstrokeCaptureWeight, serveCaptureWeight } from './DmoCapturedGroundstroke';
 import { courtSurfaceDisplayName, isIndoorDmoVenue } from '@/lib/te4DmoSurface';
 import { deriveLiveCourtSoundEvents, playLiveCourtEffect as playCue } from '@/lib/liveCourtAudio';
 import {
@@ -567,7 +567,11 @@ function ThreeCourt({
         : targetFacing;
       rig.root.userData.facingInitialized = true;
       const eventPlayer = index === 0 ? 1 : 2;
-      const event = findPlayerShotEvent(events, eventPlayer, frame, 16);
+      const nearbyEvent = findPlayerShotEvent(events, eventPlayer, frame, 24);
+      const upcomingServe = nearbyEvent
+        ? undefined
+        : findPlayerShotEvent(events, eventPlayer, frame, 64, 'serve');
+      const event = nearbyEvent ?? (upcomingServe && upcomingServe.frame > frame ? upcomingServe : undefined);
       const serving = event?.shotType === 'serve';
       const contactCue = event
         ? inferLiveCourtContactCue(
@@ -701,29 +705,36 @@ function ThreeCourt({
       const dominantX = dominantHandX(handedness);
       const playerStrokeStyle = sceneDataRef.current.snapshot.strokeStyles?.[index];
       const stroke = groundstrokeForBallSide(localX, handedness);
-      type CapturedEvent = { frame: number; stroke: 'forehand' | 'backhand'; handedness: 'left' | 'right' };
+      type CapturedEvent = { frame: number; stroke: 'forehand' | 'backhand' | 'serve'; handedness: 'left' | 'right' };
       let capturedEvent = rig.root.userData.capturedGroundstrokeEvent as CapturedEvent | undefined;
-      if (serving || contactCue === 'close-net' || contactCue === 'soft-touch') {
+      if (contactCue === 'close-net' || contactCue === 'soft-touch') {
         delete rig.root.userData.capturedGroundstrokeEvent;
         delete rig.root.userData.groundstrokePlayback;
         capturedEvent = undefined;
       } else if (event) {
-        capturedEvent = { frame: event.frame, stroke, handedness };
+        capturedEvent = {
+          frame: event.frame,
+          stroke: event.shotType === 'serve' ? 'serve' : stroke,
+          handedness,
+        };
         rig.root.userData.capturedGroundstrokeEvent = capturedEvent;
       }
       if (capturedEvent) {
         const captureDelta = frame - capturedEvent.frame;
-        if (captureDelta < -16 || captureDelta > 21) {
+        if (captureDelta < -64 || captureDelta > 22) {
           delete rig.root.userData.capturedGroundstrokeEvent;
           delete rig.root.userData.groundstrokePlayback;
         } else {
-          const weight = groundstrokeCaptureWeight(captureDelta);
+          const weight = capturedEvent.stroke === 'serve'
+            ? serveCaptureWeight(captureDelta)
+            : groundstrokeCaptureWeight(captureDelta);
           if (weight > 0) {
             rig.root.userData.groundstrokePlayback = {
               stroke: capturedEvent.stroke,
               deltaSeconds: captureDelta / frameRate,
               weight,
               handedness: capturedEvent.handedness,
+              rootOffset: false,
             };
           } else {
             delete rig.root.userData.groundstrokePlayback;

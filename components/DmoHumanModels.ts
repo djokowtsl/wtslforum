@@ -12,13 +12,15 @@ const UP = new THREE.Vector3(0, 1, 0);
 const nativeMotionSources = new WeakMap<THREE.Group, GroundstrokeMotionSources>();
 
 async function loadGroundstrokeMotionSources(base: string, signal: AbortSignal): Promise<GroundstrokeMotionSources> {
-  const load = async (stroke: 'forehand' | 'backhand') => {
+  const load = async (stroke: 'forehand' | 'backhand' | 'serve') => {
     const response = await fetch(`${base}/tennis-${stroke}.bvh`, { signal });
     if (!response.ok) throw new Error(`Captured ${stroke} motion request failed (${response.status}).`);
     return response.text();
   };
-  const [forehand, backhand] = await Promise.all([load('forehand'), load('backhand')]);
-  return { forehand, backhand };
+  const [forehand, backhand, serve] = await Promise.all([
+    load('forehand'), load('backhand'), load('serve'),
+  ]);
+  return { forehand, backhand, serve };
 }
 
 export async function loadHumanModel(gender: Gender, detail: 'player' | 'crowd', signal: AbortSignal, base = '/models/dmo-humans') {
@@ -161,7 +163,7 @@ function tintKit(mesh: THREE.SkinnedMesh, tint: number) {
 export function attachHumanPlayer(template: THREE.Group, rig: PlayerRig, shirtColor: number, handTemplate?: THREE.Group) {
   if (template.userData.continuousPlayer) {
     const motions = nativeMotionSources.get(template);
-    if (!motions) throw new Error('Captured forehand and backhand motion data was not loaded.');
+    if (!motions) throw new Error('Captured forehand, backhand, and serve motion data was not loaded.');
     return attachNativePlayer(template, rig, shirtColor, motions);
   }
   const model = clone(template) as THREE.Group;
