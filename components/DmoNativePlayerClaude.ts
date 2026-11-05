@@ -34,6 +34,17 @@ function frameRotation(a1: THREE.Vector3, b1: THREE.Vector3, a2: THREE.Vector3, 
   return new THREE.Quaternion().setFromRotationMatrix(m2.multiply(m1.transpose()));
 }
 
+/** Interpolate between orientations along either arc around the sphere. */
+function slerpPath(a: THREE.Quaternion, b: THREE.Quaternion, t: number, long: boolean) {
+  const delta = a.clone().invert().multiply(b);
+  if ((delta.w < 0) !== long) delta.set(-delta.x, -delta.y, -delta.z, -delta.w);
+  const angle = 2 * Math.acos(THREE.MathUtils.clamp(delta.w, -1, 1));
+  const sine = Math.sqrt(Math.max(0, 1 - delta.w * delta.w));
+  if (sine < 1e-6) return a.clone();
+  const axis = new THREE.Vector3(delta.x / sine, delta.y / sine, delta.z / sine);
+  return a.clone().multiply(new THREE.Quaternion().setFromAxisAngle(axis, angle * t));
+}
+
 function clampRotation(q: THREE.Quaternion, limit: number) {
   const angle = 2 * Math.acos(THREE.MathUtils.clamp(Math.abs(q.w), -1, 1));
   if (angle <= limit) return q;
@@ -182,6 +193,8 @@ export function attachNativePlayer(
   const localRacket = { l: racketContactOrientation(grips.l.shaft, grips.l.palm),
     r: racketContactOrientation(grips.r.shaft, grips.r.palm) };
   const capturedGroundstroke = new DmoCapturedGroundstroke(model, rig.root, pose.rest, motionSources);
+  const previousRoll: Partial<Record<Side, number>> = {};
+  const previousSupportHand: Partial<Record<Side, THREE.Quaternion>> = {};
 
   /** Pose a two-segment limb through its anatomical hinge (no free twist). */
   const setLimb = (l: Limb, middle: THREE.Vector3, end: THREE.Vector3, hinge: THREE.Vector3) => {
@@ -204,7 +217,13 @@ export function attachNativePlayer(
     const neutral = neutralHand(side);
     const forearm = pose.point(`hand_${side}`).sub(pose.point(`lowerarm_${side}`)).normalize();
     const delta = desired.clone().multiply(neutral.clone().invert());
-    const roll = THREE.MathUtils.clamp(twistAngle(delta, forearm), -FOREARM_ROLL_LIMIT, FOREARM_ROLL_LIMIT);
+    let rawRoll = twistAngle(delta, forearm);
+    const lastRoll = previousRoll[side];
+    if (lastRoll !== undefined && Math.abs(rawRoll - lastRoll) > Math.PI) {
+      rawRoll -= Math.sign(rawRoll - lastRoll) * 2 * Math.PI;
+    }
+    const roll = THREE.MathUtils.clamp(rawRoll, -FOREARM_ROLL_LIMIT, FOREARM_ROLL_LIMIT);
+    previousRoll[side] = roll;
     const twist = new THREE.Quaternion().setFromAxisAngle(forearm, twistAngle(delta, forearm));
     const swing = clampRotation(delta.clone().multiply(twist.invert()), WRIST_SWING_LIMIT);
     return swing.multiply(new THREE.Quaternion().setFromAxisAngle(forearm, roll)).multiply(neutral);
@@ -340,7 +359,9 @@ export function attachNativePlayer(
     const captureWeight = THREE.MathUtils.clamp(playback?.weight ?? 0, 0, 1);
     const dominant: Side = rig.root.userData.dominantHandedness === 'left' ? 'l' : 'r';
     const support: Side = dominant === 'l' ? 'r' : 'l';
-    const twoHanded = Boolean(rig.root.userData.twoHandedGrip);
+    const twoHanded = playback?.hands
+      ? playback.hands === 'two'
+      : Boolean(rig.root.userData.twoHandedGrip);
 
     // 1. Procedural base pose (always), so captured motion blends from a
     //    plausible stance rather than from the bind A-pose.
@@ -445,12 +466,20 @@ export function attachNativePlayer(
         // Ease the free hand between its relaxed pose and the racket.
         const relaxed = pose.rotation(`hand_${support}`);
         grip = handGripPoint(support, relaxed).lerp(grip, supportHold);
-        desired = relaxed.slerp(desired, supportHold);
+        const shortPath = slerpPath(relaxed, desired, supportHold, false);
+        const longPath = slerpPath(relaxed, desired, supportHold, true);
+        const previous = previousSupportHand[support];
+        desired = previous && longPath.angleTo(previous) < shortPath.angleTo(previous)
+          ? longPath
+          : shortPath;
       }
+      previousSupportHand[support] = desired.clone();
       const elbowPreference = grip.clone().addScaledVector(grips[support].forward.clone().applyQuaternion(desired),
         -arms[support].lengths[1])
         .add(new THREE.Vector3(0, -0.12, -0.02));
       reachArm(support, grip, null, desired, elbowPreference);
+    } else {
+      delete previousSupportHand[support];
     }
     distributeNativeTwist(pose.bones, pose.rest);
     pose.finish();

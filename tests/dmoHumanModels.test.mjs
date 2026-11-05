@@ -104,6 +104,52 @@ test('Claude full-body rewrite is the default production player', async () => {
     bone.matrixWorld.elements.every(Number.isFinite)));
 });
 
+test('Claude stroke hand selection overrides stale grip state and wrist roll stays continuous', async () => {
+  const template = await nativePlayerTemplate('male');
+  const rig = sceneApi.makePlayer(0x275c77, 0x333333);
+  rig.root.userData.dominantHandedness = 'right';
+  rig.racket.position.set(-0.39, 1.18, 0.06);
+  const attached = humans.attachHumanPlayer(template, rig, 0x275c77);
+  const support = 'l';
+
+  rig.root.userData.twoHandedGrip = true;
+  rig.root.userData.groundstrokePlayback = {
+    stroke: 'backhand', handedness: 'right', deltaSeconds: 0, weight: 1,
+    rootOffset: false, hands: 'one',
+  };
+  attached.update();
+  for (const name of attached.pose.bones.keys()) {
+    if (/^(index|middle|ring|pinky|thumb)_/.test(name) && name.endsWith(`_${support}`)) {
+      const roll = attached.pose.bones.get(name).quaternion.angleTo(attached.pose.rest.get(name).local);
+      assert.ok(roll < 1e-3,
+        `${name}: explicit one-handed playback must release the support fingers (angle ${roll})`);
+    }
+  }
+
+  delete rig.root.userData.groundstrokePlayback;
+  rig.root.userData.twoHandedGrip = false;
+  rig.racket.quaternion.identity();
+  attached.update();
+  const side = 'r';
+  const axis = attached.pose.point(`hand_${side}`)
+    .sub(attached.pose.point(`lowerarm_${side}`)).normalize();
+  const neutral = attached.pose.rotation(`lowerarm_${side}`)
+    .multiply(attached.pose.rest.get(`lowerarm_${side}`).rotation.clone().invert())
+    .multiply(attached.pose.rest.get(`hand_${side}`).rotation);
+  const localRacket = racketPose.racketContactOrientation(
+    attached.grips[side].shaft, attached.grips[side].palm,
+  );
+  const handFrames = [];
+  for (const roll of [3.05, -3.05]) {
+    const desired = new THREE.Quaternion().setFromAxisAngle(axis, roll).multiply(neutral);
+    rig.racket.quaternion.copy(desired.multiply(localRacket));
+    attached.update();
+    handFrames.push(attached.pose.rotation(`hand_${side}`));
+  }
+  assert.ok(handFrames[0].angleTo(handFrames[1]) < 0.2,
+    'equivalent wrist orientations across the ±π boundary should not flip');
+});
+
 async function articulatedHandAsset() {
   const bytes = await readFile(new URL('../public/models/dmo-humans/articulated-hand.glb', import.meta.url));
   const gltf = await new GLTFLoader().parseAsync(
