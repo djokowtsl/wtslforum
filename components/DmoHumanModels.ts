@@ -4,18 +4,21 @@ import { clone } from 'three/examples/jsm/utils/SkeletonUtils.js';
 import type { PlayerRig } from './DmoLiveCourt3DScene';
 import { racketHandFrame } from './DmoRacketOrientation';
 import { attachArticulatedHands } from './DmoArticulatedHands';
+import { attachNativePlayer } from './DmoNativePlayer';
 
 type Gender = 'male' | 'female';
 const UP = new THREE.Vector3(0, 1, 0);
 
 export async function loadHumanModel(gender: Gender, detail: 'player' | 'crowd', signal: AbortSignal, base = '/models/dmo-humans') {
-  const response = await fetch(`${base}/${gender}-${detail}.glb`, { signal });
+  const filename = detail === 'player' ? 'native-player.glb' : `${gender}-${detail}.glb`;
+  const response = await fetch(`${base}/${filename}`, { signal });
   if (!response.ok) throw new Error(`Character model request failed (${response.status}).`);
   const gltf = await new GLTFLoader().parseAsync(await response.arrayBuffer(), '');
   if (signal.aborted) {
     disposeHumanModel(gltf.scene);
     throw new DOMException('Character load cancelled.', 'AbortError');
   }
+  if (detail === 'player') Object.assign(gltf.scene.userData, { continuousPlayer: true, gender });
   return gltf.scene;
 }
 
@@ -138,6 +141,7 @@ function tintKit(mesh: THREE.SkinnedMesh, tint: number) {
 }
 
 export function attachHumanPlayer(template: THREE.Group, rig: PlayerRig, shirtColor: number, handTemplate?: THREE.Group) {
+  if (template.userData.continuousPlayer) return attachNativePlayer(template, rig, shirtColor);
   const model = clone(template) as THREE.Group;
   model.name = 'wtsl-textured-rigged-player';
   model.traverse((object) => {

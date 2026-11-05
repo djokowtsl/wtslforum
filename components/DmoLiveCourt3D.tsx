@@ -64,7 +64,6 @@ import styles from './DmoLiveCourt3D.module.css';
 import { attachHumanPlayer, disposeHumanModel, loadHumanModel } from './DmoHumanModels';
 import { attachHumanCrowd } from './DmoHumanCrowd';
 import { racketContactOrientation, racketGripElbow, racketGripWrist } from './DmoRacketOrientation';
-import { loadArticulatedHand } from './DmoArticulatedHands';
 
 type Props = {
   modelAssetBase?: string;
@@ -408,14 +407,13 @@ function ThreeCourt({
       loadHumanModel(isWta ? 'female' : 'male', 'player', modelLoad.signal, modelAssetBase),
       loadHumanModel('male', 'crowd', modelLoad.signal, modelAssetBase),
       loadHumanModel('female', 'crowd', modelLoad.signal, modelAssetBase),
-      loadArticulatedHand(modelLoad.signal, modelAssetBase),
     ]).then((results) => {
       try {
         if (modelLoad.signal.aborted) return;
-        const [player, maleCrowd, femaleCrowd, hand] = results;
-        if (player.status === 'fulfilled' && hand.status === 'fulfilled') {
-          attachHumanPlayer(player.value, players[0], PALETTE.shirtOne, hand.value);
-          attachHumanPlayer(player.value, players[1], PALETTE.shirtTwo, hand.value);
+        const [player, maleCrowd, femaleCrowd] = results;
+        if (player.status === 'fulfilled') {
+          attachHumanPlayer(player.value, players[0], PALETTE.shirtOne);
+          attachHumanPlayer(player.value, players[1], PALETTE.shirtTwo);
         }
         if (maleCrowd.status === 'fulfilled' && femaleCrowd.status === 'fulfilled') {
           attachHumanCrowd(scene, crowdRig, [maleCrowd.value, femaleCrowd.value]);
