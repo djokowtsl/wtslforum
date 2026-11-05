@@ -704,7 +704,16 @@ function ThreeCourt({
       rig.rightShoe.rotation.z = slideDirection * slideWeight * 0.08;
       const dominantX = dominantHandX(handedness);
       const playerStrokeStyle = sceneDataRef.current.snapshot.strokeStyles?.[index];
-      const stroke = groundstrokeForBallSide(localX, handedness);
+      // Classify the shot at contact, not from the travelling ball on every
+      // animation frame (which can switch forehand/backhand mid-swing).
+      const contactSample = event
+        ? interpolateLiveCourtFrame(samples, event.frame, maxGapFrames)
+        : undefined;
+      const contactSide = contactSample
+        ? ((contactSample[0] - contactSample[xIndex]) * localXAxis[0]
+          + (contactSample[1] - contactSample[zIndex]) * localXAxis[1]) * SCALE / rig.root.scale.x
+        : localX;
+      const stroke = groundstrokeForBallSide(contactSide, handedness);
       type CapturedEvent = { frame: number; stroke: 'forehand' | 'backhand' | 'serve'; handedness: 'left' | 'right' };
       let capturedEvent = rig.root.userData.capturedGroundstrokeEvent as CapturedEvent | undefined;
       if (contactCue === 'close-net' || contactCue === 'soft-touch') {
@@ -712,11 +721,13 @@ function ThreeCourt({
         delete rig.root.userData.groundstrokePlayback;
         capturedEvent = undefined;
       } else if (event) {
-        capturedEvent = {
-          frame: event.frame,
-          stroke: event.shotType === 'serve' ? 'serve' : stroke,
-          handedness,
-        };
+        if (capturedEvent?.frame !== event.frame || capturedEvent.handedness !== handedness) {
+          capturedEvent = {
+            frame: event.frame,
+            stroke: event.shotType === 'serve' ? 'serve' : stroke,
+            handedness,
+          };
+        }
         rig.root.userData.capturedGroundstrokeEvent = capturedEvent;
       }
       if (capturedEvent) {

@@ -215,15 +215,19 @@ export function attachNativePlayer(
       }
     }
     pose.finish();
-    if (capturedBody) {
+    {
       const placeCapturedShoe = (shoe: THREE.Object3D, footName: string) => {
         const foot = pose.bones.get(footName)!;
         const ankle = pose.point(footName);
-        shoe.position.set(ankle.x, ankle.y - 0.045, ankle.z + 0.05);
+        // Shoe geometry is already horizontal; a bone's bind frame is not.
+        // Apply only the foot's rotation away from that bind frame.
         shoe.quaternion.copy(
           rig.root.getWorldQuaternion(new THREE.Quaternion()).invert()
-            .multiply(foot.getWorldQuaternion(new THREE.Quaternion())),
-        );
+            .multiply(foot.getWorldQuaternion(new THREE.Quaternion()))
+            .multiply(pose.rest.get(footName)!.rotation.clone().invert()),
+        ).normalize();
+        shoe.position.copy(new THREE.Vector3(0, -0.045, 0.05)
+          .applyQuaternion(shoe.quaternion).add(ankle));
       };
       // The legacy shoe groups use screen-space labels, opposite anatomical sides.
       placeCapturedShoe(rig.leftShoe, 'foot_r');

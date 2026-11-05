@@ -75,13 +75,12 @@ export function makeNativeGrip(bones: Map<string, THREE.Bone>, side: 'l' | 'r') 
   }
   thumb[2].remove(tip);
   const closed = fingerBones.map(b => b.quaternion.clone());
-  let isClosed = true;
   return {
     hand, centre, shaft, palm, forward,
     setClosed(value: boolean) {
-      if (value === isClosed) return;
+      // The full-body pose resets these joints every frame. Reapply the grasp
+      // even when the requested state has not changed.
       fingerBones.forEach((bone, i) => bone.quaternion.copy((value ? closed : open)[i]));
-      isClosed = value;
     },
   };
 }
