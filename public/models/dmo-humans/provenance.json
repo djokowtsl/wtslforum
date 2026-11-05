@@ -1,0 +1,38 @@
+[
+  {
+    "filename": "male-player.glb",
+    "bytes": 856552,
+    "triangles": 14000,
+    "simplificationError": 0.0009986779186874628,
+    "source": "https://grab3d.com/dl/man-base-character-rigged/man-base-character-rigged.glb",
+    "sourceSha256": "3038f56e1225d0ef9692189ed19ff688f1424e669281148a4cc6995fed568496",
+    "license": "CC0-1.0"
+  },
+  {
+    "filename": "male-crowd.glb",
+    "bytes": 136884,
+    "triangles": 1800,
+    "simplificationError": 0.012894418090581894,
+    "source": "https://grab3d.com/dl/man-base-character-rigged/man-base-character-rigged.glb",
+    "sourceSha256": "3038f56e1225d0ef9692189ed19ff688f1424e669281148a4cc6995fed568496",
+    "license": "CC0-1.0"
+  },
+  {
+    "filename": "female-player.glb",
+    "bytes": 891476,
+    "triangles": 14000,
+    "simplificationError": 0.001035783439874649,
+    "source": "https://grab3d.com/dl/woman-base-character-rigged/woman-base-character-rigged.glb",
+    "sourceSha256": "ea49ef6644dfcaa503b2e009f37b43cf6b2069501201552dc10a5b5ab1fc8bfa",
+    "license": "CC0-1.0"
+  },
+  {
+    "filename": "female-crowd.glb",
+    "bytes": 138480,
+    "triangles": 1800,
+    "simplificationError": 0.012618932873010635,
+    "source": "https://grab3d.com/dl/woman-base-character-rigged/woman-base-character-rigged.glb",
+    "sourceSha256": "ea49ef6644dfcaa503b2e009f37b43cf6b2069501201552dc10a5b5ab1fc8bfa",
+    "license": "CC0-1.0"
+  }
+]
