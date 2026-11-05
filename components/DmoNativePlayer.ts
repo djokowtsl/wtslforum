@@ -134,9 +134,10 @@ export function attachNativePlayer(template: THREE.Group, rig: PlayerRig, shirtC
       const left = side === 'l', primary = side === dominant;
       const arm = left ? rig.leftArm : rig.rightArm;
       const forearm = left ? rig.leftForearm : rig.rightForearm;
-      const [shoulderHint, elbowHint] = ends(arm);
+      const [, elbowHint] = ends(arm);
       const [, relaxedWrist] = ends(forearm);
-      pose.aim(`clavicle_${side}`, shoulderHint);
+      // Keep the native clavicle at its anatomical rest offset. The procedural
+      // dummy shoulder is much wider than this asset's clavicle can reach.
       const shoulder = pose.point(`upperarm_${side}`);
       const holding = primary || Boolean(rig.root.userData.twoHandedGrip);
       const grip = grips[side];
