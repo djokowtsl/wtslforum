@@ -39,12 +39,6 @@ export function makeArticulatedHand(template: THREE.Group, left: boolean) {
   if (joints.size !== 25) throw new Error('Articulated hand requires all 25 finger joints.');
   const root = new THREE.Group();
   root.name = left ? 'articulated-left-hand' : 'articulated-right-hand';
-  // A tennis sweatband covers the authored mesh-to-body wrist seam.
-  const band = new THREE.Mesh(new THREE.CylinderGeometry(0.029, 0.030, 0.035, 24, 1, true),
-    new THREE.MeshStandardMaterial({ color: 0xe5e3d8, roughness: 1, side: THREE.DoubleSide }));
-  band.position.y = -0.008;
-  band.name = 'cotton-wristband';
-  root.add(band);
   const space = new THREE.Group();
   space.quaternion.copy(toHand);
   space.position.copy(origin).applyQuaternion(toHand).negate();
