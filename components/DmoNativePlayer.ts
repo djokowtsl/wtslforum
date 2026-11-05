@@ -142,17 +142,24 @@ export function attachNativePlayer(template: THREE.Group, rig: PlayerRig, shirtC
     pose.orient('head', rig.head.quaternion.clone().multiply(pose.rest.get('head')!.rotation));
     const playback = rig.root.userData.groundstrokePlayback as GroundstrokePlayback | undefined;
     const coordinated = playback && playback.stroke !== 'serve' && playback.scope !== 'upper' ? playback : undefined;
+    const waiting = rig.root.userData.waitingPose === true;
+    // A coherent neutral stance, used only outside active stroke/serve motion.
+    const dominant = rig.root.userData.dominantHandedness === 'left' ? 'l' : 'r';
+    const readyHeight = pose.point('pelvis').y - 0.9;
+    if (waiting) {
+      rig.racket.position.set(dominant === 'r' ? -0.14 : 0.14, 1.18 + readyHeight, 0.36);
+      rig.racket.quaternion.setFromEuler(new THREE.Euler(0.42, 0, dominant === 'r' ? 0.12 : -0.12));
+    }
     // Leave the accepted serve path unchanged. For groundstrokes the legacy
     // arm solve supplies only the blend's starting pose, BEFORE the capture.
     let capturedBody = playback && !coordinated ? capturedGroundstroke.apply(playback) : null;
-    const dominant = rig.root.userData.dominantHandedness === 'left' ? 'l' : 'r';
     for (const side of [dominant, dominant === 'l' ? 'r' : 'l'] as const) {
       const primary = side === dominant;
       const arm = side === 'l' ? rig.leftArm : rig.rightArm;
       const forearm = side === 'l' ? rig.leftForearm : rig.rightForearm;
       const [, elbowHint] = ends(arm), [, relaxedWrist] = ends(forearm);
       const shoulder = pose.point(`upperarm_${side}`);
-      const holding = primary || Boolean(rig.root.userData.twoHandedGrip);
+      const holding = primary || (!waiting && Boolean(rig.root.userData.twoHandedGrip));
       const grip = grips[side];
       grip.setClosed(holding);
       let orientation: THREE.Quaternion | undefined;
@@ -172,6 +179,12 @@ export function attachNativePlayer(template: THREE.Group, rig: PlayerRig, shirtC
       }
       const capturedElbow = capturedBody?.elbows[side];
       if (capturedElbow) preference.lerp(capturedElbow, THREE.MathUtils.clamp(playback?.weight ?? 0, 0, 1));
+      if (waiting) {
+        const sign = side === 'l' ? 1 : -1;
+        if (!primary) target = new THREE.Vector3(sign * 0.1, 1.17 + readyHeight, 0.36);
+        // Keep the elbow outside the ribcage, with a bend in front of the body.
+        preference = new THREE.Vector3(shoulder.x + sign * 0.16, shoulder.y - 0.2, shoulder.z + 0.16);
+      }
       const solved = nativeTwoBone(shoulder, target, armLengths[side][0], armLengths[side][1], preference);
       pose.aim(`upperarm_${side}`, solved.elbow);
       const lowerRoll = orientation?.clone().multiply(pose.rest.get(`hand_${side}`)!.local.clone().invert());
@@ -193,10 +206,25 @@ export function attachNativePlayer(template: THREE.Group, rig: PlayerRig, shirtC
       const thigh = side === 'l' ? rig.rightLeg : rig.leftLeg;
       const calf = side === 'l' ? rig.rightCalf : rig.leftCalf;
       const [, knee] = ends(thigh), [, ankle] = ends(calf);
+      if (waiting) {
+        // The old lateral gait could swap the ankles. Only constrain waiting
+        // footwork; captured stroke/serve legs keep their accepted motion.
+        const sign = side === 'l' ? 1 : -1;
+        ankle.x = sign * Math.max(0.12, ankle.x * sign);
+        knee.x = sign * Math.max(0.08, knee.x * sign);
+        knee.z = Math.max(0.1, knee.z);
+      }
       const solved = nativeTwoBone(pose.point(`thigh_${side}`), ankle, legLengths[side][0], legLengths[side][1], knee);
       pose.aim(`thigh_${side}`, solved.elbow);
       pose.aim(`calf_${side}`, solved.wrist);
       pose.orient(`foot_${side}`, pose.rest.get(`foot_${side}`)!.rotation);
+    }
+    if (waiting) {
+      // A reach-limited leg solve must not lift both shoes off the court.
+      // Translate the coherent model and its held racket together.
+      const groundCorrection = Math.min(pose.point('foot_l').y, pose.point('foot_r').y) - 0.1;
+      model.position.y -= groundCorrection;
+      rig.racket.position.y -= groundCorrection;
     }
     pose.finish();
     for (const [shoe, name] of [[rig.leftShoe, 'foot_r'], [rig.rightShoe, 'foot_l']] as const) {
