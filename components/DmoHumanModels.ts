@@ -219,8 +219,7 @@ export function attachHumanPlayer(template: THREE.Group, rig: PlayerRig, shirtCo
       pose.place(`${side}ForeArm`, start, end);
       const hand = left ? rig.leftHand : rig.rightHand;
       axis.copy(UP).applyQuaternion(hand.quaternion).multiplyScalar(0.12);
-      // Forearm ends at the actual wrist. Palm and grip are separate landmarks.
-      // The fingers run across the shaft, not along it into the handle.
+      // Forearm ends at the wrist; the hand frame follows the grip axis.
       const holding = left === (rig.root.userData.dominantHandedness === 'left') || !!rig.root.userData.twoHandedGrip;
       if (holding) {
         pose.placeFrame(`${side}Hand`, end, racketHandFrame(rig.racket.quaternion, left));

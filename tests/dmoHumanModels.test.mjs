@@ -42,8 +42,20 @@ async function asset(gender, detail = 'player') {
   const gltf = await new GLTFLoader().parseAsync(buffer.buffer.slice(buffer.byteOffset, buffer.byteOffset + buffer.byteLength), '');
   return gltf.scene;
 }
+
+async function articulatedHandAsset() {
+  const bytes = await readFile(new URL('../public/models/dmo-humans/articulated-hand.glb', import.meta.url));
+  const gltf = await new GLTFLoader().parseAsync(
+    bytes.buffer.slice(bytes.byteOffset, bytes.byteOffset + bytes.byteLength), '',
+  );
+  return gltf.scene;
+}
+
 const close = (actual, expected) => assert.ok(actual.distanceTo(expected) < 0.00001,
   `${actual.toArray()} differs from ${expected.toArray()}`);
+const handCanonical = new THREE.Quaternion().setFromRotationMatrix(new THREE.Matrix4().makeBasis(
+  new THREE.Vector3(0, 0, 1), new THREE.Vector3(0, -1, 0), new THREE.Vector3(1, 0, 0),
+));
 
 for (const gender of ['male', 'female']) {
   test(`${gender} model is a bounded, textured CC0 skeletal asset`, async () => {
@@ -114,22 +126,127 @@ for (const gender of ['male', 'female']) {
   });
 }
 
-test('finger-jointed hands close through rigid joints, not folded surface vertices', async () => {
-    const bytes = await readFile(new URL('../public/models/dmo-humans/articulated-hand.glb', import.meta.url));
-    const template = (await new GLTFLoader().parseAsync(bytes.buffer.slice(bytes.byteOffset, bytes.byteOffset + bytes.byteLength), '')).scene;
+test('tennis hand frame follows the racket shaft and mirrors palm roll', () => {
+  const racket = new THREE.Quaternion().setFromEuler(new THREE.Euler(0.4, -0.25, 0.3));
+  const shaft = new THREE.Vector3(0, 1, 0).applyQuaternion(racket);
+  const right = racketPose.racketHandFrame(racket, false);
+  const left = racketPose.racketHandFrame(racket, true);
+  close(new THREE.Vector3(0, 1, 0).applyQuaternion(right), shaft);
+  close(new THREE.Vector3(0, 1, 0).applyQuaternion(left), shaft);
+  const rightPalm = new THREE.Vector3(0, 0, 1).applyQuaternion(right);
+  const leftPalm = new THREE.Vector3(0, 0, 1).applyQuaternion(left);
+  const racketFace = new THREE.Vector3(0, 0, 1).applyQuaternion(racket);
+  assert.ok(rightPalm.dot(racketFace) < -0.999, 'dominant right palm must sit opposite the string face');
+  assert.ok(leftPalm.dot(racketFace) > 0.999, 'mirrored left palm must face the string side');
+  assert.ok(rightPalm.dot(leftPalm) < -0.999, 'right and left grips must roll to opposite palm sides');
+});
+
+test('finger-jointed hands wrap the actual shaft and oppose it with the thumb', async () => {
+    const template = await articulatedHandAsset();
+    const center = new THREE.Vector3(0, 0.075, -0.035);
+    const shaft = new THREE.Vector3(0, 1, 0);
+    const radius = 0.019;
+    const point = (hand, name) => hand.joints.get(name).bone.position.clone()
+      .sub(hand.joints.get('wrist').bone.position).applyQuaternion(handCanonical);
+    const radialDistance = value => {
+      const offset = value.clone().sub(center);
+      return offset.addScaledVector(shaft, -offset.dot(shaft)).length();
+    };
     for (const left of [false, true]) {
       const hand = articulated.makeArticulatedHand(template, left);
       assert.equal(hand.joints.size, 25);
       const tip = hand.joints.get('middle-finger-tip'), before = tip.bone.position.clone();
       let vertices;
       hand.model.traverse(o => { if (o instanceof THREE.SkinnedMesh) vertices = o.geometry.getAttribute('position').array.slice(); });
-      hand.setGrip(true);
-      assert.ok(tip.bone.position.distanceTo(before) > 0.04);
+      hand.setGrip(true, { center, shaft, radius });
+      assert.ok(tip.bone.position.distanceTo(before) > 0.015,
+        'the grip pose must flex the finger chain around the handle');
       hand.joints.forEach(j => assert.ok([...j.bone.position.toArray(), ...j.bone.quaternion.toArray()].every(Number.isFinite)));
       hand.model.traverse(o => { if (o instanceof THREE.SkinnedMesh) assert.deepEqual(o.geometry.getAttribute('position').array, vertices); });
+      let nearHandleSamples = 0;
+      for (const prefix of ['index-finger', 'middle-finger', 'ring-finger', 'pinky-finger']) {
+        const names = ['phalanx-proximal', 'phalanx-intermediate', 'phalanx-distal', 'tip']
+          .map(part => `${prefix}-${part}`);
+        for (let segment = 0; segment < 3; segment++) {
+          const from = point(hand, names[segment]);
+          const to = point(hand, names[segment + 1]);
+          for (const fraction of [0.25, 0.5, 0.75, 1]) {
+            const distance = radialDistance(from.clone().lerp(to, fraction));
+            assert.ok(distance >= radius - 0.001, `${prefix} must not penetrate the handle`);
+            if (distance <= radius + 0.018) nearHandleSamples++;
+          }
+        }
+      }
+      assert.ok(nearHandleSamples >= 8, 'multiple finger segments must follow the handle surface');
+      const thumbDistance = radialDistance(point(hand, 'thumb-tip'));
+      assert.ok(Math.abs(thumbDistance - (radius + 0.006)) < 0.014,
+        `thumb must oppose the fingers on the handle (${thumbDistance.toFixed(3)} m)`);
+      const closedTip = tip.bone.position.clone();
+      hand.setGrip(false);
+      close(tip.bone.position, before);
+      hand.setGrip(true, { center, shaft, radius });
+      close(tip.bone.position, closedTip);
       hand.setGrip(false);
       close(tip.bone.position, before);
     }
+});
+
+test('attached dominant hand tracks the transformed racket grip', async () => {
+  const rig = sceneApi.makePlayer(0xffffff, 0x000000, false);
+  rig.root.position.set(-11.8, 0, 2.1);
+  rig.root.rotation.y = Math.PI / 2;
+  rig.root.userData.dominantHandedness = 'right';
+  rig.root.userData.twoHandedGrip = false;
+  rig.racket.position.set(0.39, 1.1, 0.04);
+  rig.racket.quaternion.setFromEuler(new THREE.Euler(0.35, -0.2, 0.4));
+
+  const body = new THREE.Group();
+  const leftWrist = new THREE.Bone();
+  leftWrist.name = 'LeftHand';
+  body.add(leftWrist);
+  const rightWrist = new THREE.Bone();
+  rightWrist.name = 'RightHand';
+  rightWrist.position.copy(racketPose.racketGripWrist(
+    rig.racket.position, rig.racket.quaternion, false,
+  ));
+  rightWrist.quaternion.copy(racketPose.racketHandFrame(rig.racket.quaternion, false));
+  body.add(rightWrist);
+  rig.root.add(body);
+
+  const updateHands = articulated.attachArticulatedHands(
+    await articulatedHandAsset(), rig, body,
+  );
+  updateHands();
+  rig.root.updateMatrixWorld(true);
+
+  const hand = rig.root.getObjectByName('articulated-right-hand');
+  assert.ok(hand, 'dominant articulated hand should be attached');
+  const gripWorld = rig.racket.getWorldPosition(new THREE.Vector3());
+  const localGrip = hand.worldToLocal(gripWorld.clone());
+  close(localGrip, new THREE.Vector3(0, 0.075, -0.035));
+  const racketRotation = rig.racket.getWorldQuaternion(new THREE.Quaternion());
+  const shaft = new THREE.Vector3(0, 1, 0).applyQuaternion(racketRotation).normalize();
+  const shaftEnd = hand.worldToLocal(gripWorld.clone().add(shaft));
+  const localShaft = shaftEnd.sub(localGrip).normalize();
+  close(localShaft, new THREE.Vector3(0, 1, 0));
+
+  const center = gripWorld;
+  const radialDistance = point => {
+    const offset = point.clone().sub(center);
+    return offset.addScaledVector(shaft, -offset.dot(shaft)).length();
+  };
+  const contacts = [];
+  for (const prefix of ['index-finger', 'middle-finger', 'ring-finger', 'pinky-finger']) {
+    for (const part of ['phalanx-proximal', 'phalanx-intermediate', 'phalanx-distal', 'tip']) {
+      const joint = hand.getObjectByName(`${prefix}-${part}`);
+      assert.ok(joint, `missing ${prefix}-${part}`);
+      contacts.push(radialDistance(joint.getWorldPosition(new THREE.Vector3())));
+    }
+  }
+  assert.ok(Math.min(...contacts) >= 0.018, 'attached fingers must not pass through the racket handle');
+  assert.ok(Math.min(...contacts) <= 0.04, 'attached fingers must remain close enough to grip the handle');
+  const thumb = hand.getObjectByName('thumb-tip');
+  assert.ok(Math.abs(radialDistance(thumb.getWorldPosition(new THREE.Vector3())) - 0.025) < 0.014);
 });
 
 test('racket face follows ball flight while retaining the contact shaft axis', () => {

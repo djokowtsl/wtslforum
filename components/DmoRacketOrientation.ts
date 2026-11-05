@@ -1,13 +1,13 @@
 import * as THREE from 'three';
 
-/** Native hand +Y runs wrist-to-fingers, NOT along the racket shaft. */
+/** Keep fingers along the handle; right and left palms face opposite sides. */
 export function racketHandFrame(rotation: THREE.Quaternion, left: boolean) {
   return rotation.clone().multiply(new THREE.Quaternion().setFromAxisAngle(
-    new THREE.Vector3(0, 0, 1), left ? -Math.PI / 2 : Math.PI / 2,
+    new THREE.Vector3(0, 1, 0), left ? 0 : Math.PI,
   ));
 }
 
-/** Rest the handle across the open palm's exterior, never through its centre. */
+/** Keep the wrist behind the grip while the fingers extend toward the racket head. */
 export function racketGripWrist(grip: THREE.Vector3, rotation: THREE.Quaternion, left: boolean) {
   const hand = racketHandFrame(rotation, left);
   return grip.clone().sub(new THREE.Vector3(0, 0.075, -0.035).applyQuaternion(hand));
