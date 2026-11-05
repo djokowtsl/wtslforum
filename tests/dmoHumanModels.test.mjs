@@ -65,7 +65,24 @@ for (const gender of ['male', 'female']) {
     rig.root.position.set(-11.8, 0, 2.1);
     rig.root.rotation.y = Math.PI / 2;
     const template = await asset(gender);
+    let sourceHandMesh;
+    template.traverse((object) => {
+      if (object instanceof THREE.SkinnedMesh) sourceHandMesh = object.geometry.getAttribute('position').array.slice();
+    });
     const attached = humans.attachHumanPlayer(template, rig, 0x5979a0);
+    let changedFingerVertices = 0;
+    attached.model.traverse((object) => {
+      if (!(object instanceof THREE.SkinnedMesh)) return;
+      const positions = object.geometry.getAttribute('position').array;
+      for (let i = 0; i < positions.length; i += 3) {
+        if (Math.hypot(
+          positions[i] - sourceHandMesh[i],
+          positions[i + 1] - sourceHandMesh[i + 1],
+          positions[i + 2] - sourceHandMesh[i + 2],
+        ) > 0.001) changedFingerVertices++;
+      }
+    });
+    assert.ok(changedFingerVertices > 20, 'the dominant fingers curl while the player grips the racket');
     for (const handY of [0.9, 1.45, 2.1, 0.6]) {
       sceneApi.poseLimb(rig.leftArm, new THREE.Vector3(0.21, 1.4, 0), new THREE.Vector3(0.31, 1.15, 0.1));
       sceneApi.poseLimb(rig.leftForearm, new THREE.Vector3(0.31, 1.15, 0.1), new THREE.Vector3(0.4, 1.0, 0.25));
@@ -75,13 +92,23 @@ for (const gender of ['male', 'female']) {
         sceneApi.poseLimb(rig[`${side}Leg`], new THREE.Vector3(sign * 0.13, 0.9, 0), new THREE.Vector3(sign * 0.2, 0.45, 0.08));
         sceneApi.poseLimb(rig[`${side}Calf`], new THREE.Vector3(sign * 0.2, 0.45, 0.08), new THREE.Vector3(sign * 0.25, 0.1, 0.02));
       }
+      rig.racket.position.set(-0.4, handY, 0.3);
       attached.update();
       const hand = attached.model.getObjectByName('RightHand');
       close(rig.root.worldToLocal(hand.getWorldPosition(new THREE.Vector3())), new THREE.Vector3(-0.4, handY - 0.0456, 0.3));
+      assert.ok(hand.getWorldQuaternion(new THREE.Quaternion()).angleTo(
+        rig.racket.getWorldQuaternion(new THREE.Quaternion()),
+      ) < 0.00001, 'the dominant hand roll must follow the racket handle');
       attached.model.traverse((object) => {
         if (object instanceof THREE.Bone) assert.ok(object.matrixWorld.elements.every(Number.isFinite));
       });
     }
+    rig.root.userData.dominantHandedness = 'left';
+    attached.update();
+    const leftHand = attached.model.getObjectByName('LeftHand');
+    assert.ok(leftHand.getWorldQuaternion(new THREE.Quaternion()).angleTo(
+      rig.racket.getWorldQuaternion(new THREE.Quaternion()),
+    ) < 0.00001, 'left-handed players must align the left grip as well');
     assert.equal(rig.body.visible, false);
     assert.equal(rig.racket.visible, true);
     assert.equal(rig.leftShoe.visible, true);
