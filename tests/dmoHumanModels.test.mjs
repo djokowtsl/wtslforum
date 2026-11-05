@@ -21,11 +21,13 @@ const sceneApi = await loadTs('../components/DmoLiveCourt3DScene.ts');
 const racketPose = await loadTs('../components/DmoRacketOrientation.ts');
 const articulated = await loadTs('../components/DmoArticulatedHands.ts', { './DmoRacketOrientation': racketPose });
 const nativeGrip = await loadTs('../components/DmoNativeGrip.ts');
+const nativeTwist = await loadTs('../components/DmoNativeTwist.ts');
 const capturedGroundstroke = await import('../components/DmoCapturedGroundstroke.ts');
 const nativeKit = await loadTs('../components/DmoNativeKit.ts');
 const groundstrokeRig = await loadTs('../components/DmoGroundstrokeRig.ts', { './DmoRacketOrientation': racketPose });
 const nativePlayer = await loadTs('../components/DmoNativePlayer.ts', {
   './DmoRacketOrientation': racketPose, './DmoNativeGrip': nativeGrip, './DmoNativeKit': nativeKit,
+  './DmoNativeTwist': nativeTwist,
   './DmoCapturedGroundstroke': capturedGroundstroke,
   './DmoGroundstrokeRig': groundstrokeRig,
 });
@@ -105,7 +107,8 @@ for (const gender of ['male', 'female']) test(`${gender}: continuous native body
   }
   const attached = humans.attachHumanPlayer(template, rig, 0x275c77);
   const { pose, grips } = attached;
-  assert.equal(pose.bones.size, 53);
+  assert.equal([...pose.bones.keys()].filter(name => !name.includes('_twist_')).length, 53);
+  assert.equal([...pose.bones.keys()].filter(name => name.includes('_twist_')).length, 6);
   assert.ok(pose.rest.get('spine_03').direction.y > 0.9,
     'upper spine must aim through the neck, not its first clavicle child');
   assert.equal(rig.root.getObjectByName('articulated-right-hand'), undefined);
@@ -114,6 +117,15 @@ for (const gender of ['male', 'female']) test(`${gender}: continuous native body
   assert.ok(attached.model.getObjectByName('native-tennis-shirt').geometry.index.count > 100);
   assert.ok(attached.model.getObjectByName('native-tennis-shorts').geometry.index.count > 100);
   if (gender === 'female') assert.ok(attached.model.getObjectByName('native-tennis-skirt'));
+  const shirt = attached.model.getObjectByName('native-tennis-shirt').geometry.getAttribute('position');
+  let shoulderTop = 0, aboveNeck = 0;
+  for (let i = 0; i < shirt.count; i++) {
+    const x = Math.abs(shirt.getX(i)), y = shirt.getY(i);
+    if (x > 0.1 && x < 0.2 && y > 1.39) shoulderTop++;
+    if (y > 1.47) aboveNeck++;
+  }
+  assert.ok(shoulderTop > 20, 'shirt should cover shoulder tops');
+  assert.equal(aboveNeck, 0, 'shirt should stop at the neck base');
   attached.model.traverse(o => {
     if (!(o instanceof THREE.SkinnedMesh)) return;
     assert.equal(o.skeleton, nativeBody.skeleton, 'garments share the complete body skeleton');
@@ -530,4 +542,36 @@ test('crowd uses seated textured instancing and retains gaze/applause updates', 
     assert.ok(mesh.geometry.boundingBox.max.y < 1.7);
     assert.equal(mesh.castShadow, false);
   }
+});
+
+test('twist helpers distribute forearm roll without moving the hand or calf', async () => {
+  const template = await nativePlayerTemplate('male');
+  const rig = sceneApi.makePlayer(0x275c77, 0x333333);
+  const attached = humans.attachHumanPlayer(template, rig, 0x275c77);
+  const { pose } = attached;
+  attached.update();
+  pose.reset();
+  pose.model.updateMatrixWorld(true);
+  const roll = new THREE.Quaternion().setFromAxisAngle(
+    pose.bones.get('hand_r').position.clone().normalize(), 1.4,
+  );
+  pose.bones.get('lowerarm_r').quaternion.multiply(roll);
+  pose.model.updateMatrixWorld(true);
+  const before = ['lowerarm_r', 'hand_r', 'calf_r'].map(name =>
+    pose.bones.get(name).getWorldQuaternion(new THREE.Quaternion()));
+  const positions = ['lowerarm_r', 'hand_r', 'middle_01_r'].map(name => pose.point(name));
+  nativeTwist.distributeNativeTwist(pose.bones, pose.rest);
+  pose.model.updateMatrixWorld(true);
+  for (const [i, name] of ['hand_r', 'calf_r'].entries()) {
+    assert.ok(pose.bones.get(name).getWorldQuaternion(new THREE.Quaternion())
+      .angleTo(before[i + 1]) < 1e-3, `${name} orientation changed`);
+  }
+  for (const [i, name] of ['lowerarm_r', 'hand_r', 'middle_01_r'].entries()) {
+    assert.ok(pose.point(name).distanceTo(positions[i]) < 1e-6, `${name} moved`);
+  }
+  const helper = pose.bones.get('lowerarm_twist_r');
+  assert.ok(2 * Math.acos(Math.min(1, Math.abs(helper.quaternion.w))) > 0.8,
+    'forearm roll was not moved to its helper');
+  const lowerNow = pose.bones.get('lowerarm_r').getWorldQuaternion(new THREE.Quaternion());
+  assert.ok(lowerNow.angleTo(before[0]) > 0.8, 'forearm bone still carries the roll');
 });

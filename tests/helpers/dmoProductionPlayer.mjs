@@ -25,6 +25,7 @@ const motion = await load('lib/liveCourtMotion.ts');
 const performance = await load('lib/liveCourtPerformance.ts');
 const racket = await load('components/DmoRacketOrientation.ts');
 const grip = await load('components/DmoNativeGrip.ts');
+const twist = await load('components/DmoNativeTwist.ts');
 const kit = await load('components/DmoNativeKit.ts');
 const waiting = await load('components/DmoWaitingPose.ts');
 const strokes = await load('components/DmoGroundstrokeRig.ts', { './DmoRacketOrientation': racket });
@@ -45,6 +46,7 @@ export async function productionPlayer({ handedness = 'right', baseline = false 
   const capture = await load('components/DmoCapturedGroundstroke.ts', {}, baseline);
   const native = await load('components/DmoNativePlayer.ts', {
     './DmoRacketOrientation': racket, './DmoNativeGrip': grip, './DmoNativeKit': kit,
+    './DmoNativeTwist': twist,
     './DmoCapturedGroundstroke': capture, './DmoGroundstrokeRig': strokes,
   }, baseline);
   const rig = scene.makePlayer(0x81b6b4, 0x202020);
