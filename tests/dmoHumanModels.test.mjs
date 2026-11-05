@@ -156,12 +156,27 @@ for (const gender of ['male', 'female']) test(`${gender}: continuous native body
   for (const handedness of ['right', 'left']) for (const twoHanded of [false, true]) for (const angle of [0, 0.6, -0.8, 1.4]) {
     rig.root.userData.dominantHandedness = handedness;
     rig.root.userData.twoHandedGrip = twoHanded;
+    rig.root.userData.supportGripOffset = twoHanded ? 0.2 : undefined;
     const side = handedness === 'right' ? 'r' : 'l';
     rig.racket.position.set(side === 'r' ? -0.39 : 0.39, 1.12 + Math.sin(angle) * 0.2, 0.06);
     rig.racket.quaternion.setFromEuler(new THREE.Euler(0.42 + angle, angle * 0.2, 0.12));
+    const requestedGrip = rig.racket.position.clone();
     attached.update();
     const actualGrip = rig.root.worldToLocal(grips[side].hand.localToWorld(grips[side].centre.clone()));
     close(actualGrip, rig.racket.position);
+    assert.ok(actualGrip.distanceTo(requestedGrip) < 0.05,
+      `${handedness} grip missed the requested racket position`);
+    if (twoHanded && angle === 0) {
+      const support = side === 'r' ? 'l' : 'r';
+      const target = rig.racket.position.clone().add(
+        new THREE.Vector3(0, 0.2, 0).applyQuaternion(rig.racket.quaternion),
+      );
+      const actualSupport = rig.root.worldToLocal(
+        grips[support].hand.localToWorld(grips[support].centre.clone()),
+      );
+      assert.ok(actualSupport.distanceTo(target) < 0.05,
+        `${handedness} support hand missed the racket throat`);
+    }
     for (const [name, bone] of pose.bones) {
       assert.ok(bone.position.distanceTo(offsets.get(name)) < 1e-8, `${name}: native segment was stretched`);
       assert.ok(bone.matrixWorld.elements.every(Number.isFinite));

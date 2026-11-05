@@ -460,7 +460,22 @@ export function attachNativePlayer(
 
     // 2. Captured stroke motion blends over the whole body, arms included:
     //    the captured shoulder/elbow/wrist chain is kept, not re-solved.
+    const LEG_BONES = ['thigh_l', 'calf_l', 'foot_l', 'thigh_r', 'calf_r', 'foot_r'];
+    const steppingLegs = LEG_BONES.map(name => pose.bones.get(name)!.quaternion.clone());
     const capturedBody = playback ? capturedGroundstroke.apply(playback) : null;
+    if (capturedBody) {
+      // Keep the procedural running step during strokes so captured standing
+      // legs do not slide across the court with the moving player.
+      const running = THREE.MathUtils.smoothstep(
+        Number(rig.root.userData.locomotionSpeed ?? 0),
+        1.2,
+        3,
+      );
+      if (running > 0) {
+        LEG_BONES.forEach((name, i) => pose.bones.get(name)!.quaternion.slerp(steppingLegs[i], running));
+        model.updateMatrixWorld(true);
+      }
+    }
     const strokeRoll = new THREE.Quaternion();
     if (capturedBody && playback) {
       if (playback.stroke === 'backhand' && !twoHanded) {
@@ -524,7 +539,10 @@ export function attachNativePlayer(
       const desired = racketRotation.clone()
         .multiply(new THREE.Quaternion().setFromAxisAngle(UP, Math.PI))
         .multiply(localRacket[support].clone().invert());
-      const grip = rig.racket.position.clone().add(new THREE.Vector3(0, 0.11, 0).applyQuaternion(racketRotation));
+      const grip = rig.racket.position.clone().add(
+        new THREE.Vector3(0, Number(rig.root.userData.supportGripOffset ?? 0.11), 0)
+          .applyQuaternion(racketRotation),
+      );
       const elbowPreference = grip.clone()
         .addScaledVector(grips[support].forward.clone().applyQuaternion(desired), -arms[support].lengths[1])
         .add(new THREE.Vector3(0, -0.12, -0.02));
@@ -548,6 +566,28 @@ export function attachNativePlayer(
       // The legacy shoe groups use screen-space labels, opposite anatomical sides.
       placeCapturedShoe(rig.leftShoe, 'foot_r');
       placeCapturedShoe(rig.rightShoe, 'foot_l');
+    }
+    {
+      // Keep both shoes behind the baseline until serve contact by moving the
+      // whole body back, never by bending a leg.
+      const guard = rig.root.userData.baselineGuard as { weight: number; baseline: number } | undefined;
+      const rootWorld = rig.root.getWorldPosition(new THREE.Vector3());
+      if (guard && guard.weight > 0 && Math.abs(rootWorld.x) > guard.baseline - 1.5) {
+        const side = Math.sign(rootWorld.x) || 1;
+        let overstep = 0;
+        for (const shoe of [rig.leftShoe, rig.rightShoe]) {
+          const box = new THREE.Box3().setFromObject(shoe);
+          const nearest = side > 0 ? box.min.x : -box.max.x;
+          overstep = Math.max(overstep, guard.baseline + 0.02 - nearest);
+        }
+        if (overstep > 0) {
+          const shift = new THREE.Vector3(side * Math.min(overstep, 0.8) * guard.weight, 0, 0)
+            .applyQuaternion(rig.root.getWorldQuaternion(new THREE.Quaternion()).invert())
+            .divide(rig.root.getWorldScale(new THREE.Vector3()));
+          for (const object of [model, rig.leftShoe, rig.rightShoe, rig.racket]) object.position.add(shift);
+          model.updateMatrixWorld(true);
+        }
+      }
     }
   };
   rig.detailed = { update };

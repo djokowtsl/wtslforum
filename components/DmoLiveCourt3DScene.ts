@@ -59,7 +59,7 @@ export const PALETTE = {
   shirtTwo: 0xd97861,
 };
 
-const COURT_LENGTH = 23.77;
+export const COURT_LENGTH = 23.77;
 const COURT_WIDTH = 10.97;
 const SINGLES_WIDTH = 8.23;
 const NET_CENTER_HEIGHT = 0.914;
