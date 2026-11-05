@@ -125,12 +125,36 @@ export function attachHumanPlayer(template: THREE.Group, rig: PlayerRig, shirtCo
   model.traverse((object) => {
     if (!(object instanceof THREE.SkinnedMesh)) return;
     object.geometry = object.geometry.clone();
+    // The free base meshes are barefoot. Remove the hidden foot surface rather
+    // than letting textured toes protrude through the separate tennis shoes.
+    const positions = object.geometry.getAttribute('position');
+    const index = object.geometry.index;
+    if (index) {
+      const visible: number[] = [];
+      for (let i = 0; i < index.count; i += 3) {
+        const a = index.getX(i), b = index.getX(i + 1), c = index.getX(i + 2);
+        if (Math.max(positions.getY(a), positions.getY(b), positions.getY(c)) >= 0.115) visible.push(a, b, c);
+      }
+      object.geometry.setIndex(visible);
+    }
     object.material = (Array.isArray(object.material) ? object.material[0] : object.material).clone();
     object.castShadow = true; object.receiveShadow = true;
     object.frustumCulled = false; // Bind-pose bounds do not contain serves and slides.
     tintKit(object, shirtColor);
   });
   rig.root.add(model);
+  for (const shoe of [rig.leftShoe, rig.rightShoe]) {
+    const sock = new THREE.Mesh(new THREE.CylinderGeometry(0.043, 0.046, 0.11, 16),
+      new THREE.MeshStandardMaterial({ color: 0xe9e9e1, roughness: 0.87 }));
+    sock.name = 'tennis-sock'; sock.position.set(0, 0.075, -0.04); sock.castShadow = true;
+    shoe.add(sock);
+    for (let i = 0; i < 4; i++) {
+      const lace = new THREE.Mesh(new THREE.BoxGeometry(0.067, 0.003, 0.005),
+        new THREE.MeshStandardMaterial({ color: 0xb6b8ad, roughness: 0.8 }));
+      lace.position.set(0, 0.044, 0.005 + i * 0.018); lace.rotation.y = (i % 2 ? 1 : -1) * 0.16;
+      shoe.add(lace);
+    }
+  }
   const pose = new HumanPose(model, rig.root);
   const hidden = rig.root.children.filter((child) => ![model, rig.racket, rig.leftShoe, rig.rightShoe].includes(child as THREE.Group));
   hidden.forEach((child) => { child.visible = false; });
