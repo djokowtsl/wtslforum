@@ -66,7 +66,12 @@ import {
   type PlayerRig,
 } from './DmoLiveCourt3DScene';
 import styles from './DmoLiveCourt3D.module.css';
-import { attachHumanPlayer, disposeHumanModel, loadHumanModel } from './DmoHumanModels';
+import {
+  attachHumanPlayer,
+  disposeHumanModel,
+  loadHumanModel,
+  type NativePlayerVariant,
+} from './DmoHumanModels';
 import { attachHumanCrowd } from './DmoHumanCrowd';
 import { racketContactOrientation, racketGripElbow, racketGripWrist } from './DmoRacketOrientation';
 
@@ -79,6 +84,7 @@ type Props = {
   isWta?: boolean;
   buffering?: boolean;
   fullReplay?: boolean;
+  nativePlayerVariant?: NativePlayerVariant;
 };
 
 type CameraView =
@@ -145,6 +151,7 @@ function ThreeCourt({
   stadiumAtmosphere = true,
   isWta = false,
   buffering = false,
+  nativePlayerVariant = 'claude',
   gruntsEnabled,
   onGruntsEnabledChange,
   onUnsupported,
@@ -417,8 +424,8 @@ function ThreeCourt({
         if (modelLoad.signal.aborted) return;
         const [player, maleCrowd, femaleCrowd] = results;
         if (player.status === 'fulfilled') {
-          attachHumanPlayer(player.value, players[0], PALETTE.shirtOne);
-          attachHumanPlayer(player.value, players[1], PALETTE.shirtTwo);
+          attachHumanPlayer(player.value, players[0], PALETTE.shirtOne, undefined, nativePlayerVariant);
+          attachHumanPlayer(player.value, players[1], PALETTE.shirtTwo, undefined, nativePlayerVariant);
         }
         if (maleCrowd.status === 'fulfilled' && femaleCrowd.status === 'fulfilled') {
           attachHumanCrowd(scene, crowdRig, [maleCrowd.value, femaleCrowd.value]);

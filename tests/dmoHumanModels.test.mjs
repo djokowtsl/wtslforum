@@ -31,8 +31,14 @@ const nativePlayer = await loadTs('../components/DmoNativePlayer.ts', {
   './DmoCapturedGroundstroke': capturedGroundstroke,
   './DmoGroundstrokeRig': groundstrokeRig,
 });
+const claudeNativePlayer = await loadTs('../components/DmoNativePlayerClaude.ts', {
+  './DmoRacketOrientation': racketPose, './DmoNativeGrip': nativeGrip, './DmoNativeKit': nativeKit,
+  './DmoNativeTwist': nativeTwist,
+  './DmoCapturedGroundstroke': capturedGroundstroke,
+});
 const humans = await loadTs('../components/DmoHumanModels.ts', {
   './DmoRacketOrientation': racketPose, './DmoArticulatedHands': articulated, './DmoNativePlayer': nativePlayer,
+  './DmoNativePlayerClaude': claudeNativePlayer,
 });
 const crowds = await loadTs('../components/DmoHumanCrowd.ts', { './DmoHumanModels': humans });
 
@@ -74,6 +80,17 @@ async function nativePlayerTemplate(gender) {
     globalThis.fetch = originalFetch;
   }
 }
+
+test('Claude full-body rewrite is the default production player', async () => {
+  const template = await nativePlayerTemplate('male');
+  const rig = sceneApi.makePlayer(0x275c77, 0x333333);
+  const attached = humans.attachHumanPlayer(template, rig, 0x275c77);
+  assert.equal(attached.model.name, 'wtsl-continuous-player-claude');
+  assert.equal(typeof attached.update, 'function');
+  attached.update();
+  assert.ok([...attached.pose.bones.values()].every((bone) =>
+    bone.matrixWorld.elements.every(Number.isFinite)));
+});
 
 async function articulatedHandAsset() {
   const bytes = await readFile(new URL('../public/models/dmo-humans/articulated-hand.glb', import.meta.url));
