@@ -77,20 +77,6 @@ export class HumanPose {
     bone.updateMatrixWorld(true);
   }
 
-  placeInWorldFrame(name: string, from: THREE.Vector3, orientation: THREE.Quaternion) {
-    const joint = this.bones.get(name);
-    if (!joint) return;
-    const parent = joint.bone.parent;
-    if (!parent) return;
-    parent.updateWorldMatrix(true, false);
-    this.target.copy(from);
-    this.space.localToWorld(this.target);
-    joint.bone.position.copy(parent.worldToLocal(this.target));
-    parent.getWorldQuaternion(this.parentRotation).invert();
-    joint.bone.quaternion.copy(this.parentRotation.multiply(orientation));
-    joint.bone.updateMatrixWorld(true);
-  }
-
   finish() {
     // SkinnedMesh overrides updateMatrixWorld (not updateWorldMatrix) to refresh
     // bindMatrixInverse. This matters when baking cloned centimetre-scale rigs.
@@ -103,78 +89,6 @@ function limbEnds(mesh: THREE.Mesh, from: THREE.Vector3, to: THREE.Vector3) {
   const half = UP.clone().applyQuaternion(mesh.quaternion).multiplyScalar(mesh.scale.y * 0.5);
   from.copy(mesh.position).sub(half);
   to.copy(mesh.position).add(half);
-}
-
-function curlGripFingers(mesh: THREE.SkinnedMesh, handName: 'LeftHand' | 'RightHand') {
-  const handIndex = mesh.skeleton.bones.findIndex((bone) => bone.name === handName);
-  if (handIndex < 0) return;
-  const positions = mesh.geometry.getAttribute('position');
-  const indices = mesh.geometry.getAttribute('skinIndex');
-  const weights = mesh.geometry.getAttribute('skinWeight');
-  const hand = mesh.skeleton.bones[handIndex];
-  const blendedSkin = new THREE.Matrix4();
-  const boneTransform = new THREE.Matrix4();
-  const inverseSkin = new THREE.Matrix4();
-  const skinLinear = new THREE.Matrix3();
-  const point = new THREE.Vector3();
-  const source = new THREE.Vector3();
-  const skinned = new THREE.Vector3();
-  const worldBefore = new THREE.Vector3();
-  const worldAfter = new THREE.Vector3();
-  const meshBefore = new THREE.Vector3();
-  const meshAfter = new THREE.Vector3();
-  const skinDelta = new THREE.Vector3();
-  const sourceDelta = new THREE.Vector3();
-  const bent = new THREE.Vector3();
-
-  mesh.updateMatrixWorld(true);
-  mesh.skeleton.update();
-  for (let i = 0; i < positions.count; i++) {
-    let influence = 0;
-    blendedSkin.elements.fill(0);
-    for (let slot = 0; slot < 4; slot++) {
-      const weight = weights.getComponent(i, slot);
-      if (!weight) continue;
-      const boneIndex = indices.getComponent(i, slot);
-      boneTransform.multiplyMatrices(
-        mesh.skeleton.bones[boneIndex].matrixWorld,
-        mesh.skeleton.boneInverses[boneIndex],
-      );
-      for (let element = 0; element < 16; element++) {
-        blendedSkin.elements[element] += boneTransform.elements[element] * weight;
-      }
-      if (boneIndex === handIndex) influence += weight;
-    }
-    if (influence < 0.2) continue;
-
-    source.fromBufferAttribute(positions, i);
-    skinned.copy(mesh.applyBoneTransform(i, source.clone()));
-    worldBefore.copy(mesh.localToWorld(skinned.clone()));
-    point.copy(hand.worldToLocal(worldBefore.clone()));
-    // Hand bone coordinates are centimetres. Leave the palm and wrist alone;
-    // only bend the far finger section back toward the racket's grip centre.
-    if (point.y <= 13) continue;
-    const t = THREE.MathUtils.clamp((point.y - 13) / 7.5, 0, 1);
-    const strength = THREE.MathUtils.smoothstep(influence, 0.2, 0.85)
-      * THREE.MathUtils.smoothstep(point.y, 13, 14.5);
-    if (strength < 0.01) continue;
-    bent.copy(point);
-    bent.x *= 1 - 0.25 * t;
-    bent.y = 13 - 8.4 * t;
-    bent.z += 1.8 * Math.sin(Math.PI * t);
-    point.lerp(bent, strength);
-    worldAfter.copy(hand.localToWorld(point.clone()));
-    meshBefore.copy(mesh.worldToLocal(worldBefore.clone()));
-    meshAfter.copy(mesh.worldToLocal(worldAfter));
-    skinDelta.subVectors(meshAfter, meshBefore);
-    inverseSkin.copy(mesh.bindMatrixInverse).multiply(blendedSkin).multiply(mesh.bindMatrix).invert();
-    skinLinear.setFromMatrix4(inverseSkin);
-    sourceDelta.copy(skinDelta).applyMatrix3(skinLinear);
-    positions.setXYZ(i,
-      source.x + sourceDelta.x, source.y + sourceDelta.y, source.z + sourceDelta.z);
-  }
-  positions.needsUpdate = true;
-  mesh.geometry.computeVertexNormals();
 }
 
 /** Tint only the desaturated fabric, not skin, hair or facial features. */
@@ -229,12 +143,6 @@ export function attachHumanPlayer(template: THREE.Group, rig: PlayerRig, shirtCo
     tintKit(object, shirtColor);
   });
   rig.root.add(model);
-  rig.root.updateMatrixWorld(true);
-  model.updateMatrixWorld(true);
-  const gripHand = rig.root.userData.dominantHandedness === 'left' ? 'LeftHand' : 'RightHand';
-  model.traverse((object) => {
-    if (object instanceof THREE.SkinnedMesh) curlGripFingers(object, gripHand);
-  });
   for (const shoe of [rig.leftShoe, rig.rightShoe]) {
     const sock = new THREE.Mesh(new THREE.CylinderGeometry(0.043, 0.046, 0.11, 16),
       new THREE.MeshStandardMaterial({ color: 0xe9e9e1, roughness: 0.87 }));
@@ -284,12 +192,9 @@ export function attachHumanPlayer(template: THREE.Group, rig: PlayerRig, shirtCo
       // The asset's hand joint is at the wrist; the DMO target is the grip centre.
       start.copy(end).addScaledVector(axis, -0.38);
       end.copy(start).add(axis);
-      if ((rig.root.userData.dominantHandedness ?? 'right') === side.toLowerCase()) {
-        const racketOrientation = rig.racket.getWorldQuaternion(new THREE.Quaternion());
-        pose.placeInWorldFrame(`${side}Hand`, start, racketOrientation);
-      } else {
-        pose.place(`${side}Hand`, start, end);
-      }
+      // Preserve the asset's hand shape and bind-pose roll. This rig has no
+      // finger joints; bending its surface is not a valid substitute for a grip.
+      pose.place(`${side}Hand`, start, end);
       // Legacy leg labels are screen-space; asset names are anatomical (+X left).
       const upper = left ? rig.rightLeg : rig.leftLeg;
       const calf = left ? rig.rightCalf : rig.leftCalf;
