@@ -10,7 +10,11 @@ import {
   type Te4LiveSnapshot,
 } from '@/lib/te4DmoLive';
 import type { Te4CourtSurface } from '@/lib/te4DmoTypes';
-import { groundstrokeCaptureWeight, serveCaptureWeight } from './DmoCapturedGroundstroke';
+import {
+  groundstrokeCaptureWeight,
+  readyPosePlayback,
+  serveCaptureWeight,
+} from './DmoCapturedGroundstroke';
 import { courtSurfaceDisplayName, isIndoorDmoVenue } from '@/lib/te4DmoSurface';
 import { deriveLiveCourtSoundEvents, playLiveCourtEffect as playCue } from '@/lib/liveCourtAudio';
 import {
@@ -744,6 +748,7 @@ function ThreeCourt({
         if (captureDelta < -64 || captureDelta > 22) {
           delete rig.root.userData.capturedGroundstrokeEvent;
           delete rig.root.userData.groundstrokePlayback;
+          capturedEvent = undefined;
         } else {
           const weight = capturedEvent.stroke === 'serve'
             ? serveCaptureWeight(captureDelta)
@@ -764,6 +769,11 @@ function ThreeCourt({
         }
       } else {
         delete rig.root.userData.groundstrokePlayback;
+      }
+      if (!event && !capturedEvent) {
+        // Between shots, hold the authored pre-serve ready pose for the upper
+        // body. Scope it above the waist so the accepted footwork is untouched.
+        rig.root.userData.groundstrokePlayback = readyPosePlayback(handedness, 'upper');
       }
       const twoHandedStroke = !serving
         && (capturedEvent?.stroke !== 'serve' && capturedEvent

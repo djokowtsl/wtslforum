@@ -187,7 +187,9 @@ export function attachNativePlayer(template: THREE.Group, rig: PlayerRig, shirtC
     }
     if (coordinated) capturedBody = groundstrokes.apply(coordinated);
     else delete rig.root.userData.nativeGroundstrokeContact;
-    if (!capturedBody) for (const side of ['l', 'r'] as const) {
+    // Upper-body poses provide wrist/elbow hints only. Keep solving the legs
+    // against court foot targets so an idle pose cannot leave them in bind rest.
+    if (!capturedBody || playback?.scope === 'upper') for (const side of ['l', 'r'] as const) {
       const thigh = side === 'l' ? rig.rightLeg : rig.leftLeg;
       const calf = side === 'l' ? rig.rightCalf : rig.leftCalf;
       const [, knee] = ends(thigh), [, ankle] = ends(calf);
