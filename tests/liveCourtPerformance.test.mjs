@@ -85,12 +85,12 @@ test('actual racket mesh centre meets the target after player rotation and scale
     });
   }
 });
-test('WTA court rigs use a skirt and ponytail while standard rigs keep shorts', () => {
+test('fallback WTA rigs retain a skirt and ponytail while standard rigs keep shorts', () => {
   const standard = makePlayer(0xff0000, 0x333333);
   const wta = makePlayer(0xff0000, 0x333333, true);
 
-  assert.equal(standard.hip.geometry.type, 'CapsuleGeometry');
-  assert.equal(wta.hip.geometry.type, 'CylinderGeometry');
+  assert.ok(standard.hip.getObjectByName('single-piece-athletic-shorts')?.isMesh);
+  assert.ok(wta.hip.getObjectByName('tennis-skirt')?.isMesh);
   assert.ok(wta.head.children.some((part) => part.geometry?.type === 'CapsuleGeometry'));
 
   for (const rig of [standard, wta]) {
