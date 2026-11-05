@@ -9,6 +9,7 @@
     "lint": "next lint",
     "test:broadcast-scene": "node --test tests/liveCourtBroadcastScene.test.mjs",
     "test:dmo-waiting": "node --test tests/dmoWaitingPose.test.mjs tests/dmoGroundstrokeRig.test.mjs",
+    "test:dmo-humans": "node --test tests/dmoHumanModels.test.mjs",
     "posttest": "npm run test:livestream-access && npm run test:broadcast-scene",
     "test:livestream-access": "node --test tests/livestreamMaintenance.test.mjs",
     "pretest": "node --test tests/liveBroadcastScore.test.mjs tests/liveBroadcastViewerCount.test.mjs tests/commentTree.test.mjs tests/threadedCommentRoutes.test.mjs tests/articleReactionQueries.test.mjs tests/articleCommentPage.test.mjs tests/liveCourtTourAudio.test.mjs tests/forumDiscordAnnouncements.test.mjs tests/forumMemberDirectory.test.mjs tests/coachingReportPrivacy.test.mjs tests/forumNotifications.test.mjs tests/characterRecommendationMetrics.test.mjs tests/forumCommunityRoles.test.mjs",

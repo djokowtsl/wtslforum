@@ -4,6 +4,7 @@ import type { PlayerRig } from './DmoLiveCourt3DScene';
 import { racketContactOrientation } from './DmoRacketOrientation';
 import { makeNativeGrip } from './DmoNativeGrip';
 import { dressNativePlayer } from './DmoNativeKit';
+import { addNativeTwistBones, distributeNativeTwist } from './DmoNativeTwist';
 import { DmoCapturedGroundstroke, type GroundstrokeMotionSources, type GroundstrokePlayback } from './DmoCapturedGroundstroke';
 import { DmoGroundstrokeRig } from './DmoGroundstrokeRig';
 
@@ -28,7 +29,7 @@ export class NativePlayerPose {
     this.bones.forEach((bone, name) => {
       const child = name === 'spine_03' ? this.bones.get('neck_01') : name.startsWith('hand_')
         ? this.bones.get(`middle_01_${name.endsWith('_l') ? 'l' : 'r'}`)
-        : bone.children.find(o => o instanceof THREE.Bone);
+        : bone.children.find(o => o instanceof THREE.Bone && !o.name.includes('_twist_'));
       const direction = child
         ? child.getWorldPosition(new THREE.Vector3()).sub(bone.getWorldPosition(new THREE.Vector3())).normalize().applyQuaternion(inverse)
         : UP.clone();
@@ -102,6 +103,7 @@ export function nativeTwoBone(
 export function attachNativePlayer(template: THREE.Group, rig: PlayerRig, shirtColor: number, motionSources: GroundstrokeMotionSources) {
   const model = clone(template) as THREE.Group;
   model.name = 'wtsl-continuous-player';
+  addNativeTwistBones(model);
   dressNativePlayer(model, shirtColor, template.userData.gender === 'female');
   model.scale.multiplyScalar(BODY_SCALE);
   const original = [...rig.root.children];
@@ -226,6 +228,7 @@ export function attachNativePlayer(template: THREE.Group, rig: PlayerRig, shirtC
       model.position.y -= groundCorrection;
       rig.racket.position.y -= groundCorrection;
     }
+    distributeNativeTwist(pose.bones, pose.rest);
     pose.finish();
     for (const [shoe, name] of [[rig.leftShoe, 'foot_r'], [rig.rightShoe, 'foot_l']] as const) {
       const foot = pose.bones.get(name)!;
