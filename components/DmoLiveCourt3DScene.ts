@@ -66,23 +66,12 @@ function material(color: number, roughness = 0.86) {
   return new THREE.MeshStandardMaterial({ color, roughness });
 }
 
-const animeToneRamp = new THREE.DataTexture(
-  new Uint8Array([
-    82, 82, 98, 255,
-    160, 160, 174, 255,
-    236, 236, 244, 255,
-  ]),
-  3,
-  1,
-  THREE.RGBAFormat,
-);
-animeToneRamp.magFilter = THREE.NearestFilter;
-animeToneRamp.minFilter = THREE.NearestFilter;
-animeToneRamp.generateMipmaps = false;
-animeToneRamp.needsUpdate = true;
-
-function animeMaterial(color: number) {
-  return new THREE.MeshToonMaterial({ color, gradientMap: animeToneRamp });
+function realisticMaterial(color: number, roughness = 0.78) {
+  return new THREE.MeshStandardMaterial({
+    color,
+    roughness,
+    metalness: 0,
+  });
 }
 
 function ellipticalBodyGeometry(
@@ -124,7 +113,7 @@ function ellipticalBodyGeometry(
   return geometry;
 }
 
-function animeScalpGeometry() {
+function naturalScalpGeometry() {
   const rows: Array<[y: number, radiusX: number, radiusZ: number, centerZ: number]> = [
     [-0.095, 0.018, 0.026, -0.018],
     [-0.064, 0.083, 0.077, -0.017],
@@ -165,7 +154,7 @@ function animeScalpGeometry() {
   geometry.setIndex(indices);
   geometry.computeVertexNormals();
   geometry.computeBoundingBox();
-  geometry.userData.animeScalp = { openingHalfAngle, rowCount: rows.length };
+  geometry.userData.scalpShell = { openingHalfAngle, rowCount: rows.length };
   return geometry;
 }
 
@@ -174,8 +163,8 @@ export function buildStadiumEnvironment(scene: THREE.Scene, indoor = false) {
   if (existing && scene.userData.wtslStadiumIndoor === indoor) return;
   existing?.removeFromParent();
   scene.getObjectByName('wtsl-open-sky')?.removeFromParent();
-  scene.background = new THREE.Color(indoor ? 0x56636a : 0x9ab8c4);
-  scene.fog = new THREE.Fog(indoor ? 0x56636a : 0x9ab8c4, 72, 190);
+  scene.background = new THREE.Color(indoor ? 0x444f55 : 0x9babb0);
+  scene.fog = new THREE.Fog(indoor ? 0x444f55 : 0x9babb0, 82, 205);
   scene.userData.wtslStadiumIndoor = indoor;
   const stadium = new THREE.Group();
   stadium.name = 'wtsl-stadium-architecture';
@@ -183,8 +172,8 @@ export function buildStadiumEnvironment(scene: THREE.Scene, indoor = false) {
     const skyGeometry = new THREE.SphereGeometry(180, 48, 24, 0, Math.PI * 2, 0, Math.PI / 2);
     const skyPositions = skyGeometry.getAttribute('position');
     const skyColors: number[] = [];
-    const horizon = new THREE.Color(0xd5e1d8);
-    const zenith = new THREE.Color(0x4d829d);
+    const horizon = new THREE.Color(0xc7d2ce);
+    const zenith = new THREE.Color(0x668797);
     for (let index = 0; index < skyPositions.count; index += 1) {
       const height = THREE.MathUtils.clamp(skyPositions.getY(index) / 180, 0, 1);
       const color = horizon.clone().lerp(zenith, Math.pow(height, 0.72));
@@ -198,10 +187,10 @@ export function buildStadiumEnvironment(scene: THREE.Scene, indoor = false) {
     sky.renderOrder = -10;
     scene.add(sky);
   }
-  const steel = material(0x536a68, 0.72);
-  const concrete = material(0x85938b, 0.94);
+  const steel = material(0x3f5051, 0.62);
+  const concrete = material(0x777e79, 0.88);
   const lamp = new THREE.MeshStandardMaterial({
-    color: 0xf2e5bd, emissive: 0xffedc4, emissiveIntensity: 0.78, roughness: 0.38,
+    color: 0xe8dfca, emissive: 0xffe6b9, emissiveIntensity: 0.52, roughness: 0.42,
   });
   if (indoor) {
     // Full-span trusses and a shallow vaulted roof appear only for indoor venues.
@@ -239,7 +228,7 @@ export function buildStadiumEnvironment(scene: THREE.Scene, indoor = false) {
   }
   scene.add(stadium);
   for (const [x, z] of [[-18, -13], [-18, 13], [18, -13], [18, 13]] as const) {
-    const spot = new THREE.SpotLight(0xffefcf, indoor ? 14 : 8, 48, Math.PI / 5, 0.68, 2);
+    const spot = new THREE.SpotLight(0xfff0d7, indoor ? 8 : 5, 48, Math.PI / 5, 0.68, 2);
     spot.position.set(x, indoor ? 12.4 : 11.5, z);
     spot.target.position.set(0, 0, 0);
     spot.castShadow = false;
@@ -564,45 +553,68 @@ export function buildCrowd(scene: THREE.Scene) {
 
   const seatMesh = new THREE.InstancedMesh(
     new THREE.BoxGeometry(0.45, 0.1, 0.42),
-    material(PALETTE.stands, 0.95),
+    material(0x334146, 0.86),
     spectators.length,
   );
   const seatBackMesh = new THREE.InstancedMesh(
-    new THREE.BoxGeometry(0.45, 0.56, 0.09),
-    material(0x344b52, 0.92),
+    new THREE.BoxGeometry(0.45, 0.48, 0.08),
+    material(0x3b494b, 0.82),
     spectators.length,
   );
   const bodyMesh = new THREE.InstancedMesh(
     ellipticalBodyGeometry([
-      [-0.28, 0.018, 0.018],
-      [-0.24, 0.14, 0.09],
-      [-0.12, 0.18, 0.105],
-      [0.02, 0.195, 0.115],
-      [0.16, 0.21, 0.12],
-      [0.24, 0.19, 0.105],
-      [0.28, 0.035, 0.035],
-    ]),
-    new THREE.MeshStandardMaterial({ color: 0xffffff, roughness: 0.92 }),
+      [-0.29, 0.02, 0.025],
+      [-0.24, 0.13, 0.085],
+      [-0.13, 0.155, 0.095],
+      [-0.015, 0.15, 0.09],
+      [0.085, 0.17, 0.10],
+      [0.19, 0.20, 0.105],
+      [0.25, 0.17, 0.09],
+      [0.29, 0.025, 0.025],
+    ], 24),
+    new THREE.MeshStandardMaterial({ color: 0xffffff, roughness: 0.84 }),
     spectators.length,
   );
   const headMesh = new THREE.InstancedMesh(
-    new THREE.SphereGeometry(0.12, 16, 12),
-    new THREE.MeshStandardMaterial({ color: 0xffffff, roughness: 0.88 }),
+    ellipticalBodyGeometry([
+      [-0.125, 0.018, 0.035],
+      [-0.11, 0.047, 0.057],
+      [-0.078, 0.068, 0.072],
+      [-0.025, 0.078, 0.082],
+      [0.035, 0.081, 0.084],
+      [0.087, 0.072, 0.078],
+      [0.12, 0.047, 0.06],
+      [0.132, 0.015, 0.025],
+    ], 24),
+    new THREE.MeshStandardMaterial({ color: 0xffffff, roughness: 0.72 }),
     spectators.length,
   );
   const eyeMesh = new THREE.InstancedMesh(
-    new THREE.SphereGeometry(0.012, 8, 6),
-    new THREE.MeshStandardMaterial({ color: 0x28221f, roughness: 0.9 }),
+    new THREE.SphereGeometry(0.007, 8, 6),
+    new THREE.MeshStandardMaterial({ color: 0x342b27, roughness: 0.74 }),
     spectators.length * 2,
   );
   const mouthMesh = new THREE.InstancedMesh(
-    new THREE.BoxGeometry(0.034, 0.009, 0.008),
-    new THREE.MeshStandardMaterial({ color: 0x68463d, roughness: 0.9 }),
+    new THREE.SphereGeometry(0.012, 10, 8),
+    new THREE.MeshStandardMaterial({ color: 0x855b50, roughness: 0.76 }),
     spectators.length,
   );
+  const noseMesh = new THREE.InstancedMesh(
+    new THREE.SphereGeometry(0.012, 10, 8),
+    new THREE.MeshStandardMaterial({ color: 0xffffff, roughness: 0.76 }),
+    spectators.length,
+  );
+  const earMesh = new THREE.InstancedMesh(
+    new THREE.SphereGeometry(0.018, 12, 10),
+    new THREE.MeshStandardMaterial({ color: 0xffffff, roughness: 0.78 }),
+    spectators.length * 2,
+  );
+  headMesh.name = 'wtsl-spectator-heads';
+  noseMesh.name = 'wtsl-spectator-noses';
+  earMesh.name = 'wtsl-spectator-ears';
   const neckMesh = new THREE.InstancedMesh(
-    new THREE.CylinderGeometry(0.042, 0.052, 0.15, 10),
-    new THREE.MeshStandardMaterial({ color: 0xffffff, roughness: 0.9 }),
+    new THREE.CylinderGeometry(0.039, 0.048, 0.14, 12),
+    new THREE.MeshStandardMaterial({ color: 0xffffff, roughness: 0.78 }),
     spectators.length,
   );
   const shortsMesh = new THREE.InstancedMesh(
@@ -649,19 +661,28 @@ export function buildCrowd(scene: THREE.Scene) {
     spectators.length * 2,
   );
   const handMesh = new THREE.InstancedMesh(
-    new THREE.BoxGeometry(0.075, 0.105, 0.055),
+    ellipticalBodyGeometry([
+      [-0.06, 0.025, 0.024], [-0.045, 0.04, 0.031],
+      [0.005, 0.042, 0.03], [0.045, 0.034, 0.026],
+      [0.06, 0.02, 0.02],
+    ], 12),
     new THREE.MeshStandardMaterial({ color: 0xffffff, roughness: 0.92 }),
     spectators.length * 2,
   );
   const shoeMesh = new THREE.InstancedMesh(
-    new THREE.BoxGeometry(0.18, 0.065, 0.095),
+    new THREE.SphereGeometry(0.5, 12, 8),
     material(0xe8e5dc, 0.82),
     spectators.length * 2,
   );
   const hairMesh = new THREE.InstancedMesh(
-    new THREE.SphereGeometry(0.12, 12, 9, 0, Math.PI * 2, 0, Math.PI * 0.56),
-    new THREE.MeshStandardMaterial({ color: 0xffffff, roughness: 0.92 }),
+    new THREE.SphereGeometry(0.5, 16, 10, 0, Math.PI * 2, 0, Math.PI * 0.49),
+    new THREE.MeshStandardMaterial({ color: 0xffffff, roughness: 0.8 }),
     spectators.length,
+  );
+  const hairTempleMesh = new THREE.InstancedMesh(
+    new THREE.SphereGeometry(0.5, 12, 8),
+    new THREE.MeshStandardMaterial({ color: 0xffffff, roughness: 0.82 }),
+    spectators.length * 2,
   );
   const dummy = new THREE.Object3D();
   const fromPoint = new THREE.Vector3();
@@ -742,44 +763,63 @@ export function buildCrowd(scene: THREE.Scene) {
     const forwardZ = Math.cos(spectator.facing);
     const sideX = Math.cos(spectator.facing);
     const sideZ = -Math.sin(spectator.facing);
+    const facialScale = [0.94, 0.98, 1.02, 1.06][index % 4];
     for (const eyeSide of [-1, 1]) {
       dummy.position.set(
-        spectator.x + forwardX * 0.116 * headScale + sideX * eyeSide * 0.035 * headScale,
-        baseY + 1.24,
-        spectator.z + forwardZ * 0.116 * headScale + sideZ * eyeSide * 0.035 * headScale,
+        spectator.x + forwardX * 0.079 * facialScale + sideX * eyeSide * 0.029 * facialScale,
+        baseY + 1.25,
+        spectator.z + forwardZ * 0.079 * facialScale + sideZ * eyeSide * 0.029 * facialScale,
       );
       dummy.rotation.y = spectator.facing;
-      dummy.scale.setScalar(headScale);
+      dummy.scale.set(0.72, 0.78, 0.68);
       dummy.updateMatrix();
       eyeMesh.setMatrixAt(index * 2 + (eyeSide === 1 ? 1 : 0), dummy.matrix);
+      placePart(earMesh, index * 2 + (eyeSide === 1 ? 1 : 0), spectator,
+        eyeSide * 0.074 * facialScale, 1.225, -0.002, 0.62, 0.92, 0.56);
     }
+    placePart(noseMesh, index, spectator, 0, 1.207, 0.093 * facialScale,
+      0.72, 0.78, 0.88);
+    noseMesh.setColorAt(index, skin);
+    earMesh.setColorAt(index * 2, skin);
+    earMesh.setColorAt(index * 2 + 1, skin);
     dummy.position.set(
-      spectator.x + forwardX * 0.112 * headScale,
-      baseY + 1.18,
-      spectator.z + forwardZ * 0.112 * headScale,
+      spectator.x + forwardX * 0.086 * facialScale,
+      baseY + 1.17,
+      spectator.z + forwardZ * 0.086 * facialScale,
     );
     dummy.rotation.y = spectator.facing;
-    dummy.scale.setScalar(headScale);
+    dummy.scale.set(1.15, 0.22, 0.48);
     dummy.updateMatrix();
     mouthMesh.setMatrixAt(index, dummy.matrix);
 
     placePart(neckMesh, index, spectator, 0, 1.1, 0.01, 0.9, 0.9, 0.9);
     neckMesh.setColorAt(index, skin);
-    placePart(shortsMesh, index, spectator, 0, 0.5, -0.01);
+    placePart(shortsMesh, index, spectator, 0, 0.5, -0.01, 0.95, 0.82, 0.92);
     shortsMesh.setColorAt(index, new THREE.Color(index % 2 ? 0x36465a : 0x4b4050));
-    placePart(hairMesh, index, spectator, 0, 1.30, -0.015, headScale, headScale, headScale);
-    hairMesh.setColorAt(index, new THREE.Color(hairColors[(index * 7 + spectator.row) % hairColors.length]));
+    const hairStyle = index % 5;
+    placePart(hairMesh, index, spectator, 0, 1.30, -0.014,
+      (0.19 + (hairStyle % 3) * 0.012) * headScale,
+      (0.16 + (hairStyle === 3 ? 0.025 : 0)) * headScale,
+      (0.18 + (hairStyle === 4 ? 0.025 : 0)) * headScale);
+    const hairColor = new THREE.Color(hairColors[(index * 7 + spectator.row) % hairColors.length]);
+    hairMesh.setColorAt(index, hairColor);
+    for (const side of [-1, 1]) {
+      const templeIndex = index * 2 + (side === 1 ? 1 : 0);
+      placePart(hairTempleMesh, templeIndex, spectator, side * 0.071, 1.255, -0.01,
+        0.036, (0.052 + (hairStyle % 3) * 0.008), 0.046);
+      hairTempleMesh.setColorAt(templeIndex, hairColor);
+    }
 
     for (const [sideIndex, side] of [-1, 1].entries()) {
       const instance = index * 2 + sideIndex;
       const thighTop: [number, number, number] = [side * 0.11, 0.5, 0];
-      const knee: [number, number, number] = [side * 0.17, 0.45, 0.21];
+      const knee: [number, number, number] = [side * 0.17, 0.43, 0.19];
       const ankle: [number, number, number] = [side * 0.17, 0.12, 0.28];
       placeLimb(thighMesh, instance, spectator, thighTop, knee);
       placeLimb(calfMesh, instance, spectator, knee, ankle);
       thighMesh.setColorAt(instance, new THREE.Color(index % 2 ? 0x36465a : 0x4b4050));
       calfMesh.setColorAt(instance, skin);
-      placePart(shoeMesh, instance, spectator, side * 0.17, 0.1, 0.37, 1, 1, 1, side * -0.08);
+      placePart(shoeMesh, instance, spectator, side * 0.17, 0.1, 0.37, 0.19, 0.07, 0.11, side * -0.08);
       const shoulder: [number, number, number] = [side * 0.17, 0.99, 0.015];
       const elbow: [number, number, number] = [side * 0.21, 0.78, 0.08];
       const wrist: [number, number, number] = [side * 0.19, 0.61, 0.15];
@@ -787,12 +827,14 @@ export function buildCrowd(scene: THREE.Scene) {
       placeLimb(forearmMesh, instance, spectator, elbow, wrist);
       upperArmMesh.setColorAt(instance, new THREE.Color(shirts[(index * 5 + spectator.row) % shirts.length]));
       forearmMesh.setColorAt(instance, skin);
-      placePart(handMesh, instance, spectator, wrist[0], wrist[1], wrist[2] + 0.025);
+      placePart(handMesh, instance, spectator, wrist[0], wrist[1], wrist[2] + 0.025,
+        0.82, 0.92, 0.72);
+      handMesh.setColorAt(instance, skin);
     }
   });
   const staticInstances = [
-    seatMesh, seatBackMesh, bodyMesh, headMesh, eyeMesh, neckMesh, shortsMesh,
-    thighMesh, calfMesh, shoeMesh, upperArmMesh, forearmMesh, handMesh, hairMesh, mouthMesh,
+    seatMesh, seatBackMesh, bodyMesh, headMesh, eyeMesh, earMesh, noseMesh, neckMesh, shortsMesh,
+    thighMesh, calfMesh, shoeMesh, upperArmMesh, forearmMesh, handMesh, hairMesh, hairTempleMesh, mouthMesh,
   ];
   for (const instances of staticInstances) {
     instances.instanceMatrix.needsUpdate = true;
@@ -800,13 +842,13 @@ export function buildCrowd(scene: THREE.Scene) {
     instances.receiveShadow = false;
     scene.add(instances);
   }
-  for (const instances of [bodyMesh, headMesh, neckMesh, shortsMesh, thighMesh, calfMesh, upperArmMesh, forearmMesh, hairMesh]) {
+  for (const instances of [bodyMesh, headMesh, earMesh, noseMesh, neckMesh, shortsMesh, thighMesh, calfMesh, upperArmMesh, forearmMesh, handMesh, hairMesh, hairTempleMesh]) {
     if (instances.instanceColor) instances.instanceColor.needsUpdate = true;
   }
   for (const instances of [upperArmMesh, forearmMesh, handMesh]) {
     instances.instanceMatrix.setUsage(THREE.DynamicDrawUsage);
   }
-  for (const instances of [mouthMesh, headMesh, eyeMesh, hairMesh]) {
+  for (const instances of [mouthMesh, headMesh, eyeMesh, earMesh, noseMesh, hairMesh, hairTempleMesh]) {
     instances.instanceMatrix.setUsage(THREE.DynamicDrawUsage);
   }
   let previousApplause = false;
@@ -824,7 +866,7 @@ export function buildCrowd(scene: THREE.Scene) {
       gazeOffsets[index] += (targetDelta - gazeOffsets[index]) * 0.62;
       const delta = gazeOffsets[index];
       const facing = spectator.facing + delta;
-      const headScale = 0.88 + (index % 3) * 0.08;
+      const headScale = 0.92 + (index % 4) * 0.025;
       const headY = 1.23;
       const placeFace = (
         mesh: THREE.InstancedMesh,
@@ -832,7 +874,7 @@ export function buildCrowd(scene: THREE.Scene) {
         localX: number,
         localY: number,
         localZ: number,
-        scale = headScale,
+        scale: number | [number, number, number] = headScale,
       ) => {
         const cosine = Math.cos(facing);
         const sine = Math.sin(facing);
@@ -842,30 +884,59 @@ export function buildCrowd(scene: THREE.Scene) {
           spectator.z - localX * sine + localZ * cosine,
         );
         dummy.rotation.set(0, facing, 0);
-        dummy.scale.setScalar(scale);
+        if (typeof scale === 'number') dummy.scale.setScalar(scale);
+        else dummy.scale.set(...scale);
         dummy.updateMatrix();
         mesh.setMatrixAt(instance, dummy.matrix);
       };
+      const placeHair = () => {
+        const cosine = Math.cos(facing);
+        const sine = Math.sin(facing);
+        dummy.position.set(
+          spectator.x + 0.014 * sine,
+          platformBaseY(spectator.row) + headY + 0.07,
+          spectator.z + 0.014 * cosine,
+        );
+        dummy.rotation.set(0, facing, 0);
+        dummy.scale.set(0.19 * headScale, 0.16 * headScale, 0.18 * headScale);
+        dummy.updateMatrix();
+        hairMesh.setMatrixAt(index, dummy.matrix);
+        for (const side of [-1, 1]) {
+          const templeIndex = index * 2 + (side === 1 ? 1 : 0);
+          dummy.position.set(
+            spectator.x + side * 0.071 * cosine - 0.01 * sine,
+            platformBaseY(spectator.row) + headY + 0.025,
+            spectator.z - side * 0.071 * sine - 0.01 * cosine,
+          );
+          dummy.rotation.set(0, facing, 0);
+          dummy.scale.set(0.036, 0.052 + (index % 3) * 0.008, 0.046);
+          dummy.updateMatrix();
+          hairTempleMesh.setMatrixAt(templeIndex, dummy.matrix);
+        }
+      };
       placeFace(headMesh, index, 0, 0, 0);
-      placeFace(hairMesh, index, 0, 0.07, -0.015);
-      placeFace(eyeMesh, index * 2, -0.035 * headScale, 0.01, 0.116 * headScale);
-      placeFace(eyeMesh, index * 2 + 1, 0.035 * headScale, 0.01, 0.116 * headScale);
-      placeFace(mouthMesh, index, 0, -0.05, 0.112 * headScale, 1);
+      placeHair();
+      placeFace(eyeMesh, index * 2, -0.029 * headScale, 0.02, 0.079 * headScale, [0.72, 0.78, 0.68]);
+      placeFace(eyeMesh, index * 2 + 1, 0.029 * headScale, 0.02, 0.079 * headScale, [0.72, 0.78, 0.68]);
+      placeFace(noseMesh, index, 0, -0.008, 0.093 * headScale, [0.72, 0.78, 0.88]);
+      placeFace(earMesh, index * 2, -0.074 * headScale, -0.005, -0.002, [0.62, 0.92, 0.56]);
+      placeFace(earMesh, index * 2 + 1, 0.074 * headScale, -0.005, -0.002, [0.62, 0.92, 0.56]);
+      placeFace(mouthMesh, index, 0, -0.06, 0.071 * headScale, [1.15, 0.22, 0.48]);
       if (previousApplause && index % 5 !== 0) {
         const cosine = Math.cos(facing);
         const sine = Math.sin(facing);
         dummy.position.set(
-          spectator.x + 0.112 * headScale * sine,
+          spectator.x + 0.071 * headScale * sine,
           platformBaseY(spectator.row) + headY - 0.05,
-          spectator.z + 0.112 * headScale * cosine,
+          spectator.z + 0.071 * headScale * cosine,
         );
         dummy.rotation.set(0, facing, 0);
-        dummy.scale.set(1, 5.5, 1);
+        dummy.scale.set(1.15, 1.21, 0.48);
         dummy.updateMatrix();
         mouthMesh.setMatrixAt(index, dummy.matrix);
       }
     }
-    for (const instances of [headMesh, eyeMesh, hairMesh, mouthMesh]) {
+    for (const instances of [headMesh, eyeMesh, earMesh, noseMesh, hairMesh, hairTempleMesh, mouthMesh]) {
       instances.instanceMatrix.needsUpdate = true;
     }
   };
@@ -897,12 +968,12 @@ export function buildCrowd(scene: THREE.Scene) {
         const openMouth = applauding && index % 5 !== 0;
         const facing = spectator.facing + gazeOffsets[index];
         dummy.position.set(
-          spectator.x + Math.sin(facing) * 0.09,
+          spectator.x + Math.sin(facing) * 0.071,
           platformBaseY(spectator.row) + 1.18,
-          spectator.z + Math.cos(facing) * 0.09,
+          spectator.z + Math.cos(facing) * 0.071,
         );
         dummy.rotation.y = facing;
-        dummy.scale.set(1, openMouth ? 5.5 : 1, 1);
+        dummy.scale.set(1.15, openMouth ? 1.21 : 0.22, 0.48);
         dummy.updateMatrix();
         mouthMesh.setMatrixAt(index, dummy.matrix);
       }
@@ -1000,8 +1071,8 @@ export function buildCourtFixtures(scene: THREE.Scene): CourtFixtureRig {
   }
 
   const umpireShirt = material(0x526d93, 0.84);
-  const umpireSkin = material(0xd2a17f, 0.9);
-  const umpireHair = material(0x353744, 0.92);
+  const umpireSkin = new THREE.MeshStandardMaterial({ color: 0xb98a6d, roughness: 0.78 });
+  const umpireHair = new THREE.MeshStandardMaterial({ color: 0x37312d, roughness: 0.6 });
   const torso = new THREE.Mesh(new THREE.CapsuleGeometry(0.16, 0.3, 4, 8), umpireShirt);
   torso.position.set(0, 2.02, 0.02);
   torso.castShadow = true;
@@ -1010,27 +1081,28 @@ export function buildCourtFixtures(scene: THREE.Scene): CourtFixtureRig {
   headRig.name = 'wtsl-umpire-gaze';
   headRig.position.set(0, 2.35, 0.02);
   chair.add(headRig);
-  const head = new THREE.Mesh(new THREE.SphereGeometry(0.14, 18, 14), umpireSkin);
+  const head = new THREE.Mesh(new THREE.SphereGeometry(0.125, 20, 16), umpireSkin);
+  head.scale.set(0.9, 1.08, 0.92);
   head.castShadow = true;
   headRig.add(head);
-  const hair = new THREE.Mesh(new THREE.SphereGeometry(0.143, 16, 10, 0, Math.PI * 2, 0, Math.PI * 0.48), umpireHair);
-  hair.position.set(0, 0.025, -0.025);
+  const hair = new THREE.Mesh(new THREE.SphereGeometry(0.13, 16, 10, 0, Math.PI * 2, 0, Math.PI * 0.39), umpireHair);
+  hair.position.set(0, 0.035, -0.026);
   headRig.add(hair);
   for (const side of [-1, 1]) {
-    const eye = new THREE.Mesh(new THREE.SphereGeometry(0.018, 10, 8), material(0xf3eee4));
-    eye.position.set(side * 0.047, 0.024, 0.132);
-    eye.scale.set(1, 0.72, 0.6);
-    const pupil = new THREE.Mesh(new THREE.SphereGeometry(0.009, 8, 6), material(0x27211c));
-    pupil.position.z = 0.015;
+    const eye = new THREE.Mesh(new THREE.SphereGeometry(0.012, 12, 10), material(0xe1d9cb, 0.7));
+    eye.position.set(side * 0.041, 0.023, 0.109);
+    eye.scale.set(1, 0.65, 0.55);
+    const pupil = new THREE.Mesh(new THREE.SphereGeometry(0.0055, 10, 8), material(0x29231f, 0.55));
+    pupil.position.z = 0.009;
     eye.add(pupil);
     headRig.add(eye);
   }
-  const nose = new THREE.Mesh(new THREE.SphereGeometry(0.024, 10, 8), umpireSkin);
-  nose.position.set(0, -0.012, 0.142);
-  nose.scale.set(0.65, 1.2, 0.9);
+  const nose = new THREE.Mesh(new THREE.SphereGeometry(0.017, 12, 10), umpireSkin);
+  nose.position.set(0, -0.012, 0.114);
+  nose.scale.set(0.68, 1, 0.72);
   headRig.add(nose);
-  const mouth = new THREE.Mesh(new THREE.SphereGeometry(0.025, 10, 6), material(0x63443a));
-  mouth.position.set(0, -0.058, 0.131);
+  const mouth = new THREE.Mesh(new THREE.SphereGeometry(0.018, 10, 6), material(0x63443a));
+  mouth.position.set(0, -0.052, 0.105);
   mouth.scale.set(1, 0.15, 0.3);
   headRig.add(mouth);
   for (const side of [-1, 1]) {
@@ -1062,12 +1134,19 @@ export function buildCourtFixtures(scene: THREE.Scene): CourtFixtureRig {
 
 export function makePlayer(shirtColor: number, shortsColor: number, isWta = false): PlayerRig {
   const root = new THREE.Group();
-  const outline = animeMaterial(0x293443);
-  const skin = animeMaterial(0xf0bd99);
-  const shirt = animeMaterial(shirtColor);
-  const shorts = animeMaterial(shortsColor);
-  const shoe = animeMaterial(0xf1eee6);
-  const hairMaterial = animeMaterial(isWta ? 0x604151 : 0x344459);
+  const skin = new THREE.MeshPhysicalMaterial({
+    color: 0xc89574, roughness: 0.72, metalness: 0, clearcoat: 0.035, clearcoatRoughness: 0.82,
+  });
+  const shirt = new THREE.MeshPhysicalMaterial({
+    color: shirtColor, roughness: 0.82, metalness: 0, sheen: 0.18, sheenRoughness: 0.9,
+  });
+  const shorts = new THREE.MeshPhysicalMaterial({
+    color: shortsColor, roughness: 0.86, metalness: 0, sheen: 0.12, sheenRoughness: 0.92,
+  });
+  const shoe = realisticMaterial(0xe5e2d9, 0.68);
+  const hairMaterial = new THREE.MeshStandardMaterial({
+    color: isWta ? 0x49372e : 0x352f2c, roughness: 0.58, metalness: 0,
+  });
   // Sculpted elliptical cross-sections create a human rib cage, waist and
   // shoulder shelf instead of a lathed toy barrel.
   const body = new THREE.Mesh(ellipticalBodyGeometry([
@@ -1084,7 +1163,7 @@ export function makePlayer(shirtColor: number, shortsColor: number, isWta = fals
   ], 32), shirt);
   body.position.y = 1.22;
   body.castShadow = true;
-  const collar = new THREE.Mesh(new THREE.TorusGeometry(0.068, 0.009, 6, 20), animeMaterial(0xf4ead9));
+  const collar = new THREE.Mesh(new THREE.TorusGeometry(0.068, 0.007, 6, 20), realisticMaterial(0xe7e0d2, 0.85));
   collar.position.set(0, 0.275, 0.004);
   collar.scale.set(1, 0.72, 0.9);
   body.add(collar);
@@ -1134,12 +1213,12 @@ export function makePlayer(shirtColor: number, shortsColor: number, isWta = fals
     hip.add(shortsShell);
 
     const waistbandColor = new THREE.Color(shortsColor)
-      .lerp(new THREE.Color(0xffffff), 0.12).getHex();
+      .lerp(new THREE.Color(0xffffff), 0.08).getHex();
     const waistband = new THREE.Mesh(ellipticalBodyGeometry([
       [0.105, 0.17, 0.115],
       [0.12, 0.176, 0.12],
       [0.138, 0.145, 0.098],
-    ], 28), animeMaterial(waistbandColor));
+    ], 28), realisticMaterial(waistbandColor, 0.84));
     hip.add(waistband);
   } else {
     const skirt = new THREE.Mesh(ellipticalBodyGeometry([
@@ -1177,37 +1256,19 @@ export function makePlayer(shirtColor: number, shortsColor: number, isWta = fals
     ear.position.set(side * 0.09, -0.002, 0);
     ear.scale.set(0.62, 0.9, 0.72);
     head.add(ear);
-    const eye = new THREE.Mesh(new THREE.SphereGeometry(0.018, 20, 16), animeMaterial(0xfff8ee));
-    eye.name = side < 0 ? 'anime-left-eye' : 'anime-right-eye';
-    // Larger irises, an upward gaze and gently arched lids soften the stare.
-    eye.position.set(side * 0.036, 0.034, 0.088);
-    eye.scale.set(1.08, 0.88, 0.56);
-    eye.castShadow = true;
-    const iris = new THREE.Mesh(new THREE.SphereGeometry(0.010, 16, 12),
-      animeMaterial(isWta ? 0x815e9e : 0x6f8461));
-    iris.name = 'anime-colored-iris';
-    iris.position.set(-side * 0.0015, 0.0015, 0.0085);
+    const eye = new THREE.Mesh(new THREE.SphereGeometry(0.012, 16, 12), realisticMaterial(0xe1d9cb, 0.68));
+    eye.name = side < 0 ? 'left-eye' : 'right-eye';
+    eye.position.set(side * 0.034, 0.029, 0.084);
+    eye.scale.set(1.15, 0.68, 0.5);
+    const iris = new THREE.Mesh(new THREE.SphereGeometry(0.0062, 12, 10),
+      realisticMaterial(isWta ? 0x5c5142 : 0x554638, 0.5));
+    iris.name = 'iris';
+    iris.position.set(-side * 0.001, 0.001, 0.006);
     eye.add(iris);
-    const pupil = new THREE.Mesh(new THREE.SphereGeometry(0.0055, 12, 10), animeMaterial(0x282531));
-    pupil.name = 'anime-pupil';
-    pupil.position.set(-side * 0.0015, 0.002, 0.017);
+    const pupil = new THREE.Mesh(new THREE.SphereGeometry(0.0032, 10, 8), realisticMaterial(0x211d19, 0.42));
+    pupil.name = 'pupil';
+    pupil.position.set(-side * 0.001, 0.001, 0.011);
     eye.add(pupil);
-    const glint = new THREE.Mesh(new THREE.SphereGeometry(0.0027, 10, 8), animeMaterial(0xffffff));
-    glint.position.set(-0.003, 0.005, 0.022);
-    eye.add(glint);
-    const upperLid = new THREE.CatmullRomCurve3([
-      new THREE.Vector3(-0.018, 0.006, 0.008),
-      new THREE.Vector3(-0.01, 0.015, 0.012),
-      new THREE.Vector3(0, 0.018, 0.013),
-      new THREE.Vector3(0.01, 0.015, 0.012),
-      new THREE.Vector3(0.018, 0.006, 0.008),
-    ]);
-    const lashes = new THREE.Mesh(
-      new THREE.TubeGeometry(upperLid, 12, 0.0023, 5, false),
-      outline,
-    );
-    lashes.name = 'anime-upper-eyelid';
-    eye.add(lashes);
     head.add(eye);
     if (side < 0) leftEye = eye;
     else rightEye = eye;
@@ -1221,37 +1282,22 @@ export function makePlayer(shirtColor: number, shortsColor: number, isWta = fals
   nose.position.set(0, -0.038, 0.09);
   nose.scale.set(0.76, 0.45, 0.55);
   head.add(nose);
-  const blushMaterial = new THREE.MeshBasicMaterial({
-    color: 0xec8d83,
-    transparent: true,
-    opacity: 0.28,
-    depthWrite: false,
-  });
-  for (const side of [-1, 1]) {
-    const blush = new THREE.Mesh(new THREE.SphereGeometry(0.014, 12, 8), blushMaterial);
-    blush.name = 'anime-cheek-blush';
-    blush.position.set(side * 0.058, -0.041, 0.064);
-    blush.scale.set(1.2, 0.46, 0.18);
-    head.add(blush);
-  }
-  const browMaterial = animeMaterial(isWta ? 0x604151 : 0x51443e);
-  const makeAnimeBrow = (side: -1 | 1) => new THREE.Mesh(
+  const browMaterial = realisticMaterial(isWta ? 0x49372e : 0x352f2c, 0.82);
+  const makeNaturalBrow = (side: -1 | 1) => new THREE.Mesh(
     new THREE.TubeGeometry(new THREE.CatmullRomCurve3([
-      new THREE.Vector3(side * 0.019, 0, 0.002),
-      new THREE.Vector3(side * 0.01, 0.009, 0.006),
-      new THREE.Vector3(0, 0.01, 0.008),
-      new THREE.Vector3(-side * 0.01, 0.007, 0.006),
-      new THREE.Vector3(-side * 0.019, 0.002, 0.002),
-    ]), 12, 0.0035, 6, false),
+      new THREE.Vector3(side * 0.016, 0, 0.001),
+      new THREE.Vector3(side * 0.008, 0.003, 0.004),
+      new THREE.Vector3(0, 0.004, 0.005),
+      new THREE.Vector3(-side * 0.008, 0.003, 0.004),
+      new THREE.Vector3(-side * 0.016, 0, 0.001),
+    ]), 10, 0.0024, 5, false),
     browMaterial,
   );
-  const leftBrow = makeAnimeBrow(-1);
-  leftBrow.name = 'anime-left-brow';
-  leftBrow.position.set(-0.036, 0.066, 0.091);
+  const leftBrow = makeNaturalBrow(-1);
+  leftBrow.position.set(-0.034, 0.052, 0.085);
   head.add(leftBrow);
-  const rightBrow = makeAnimeBrow(1);
-  rightBrow.name = 'anime-right-brow';
-  rightBrow.position.set(0.036, 0.066, 0.091);
+  const rightBrow = makeNaturalBrow(1);
+  rightBrow.position.set(0.034, 0.052, 0.085);
   head.add(rightBrow);
   const smile = new THREE.CatmullRomCurve3([
     new THREE.Vector3(-0.012, 0.002, 0),
@@ -1262,58 +1308,26 @@ export function makePlayer(shirtColor: number, shortsColor: number, isWta = fals
   ]);
   const mouth = new THREE.Mesh(
     new THREE.TubeGeometry(smile, 12, 0.0022, 5, false),
-    animeMaterial(0x8c4847),
+    realisticMaterial(0x875b52, 0.82),
   );
   mouth.position.set(0, -0.082, 0.088);
-  mouth.name = 'anime-smile';
+  mouth.name = 'mouth';
   head.add(mouth);
   // Full scalp coverage wraps behind the crown and temples; the smaller top
   // cap alone left the back and sides looking bald from a court-level camera.
   const hair = new THREE.Mesh(
-    animeScalpGeometry(),
+    naturalScalpGeometry(),
     hairMaterial,
   );
-  hair.name = 'anime-scalp';
+  hair.name = 'natural-scalp';
   head.add(hair);
-  for (const side of [-1, 1]) {
-    const fringeStrand = new THREE.Mesh(
-      new THREE.CapsuleGeometry(0.014, 0.035, 4, 8),
-      hairMaterial,
-    );
-    fringeStrand.name = 'anime-fringe-strand';
-    fringeStrand.scale.set(0.85, 0.92, 0.65);
-    fringeStrand.position.set(side * 0.03, 0.106, 0.069);
-    fringeStrand.rotation.z = -side * 0.27;
-    head.add(fringeStrand);
-  }
-  for (const [side, length, radius] of [
-    [-1, 0.042, 0.012],
-    [0, 0.048, 0.013],
-    [1, 0.042, 0.012],
-  ] as const) {
-    const spike = new THREE.Mesh(new THREE.ConeGeometry(radius, length, 7), hairMaterial);
-    spike.name = 'anime-hair-spike';
-    spike.position.set(side * 0.038, 0.125, 0.035);
-    spike.rotation.z = -side * 0.24;
-    spike.castShadow = true;
-    head.add(spike);
-  }
-  const frontLock = new THREE.Mesh(new THREE.ConeGeometry(0.02, 0.06, 8), hairMaterial);
-  frontLock.name = 'anime-swept-fringe';
-  frontLock.position.set(-0.023, 0.094, 0.071);
-  frontLock.rotation.set(0.08, 0, Math.PI + 0.18);
-  frontLock.castShadow = true;
-  head.add(frontLock);
   if (isWta) {
-    const sweep = new THREE.Mesh(new THREE.ConeGeometry(0.019, 0.055, 8), hairMaterial);
-    sweep.name = 'anime-side-fringe';
-    sweep.position.set(0.028, 0.095, 0.074);
-    sweep.rotation.set(0.04, 0, Math.PI - 0.2);
-    sweep.castShadow = true;
-    head.add(sweep);
-    const ponytail = new THREE.Mesh(new THREE.CapsuleGeometry(0.028, 0.13, 3, 8), hairMaterial);
-    ponytail.position.set(-0.065, -0.085, -0.072);
-    ponytail.rotation.z = -0.18;
+    const tie = new THREE.Mesh(new THREE.SphereGeometry(0.031, 12, 10), realisticMaterial(0x302923, 0.55));
+    tie.position.set(-0.01, -0.035, -0.088);
+    head.add(tie);
+    const ponytail = new THREE.Mesh(new THREE.CapsuleGeometry(0.021, 0.105, 4, 10), hairMaterial);
+    ponytail.position.set(-0.012, -0.105, -0.105);
+    ponytail.rotation.z = -0.12;
     head.add(ponytail);
   }
 
@@ -1353,7 +1367,7 @@ export function makePlayer(shirtColor: number, shortsColor: number, isWta = fals
   const rightLeg = new THREE.Mesh(legGeometry, skin);
   const leftCalf = new THREE.Mesh(calfGeometry, skin);
   const rightCalf = new THREE.Mesh(calfGeometry, skin);
-  const trimMaterial = animeMaterial(0xf4ead9);
+  const trimMaterial = realisticMaterial(0xe7e0d2, 0.86);
   for (const sleeve of [leftArm, rightArm]) {
     const shirtSleeve = new THREE.Mesh(ellipticalBodyGeometry([
       [-0.535, 0.054, 0.055],
@@ -1370,7 +1384,7 @@ export function makePlayer(shirtColor: number, shortsColor: number, isWta = fals
     cuff.position.y = 0.02;
     sleeve.add(cuff);
   }
-  const sockMaterial = animeMaterial(0xf4ead9);
+  const sockMaterial = realisticMaterial(0xe4dfd2, 0.88);
   for (const calf of [leftCalf, rightCalf]) {
     const sockBand = new THREE.Mesh(new THREE.TorusGeometry(0.034, 0.005, 6, 16), sockMaterial);
     sockBand.rotation.x = Math.PI / 2;
@@ -1402,11 +1416,11 @@ export function makePlayer(shirtColor: number, shortsColor: number, isWta = fals
   handGeometry.userData.closedGrip = true;
   const leftHand = new THREE.Mesh(handGeometry, skin);
   const rightHand = new THREE.Mesh(handGeometry, skin);
-  leftHand.name = 'anime-left-palm';
+  leftHand.name = 'left-palm';
   rightHand.name = 'dominant-right-hand';
   for (const [hand, side] of [[leftHand, -1], [rightHand, 1]] as const) {
     const thumb = new THREE.Mesh(new THREE.CapsuleGeometry(0.012, 0.026, 5, 12), skin);
-    thumb.name = 'anime-grip-thumb';
+    thumb.name = 'grip-thumb';
     thumb.position.set(side * 0.02, 0.009, 0.02);
     thumb.rotation.z = side * 0.7;
     thumb.castShadow = true;
