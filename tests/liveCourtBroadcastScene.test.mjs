@@ -24,7 +24,7 @@ const { deriveLiveCourtSoundEvents, playLiveCourtEffect } = await loadTs('../lib
   './te4DmoSurface': { courtSurfaceSoundProfile },
 });
 
-test('human player proportions and visible eyes replace the oversized toy head', () => {
+test('players use realistic materials and natural human proportions', () => {
   for (const isWta of [false, true]) {
     const rig = sceneApi.makePlayer(0xffffff, 0x445566, isWta);
     rig.head.geometry.computeBoundingBox();
@@ -32,26 +32,31 @@ test('human player proportions and visible eyes replace the oversized toy head',
     assert.ok(headSize.y <= 0.285 && headSize.y >= 0.22, `head height ${headSize.y}`);
     assert.ok(headSize.x <= 0.215, `head width ${headSize.x}`);
     assert.notEqual(rig.body.geometry.type, 'LatheGeometry');
-    assert.ok(rig.head.material.isMeshToonMaterial, 'face uses cel shading');
-    assert.ok(rig.body.material.isMeshToonMaterial, 'uniform uses cel shading');
-    assert.ok(rig.head.getObjectByName('anime-scalp'));
-    const scalp = rig.head.getObjectByName('anime-scalp');
+    assert.ok(rig.head.material.isMeshStandardMaterial, 'face uses physically based shading');
+    assert.ok(rig.body.material.isMeshPhysicalMaterial, 'uniform uses a fabric-like physical material');
+    assert.ok(!rig.head.material.isMeshToonMaterial);
+    assert.ok(!rig.body.material.isMeshToonMaterial);
+    assert.ok(rig.head.getObjectByName('natural-scalp'));
+    const scalp = rig.head.getObjectByName('natural-scalp');
     scalp.geometry.computeBoundingBox();
     const scalpSize = scalp.geometry.boundingBox.getSize(new THREE.Vector3());
-    assert.equal(scalp.geometry.userData.animeScalp.rowCount, 7, 'the fitted hair shell covers crown and sides');
+    assert.equal(scalp.geometry.userData.scalpShell.rowCount, 7, 'the fitted hair shell covers crown and sides');
     assert.ok(scalpSize.x > 0.19 && scalpSize.y > 0.22);
     const scalpVertices = scalp.geometry.getAttribute('position');
     const crownStart = new THREE.Vector3().fromBufferAttribute(scalpVertices, 4 * 49);
     const crownEnd = new THREE.Vector3().fromBufferAttribute(scalpVertices, 4 * 49 + 48);
     assert.ok(crownStart.distanceTo(crownEnd) < 0.00001, 'the face opening closes above the forehead');
-    assert.equal(rig.head.children.filter(child => child.name === 'anime-fringe-strand').length, 2);
-    assert.ok(rig.head.getObjectByName('anime-swept-fringe'));
-    assert.ok(rig.head.children.filter(child => child.name === 'anime-hair-spike').length >= 3);
+    const headNames = [];
+    rig.head.traverse(child => headNames.push(child.name));
+    assert.equal(headNames.some(name => /anime|spike|blush/i.test(name)), false,
+      'face and hair details avoid cartoon-specific features');
+    assert.equal(rig.head.children.some(child => child.geometry?.type === 'ConeGeometry'), false,
+      'hair uses a continuous scalp silhouette instead of spikes');
     for (const hand of [rig.leftHand, rig.rightHand]) {
       assert.equal(hand.geometry.userData.closedGrip, true, 'grip uses one continuous fist surface');
       assert.equal(hand.children.filter(child => child.geometry?.type === 'TubeGeometry').length, 0,
         'no detached finger loops');
-      const thumb = hand.getObjectByName('anime-grip-thumb');
+      const thumb = hand.getObjectByName('grip-thumb');
       assert.ok(thumb && thumb.geometry.type === 'CapsuleGeometry');
       hand.updateMatrixWorld(true);
       const palmBounds = new THREE.Box3().setFromBufferAttribute(hand.geometry.getAttribute('position'))
@@ -93,10 +98,9 @@ test('human player proportions and visible eyes replace the oversized toy head',
       const eyeFront = eye.position.z + eye.geometry.boundingBox.max.z * eye.scale.z;
       assert.ok(eyeFront > hit.point.z + 0.003, 'whites must protrude beyond the face, not be buried');
       const eyeSize = eye.geometry.boundingBox.getSize(new THREE.Vector3()).multiply(eye.scale);
-      assert.ok(eyeSize.y > 0.028, `expressive iris eye height ${eyeSize.y}`);
-      assert.ok(eye.getObjectByName('anime-colored-iris'));
-      assert.ok(eye.getObjectByName('anime-pupil'));
-      assert.ok(eye.getObjectByName('anime-upper-eyelid'));
+      assert.ok(eyeSize.y > 0.014 && eyeSize.y < 0.026, `natural eye height ${eyeSize.y}`);
+      assert.ok(eye.getObjectByName('iris'));
+      assert.ok(eye.getObjectByName('pupil'));
     }
     assert.ok((rig.head.position.y + headSize.y / 2) * rig.root.scale.y < 1.95);
   }
@@ -105,9 +109,16 @@ test('human player proportions and visible eyes replace the oversized toy head',
 test('crowd is human-scaled and separated from deep-baseline player space', () => {
   const scene = new THREE.Scene();
   const crowd = sceneApi.buildCrowd(scene);
-  const heads = scene.children.find(item => item.isInstancedMesh
-    && item.geometry.type === 'SphereGeometry' && item.geometry.parameters.radius > 0.1);
+  const heads = scene.getObjectByName('wtsl-spectator-heads');
   assert.ok(heads, 'adult-sized spectator heads');
+  const noses = scene.getObjectByName('wtsl-spectator-noses');
+  const ears = scene.getObjectByName('wtsl-spectator-ears');
+  assert.equal(noses?.count, heads.count, 'each spectator has a facial profile');
+  assert.equal(ears?.count, heads.count * 2, 'each spectator has two ears');
+  heads.geometry.computeBoundingBox();
+  const headSize = heads.geometry.boundingBox.getSize(new THREE.Vector3());
+  assert.ok(headSize.y >= 0.22 && headSize.y <= 0.29, 'heads retain adult human proportions');
+  assert.ok(headSize.x < 0.20, 'heads taper instead of using oversized round spheres');
   const matrix = new THREE.Matrix4();
   const before = new THREE.Matrix4();
   heads.getMatrixAt(0, before);
