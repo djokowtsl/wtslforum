@@ -19,9 +19,48 @@ async function loadTs(path, overrides = {}) {
     name => overrides[name] ?? require(name));
   return module.exports;
 }
-const sceneApi = await loadTs('../components/DmoLiveCourt3DScene.ts');
+const stadiumArchitectureApi = await loadTs('../components/DmoStadiumArchitecture.ts');
+const sceneApi = await loadTs('../components/DmoLiveCourt3DScene.ts', {
+  './DmoStadiumArchitecture': stadiumArchitectureApi,
+});
+const crowdLodApi = await loadTs('../lib/dmoCrowdLod.ts');
 const { deriveLiveCourtSoundEvents, playLiveCourtEffect } = await loadTs('../lib/liveCourtAudio.ts', {
   './te4DmoSurface': { courtSurfaceSoundProfile },
+});
+
+test('stadium includes a layered bowl, WTSL boards, score screens and venue-specific roofing', () => {
+  for (const indoor of [false, true]) {
+    const scene = new THREE.Scene();
+    sceneApi.buildStadiumEnvironment(scene, indoor);
+    const stadium = scene.getObjectByName('wtsl-stadium-architecture');
+    const superstructure = stadium?.getObjectByName('wtsl-stadium-superstructure');
+    assert.ok(superstructure, 'the stadium has an outer structural shell');
+
+    const named = (root, name) => {
+      const matches = [];
+      root.traverse((object) => { if (object.name === name) matches.push(object); });
+      return matches;
+    };
+    assert.equal(named(superstructure, 'wtsl-baseline-upper-deck-0').length, 2);
+    assert.equal(named(superstructure, 'wtsl-sideline-upper-deck-2').length, 2);
+    assert.equal(named(superstructure, 'wtsl-advertising-board-baseline').length, 2);
+    assert.equal(named(superstructure, 'wtsl-advertising-board-sideline').length, 2);
+    assert.equal(named(superstructure, 'wtsl-scoreboard-screen').length, 2);
+    assert.equal(named(superstructure, 'wtsl-stadium-support-columns').length, 1);
+    assert.equal(named(superstructure, 'wtsl-open-air-canopy').length, indoor ? 0 : 4);
+    assert.equal(named(superstructure, 'wtsl-indoor-roof-wing').length, indoor ? 4 : 0);
+    assert.equal(Boolean(scene.getObjectByName('wtsl-open-sky')), !indoor);
+  }
+});
+
+test('full-detail crowd seats are sparse, near-court and gender-balanced for quality tiers', () => {
+  for (const genderIndex of [0, 1]) {
+    const selected = Array.from({ length: 7 * 96 }, (_, index) => index)
+      .filter((index) => crowdLodApi.shouldUseHighDetailCrowdSeat(Math.floor(index / 96), index, genderIndex));
+    assert.equal(selected.length, 24);
+    assert.ok(selected.every((index) => index % 2 === genderIndex));
+    assert.ok(selected.every((index) => Math.floor(index / 96) < crowdLodApi.HIGH_DETAIL_CROWD_ROW_LIMIT));
+  }
 });
 
 test('players use realistic materials and natural human proportions', () => {

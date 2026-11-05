@@ -1,5 +1,6 @@
 import * as THREE from 'three';
 import type { Te4CourtSurface } from '@/lib/te4DmoTypes';
+import { buildStadiumArchitecture } from './DmoStadiumArchitecture';
 
 export type PlayerRig = {
   detailed?: { update: () => void };
@@ -35,8 +36,11 @@ export type PlayerRig = {
 
 export type CrowdRig = {
   update: (timeSeconds: number, applauding: boolean, ballPosition?: THREE.Vector3) => void;
-  seats: Array<{ x: number; y: number; z: number; facing: number }>;
+  seats: Array<{ x: number; y: number; z: number; row: number; facing: number }>;
   replacePeople: (update: CrowdRig['update']) => void;
+  highDetailEnabled: boolean;
+  setHighDetailEnabled: (enabled: boolean) => void;
+  setHighDetailModel: (template: THREE.Group, genderIndex: number) => void;
 };
 
 export type CourtFixtureRig = {
@@ -229,6 +233,7 @@ export function buildStadiumEnvironment(scene: THREE.Scene, indoor = false) {
       stadium.add(fixture);
     }
   }
+  stadium.add(buildStadiumArchitecture(indoor));
   scene.add(stadium);
   for (const [x, z] of [[-18, -13], [-18, 13], [18, -13], [18, 13]] as const) {
     const spot = new THREE.SpotLight(0xfff0d7, indoor ? 8 : 5, 48, Math.PI / 5, 0.68, 2);
@@ -990,6 +995,9 @@ export function buildCrowd(scene: THREE.Scene) {
   let detailedUpdate: CrowdRig['update'] | undefined;
   const crowdRig: CrowdRig = {
     seats: spectators.map((spectator) => ({ ...spectator, y: platformBaseY(spectator.row) })),
+    highDetailEnabled: true,
+    setHighDetailEnabled: (enabled) => { crowdRig.highDetailEnabled = enabled; },
+    setHighDetailModel: () => {},
     replacePeople: (update) => {
       for (const mesh of staticInstances) {
         if (mesh !== seatMesh && mesh !== seatBackMesh && mesh !== shoeMesh) mesh.visible = false;
