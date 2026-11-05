@@ -61,8 +61,13 @@ import {
   type PlayerRig,
 } from './DmoLiveCourt3DScene';
 import styles from './DmoLiveCourt3D.module.css';
+import { attachHumanPlayer, disposeHumanModel, loadHumanModel } from './DmoHumanModels';
+import { attachHumanCrowd } from './DmoHumanCrowd';
+import { racketContactOrientation, racketGripWrist } from './DmoRacketOrientation';
+import { loadArticulatedHand } from './DmoArticulatedHands';
 
 type Props = {
+  modelAssetBase?: string;
   snapshot: Te4LiveSnapshot;
   surface: Te4CourtSurface;
   playbackSpeed: Te4DmoReplaySpeed;
@@ -128,6 +133,7 @@ function playSample(
 }
 
 function ThreeCourt({
+  modelAssetBase,
   snapshot,
   surface,
   playbackSpeed,
@@ -193,6 +199,7 @@ function ThreeCourt({
   const [crowdVolume, setCrowdVolume] = useState(0.24);
   const [effectsVolume, setEffectsVolume] = useState(0.9);
   const [hasCourtData, setHasCourtData] = useState(snapshot.court.length > 0);
+  const [modelStatus, setModelStatus] = useState<'loading' | 'ready' | 'failed'>('loading');
   const surfaceLabel = courtSurfaceDisplayName(surface);
   const [shotCallout, setShotCallout] = useState<{
     player: string;
@@ -329,12 +336,14 @@ function ThreeCourt({
       onUnsupported();
       return;
     }
-    renderer.setPixelRatio(Math.min(window.devicePixelRatio || 1, 1.5));
+    // A restrained high-DPI cap keeps the reconstructed scene crisp on retina
+    // screens without multiplying crowd and shadow fill cost on mobile GPUs.
+    renderer.setPixelRatio(Math.min(window.devicePixelRatio || 1, 1.75));
     renderer.outputColorSpace = THREE.SRGBColorSpace;
     renderer.toneMapping = THREE.ACESFilmicToneMapping;
-    renderer.toneMappingExposure = 1.12;
+    renderer.toneMappingExposure = 1.0;
     renderer.shadowMap.enabled = true;
-    renderer.shadowMap.type = THREE.PCFShadowMap;
+    renderer.shadowMap.type = THREE.PCFSoftShadowMap;
     renderer.domElement.className = styles.canvas;
     renderer.domElement.setAttribute('role', 'img');
     const initialPlayers = sceneDataRef.current.snapshot.players;
@@ -368,8 +377,8 @@ function ThreeCourt({
       setCameraView('custom');
     });
 
-    scene.add(new THREE.HemisphereLight(0xe2e8f2, 0x303b4b, 1.9));
-    const keyLight = new THREE.DirectionalLight(0xfff2d5, 3.2);
+    scene.add(new THREE.HemisphereLight(0xe2e4df, 0x34383a, 1.25));
+    const keyLight = new THREE.DirectionalLight(0xfff0dc, 2.35);
     keyLight.position.set(-8, 22, 9);
     keyLight.castShadow = true;
     keyLight.shadow.mapSize.set(1024, 1024);
@@ -378,7 +387,7 @@ function ThreeCourt({
     keyLight.shadow.camera.top = 25;
     keyLight.shadow.camera.bottom = -25;
     scene.add(keyLight);
-    const fillLight = new THREE.DirectionalLight(0xb3c4df, 1.2);
+    const fillLight = new THREE.DirectionalLight(0xc4d0d0, 0.72);
     fillLight.position.set(17, 9, -14);
     scene.add(fillLight);
 
@@ -389,7 +398,40 @@ function ThreeCourt({
       makePlayer(PALETTE.shirtOne, 0x335d58, isWta),
       makePlayer(PALETTE.shirtTwo, 0x514b61, isWta),
     ];
+    players.forEach(({ root }, index) => {
+      root.userData.dominantHandedness = sceneDataRef.current.snapshot.handedness?.[index] ?? 'right';
+    });
     players.forEach(({ root }) => scene.add(root));
+    const modelLoad = new AbortController();
+    setModelStatus('loading');
+    Promise.allSettled([
+      loadHumanModel(isWta ? 'female' : 'male', 'player', modelLoad.signal, modelAssetBase),
+      loadHumanModel('male', 'crowd', modelLoad.signal, modelAssetBase),
+      loadHumanModel('female', 'crowd', modelLoad.signal, modelAssetBase),
+      loadArticulatedHand(modelLoad.signal, modelAssetBase),
+    ]).then((results) => {
+      try {
+        if (modelLoad.signal.aborted) return;
+        const [player, maleCrowd, femaleCrowd, hand] = results;
+        if (player.status === 'fulfilled' && hand.status === 'fulfilled') {
+          attachHumanPlayer(player.value, players[0], PALETTE.shirtOne, hand.value);
+          attachHumanPlayer(player.value, players[1], PALETTE.shirtTwo, hand.value);
+        }
+        if (maleCrowd.status === 'fulfilled' && femaleCrowd.status === 'fulfilled') {
+          attachHumanCrowd(scene, crowdRig, [maleCrowd.value, femaleCrowd.value]);
+        }
+        const failed = results.find((result) => result.status === 'rejected');
+        if (failed?.status === 'rejected') throw failed.reason;
+        setModelStatus('ready');
+      } finally {
+        // Visible instances retain texture maps; discard only the unused template buffers.
+        results.forEach((result) => { if (result.status === 'fulfilled') disposeHumanModel(result.value, modelLoad.signal.aborted); });
+      }
+    }).catch((error: unknown) => {
+      if (modelLoad.signal.aborted) return;
+      console.error('Detailed DMO character models could not load.', error);
+      setModelStatus('failed');
+    });
     const ball = new THREE.Mesh(
       new THREE.SphereGeometry(BALL_RADIUS, 18, 14),
       new THREE.MeshStandardMaterial({
@@ -427,7 +469,8 @@ function ThreeCourt({
       const compactFrame = bounds.width <= 720;
       camera.fov = compactFrame ? 38 : 34;
       camera.updateProjectionMatrix();
-      const responsiveScale = compactFrame ? 0.82 : 1;
+      // Narrow screens must pull back, not crop out the near-baseline player.
+      const responsiveScale = compactFrame ? 1.22 : 1;
       const activeView = cameraViewRef.current;
       if (activeView === 'court') {
         camera.position.copy(DEFAULT_CAMERA).multiplyScalar(responsiveScale);
@@ -617,11 +660,11 @@ function ThreeCourt({
         0,
         1,
       );
-      rig.face.leftEye.scale.y = 0.82 - effort * 0.16;
-      rig.face.rightEye.scale.y = 0.82 - effort * 0.16;
+      rig.face.leftEye.scale.y = 0.68 - effort * 0.1;
+      rig.face.rightEye.scale.y = 0.68 - effort * 0.1;
       rig.face.mouth.scale.y = 0.16 + effort * 0.84;
-      rig.face.leftBrow.rotation.z = Math.PI / 2 + 0.12 + effort * 0.1;
-      rig.face.rightBrow.rotation.z = Math.PI / 2 - 0.12 - effort * 0.1;
+      rig.face.leftBrow.rotation.z = 0.04 + effort * 0.07;
+      rig.face.rightBrow.rotation.z = -0.04 - effort * 0.07;
       const leftHip = new THREE.Vector3(-0.13, 0.90 + bodyBounce - crouch * 0.75, 0);
       const rightHip = new THREE.Vector3(0.13, 0.90 + bodyBounce - crouch * 0.75, 0);
       const leftFoot = new THREE.Vector3(
@@ -752,9 +795,25 @@ function ThreeCourt({
       const serveLoadRotation = resting.clone().multiply(
         new THREE.Quaternion().setFromEuler(new THREE.Euler(-strokeSide * 0.72, 0, -strokeSide * 0.78)),
       );
-      const contactRotation = new THREE.Quaternion().setFromUnitVectors(
-        new THREE.Vector3(0, 1, 0), new THREE.Vector3(...contact.axis),
-      );
+      // Resolve the string-bed roll from the outgoing flight at the shot,
+      // rather than pointing only the shaft at the ball and leaving its face
+      // in an arbitrary upright orientation. Use observed movement when the
+      // live buffer does not yet include the post-contact samples.
+      const flightStart = event
+        ? interpolateLiveCourtFrame(samples, Math.min(lastFrame, event.frame + 1), maxGapFrames) ?? prior
+        : prior;
+      const flightEnd = event
+        ? interpolateLiveCourtFrame(samples, Math.min(lastFrame, event.frame + 4), maxGapFrames) ?? later
+        : later;
+      const flight = new THREE.Vector3(
+        flightEnd[0] - flightStart[0],
+        flightEnd[2] - flightStart[2],
+        flightEnd[1] - flightStart[1],
+      ).applyAxisAngle(new THREE.Vector3(0, 1, 0), -facing);
+      // Both sides of the string bed are equivalent; keep a stable facing
+      // sign so a transition from incoming to outgoing flight cannot flip it.
+      if (flight.z < 0) flight.negate();
+      const contactRotation = racketContactOrientation(new THREE.Vector3(...contact.axis), flight);
       const followRotation = contactRotation.clone().multiply(
         new THREE.Quaternion().setFromEuler(new THREE.Euler(
           0,
@@ -771,9 +830,24 @@ function ThreeCourt({
       if (impactWeight > 0) rig.racket.quaternion.slerp(contactRotation, impactWeight);
       if (shapedFollowThrough > 0) rig.racket.quaternion.slerp(followRotation, shapedFollowThrough);
       if (serveFollowThrough > 0) rig.racket.quaternion.slerp(serveFollowRotation, serveFollowThrough);
-      // Keep the dominant palm and curled fingers aligned with the grip as
-      // the racket turns through serves and groundstrokes.
+      // Preserve the original unarticulated hand surface; do not sculpt
+      // fingertips or force a wrist roll to simulate missing finger joints.
+      rig.root.userData.dominantHandedness = handedness;
       dominantMesh.quaternion.copy(rig.racket.quaternion);
+      const wrist = racketGripWrist(rig.racket.position, rig.racket.quaternion, handedness === 'left');
+      dominantElbow.copy(elbowPosition(dominantShoulder, wrist));
+      poseLimb(dominantUpperArm, dominantShoulder, dominantElbow);
+      dominantElbowMesh.position.copy(dominantElbow);
+      poseLimb(dominantForearm, dominantElbow, wrist);
+      rig.root.userData.twoHandedGrip = twoHandedStroke && (impactWeight > 0 || shapedBackswing > 0 || shapedFollowThrough > 0);
+      if (rig.root.userData.twoHandedGrip) {
+        const supportWrist = racketGripWrist(nonDominantHand, rig.racket.quaternion, handedness !== 'left');
+        nonDominantElbow.copy(elbowPosition(nonDominantShoulder, supportWrist));
+        poseLimb(nonDominantUpperArm, nonDominantShoulder, nonDominantElbow);
+        nonDominantElbowMesh.position.copy(nonDominantElbow);
+        poseLimb(nonDominantForearm, nonDominantElbow, supportWrist);
+      }
+      rig.detailed?.update();
     };
 
     const animate = (now: number) => {
@@ -1033,7 +1107,7 @@ function ThreeCourt({
       controls.target.set(0, 0.5, 0);
       const compactFrame = viewportRef.current?.getBoundingClientRect().width ?? window.innerWidth;
       const compactViewport = compactFrame <= 720;
-      const narrowScale = compactViewport ? 0.82 : 1;
+      const narrowScale = compactViewport ? 1.22 : 1;
       if (view === 'aerial') camera.position.set(0, compactViewport ? 46 : 60, 0.1);
       else if (view === 'tv') camera.position.set(0, 24 * narrowScale, 46 * narrowScale);
       else if (view === 'court') camera.position.copy(DEFAULT_CAMERA).multiplyScalar(narrowScale);
@@ -1081,6 +1155,7 @@ function ThreeCourt({
     viewport.addEventListener('courtplayerpan', onPlayerPan);
 
     return () => {
+      modelLoad.abort();
       window.cancelAnimationFrame(animation);
       observer.disconnect();
       controls.dispose();
@@ -1097,7 +1172,11 @@ function ThreeCourt({
         if (object instanceof THREE.Mesh || object instanceof THREE.Line) {
           geometries.add(object.geometry);
           const objectMaterials = Array.isArray(object.material) ? object.material : [object.material];
-          objectMaterials.forEach((item) => materials.add(item));
+          objectMaterials.forEach((item) => {
+            materials.add(item);
+            Object.values(item).forEach((value) => { if (value instanceof THREE.Texture) textures.add(value); });
+          });
+          if (object instanceof THREE.SkinnedMesh) object.skeleton.dispose();
         }
         if (object instanceof THREE.Sprite) {
           materials.add(object.material);
@@ -1108,7 +1187,7 @@ function ThreeCourt({
       materials.forEach((item) => item.dispose());
       textures.forEach((texture) => texture.dispose());
     };
-  }, [fullReplay, isWta, onUnsupported, snapshot.filename]);
+  }, [fullReplay, isWta, modelAssetBase, onUnsupported, snapshot.filename]);
 
   const requestZoom = (factor: number) => {
     viewportRef.current?.dispatchEvent(new CustomEvent<number>('courtzoom', { detail: factor }));
@@ -1403,6 +1482,13 @@ function ThreeCourt({
         )}
         <DmoLiveBufferingOverlay buffering={buffering} />
       </div>
+      {modelStatus !== 'ready' && (
+        <p className={styles.modelStatus} role="status">
+          {modelStatus === 'loading'
+            ? 'Loading textured character models…'
+            : 'Detailed characters could not load. Simplified reconstruction is shown.'}
+        </p>
+      )}
       <div className={styles.legend}>
         <span><i className={styles.playerOne} />{snapshot.players[0]}</span>
         <span><i className={styles.playerTwo} />{snapshot.players[1]}</span>

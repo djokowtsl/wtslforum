@@ -1,3 +1,8 @@
+.modelStatus {
+  margin: 6px 0;
+  color: var(--muted-foreground, #87908c);
+  font-size: 12px;
+}
 .scene {
   overflow: hidden;
   border: 1px solid rgba(152, 174, 207, .24);

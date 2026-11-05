@@ -14,14 +14,16 @@ for (let frame = 0; frame < 1200; frame++) {
   const shot = Math.floor(frame / 60);
   const progress = (frame % 60) / 60;
   const direction = shot % 2 === 0 ? 1 : -1;
-  const ballX = direction * (-1500 + progress * 3000);
+  const ballX = direction * (-1050 + progress * 2100);
   const ballZ = Math.sin(frame * 0.018) * 260;
+  const playerOneX = -1180 + Math.sin(frame * 0.008) * 80;
+  const playerOneZ = Math.sin(frame * 0.009) * 200;
+  const playerTwoX = 1180 + Math.cos(frame * 0.009) * 80;
+  const playerTwoZ = Math.cos(frame * 0.008) * 200;
   const bounce = progress < 0.72
     ? (1 - progress / 0.72) * (80 + progress * 450)
     : ((progress - 0.72) / 0.28) * 90;
-  court.push([ballX, ballZ, bounce + 4, -1600 + Math.sin(frame * 0.008) * 180,
-    Math.sin(frame * 0.022) * 220, 1550 + Math.cos(frame * 0.009) * 180,
-    -Math.sin(frame * 0.021) * 230]);
+  court.push([ballX, ballZ, bounce + 4, playerOneX, playerOneZ, playerTwoX, playerTwoZ]);
   indices.push(frame);
   if (frame % 60 === 0) events.push({
     frame, kind: 'shot', player: shot % 2 === 0 ? 1 : 2,
