@@ -91,6 +91,42 @@ test('reachable contact alignment rotates the upper chain without changing foot 
   }
 });
 
+test('between-shot upper-body ready pose brings the free hand forward and preserves the legs', () => {
+  for (const handedness of ['right', 'left']) {
+    const side = handedness === 'right' ? 'r' : 'l';
+    const support = side === 'r' ? 'l' : 'r';
+    const resting = player(handedness);
+    resting.update();
+    const restingSupport = resting.pose.point(`hand_${support}`);
+    const feetBefore = ['foot_l', 'foot_r'].map(name => ({
+      name,
+      point: resting.pose.point(name),
+      rotation: resting.pose.bones.get(name).getWorldQuaternion(new THREE.Quaternion()),
+    }));
+
+    const ready = player(handedness);
+    ready.rig.root.userData.groundstrokePlayback = capture.readyPosePlayback(handedness, 'upper');
+    ready.update();
+    const readySupport = ready.pose.point(`hand_${support}`);
+    assert.ok(readySupport.z > restingSupport.z + 0.12,
+      `${handedness}: the free hand should move into the forward ready position`);
+
+    const primaryRotation = ready.rig.root.getWorldQuaternion(new THREE.Quaternion()).invert()
+      .multiply(ready.pose.bones.get(`hand_${side}`).getWorldQuaternion(new THREE.Quaternion()));
+    const grasp = ready.pose.point(`hand_${side}`)
+      .add(ready.grips[side].centre.clone().multiplyScalar(1.075).applyQuaternion(primaryRotation));
+    const gripError = ready.rig.racket.position.distanceTo(grasp);
+    assert.ok(gripError < 1e-6,
+      `${handedness}: the racket must remain attached to the dominant hand (${gripError})`);
+    for (const foot of feetBefore) {
+      assert.ok(ready.pose.point(foot.name).distanceTo(foot.point) < 1e-8,
+        'the ready pose must not change the accepted foot placement');
+      assert.ok(angle(ready.pose.bones.get(foot.name).getWorldQuaternion(new THREE.Quaternion()), foot.rotation) < 1e-6,
+        'the ready pose must not change the accepted foot orientation');
+    }
+  }
+});
+
 test('one-handed backhand selection keeps the secondary fingers open despite an old two-hand flag', () => {
   for (const handedness of ['right', 'left']) {
     const p = player(handedness), secondary = handedness === 'right' ? 'l' : 'r';
