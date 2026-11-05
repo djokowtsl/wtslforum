@@ -23,9 +23,11 @@ const articulated = await loadTs('../components/DmoArticulatedHands.ts', { './Dm
 const nativeGrip = await loadTs('../components/DmoNativeGrip.ts');
 const capturedGroundstroke = await import('../components/DmoCapturedGroundstroke.ts');
 const nativeKit = await loadTs('../components/DmoNativeKit.ts');
+const groundstrokeRig = await loadTs('../components/DmoGroundstrokeRig.ts', { './DmoRacketOrientation': racketPose });
 const nativePlayer = await loadTs('../components/DmoNativePlayer.ts', {
   './DmoRacketOrientation': racketPose, './DmoNativeGrip': nativeGrip, './DmoNativeKit': nativeKit,
   './DmoCapturedGroundstroke': capturedGroundstroke,
+  './DmoGroundstrokeRig': groundstrokeRig,
 });
 const humans = await loadTs('../components/DmoHumanModels.ts', {
   './DmoRacketOrientation': racketPose, './DmoArticulatedHands': articulated, './DmoNativePlayer': nativePlayer,

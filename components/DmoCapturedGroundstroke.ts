@@ -17,6 +17,9 @@ export interface GroundstrokePlayback {
   handedness: DominantHandedness;
   scope?: 'full' | 'upper';
   rootOffset?: boolean;
+  hands?: 'one' | 'two';
+  /** Recorded contact ball position in the player's local court space. */
+  contactTarget?: [number, number, number];
 }
 
 export interface CapturedBodyHints {

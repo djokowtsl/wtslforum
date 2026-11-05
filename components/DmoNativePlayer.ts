@@ -4,11 +4,8 @@ import type { PlayerRig } from './DmoLiveCourt3DScene';
 import { racketContactOrientation } from './DmoRacketOrientation';
 import { makeNativeGrip } from './DmoNativeGrip';
 import { dressNativePlayer } from './DmoNativeKit';
-import {
-  DmoCapturedGroundstroke,
-  type GroundstrokeMotionSources,
-  type GroundstrokePlayback,
-} from './DmoCapturedGroundstroke';
+import { DmoCapturedGroundstroke, type GroundstrokeMotionSources, type GroundstrokePlayback } from './DmoCapturedGroundstroke';
+import { DmoGroundstrokeRig } from './DmoGroundstrokeRig';
 
 const UP = new THREE.Vector3(0, 1, 0);
 const BODY_SCALE = 1.075;
@@ -21,10 +18,8 @@ function ends(mesh: THREE.Mesh) {
 export class NativePlayerPose {
   readonly bones = new Map<string, THREE.Bone>();
   readonly rest = new Map<string, {
-    position: THREE.Vector3;
-    rotation: THREE.Quaternion;
-    direction: THREE.Vector3;
-    local: THREE.Quaternion;
+    position: THREE.Vector3; rotation: THREE.Quaternion;
+    direction: THREE.Vector3; local: THREE.Quaternion;
   }>();
   constructor(readonly model: THREE.Group, readonly space: THREE.Group) {
     model.updateMatrixWorld(true);
@@ -48,8 +43,7 @@ export class NativePlayerPose {
   reset() {
     this.rest.forEach((rest, name) => {
       const bone = this.bones.get(name)!;
-      bone.position.copy(rest.position);
-      bone.quaternion.copy(rest.local);
+      bone.position.copy(rest.position); bone.quaternion.copy(rest.local);
     });
     this.model.updateMatrixWorld(true);
   }
@@ -105,12 +99,7 @@ export function nativeTwoBone(
   return { elbow, wrist };
 }
 
-export function attachNativePlayer(
-  template: THREE.Group,
-  rig: PlayerRig,
-  shirtColor: number,
-  motionSources: GroundstrokeMotionSources,
-) {
+export function attachNativePlayer(template: THREE.Group, rig: PlayerRig, shirtColor: number, motionSources: GroundstrokeMotionSources) {
   const model = clone(template) as THREE.Group;
   model.name = 'wtsl-continuous-player';
   dressNativePlayer(model, shirtColor, template.userData.gender === 'female');
@@ -138,14 +127,11 @@ export function attachNativePlayer(
   const localRacket = { l: racketContactOrientation(grips.l.shaft, grips.l.palm),
     r: racketContactOrientation(grips.r.shaft, grips.r.palm) };
   const capturedGroundstroke = new DmoCapturedGroundstroke(model, rig.root, pose.rest, motionSources);
+  const groundstrokes = new DmoGroundstrokeRig(rig, model, pose, capturedGroundstroke, grips, localRacket, BODY_SCALE, nativeTwoBone);
   const update = () => {
     pose.reset();
-    const delta = rig.hip.position.clone().sub(pose.point('pelvis'));
-    model.position.add(delta);
+    model.position.add(rig.hip.position.clone().sub(pose.point('pelvis')));
     pose.orient('pelvis', rig.hip.quaternion.clone().multiply(pose.rest.get('pelvis')!.rotation));
-    // The DMO pose already gives the torso's pitch, roll and turn. Applying
-    // that same absolute body rotation to each native spine joint preserves
-    // its bind offsets while avoiding cumulative bends through the torso.
     for (const name of ['spine_01', 'spine_02', 'spine_03']) {
       pose.orient(name, rig.body.quaternion.clone().multiply(pose.rest.get(name)!.rotation));
     }
@@ -155,17 +141,16 @@ export function attachNativePlayer(
     pose.aim('neck_01', neckPosition.add(headDirection));
     pose.orient('head', rig.head.quaternion.clone().multiply(pose.rest.get('head')!.rotation));
     const playback = rig.root.userData.groundstrokePlayback as GroundstrokePlayback | undefined;
-    const capturedBody = playback ? capturedGroundstroke.apply(playback) : null;
+    const coordinated = playback && playback.stroke !== 'serve' && playback.scope !== 'upper' ? playback : undefined;
+    // Leave the accepted serve path unchanged. For groundstrokes the legacy
+    // arm solve supplies only the blend's starting pose, BEFORE the capture.
+    let capturedBody = playback && !coordinated ? capturedGroundstroke.apply(playback) : null;
     const dominant = rig.root.userData.dominantHandedness === 'left' ? 'l' : 'r';
-    const sides = [dominant, dominant === 'l' ? 'r' : 'l'] as const;
-    for (const side of sides) {
-      const left = side === 'l', primary = side === dominant;
-      const arm = left ? rig.leftArm : rig.rightArm;
-      const forearm = left ? rig.leftForearm : rig.rightForearm;
-      const [, elbowHint] = ends(arm);
-      const [, relaxedWrist] = ends(forearm);
-      // Keep the native clavicle at its anatomical rest offset. The procedural
-      // dummy shoulder is much wider than this asset's clavicle can reach.
+    for (const side of [dominant, dominant === 'l' ? 'r' : 'l'] as const) {
+      const primary = side === dominant;
+      const arm = side === 'l' ? rig.leftArm : rig.rightArm;
+      const forearm = side === 'l' ? rig.leftForearm : rig.rightForearm;
+      const [, elbowHint] = ends(arm), [, relaxedWrist] = ends(forearm);
       const shoulder = pose.point(`upperarm_${side}`);
       const holding = primary || Boolean(rig.root.userData.twoHandedGrip);
       const grip = grips[side];
@@ -194,44 +179,30 @@ export function attachNativePlayer(
       if (orientation) pose.orient(`hand_${side}`, orientation);
       else {
         const lower = pose.bones.get(`lowerarm_${side}`)!;
-        const local = rig.root.getWorldQuaternion(new THREE.Quaternion()).invert()
-          .multiply(lower.getWorldQuaternion(new THREE.Quaternion()))
-          .multiply(pose.rest.get(`hand_${side}`)!.local);
-        pose.orient(`hand_${side}`, local);
+        pose.orient(`hand_${side}`, rig.root.getWorldQuaternion(new THREE.Quaternion()).invert()
+          .multiply(lower.getWorldQuaternion(new THREE.Quaternion())).multiply(pose.rest.get(`hand_${side}`)!.local));
       }
       if (primary) rig.racket.position.copy(pose.point(`hand_${side}`))
         .add(grip.centre.clone().multiplyScalar(BODY_SCALE).applyQuaternion(orientation!));
     }
-    if (!capturedBody) {
-      for (const side of ['l', 'r'] as const) {
-        // Legacy legs use screen-space labels, opposite anatomical asset labels.
-        const thigh = side === 'l' ? rig.rightLeg : rig.leftLeg;
-        const calf = side === 'l' ? rig.rightCalf : rig.leftCalf;
-        const [, knee] = ends(thigh), [, ankle] = ends(calf);
-        const solved = nativeTwoBone(pose.point(`thigh_${side}`), ankle, legLengths[side][0], legLengths[side][1], knee);
-        pose.aim(`thigh_${side}`, solved.elbow);
-        pose.aim(`calf_${side}`, solved.wrist);
-        pose.orient(`foot_${side}`, pose.rest.get(`foot_${side}`)!.rotation);
-      }
+    if (coordinated) capturedBody = groundstrokes.apply(coordinated);
+    else delete rig.root.userData.nativeGroundstrokeContact;
+    if (!capturedBody) for (const side of ['l', 'r'] as const) {
+      const thigh = side === 'l' ? rig.rightLeg : rig.leftLeg;
+      const calf = side === 'l' ? rig.rightCalf : rig.leftCalf;
+      const [, knee] = ends(thigh), [, ankle] = ends(calf);
+      const solved = nativeTwoBone(pose.point(`thigh_${side}`), ankle, legLengths[side][0], legLengths[side][1], knee);
+      pose.aim(`thigh_${side}`, solved.elbow);
+      pose.aim(`calf_${side}`, solved.wrist);
+      pose.orient(`foot_${side}`, pose.rest.get(`foot_${side}`)!.rotation);
     }
     pose.finish();
-    {
-      const placeCapturedShoe = (shoe: THREE.Object3D, footName: string) => {
-        const foot = pose.bones.get(footName)!;
-        const ankle = pose.point(footName);
-        // Shoe geometry is already horizontal; a bone's bind frame is not.
-        // Apply only the foot's rotation away from that bind frame.
-        shoe.quaternion.copy(
-          rig.root.getWorldQuaternion(new THREE.Quaternion()).invert()
-            .multiply(foot.getWorldQuaternion(new THREE.Quaternion()))
-            .multiply(pose.rest.get(footName)!.rotation.clone().invert()),
-        ).normalize();
-        shoe.position.copy(new THREE.Vector3(0, -0.045, 0.05)
-          .applyQuaternion(shoe.quaternion).add(ankle));
-      };
-      // The legacy shoe groups use screen-space labels, opposite anatomical sides.
-      placeCapturedShoe(rig.leftShoe, 'foot_r');
-      placeCapturedShoe(rig.rightShoe, 'foot_l');
+    for (const [shoe, name] of [[rig.leftShoe, 'foot_r'], [rig.rightShoe, 'foot_l']] as const) {
+      const foot = pose.bones.get(name)!;
+      shoe.quaternion.copy(rig.root.getWorldQuaternion(new THREE.Quaternion()).invert()
+        .multiply(foot.getWorldQuaternion(new THREE.Quaternion()))
+        .multiply(pose.rest.get(name)!.rotation.clone().invert())).normalize();
+      shoe.position.copy(new THREE.Vector3(0, -0.045, 0.05).applyQuaternion(shoe.quaternion).add(pose.point(name)));
     }
   };
   rig.detailed = { update };
