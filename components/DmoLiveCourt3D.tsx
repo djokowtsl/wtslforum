@@ -329,12 +329,14 @@ function ThreeCourt({
       onUnsupported();
       return;
     }
-    renderer.setPixelRatio(Math.min(window.devicePixelRatio || 1, 1.5));
+    // A restrained high-DPI cap keeps the reconstructed scene crisp on retina
+    // screens without multiplying crowd and shadow fill cost on mobile GPUs.
+    renderer.setPixelRatio(Math.min(window.devicePixelRatio || 1, 1.75));
     renderer.outputColorSpace = THREE.SRGBColorSpace;
     renderer.toneMapping = THREE.ACESFilmicToneMapping;
-    renderer.toneMappingExposure = 1.12;
+    renderer.toneMappingExposure = 1.0;
     renderer.shadowMap.enabled = true;
-    renderer.shadowMap.type = THREE.PCFShadowMap;
+    renderer.shadowMap.type = THREE.PCFSoftShadowMap;
     renderer.domElement.className = styles.canvas;
     renderer.domElement.setAttribute('role', 'img');
     const initialPlayers = sceneDataRef.current.snapshot.players;
@@ -368,8 +370,8 @@ function ThreeCourt({
       setCameraView('custom');
     });
 
-    scene.add(new THREE.HemisphereLight(0xe2e8f2, 0x303b4b, 1.9));
-    const keyLight = new THREE.DirectionalLight(0xfff2d5, 3.2);
+    scene.add(new THREE.HemisphereLight(0xe2e4df, 0x34383a, 1.25));
+    const keyLight = new THREE.DirectionalLight(0xfff0dc, 2.35);
     keyLight.position.set(-8, 22, 9);
     keyLight.castShadow = true;
     keyLight.shadow.mapSize.set(1024, 1024);
@@ -378,7 +380,7 @@ function ThreeCourt({
     keyLight.shadow.camera.top = 25;
     keyLight.shadow.camera.bottom = -25;
     scene.add(keyLight);
-    const fillLight = new THREE.DirectionalLight(0xb3c4df, 1.2);
+    const fillLight = new THREE.DirectionalLight(0xc4d0d0, 0.72);
     fillLight.position.set(17, 9, -14);
     scene.add(fillLight);
 
@@ -617,11 +619,11 @@ function ThreeCourt({
         0,
         1,
       );
-      rig.face.leftEye.scale.y = 0.82 - effort * 0.16;
-      rig.face.rightEye.scale.y = 0.82 - effort * 0.16;
+      rig.face.leftEye.scale.y = 0.68 - effort * 0.1;
+      rig.face.rightEye.scale.y = 0.68 - effort * 0.1;
       rig.face.mouth.scale.y = 0.16 + effort * 0.84;
-      rig.face.leftBrow.rotation.z = Math.PI / 2 + 0.12 + effort * 0.1;
-      rig.face.rightBrow.rotation.z = Math.PI / 2 - 0.12 - effort * 0.1;
+      rig.face.leftBrow.rotation.z = 0.04 + effort * 0.07;
+      rig.face.rightBrow.rotation.z = -0.04 - effort * 0.07;
       const leftHip = new THREE.Vector3(-0.13, 0.90 + bodyBounce - crouch * 0.75, 0);
       const rightHip = new THREE.Vector3(0.13, 0.90 + bodyBounce - crouch * 0.75, 0);
       const leftFoot = new THREE.Vector3(
