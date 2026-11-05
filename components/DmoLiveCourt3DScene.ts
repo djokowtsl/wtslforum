@@ -2,6 +2,7 @@ import * as THREE from 'three';
 import type { Te4CourtSurface } from '@/lib/te4DmoTypes';
 
 export type PlayerRig = {
+  detailed?: { update: () => void };
   root: THREE.Group;
   body: THREE.Mesh;
   hip: THREE.Group;
@@ -34,6 +35,8 @@ export type PlayerRig = {
 
 export type CrowdRig = {
   update: (timeSeconds: number, applauding: boolean, ballPosition?: THREE.Vector3) => void;
+  seats: Array<{ x: number; y: number; z: number; facing: number }>;
+  replacePeople: (update: CrowdRig['update']) => void;
 };
 
 export type CourtFixtureRig = {
@@ -984,7 +987,17 @@ export function buildCrowd(scene: THREE.Scene) {
     if (applauding !== previousApplause) mouthMesh.instanceMatrix.needsUpdate = true;
     previousApplause = applauding;
   };
-  const crowdRig: CrowdRig = { update: updateApplausePose };
+  let detailedUpdate: CrowdRig['update'] | undefined;
+  const crowdRig: CrowdRig = {
+    seats: spectators.map((spectator) => ({ ...spectator, y: platformBaseY(spectator.row) })),
+    replacePeople: (update) => {
+      for (const mesh of staticInstances) {
+        if (mesh !== seatMesh && mesh !== seatBackMesh && mesh !== shoeMesh) mesh.visible = false;
+      }
+      detailedUpdate = update;
+    },
+    update: (time, applauding, ballPosition) => (detailedUpdate ?? updateApplausePose)(time, applauding, ballPosition),
+  };
 
   // A low, open-sided retaining bowl gives the seating a clear stadium boundary
   // without placing a roof or scoreboard in aerial and TV camera sightlines.
