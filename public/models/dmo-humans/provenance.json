@@ -34,5 +34,13 @@
     "source": "https://grab3d.com/dl/woman-base-character-rigged/woman-base-character-rigged.glb",
     "sourceSha256": "ea49ef6644dfcaa503b2e009f37b43cf6b2069501201552dc10a5b5ab1fc8bfa",
     "license": "CC0-1.0"
+  },
+  {
+    "filename": "articulated-hand.glb",
+    "bytes": 94004,
+    "source": "https://cdn.jsdelivr.net/npm/@webxr-input-profiles/assets@1.0/dist/profiles/generic-hand/right.glb",
+    "license": "MIT",
+    "notice": "ARTICULATED-HAND-LICENSE.md",
+    "modifications": "Authored finger-joint grasp and mirrored left hand at runtime; mesh positions unchanged."
   }
 ]
