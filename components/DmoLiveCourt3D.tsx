@@ -40,6 +40,14 @@ import {
   type LiveCourtSkidMark,
 } from '@/lib/liveCourtMotion';
 import {
+  advanceGait,
+  gaitFeet,
+  newGaitState,
+  returnReadiness,
+  splitStepLift,
+  type GaitState,
+} from '@/lib/liveCourtGait';
+import {
   clampPointToReach,
   crossedFrame,
   dominantHandX,
@@ -55,6 +63,7 @@ import DmoLiveCourt, { type GruntControlProps } from './DmoLiveCourt';
 import DmoLiveBufferingOverlay from './DmoLiveBufferingOverlay';
 import {
   BALL_RADIUS,
+  COURT_LENGTH,
   PALETTE,
   SCALE,
   buildCourt,
@@ -66,7 +75,12 @@ import {
   type PlayerRig,
 } from './DmoLiveCourt3DScene';
 import styles from './DmoLiveCourt3D.module.css';
-import { attachHumanPlayer, disposeHumanModel, loadHumanModel } from './DmoHumanModels';
+import {
+  attachHumanPlayer,
+  disposeHumanModel,
+  loadHumanModel,
+  type NativePlayerVariant,
+} from './DmoHumanModels';
 import { attachHumanCrowd } from './DmoHumanCrowd';
 import { racketContactOrientation, racketGripElbow, racketGripWrist } from './DmoRacketOrientation';
 
@@ -79,6 +93,7 @@ type Props = {
   isWta?: boolean;
   buffering?: boolean;
   fullReplay?: boolean;
+  nativePlayerVariant?: NativePlayerVariant;
 };
 
 type CameraView =
@@ -145,6 +160,7 @@ function ThreeCourt({
   stadiumAtmosphere = true,
   isWta = false,
   buffering = false,
+  nativePlayerVariant = 'claude',
   gruntsEnabled,
   onGruntsEnabledChange,
   onUnsupported,
@@ -417,8 +433,8 @@ function ThreeCourt({
         if (modelLoad.signal.aborted) return;
         const [player, maleCrowd, femaleCrowd] = results;
         if (player.status === 'fulfilled') {
-          attachHumanPlayer(player.value, players[0], PALETTE.shirtOne);
-          attachHumanPlayer(player.value, players[1], PALETTE.shirtTwo);
+          attachHumanPlayer(player.value, players[0], PALETTE.shirtOne, undefined, nativePlayerVariant);
+          attachHumanPlayer(player.value, players[1], PALETTE.shirtTwo, undefined, nativePlayerVariant);
         }
         if (maleCrowd.status === 'fulfilled' && femaleCrowd.status === 'fulfilled') {
           attachHumanCrowd(scene, crowdRig, [maleCrowd.value, femaleCrowd.value]);
@@ -633,35 +649,56 @@ function ThreeCourt({
       const slideWeight = liveCourtSlideWeight(footworkEventsRef.current, eventPlayer, frame, frameRate);
       const lateralVelocity = velocityX * localXAxis[0] + velocityZ * localXAxis[1];
       const slideDirection = Math.sign(lateralVelocity);
-      const phase = frame * 0.22 + index * Math.PI;
-      const gaitSpeed = speed > 0.12 ? speed : 0;
-      const leftCycle = Math.sin(phase);
-      const rightCycle = Math.sin(phase + Math.PI);
-      const stride = gaitSpeed * 0.19 * (1 - slideWeight * 0.45);
+      const speedMs = Math.hypot(velocityX, velocityZ) * frameRate / 4;
+      const gait = (rig.root.userData.gait as GaitState | undefined) ?? newGaitState();
+      rig.root.userData.gait = gait;
+      const lastRoot = rig.root.userData.lastRootPosition as THREE.Vector3 | undefined;
+      const moved = lastRoot ? rig.root.position.clone().sub(lastRoot) : new THREE.Vector3();
+      rig.root.userData.lastRootPosition = rig.root.position.clone();
+      const travel: [number, number] = moved.length() > 0.6 ? [0, 0] : [
+        (moved.x * localXAxis[0] + moved.z * localXAxis[1]) / rig.root.scale.x,
+        (moved.x * Math.sin(facing) + moved.z * Math.cos(facing)) / rig.root.scale.x,
+      ];
+      const steppingSpeed = speedMs * (1 - slideWeight);
+      advanceGait(gait, travel, steppingSpeed);
+      const [stepA, stepB] = gaitFeet(gait, steppingSpeed);
+      rig.root.userData.locomotionSpeed = steppingSpeed;
+      const phase = gait.phase * Math.PI * 2 + index * Math.PI;
+      const gaitSpeed = gait.amount * Math.min(1, speedMs / 4);
+      const opponentServe = findPlayerShotEvent(events, eventPlayer === 1 ? 2 : 1, frame, 90, 'serve');
+      const framesToServe = opponentServe ? opponentServe.frame - frame : Number.POSITIVE_INFINITY;
+      const ownShotBusy = Boolean(event && frame - event.frame < 14);
+      const ready = opponentServe && !ownShotBusy ? returnReadiness(framesToServe) : 0;
+      const splitStep = opponentServe && !ownShotBusy ? splitStepLift(framesToServe) : 0;
+      const stanceHalfWidth = 0.15 + ready * 0.2;
       const slideSpread = slideDirection * slideWeight * 0.15;
-      const leftLift = (Math.max(0, leftCycle) * gaitSpeed * 0.13 + jump) * (1 - slideWeight * 0.8);
-      const rightLift = (Math.max(0, rightCycle) * gaitSpeed * 0.13 + jump) * (1 - slideWeight * 0.8);
-      const bodyBounce = gaitSpeed * Math.abs(Math.sin(phase * 2)) * 0.035 + jump;
+      const landing = 1 - slideWeight * 0.8;
+      const leftLift = (stepA.lift + jump + splitStep) * landing;
+      const rightLift = (stepB.lift + jump + splitStep) * landing;
+      const bodyBounce = (stepA.lift + stepB.lift) * 0.3 + jump + splitStep;
       const crouch = impactWeight * THREE.MathUtils.clamp((1.05 - ballY) / 0.95, 0, 1) * 0.18
-        + slideWeight * 0.13;
+        + slideWeight * 0.13 + ready * 0.24;
       rig.root.rotation.y = facing;
       const bodyY = 1.22 + bodyBounce - crouch * 0.45;
       const strokeSide = Math.sign(localX || dominantHandX(handedness));
       const trunkTurn = (shapedBackswing * 0.36 - shapedFollowThrough * 0.28
         + servePreparation * 0.22 - serveFollowThrough * 0.16) * strokeSide;
+      const runLean = gait.amount * Math.min(0.16, speedMs * 0.045);
       rig.body.position.set(Math.sin(phase * 0.5) * gaitSpeed * 0.02, bodyY, 0);
       rig.body.rotation.z = THREE.MathUtils.clamp(
         -lateralVelocity * 1.8 - slideDirection * slideWeight * 0.09,
         -0.3,
         0.3,
       );
-      rig.body.rotation.x = crouch * 0.5 + shapedFollowThrough * 0.08 - serveFollowThrough * 0.05;
+      rig.body.rotation.x = crouch * 0.5 + shapedFollowThrough * 0.08 - serveFollowThrough * 0.05
+        + ready * 0.52 + runLean;
       rig.body.rotation.y = trunkTurn;
       rig.hip.position.y = 0.90 + bodyBounce - crouch * 0.75;
+      rig.hip.rotation.x = ready * 0.38 + runLean * 0.5;
       rig.hip.rotation.y = trunkTurn * 0.42;
-      rig.head.position.set(0, 1.73 + bodyBounce * 0.8 - crouch * 0.3, 0);
-      rig.head.rotation.y = THREE.MathUtils.clamp(localX * 0.72, -0.28, 0.28);
-      rig.head.rotation.x = THREE.MathUtils.clamp(-(ballY - 1.45) * 0.08, -0.18, 0.18);
+      rig.head.position.set(0, 1.73 + bodyBounce * 0.8 - crouch * 0.3 - ready * 0.16, ready * 0.4);
+      rig.head.rotation.y = THREE.MathUtils.clamp(localX * 0.72, -0.28, 0.28) * (1 - ready);
+      rig.head.rotation.x = THREE.MathUtils.clamp(-(ballY - 1.45) * 0.08, -0.18, 0.18) - ready * 0.3;
       const effort = THREE.MathUtils.clamp(
         impactWeight * 0.35 + shapedBackswing * 0.18 + shapedFollowThrough * 0.48 + gaitSpeed * 0.16 + jump * 0.32,
         0,
@@ -675,14 +712,14 @@ function ThreeCourt({
       const leftHip = new THREE.Vector3(-0.13, 0.90 + bodyBounce - crouch * 0.75, 0);
       const rightHip = new THREE.Vector3(0.13, 0.90 + bodyBounce - crouch * 0.75, 0);
       const leftFoot = new THREE.Vector3(
-        -0.15 + leftCycle * stride - slideSpread * 0.35,
+        -stanceHalfWidth + stepA.x - slideSpread * 0.35,
         0.1 + leftLift,
-        Math.max(0, leftCycle) * 0.05,
+        stepA.z + ready * 0.05,
       );
       const rightFoot = new THREE.Vector3(
-        0.15 + rightCycle * stride + slideSpread * 0.35,
+        stanceHalfWidth + stepB.x + slideSpread * 0.35,
         0.1 + rightLift,
-        Math.max(0, rightCycle) * 0.05,
+        stepB.z + ready * 0.05,
       );
       const leftKnee = new THREE.Vector3(
         leftHip.x + (leftFoot.x - leftHip.x) * 0.38,
@@ -702,8 +739,8 @@ function ThreeCourt({
       rig.rightKnee.position.copy(rightKnee);
       rig.leftShoe.position.set(leftFoot.x, 0.052 + leftLift, leftFoot.z + 0.05);
       rig.rightShoe.position.set(rightFoot.x, 0.052 + rightLift, rightFoot.z + 0.05);
-      rig.leftShoe.rotation.y = leftCycle * gaitSpeed * 0.12;
-      rig.rightShoe.rotation.y = rightCycle * gaitSpeed * 0.12;
+      rig.leftShoe.rotation.y = 0;
+      rig.rightShoe.rotation.y = 0;
       rig.leftShoe.rotation.z = -slideDirection * slideWeight * 0.08;
       rig.rightShoe.rotation.z = slideDirection * slideWeight * 0.08;
       const dominantX = dominantHandX(handedness);
@@ -742,7 +779,22 @@ function ThreeCourt({
           };
         }
         rig.root.userData.capturedGroundstrokeEvent = capturedEvent;
+        if (contactSample) {
+          // Keep the recorded ball target in rig-local space for the detailed
+          // native player solver to coordinate torso, shoulder and elbow motion.
+          const dx = (contactSample[0] - contactSample[xIndex]) * SCALE;
+          const dz = (contactSample[1] - contactSample[zIndex]) * SCALE;
+          rig.root.userData.contactTarget = {
+            key: `${event.frame}:${capturedEvent.stroke}:${capturedEvent.handedness}`,
+            point: [
+              (dx * localXAxis[0] + dz * localXAxis[1]) / rig.root.scale.x,
+              (Math.max(0, contactSample[2] * SCALE) + BALL_RADIUS) / rig.root.scale.y,
+              (dx * Math.sin(facing) + dz * Math.cos(facing)) / rig.root.scale.x,
+            ],
+          };
+        }
       }
+      if (!capturedEvent) delete rig.root.userData.contactTarget;
       if (capturedEvent) {
         const captureDelta = frame - capturedEvent.frame;
         if (captureDelta < -64 || captureDelta > 22) {
@@ -783,6 +835,14 @@ function ThreeCourt({
       const armPump = Math.sin(phase * 0.55) * gaitSpeed * 0.12;
       const dominantHand = new THREE.Vector3(dominantX, 1.12 + bodyBounce + armPump, 0.06);
       const nonDominantHand = new THREE.Vector3(-dominantX * 0.72, 0.96 + bodyBounce - armPump, 0.1);
+      {
+        // Running arm action: swing the free arm against its same-side leg
+        // with the elbow bent, rather than letting it hang behind the hip.
+        const sameSideStep = dominantX < 0 ? stepB : stepA;
+        nonDominantHand.z += -sameSideStep.z * 0.9 + gait.amount * 0.12;
+        nonDominantHand.y += gait.amount * 0.1 + Math.abs(sameSideStep.z) * 0.15;
+        nonDominantHand.x -= Math.sign(-dominantX) * gait.amount * 0.08;
+      }
       dominantHand.x += dominantX * shapedBackswing * 0.48
         - strokeSide * shapedFollowThrough * 0.42
         - strokeSide * serveFollowThrough * 0.2;
@@ -807,6 +867,10 @@ function ThreeCourt({
         nonDominantHand.z += serveToss * 0.08;
         dominantHand.y += servePreparation * 0.42;
         dominantHand.z -= servePreparation * 0.24;
+      }
+      if (ready > 0) {
+        // Hold the racket low in front during the return stance.
+        dominantHand.lerp(new THREE.Vector3(dominantX * 0.3, 0.7, 0.4), ready);
       }
       const bodyPivot = new THREE.Vector3(0, bodyY, 0);
       const shoulderAxis = new THREE.Vector3(0, 1, 0);
@@ -907,6 +971,14 @@ function ThreeCourt({
       if (impactWeight > 0) rig.racket.quaternion.slerp(contactRotation, impactWeight);
       if (shapedFollowThrough > 0) rig.racket.quaternion.slerp(followRotation, shapedFollowThrough);
       if (serveFollowThrough > 0) rig.racket.quaternion.slerp(serveFollowRotation, serveFollowThrough);
+      if (ready > 0) {
+        const readyShaft = new THREE.Vector3(-Math.sign(dominantX) * 0.55, -0.12, 0.83).normalize();
+        const readyRotation = racketContactOrientation(
+          readyShaft,
+          new THREE.Vector3(0, 1, 0).cross(readyShaft),
+        );
+        rig.racket.quaternion.slerp(readyRotation, ready);
+      }
       // Preserve the original unarticulated hand surface; do not sculpt
       // fingertips or force a wrist roll to simulate missing finger joints.
       rig.root.userData.dominantHandedness = handedness;
@@ -916,7 +988,13 @@ function ThreeCourt({
       poseLimb(dominantUpperArm, dominantShoulder, dominantElbow);
       dominantElbowMesh.position.copy(dominantElbow);
       poseLimb(dominantForearm, dominantElbow, wrist);
-      rig.root.userData.twoHandedGrip = twoHandedStroke && (impactWeight > 0 || shapedBackswing > 0 || shapedFollowThrough > 0);
+      const strokeGrip = twoHandedStroke
+        && (impactWeight > 0 || shapedBackswing > 0 || shapedFollowThrough > 0);
+      rig.root.userData.twoHandedGrip = strokeGrip || ready > 0.5;
+      rig.root.userData.supportGripOffset = strokeGrip ? undefined : 0.2;
+      rig.root.userData.baselineGuard = serving
+        ? { weight: 1 - THREE.MathUtils.smoothstep(strokeDelta, 2, 14), baseline: COURT_LENGTH / 2 }
+        : undefined;
       if (rig.root.userData.twoHandedGrip) {
         const supportWrist = racketGripWrist(nonDominantHand, rig.racket.quaternion, handedness !== 'left');
         nonDominantElbow.copy(racketGripElbow(nonDominantShoulder, supportWrist, rig.racket.quaternion, handedness !== 'left'));

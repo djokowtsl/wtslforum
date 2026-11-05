@@ -5,9 +5,11 @@ import type { PlayerRig } from './DmoLiveCourt3DScene';
 import { racketHandFrame } from './DmoRacketOrientation';
 import { attachArticulatedHands } from './DmoArticulatedHands';
 import { attachNativePlayer } from './DmoNativePlayer';
+import { attachNativePlayer as attachClaudeNativePlayer } from './DmoNativePlayerClaude';
 import type { GroundstrokeMotionSources } from './DmoCapturedGroundstroke';
 
 type Gender = 'male' | 'female';
+export type NativePlayerVariant = 'current' | 'claude';
 const UP = new THREE.Vector3(0, 1, 0);
 const nativeMotionSources = new WeakMap<THREE.Group, GroundstrokeMotionSources>();
 
@@ -160,11 +162,18 @@ function tintKit(mesh: THREE.SkinnedMesh, tint: number) {
   material.vertexColors = true;
 }
 
-export function attachHumanPlayer(template: THREE.Group, rig: PlayerRig, shirtColor: number, handTemplate?: THREE.Group) {
+export function attachHumanPlayer(
+  template: THREE.Group,
+  rig: PlayerRig,
+  shirtColor: number,
+  handTemplate?: THREE.Group,
+  nativePlayerVariant: NativePlayerVariant = 'claude',
+) {
   if (template.userData.continuousPlayer) {
     const motions = nativeMotionSources.get(template);
     if (!motions) throw new Error('Captured forehand, backhand, and serve motion data was not loaded.');
-    return attachNativePlayer(template, rig, shirtColor, motions);
+    const attach = nativePlayerVariant === 'claude' ? attachClaudeNativePlayer : attachNativePlayer;
+    return attach(template, rig, shirtColor, motions);
   }
   const model = clone(template) as THREE.Group;
   model.name = 'wtsl-textured-rigged-player';
