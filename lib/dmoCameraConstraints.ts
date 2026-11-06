@@ -1,5 +1,36 @@
 /** Minimum camera clearance over the flat court surface, in metres. */
 export const MIN_DMO_CAMERA_HEIGHT = 0.8;
+export const DMO_CAMERA_PAN_LIMIT = 7;
+export const DMO_CAMERA_VERTICAL_PAN_LIMIT = 4;
+
+type DmoCameraPoint = { x: number; y: number; z: number };
+
+/** Keep manual panning anchored to the selected court or player view. */
+export function clampDmoCameraTarget(
+  target: DmoCameraPoint,
+  anchor: DmoCameraPoint,
+  horizontalLimit = DMO_CAMERA_PAN_LIMIT,
+  verticalLimit = DMO_CAMERA_VERTICAL_PAN_LIMIT,
+): DmoCameraPoint {
+  return {
+    x: Math.max(anchor.x - horizontalLimit, Math.min(anchor.x + horizontalLimit, target.x)),
+    y: Math.max(anchor.y - verticalLimit, Math.min(anchor.y + verticalLimit, target.y)),
+    z: Math.max(anchor.z - horizontalLimit, Math.min(anchor.z + horizontalLimit, target.z)),
+  };
+}
+
+/** Keep an orbit, including bounded pan, within the venue's seating radius. */
+export function dmoCameraMaxDistanceInsideBowl(
+  target: DmoCameraPoint,
+  interiorRadius: number,
+  panLimit: number,
+  preferredMaxDistance: number,
+) {
+  const targetRadius = Math.hypot(target.x, target.z);
+  const panRadius = Math.SQRT2 * Math.max(0, panLimit);
+  const availableDistance = Math.max(0, interiorRadius - targetRadius - panRadius);
+  return Math.min(Math.max(0, preferredMaxDistance), availableDistance);
+}
 
 /**
  * OrbitControls pans its camera and target together. Lift both by the same

@@ -230,6 +230,13 @@ export function buildStadiumArchitecture(
   const concourseWidth = 2.15;
   const tierRows = venue.tierRows;
   const rowRadiusStart = (row: number) => row * rowWidth + Math.floor(row / tierRows) * concourseWidth;
+  const outerSeatRadius = rowRadiusStart(seatRows - 1) + rowWidth;
+  const interiorSeatEdgeRadius = innerZ + outerSeatRadius;
+  const maxInteriorCameraDistance = Math.min(44, interiorSeatEdgeRadius * 0.82);
+  const maxInteriorCameraPan = Math.min(
+    7,
+    Math.max(0, (interiorSeatEdgeRadius - maxInteriorCameraDistance) / Math.SQRT2),
+  );
   const baseY = 2.7;
   for (let row = 0; row < seatRows; row += 1) {
     const innerRadius = rowRadiusStart(row);
@@ -506,5 +513,9 @@ export function buildStadiumArchitecture(
   stadium.userData.capacity = venue.capacity;
   stadium.userData.seatCount = totalSeats;
   stadium.userData.spectatorCount = occupiedSeats;
+  stadium.userData.outerSeatRadius = outerSeatRadius;
+  stadium.userData.interiorSeatEdgeRadius = interiorSeatEdgeRadius;
+  stadium.userData.maxInteriorCameraDistance = maxInteriorCameraDistance;
+  stadium.userData.maxInteriorCameraPan = maxInteriorCameraPan;
   return stadium;
 }

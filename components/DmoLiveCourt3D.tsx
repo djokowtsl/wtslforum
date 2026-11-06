@@ -10,6 +10,7 @@ import {
   type Te4LiveSnapshot,
 } from '@/lib/te4DmoLive';
 import type { Te4CourtSurface } from '@/lib/te4DmoTypes';
+import { clampDmoCameraTarget, dmoCameraMaxDistanceInsideBowl } from '@/lib/dmoCameraConstraints';
 import {
   CAPTURE_RECOVERY_FRAMES,
   GROUNDSTROKE_LEAD_FRAMES,
@@ -419,25 +420,56 @@ function ThreeCourt({
       sceneDataRef.current.scoreboard,
       sceneDataRef.current.snapshot.stadium,
     );
+    const stadiumCameraData = scene.getObjectByName('wtsl-stadium-superstructure')?.userData;
+    const stadiumCameraLimit = stadiumCameraData?.maxInteriorCameraDistance;
+    const cameraMaxDistance = typeof stadiumCameraLimit === 'number' && Number.isFinite(stadiumCameraLimit)
+      ? stadiumCameraLimit
+      : 40;
+    const cameraInteriorRadius = typeof stadiumCameraData?.interiorSeatEdgeRadius === 'number'
+      && Number.isFinite(stadiumCameraData.interiorSeatEdgeRadius)
+      ? stadiumCameraData.interiorSeatEdgeRadius
+      : cameraMaxDistance + 7 * Math.SQRT2;
+    const cameraPanLimit = typeof stadiumCameraData?.maxInteriorCameraPan === 'number'
+      && Number.isFinite(stadiumCameraData.maxInteriorCameraPan)
+      ? stadiumCameraData.maxInteriorCameraPan
+      : 7;
+    const maxDistanceForTarget = (target: THREE.Vector3) => dmoCameraMaxDistanceInsideBowl(
+      target,
+      cameraInteriorRadius,
+      cameraPanLimit,
+      cameraMaxDistance,
+    );
     const camera = new THREE.PerspectiveCamera(34, 1, 0.1, 260);
     camera.position.copy(DEFAULT_CAMERA);
     camera.lookAt(0, 0.3, 0);
     const controls = new OrbitControls(camera, renderer.domElement);
-    controls.target.set(0, 0.5, 0);
+    const cameraTargetAnchor = new THREE.Vector3(0, 0.5, 0);
+    let preferredCameraMinDistance = 14;
+    controls.target.copy(cameraTargetAnchor);
     controls.enableDamping = true;
     controls.dampingFactor = 0.075;
     controls.enablePan = true;
     controls.screenSpacePanning = true;
     controls.panSpeed = 0.9;
     controls.zoomSpeed = 0.9;
-    controls.minDistance = 14;
-    controls.maxDistance = 100;
+    controls.maxDistance = maxDistanceForTarget(cameraTargetAnchor);
+    controls.minDistance = Math.min(preferredCameraMinDistance, controls.maxDistance);
     controls.minPolarAngle = 0.04;
-    controls.maxPolarAngle = THREE.MathUtils.degToRad(84);
+    controls.maxPolarAngle = THREE.MathUtils.degToRad(75);
     controls.update();
-    // Panning moves the camera and its target together, so the polar limit
-    // alone could still carry the view under the court. Lift both back above it.
+    // Keep manual panning near the selected view and prevent the camera from
+    // moving below the court when OrbitControls moves its target and camera.
     controls.addEventListener('change', () => {
+      const boundedTarget = clampDmoCameraTarget(controls.target, cameraTargetAnchor, cameraPanLimit);
+      const correction = new THREE.Vector3(
+        boundedTarget.x - controls.target.x,
+        boundedTarget.y - controls.target.y,
+        boundedTarget.z - controls.target.z,
+      );
+      if (correction.lengthSq() > 0) {
+        controls.target.set(boundedTarget.x, boundedTarget.y, boundedTarget.z);
+        camera.position.add(correction);
+      }
       const lift = Math.max(0, -controls.target.y, MIN_CAMERA_HEIGHT - camera.position.y);
       if (lift > 0) {
         controls.target.y += lift;
@@ -545,24 +577,27 @@ function ThreeCourt({
       renderer.setSize(bounds.width, bounds.height, false);
       camera.aspect = bounds.width / bounds.height;
       const compactFrame = bounds.width <= 720;
-      camera.fov = compactFrame ? 38 : 34;
+      const activeView = cameraViewRef.current;
+      camera.fov = activeView === 'aerial' ? 48 : compactFrame ? 38 : 34;
       camera.updateProjectionMatrix();
       // Narrow screens must pull back, not crop out the near-baseline player.
       const responsiveScale = compactFrame ? 1.22 : 1;
-      const activeView = cameraViewRef.current;
       if (activeView === 'court') {
         camera.position.copy(DEFAULT_CAMERA).multiplyScalar(responsiveScale);
         controls.target.set(0, 0.5, 0);
-        controls.update();
+        cameraTargetAnchor.copy(controls.target);
       } else if (activeView === 'tv') {
         camera.position.set(0, 24 * responsiveScale, 46 * responsiveScale);
         controls.target.set(0, 0.5, 0);
-        controls.update();
+        cameraTargetAnchor.copy(controls.target);
       } else if (activeView === 'aerial') {
-        camera.position.set(0, compactFrame ? 46 : 60, 0.1);
+        camera.position.set(0, Math.min(32, cameraMaxDistance * 0.98), 0.1);
         controls.target.set(0, 0.5, 0);
-        controls.update();
+        cameraTargetAnchor.copy(controls.target);
       }
+      controls.maxDistance = maxDistanceForTarget(cameraTargetAnchor);
+      controls.minDistance = Math.min(preferredCameraMinDistance, controls.maxDistance);
+      controls.update();
     };
     const observer = new ResizeObserver(resize);
     observer.observe(viewport);
@@ -1544,7 +1579,9 @@ function ThreeCourt({
       const compactFrame = viewportRef.current?.getBoundingClientRect().width ?? window.innerWidth;
       const compactViewport = compactFrame <= 720;
       const narrowScale = compactViewport ? 1.22 : 1;
-      if (view === 'aerial') camera.position.set(0, compactViewport ? 46 : 60, 0.1);
+      camera.fov = view === 'aerial' ? 50 : compactViewport ? 38 : 34;
+      camera.updateProjectionMatrix();
+      if (view === 'aerial') camera.position.set(0, Math.min(32, cameraMaxDistance * 0.98), 0.1);
       else if (view === 'tv') camera.position.set(0, 24 * narrowScale, 46 * narrowScale);
       else if (view === 'court') camera.position.copy(DEFAULT_CAMERA).multiplyScalar(narrowScale);
       else {
@@ -1558,16 +1595,19 @@ function ThreeCourt({
         if (view.endsWith('-first')) {
           camera.position.copy(player.root.position).add(new THREE.Vector3(0, 1.55, 0));
           controls.target.copy(camera.position).addScaledVector(forward, 16);
-          controls.minDistance = 0.5;
         } else {
           camera.position.copy(player.root.position)
             .add(new THREE.Vector3(0, 2.4, 0))
             .addScaledVector(forward, -3.6);
           controls.target.copy(player.root.position).add(new THREE.Vector3(0, 1.0, 0));
-          controls.minDistance = 2;
         }
       }
-      if (view === 'court' || view === 'aerial' || view === 'tv') controls.minDistance = 14;
+      cameraTargetAnchor.copy(controls.target);
+      preferredCameraMinDistance = view.startsWith('player-')
+        ? view.endsWith('-first') ? 0.5 : 2
+        : 14;
+      controls.maxDistance = maxDistanceForTarget(cameraTargetAnchor);
+      controls.minDistance = Math.min(preferredCameraMinDistance, controls.maxDistance);
       controls.update();
       setCameraView(view);
     };
