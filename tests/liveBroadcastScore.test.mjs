@@ -101,14 +101,16 @@ test('the rendered automatic scoreboard uses TE4 data, without changing the DMO 
   const { renderToStaticMarkup } = require('react-dom/server');
   let courtSnapshot;
   let courtBuffering = false;
+  let courtScoreboard;
   const Display = load('components/DmoLiveDisplay.tsx', {
     '@/lib/te4DmoLive': { LIVE_DMO_FRAME_STALL_MS: 5_000 },
     '@/lib/te4DmoSurface': { surfaceForDmoTournament: () => 'hard' },
     './DmoLiveCourt3D': {
       __esModule: true,
-      default: ({ snapshot: value, buffering }) => {
+      default: ({ snapshot: value, buffering, scoreboard }) => {
         courtSnapshot = value;
         courtBuffering = buffering;
+        courtScoreboard = scoreboard;
         return null;
       },
     },
@@ -121,13 +123,20 @@ test('the rendered automatic scoreboard uses TE4 data, without changing the DMO 
   assert.match(html, /TE4 live score/);
   assert.equal(courtSnapshot, snapshot);
   assert.equal(courtBuffering, false);
+  assert.equal(courtScoreboard.live, true);
+  assert.deepEqual(courtScoreboard.score.sets, [[5, 7], [7, 5]]);
+  assert.deepEqual(courtScoreboard.score.games, [0, 1]);
   render({ stale: true });
   assert.equal(courtBuffering, true);
   assert.deepEqual(snapshot.score, dmoScore);
   const unavailable = render({ liveScore: null });
   assert.match(unavailable, /Live score temporarily unavailable/);
   assert.doesNotMatch(unavailable, /7–6/);
+  assert.equal(courtScoreboard.live, true);
+  assert.equal(courtScoreboard.score, null, 'automatic live scoreboards do not fall back to reconstructed DMO data');
   assert.match(render(), /7–6/); // Manual/historical replays keep their DMO score.
+  assert.equal(courtScoreboard.live, false);
+  assert.deepEqual(courtScoreboard.score.games, dmoScore.games);
 });
 
 test('the court buffering overlay clearly announces delays and stays absent when the feed is fresh', () => {

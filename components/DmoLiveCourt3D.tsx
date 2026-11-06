@@ -88,6 +88,7 @@ import styles from './DmoLiveCourt3D.module.css';
 import { attachHumanPlayer, disposeHumanModel, loadHumanModel } from './DmoHumanModels';
 import { attachHumanCrowd } from './DmoHumanCrowd';
 import { racketContactOrientation, racketGripElbow, racketGripWrist } from './DmoRacketOrientation';
+import type { StadiumScoreboardData } from './DmoStadiumArchitecture';
 
 type Props = {
   modelAssetBase?: string;
@@ -98,6 +99,7 @@ type Props = {
   isWta?: boolean;
   buffering?: boolean;
   fullReplay?: boolean;
+  scoreboard?: StadiumScoreboardData;
 };
 
 type CameraView =
@@ -170,12 +172,14 @@ function ThreeCourt({
   stadiumAtmosphere = true,
   isWta = false,
   buffering = false,
+  scoreboard,
   gruntsEnabled,
   onGruntsEnabledChange,
   onUnsupported,
 }: Props & GruntControlProps & { onUnsupported: () => void }) {
   const viewportRef = useRef<HTMLDivElement>(null);
   const canvasHostRef = useRef<HTMLDivElement>(null);
+  const sceneRef = useRef<THREE.Scene | null>(null);
   const audioContextRef = useRef<AudioContext | null>(null);
   const crowdAudioRef = useRef<HTMLAudioElement | null>(null);
   const crowdGainRef = useRef<GainNode | null>(null);
@@ -211,12 +215,24 @@ function ThreeCourt({
   const replayUiUpdateAt = useRef(0);
   replayPlayingRef.current = replayPlaying;
   replaySpeedRef.current = replaySpeed;
-  const sceneDataRef = useRef({ snapshot, surface, playbackSpeed, stadiumAtmosphere });
+  const scoreboardData: StadiumScoreboardData = scoreboard ?? {
+    players: snapshot.players,
+    score: {
+      sets: snapshot.score.sets,
+      games: snapshot.score.games,
+      pointText: snapshot.score.pointText,
+      tiebreak: snapshot.score.tiebreak,
+      server: snapshot.score.server === 1 ? 1 : snapshot.score.server === 2 ? 2 : null,
+    },
+    live: false,
+  };
+  const sceneDataRef = useRef({ snapshot, surface, playbackSpeed, stadiumAtmosphere, scoreboard: scoreboardData });
   sceneDataRef.current = {
     snapshot,
     surface,
     playbackSpeed: fullReplay ? replaySpeed : playbackSpeed,
     stadiumAtmosphere,
+    scoreboard: scoreboardData,
   };
   const soundOnRef = useRef(false);
   const cameraViewRef = useRef<CameraView>('court');
@@ -384,7 +400,12 @@ function ThreeCourt({
     host.appendChild(renderer.domElement);
 
     const scene = new THREE.Scene();
-    buildStadiumEnvironment(scene, isIndoorDmoVenue(sceneDataRef.current.snapshot.stadium));
+    sceneRef.current = scene;
+    buildStadiumEnvironment(
+      scene,
+      isIndoorDmoVenue(sceneDataRef.current.snapshot.stadium),
+      sceneDataRef.current.scoreboard,
+    );
     const camera = new THREE.PerspectiveCamera(34, 1, 0.1, 260);
     camera.position.copy(DEFAULT_CAMERA);
     camera.lookAt(0, 0.3, 0);
@@ -1583,6 +1604,13 @@ function ThreeCourt({
       setSoundError('Sound could not be enabled in this browser.');
     }
   };
+
+  useEffect(() => {
+    const updateScoreboard = sceneRef.current
+      ?.getObjectByName('wtsl-stadium-architecture')
+      ?.userData.updateScoreboard;
+    if (typeof updateScoreboard === 'function') updateScoreboard(scoreboardData);
+  }, [scoreboardData]);
 
   useEffect(() => {
     const context = audioContextRef.current;

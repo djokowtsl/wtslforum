@@ -99,26 +99,27 @@ export function attachHumanCrowd(scene: THREE.Scene, crowd: CrowdRig, templates:
     counts.fill(0);
     highDetailCounts.fill(0);
     crowd.seats.forEach((seat, index) => {
+      const sourceIndex = seat.sourceIndex ?? index;
       let delta = ball ? Math.atan2(ball.x - seat.x, ball.z - seat.z) - seat.facing : 0;
       delta = THREE.MathUtils.euclideanModulo(delta + Math.PI, Math.PI * 2) - Math.PI;
       const gaze = delta < -0.18 ? 0 : delta > 0.18 ? 2 : 1;
-      const gender = index % 2;
+      const gender = sourceIndex % 2;
       // Alternate hands-apart and hands-together poses during applause.
-      const clap = applauding && index % 5 !== 0 && Math.sin(time * 9 + index) > -0.15;
+      const clap = applauding && sourceIndex % 5 !== 0 && Math.sin(time * 9 + sourceIndex) > -0.15;
       const useHighDetail = highDetailEnabled && highDetailBatches.length > 0 && highDetailSeats.has(index);
       const bucket = (clap ? 3 : 0) + gaze;
       const mesh = useHighDetail ? highDetailBatches[bucket] : batches[gender * 6 + bucket];
       const instance = useHighDetail ? highDetailCounts[bucket]++ : counts[gender * 6 + bucket]++;
-      const lean = ((index % 5) - 2) * 0.009;
-      const turn = ((index * 3 % 5) - 2) * 0.012;
+      const lean = ((sourceIndex % 5) - 2) * 0.009;
+      const turn = ((sourceIndex * 3 % 5) - 2) * 0.012;
       dummy.position.set(seat.x, seat.y, seat.z);
       dummy.rotation.set(lean, seat.facing + turn, 0);
-      const stature = 0.91 + (index % 7) * 0.025;
-      dummy.scale.set(0.9 + (index % 5) * 0.035, stature, 0.94 + (index % 3) * 0.04);
+      const stature = 0.91 + (sourceIndex % 7) * 0.025;
+      dummy.scale.set(0.9 + (sourceIndex % 5) * 0.035, stature, 0.94 + (sourceIndex % 3) * 0.04);
       dummy.updateMatrix();
       mesh.setMatrixAt(instance, dummy.matrix);
       // Subtle warm-neutral tint variation gives the textured models a less repeated look.
-      const tone = index % 6;
+      const tone = sourceIndex % 6;
       instanceColor.setRGB(tones[tone][0], tones[tone][1], tones[tone][2]);
       mesh.setColorAt(instance, instanceColor);
     });
@@ -144,7 +145,7 @@ export function attachHumanCrowd(scene: THREE.Scene, crowd: CrowdRig, templates:
     makeBatches(template, highDetailBatches, 'high-detail');
     highDetailSeats = new Set(
       crowd.seats.flatMap((seat, index) =>
-        shouldUseHighDetailCrowdSeat(seat.row, index, genderIndex) ? [index] : []),
+        shouldUseHighDetailCrowdSeat(seat.row, seat.sourceIndex ?? index, genderIndex) ? [index] : []),
     );
     highDetailCounts = new Uint16Array(highDetailBatches.length);
     highDetailBatches.forEach((mesh) => { mesh.visible = highDetailEnabled; });
