@@ -1,0 +1,171 @@
+<!DOCTYPE html><html lang="en"><head><meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="referrer" content="no-referrer">
+<title>TE4 Voice Room</title>
+<style>
+:root{--bg:#0b1118;--bar:#101822;--card:#131c27;--ln:#233042;--tx:#e8eef6;--mu:#8697ad;--ok:#34c27a;--bad:#ef5350;--ac:#2563eb}
+*{box-sizing:border-box}html,body{margin:0;background:var(--bg);color:var(--tx);font:15px system-ui,sans-serif}
+header{display:flex;flex-wrap:wrap;gap:8px 14px;align-items:center;padding:12px 16px;background:var(--bar);border-bottom:1px solid var(--ln)}
+header b{font-size:18px}.mu{color:var(--mu);font-size:13px}
+main{max-width:760px;margin:0 auto;padding:14px 16px 40px}
+.card{background:var(--card);border:1px solid var(--ln);border-radius:12px;padding:14px;margin-bottom:12px}
+label{display:block;font-size:12px;color:var(--mu);margin:10px 0 4px}
+input[type=text],select,textarea{width:100%;background:#0e1620;color:var(--tx);border:1px solid var(--ln);border-radius:8px;padding:9px 10px;font:inherit}
+input[readonly]{opacity:.8}
+textarea{min-height:70px;font:12px ui-monospace,monospace}
+button{background:#1a2635;color:var(--tx);border:1px solid var(--ln);border-radius:8px;padding:9px 14px;font:inherit;cursor:pointer}button:hover{background:#223249}
+button.pri{background:var(--ac);border-color:var(--ac)}button.pri:hover{background:#3b73f0}button.bad{background:#7a1f1f;border-color:#7a1f1f}
+button:disabled{opacity:.5;cursor:default}.row{display:flex;flex-wrap:wrap;gap:8px;align-items:center}.row>*{flex:0 0 auto}.grow{flex:1 1 160px!important}
+.chk{display:flex;gap:8px;align-items:center;font-size:13px;margin:8px 0 0}.chk input{width:auto}
+#roster{display:grid;grid-template-columns:repeat(auto-fill,minmax(210px,1fr));gap:10px}
+.pc{background:#0e1620;border:2px solid var(--ln);border-radius:12px;padding:12px;transition:border-color .12s,box-shadow .12s}
+.pc.sp{border-color:var(--ok);box-shadow:0 0 0 3px rgba(52,194,122,.25)}.pc .nm{font-weight:700;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.pc .st{font-size:12px;color:var(--mu);margin:2px 0 8px}.pc.me{border-color:#2d4a7a}
+.meter{height:6px;background:#1b2838;border-radius:3px;overflow:hidden;margin:6px 0}.meter i{display:block;height:100%;width:0;background:var(--ok);transition:width .08s}
+.pc input[type=range]{width:100%}.pc .b{display:flex;gap:6px;margin-top:6px}.pc .b button{padding:5px 9px;font-size:12px}
+#msg{padding:9px 12px;border-radius:8px;background:#1d2a3a;font-size:13px;margin-bottom:12px}#msg.err{background:#4a1d1d}#msg.ok{background:#17382a}
+.hide{display:none}.kbd{border:1px solid var(--ln);border-radius:4px;padding:0 5px;font-size:12px}
+details summary{cursor:pointer;color:var(--mu);font-size:13px}
+body.embed header,body.embed .tips,body.embed #rnd,body.embed #rnd+span,body.embed .roomf,body.embed #copy{display:none}body.embed main{padding:8px}body.embed .card{margin-bottom:8px}
+@media(max-width:520px){#roster{grid-template-columns:1fr 1fr}}
+</style></head><body>
+<header><b>TE4 Voice Room</b><span class="mu" id="hdr">Talk to your opponent or a group while you play. Audio goes straight between browsers.</span></header>
+<main>
+<div id="msg" class="hide"></div>
+<div class="card" id="join">
+ <div class="row"><div class="grow"><label for="name">Your name</label><input type="text" id="name" maxlength="24" placeholder="e.g. Debuffy"></div>
+ <div class="grow roomf"><label for="room">Room code</label><input type="text" id="room" maxlength="40" placeholder="e.g. debuffy-vs-dani21" autocapitalize="off" spellcheck="false"></div></div>
+ <div class="row" style="margin-top:10px"><button id="rnd">Make a private room</button><span class="mu">Anyone with the code can join, so use a random one for private talk.</span></div>
+ <div class="chk"><input type="checkbox" id="ptt"><label for="ptt" style="margin:0;color:var(--tx);font-size:13px">Push to talk: hold <span class="kbd">V</span> (or the Talk button) to speak</label></div>
+ <div class="row" style="margin-top:14px"><button class="pri" id="jm">Join with microphone</button><button id="jl">Join listen-only</button></div>
+ <details style="margin-top:14px"><summary>Settings</summary>
+  <label for="srv">Voice server (where server.js runs)</label><input type="text" id="srv" placeholder="https://your-voice-server.example.com" spellcheck="false">
+  <label for="mic">Microphone</label><select id="mic"><option value="">Default microphone</option></select>
+  <div class="chk"><input type="checkbox" id="ec" checked><label for="ec" style="margin:0;color:var(--tx);font-size:13px">Echo cancellation</label></div>
+  <div class="chk"><input type="checkbox" id="ns" checked><label for="ns" style="margin:0;color:var(--tx);font-size:13px">Noise suppression</label></div>
+  <div class="chk"><input type="checkbox" id="ag" checked><label for="ag" style="margin:0;color:var(--tx);font-size:13px">Automatic gain</label></div>
+  <label for="ice">Extra ICE / TURN servers (JSON, optional)</label><textarea id="ice" spellcheck="false" placeholder='[{"urls":"turn:turn.example.com:3478","username":"user","credential":"pass"}]'></textarea>
+  <div class="mu" style="margin-top:6px">Most connections work with the built-in STUN servers. If two players cannot hear each other (strict routers or mobile networks), a TURN relay is needed.</div>
+ </details></div>
+<div id="room-ui" class="hide">
+ <div class="card"><div class="row"><b id="rtitle" class="grow"></b><button id="copy">Copy invite link</button><button class="bad" id="leave">Leave</button></div>
+  <div class="mu" id="rstat" style="margin-top:6px"></div></div>
+ <div class="card"><div id="roster"></div>
+  <div class="row" style="margin-top:12px"><button class="pri" id="mute">Mute</button><button id="talk" class="hide">Hold to talk</button>
+   <select id="out" class="hide grow" title="Speakers"></select></div></div>
+</div>
+<div class="mu tips">Tips: use headphones to avoid echo. Voice is peer to peer, so players in the room can see each other's IP address (a normal WebRTC trait). Rooms hold up to 8 people.</div>
+</main>
+<script>
+const $=i=>document.getElementById(i),store={get:k=>{try{return localStorage.getItem(k)}catch(_){return null}},set:(k,v)=>{try{localStorage.setItem(k,v)}catch(_){}}};
+const rid=()=>([...crypto.getRandomValues(new Uint8Array(12))].map(b=>b.toString(16).padStart(2,'0')).join(''));
+const S={id:rid(),peers:new Map(),names:new Map(),es:null,ice:[{urls:'stun:stun.l.google.com:19302'},{urls:'stun:stun1.l.google.com:19302'}],muted:false,ptt:false,pttDown:false,ctx:null,joined:false,room:'',base:'',myName:''};
+// ---------------------------------------------------------------- setup
+const q=new URLSearchParams(location.search),embedded=q.get('embed')==='1';
+if(embedded){document.body.classList.add('embed');$('name').readOnly=true;$('name').setAttribute('aria-readonly','true')}
+$('name').value=q.get('name')||store.get('te4v_name')||'';$('room').value=(q.get('room')||store.get('te4v_room')||'').toLowerCase();
+$('srv').value=q.get('server')||store.get('te4v_server')||(/^https?:/.test(location.protocol)?location.origin:'');
+$('ice').value=store.get('te4v_ice')||'';$('ptt').checked=store.get('te4v_ptt')==='1';
+for(const k of['ec','ns','ag']){const v=store.get('te4v_'+k);if(v!==null)$(k).checked=v==='1'}
+function say(t,cls){const m=$('msg');m.textContent=t;m.className=cls||'';if(!t)m.classList.add('hide')}
+const slug=s=>String(s||'').toLowerCase().replace(/[^a-z0-9]+/g,'-').replace(/^-+|-+$/g,'');
+$('rnd').onclick=()=>{const w=crypto.getRandomValues(new Uint8Array(4));$('room').value='tennis-'+[...w].map(b=>b.toString(36).padStart(2,'0')).join('').slice(0,7)};
+$('jm').onclick=()=>join(true);$('jl').onclick=()=>join(false);
+async function listMics(){try{const d=(await navigator.mediaDevices.enumerateDevices()).filter(x=>x.kind=='audioinput'),sel=$('mic'),cur=sel.value;sel.innerHTML='<option value="">Default microphone</option>'+d.map(x=>`<option value="${x.deviceId}">${(x.label||'Microphone').replace(/[<>&]/g,'')}</option>`).join('');sel.value=cur}catch(_){}}
+// ---------------------------------------------------------------- local audio graph (mute and push-to-talk just toggle the outgoing track)
+async function startAudio(useMic){
+ const ctx=S.ctx=new (window.AudioContext||window.webkitAudioContext)();await ctx.resume().catch(()=>{});
+ S.dest=ctx.createMediaStreamDestination();S.outTrack=S.dest.stream.getAudioTracks()[0];S.an=ctx.createAnalyser();S.an.fftSize=512;
+ if(useMic){
+  const c={echoCancellation:$('ec').checked,noiseSuppression:$('ns').checked,autoGainControl:$('ag').checked,channelCount:1};if($('mic').value)c.deviceId={exact:$('mic').value};
+  S.micStream=await navigator.mediaDevices.getUserMedia({audio:c});S.src=ctx.createMediaStreamSource(S.micStream);S.src.connect(S.dest);S.src.connect(S.an);listMics();
+ }
+ applyMute();
+}
+function effMuted(){return !S.hasMic||S.muted||(S.ptt&&!S.pttDown)}
+function applyMute(){if(S.outTrack)S.outTrack.enabled=!effMuted();$('mute').textContent=S.muted?'Unmute':'Mute';$('mute').classList.toggle('hide',!S.hasMic);broadcast();render()}
+function broadcast(){const m=JSON.stringify({t:'state',name:S.myName,muted:effMuted(),listen:!S.hasMic});for(const p of S.peers.values())if(p.dc&&p.dc.readyState=='open')p.dc.send(m)}
+$('mute').onclick=()=>{S.muted=!S.muted;applyMute()};
+$('ptt').onchange=e=>{store.set('te4v_ptt',e.target.checked?'1':'0');S.ptt=e.target.checked;$('talk').classList.toggle('hide',!(S.ptt&&S.hasMic));if(S.joined)applyMute()};
+const tk=v=>{if(S.ptt){S.pttDown=v;applyMute()}};
+$('talk').onpointerdown=()=>tk(true);$('talk').onpointerup=$('talk').onpointerleave=()=>tk(false);
+addEventListener('keydown',e=>{if(e.key.toLowerCase()=='v'&&!e.repeat&&!/INPUT|TEXTAREA|SELECT/.test(document.activeElement.tagName))tk(true)});
+addEventListener('keyup',e=>{if(e.key.toLowerCase()=='v')tk(false)});
+// ---------------------------------------------------------------- joining and signaling
+async function join(useMic){
+ const name=($('name').value.trim()||'Player').slice(0,24),room=slug($('room').value),base=$('srv').value.trim().replace(/\/+$/,'');
+ if(room.length<3){say('Pick a room code of at least 3 letters or digits.','err');return}
+ if(!base){say('Enter the voice server address under Settings (where server.js is running).','err');return}
+ if(!navigator.mediaDevices||!window.RTCPeerConnection){say('This browser has no WebRTC or microphone access. Use a current Chrome, Edge, Firefox or Safari, over https.','err');return}
+ let ice=[];try{const t=$('ice').value.trim();if(t)ice=JSON.parse(t)}catch(_){say('The extra ICE servers box is not valid JSON.','err');return}
+ store.set('te4v_name',name);store.set('te4v_room',room);store.set('te4v_server',base);store.set('te4v_ice',$('ice').value.trim());for(const k of['ec','ns','ag'])store.set('te4v_'+k,$(k).checked?'1':'0');
+ S.myName=name;S.room=room;S.base=base;S.ptt=$('ptt').checked;S.userIce=ice;S.hasMic=useMic;S.muted=false;S.pttDown=false;
+ try{await startAudio(useMic)}catch(e){S.hasMic=false;say(useMic?'Could not use the microphone ('+(e.name||e.message)+'). Joining listen-only; allow microphone access in the browser to talk.':'','err');try{await startAudio(false)}catch(_){return}}
+ $('join').classList.add('hide');$('room-ui').classList.remove('hide');$('rtitle').textContent='Room: '+room;$('talk').classList.toggle('hide',!(S.ptt&&S.hasMic));
+ $('rstat').textContent='Connecting to the voice server...';S.joined=true;connect();render();loop();
+}
+function connect(){
+ const u=`${S.base}/api/join?room=${encodeURIComponent(S.room)}&id=${S.id}&name=${encodeURIComponent(S.myName)}&exp=${encodeURIComponent(q.get('exp')||'')}&sig=${encodeURIComponent(q.get('sig')||'')}`;
+ const es=S.es=new EventSource(u);
+ es.addEventListener('welcome',e=>{const d=JSON.parse(e.data);if(!S.baseIce)S.baseIce=d.ice||S.ice;S.ice=S.baseIce.concat(S.userIce||[]);
+  say('');$('rstat').textContent=d.peers.length?'Connecting to '+d.peers.length+' other '+(d.peers.length==1?'person':'people')+'...':'You are the first one here. Share the invite link.';
+  for(const p of d.peers){S.names.set(p.id,p.name);if(!S.peers.has(p.id))makePeer(p.id,p.name,true)}render()});
+ es.addEventListener('peer-joined',e=>{const d=JSON.parse(e.data);S.names.set(d.id,d.name)});
+ es.addEventListener('peer-left',e=>{dropPeer(JSON.parse(e.data).id)});
+ es.addEventListener('denied',()=>{es.close();say('This room needs a valid Forum link. Reopen the voice room from the match page.','err');leave(true)});
+ es.addEventListener('full',()=>{es.close();say('This room is full.','err');leave(true)});
+ es.addEventListener('signal',e=>onSignal(JSON.parse(e.data)));
+ es.onerror=()=>{if(S.joined)$('rstat').textContent='Lost contact with the voice server, retrying...'};
+}
+const post=(to,type,data)=>fetch(S.base+'/api/signal',{method:'POST',headers:{'content-type':'application/json'},body:JSON.stringify({room:S.room,from:S.id,to,type,data,name:S.myName,exp:Number(q.get('exp')),sig:q.get('sig')})}).catch(()=>{});
+function makePeer(id,name,initiator){
+ const pc=new RTCPeerConnection({iceServers:S.ice}),p={id,name:name||'Player',pc,audio:null,an:null,level:0,speaking:false,muted:false,listen:false,vol:1,mine:false,state:'connecting',pend:[],dc:null};
+ S.peers.set(id,p);pc.addTrack(S.outTrack,S.dest.stream);
+ pc.onicecandidate=e=>{if(e.candidate)post(id,'ice',e.candidate)};
+ pc.ontrack=e=>attach(p,e.streams[0]||new MediaStream([e.track]));
+ pc.onconnectionstatechange=()=>{p.state=pc.connectionState;if(pc.connectionState=='failed')say('Could not connect to '+p.name+'. Their network may need a TURN relay (see Settings).','err');status();render()};
+ if(initiator){p.dc=pc.createDataChannel('ctl');dc(p);pc.createOffer().then(o=>pc.setLocalDescription(o)).then(()=>post(id,'offer',pc.localDescription)).catch(console.error)}
+ else pc.ondatachannel=e=>{p.dc=e.channel;dc(p)};
+ return p}
+function dc(p){p.dc.onopen=()=>broadcast();p.dc.onmessage=e=>{try{const m=JSON.parse(e.data);if(m.t=='state'){p.muted=!!m.muted;p.listen=!!m.listen;if(m.name)p.name=String(m.name).slice(0,24);render()}}catch(_){}}}
+async function onSignal({from,type,data}){
+ let p=S.peers.get(from);
+ try{
+  if(type=='offer'){if(p){p.pc.close();S.peers.delete(from)}p=makePeer(from,S.names.get(from),false);await p.pc.setRemoteDescription(data);await flush(p);const a=await p.pc.createAnswer();await p.pc.setLocalDescription(a);post(from,'answer',p.pc.localDescription)}
+  else if(!p)return;
+  else if(type=='answer'){await p.pc.setRemoteDescription(data);await flush(p)}
+  else if(type=='ice'){if(p.pc.remoteDescription)await p.pc.addIceCandidate(data).catch(()=>{});else p.pend.push(data)}
+ }catch(e){console.warn('signal',type,e)}}
+async function flush(p){for(const c of p.pend.splice(0))await p.pc.addIceCandidate(c).catch(()=>{})}
+function attach(p,stream){
+ if(!p.audio){p.audio=new Audio();p.audio.autoplay=true;document.body.appendChild(p.audio);p.audio.style.display='none'}
+ p.audio.srcObject=stream;p.audio.volume=p.vol;p.audio.muted=p.mine;p.audio.play().catch(()=>{});
+ const sel=$('out').value;if(sel&&p.audio.setSinkId)p.audio.setSinkId(sel).catch(()=>{});
+ try{const s=S.ctx.createMediaStreamSource(stream),an=S.ctx.createAnalyser();an.fftSize=512;s.connect(an);p.an=an}catch(_){}}
+function dropPeer(id){const p=S.peers.get(id);if(!p)return;try{p.pc.close()}catch(_){}if(p.audio){p.audio.srcObject=null;p.audio.remove()}S.peers.delete(id);status();render()}
+function status(){const n=[...S.peers.values()],ok=n.filter(p=>p.state=='connected').length;$('rstat').textContent=n.length?`${ok} of ${n.length} connected`:'You are the first one here. Share the invite link.'}
+function leave(silent){S.joined=false;if(S.es)S.es.close();for(const id of [...S.peers.keys()])dropPeer(id);if(S.micStream)S.micStream.getTracks().forEach(t=>t.stop());if(S.ctx)S.ctx.close().catch(()=>{});S.ctx=null;
+ $('room-ui').classList.add('hide');$('join').classList.remove('hide');if(!silent)say('')}
+$('leave').onclick=()=>leave();addEventListener('pagehide',()=>{if(S.es)S.es.close()});
+$('copy').onclick=async()=>{const u=location.origin+location.pathname+'?room='+encodeURIComponent(S.room)+(/^https?:/.test(location.protocol)?'':'&server='+encodeURIComponent(S.base));try{await navigator.clipboard.writeText(u);say('Invite link copied.','ok')}catch(_){say(u)}setTimeout(()=>{if($('msg').textContent=='Invite link copied.')say('')},2500)};
+// ---------------------------------------------------------------- UI
+function rms(an){if(!an)return 0;const b=new Uint8Array(an.fftSize);an.getByteTimeDomainData(b);let s=0;for(const v of b){const x=(v-128)/128;s+=x*x}return Math.sqrt(s/b.length)}
+function loop(){if(!S.joined)return;
+ const my=effMuted()?0:rms(S.an);S.myLevel=my;S.mySpeak=my>.03;
+ for(const p of S.peers.values()){p.level=p.muted?0:rms(p.an);p.speaking=p.level>.025}
+ paint();setTimeout(loop,90)}
+const cards=new Map();
+function card(id){let c=cards.get(id);if(c)return c;const el=document.createElement('div');el.className='pc';el.innerHTML='<div class="nm"></div><div class="st"></div><div class="meter"><i></i></div><div class="v"></div><div class="b"></div>';cards.set(id,c={el,nm:el.children[0],st:el.children[1],bar:el.children[2].firstChild,v:el.children[3],b:el.children[4]});return c}
+function paint(){for(const [id,c] of cards){const me=id=='me',p=me?null:S.peers.get(id);if(!me&&!p)continue;const lv=me?S.myLevel:p.level,sp=me?S.mySpeak:p.speaking;c.el.classList.toggle('sp',!!sp);c.bar.style.width=Math.min(100,lv*400)+'%'}}
+function render(){const R=$('roster');if(!S.joined)return;const want=['me',...S.peers.keys()];
+ for(const [id,c] of [...cards])if(!want.includes(id)){c.el.remove();cards.delete(id)}
+ for(const id of want){const c=card(id),me=id=='me',p=me?null:S.peers.get(id);if(!c.el.parentNode)R.appendChild(c.el);
+  c.el.classList.toggle('me',me);c.nm.textContent=me?S.myName+' (you)':p.name;
+  c.st.textContent=me?(!S.hasMic?'listen-only':effMuted()?(S.ptt?'push to talk':'muted'):'mic on'):(p.state!='connected'?(p.state=='failed'?'could not connect':'connecting...'):p.listen?'listening':p.muted?'muted':'mic on');
+  if(!me&&!c.built){c.built=1;c.v.innerHTML='<input type="range" min="0" max="100" value="100" title="Volume (only for you)">';c.v.firstChild.oninput=e=>{p.vol=e.target.value/100;if(p.audio)p.audio.volume=p.vol};
+   const b=document.createElement('button');b.textContent='Mute for me';b.onclick=()=>{p.mine=!p.mine;if(p.audio)p.audio.muted=p.mine;b.textContent=p.mine?'Unmute for me':'Mute for me'};c.b.appendChild(b)}}
+ R.querySelectorAll('.pc').forEach(e=>{});}
+if(navigator.mediaDevices&&navigator.mediaDevices.enumerateDevices)listMics();
+(async()=>{const sel=$('out');if(!HTMLMediaElement.prototype.setSinkId||!navigator.mediaDevices.enumerateDevices)return;try{const d=(await navigator.mediaDevices.enumerateDevices()).filter(x=>x.kind=='audiooutput');if(d.length>1){sel.innerHTML=d.map(x=>`<option value="${x.deviceId}">${(x.label||'Speakers').replace(/[<>&]/g,'')}</option>`).join('');sel.classList.remove('hide');sel.onchange=()=>{for(const p of S.peers.values())if(p.audio)p.audio.setSinkId(sel.value).catch(()=>{})}}}catch(_){}})();
+window.__S=S;
+</script></body></html>

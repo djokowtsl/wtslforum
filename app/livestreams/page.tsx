@@ -13,7 +13,7 @@ export default async function LivestreamsPage() {
   return (
     <main className="live-broadcast-page">
       {user && <DmoLiveHost displayName={user.username} canPrepareFullReplay={user.isAdmin} />}
-      <DmoLiveViewer canWatch={Boolean(user)} />
+      <DmoLiveViewer canWatch={Boolean(user)} voiceServer={process.env.NEXT_PUBLIC_VOICE_SERVER?.trim() ?? ''} />
     </main>
   );
 }
