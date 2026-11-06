@@ -42,6 +42,7 @@ const claudeNativePlayer = await loadTs('../components/DmoNativePlayerClaude.ts'
 const humans = await loadTs('../components/DmoHumanModels.ts', {
   './DmoRacketOrientation': racketPose, './DmoArticulatedHands': articulated,
   './DmoNativePlayer': nativePlayer, './DmoNativePlayerClaude': claudeNativePlayer,
+  './DmoNativeKit': nativeKit,
 });
 const crowdLodApi = await loadTs('../lib/dmoCrowdLod.ts');
 const crowds = await loadTs('../components/DmoHumanCrowd.ts', {
@@ -120,6 +121,31 @@ for (const gender of ['male', 'female']) test(`${gender}: continuous native body
   }
   const attached = humans.attachHumanPlayer(template, rig, 0x275c77);
   const { pose, grips } = attached;
+  assert.equal(attached.model.getObjectByName('native-tour-mark-1').userData.inventedLabel, 'COURTLINE');
+  assert.ok(attached.model.getObjectByName('native-player-headband-1'));
+  assert.ok(attached.model.getObjectByName('native-player-swept-hair-1'));
+  const apparelPatch = attached.model.getObjectByName('native-apparel-patch');
+  assert.ok(apparelPatch?.geometry.parameters.width >= 0.16,
+    'fictional tour marks are apparel-sized patches rather than tiny unreadable emblems');
+  assert.equal(attached.model.getObjectByName('native-tennis-sweatband-1').parent.parent.name, 'hand_r');
+  assert.equal(attached.model.getObjectByName('native-sports-watch-face-1').parent.parent.name, 'hand_l');
+  const alternateKitRig = sceneApi.makePlayer(0xc7baa2, 0x35413d);
+  const alternateKit = humans.attachHumanPlayer(
+    template, alternateKitRig, 0xc7baa2, undefined, undefined, nativeKit.BROADCAST_PLAYER_KITS[1], 1,
+  );
+  assert.equal(alternateKit.model.getObjectByName('native-tour-mark-2').userData.inventedLabel, 'MERIDIAN');
+  if (gender === 'female') {
+    assert.ok(alternateKit.model.getObjectByName('native-player-ponytail-2'));
+    assert.ok(alternateKit.model.getObjectByName('native-player-hair-tie-2'));
+    assert.equal(alternateKit.model.getObjectByName('native-player-neat-beard-2'), undefined,
+      'WTA styling must never inherit the ATP beard option');
+  } else {
+    assert.ok(alternateKit.model.getObjectByName('native-player-neat-beard-2'));
+    assert.ok(alternateKit.model.getObjectByName('native-player-stubble-2'));
+    assert.equal(alternateKit.model.getObjectByName('native-player-ponytail-2'), undefined);
+  }
+  assert.ok(alternateKit.model.getObjectByName('native-tennis-sweatband-2'));
+  assert.ok(alternateKit.model.getObjectByName('native-sports-watch-face-2'));
   // 53 native joints plus one roll-helper per upper arm, forearm and thigh.
   assert.equal([...pose.bones.keys()].filter(name => !name.includes('_twist_')).length, 53);
   assert.equal([...pose.bones.keys()].filter(name => name.includes('_twist_')).length, 6);
@@ -567,15 +593,24 @@ test('crowd uses seated textured instancing and retains gaze/applause updates', 
   assert.ok(scene.getObjectByName('wtsl-crowd-caps'), 'some spectators wear caps');
 });
 
-test('both players have a seated coach and the detailed umpire tracks the ball', async () => {
+test('coaches occupy reserved lower-stand seats and the detailed umpire tracks the ball', async () => {
   const scene = new THREE.Scene();
   const fixtures = sceneApi.buildCourtFixtures(scene);
+  const crowd = sceneApi.buildCrowd(scene);
   const male = await asset('male', 'crowd');
   const female = await asset('female', 'crowd');
   const detailedUmpire = await asset('male', 'player');
-  crowds.attachHumanCourtStaff(scene, fixtures, [male, female], detailedUmpire);
+  crowds.attachHumanCourtStaff(scene, fixtures, [male, female], crowd, detailedUmpire);
   assert.ok(scene.getObjectByName('wtsl-court-coach-1'));
   assert.ok(scene.getObjectByName('wtsl-court-coach-2'));
+  for (const index of [1, 2]) {
+    const space = scene.getObjectByName(`wtsl-coach-space-${index}`);
+    assert.equal(space.userData.offCourt, true);
+    assert.equal(space.userData.seatRow, 1);
+    assert.ok(Math.abs(space.position.z) > 13);
+  }
+  assert.equal(scene.getObjectByName('wtsl-player-bench-left').getObjectByName('wtsl-court-coach-1'), undefined);
+  assert.equal(scene.getObjectByName('wtsl-player-bench-right').getObjectByName('wtsl-court-coach-2'), undefined);
   assert.equal(scene.getObjectByName('wtsl-umpire-placeholder').visible, false);
   const umpire = scene.getObjectByName('wtsl-detailed-umpire');
   const head = umpire.getObjectByName('Head');

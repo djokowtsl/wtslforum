@@ -3,7 +3,12 @@ import { clone } from 'three/examples/jsm/utils/SkeletonUtils.js';
 import type { PlayerRig } from './DmoLiveCourt3DScene';
 import { racketContactOrientation } from './DmoRacketOrientation';
 import { makeNativeGrip } from './DmoNativeGrip';
-import { dressNativePlayer } from './DmoNativeKit';
+import {
+  addNativePlayerAccessories,
+  BROADCAST_PLAYER_KITS,
+  dressNativePlayer,
+  type NativePlayerKit,
+} from './DmoNativeKit';
 import { addNativeTwistBones, distributeNativeTwist, twistAngle } from './DmoNativeTwist';
 import {
   DmoCapturedGroundstroke,
@@ -170,11 +175,19 @@ export function attachNativePlayer(
   rig: PlayerRig,
   shirtColor: number,
   motionSources: GroundstrokeMotionSources,
+  kit: NativePlayerKit = BROADCAST_PLAYER_KITS[0],
+  kitIndex = 0,
 ) {
   const model = clone(template) as THREE.Group;
   model.name = 'wtsl-continuous-player-claude';
   addNativeTwistBones(model);
-  dressNativePlayer(model, shirtColor, template.userData.gender === 'female');
+  dressNativePlayer(model, shirtColor, template.userData.gender === 'female', kit, kitIndex);
+  addNativePlayerAccessories(
+    model,
+    kit,
+    rig.root.userData.dominantHandedness === 'left' ? 'left' : 'right',
+    kitIndex,
+  );
   model.scale.multiplyScalar(BODY_SCALE);
   const original = [...rig.root.children];
   rig.root.add(model);

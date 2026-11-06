@@ -334,23 +334,24 @@ export function attachHumanCourtStaff(
   scene: THREE.Scene,
   fixtures: CourtFixtureRig,
   templates: [THREE.Group, THREE.Group],
+  crowd: CrowdRig,
   detailedUmpireTemplate: THREE.Group = templates[0],
 ) {
-  const coachBenches = ['wtsl-player-bench-left', 'wtsl-player-bench-right'];
   const coachTints = [0x314a5a, 0x6e493b];
-  coachBenches.forEach((benchName, index) => {
-    const bench = scene.getObjectByName(benchName);
-    if (!(bench instanceof THREE.Group)) return;
+  crowd.staffSeats.forEach((seat, index) => {
     const space = new THREE.Group();
     space.name = `wtsl-coach-space-${index + 1}`;
-    space.rotation.y = Math.PI;
-    bench.add(space);
+    space.position.set(seat.x, seat.y, seat.z);
+    space.rotation.y = seat.facing;
+    space.userData.seatRow = seat.row;
+    space.userData.offCourt = true;
+    scene.add(space);
     attachStaffModel(
       space,
       templates[index % templates.length],
       `wtsl-court-coach-${index + 1}`,
       coachTints[index % coachTints.length],
-      0.63,
+      0.4,
     );
   });
 

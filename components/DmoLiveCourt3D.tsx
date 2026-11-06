@@ -23,7 +23,6 @@ import { courtSurfaceDisplayName, isIndoorDmoVenue } from '@/lib/te4DmoSurface';
 import {
   deriveLiveCourtSoundEvents,
   loadCourtEffectSamples,
-  playCourtSoundCheck,
   playLiveCourtEffect as playCue,
   type CourtEffectSamples,
 } from '@/lib/liveCourtAudio';
@@ -98,6 +97,7 @@ import CourtFullscreenButton from './CourtFullscreenButton';
 import CourtPictureInPictureButton from './CourtPictureInPictureButton';
 import { attachHumanPlayer, disposeHumanModel, loadHumanModel } from './DmoHumanModels';
 import { attachHumanCourtStaff, attachHumanCrowd } from './DmoHumanCrowd';
+import { BROADCAST_PLAYER_KITS } from './DmoNativeKit';
 import { racketContactOrientation, racketGripElbow, racketGripWrist } from './DmoRacketOrientation';
 import type { StadiumScoreboardData } from './DmoStadiumArchitecture';
 
@@ -520,8 +520,8 @@ function ThreeCourt({
         if (modelLoad.signal.aborted) return;
         const [player, maleCrowd, femaleCrowd] = results;
         if (player.status === 'fulfilled') {
-          attachHumanPlayer(player.value, players[0], PALETTE.shirtOne);
-          attachHumanPlayer(player.value, players[1], PALETTE.shirtTwo);
+          attachHumanPlayer(player.value, players[0], PALETTE.shirtOne, undefined, undefined, BROADCAST_PLAYER_KITS[0], 0);
+          attachHumanPlayer(player.value, players[1], PALETTE.shirtTwo, undefined, undefined, BROADCAST_PLAYER_KITS[1], 1);
         }
         if (maleCrowd.status === 'fulfilled' && femaleCrowd.status === 'fulfilled') {
           const crowdTemplates: [THREE.Group, THREE.Group] = [maleCrowd.value, femaleCrowd.value];
@@ -530,6 +530,7 @@ function ThreeCourt({
             scene,
             fixtureRig,
             crowdTemplates,
+            crowdRig,
             player.status === 'fulfilled' ? player.value : crowdTemplates[0],
           );
         }
@@ -2071,26 +2072,16 @@ function ThreeCourt({
             </div>
           )}
           {soundEnabled && (
-            <>
-              <label className={styles.volumeControl}>
-                <span>Court effects</span>
-                <input type="range" min="0" max="1" step="0.01" value={effectsVolume}
-                  aria-label="Court effects volume"
-                  onChange={(event) => {
-                    const volume = Number(event.currentTarget.value);
-                    effectsVolumeRef.current = volume;
-                    setEffectsVolume(volume);
-                  }} />
-              </label>
-              <button type="button" className={styles.soundButton} onClick={() => {
-                const context = audioContextRef.current;
-                if (!context || !soundOnRef.current || context.state === 'closed') return;
-                // Start all four sources synchronously from the tap, then let
-                // Web Audio sequence them without losing the mobile gesture.
-                void context.resume().catch(() => setSoundError('Court audio could not be resumed.'));
-                playCourtSoundCheck(context, surface, effectsVolumeRef.current, courtEffectSamplesRef.current);
-              }}>Test court sounds</button>
-            </>
+            <label className={styles.volumeControl}>
+              <span>Court effects</span>
+              <input type="range" min="0" max="1" step="0.01" value={effectsVolume}
+                aria-label="Court effects volume"
+                onChange={(event) => {
+                  const volume = Number(event.currentTarget.value);
+                  effectsVolumeRef.current = volume;
+                  setEffectsVolume(volume);
+                }} />
+            </label>
           )}
         </div>
       </div>

@@ -55,7 +55,6 @@ test('court effect samples stay compact and surface labels remain distinct', asy
     assert.ok(asset.size > 1_000 && asset.size < 20_000, `${file} is a small, bundled court cue`);
   }
   assert.match(threeCourt, /loadCourtEffectSamples\(context\)/);
-  assert.match(threeCourt, /playCourtSoundCheck\(context, surface, effectsVolumeRef\.current/);
   assert.match(threeCourt, /courtEffectSamplesRef\.current/);
 
   const surfaces = ['clay', 'grass', 'hard', 'unknown'];
@@ -72,4 +71,10 @@ test('court effect samples stay compact and surface labels remain distinct', asy
   assert.equal(new Set(profiles.map((profile) => profile.racketHz.join(':'))).size, 4);
   assert.doesNotMatch(threeCourt, /dmo-court-slide\.mp3/);
   assert.match(fallbackCourt, /if \(event\.kind !== 'footstep'\) continue/);
+});
+
+test('the nonfunctional 3D court sound-test control is removed', () => {
+  assert.doesNotMatch(threeCourt, /Test court sounds|playCourtSoundCheck/);
+  assert.match(threeCourt, /Court effects volume/,
+    'the actual court-effects volume control remains available');
 });

@@ -23,7 +23,213 @@ type Vertex = {
 
 const smooth = THREE.MathUtils.smoothstep;
 
-export function dressNativePlayer(model: THREE.Group, shirtColor: number, female: boolean) {
+export type NativePlayerKit = {
+  shortsColor: number;
+  accentColor: number;
+  hairColor: number;
+  grooming: 'headband-swept' | 'short-beard';
+};
+
+export const BROADCAST_PLAYER_KITS: [NativePlayerKit, NativePlayerKit] = [
+  { shortsColor: 0x26343a, accentColor: 0xc2ad7e, hairColor: 0x2b2522, grooming: 'headband-swept' },
+  { shortsColor: 0x35413d, accentColor: 0x9c6655, hairColor: 0x46352d, grooming: 'short-beard' },
+];
+
+function addTourMark(model: THREE.Group, kit: NativePlayerKit, index: number) {
+  const chest = model.getObjectByName('spine_03');
+  if (!(chest instanceof THREE.Bone)) return;
+  const mark = new THREE.Group();
+  mark.name = `native-tour-mark-${index + 1}`;
+  mark.position.set(-0.09, 0.11, 0.108);
+  const inventedLabel = index === 0 ? 'COURTLINE' : 'MERIDIAN';
+  mark.userData.inventedLabel = inventedLabel;
+  let map: THREE.CanvasTexture | undefined;
+  if (typeof document !== 'undefined') {
+    const canvas = document.createElement('canvas');
+    canvas.width = 512;
+    canvas.height = 196;
+    const context = canvas.getContext('2d');
+    if (context) {
+      const accent = `#${kit.accentColor.toString(16).padStart(6, '0')}`;
+      context.fillStyle = '#26343a';
+      context.fillRect(0, 0, canvas.width, canvas.height);
+      context.strokeStyle = '#d8d0bd';
+      context.lineWidth = 8;
+      context.strokeRect(5, 5, canvas.width - 10, canvas.height - 10);
+      context.fillStyle = accent;
+      context.fillRect(18, 18, 14, canvas.height - 36);
+      context.beginPath();
+      context.moveTo(66, 48);
+      context.lineTo(91, 98);
+      context.lineTo(66, 148);
+      context.lineTo(41, 98);
+      context.closePath();
+      context.fill();
+      context.fillStyle = '#f0eadc';
+      context.font = '700 44px sans-serif';
+      context.textBaseline = 'middle';
+      context.fillText(inventedLabel, 111, 92, 374);
+      map = new THREE.CanvasTexture(canvas);
+      map.colorSpace = THREE.SRGBColorSpace;
+    }
+  }
+  const patch = new THREE.Mesh(
+    new THREE.PlaneGeometry(0.17, 0.066),
+    new THREE.MeshStandardMaterial({
+      color: 0xffffff,
+      ...(map ? { map } : {}),
+      roughness: 0.86,
+      side: THREE.DoubleSide,
+    }),
+  );
+  patch.name = 'native-apparel-patch';
+  mark.add(patch);
+  if (!map) {
+    const seam = new THREE.Mesh(
+      new THREE.BoxGeometry(0.13, 0.004, 0.003),
+      new THREE.MeshStandardMaterial({ color: kit.accentColor, roughness: 0.82 }),
+    );
+    seam.name = 'native-patch-seam';
+    seam.position.y = -0.023;
+    mark.add(seam);
+  }
+  chest.add(mark);
+}
+
+function addGrooming(model: THREE.Group, kit: NativePlayerKit, index: number, female: boolean) {
+  const head = model.getObjectByName('head');
+  if (!(head instanceof THREE.Bone)) return;
+  // Player two's WTA hair is tied back; facial hair is never used on a
+  // female rig, even if a kit is accidentally reused across tours.
+  const style = female ? (index === 1 ? 'ponytail' : 'headband-swept') : kit.grooming;
+  if (style === 'ponytail') {
+    const tie = new THREE.Mesh(
+      new THREE.SphereGeometry(0.026, 12, 10),
+      new THREE.MeshStandardMaterial({ color: kit.accentColor, roughness: 0.82 }),
+    );
+    tie.name = `native-player-hair-tie-${index + 1}`;
+    tie.position.set(0, -0.065, -0.064);
+    head.add(tie);
+    const ponytail = new THREE.Mesh(
+      new THREE.CapsuleGeometry(0.026, 0.14, 5, 10),
+      new THREE.MeshStandardMaterial({ color: kit.hairColor, roughness: 0.78 }),
+    );
+    ponytail.name = `native-player-ponytail-${index + 1}`;
+    ponytail.position.set(-0.012, -0.15, -0.09);
+    ponytail.rotation.z = -0.18;
+    ponytail.rotation.x = 0.18;
+    ponytail.castShadow = true;
+    head.add(ponytail);
+  } else if (style === 'headband-swept') {
+    const band = new THREE.Mesh(
+      new THREE.TorusGeometry(0.084, 0.008, 6, 28),
+      new THREE.MeshStandardMaterial({ color: kit.accentColor, roughness: 0.8 }),
+    );
+    band.name = `native-player-headband-${index + 1}`;
+    band.rotation.x = Math.PI / 2;
+    band.position.set(0, 0.062, 0);
+    band.scale.set(0.88, 1, 0.82);
+    head.add(band);
+    const sweptHair = new THREE.Mesh(
+      new THREE.SphereGeometry(1, 18, 12),
+      new THREE.MeshStandardMaterial({ color: kit.hairColor, roughness: 0.78 }),
+    );
+    sweptHair.name = `native-player-swept-hair-${index + 1}`;
+    sweptHair.scale.set(0.061, 0.031, 0.079);
+    sweptHair.position.set(0.018, 0.111, -0.018);
+    sweptHair.rotation.z = -0.18;
+    sweptHair.rotation.x = -0.15;
+    sweptHair.castShadow = true;
+    head.add(sweptHair);
+  } else {
+    const beardMaterial = new THREE.MeshStandardMaterial({ color: kit.hairColor, roughness: 0.94 });
+    const beard = new THREE.Mesh(
+      new THREE.SphereGeometry(1, 16, 10),
+      beardMaterial,
+    );
+    beard.name = `native-player-neat-beard-${index + 1}`;
+    beard.scale.set(0.066, 0.032, 0.019);
+    beard.position.set(0, -0.086, 0.075);
+    beard.castShadow = true;
+    const grooming = new THREE.Group();
+    grooming.name = `native-player-stubble-${index + 1}`;
+    grooming.add(beard);
+    for (const side of [-1, 1]) {
+      const sideburn = new THREE.Mesh(
+        new THREE.SphereGeometry(1, 12, 8),
+        beardMaterial,
+      );
+      sideburn.scale.set(0.012, 0.035, 0.014);
+      sideburn.position.set(side * 0.064, -0.042, 0.045);
+      grooming.add(sideburn);
+    }
+    head.add(grooming);
+  }
+}
+
+export function addNativePlayerAccessories(
+  model: THREE.Group,
+  kit: NativePlayerKit,
+  dominantHandedness: 'left' | 'right',
+  kitIndex: number,
+) {
+  model.updateMatrixWorld(true);
+  const dominant = dominantHandedness === 'left' ? 'l' : 'r';
+  const support = dominant === 'l' ? 'r' : 'l';
+  const wristBandMaterial = new THREE.MeshStandardMaterial({ color: kit.accentColor, roughness: 0.86 });
+  const watchStrapMaterial = new THREE.MeshStandardMaterial({ color: 0x344047, roughness: 0.72 });
+  const watchFaceMaterial = new THREE.MeshStandardMaterial({ color: 0x29343a, roughness: 0.48, metalness: 0.12 });
+  const axis = new THREE.Vector3(0, 0, 1);
+  const wristAccessory = (side: 'l' | 'r') => {
+    const hand = model.getObjectByName(`hand_${side}`);
+    const forearm = model.getObjectByName(`lowerarm_${side}`);
+    if (!(hand instanceof THREE.Bone) || !(forearm instanceof THREE.Bone)) return null;
+    hand.updateWorldMatrix(true, false);
+    forearm.updateWorldMatrix(true, false);
+    const wrist = hand.getWorldPosition(new THREE.Vector3());
+    const elbow = forearm.getWorldPosition(new THREE.Vector3());
+    const localAxis = wrist.clone().sub(elbow).normalize()
+      .applyQuaternion(hand.getWorldQuaternion(new THREE.Quaternion()).invert()).normalize();
+    const anchor = new THREE.Group();
+    anchor.position.copy(localAxis).multiplyScalar(-0.035);
+    anchor.quaternion.setFromUnitVectors(axis, localAxis);
+    anchor.name = `native-wrist-accessory-anchor-${side}`;
+    hand.add(anchor);
+    return anchor;
+  };
+
+  const sweatband = wristAccessory(dominant);
+  if (sweatband) {
+    const ring = new THREE.Mesh(new THREE.TorusGeometry(0.044, 0.008, 6, 20), wristBandMaterial);
+    ring.name = `native-tennis-sweatband-${kitIndex + 1}`;
+    sweatband.add(ring);
+  }
+
+  const watch = wristAccessory(support);
+  if (watch) {
+    const strap = new THREE.Mesh(new THREE.TorusGeometry(0.043, 0.006, 6, 20), watchStrapMaterial);
+    strap.name = `native-sports-watch-strap-${kitIndex + 1}`;
+    watch.add(strap);
+    const face = new THREE.Mesh(new THREE.BoxGeometry(0.035, 0.007, 0.026), watchFaceMaterial);
+    face.name = `native-sports-watch-face-${kitIndex + 1}`;
+    face.position.y = 0.044;
+    watch.add(face);
+    const display = new THREE.Mesh(new THREE.BoxGeometry(0.018, 0.002, 0.011), new THREE.MeshStandardMaterial({
+      color: kit.accentColor, roughness: 0.48, metalness: 0.08,
+    }));
+    display.name = 'sports-watch-display';
+    display.position.set(0, 0.0485, 0);
+    watch.add(display);
+  }
+}
+
+export function dressNativePlayer(
+  model: THREE.Group,
+  shirtColor: number,
+  female: boolean,
+  kit: NativePlayerKit = BROADCAST_PLAYER_KITS[0],
+  kitIndex = 0,
+) {
   model.updateMatrixWorld(true);
   const bodies: THREE.SkinnedMesh[] = [];
   model.traverse(o => { if (o instanceof THREE.SkinnedMesh) bodies.push(o); });
@@ -172,8 +378,8 @@ export function dressNativePlayer(model: THREE.Group, shirtColor: number, female
       const collarFit = 0.003 * (1 - smooth(v.fields[1], 0, 0.02));
       return 0.011 + hemFlare - collarFit;
     }, shirtFields);
-    addShell('native-tennis-shorts', 0x202b35, () => 0.007, shortsFields, triangle => triangle.every(isTrunk));
-    addShell('native-cropped-hair', 0x38291f, () => 0.004, [i => points[i].y - 1.56],
+    addShell('native-tennis-shorts', kit.shortsColor, () => 0.007, shortsFields, triangle => triangle.every(isTrunk));
+    addShell('native-cropped-hair', kit.hairColor, () => 0.004, [i => points[i].y - 1.56],
       triangle => triangle.some(v => {
         const p = points[v];
         return p.y > 1.635 || p.z < 0.015 || (p.y > 1.60 && Math.abs(p.x) > 0.064);
@@ -190,7 +396,7 @@ export function dressNativePlayer(model: THREE.Group, shirtColor: number, female
   if (female) {
     const pelvis = model.getObjectByName('pelvis')!;
     const skirt = new THREE.Mesh(new THREE.CylinderGeometry(0.155, 0.235, 0.28, 40, 1, true),
-      new THREE.MeshStandardMaterial({ color: 0x202b35, roughness: 0.9, side: THREE.DoubleSide }));
+      new THREE.MeshStandardMaterial({ color: kit.shortsColor, roughness: 0.9, side: THREE.DoubleSide }));
     skirt.name = 'native-tennis-skirt';
     model.updateMatrixWorld(true);
     const world = pelvis.getWorldPosition(new THREE.Vector3()).add(new THREE.Vector3(0, -0.12, 0));
@@ -198,4 +404,6 @@ export function dressNativePlayer(model: THREE.Group, shirtColor: number, female
     skirt.quaternion.copy(model.getWorldQuaternion(new THREE.Quaternion()).invert());
     pelvis.attach(skirt);
   }
+  addTourMark(model, kit, kitIndex);
+  addGrooming(model, kit, kitIndex, female);
 }
