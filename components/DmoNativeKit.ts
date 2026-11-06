@@ -1,8 +1,28 @@
 import * as THREE from 'three';
 
+/**
+ * Skinned tennis garments share the native skeleton, including at the sleeves.
+ *
+ * Garment boundaries are scalar fields evaluated on the body's bind-pose
+ * vertices (metres, model faces +Z, A-pose). A garment keeps a surface region
+ * where every field is >= 0 and clips triangles exactly at the zero crossing,
+ * so collars, cuffs and hems are clean lines that follow the anatomy:
+ *  - the crew neckline follows the base of the neck (the old flat y = 1.375 cut
+ *    ran BELOW the 1.38–1.43 m shoulder tops, leaving every shoulder bare);
+ *  - sleeves are cut perpendicular to each upper arm (the old vertical x = ±0.29
+ *    plane sliced the A-posed arm diagonally);
+ *  - the shirt is layered outside the shorts' waistband;
+ *  - body skin hidden under a garment is removed, so it cannot poke through.
+ */
+type Vertex = {
+  point: THREE.Vector3;
+  normal: THREE.Vector3;
+  weights: Map<number, number>;
+  fields: number[];
+};
+
 const smooth = THREE.MathUtils.smoothstep;
 
-/** Skinned tennis garments share the native skeleton, including at the sleeves. */
 export function dressNativePlayer(model: THREE.Group, shirtColor: number, female: boolean) {
   model.updateMatrixWorld(true);
   const bodies: THREE.SkinnedMesh[] = [];
@@ -17,7 +37,7 @@ export function dressNativePlayer(model: THREE.Group, shirtColor: number, female
     const points = Array.from({ length: positions.count }, (_, i) =>
       new THREE.Vector3().fromBufferAttribute(positions, i).applyMatrix4(body.matrixWorld));
     const skinIndex = original.getAttribute('skinIndex'), skinWeight = original.getAttribute('skinWeight');
-    const boneNames = body.skeleton.bones.map(bone => bone.name);
+    const boneNames = body.skeleton.bones.map(b => b.name);
     const vertexWeights = Array.from({ length: positions.count }, (_, i) => {
       const weights = new Map<number, number>();
       for (let k = 0; k < 4; k++) {
@@ -28,9 +48,10 @@ export function dressNativePlayer(model: THREE.Group, shirtColor: number, female
     });
     const weightOf = (i: number, test: RegExp) => {
       let total = 0;
-      vertexWeights[i].forEach((weight, joint) => { if (test.test(boneNames[joint])) total += weight; });
+      vertexWeights[i].forEach((w, j) => { if (test.test(boneNames[j])) total += w; });
       return total;
     };
+    // Bind-pose joint positions (same space as `points`).
     const joint = (name: string) => {
       const bone = body.skeleton.bones[boneNames.indexOf(name)];
       if (!bone) throw new Error(`Native kit requires joint ${name}`);
@@ -41,17 +62,37 @@ export function dressNativePlayer(model: THREE.Group, shirtColor: number, female
       const shoulder = joint(`upperarm_${side}`), elbow = joint(`lowerarm_${side}`);
       const axis = elbow.clone().sub(shoulder);
       const length = axis.length();
-      return { side, shoulder, axis: axis.divideScalar(length), length,
-        test: new RegExp(`^(upperarm|lowerarm|hand|index|middle|ring|pinky|thumb)\\w*_${side}$`) };
+      return { side, shoulder, axis: axis.divideScalar(length), length, test: new RegExp(`^(upperarm|lowerarm|hand|index|middle|ring|pinky|thumb)\\w*_${side}$`) };
     });
     type Field = (i: number) => number;
-    type Vertex = { point: THREE.Vector3; normal: THREE.Vector3; weights: Map<number, number>; fields: number[] };
+    // Crew neckline: an elliptical collar around the neck base, slightly lower
+    // at the front. Positive = garment.
+    const neckline: Field = i => {
+      const p = points[i];
+      const dx = p.x - neck.x, dz = p.z - (neck.z + 0.012);
+      const radial = Math.hypot(dx / 0.088, dz / 0.082) - 1;
+      const collarHeight = neck.y - 0.045 - 0.022 * smooth(dz, 0, 0.08);
+      return Math.max(collarHeight - p.y, radial * 0.08);
+    };
+    // Short sleeves end ~45% down the upper arm, perpendicular to it. Torso
+    // vertices (no arm weight) are always inside the shirt.
+    const sleeve = (fraction: number): Field => i => {
+      const p = points[i];
+      const arm = arms[p.x >= 0 ? 0 : 1];
+      const along = p.clone().sub(arm.shoulder).dot(arm.axis) / arm.length;
+      const armness = smooth(weightOf(i, arm.test), 0.25, 0.75);
+      return (fraction - along) * armness + 0.3 * (1 - armness);
+    };
+    const shirtFields: Field[] = [i => points[i].y - 0.86, neckline, sleeve(0.46), i => neck.y + 0.01 - points[i].y];
+    const isTrunk = (i: number) => weightOf(i, /^(pelvis|spine_01|thigh|calf)/) > 0.5;
+    const shortsFields: Field[] = [i => points[i].y - 0.575, i => 0.975 - points[i].y];
+
     const fieldCache = new Map<Field[], Map<number, number[]>>();
     const sourceVertex = (i: number, fields: Field[]): Vertex => {
       let cache = fieldCache.get(fields);
       if (!cache) fieldCache.set(fields, cache = new Map());
       let values = cache.get(i);
-      if (!values) cache.set(i, values = fields.map(field => field(i)));
+      if (!values) cache.set(i, values = fields.map(f => f(i)));
       return {
         point: points[i].clone(),
         normal: new THREE.Vector3().fromBufferAttribute(normals, i),
@@ -61,31 +102,32 @@ export function dressNativePlayer(model: THREE.Group, shirtColor: number, female
     };
     const interpolate = (a: Vertex, b: Vertex, t: number): Vertex => {
       const weights = new Map<number, number>();
-      a.weights.forEach((weight, joint) => weights.set(joint, weight * (1 - t)));
-      b.weights.forEach((weight, joint) => weights.set(joint, (weights.get(joint) ?? 0) + weight * t));
+      a.weights.forEach((v, k) => weights.set(k, v * (1 - t)));
+      b.weights.forEach((v, k) => weights.set(k, (weights.get(k) ?? 0) + v * t));
       return {
         point: a.point.clone().lerp(b.point, t),
         normal: a.normal.clone().lerp(b.normal, t).normalize(),
         weights,
-        fields: a.fields.map((value, i) => value + (b.fields[i] - value) * t),
+        fields: a.fields.map((f, k) => f + (b.fields[k] - f) * t),
       };
     };
     const covered = new Set<number>();
     const addShell = (
-      name: string, color: number, offset: (vertex: Vertex) => number, fields: Field[],
+      name: string, color: number, offset: (v: Vertex) => number, fields: Field[],
       include?: (triangle: number[]) => boolean, hidesSkin = true,
     ) => {
       const vertices: Vertex[] = [], visible: number[] = [];
       for (let i = 0; i < indices.count; i += 3) {
         const triangle = [0, 1, 2].map(k => indices.getX(i + k));
         if (include && !include(triangle)) continue;
-        let polygon = triangle.map(vertex => sourceVertex(vertex, fields));
-        if (hidesSkin && polygon.every(vertex => vertex.fields.every(field => field > 0.012))) covered.add(i);
-        for (let field = 0; field < fields.length; field++) {
+        let polygon = triangle.map(v => sourceVertex(v, fields));
+        // Skin fully inside the garment (with margin) can never be seen.
+        if (hidesSkin && polygon.every(v => v.fields.every(f => f > 0.012))) covered.add(i);
+        for (let k = 0; k < fields.length; k++) {
           const clipped: Vertex[] = [];
-          for (let k = 0; k < polygon.length; k++) {
-            const a = polygon[k], b = polygon[(k + 1) % polygon.length];
-            const da = a.fields[field], db = b.fields[field];
+          for (let e = 0; e < polygon.length; e++) {
+            const a = polygon[e], b = polygon[(e + 1) % polygon.length];
+            const da = a.fields[k], db = b.fields[k];
             if (da >= 0) clipped.push(a);
             if ((da >= 0) !== (db >= 0)) clipped.push(interpolate(a, b, da / (da - db)));
           }
@@ -100,7 +142,7 @@ export function dressNativePlayer(model: THREE.Group, shirtColor: number, female
       const position: number[] = [], normal: number[] = [], joints: number[] = [], weights: number[] = [];
       const inverse = body.matrixWorld.clone().invert();
       for (const vertex of vertices) {
-         position.push(...vertex.point.clone().applyMatrix4(inverse).addScaledVector(vertex.normal, offset(vertex)).toArray());
+        position.push(...vertex.point.clone().applyMatrix4(inverse).addScaledVector(vertex.normal, offset(vertex)).toArray());
         normal.push(...vertex.normal.toArray());
         const strongest = [...vertex.weights].sort((a, b) => b[1] - a[1]).slice(0, 4);
         const total = strongest.reduce((n, entry) => n + entry[1], 0) || 1;
@@ -123,44 +165,24 @@ export function dressNativePlayer(model: THREE.Group, shirtColor: number, female
       mesh.frustumCulled = false; mesh.castShadow = true; mesh.receiveShadow = true;
       body.parent!.add(mesh);
     };
-    const neckline: Field = i => {
-      const point = points[i];
-      const dx = point.x - neck.x, dz = point.z - (neck.z + 0.012);
-      const radial = Math.hypot(dx / 0.088, dz / 0.082) - 1;
-      const collarHeight = neck.y - 0.045 - 0.022 * smooth(dz, 0, 0.08);
-      return Math.max(collarHeight - point.y, radial * 0.08);
-    };
-    const sleeve = (fraction: number): Field => i => {
-      const point = points[i];
-      const arm = arms[point.x >= 0 ? 0 : 1];
-      const along = point.clone().sub(arm.shoulder).dot(arm.axis) / arm.length;
-      const armness = smooth(weightOf(i, arm.test), 0.25, 0.75);
-      return (fraction - along) * armness + 0.3 * (1 - armness);
-    };
-    const shirtFields: Field[] = [
-      i => points[i].y - 0.86,
-      neckline,
-      sleeve(0.46),
-      i => neck.y + 0.01 - points[i].y,
-    ];
-    const isTrunk = (i: number) => weightOf(i, /^(pelvis|spine_01|thigh|calf)/) > 0.5;
-    const shortsFields: Field[] = [i => points[i].y - 0.575, i => 0.975 - points[i].y];
-    addShell('native-tennis-shirt', shirtColor, vertex => {
-      const hemFlare = 0.004 * (1 - smooth(vertex.point.y, 0.88, 1.0));
-      const collarFit = 0.003 * (1 - smooth(vertex.fields[1], 0, 0.02));
+    // Shirt sits outside the shorts' waistband (shirt worn untucked): a larger
+    // offset where they overlap, a closer fit at the collar and sleeve hems.
+    addShell('native-tennis-shirt', shirtColor, v => {
+      const hemFlare = 0.004 * (1 - smooth(v.point.y, 0.88, 1.0));
+      const collarFit = 0.003 * (1 - smooth(v.fields[1], 0, 0.02));
       return 0.011 + hemFlare - collarFit;
     }, shirtFields);
-    addShell('native-tennis-shorts', 0x202b35, () => 0.007, shortsFields,
-      triangle => triangle.every(isTrunk));
+    addShell('native-tennis-shorts', 0x202b35, () => 0.007, shortsFields, triangle => triangle.every(isTrunk));
     addShell('native-cropped-hair', 0x38291f, () => 0.004, [i => points[i].y - 1.56],
-      triangle => triangle.some(i => {
-        const point = points[i];
-        return point.y > 1.635 || point.z < 0.015 || (point.y > 1.60 && Math.abs(point.x) > 0.064);
+      triangle => triangle.some(v => {
+        const p = points[v];
+        return p.y > 1.635 || p.z < 0.015 || (p.y > 1.60 && Math.abs(p.x) > 0.064);
       }), false);
     const visible: number[] = [];
     for (let i = 0; i < indices.count; i += 3) {
+      if (covered.has(i)) continue;
       const a = indices.getX(i), b = indices.getX(i + 1), c = indices.getX(i + 2);
-      if (!covered.has(i) && Math.max(points[a].y, points[b].y, points[c].y) >= 0.1) visible.push(a, b, c);
+      if (Math.max(points[a].y, points[b].y, points[c].y) >= 0.1) visible.push(a, b, c);
     }
     body.geometry.setIndex(visible);
     body.frustumCulled = false; body.castShadow = true; body.receiveShadow = true;

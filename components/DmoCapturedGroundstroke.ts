@@ -98,24 +98,29 @@ const UPPER_BODY_BONES = [
   'clavicle_l', 'clavicle_r',
 ];
 
-/** Frames after contact over which the recorded motion returns to carry. */
+/** Frames after contact by which the recorded stroke has handed back to the
+ * between-shot carry (~0.4 s of recovery rather than a 0.1 s snap). */
 export const CAPTURE_RECOVERY_FRAMES = 40;
 
-/** Begin recorded groundstroke preparation about two thirds of a second early. */
+/** Frames before contact at which a groundstroke's recorded preparation
+ * starts to blend in (~0.65 s, so the take-back is not a few-frame whip). */
 export const GROUNDSTROKE_LEAD_FRAMES = 40;
 
 export function groundstrokeCaptureWeight(frameDelta: number) {
   if (!Number.isFinite(frameDelta)) return 0;
   const smooth = THREE.MathUtils.smoothstep;
-  return smooth(frameDelta, -GROUNDSTROKE_LEAD_FRAMES, -20)
-    * (1 - smooth(frameDelta, 16, CAPTURE_RECOVERY_FRAMES));
+  // One continuous envelope. (Separate backswing/impact/follow-through lobes
+  // crossed ~5 frames before contact, dipping the weight to ~0.5 and pulling
+  // the arm halfway back to the procedural pose mid-swing.)
+  return smooth(frameDelta, -GROUNDSTROKE_LEAD_FRAMES, -20) * (1 - smooth(frameDelta, 16, CAPTURE_RECOVERY_FRAMES));
 }
 
 export function serveCaptureWeight(frameDelta: number) {
   if (!Number.isFinite(frameDelta)) return 0;
   const smooth = THREE.MathUtils.smoothstep;
-  return smooth(frameDelta, -64, -48)
-    * (1 - smooth(frameDelta, 16, CAPTURE_RECOVERY_FRAMES));
+  // Continuous from the start of the service motion to the end of recovery;
+  // the old lobes dropped to zero ~6 frames before contact.
+  return smooth(frameDelta, -64, -48) * (1 - smooth(frameDelta, 16, CAPTURE_RECOVERY_FRAMES));
 }
 
 export function readyPosePlayback(

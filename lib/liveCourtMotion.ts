@@ -6,6 +6,8 @@ export type LiveCourtMotionEvent = {
   player?: 1 | 2;
   shotType?: 'serve' | 'rally';
   speedKmh?: number;
+  /** point-end only: the players change ends before the next point (from the score). */
+  changeover?: boolean;
 };
 export type LiveCourtFootworkEvent = {
   frame: number;
