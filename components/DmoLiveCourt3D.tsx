@@ -18,7 +18,12 @@ import {
   serveCaptureWeight,
 } from './DmoCapturedGroundstroke';
 import { courtSurfaceDisplayName, isIndoorDmoVenue } from '@/lib/te4DmoSurface';
-import { deriveLiveCourtSoundEvents, playLiveCourtEffect as playCue } from '@/lib/liveCourtAudio';
+import {
+  deriveLiveCourtSoundEvents,
+  loadCourtEffectSamples,
+  playLiveCourtEffect as playCue,
+  type CourtEffectSamples,
+} from '@/lib/liveCourtAudio';
 import {
   advanceLiveCourtPlayhead,
   clampPlayerCameraLateralPan,
@@ -188,6 +193,8 @@ function ThreeCourt({
   const crowdVolumeRef = useRef(0.24);
   const gruntAudioRef = useRef<{ isWta: boolean; buffer: AudioBuffer } | null>(null);
   const applauseAudioRef = useRef<AudioBuffer | null>(null);
+  const courtEffectSamplesRef = useRef<CourtEffectSamples>({});
+  const courtEffectSamplesLoadRef = useRef<Promise<void> | null>(null);
   const activeGruntsRef = useRef(new Set<AudioBufferSourceNode>());
   const activeApplauseRef = useRef(new Set<AudioBufferSourceNode>());
   const gruntsEnabledRef = useRef(gruntsEnabled);
@@ -1282,7 +1289,8 @@ function ThreeCourt({
               index += 1) {
               const cue = soundCues[index];
               if (crossedFrame(cue.frame, previous, currentFrame)) {
-                playCue(context, cue.kind, sceneDataRef.current.surface, effectsVolumeRef.current);
+                playCue(context, cue.kind, sceneDataRef.current.surface,
+                  effectsVolumeRef.current, courtEffectSamplesRef.current);
               }
             }
             for (const cue of liveCourtEventsBetween(trajectoryEventsRef.current, previous, currentFrame)) {
@@ -1565,6 +1573,21 @@ function ThreeCourt({
       setSoundError('');
       setSoundEnabled(true);
       const layers: Array<Promise<unknown>> = [];
+      let sampleLoad = courtEffectSamplesLoadRef.current;
+      if (!sampleLoad) {
+        sampleLoad = loadCourtEffectSamples(context).then(({ samples, missing }) => {
+          courtEffectSamplesRef.current = samples;
+          if (missing.length && soundOnRef.current) {
+            setSoundError('Some tennis court samples could not be loaded; backup effects are active.');
+          }
+        }).catch(() => {
+          if (soundOnRef.current) {
+            setSoundError('Tennis court samples could not be loaded; backup effects are active.');
+          }
+        });
+        courtEffectSamplesLoadRef.current = sampleLoad;
+      }
+      layers.push(sampleLoad);
       if (stadiumAtmosphere) {
         if (!crowdAudioRef.current) {
           const crowdAudio = new Audio('/audio/te4-crowd-ambience.mp3');
@@ -1815,7 +1838,7 @@ function ThreeCourt({
                   window.setTimeout(() => {
                     const context = audioContextRef.current;
                     if (soundOnRef.current && context?.state === 'running') {
-                      playCue(context, kind, surface, effectsVolumeRef.current);
+                      playCue(context, kind, surface, effectsVolumeRef.current, courtEffectSamplesRef.current);
                     }
                   }, index * 400);
                 });

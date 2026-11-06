@@ -21,6 +21,7 @@ import {
 } from '@/lib/liveCourtProjection';
 import {
   advanceLiveCourtPlayhead,
+  deriveLiveCourtFootworkEvents,
   interpolateLiveCourtFrame,
   liveCourtTrajectoryCue,
   latestLiveCourtMotionEvent,
@@ -30,6 +31,12 @@ import {
   type LiveCourtMotionEvent,
   type LiveCourtSample,
 } from '@/lib/liveCourtMotion';
+import {
+  loadCourtEffectSamples,
+  playLiveCourtEffect,
+  type CourtEffectKind,
+  type CourtEffectSamples,
+} from '@/lib/liveCourtAudio';
 import {
   drawLiveCourtBackdrop,
   drawLiveCourtCrowdMotion,
@@ -348,6 +355,7 @@ function drawScene(
 }
 
 type SynthesizedCue = 'racket' | 'bounce' | 'grunt' | 'cheer';
+type CourtCue = CourtEffectKind | 'grunt' | 'cheer';
 type CrowdBed = { source: AudioBufferSourceNode; gain: GainNode };
 type ActiveGruntVoice = OscillatorNode | AudioBufferSourceNode;
 
@@ -447,13 +455,19 @@ function playWtaGrunt(context: AudioContext, buffer: AudioBuffer, activeGrunts: 
 
 function playLiveCourtCue(
   context: AudioContext,
-  kind: SynthesizedCue,
+  kind: CourtCue,
   activeGrunts: Set<ActiveGruntVoice>,
   isWta: boolean,
   wtaGrunt: AudioBuffer | null,
+  surface: Te4CourtSurface,
+  courtEffectSamples: CourtEffectSamples,
 ) {
   if (kind === 'grunt' && isWta && wtaGrunt) {
     playWtaGrunt(context, wtaGrunt, activeGrunts);
+    return;
+  }
+  if (kind === 'racket' || kind === 'bounce' || kind === 'footstep' || kind === 'slide') {
+    playLiveCourtEffect(context, kind, surface, 0.9, courtEffectSamples);
     return;
   }
   playSynthesizedCue(context, kind, activeGrunts, isWta);
@@ -489,6 +503,8 @@ function DmoLiveCourt({
   const crowdBedRef = useRef<CrowdBed | null>(null);
   const activeGruntVoicesRef = useRef(new Set<ActiveGruntVoice>());
   const wtaGruntAudioRef = useRef<AudioBuffer | null>(null);
+  const courtEffectSamplesRef = useRef<CourtEffectSamples>({});
+  const courtEffectSamplesLoadRef = useRef<Promise<void> | null>(null);
   const lastSoundFrameRef = useRef(Math.max(0, snapshot.frameCount - 3));
   const playedSoundEventsRef = useRef(new Set<string>());
   const [soundEnabled, setSoundEnabled] = useState(false);
@@ -675,14 +691,26 @@ function DmoLiveCourt({
     for (const event of snapshot.soundEvents ?? []) {
       const key = `${event.frame}:${event.kind}`;
       if (event.frame < lastSoundFrameRef.current || playedSoundEventsRef.current.has(key)) continue;
-      playLiveCourtCue(context, event.kind, activeGruntVoicesRef.current, isWta, wtaGruntAudioRef.current);
+      playLiveCourtCue(context, event.kind, activeGruntVoicesRef.current, isWta,
+        wtaGruntAudioRef.current, surface, courtEffectSamplesRef.current);
+      playedSoundEventsRef.current.add(key);
+    }
+    for (const event of deriveLiveCourtFootworkEvents(
+      sampleBufferRef.current,
+      TE4_DMO_FRAMES_PER_SECOND,
+    )) {
+      const key = `${event.frame}:${event.kind}:${event.player}`;
+      if (event.frame < lastSoundFrameRef.current || playedSoundEventsRef.current.has(key)) continue;
+      playLiveCourtCue(context, event.kind, activeGruntVoicesRef.current, isWta,
+        wtaGruntAudioRef.current, surface, courtEffectSamplesRef.current);
       playedSoundEventsRef.current.add(key);
     }
     for (const event of snapshot.trajectoryEvents ?? []) {
       const cue = liveCourtTrajectoryCue(event, gruntsEnabled);
       const key = `${event.frame}:${event.kind}`;
       if (event.frame < lastSoundFrameRef.current || playedSoundEventsRef.current.has(key)) continue;
-      if (cue) playLiveCourtCue(context, cue, activeGruntVoicesRef.current, isWta, wtaGruntAudioRef.current);
+      if (cue) playLiveCourtCue(context, cue, activeGruntVoicesRef.current, isWta,
+        wtaGruntAudioRef.current, surface, courtEffectSamplesRef.current);
       playedSoundEventsRef.current.add(key);
     }
     lastSoundFrameRef.current = Math.max(lastSoundFrameRef.current, snapshot.frameCount - 3);
@@ -693,7 +721,7 @@ function DmoLiveCourt({
         playedSoundEventsRef.current.delete(key);
       }
     }
-  }, [snapshot.frameCount, snapshot.soundEvents, snapshot.trajectoryEvents, soundEnabled, gruntsEnabled, isWta]);
+  }, [snapshot.frameCount, snapshot.soundEvents, snapshot.trajectoryEvents, soundEnabled, gruntsEnabled, isWta, surface]);
 
   useEffect(() => () => {
     try {
@@ -766,6 +794,16 @@ function DmoLiveCourt({
       lastSoundFrameRef.current = Math.max(0, snapshot.frameCount - 3);
       setSoundError('');
       setSoundEnabled(true);
+      if (!courtEffectSamplesLoadRef.current) {
+        courtEffectSamplesLoadRef.current = loadCourtEffectSamples(context).then(({ samples, missing }) => {
+          courtEffectSamplesRef.current = samples;
+          if (missing.length) {
+            setSoundError('Some tennis court samples could not be loaded; backup effects are active.');
+          }
+        }).catch(() => {
+          setSoundError('Tennis court samples could not be loaded; backup effects are active.');
+        });
+      }
     } catch {
       setSoundError('Sound could not be enabled in this browser.');
     }

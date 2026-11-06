@@ -24,7 +24,11 @@ const sceneApi = await loadTs('../components/DmoLiveCourt3DScene.ts', {
   './DmoStadiumArchitecture': stadiumArchitectureApi,
 });
 const crowdLodApi = await loadTs('../lib/dmoCrowdLod.ts');
-const { deriveLiveCourtSoundEvents, playLiveCourtEffect } = await loadTs('../lib/liveCourtAudio.ts', {
+const {
+  deriveLiveCourtSoundEvents,
+  loadCourtEffectSamples,
+  playLiveCourtEffect,
+} = await loadTs('../lib/liveCourtAudio.ts', {
   './te4DmoSurface': { courtSurfaceSoundProfile },
 });
 
@@ -403,6 +407,8 @@ test('court contacts use compact varied sound textures for each effect and surfa
   const makeContext = () => {
     const buffers = [];
     const sources = [];
+    const filters = [];
+    const gains = [];
     const node = () => ({
       connect() { return this; },
       disconnect() {},
@@ -415,10 +421,14 @@ test('court contacts use compact varied sound textures for each effect and surfa
       ratio: param(),
       attack: param(),
       release: param(),
+      frequency: param(),
+      Q: param(),
     });
     return {
       buffers,
       sources,
+      filters,
+      gains,
       context: {
         currentTime: 0, sampleRate: 8000, destination: {},
         createBuffer: (_, length, sampleRate) => {
@@ -436,7 +446,16 @@ test('court contacts use compact varied sound textures for each effect and surfa
           sources.push(source);
           return source;
         },
-        createGain: node,
+        createGain: () => {
+          const gain = node();
+          gains.push(gain);
+          return gain;
+        },
+        createBiquadFilter: () => {
+          const filter = node();
+          filters.push(filter);
+          return filter;
+        },
         createDynamicsCompressor: node,
       },
     };
@@ -463,6 +482,92 @@ test('court contacts use compact varied sound textures for each effect and surfa
   const silent = makeContext();
   playLiveCourtEffect(silent.context, 'racket', 'hard', 0);
   assert.equal(silent.sources.length, 0, 'zero effects volume remains silent');
+});
+
+test('court effects load recorded samples and retain quiet, surface-aware footwork', async () => {
+  const requestedUrls = [];
+  const { samples, missing } = await loadCourtEffectSamples({
+    decodeAudioData: async () => ({ duration: 0.25 }),
+  }, async url => {
+    requestedUrls.push(url);
+    return { ok: true, arrayBuffer: async () => new ArrayBuffer(32) };
+  });
+  assert.deepEqual(missing, []);
+  assert.deepEqual(Object.keys(samples).sort(), ['bounce', 'footstep', 'racket', 'slide']);
+  assert.deepEqual(requestedUrls.sort(), [
+    '/audio/dmo-ball-bounce.mp3',
+    '/audio/dmo-court-footstep.mp3',
+    '/audio/dmo-court-slide.mp3',
+    '/audio/dmo-racket-impact.mp3',
+  ]);
+
+  const param = () => ({ value: 0 });
+  const makeContext = () => {
+    const sources = [];
+    const filters = [];
+    const gains = [];
+    const node = () => ({
+      connect() { return this; },
+      disconnect() {},
+      start() {},
+      stop() {},
+      gain: param(),
+      playbackRate: param(),
+      frequency: param(),
+      Q: param(),
+      threshold: param(),
+      knee: param(),
+      ratio: param(),
+      attack: param(),
+      release: param(),
+    });
+    const context = {
+      currentTime: 0,
+      destination: {},
+      createBufferSource: () => {
+        const source = node();
+        sources.push(source);
+        return source;
+      },
+      createGain: () => {
+        const gain = node();
+        gains.push(gain);
+        return gain;
+      },
+      createBiquadFilter: () => {
+        const filter = node();
+        filters.push(filter);
+        return filter;
+      },
+      createDynamicsCompressor: node,
+    };
+    return { context, sources, filters, gains };
+  };
+
+  const sample = { duration: 0.25 };
+  const hard = makeContext();
+  const clay = makeContext();
+  const grass = makeContext();
+  for (const [context, surface] of [[hard.context, 'hard'], [clay.context, 'clay'], [grass.context, 'grass']]) {
+    playLiveCourtEffect(context, 'footstep', surface, 1, { footstep: sample });
+  }
+  assert.ok(hard.sources.every(source => source.buffer === sample));
+  assert.ok(clay.sources.every(source => source.buffer === sample));
+  assert.ok(grass.sources.every(source => source.buffer === sample));
+  assert.equal(new Set([
+    hard.sources[0].playbackRate.value.toFixed(3),
+    clay.sources[0].playbackRate.value.toFixed(3),
+    grass.sources[0].playbackRate.value.toFixed(3),
+  ]).size, 3, 'surface profiles shape the same recording differently');
+  assert.ok(clay.gains[0].gain.value < 0.6, 'footsteps stay quieter than racket and ball contacts');
+
+  const partial = await loadCourtEffectSamples({
+    decodeAudioData: async () => ({ duration: 0.25 }),
+  }, async url => ({
+    ok: !url.endsWith('dmo-court-slide.mp3'),
+    arrayBuffer: async () => new ArrayBuffer(32),
+  }));
+  assert.deepEqual(partial.missing, ['slide'], 'unavailable samples are reported for the visible fallback status');
 });
 
 test('point and game boundaries do not clear accumulated clay marks', async () => {
