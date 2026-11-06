@@ -42,6 +42,7 @@ import {
   drawLiveCourtCrowdMotion,
 } from '@/lib/liveCourtStadium';
 import CourtFullscreenButton from './CourtFullscreenButton';
+import CourtPictureInPictureButton from './CourtPictureInPictureButton';
 import { liveGruntAudioUrl } from '@/lib/liveGruntAudio';
 import styles from './DmoLiveCourt.module.css';
 
@@ -913,6 +914,19 @@ function DmoLiveCourt({
             targetRef={sceneElementRef}
             className={styles.fullscreenButton}
             statusClassName={styles.visuallyHidden}
+            fallbackClassName={styles.fullscreenFallback}
+          />
+          <CourtPictureInPictureButton
+            canvasRef={canvasRef}
+            targetRef={sceneElementRef}
+            className={styles.pictureInPictureButton}
+            statusClassName={styles.visuallyHidden}
+            fallbackClassName={styles.pictureInPictureFallback}
+            overlayClassName={styles.pictureInPictureOverlay}
+            activeOverlayClassName={styles.pictureInPictureOverlayActive}
+            videoClassName={styles.pictureInPictureVideo}
+            sourceClassName={styles.pictureInPictureSource}
+            closeClassName={styles.pictureInPictureClose}
           />
           {stadiumAtmosphere && (
             <div className={styles.crowdVolumeControl} role="group" aria-label="Crowd volume controls">

@@ -129,6 +129,13 @@ test('one animated crowd ring fills the near apron and upper bowl with four cent
       'upper tiers keep the four centered passageways clear');
   }
   const nearSeats = crowd.seats.filter((seat) => seat.row < 4);
+  const nearPlatforms = scene.getObjectByName('wtsl-near-court-seating-platforms');
+  const nearRisers = scene.getObjectByName('wtsl-near-court-seating-risers');
+  assert.ok(nearPlatforms?.isInstancedMesh);
+  assert.equal(nearPlatforms.count, 32, 'each lower row has platforms beneath its four seating sides');
+  assert.equal(nearPlatforms.userData.accessPassages, 4, 'the seating platform leaves the four walk-through gaps open');
+  assert.ok(nearRisers?.isInstancedMesh);
+  assert.equal(nearRisers.count, 24, 'raised crowd rows have visible risers instead of appearing suspended');
   const sidelineSeats = nearSeats.filter((seat) => Math.abs(seat.z) >= 12 && Math.abs(seat.x) < 22);
   const baselineSeats = nearSeats.filter((seat) => Math.abs(seat.x) >= 22 && Math.abs(seat.z) < 12);
   assert.ok(sidelineSeats.every((seat) => Math.abs(seat.x) >= 2.5),
@@ -170,6 +177,29 @@ test('one animated crowd ring fills the near apron and upper bowl with four cent
   arms.getMatrixAt(animatedSeat * 2, armAfter);
   assert.notDeepEqual(after.elements, before.elements, 'the same gaze animation reaches upper-bowl spectators');
   assert.notDeepEqual(armAfter.elements, armBefore.elements, 'the same applause animation reaches upper-bowl spectators');
+});
+
+test('transparent courtside safety barriers stay outside runoff and preserve four access gaps', () => {
+  const scene = new THREE.Scene();
+  sceneApi.buildCourt(scene, 'hard');
+  const barrier = scene.getObjectByName('wtsl-courtside-safety-barrier');
+  assert.ok(barrier);
+  assert.equal(barrier.userData.height, 1.3);
+  assert.equal(barrier.userData.accessGaps, 4);
+  assert.equal(barrier.userData.outsideClearRunoff, true);
+  const panels = barrier.children.filter((object) => object.name === 'wtsl-courtside-safety-glass');
+  assert.equal(panels.length, 8, 'four transparent sides retain centered player and spectator access aisles');
+  for (const panel of panels) {
+    assert.ok(Math.abs(panel.position.z) >= 11.5 || Math.abs(panel.position.x) >= 21.5,
+      'the barrier remains beyond the continuous court apron');
+    assert.equal(panel.material.transparent, true);
+  }
+  const continuousCourt = scene.children.find((object) =>
+    object.isMesh
+    && object.geometry?.type === 'PlaneGeometry'
+    && object.geometry.parameters.width === 42
+    && object.geometry.parameters.height === 22);
+  assert.ok(continuousCourt, 'the original 42 by 22 court apron geometry is unchanged');
 });
 
 test('upper crowd anchors match the architecture seat coordinates and facing', () => {

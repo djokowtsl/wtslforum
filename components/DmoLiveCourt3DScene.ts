@@ -328,6 +328,100 @@ function claySkidTexture() {
   return texture;
 }
 
+function addCourtsideSafetyBarrier(scene: THREE.Scene) {
+  const barrier = new THREE.Group();
+  barrier.name = 'wtsl-courtside-safety-barrier';
+  barrier.userData = {
+    height: 1.3,
+    outsideClearRunoff: true,
+    accessGaps: 4,
+    transparentPanels: true,
+  };
+  const glass = new THREE.MeshPhysicalMaterial({
+    color: 0xa9c9c6,
+    transparent: true,
+    opacity: 0.2,
+    roughness: 0.16,
+    metalness: 0,
+    side: THREE.DoubleSide,
+    depthWrite: false,
+  });
+  const rail = new THREE.MeshStandardMaterial({
+    color: 0x425653,
+    roughness: 0.58,
+    metalness: 0.18,
+  });
+  const halfLength = 21.55;
+  const halfWidth = 11.55;
+  const gateHalfWidth = 2.65;
+  const panelBottom = 0.06;
+  const panelHeight = 1.16;
+  const topY = panelBottom + panelHeight + 0.04;
+
+  const addSegment = (axis: 'x' | 'z', fixed: number, from: number, to: number) => {
+    const length = to - from;
+    if (length <= 0) return;
+    const center = (from + to) / 2;
+    const panel = new THREE.Mesh(
+      axis === 'x'
+        ? new THREE.BoxGeometry(length, panelHeight, 0.035)
+        : new THREE.BoxGeometry(0.035, panelHeight, length),
+      glass,
+    );
+    panel.name = 'wtsl-courtside-safety-glass';
+    panel.position.set(
+      axis === 'x' ? center : fixed,
+      panelBottom + panelHeight / 2,
+      axis === 'x' ? fixed : center,
+    );
+    panel.userData.role = 'transparent-safety-panel';
+    panel.castShadow = false;
+    panel.receiveShadow = true;
+    barrier.add(panel);
+
+    const addRail = (y: number, height: number, depth: number) => {
+      const railMesh = new THREE.Mesh(
+        axis === 'x'
+          ? new THREE.BoxGeometry(length, height, depth)
+          : new THREE.BoxGeometry(depth, height, length),
+        rail,
+      );
+      railMesh.name = 'wtsl-courtside-safety-rail';
+      railMesh.position.set(axis === 'x' ? center : fixed, y, axis === 'x' ? fixed : center);
+      railMesh.castShadow = false;
+      barrier.add(railMesh);
+    };
+    addRail(panelBottom, 0.06, 0.08);
+    addRail(topY, 0.08, 0.1);
+
+    const addPost = (along: number) => {
+      const post = new THREE.Mesh(new THREE.BoxGeometry(0.075, 1.3, 0.075), rail);
+      post.name = 'wtsl-courtside-safety-post';
+      post.position.set(axis === 'x' ? along : fixed, 0.65, axis === 'x' ? fixed : along);
+      post.castShadow = false;
+      barrier.add(post);
+    };
+    for (let along = from; along < to; along += 2.2) addPost(along);
+    addPost(to);
+  };
+
+  for (const side of [-1, 1]) {
+    for (const [from, to] of [
+      [-halfLength, -gateHalfWidth],
+      [gateHalfWidth, halfLength],
+    ]) {
+      addSegment('x', side * halfWidth, from, to);
+    }
+    for (const [from, to] of [
+      [-halfWidth, -gateHalfWidth],
+      [gateHalfWidth, halfWidth],
+    ]) {
+      addSegment('z', side * halfLength, from, to);
+    }
+  }
+  scene.add(barrier);
+}
+
 export function buildCourt(scene: THREE.Scene, surface: Te4CourtSurface) {
   const halfLength = COURT_LENGTH / 2;
   const halfWidth = COURT_WIDTH / 2;
@@ -418,6 +512,7 @@ export function buildCourt(scene: THREE.Scene, surface: Te4CourtSurface) {
     new THREE.LineBasicMaterial({ color: PALETTE.trim, transparent: true, opacity: 0.42 }),
   );
   scene.add(apronOutline);
+  addCourtsideSafetyBarrier(scene);
 
   const skidTexture = surface === 'clay' ? claySkidTexture() : null;
   const skidCount = 2048;
@@ -573,6 +668,91 @@ function buildUnifiedCrowd(scene: THREE.Scene): CrowdRig {
       });
     }
   }
+
+  const nearPlatforms = new THREE.InstancedMesh(
+    new THREE.BoxGeometry(1, 1, 1),
+    material(0x52605e, 0.92),
+    lowerRows * 8,
+  );
+  const nearRisers = new THREE.InstancedMesh(
+    new THREE.BoxGeometry(1, 1, 1),
+    material(0x465553, 0.92),
+    (lowerRows - 1) * 8,
+  );
+  nearPlatforms.name = 'wtsl-near-court-seating-platforms';
+  nearPlatforms.userData = { rows: lowerRows, continuous: true, accessPassages: 4 };
+  nearRisers.name = 'wtsl-near-court-seating-risers';
+  nearRisers.userData = { rows: lowerRows - 1, supportsRaisedRows: true, accessPassages: 4 };
+  const platformTransform = new THREE.Object3D();
+  let platformIndex = 0;
+  let riserIndex = 0;
+  for (let row = 0; row < lowerRows; row += 1) {
+    const halfWidth = 22 + row * lowerRowRun;
+    const halfDepth = 12 + row * lowerRowRun;
+    const corner = 1.3;
+    const seatY = 0.05 + row * lowerRowRise;
+    const addPlatform = (
+      x: number,
+      z: number,
+      width: number,
+      depth: number,
+    ) => {
+      platformTransform.position.set(x, seatY - 0.08, z);
+      platformTransform.rotation.set(0, 0, 0);
+      platformTransform.scale.set(width, 0.16, depth);
+      platformTransform.updateMatrix();
+      nearPlatforms.setMatrixAt(platformIndex++, platformTransform.matrix);
+    };
+    const addRiser = (
+      x: number,
+      z: number,
+      width: number,
+      depth: number,
+    ) => {
+      platformTransform.position.set(x, seatY - lowerRowRise / 2, z);
+      platformTransform.rotation.set(0, 0, 0);
+      platformTransform.scale.set(width, lowerRowRise, depth);
+      platformTransform.updateMatrix();
+      nearRisers.setMatrixAt(riserIndex++, platformTransform.matrix);
+    };
+    const outerX = halfWidth + corner;
+    const outerZ = halfDepth + corner;
+    for (const side of [-1, 1]) {
+      for (const direction of [-1, 1]) {
+        const segmentLength = outerX - tunnelHalfWidth;
+        const segmentCenter = direction * (outerX + tunnelHalfWidth) / 2;
+        addPlatform(segmentCenter, side * halfDepth, segmentLength, lowerRowRun);
+        if (row > 0) {
+          addRiser(
+            segmentCenter,
+            side * (halfDepth - lowerRowRun / 2),
+            segmentLength,
+            0.1,
+          );
+        }
+      }
+      for (const direction of [-1, 1]) {
+        const segmentLength = outerZ - tunnelHalfWidth;
+        const segmentCenter = direction * (outerZ + tunnelHalfWidth) / 2;
+        addPlatform(side * (halfWidth + corner), segmentCenter, lowerRowRun, segmentLength);
+        if (row > 0) {
+          addRiser(
+            side * (halfWidth + corner - lowerRowRun / 2),
+            segmentCenter,
+            0.1,
+            segmentLength,
+          );
+        }
+      }
+    }
+  }
+  nearPlatforms.instanceMatrix.needsUpdate = true;
+  nearRisers.instanceMatrix.needsUpdate = true;
+  nearPlatforms.castShadow = false;
+  nearPlatforms.receiveShadow = true;
+  nearRisers.castShadow = false;
+  nearRisers.receiveShadow = true;
+  scene.add(nearPlatforms, nearRisers);
 
   const nearSeatMesh = new THREE.InstancedMesh(
     new THREE.BoxGeometry(0.46, 0.1, 0.42),
