@@ -170,6 +170,8 @@ export default function Te4DmoReplayPlayer({
           className={styles.frame}
           title={`Classic match analysis: ${viewer.names[0]} vs ${viewer.names[1]}`}
           srcDoc={srcDoc}
+          allow="fullscreen"
+          allowFullScreen
           sandbox="allow-scripts"
           onLoad={() => {
             syncViewerTheme();
