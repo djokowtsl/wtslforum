@@ -50,6 +50,7 @@ test('generated tennis effect samples stay compact and surface labels remain dis
     'dmo-racket-impact.mp3',
     'dmo-ball-bounce.mp3',
     'dmo-court-footstep.mp3',
+    'dmo-court-slide.mp3',
   ]) {
     const asset = await stat(new URL(`../public/audio/${file}`, import.meta.url));
     assert.ok(asset.size > 1_000 && asset.size < 20_000, `${file} is a small, bundled court cue`);

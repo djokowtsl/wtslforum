@@ -680,51 +680,31 @@ function buildUnifiedCrowd(scene: THREE.Scene, venue: DmoVenueProfile): CrowdRig
     }
   }
 
-  const nearPlatforms = new THREE.InstancedMesh(
-    new THREE.BoxGeometry(1, 1, 1),
-    material(0x52605e, 0.92),
-    lowerRows * 8,
-  );
-  const nearRisers = new THREE.InstancedMesh(
+  const nearSupports = new THREE.InstancedMesh(
     new THREE.BoxGeometry(1, 1, 1),
     material(0x465553, 0.92),
-    (lowerRows - 1) * 8,
+    lowerRows * 8,
   );
-  nearPlatforms.name = 'wtsl-near-court-seating-platforms';
-  nearPlatforms.userData = { rows: lowerRows, continuous: true, accessPassages: 4 };
-  nearRisers.name = 'wtsl-near-court-seating-risers';
-  nearRisers.userData = { rows: lowerRows - 1, supportsRaisedRows: true, accessPassages: 4 };
+  nearSupports.name = 'wtsl-near-court-seating-supports';
+  nearSupports.userData = { rows: lowerRows, style: 'narrow-beams', accessPassages: 4 };
   const platformTransform = new THREE.Object3D();
-  let platformIndex = 0;
-  let riserIndex = 0;
+  let supportIndex = 0;
   for (let row = 0; row < lowerRows; row += 1) {
     const halfWidth = 22 + row * lowerRowRun;
     const halfDepth = 12 + row * lowerRowRun;
     const corner = 1.3;
     const seatY = 0.05 + row * lowerRowRise;
-    const addPlatform = (
+    const addSupport = (
       x: number,
       z: number,
       width: number,
       depth: number,
     ) => {
-      platformTransform.position.set(x, seatY - 0.08, z);
+      platformTransform.position.set(x, seatY - 0.06, z);
       platformTransform.rotation.set(0, 0, 0);
-      platformTransform.scale.set(width, 0.16, depth);
+      platformTransform.scale.set(width, 0.12, depth);
       platformTransform.updateMatrix();
-      nearPlatforms.setMatrixAt(platformIndex++, platformTransform.matrix);
-    };
-    const addRiser = (
-      x: number,
-      z: number,
-      width: number,
-      depth: number,
-    ) => {
-      platformTransform.position.set(x, seatY - lowerRowRise / 2, z);
-      platformTransform.rotation.set(0, 0, 0);
-      platformTransform.scale.set(width, lowerRowRise, depth);
-      platformTransform.updateMatrix();
-      nearRisers.setMatrixAt(riserIndex++, platformTransform.matrix);
+      nearSupports.setMatrixAt(supportIndex++, platformTransform.matrix);
     };
     const outerX = halfWidth + corner;
     const outerZ = halfDepth + corner;
@@ -732,38 +712,19 @@ function buildUnifiedCrowd(scene: THREE.Scene, venue: DmoVenueProfile): CrowdRig
       for (const direction of [-1, 1]) {
         const segmentLength = outerX - tunnelHalfWidth;
         const segmentCenter = direction * (outerX + tunnelHalfWidth) / 2;
-        addPlatform(segmentCenter, side * halfDepth, segmentLength, lowerRowRun);
-        if (row > 0) {
-          addRiser(
-            segmentCenter,
-            side * (halfDepth - lowerRowRun / 2),
-            segmentLength,
-            0.1,
-          );
-        }
+        addSupport(segmentCenter, side * halfDepth, segmentLength, 0.18);
       }
       for (const direction of [-1, 1]) {
         const segmentLength = outerZ - tunnelHalfWidth;
         const segmentCenter = direction * (outerZ + tunnelHalfWidth) / 2;
-        addPlatform(side * (halfWidth + corner), segmentCenter, lowerRowRun, segmentLength);
-        if (row > 0) {
-          addRiser(
-            side * (halfWidth + corner - lowerRowRun / 2),
-            segmentCenter,
-            0.1,
-            segmentLength,
-          );
-        }
+        addSupport(side * (halfWidth + corner), segmentCenter, 0.18, segmentLength);
       }
     }
   }
-  nearPlatforms.instanceMatrix.needsUpdate = true;
-  nearRisers.instanceMatrix.needsUpdate = true;
-  nearPlatforms.castShadow = false;
-  nearPlatforms.receiveShadow = true;
-  nearRisers.castShadow = false;
-  nearRisers.receiveShadow = true;
-  scene.add(nearPlatforms, nearRisers);
+  nearSupports.instanceMatrix.needsUpdate = true;
+  nearSupports.castShadow = false;
+  nearSupports.receiveShadow = true;
+  scene.add(nearSupports);
 
   const nearSeatMesh = new THREE.InstancedMesh(
     new THREE.BoxGeometry(0.46, 0.1, 0.42),

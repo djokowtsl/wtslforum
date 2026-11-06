@@ -5,6 +5,7 @@ import { courtSurfaceSoundProfile } from './te4DmoSurface';
 export type CourtEffectKind = 'racket' | 'bounce' | 'footstep' | 'slide';
 export type CourtEffectSamples = Partial<Record<CourtEffectKind, AudioBuffer>>;
 export type CourtSoundEvent = { frame: number; kind: CourtEffectKind; player?: 1 | 2 };
+type ProceduralCourtEffectKind = Exclude<CourtEffectKind, 'slide'>;
 
 /** Fill missing contact cues from the same recorded timeline used for animation. */
 export function deriveLiveCourtSoundEvents(
@@ -57,6 +58,7 @@ const courtEffectAssets: Partial<Record<CourtEffectKind, string>> = {
   racket: '/audio/dmo-racket-impact.mp3',
   bounce: '/audio/dmo-ball-bounce.mp3',
   footstep: '/audio/dmo-court-footstep.mp3',
+  slide: '/audio/dmo-court-slide.mp3',
 };
 
 export async function loadCourtEffectSamples(
@@ -108,9 +110,8 @@ function seededRandom(seedText: string) {
   };
 }
 
-function courtEffectDuration(kind: CourtEffectKind, surface: Te4CourtSurface) {
+function courtEffectDuration(kind: ProceduralCourtEffectKind, surface: Te4CourtSurface) {
   const profile = courtSurfaceSoundProfile(surface);
-  if (kind === 'slide') return surface === 'clay' ? 0.09 : 0.07;
   if (kind === 'footstep') return 0.07;
   if (kind === 'racket') return Math.max(0.07, profile.racketDuration);
   return Math.min(0.095, profile.bounceDuration);
@@ -118,7 +119,7 @@ function courtEffectDuration(kind: CourtEffectKind, surface: Te4CourtSurface) {
 
 function createCourtEffectBuffer(
   context: BaseAudioContext,
-  kind: CourtEffectKind,
+  kind: ProceduralCourtEffectKind,
   surface: Te4CourtSurface,
   variant: number,
 ) {
@@ -128,7 +129,6 @@ function createCourtEffectBuffer(
   const buffer = context.createBuffer(1, Math.ceil(sampleRate * duration), sampleRate);
   const samples = buffer.getChannelData(0);
   const random = seededRandom(`${kind}:${surface}:${variant}`);
-  const isSlide = kind === 'slide';
   const isStep = kind === 'footstep';
 
   const modes = kind === 'racket'
@@ -143,12 +143,10 @@ function createCourtEffectBuffer(
         { frequency: profile.bounceHz[0], gain: profile.bounceGain * 1.5, decay: 0.031 },
         { frequency: profile.bounceHz[1] * 0.52, gain: profile.bounceGain * 0.5, decay: 0.076 },
       ]
-      : isStep
-        ? [
+        : [
           { frequency: profile.stepToneHz[1], gain: 0.18, decay: 0.046 },
           { frequency: profile.stepToneHz[0], gain: 0.075, decay: 0.022 },
-        ]
-        : [];
+        ];
   const variedModes = modes.map((mode) => ({
     ...mode,
     frequency: mode.frequency * (0.97 + random() * 0.06),
@@ -156,10 +154,10 @@ function createCourtEffectBuffer(
   }));
 
   const nyquist = sampleRate / 2;
-  const lowCutoff = Math.min(nyquist * 0.45, isSlide ? profile.slideNoiseHz * 0.52
-    : isStep ? profile.stepNoiseHz * 0.5 : kind === 'racket' ? 1_100 : 500);
-  const highCutoff = Math.min(nyquist * 0.9, isSlide ? profile.slideNoiseHz * 1.8
-    : isStep ? profile.stepNoiseHz * 2.1 : kind === 'racket' ? 5_200 : 2_800);
+  const lowCutoff = Math.min(nyquist * 0.45, isStep ? profile.stepNoiseHz * 0.5
+    : kind === 'racket' ? 1_100 : 500);
+  const highCutoff = Math.min(nyquist * 0.9, isStep ? profile.stepNoiseHz * 2.1
+    : kind === 'racket' ? 5_200 : 2_800);
   const lowAlpha = 1 - Math.exp((-2 * Math.PI * lowCutoff) / sampleRate);
   const highAlpha = 1 - Math.exp((-2 * Math.PI * highCutoff) / sampleRate);
   let lowState = 0;
@@ -168,15 +166,13 @@ function createCourtEffectBuffer(
 
   for (let index = 0; index < samples.length; index += 1) {
     const time = index / sampleRate;
-    const attack = Math.min(1, time / (isSlide ? 0.01 : 0.0016));
+    const attack = Math.min(1, time / 0.0016);
     const white = random() * 2 - 1;
     lowState += lowAlpha * (white - lowState);
     highState += highAlpha * (white - highState);
     const bandNoise = highState - lowState;
-    const noiseEnvelope = isSlide
-      ? Math.min(1, time / 0.008) * Math.exp(-Math.max(0, time - 0.012) / 0.032)
-      : Math.exp(-time / (kind === 'racket' ? 0.012 : isStep ? 0.022 : 0.01));
-    const noiseLevel = isSlide ? 0.12 : isStep ? 0.15 : kind === 'racket' ? 0.14 : 0.12;
+    const noiseEnvelope = Math.exp(-time / (kind === 'racket' ? 0.012 : isStep ? 0.022 : 0.01));
+    const noiseLevel = isStep ? 0.15 : kind === 'racket' ? 0.14 : 0.12;
     const noise = bandNoise * noiseEnvelope * noiseLevel;
     const body = variedModes.reduce((sum, mode) =>
       sum + Math.sin((2 * Math.PI * mode.frequency * time) + mode.phase)
@@ -186,7 +182,7 @@ function createCourtEffectBuffer(
     peak = Math.max(peak, Math.abs(sample));
   }
 
-  const targetPeak = kind === 'racket' ? 0.58 : kind === 'bounce' ? 0.52 : isStep ? 0.3 : isSlide ? 0.12 : 0.26;
+  const targetPeak = kind === 'racket' ? 0.58 : kind === 'bounce' ? 0.52 : isStep ? 0.3 : 0.26;
   if (peak > 0) {
     const scale = targetPeak / peak;
     for (let index = 0; index < samples.length; index += 1) samples[index] *= scale;
@@ -196,7 +192,7 @@ function createCourtEffectBuffer(
 
 function courtEffectVariants(
   context: BaseAudioContext,
-  kind: CourtEffectKind,
+  kind: ProceduralCourtEffectKind,
   surface: Te4CourtSurface,
 ) {
   let buffers = effectBuffers.get(context);
@@ -226,7 +222,7 @@ const sampleGain: Record<CourtEffectKind, number> = {
   slide: 0.28,
 };
 
-/** Play short recorded court cues, retaining surface-specific EQ and a procedural fallback. */
+/** Play short recorded court cues; slides require the recorded shoe squeak. */
 export function playLiveCourtEffect(
   context: BaseAudioContext,
   kind: CourtEffectKind,
@@ -237,11 +233,12 @@ export function playLiveCourtEffect(
 ) {
   const level = Math.max(0, Math.min(1, Number.isFinite(volume) ? volume : 0));
   if (level <= 0) return;
-  // The bundled slide recording is a long tonal squeak. Slides use a short,
-  // non-tonal friction burst instead, while the other effects keep their samples.
-  const sample = kind === 'slide' ? undefined : samples[kind];
-  const variants = sample ? null : courtEffectVariants(context, kind, surface);
-  const buffer = sample ?? variants![Math.floor(Math.random() * variants!.length)];
+  const sample = samples[kind];
+  if (kind === 'slide' && !sample) return;
+  const fallbackKind: ProceduralCourtEffectKind | null = kind === 'slide' ? null : kind;
+  const variants = sample || !fallbackKind ? null : courtEffectVariants(context, fallbackKind, surface);
+  const buffer = sample ?? variants?.[Math.floor(Math.random() * variants.length)];
+  if (!buffer) return;
   const now = context.currentTime;
   const source = context.createBufferSource();
   const output = context.createGain();
@@ -249,13 +246,28 @@ export function playLiveCourtEffect(
   source.playbackRate.value = sample
     ? sampleSurfacePitch[surface] * (0.99 + Math.random() * 0.02)
     : 0.97 + Math.random() * 0.06;
-  output.gain.value = sample
+  const targetGain = sample
     ? level * sampleGain[kind] * (0.96 + Math.random() * 0.08)
     : level * (0.94 + Math.random() * 0.1);
+  output.gain.value = targetGain;
   source.connect(output).connect(effectsBus(context));
   const startAt = now + Math.max(0, Number.isFinite(delaySeconds) ? delaySeconds : 0);
-  source.start(startAt);
-  source.stop(startAt + buffer.duration);
+  if (kind === 'slide' && sample) {
+    const offset = Math.min(0.02, sample.duration * 0.08);
+    const clipDuration = Math.min(0.14, Math.max(0, sample.duration - offset));
+    const playbackDuration = clipDuration / source.playbackRate.value;
+    const fadeInEnd = startAt + Math.min(0.008, playbackDuration * 0.15);
+    const fadeOutStart = Math.max(fadeInEnd, startAt + playbackDuration - 0.025);
+    output.gain.setValueAtTime(0, startAt);
+    output.gain.linearRampToValueAtTime(targetGain, fadeInEnd);
+    output.gain.setValueAtTime(targetGain, fadeOutStart);
+    output.gain.exponentialRampToValueAtTime(0.001, startAt + playbackDuration);
+    source.start(startAt, offset, clipDuration);
+    source.stop(startAt + playbackDuration);
+  } else {
+    source.start(startAt);
+    source.stop(startAt + buffer.duration / source.playbackRate.value);
+  }
   source.onended = () => {
     source.disconnect();
     output.disconnect();

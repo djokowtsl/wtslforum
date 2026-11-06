@@ -54,6 +54,15 @@ test('stadium fills three open tiers with crowd, concourses, score displays and 
     assert.equal(bowl.geometry.userData.inwardFacing, true);
     assert.equal(bowl.geometry.userData.rows, 18, 'the bowl continues well above the sparse detailed crowd');
     assert.equal(bowl.geometry.userData.tiers, 3);
+    assert.ok(superstructure.userData.maxInteriorCameraDistance >= 26);
+    assert.ok(superstructure.userData.maxInteriorCameraDistance <= 44,
+      'manual zoom remains inside the venue rather than exposing the complete stadium');
+    assert.ok(
+      superstructure.userData.interiorSeatEdgeRadius
+        >= superstructure.userData.maxInteriorCameraDistance
+          + Math.SQRT2 * superstructure.userData.maxInteriorCameraPan - 1e-9,
+      'the maximum camera distance plus bounded pan stays within the seating edge',
+    );
     bowl.geometry.computeBoundingBox();
     assert.ok(bowl.geometry.boundingBox.max.x > 55, 'stands reach beyond the court in every direction');
     assert.ok(bowl.geometry.boundingBox.max.y > 19, 'upper seating fills the scene height');
@@ -125,6 +134,11 @@ test('stadium and audience scale with recognized tournament capacities', async (
     asheScene.getObjectByName('wtsl-stadium-superstructure').userData.seatCount
       > delrayScene.getObjectByName('wtsl-stadium-superstructure').userData.seatCount,
   );
+  assert.ok(
+    asheScene.getObjectByName('wtsl-stadium-superstructure').userData.maxInteriorCameraDistance
+      > delrayScene.getObjectByName('wtsl-stadium-superstructure').userData.maxInteriorCameraDistance,
+    'the zoom limit tracks venue scale while remaining inside the bowl',
+  );
 
   const asheCrowd = sceneApi.buildCrowd(new THREE.Scene(), 'Arthur Ashe Stadium');
   const delrayCrowd = sceneApi.buildCrowd(new THREE.Scene(), 'Delray Beach Tennis Center');
@@ -133,6 +147,11 @@ test('stadium and audience scale with recognized tournament capacities', async (
   const viewer = await readFile(new URL('../components/DmoLiveViewer.tsx', import.meta.url), 'utf8');
   assert.match(court, /sceneDataRef\.current\.snapshot\.stadium/);
   assert.match(court, /snapshot\.stadium\]\)/);
+  assert.match(court, /maxInteriorCameraDistance/);
+  assert.match(court, /controls\.maxDistance = maxDistanceForTarget\(cameraTargetAnchor\)/);
+  assert.match(court, /maxPolarAngle = THREE\.MathUtils\.degToRad\(75\)/);
+  assert.match(court, /clampDmoCameraTarget\(controls\.target, cameraTargetAnchor, cameraPanLimit\)/);
+  assert.match(court, /camera\.fov = view === 'aerial' \? 50/);
   assert.match(viewer, /previousSnapshot\.stadium === nextSnapshot\.stadium/);
 });
 
@@ -164,13 +183,20 @@ test('one animated crowd ring fills the near apron and upper bowl with four cent
       'upper tiers keep the four centered passageways clear');
   }
   const nearSeats = crowd.seats.filter((seat) => seat.row < 4);
-  const nearPlatforms = scene.getObjectByName('wtsl-near-court-seating-platforms');
-  const nearRisers = scene.getObjectByName('wtsl-near-court-seating-risers');
-  assert.ok(nearPlatforms?.isInstancedMesh);
-  assert.equal(nearPlatforms.count, 32, 'each lower row has platforms beneath its four seating sides');
-  assert.equal(nearPlatforms.userData.accessPassages, 4, 'the seating platform leaves the four walk-through gaps open');
-  assert.ok(nearRisers?.isInstancedMesh);
-  assert.equal(nearRisers.count, 24, 'raised crowd rows have visible risers instead of appearing suspended');
+  const nearSupports = scene.getObjectByName('wtsl-near-court-seating-supports');
+  assert.ok(nearSupports?.isInstancedMesh);
+  assert.equal(nearSupports.count, 32, 'each lower row has narrow supports beneath its four seating sides');
+  assert.equal(nearSupports.userData.style, 'narrow-beams');
+  assert.equal(nearSupports.userData.accessPassages, 4, 'the supports leave the four walk-through gaps open');
+  assert.equal(scene.getObjectByName('wtsl-near-court-seating-platforms'), undefined,
+    'lower seating does not sit on a broad floating platform');
+  assert.equal(scene.getObjectByName('wtsl-near-court-seating-risers'), undefined);
+  const supportMatrix = new THREE.Matrix4();
+  const supportScale = new THREE.Vector3();
+  nearSupports.getMatrixAt(0, supportMatrix);
+  supportMatrix.decompose(new THREE.Vector3(), new THREE.Quaternion(), supportScale);
+  assert.ok(supportScale.y < 0.13 && Math.min(supportScale.x, supportScale.z) <= 0.181,
+    'visible supports are slim beams, not seating slabs');
   const sidelineSeats = nearSeats.filter((seat) => Math.abs(seat.z) >= 12 && Math.abs(seat.x) < 22);
   const baselineSeats = nearSeats.filter((seat) => Math.abs(seat.x) >= 22 && Math.abs(seat.z) < 12);
   assert.ok(sidelineSeats.every((seat) => Math.abs(seat.x) >= 2.5),
@@ -473,8 +499,13 @@ test('contacts remain audible when the optional source sound list is empty', () 
   assert.equal(deriveLiveCourtSoundEvents([], [{ frame: 0, kind: 'point-end' }], [], samples).length, 0);
 });
 
-test('court contacts use compact varied sound textures for each effect and surface', () => {
-  const param = () => ({ value: 0, setValueAtTime() {}, exponentialRampToValueAtTime() {} });
+test('court contacts stay compact, and slides use a short recorded squeak instead of noise', () => {
+  const param = () => ({
+    value: 0,
+    setValueAtTime() {},
+    linearRampToValueAtTime() {},
+    exponentialRampToValueAtTime() {},
+  });
   const makeContext = () => {
     const buffers = [];
     const sources = [];
@@ -483,8 +514,8 @@ test('court contacts use compact varied sound textures for each effect and surfa
     const node = () => ({
       connect() { return this; },
       disconnect() {},
-      start() {},
-      stop() {},
+      start(...args) { this.startArguments = args; },
+      stop(time) { this.stoppedAt = time; },
       gain: param(),
       playbackRate: param(),
       threshold: param(),
@@ -532,7 +563,7 @@ test('court contacts use compact varied sound textures for each effect and surfa
     };
   };
 
-  for (const kind of ['racket', 'bounce', 'footstep', 'slide']) {
+  for (const kind of ['racket', 'bounce', 'footstep']) {
     const { context, sources } = makeContext();
     playLiveCourtEffect(context, kind, 'clay', 0.9);
     assert.equal(sources.length, 1, `${kind} plays one composed buffer`);
@@ -543,6 +574,19 @@ test('court contacts use compact varied sound textures for each effect and surfa
     assert.ok(Math.abs(samples[0]) < 0.001, `${kind} has a click-free onset`);
     assert.ok(sources[0].playbackRate.value >= 0.97 && sources[0].playbackRate.value <= 1.03);
   }
+
+  const squeak = { duration: 0.522 };
+  const slide = makeContext();
+  playLiveCourtEffect(slide.context, 'slide', 'clay', 0.9, { slide: squeak });
+  assert.equal(slide.sources.length, 1);
+  assert.equal(slide.sources[0].buffer, squeak, 'slides play the bundled recorded shoe squeak');
+  assert.deepEqual(slide.sources[0].startArguments.slice(1), [0.02, 0.14],
+    'the recording is cropped to a brief, clean squeak');
+  assert.ok(slide.sources[0].stoppedAt < 0.16);
+  const missingSqueak = makeContext();
+  playLiveCourtEffect(missingSqueak.context, 'slide', 'clay');
+  assert.equal(missingSqueak.sources.length, 0,
+    'missing squeak audio fails quiet instead of substituting broadband noise');
 
   const { context, sources } = makeContext();
   for (const surface of ['hard', 'clay', 'grass']) playLiveCourtEffect(context, 'bounce', surface);
@@ -564,14 +608,20 @@ test('court effects load clean samples, test directly from a tap, and keep slide
     return { ok: true, arrayBuffer: async () => new ArrayBuffer(32) };
   });
   assert.deepEqual(missing, []);
-  assert.deepEqual(Object.keys(samples).sort(), ['bounce', 'footstep', 'racket']);
+  assert.deepEqual(Object.keys(samples).sort(), ['bounce', 'footstep', 'racket', 'slide']);
   assert.deepEqual(requestedUrls.sort(), [
     '/audio/dmo-ball-bounce.mp3',
     '/audio/dmo-court-footstep.mp3',
+    '/audio/dmo-court-slide.mp3',
     '/audio/dmo-racket-impact.mp3',
   ]);
 
-  const param = () => ({ value: 0 });
+  const param = () => ({
+    value: 0,
+    setValueAtTime() {},
+    linearRampToValueAtTime() {},
+    exponentialRampToValueAtTime() {},
+  });
   const makeContext = () => {
     const sources = [];
     const filters = [];
@@ -579,8 +629,8 @@ test('court effects load clean samples, test directly from a tap, and keep slide
     const node = () => ({
       connect() { return this; },
       disconnect() {},
-      start(time) { this.startedAt = time; },
-      stop() {},
+      start(...args) { this.startedAt = args[0]; this.startArguments = args; },
+      stop(time) { this.stoppedAt = time; },
       gain: param(),
       playbackRate: param(),
       frequency: param(),
@@ -643,8 +693,8 @@ test('court effects load clean samples, test directly from a tap, and keep slide
   });
   assert.deepEqual(soundCheck.sources.map(source => source.startedAt), [0, 0.36, 0.72, 1.08]);
   assert.equal(soundCheck.sources[0].buffer, sample);
-  assert.notEqual(soundCheck.sources[3].buffer, longSqueak, 'slide never uses the long tonal recording');
-  assert.ok(soundCheck.sources[3].buffer.duration < 0.1, 'slide friction is a short burst');
+  assert.equal(soundCheck.sources[3].buffer, longSqueak, 'slide uses the recorded shoe squeak');
+  assert.deepEqual(soundCheck.sources[3].startArguments, [1.08, 0.02, 0.14]);
 
   const partial = await loadCourtEffectSamples({
     decodeAudioData: async () => ({ duration: 0.25 }),
@@ -654,7 +704,9 @@ test('court effects load clean samples, test directly from a tap, and keep slide
   }));
   assert.deepEqual(partial.missing, ['bounce'], 'unavailable samples are reported for the visible fallback status');
   const audioSource = await readFile(new URL('../lib/liveCourtAudio.ts', import.meta.url), 'utf8');
-  assert.doesNotMatch(audioSource, /dmo-court-slide\.mp3/);
+  assert.match(audioSource, /slide: '\/audio\/dmo-court-slide\.mp3'/);
+  assert.match(audioSource, /kind === 'slide' && !sample/,
+    'there is no noisy procedural substitute if the shoe sample cannot load');
 });
 
 test('point and game boundaries do not clear accumulated clay marks', async () => {
