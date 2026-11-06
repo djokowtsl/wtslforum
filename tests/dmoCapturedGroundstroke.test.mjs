@@ -1,7 +1,8 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import {
-  GROUNDSTROKE_LEAD_FRAMES, groundstrokeCaptureWeight, recordedStrokeUsesTwoHands, serveCaptureWeight,
+  GROUNDSTROKE_LEAD_FRAMES, SERVE_LEAD_FRAMES, groundstrokeCaptureWeight,
+  recordedStrokeUsesTwoHands, serveCaptureWeight,
 } from '../components/DmoCapturedGroundstroke.ts';
 
 test('captured groundstroke blends in before contact and fades after follow-through', () => {
@@ -17,8 +18,8 @@ test('captured groundstroke blends in before contact and fades after follow-thro
 });
 
 test('serve capture covers preparation, contact, and recovery inside the event lookup window', () => {
-  assert.equal(serveCaptureWeight(-64), 0);
-  assert.ok(serveCaptureWeight(-58) > 0.3);
+  assert.equal(serveCaptureWeight(-SERVE_LEAD_FRAMES), 0);
+  assert.ok(serveCaptureWeight(-95) > 0.3, 'the serve set-up is already playing ~1.6 s before contact');
   assert.ok(serveCaptureWeight(-12) > 0.3);
   assert.equal(serveCaptureWeight(0), 1);
   assert.ok(serveCaptureWeight(12) > 0.8);
@@ -50,4 +51,13 @@ test('a recorded serve stays one-handed through recovery', () => {
   assert.equal(recordedStrokeUsesTwoHands('serve', twoHandedStyle, true), false);
   assert.equal(recordedStrokeUsesTwoHands('backhand', twoHandedStyle, false), true);
   assert.equal(recordedStrokeUsesTwoHands(undefined, twoHandedStyle, true), true);
+});
+
+test('the recorded serve blends in over half a second, not a quarter', () => {
+  let steepest = 0;
+  for (let delta = -SERVE_LEAD_FRAMES - 2; delta <= 0; delta += 1) {
+    steepest = Math.max(steepest, serveCaptureWeight(delta + 1) - serveCaptureWeight(delta));
+  }
+  assert.ok(SERVE_LEAD_FRAMES >= 100);
+  assert.ok(steepest < 0.06, `blend-in step per frame ${steepest.toFixed(3)} (was ~0.09)`);
 });

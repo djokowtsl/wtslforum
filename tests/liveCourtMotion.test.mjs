@@ -106,11 +106,18 @@ test('footwork events distinguish normal steps from lateral slides and ignore te
   ], 60), []);
 });
 
-test('visual sliding is attributed to one player and eases out after the lateral burst', () => {
+test('visual sliding is attributed to one player, eases in, and eases out after the lateral burst', () => {
   const events = [{ frame: 100, kind: 'slide', player: 2 }];
-  assert.equal(liveCourtSlideWeight(events, 1, 100), 0);
-  assert.equal(liveCourtSlideWeight(events, 2, 100), 1);
-  assert.ok(liveCourtSlideWeight(events, 2, 112) < 1);
+  assert.equal(liveCourtSlideWeight(events, 1, 106), 0);
+  // Eases in (it used to start at full strength, dropping the hips in one frame).
+  assert.equal(liveCourtSlideWeight(events, 2, 100), 0);
+  let steepest = 0;
+  for (let f = 100; f < 126; f++) {
+    steepest = Math.max(steepest, Math.abs(liveCourtSlideWeight(events, 2, f + 1) - liveCourtSlideWeight(events, 2, f)));
+  }
+  assert.ok(steepest < 0.35, `slide weight step per frame ${steepest.toFixed(2)}`);
+  assert.ok(liveCourtSlideWeight(events, 2, 106) > 0.6);
+  assert.ok(liveCourtSlideWeight(events, 2, 112) < liveCourtSlideWeight(events, 2, 106));
   assert.equal(liveCourtSlideWeight(events, 2, 126), 0);
 });
 

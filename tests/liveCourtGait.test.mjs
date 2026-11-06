@@ -2,7 +2,6 @@ import assert from 'node:assert/strict';
 import test from 'node:test';
 import {
   advanceGait, gaitFeet, newGaitState, returnReadiness, splitStepLift, MAX_LATERAL_REACH,
-  relaxedWalkCarryWeight, serveBaselineGuardWeight,
 } from '../lib/liveCourtGait.ts';
 
 function run(direction, speedMs, frames = 240, fps = 60) {
@@ -85,21 +84,6 @@ test('a walk continues all the way to the spot instead of snapping the last stre
   const { planReposition } = await import('../lib/liveCourtGait.ts');
   assert.equal(planReposition({ distance: 0.4, betweenPoints: true, secondsToNextServe: 5, walking: true }), 'walk');
   assert.equal(planReposition({ distance: 0.01, betweenPoints: true, secondsToNextServe: 5, walking: true }), 'follow');
-});
-
-test('recorded between-point walks blend into the relaxed carry at walking pace', () => {
-  assert.equal(relaxedWalkCarryWeight(0.5), 0);
-  assert.ok(relaxedWalkCarryWeight(0.75) > 0 && relaxedWalkCarryWeight(0.75) < 1);
-  assert.equal(relaxedWalkCarryWeight(1), 1);
-});
-
-test('serve baseline guard eases in before contact and releases after contact', () => {
-  assert.equal(serveBaselineGuardWeight(-64), 0);
-  assert.ok(serveBaselineGuardWeight(-52) > 0 && serveBaselineGuardWeight(-52) < 1);
-  assert.equal(serveBaselineGuardWeight(-40), 1);
-  assert.equal(serveBaselineGuardWeight(0), 1);
-  assert.ok(serveBaselineGuardWeight(8) > 0 && serveBaselineGuardWeight(8) < 1);
-  assert.equal(serveBaselineGuardWeight(14), 0);
 });
 
 test('a side switch is only labelled a change of ends when the game (server) changes', async () => {

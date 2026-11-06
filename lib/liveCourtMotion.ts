@@ -194,7 +194,12 @@ export function liveCourtSlideWeight(
     const event = events[index];
     if (event.frame > frame || event.player !== player || event.kind !== 'slide') continue;
     const age = frame - event.frame;
-    if (age <= duration) return Math.max(0, 1 - age / duration);
+    // Eases in over ~0.1 s: starting at full strength dropped the hips ~10 cm
+    // and spread the feet in a single frame at the start of every slide.
+    if (age <= duration) {
+      const onset = Math.min(1, age / Math.max(1, frameRate * 0.1));
+      return onset * onset * (3 - 2 * onset) * Math.max(0, 1 - age / duration);
+    }
   }
   return 0;
 }
