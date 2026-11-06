@@ -28,13 +28,13 @@ const { deriveLiveCourtSoundEvents, playLiveCourtEffect } = await loadTs('../lib
   './te4DmoSurface': { courtSurfaceSoundProfile },
 });
 
-test('stadium includes a layered bowl, WTSL boards, score screens and venue-specific roofing', () => {
+test('stadium keeps the court open, with only an indoor ceiling or outdoor sky', () => {
   for (const indoor of [false, true]) {
     const scene = new THREE.Scene();
     sceneApi.buildStadiumEnvironment(scene, indoor);
     const stadium = scene.getObjectByName('wtsl-stadium-architecture');
     const superstructure = stadium?.getObjectByName('wtsl-stadium-superstructure');
-    assert.ok(superstructure, 'the stadium has an outer structural shell');
+    assert.ok(superstructure, 'the interior stands and court-side details remain');
 
     const named = (root, name) => {
       const matches = [];
@@ -46,10 +46,22 @@ test('stadium includes a layered bowl, WTSL boards, score screens and venue-spec
     assert.equal(named(superstructure, 'wtsl-advertising-board-baseline').length, 2);
     assert.equal(named(superstructure, 'wtsl-advertising-board-sideline').length, 2);
     assert.equal(named(superstructure, 'wtsl-scoreboard-screen').length, 2);
-    assert.equal(named(superstructure, 'wtsl-stadium-support-columns').length, 1);
-    assert.equal(named(superstructure, 'wtsl-open-air-canopy').length, indoor ? 0 : 4);
-    assert.equal(named(superstructure, 'wtsl-indoor-roof-wing').length, indoor ? 4 : 0);
+    assert.equal(named(superstructure, 'wtsl-stadium-concourse').length, 0);
+    assert.equal(named(superstructure, 'wtsl-stadium-concourse-windows').length, 0);
+    assert.equal(named(superstructure, 'wtsl-stadium-support-columns').length, 0);
+    assert.equal(named(superstructure, 'wtsl-open-air-canopy').length, 0);
+    assert.equal(named(superstructure, 'wtsl-indoor-roof-wing').length, 0);
     assert.equal(Boolean(scene.getObjectByName('wtsl-open-sky')), !indoor);
+    const roof = scene.getObjectByName('wtsl-indoor-ceiling');
+    assert.equal(Boolean(roof), indoor);
+    if (roof) {
+      assert.equal(roof.material.side, THREE.FrontSide);
+      roof.updateMatrixWorld(true);
+      const fromCourt = new THREE.Raycaster(new THREE.Vector3(0, 8, 0), new THREE.Vector3(0, 1, 0));
+      const fromAbove = new THREE.Raycaster(new THREE.Vector3(0, 20, 0), new THREE.Vector3(0, -1, 0));
+      assert.ok(fromCourt.intersectObject(roof).length > 0, 'the underside ceiling is visible from court level');
+      assert.equal(fromAbove.intersectObject(roof).length, 0, 'the ceiling does not block an exterior view down to court');
+    }
   }
 });
 
