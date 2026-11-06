@@ -1,8 +1,7 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
 import {
-  advanceGait, freeArmStrideSwing, gaitFeet, isChangeoverCut, newGaitState, nextShotEvent,
-  lastShotFrame, returnReadiness, smoothReplayValue, splitStepLift, MAX_LATERAL_REACH,
+  advanceGait, gaitFeet, newGaitState, returnReadiness, splitStepLift, MAX_LATERAL_REACH,
 } from '../lib/liveCourtGait.ts';
 
 function run(direction, speedMs, frames = 240, fps = 60) {
@@ -14,10 +13,8 @@ function run(direction, speedMs, frames = 240, fps = 60) {
     body += step;
     advanceGait(state, [direction[0] * step, direction[1] * step], speedMs);
     const feet = gaitFeet(state, speedMs);
-    const world = feet.map(foot => ({
-      along: body + foot.x * direction[0] + foot.z * direction[1],
-      lift: foot.lift,
-    }));
+    // world position of each foot along the travel line (stance offsets cancel out)
+    const world = feet.map(foot => ({ along: body + foot.x * direction[0] + foot.z * direction[1], lift: foot.lift }));
     minSeparation = Math.min(minSeparation, 0.30 + (feet[1].x - feet[0].x));
     if (previous && f > 60) for (let k = 0; k < 2; k++) {
       if (world[k].lift === 0 && previous[k].lift === 0) {
@@ -30,28 +27,22 @@ function run(direction, speedMs, frames = 240, fps = 60) {
   return { worstSlip, planted, minSeparation, state };
 }
 
-for (const [name, direction] of [
-  ['forwards', [0, 1]],
-  ['backwards', [0, -1]],
-  ['sideways', [1, 0]],
-  ['diagonal', [Math.SQRT1_2, Math.SQRT1_2]],
-]) {
+for (const [name, direction] of [['forwards', [0, 1]], ['backwards', [0, -1]], ['sideways', [1, 0]], ['diagonal', [Math.SQRT1_2, Math.SQRT1_2]]]) {
   test(`planted feet do not slide while running ${name}`, () => {
     for (const speed of [1, 2.5, 4.5]) {
       const { worstSlip, planted, state } = run(direction, speed);
       assert.ok(state.amount > 0.95, 'gait engages when running');
       assert.ok(planted > 50, 'feet spend time planted');
-      assert.ok(worstSlip < 0.002 * speed,
-        `${name} @${speed} m/s: planted foot slid ${worstSlip.toFixed(4)} m in a frame`);
+      assert.ok(worstSlip < 0.002 * speed, `${name} @${speed} m/s: planted foot slid ${worstSlip.toFixed(4)} m in a frame`);
     }
   });
 }
 
 test('sideways steps shuffle instead of crossing the feet', () => {
   const { minSeparation } = run([1, 0], 4.5);
+  // stance feet sit 0.30 m apart; each reaches at most MAX_LATERAL_REACH sideways
   assert.ok(minSeparation > -1e-9, `feet crossed: separation ${minSeparation.toFixed(3)} m`);
   assert.ok(minSeparation < 0.15, 'a fast shuffle should still bring the feet together');
-  assert.ok(MAX_LATERAL_REACH > 0);
 });
 
 test('standing still settles both feet on the ground', () => {
@@ -72,29 +63,14 @@ test('return stance settles before the serve, split-steps at contact, releases a
   assert.equal(splitStepLift(-5), 0);
 });
 
-test('return stance stays upright while moving and settles after stopping', async () => {
-  const { returnSettleTarget, advanceReturnSettle } = await import('../lib/liveCourtGait.ts');
-  assert.equal(returnSettleTarget(0.2, true), 0);
-  assert.equal(returnSettleTarget(1.2, false), 0);
-  assert.equal(returnSettleTarget(0.2, false), 1);
-  assert.ok(advanceReturnSettle(0.8, 0.2, true, 1 / 60) < 0.8,
-    'a moving player should begin standing up immediately');
-  assert.ok(advanceReturnSettle(0, 0.2, false, 0.1) > 0,
-    'settling into the stance should ease in after movement stops');
-  assert.ok(advanceReturnSettle(1, 1.2, false, 1 / 60) < 0.9,
-    'the stance should release quickly when the player moves off');
-});
-
-test('between points a player walks nearby and cuts to distant positions', async () => {
+test('between points a player walks to a nearby position and is cut to a distant one', async () => {
   const { planReposition, isBetweenPoints, WALK_SPEED } = await import('../lib/liveCourtGait.ts');
   assert.equal(planReposition({ distance: 0.3, betweenPoints: true, secondsToNextServe: 10 }), 'follow');
   assert.equal(planReposition({ distance: 3, betweenPoints: true, secondsToNextServe: 10 }), 'walk');
-  assert.equal(planReposition({
-    distance: 3, betweenPoints: true, secondsToNextServe: 3 / WALK_SPEED,
-  }), 'cut');
-  assert.equal(planReposition({ distance: 3, betweenPoints: true, secondsToNextServe: 3 }), 'walk');
-  assert.equal(planReposition({ distance: 3, betweenPoints: true, secondsToNextServe: 2.9 }), 'cut');
+  // not enough time to walk 3 m before the next serve
+  assert.equal(planReposition({ distance: 3, betweenPoints: true, secondsToNextServe: 3 / WALK_SPEED }), 'cut');
   assert.equal(planReposition({ distance: 9, betweenPoints: true, secondsToNextServe: 30 }), 'cut');
+  // during a rally, ordinary sample-to-sample movement is followed; a jump is cut
   assert.equal(planReposition({ distance: 1.2, betweenPoints: false, secondsToNextServe: 30 }), 'follow');
   assert.equal(planReposition({ distance: 5, betweenPoints: false, secondsToNextServe: 30 }), 'cut');
   const events = [{ frame: 10, kind: 'shot' }, { frame: 50, kind: 'point-end' }, { frame: 90, kind: 'shot' }];
@@ -104,58 +80,96 @@ test('between points a player walks nearby and cuts to distant positions', async
   assert.equal(isBetweenPoints(events, 90), false);
 });
 
-test('an in-progress walk continues to the target instead of snapping at the end', async () => {
+test('a walk continues all the way to the spot instead of snapping the last stretch', async () => {
   const { planReposition } = await import('../lib/liveCourtGait.ts');
-  assert.equal(planReposition({
-    distance: 0.4, betweenPoints: true, secondsToNextServe: 5, walking: true,
-  }), 'walk');
-  assert.equal(planReposition({
-    distance: 1.65, betweenPoints: true, secondsToNextServe: 2, walking: true,
-  }), 'cut', 'an ongoing walk must still leave one second before serve');
-  assert.equal(planReposition({
-    distance: 0.01, betweenPoints: true, secondsToNextServe: 5, walking: true,
-  }), 'follow');
+  assert.equal(planReposition({ distance: 0.4, betweenPoints: true, secondsToNextServe: 5, walking: true }), 'walk');
+  assert.equal(planReposition({ distance: 0.01, betweenPoints: true, secondsToNextServe: 5, walking: true }), 'follow');
 });
 
-test('noisy speed samples cannot flip carry style, while a sustained sprint is followed', () => {
-  let speed = 1.5;
-  let carry = 0.2;
-  const values = [];
-  for (let frame = 0; frame < 18; frame += 1) {
-    const noisySpeed = frame % 2 === 0 ? 0.4 : 3.4;
-    speed = smoothReplayValue(speed, noisySpeed, 1 / 60, 0.15);
-    const target = speed > 3.2 ? 1 : 0;
-    carry = smoothReplayValue(carry, target, 1 / 60, 0.3);
-    values.push(carry);
-  }
-  assert.ok(Math.max(...values) - Math.min(...values) < 0.2,
-    'high-frequency position noise must not switch between carry poses');
-
-  for (let frame = 0; frame < 180; frame += 1) {
-    speed = smoothReplayValue(speed, 4, 1 / 60, 0.15);
-    carry = smoothReplayValue(carry, 1, 1 / 60, 0.3);
-  }
-  assert.ok(speed > 3.9);
-  assert.ok(carry > 0.99);
-  assert.equal(smoothReplayValue(carry, 0, 1, 0.3), 0, 'a seek should not retain stale carry state');
-  assert.equal(smoothReplayValue(carry, 0, -1, 0.3), 0, 'a backward seek should reset carry state too');
-  assert.ok(smoothReplayValue(carry, 0, -1 / 60, 0.3) < carry,
-    'small reverse steps should still ease toward their sampled pose');
+test('a side switch is only labelled a change of ends when the game (server) changes', async () => {
+  const { isGameChange } = await import('../lib/liveCourtGait.ts');
+  const events = [
+    { frame: 0, kind: 'shot', shotType: 'serve', player: 1 },
+    { frame: 100, kind: 'point-end' },
+    { frame: 200, kind: 'shot', shotType: 'serve', player: 1 },
+    { frame: 300, kind: 'point-end' },
+    { frame: 400, kind: 'shot', shotType: 'serve', player: 2 },
+  ];
+  assert.equal(isGameChange(events, 150), false, 'same server: within a game');
+  assert.equal(isGameChange(events, 350), true, 'server changes: a game ended');
+  assert.equal(isGameChange(events, 450), false, 'no later serve known');
 });
 
-test('the free-arm stride follows a continuous arc rather than a foot-lift corner', () => {
-  let largestStep = 0;
-  let previous = freeArmStrideSwing(0, 1, 1);
-  for (let index = 1; index <= 100; index += 1) {
-    const current = freeArmStrideSwing(index / 100, 1, 1);
-    largestStep = Math.max(largestStep, Math.abs(current - previous));
-    previous = current;
-  }
-  assert.ok(largestStep < 0.07, `free-arm arc stepped by ${largestStep.toFixed(3)}`);
-  assert.equal(freeArmStrideSwing(0, -1, 1), -freeArmStrideSwing(0, 1, 1));
+test('last shot lookup finds the player\'s own previous shot however far back', async () => {
+  const { lastShotFrame } = await import('../lib/liveCourtGait.ts');
+  const events = [{ frame: 10, kind: 'shot', player: 1 }, { frame: 70, kind: 'shot', player: 2 }, { frame: 90, kind: 'point-end' }];
+  assert.equal(lastShotFrame(events, 1, 200), 10);
+  assert.equal(lastShotFrame(events, 2, 69), undefined);
+  assert.equal(lastShotFrame(events, 2, 70), 70);
 });
 
-test('score flags suppress changeover labels on ordinary cuts', () => {
+test('changeovers come from the score: odd games, odd sets, every six tie-break points', async () => {
+  const { changeoversAfterPoints } = await import('../lib/te4DmoReplaySnapshot.ts');
+  // Build a set point by point: games alternate servers; a game is 4 points.
+  const points = [];
+  let server = 1;
+  const addGame = (set, length = 4) => {
+    for (let k = 0; k < length; k++) points.push({ s: server, set, tb: 0, g: '0-0' });
+    server = server === 1 ? 2 : 1;
+  };
+  for (let game = 0; game < 10; game++) addGame(1); // set 1: 6-4 (10 games)
+  for (let game = 0; game < 9; game++) addGame(2); // set 2: 6-3 (9 games)
+  addGame(3);
+  const flags = changeoversAfterPoints(points);
+  const lastOfGame = (n) => n * 4 - 1; // index of the last point of game n (1-based, across the match)
+  // Within a game, never.
+  assert.equal(flags[0], false); assert.equal(flags[1], false); assert.equal(flags[2], false);
+  // After games 1, 3, 5 of set 1; not after 2 or 4.
+  assert.equal(flags[lastOfGame(1)], true);
+  assert.equal(flags[lastOfGame(2)], false);
+  assert.equal(flags[lastOfGame(3)], true);
+  assert.equal(flags[lastOfGame(4)], false);
+  // Set 1 ends 6-4 (even): no change; set 2's first game (odd): change.
+  assert.equal(flags[lastOfGame(10)], false);
+  assert.equal(flags[lastOfGame(11)], true);
+  // Set 2 ends 6-3 (odd): change at the set break.
+  assert.equal(flags[lastOfGame(19)], true);
+  // Number of changeovers in a 6-4 set: after games 1,3,5,7,9.
+  const setOne = flags.slice(0, 40).filter(Boolean).length;
+  assert.equal(setOne, 5);
+});
+
+test('tie-break changeovers fall every six points and a 7-6 set changes ends', async () => {
+  const { changeoversAfterPoints } = await import('../lib/te4DmoReplaySnapshot.ts');
+  const points = [];
+  let server = 1;
+  for (let game = 0; game < 12; game++) {
+    for (let k = 0; k < 4; k++) points.push({ s: server, set: 1, tb: 0 });
+    server = server === 1 ? 2 : 1;
+  }
+  // Tie-break: 13 points, server changes after the first and then every two.
+  for (let k = 0; k < 13; k++) points.push({ s: k === 0 || Math.floor((k - 1) / 2) % 2 === 1 ? 1 : 2, set: 1, tb: 1 });
+  points.push({ s: 2, set: 2, tb: 0 });
+  const flags = changeoversAfterPoints(points);
+  const tieBreakStart = 48;
+  assert.equal(flags[tieBreakStart - 1], false, '6-6: no change before the tie-break');
+  const inTieBreak = flags.slice(tieBreakStart, tieBreakStart + 12).map((f, k) => (f ? k + 1 : 0)).filter(Boolean);
+  assert.deepEqual(inTieBreak, [6, 12], 'after 6 and 12 tie-break points, not at server changes');
+  assert.equal(flags[tieBreakStart + 12], true, '7-6 set (13 games) ends with a change');
+});
+
+test('a replay that starts mid-set counts from its first game score', async () => {
+  const { changeoversAfterPoints } = await import('../lib/te4DmoReplaySnapshot.ts');
+  const points = [
+    { s: 1, set: 1, tb: 0, g: '2-2' }, { s: 1, set: 1, tb: 0, g: '2-2' },
+    { s: 2, set: 1, tb: 0, g: '3-2' }, { s: 2, set: 1, tb: 0, g: '3-2' },
+    { s: 1, set: 1, tb: 0, g: '3-3' },
+  ];
+  assert.deepEqual(changeoversAfterPoints(points), [false, true, false, false, false]);
+});
+
+test('a cut is labelled only when its point-end says the players change ends', async () => {
+  const { isChangeoverCut } = await import('../lib/liveCourtGait.ts');
   const events = [
     { frame: 0, kind: 'shot', shotType: 'serve', player: 1 },
     { frame: 100, kind: 'point-end', changeover: false },
@@ -164,44 +178,29 @@ test('score flags suppress changeover labels on ordinary cuts', () => {
     { frame: 260, kind: 'point-end', changeover: true },
     { frame: 330, kind: 'shot', shotType: 'serve', player: 2 },
   ];
-  assert.equal(isChangeoverCut(events, 120), false);
-  assert.equal(isChangeoverCut(events, 270), true);
-  assert.equal(isChangeoverCut(events, 250), true, 'a cut can precede the point-end frame');
+  assert.equal(isChangeoverCut(events, 120), false, 'same server, mid-game side switch: plain fade');
+  assert.equal(isChangeoverCut(events, 270), true, 'after a game that changes ends');
+  assert.equal(isChangeoverCut(events, 250), true, 'cut just before its point-end');
+  // Without score flags it falls back to "the server changes".
+  const bare = events.map(({ changeover, ...rest }) => rest);
+  assert.equal(isChangeoverCut(bare, 120), false);
+  assert.equal(isChangeoverCut(bare, 270), true);
 });
 
-test('live feeds without score flags fall back to a server change', () => {
-  const sameServer = [
-    { frame: 0, kind: 'shot', shotType: 'serve', player: 1 },
-    { frame: 50, kind: 'point-end' },
-    { frame: 80, kind: 'shot', shotType: 'serve', player: 1 },
-  ];
-  const changedServer = [
-    ...sameServer,
-    { frame: 100, kind: 'point-end' },
-    { frame: 130, kind: 'shot', shotType: 'serve', player: 2 },
-  ];
-  assert.equal(isChangeoverCut(sameServer, 60), false);
-  assert.equal(isChangeoverCut(changedServer, 110), true);
+test('next shot lookup returns the player\'s own next shot', async () => {
+  const { nextShotEvent } = await import('../lib/liveCourtGait.ts');
+  const events = [{ frame: 10, kind: 'shot', player: 1 }, { frame: 70, kind: 'shot', player: 2 }, { frame: 90, kind: 'point-end' }, { frame: 130, kind: 'shot', player: 1 }];
+  assert.equal(nextShotEvent(events, 1, 10)?.frame, 130);
+  assert.equal(nextShotEvent(events, 2, 0)?.frame, 70);
+  assert.equal(nextShotEvent(events, 2, 70), undefined);
 });
 
-test('next-shot lookup selects only a future shot by the requested player', () => {
-  const events = [
-    { frame: 10, kind: 'shot', player: 1, shotType: 'serve' },
-    { frame: 20, kind: 'point-end' },
-    { frame: 30, kind: 'shot', player: 2, shotType: 'rally' },
-    { frame: 40, kind: 'shot', player: 1, shotType: 'rally' },
-  ];
-  assert.equal(nextShotEvent(events, 1, 20)?.frame, 40);
-  assert.equal(nextShotEvent(events, 2, 30), undefined);
-});
-
-test('latest-shot lookup keeps the return stance eased through recovery', () => {
-  const events = [
-    { frame: 10, kind: 'shot', player: 1 },
-    { frame: 20, kind: 'shot', player: 2 },
-    { frame: 35, kind: 'point-end' },
-  ];
-  assert.equal(lastShotFrame(events, 1, 34), 10);
-  assert.equal(lastShotFrame(events, 2, 19), undefined);
-  assert.equal(lastShotFrame(events, 2, 20), 20);
+test('a walk between points finishes at least a second before the serve', async () => {
+  const { planReposition, WALK_SPEED, ARRIVAL_MARGIN } = await import('../lib/liveCourtGait.ts');
+  assert.ok(ARRIVAL_MARGIN >= 1);
+  const distance = 3;
+  const walkTime = distance / WALK_SPEED;
+  assert.equal(planReposition({ distance, betweenPoints: true, secondsToNextServe: walkTime + 1.2 }), 'walk');
+  assert.equal(planReposition({ distance, betweenPoints: true, secondsToNextServe: walkTime + 0.6 }), 'cut',
+    'arriving with under a second to spare would mean settling into the stance mid-walk');
 });

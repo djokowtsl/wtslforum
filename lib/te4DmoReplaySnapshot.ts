@@ -23,37 +23,42 @@ function gameScore(point: Te4ViewerPoint | undefined): [number, number] {
     : [0, 0];
 }
 
-type ChangeoverScorePoint = Pick<Te4ViewerPoint, 's' | 'set' | 'tb' | 'g'>;
+type ScorePoint = { s?: number; set?: number; tb?: number; g?: string };
 
-/** Whether a replay's players switch ends after each completed point. */
-export function changeoversAfterPoints(points: ChangeoverScorePoint[]) {
-  const flags = points.map(() => false);
-  const openingScore = points[0]?.g.match(/\d+/g)?.map(Number);
-  let gamesInSet = openingScore?.length === 2 && openingScore.every(Number.isInteger)
-    ? openingScore[0] + openingScore[1]
-    : 0;
+/**
+ * Whether the players change ends after each recorded point, from the match
+ * score rather than from positions or shot attribution: ends change after
+ * every odd game of a set, after a set whose game total is odd, and every six
+ * points of a tie-break. A game boundary is where the server changes (or the
+ * set changes, or a tie-break starts). The count starts from the first point's
+ * game score, so a replay that begins mid-set still counts correctly.
+ */
+export function changeoversAfterPoints(points: ScorePoint[]): boolean[] {
+  const result = points.map(() => false);
+  const opening = points[0]?.g?.match(/\d+/g)?.map(Number);
+  let gamesInSet = opening?.length === 2 && opening.every(Number.isInteger) ? opening[0] + opening[1] : 0;
   let tieBreakPoints = 0;
-
-  for (let index = 0; index + 1 < points.length; index += 1) {
-    const point = points[index];
-    const next = points[index + 1];
+  for (let i = 0; i + 1 < points.length; i += 1) {
+    const point = points[i], next = points[i + 1];
+    const tieBreak = Boolean(point.tb);
     if (next.set !== point.set) {
-      flags[index] = (gamesInSet + 1) % 2 === 1;
+      // Set over: the last game (a tie-break counts as one) completes the set.
+      result[i] = (gamesInSet + 1) % 2 === 1;
       gamesInSet = 0;
       tieBreakPoints = 0;
-    } else if (point.tb && next.tb) {
+    } else if (tieBreak && next.tb) {
       tieBreakPoints += 1;
-      flags[index] = tieBreakPoints % 6 === 0;
-    } else if (!point.tb && next.tb) {
-      gamesInSet += 1;
+      result[i] = tieBreakPoints % 6 === 0;
+    } else if (next.tb && !tieBreak) {
+      gamesInSet += 1; // 6-6: into the tie-break
       tieBreakPoints = 0;
-      flags[index] = gamesInSet % 2 === 1;
+      result[i] = gamesInSet % 2 === 1;
     } else if (next.s !== point.s) {
       gamesInSet += 1;
-      flags[index] = gamesInSet % 2 === 1;
+      result[i] = gamesInSet % 2 === 1;
     }
   }
-  return flags;
+  return result;
 }
 
 function replayPoint(point: Te4ViewerPoint): Te4LiveSnapshot['recentPoints'][number] {
@@ -127,6 +132,8 @@ export function te4ViewerToLiveSnapshot(
     soundEvents.push({ frame, kind });
   };
 
+  // Whether the players change ends after each point comes from the score,
+  // so the renderer labels only real changeovers.
   const changeovers = changeoversAfterPoints(viewer.pts);
   for (const [pointIndex, point] of viewer.pts.entries()) {
     for (const shot of point.sh) {
@@ -146,11 +153,7 @@ export function te4ViewerToLiveSnapshot(
     if (point.fc > 0) {
       const endFrame = Math.min(frameCount - 1, point.mf + point.fc - 1);
       if (endFrame >= 0) {
-        trajectoryEvents.push({
-          frame: endFrame,
-          kind: 'point-end',
-          changeover: changeovers[pointIndex],
-        });
+        trajectoryEvents.push({ frame: endFrame, kind: 'point-end', changeover: changeovers[pointIndex] });
       }
     }
   }

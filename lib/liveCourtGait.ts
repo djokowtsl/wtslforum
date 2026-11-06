@@ -1,22 +1,25 @@
 /**
  * Ground-locked stepping for the livestream players.
  *
- * The old gait swung the feet sideways at a fixed cadence regardless of how
- * far, or in which direction, the player moved. Advance the step cycle by the
- * distance actually travelled so a planted foot stays fixed on the court.
+ * The old gait swung the feet sideways at a fixed cadence (frame * 0.22) no
+ * matter which way, or how far, the player actually moved, so forward and
+ * backward running glided over planted feet. Here the step cycle advances by
+ * the distance the rig really travelled, along the direction it travelled:
+ * a planted foot moves backwards in the rig's frame at exactly the rig's
+ * speed, so it stays put on the court.
  */
 
 export type GaitState = {
-  phase: number;
-  direction: [number, number];
-  amount: number;
+  phase: number; // 0..1 step cycle of the "left" foot; the right foot is half a cycle later
+  direction: [number, number]; // smoothed local travel direction (x, z), unit
+  amount: number; // 0..1 how much the player is stepping (eases in/out)
 };
 
 export type GaitFoot = { x: number; z: number; lift: number };
 
 /** Fraction of the cycle a foot spends planted. */
 export const STANCE = 0.6;
-/** Lateral reach before a shuffle would cause the feet to cross. */
+/** Lateral reach of one foot from its stance position before the feet would cross. */
 export const MAX_LATERAL_REACH = 0.14;
 
 export function newGaitState(): GaitState {
@@ -28,7 +31,7 @@ export function halfStride(speedMs: number) {
   return Math.min(0.42, Math.max(0.1, 0.1 + 0.11 * speedMs));
 }
 
-/** Planted foot sweeps +1 to -1; swing foot lifts and returns. */
+/** Planted: sweeps +1 -> -1 at constant rate. Swing: lifts and returns -1 -> +1. */
 export function footCycle(phase: number) {
   const p = ((phase % 1) + 1) % 1;
   if (p < STANCE) return { along: 1 - (2 * p) / STANCE, lift: 0 };
@@ -38,9 +41,9 @@ export function footCycle(phase: number) {
 }
 
 /**
- * Advance one renderer update.
- * @param travel local-space displacement of the rig since the last update
- * @param speedMs recorded running speed in m/s
+ * Advance the gait by one renderer update.
+ * @param travel local-space displacement of the rig since the last update (x, z)
+ * @param speedMs recorded running speed in m/s (for stride length)
  */
 export function advanceGait(state: GaitState, travel: [number, number], speedMs: number) {
   const distance = Math.hypot(travel[0], travel[1]);
@@ -48,7 +51,8 @@ export function advanceGait(state: GaitState, travel: [number, number], speedMs:
   state.amount += (moving - state.amount) * 0.25;
   if (distance > 1e-5) {
     const dx = travel[0] / distance, dz = travel[1] / distance;
-    // Reverse immediately rather than averaging opposite directions.
+    // A reversal (forward then straight back) passes through a standstill:
+    // take the new direction at once; averaging opposite vectors never flips.
     if (dx * state.direction[0] + dz * state.direction[1] < -0.3) state.direction = [dx, dz];
     const k = 0.35;
     const nx = state.direction[0] + (dx - state.direction[0]) * k;
@@ -56,7 +60,9 @@ export function advanceGait(state: GaitState, travel: [number, number], speedMs:
     const length = Math.hypot(nx, nz) || 1;
     state.direction = [nx / length, nz / length];
   }
+  // Shorter steps sideways so the feet never cross: a quick shuffle instead.
   const amplitude = effectiveHalfStride(speedMs, state.direction);
+  // Stance sweeps 2*amplitude over STANCE of a cycle: that rate equals ground speed.
   state.phase = (state.phase + (distance * STANCE) / (2 * amplitude)) % 1;
   return state;
 }
@@ -67,7 +73,7 @@ export function effectiveHalfStride(speedMs: number, direction: [number, number]
   return lateral > 1e-3 ? Math.min(base, MAX_LATERAL_REACH / lateral) : base;
 }
 
-/** Foot offsets from each stance position, in the rig's local frame. */
+/** Foot offsets from each foot's stance position, in the rig's local frame. */
 export function gaitFeet(state: GaitState, speedMs: number): [GaitFoot, GaitFoot] {
   const amplitude = effectiveHalfStride(speedMs, state.direction) * state.amount;
   const height = (0.05 + 0.025 * Math.min(4, speedMs)) * state.amount;
@@ -81,65 +87,54 @@ export function gaitFeet(state: GaitState, speedMs: number): [GaitFoot, GaitFoot
   }) as [GaitFoot, GaitFoot];
 }
 
-/** Return stance settles before serve contact and releases after it. */
+/**
+ * How far the return-of-serve ready stance applies: settles in while the
+ * opponent prepares, holds through their contact (with a split-step), and
+ * releases as the receiver starts moving to the ball.
+ */
 export function returnReadiness(framesToServe: number) {
   const s = (x: number, a: number, b: number) => {
     const t = Math.min(1, Math.max(0, (x - a) / (b - a)));
     return t * t * (3 - 2 * t);
   };
+  // framesToServe = serveFrame - frame (positive before the opponent's contact)
   return s(-framesToServe, -90, -60) * (1 - s(-framesToServe, 6, 16));
 }
 
-/** Seconds a between-point walk must leave before the next serve. */
-export const ARRIVAL_MARGIN = 1;
-
-/** Keep the return stance upright while the receiver is walking or moving. */
-export function returnSettleTarget(speedMs: number, walking: boolean) {
-  if (walking || !Number.isFinite(speedMs)) return 0;
-  const t = Math.min(1, Math.max(0, (speedMs - 0.45) / (0.9 - 0.45)));
-  return 1 - t * t * (3 - 2 * t);
-}
-
-/** Stand up quickly on movement; ease into the return stance after stopping. */
-export function advanceReturnSettle(
-  previous: number | undefined,
-  speedMs: number,
-  walking: boolean,
-  deltaSeconds: number,
-) {
-  const target = returnSettleTarget(speedMs, walking);
-  const current = Number.isFinite(previous) ? Math.min(1, Math.max(0, previous!)) : target;
-  const elapsed = Math.max(0, deltaSeconds);
-  const timeConstant = target < current ? 0.08 : 0.2;
-  const alpha = elapsed > 0.5 ? 1 : 1 - Math.exp(-elapsed / timeConstant);
-  return current + (target - current) * alpha;
-}
-
-/** Small unweighting timed to the opponent's serve contact. */
+/** Split-step hop height (metres): a small unweighting timed to the server's contact. */
 export function splitStepLift(framesToServe: number) {
-  const t = (-framesToServe + 8) / 10;
+  const t = (-framesToServe + 8) / 10; // airborne from 8 frames before contact to 2 after
   return t > 0 && t < 1 ? Math.sin(Math.PI * t) * 0.06 : 0;
 }
 
 /** Walking pace between points (m/s). */
 export const WALK_SPEED = 1.5;
 
+/** Seconds a walk must leave before the next serve. */
+export const ARRIVAL_MARGIN = 1;
+
 export type RepositionPlan = 'follow' | 'walk' | 'cut';
 
-/** Choose normal tracking, a physical walk, or a short editorial cut. */
+/**
+ * How the rig should reach a recorded position it is not at yet.
+ * - follow: normal rally movement (small differences between samples)
+ * - walk: between points, walk there at walking pace, facing the way it goes
+ * - cut: too far, or not enough time before the next serve: fade and place it
+ */
 export function planReposition(options: {
   distance: number;
   betweenPoints: boolean;
   secondsToNextServe: number;
-  /** Keep a started walk continuous through its last half metre. */
+  /** Already walking: keep walking all the way to the spot (no snap at the end). */
   walking?: boolean;
 }): RepositionPlan {
   const { distance, betweenPoints, secondsToNextServe, walking } = options;
-  if (walking && betweenPoints && distance > 0.02
-    && distance / WALK_SPEED <= secondsToNextServe - ARRIVAL_MARGIN) return 'walk';
+  if (walking && betweenPoints && distance > 0.02 && distance / WALK_SPEED <= secondsToNextServe) return 'walk';
   if (!Number.isFinite(distance) || distance <= 0.6) return 'follow';
   if (!betweenPoints) return distance > 3 ? 'cut' : 'follow';
   if (distance > 7) return 'cut';
+  // Arrive at least a second before the serve, so the server can set up and the
+  // receiver can settle into the return stance standing still, not mid-walk.
   if (distance / WALK_SPEED > secondsToNextServe - ARRIVAL_MARGIN) return 'cut';
   return 'walk';
 }
@@ -149,34 +144,59 @@ export function isBetweenPoints(events: { frame: number; kind: string }[], frame
   let low = 0, high = events.length;
   while (low < high) {
     const middle = (low + high) >> 1;
-    if (events[middle].frame <= frame) low = middle + 1;
-    else high = middle;
+    if (events[middle].frame <= frame) low = middle + 1; else high = middle;
   }
   return low > 0 && events[low - 1].kind === 'point-end';
 }
 
-/** Smooth noisy recorded signals using replay time; long seeks snap to the target. */
-export function smoothReplayValue(
-  previous: number | undefined,
-  target: number,
-  deltaSeconds: number,
-  timeConstant: number,
+/**
+ * A real change of ends follows a finished game, so the server changes. A side
+ * switch in the recorded positions within the same server's game is not a
+ * changeover and must not be labelled as one.
+ */
+export function isGameChange(
+  events: { frame: number; kind: string; shotType?: string; player?: number }[],
+  frame: number,
 ) {
-  if (!Number.isFinite(target)) return previous ?? 0;
-  const elapsed = Math.abs(deltaSeconds);
-  if (!Number.isFinite(previous) || elapsed > 0.5) return target;
-  const alpha = 1 - Math.exp(-elapsed / Math.max(0.001, timeConstant));
-  return previous! + (target - previous!) * alpha;
+  let previous: number | undefined, next: number | undefined;
+  for (const event of events) {
+    if (event.kind !== 'shot' || event.shotType !== 'serve' || !event.player) continue;
+    if (event.frame <= frame) previous = event.player;
+    else { next = event.player; break; }
+  }
+  return previous !== undefined && next !== undefined && previous !== next;
 }
 
-/** Continuous opposing free-arm swing, independent of the foot lift corner. */
-export function freeArmStrideSwing(phase: number, directionZ: number, reach: number) {
-  return -Math.cos(2 * Math.PI * phase)
-    * Math.sign(directionZ || 1)
-    * Math.min(1, Math.max(0, reach));
+type CutEvent = { frame: number; kind: string; shotType?: string; player?: number; changeover?: boolean };
+
+/**
+ * Should a cut where a player's recorded end switches be labelled "Change of
+ * ends"? Uses the point-end that the cut belongs to (the last one before it
+ * with no serve since, else one just after it) and its score-based changeover
+ * flag. Recordings without that flag fall back to "the server changes".
+ */
+export function isChangeoverCut(events: CutEvent[], frame: number) {
+  let low = 0, high = events.length;
+  while (low < high) {
+    const middle = (low + high) >> 1;
+    if (events[middle].frame <= frame) low = middle + 1; else high = middle;
+  }
+  let owner: CutEvent | undefined;
+  for (let i = low - 1; i >= 0; i--) {
+    const event = events[i];
+    if (event.kind === 'point-end') { owner = event; break; }
+    if (event.kind === 'shot' && event.shotType === 'serve') break;
+  }
+  if (!owner) {
+    for (let i = low; i < events.length && events[i].frame <= frame + 90; i++) {
+      if (events[i].kind === 'point-end') { owner = events[i]; break; }
+    }
+  }
+  if (typeof owner?.changeover === 'boolean') return owner.changeover;
+  return isGameChange(events, frame);
 }
 
-/** The player's next shot after `frame`, if one exists. */
+/** This player's next shot after `frame`, if any. */
 export function nextShotEvent<T extends { frame: number; kind: string; player?: number }>(
   events: T[],
   player: number,
@@ -185,16 +205,15 @@ export function nextShotEvent<T extends { frame: number; kind: string; player?: 
   let low = 0, high = events.length;
   while (low < high) {
     const middle = (low + high) >> 1;
-    if (events[middle].frame <= frame) low = middle + 1;
-    else high = middle;
+    if (events[middle].frame <= frame) low = middle + 1; else high = middle;
   }
-  for (let index = low; index < events.length; index += 1) {
-    if (events[index].kind === 'shot' && events[index].player === player) return events[index];
+  for (let i = low; i < events.length; i++) {
+    if (events[i].kind === 'shot' && events[i].player === player) return events[i];
   }
   return undefined;
 }
 
-/** Frame of this player's latest shot at or before `frame`, however far back. */
+/** Frame of this player's most recent shot at or before `frame` (any distance back). */
 export function lastShotFrame(
   events: { frame: number; kind: string; player?: number }[],
   player: number,
@@ -203,60 +222,10 @@ export function lastShotFrame(
   let low = 0, high = events.length;
   while (low < high) {
     const middle = (low + high) >> 1;
-    if (events[middle].frame <= frame) low = middle + 1;
-    else high = middle;
+    if (events[middle].frame <= frame) low = middle + 1; else high = middle;
   }
-  for (let index = low - 1; index >= 0; index -= 1) {
-    if (events[index].kind === 'shot' && events[index].player === player) return events[index].frame;
+  for (let i = low - 1; i >= 0; i--) {
+    if (events[i].kind === 'shot' && events[i].player === player) return events[i].frame;
   }
   return undefined;
-}
-
-type ChangeoverEvent = {
-  frame: number;
-  kind: string;
-  shotType?: string;
-  player?: number;
-  changeover?: boolean;
-};
-
-/** Use replay score flags when available; live feeds fall back to server changes. */
-export function isChangeoverCut(events: ChangeoverEvent[], frame: number) {
-  let low = 0, high = events.length;
-  while (low < high) {
-    const middle = (low + high) >> 1;
-    if (events[middle].frame <= frame) low = middle + 1;
-    else high = middle;
-  }
-
-  let pointEnd: ChangeoverEvent | undefined;
-  for (let index = low - 1; index >= 0; index -= 1) {
-    const event = events[index];
-    if (event.kind === 'point-end') {
-      pointEnd = event;
-      break;
-    }
-    if (event.kind === 'shot' && event.shotType === 'serve') break;
-  }
-  if (!pointEnd) {
-    for (let index = low; index < events.length && events[index].frame <= frame + 90; index += 1) {
-      if (events[index].kind === 'point-end') {
-        pointEnd = events[index];
-        break;
-      }
-    }
-  }
-  if (typeof pointEnd?.changeover === 'boolean') return pointEnd.changeover;
-
-  let previousServer: number | undefined;
-  let nextServer: number | undefined;
-  for (const event of events) {
-    if (event.kind !== 'shot' || event.shotType !== 'serve' || !event.player) continue;
-    if (event.frame <= frame) previousServer = event.player;
-    else {
-      nextServer = event.player;
-      break;
-    }
-  }
-  return previousServer !== undefined && nextServer !== undefined && previousServer !== nextServer;
 }

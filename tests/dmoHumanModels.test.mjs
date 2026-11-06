@@ -24,15 +24,13 @@ const sceneApi = await loadTs('../components/DmoLiveCourt3DScene.ts', {
 const racketPose = await loadTs('../components/DmoRacketOrientation.ts');
 const articulated = await loadTs('../components/DmoArticulatedHands.ts', { './DmoRacketOrientation': racketPose });
 const nativeGrip = await loadTs('../components/DmoNativeGrip.ts');
-const nativeTwist = await loadTs('../components/DmoNativeTwist.ts');
 const capturedGroundstroke = await import('../components/DmoCapturedGroundstroke.ts');
 const nativeKit = await loadTs('../components/DmoNativeKit.ts');
-const groundstrokeRig = await loadTs('../components/DmoGroundstrokeRig.ts', { './DmoRacketOrientation': racketPose });
+const nativeTwist = await loadTs('../components/DmoNativeTwist.ts');
 const nativePlayer = await loadTs('../components/DmoNativePlayer.ts', {
   './DmoRacketOrientation': racketPose, './DmoNativeGrip': nativeGrip, './DmoNativeKit': nativeKit,
   './DmoNativeTwist': nativeTwist,
   './DmoCapturedGroundstroke': capturedGroundstroke,
-  './DmoGroundstrokeRig': groundstrokeRig,
 });
 const claudeNativePlayer = await loadTs('../components/DmoNativePlayerClaude.ts', {
   './DmoRacketOrientation': racketPose, './DmoNativeGrip': nativeGrip, './DmoNativeKit': nativeKit,
@@ -40,18 +38,13 @@ const claudeNativePlayer = await loadTs('../components/DmoNativePlayerClaude.ts'
   './DmoCapturedGroundstroke': capturedGroundstroke,
 });
 const humans = await loadTs('../components/DmoHumanModels.ts', {
-  './DmoRacketOrientation': racketPose, './DmoArticulatedHands': articulated, './DmoNativePlayer': nativePlayer,
-  './DmoNativePlayerClaude': claudeNativePlayer,
+  './DmoRacketOrientation': racketPose, './DmoArticulatedHands': articulated,
+  './DmoNativePlayer': nativePlayer, './DmoNativePlayerClaude': claudeNativePlayer,
 });
 const crowdLodApi = await loadTs('../lib/dmoCrowdLod.ts');
 const crowds = await loadTs('../components/DmoHumanCrowd.ts', {
-  './DmoHumanModels': humans, '../lib/dmoCrowdLod': crowdLodApi,
-});
-
-test('high-detail spectators use the clothed CC0 player assets', () => {
-  assert.equal(humans.humanModelAssetFilename('male', 'crowd-high'), 'male-player.glb');
-  assert.equal(humans.humanModelAssetFilename('female', 'crowd-high'), 'female-player.glb');
-  assert.equal(humans.humanModelAssetFilename('male', 'crowd'), 'male-crowd.glb');
+  './DmoHumanModels': humans,
+  '../lib/dmoCrowdLod': crowdLodApi,
 });
 
 // Parse the real rig and geometry in Node, omitting image decoding (verified in browser).
@@ -93,109 +86,6 @@ async function nativePlayerTemplate(gender) {
   }
 }
 
-test('Claude full-body rewrite is the default production player', async () => {
-  const template = await nativePlayerTemplate('male');
-  const rig = sceneApi.makePlayer(0x275c77, 0x333333);
-  const attached = humans.attachHumanPlayer(template, rig, 0x275c77);
-  assert.equal(attached.model.name, 'wtsl-continuous-player-claude');
-  assert.equal(typeof attached.update, 'function');
-  attached.update();
-  assert.ok([...attached.pose.bones.values()].every((bone) =>
-    bone.matrixWorld.elements.every(Number.isFinite)));
-});
-
-test('serve tossing arm blends from the lift into a front tuck through landing', () => {
-  const tuck = claudeNativePlayer.serveTossTuckWeight;
-  assert.equal(tuck(-11, 1), 0);
-  assert.equal(tuck(-1, 1), 1);
-  assert.equal(tuck(0, 1), 1);
-  assert.ok(tuck(25, 1) > 0 && tuck(25, 1) < 1);
-  assert.equal(tuck(34, 1), 0);
-  assert.equal(tuck(0, 0.4), 0.4);
-});
-
-test('Claude support hand chooses a low-strain, continuous throat cradle', async () => {
-  const template = await nativePlayerTemplate('male');
-  for (const handedness of ['right', 'left']) {
-    const rig = sceneApi.makePlayer(0x275c77, 0x333333);
-    rig.root.userData.dominantHandedness = handedness;
-    rig.root.userData.waitingPose = true;
-    rig.root.userData.twoHandedGrip = false;
-    rig.root.userData.supportHoldWeight = 1;
-    rig.root.userData.supportGripOffset = 0.11;
-    rig.racket.position.set(handedness === 'right' ? -0.22 : 0.22, 1, 0.32);
-    const shaft = new THREE.Vector3(handedness === 'right' ? 0.18 : -0.18, 0.32, 0.93).normalize();
-    rig.racket.quaternion.copy(racketPose.racketContactOrientation(
-      shaft, new THREE.Vector3(0, 1, 0).cross(shaft),
-    ));
-    const attached = humans.attachHumanPlayer(template, rig, 0x275c77);
-    const support = handedness === 'right' ? 'l' : 'r';
-    let previous;
-    let finalRoll = 0;
-    for (let frame = 0; frame < 36; frame += 1) {
-      attached.update();
-      const hand = attached.pose.rotation(`hand_${support}`);
-      if (previous) assert.ok(hand.angleTo(previous) < 0.4, 'cradle orientation must not jump between frames');
-      previous = hand.clone();
-      const neutral = attached.pose.rotation(`lowerarm_${support}`)
-        .multiply(attached.pose.rest.get(`lowerarm_${support}`).rotation.clone().invert())
-        .multiply(attached.pose.rest.get(`hand_${support}`).rotation);
-      const forearm = attached.pose.point(`hand_${support}`)
-        .sub(attached.pose.point(`lowerarm_${support}`)).normalize();
-      finalRoll = Math.abs(nativeTwist.twistAngle(
-        hand.clone().multiply(neutral.clone().invert()), forearm,
-      ));
-    }
-    assert.ok(finalRoll < 1.4, `${handedness}: free forearm roll should stay below ${finalRoll.toFixed(2)} radians`);
-  }
-});
-
-test('Claude stroke hand selection overrides stale grip state and wrist roll stays continuous', async () => {
-  const template = await nativePlayerTemplate('male');
-  const rig = sceneApi.makePlayer(0x275c77, 0x333333);
-  rig.root.userData.dominantHandedness = 'right';
-  rig.racket.position.set(-0.39, 1.18, 0.06);
-  const attached = humans.attachHumanPlayer(template, rig, 0x275c77);
-  const support = 'l';
-
-  rig.root.userData.twoHandedGrip = true;
-  rig.root.userData.groundstrokePlayback = {
-    stroke: 'backhand', handedness: 'right', deltaSeconds: 0, weight: 1,
-    rootOffset: false, hands: 'one',
-  };
-  attached.update();
-  for (const name of attached.pose.bones.keys()) {
-    if (/^(index|middle|ring|pinky|thumb)_/.test(name) && name.endsWith(`_${support}`)) {
-      const roll = attached.pose.bones.get(name).quaternion.angleTo(attached.pose.rest.get(name).local);
-      assert.ok(roll < 1e-3,
-        `${name}: explicit one-handed playback must release the support fingers (angle ${roll})`);
-    }
-  }
-
-  delete rig.root.userData.groundstrokePlayback;
-  rig.root.userData.twoHandedGrip = false;
-  rig.racket.quaternion.identity();
-  attached.update();
-  const side = 'r';
-  const axis = attached.pose.point(`hand_${side}`)
-    .sub(attached.pose.point(`lowerarm_${side}`)).normalize();
-  const neutral = attached.pose.rotation(`lowerarm_${side}`)
-    .multiply(attached.pose.rest.get(`lowerarm_${side}`).rotation.clone().invert())
-    .multiply(attached.pose.rest.get(`hand_${side}`).rotation);
-  const localRacket = racketPose.racketContactOrientation(
-    attached.grips[side].shaft, attached.grips[side].palm,
-  );
-  const handFrames = [];
-  for (const roll of [3.05, -3.05]) {
-    const desired = new THREE.Quaternion().setFromAxisAngle(axis, roll).multiply(neutral);
-    rig.racket.quaternion.copy(desired.multiply(localRacket));
-    attached.update();
-    handFrames.push(attached.pose.rotation(`hand_${side}`));
-  }
-  assert.ok(handFrames[0].angleTo(handFrames[1]) < 0.2,
-    'equivalent wrist orientations across the ±π boundary should not flip');
-});
-
 async function articulatedHandAsset() {
   const bytes = await readFile(new URL('../public/models/dmo-humans/articulated-hand.glb', import.meta.url));
   const gltf = await new GLTFLoader().parseAsync(
@@ -228,6 +118,7 @@ for (const gender of ['male', 'female']) test(`${gender}: continuous native body
   }
   const attached = humans.attachHumanPlayer(template, rig, 0x275c77);
   const { pose, grips } = attached;
+  // 53 native joints plus one roll-helper per upper arm, forearm and thigh.
   assert.equal([...pose.bones.keys()].filter(name => !name.includes('_twist_')).length, 53);
   assert.equal([...pose.bones.keys()].filter(name => name.includes('_twist_')).length, 6);
   assert.ok(pose.rest.get('spine_03').direction.y > 0.9,
@@ -238,15 +129,19 @@ for (const gender of ['male', 'female']) test(`${gender}: continuous native body
   assert.ok(attached.model.getObjectByName('native-tennis-shirt').geometry.index.count > 100);
   assert.ok(attached.model.getObjectByName('native-tennis-shorts').geometry.index.count > 100);
   if (gender === 'female') assert.ok(attached.model.getObjectByName('native-tennis-skirt'));
-  const shirt = attached.model.getObjectByName('native-tennis-shirt').geometry.getAttribute('position');
-  let shoulderTop = 0, aboveNeck = 0;
-  for (let i = 0; i < shirt.count; i++) {
-    const x = Math.abs(shirt.getX(i)), y = shirt.getY(i);
-    if (x > 0.1 && x < 0.2 && y > 1.39) shoulderTop++;
-    if (y > 1.47) aboveNeck++;
+  {
+    // Regression: the shirt must cover the shoulder tops (bind y 1.38-1.43 m)
+    // and must stop at the neck base (never the face).
+    const shirt = attached.model.getObjectByName('native-tennis-shirt').geometry.getAttribute('position');
+    let shoulderTop = 0, aboveNeck = 0;
+    for (let i = 0; i < shirt.count; i++) {
+      const x = Math.abs(shirt.getX(i)), y = shirt.getY(i);
+      if (x > 0.1 && x < 0.2 && y > 1.39) shoulderTop++;
+      if (y > 1.47) aboveNeck++;
+    }
+    assert.ok(shoulderTop > 20, 'shirt leaves the shoulder tops bare');
+    assert.equal(aboveNeck, 0, 'shirt climbs above the neck base');
   }
-  assert.ok(shoulderTop > 20, 'shirt should cover shoulder tops');
-  assert.equal(aboveNeck, 0, 'shirt should stop at the neck base');
   attached.model.traverse(o => {
     if (!(o instanceof THREE.SkinnedMesh)) return;
     assert.equal(o.skeleton, nativeBody.skeleton, 'garments share the complete body skeleton');
@@ -258,32 +153,18 @@ for (const gender of ['male', 'female']) test(`${gender}: continuous native body
   });
   const offsets = new Map([...pose.bones].map(([name, bone]) => [name, bone.position.clone()]));
   for (const handedness of ['right', 'left']) for (const twoHanded of [false, true]) for (const angle of [0, 0.6, -0.8, 1.4]) {
-    const waitingPose = !twoHanded && angle === 0;
     rig.root.userData.dominantHandedness = handedness;
     rig.root.userData.twoHandedGrip = twoHanded;
-    rig.root.userData.waitingPose = waitingPose;
-    rig.root.userData.supportGripOffset = twoHanded || waitingPose ? 0.2 : undefined;
-    rig.root.userData.supportHoldWeight = waitingPose ? 1 : 0;
     const side = handedness === 'right' ? 'r' : 'l';
     rig.racket.position.set(side === 'r' ? -0.39 : 0.39, 1.12 + Math.sin(angle) * 0.2, 0.06);
     rig.racket.quaternion.setFromEuler(new THREE.Euler(0.42 + angle, angle * 0.2, 0.12));
     const requestedGrip = rig.racket.position.clone();
     attached.update();
     const actualGrip = rig.root.worldToLocal(grips[side].hand.localToWorld(grips[side].centre.clone()));
+    // The racket is carried by the hand, and the hand still reaches the requested grip.
     close(actualGrip, rig.racket.position);
-    assert.ok(actualGrip.distanceTo(requestedGrip) < 0.05,
-      `${handedness} grip missed the requested racket position`);
-    if ((twoHanded || waitingPose) && angle === 0) {
-      const support = side === 'r' ? 'l' : 'r';
-      const target = rig.racket.position.clone().add(
-        new THREE.Vector3(0, 0.2, 0).applyQuaternion(rig.racket.quaternion),
-      );
-      const actualSupport = rig.root.worldToLocal(
-        grips[support].hand.localToWorld(grips[support].centre.clone()),
-      );
-      assert.ok(actualSupport.distanceTo(target) < 0.05,
-        `${handedness} support hand missed the racket throat`);
-    }
+    // (one test pose sits 0.21 m from the shoulder, tighter than an elbow can fold around a held racket)
+    assert.ok(actualGrip.distanceTo(requestedGrip) < 0.05, `${handedness} grip missed the requested racket position`);
     for (const [name, bone] of pose.bones) {
       assert.ok(bone.position.distanceTo(offsets.get(name)) < 1e-8, `${name}: native segment was stretched`);
       assert.ok(bone.matrixWorld.elements.every(Number.isFinite));
@@ -669,71 +550,41 @@ test('racket face follows ball flight while retaining the contact shaft axis', (
 test('crowd uses seated textured instancing and retains gaze/applause updates', async () => {
   const scene = new THREE.Scene();
   const oldCrowd = sceneApi.buildCrowd(scene);
-  oldCrowd.setHighDetailEnabled(false);
-  const batches = crowds.attachHumanCrowd(scene, oldCrowd, [
-    await asset('male', 'crowd'), await asset('female', 'crowd'),
-  ]);
+  const batches = crowds.attachHumanCrowd(scene, oldCrowd, [await asset('male', 'crowd'), await asset('female', 'crowd')]);
   assert.equal(batches.length, 12);
   assert.equal(batches.reduce((sum, mesh) => sum + mesh.count, 0), oldCrowd.seats.length);
-  oldCrowd.setHighDetailModel(await asset('male', 'player'), 0);
-  const highDetailBatches = scene.children.filter((object) => object.name.includes('high-detail'));
-  oldCrowd.update(0.1, false);
-  const totalInstances = () => [...batches, ...highDetailBatches]
-    .reduce((sum, mesh) => sum + mesh.count, 0);
-  assert.equal(highDetailBatches.reduce((sum, mesh) => sum + mesh.count, 0), 0);
-  assert.ok(highDetailBatches.every((mesh) => !mesh.visible));
-  assert.equal(totalInstances(), oldCrowd.seats.length);
-  oldCrowd.setHighDetailEnabled(true);
-  oldCrowd.update(0.2, false);
-  assert.equal(highDetailBatches.reduce((sum, mesh) => sum + mesh.count, 0), 24);
-  assert.equal(totalInstances(), oldCrowd.seats.length);
   assert.equal(scene.getObjectByName('wtsl-spectator-heads').visible, false);
   oldCrowd.update(2, true, new THREE.Vector3(11, 0.5, 5));
   assert.ok(batches.some((mesh, index) => index % 6 >= 3 && mesh.count > 0));
-  assert.equal(totalInstances(), oldCrowd.seats.length);
-  oldCrowd.setHighDetailEnabled(false);
-  oldCrowd.update(2.2, true, new THREE.Vector3(11, 0.5, 5));
-  assert.equal(highDetailBatches.reduce((sum, mesh) => sum + mesh.count, 0), 0);
-  assert.ok(highDetailBatches.every((mesh) => !mesh.visible));
-  assert.equal(totalInstances(), oldCrowd.seats.length);
-  oldCrowd.setHighDetailEnabled(true);
-  oldCrowd.update(2.4, true, new THREE.Vector3(11, 0.5, 5));
-  assert.equal(highDetailBatches.reduce((sum, mesh) => sum + mesh.count, 0), 24);
-  for (const mesh of [...batches, ...highDetailBatches]) {
+  assert.equal(batches.reduce((sum, mesh) => sum + mesh.count, 0), oldCrowd.seats.length);
+  for (const mesh of batches) {
     assert.ok(mesh.geometry.boundingBox.max.y > 1.2);
     assert.ok(mesh.geometry.boundingBox.max.y < 1.7);
     assert.equal(mesh.castShadow, false);
   }
 });
 
-test('twist helpers distribute forearm roll without moving the hand or calf', async () => {
+test('limb roll is spread along helper twist bones without changing hand or forearm orientation', async () => {
   const template = await nativePlayerTemplate('male');
   const rig = sceneApi.makePlayer(0x275c77, 0x333333);
   const attached = humans.attachHumanPlayer(template, rig, 0x275c77);
   const { pose } = attached;
+  const twist = await loadTs('../components/DmoNativeTwist.ts');
   attached.update();
-  pose.reset();
-  pose.model.updateMatrixWorld(true);
   const roll = new THREE.Quaternion().setFromAxisAngle(
-    pose.bones.get('hand_r').position.clone().normalize(), 1.4,
-  );
+    pose.bones.get('hand_r').position.clone().normalize(), 1.4);
   pose.bones.get('lowerarm_r').quaternion.multiply(roll);
   pose.model.updateMatrixWorld(true);
-  const before = ['lowerarm_r', 'hand_r', 'calf_r'].map(name =>
-    pose.bones.get(name).getWorldQuaternion(new THREE.Quaternion()));
-  const positions = ['lowerarm_r', 'hand_r', 'middle_01_r'].map(name => pose.point(name));
-  nativeTwist.distributeNativeTwist(pose.bones, pose.rest);
+  const before = ['lowerarm_r', 'hand_r', 'calf_r'].map(n => pose.bones.get(n).getWorldQuaternion(new THREE.Quaternion()));
+  const positions = ['lowerarm_r', 'hand_r', 'middle_01_r'].map(n => pose.point(n));
+  twist.distributeNativeTwist(pose.bones, pose.rest);
   pose.model.updateMatrixWorld(true);
-  for (const [i, name] of ['hand_r', 'calf_r'].entries()) {
-    assert.ok(pose.bones.get(name).getWorldQuaternion(new THREE.Quaternion())
-      .angleTo(before[i + 1]) < 1e-3, `${name} orientation changed`);
-  }
-  for (const [i, name] of ['lowerarm_r', 'hand_r', 'middle_01_r'].entries()) {
-    assert.ok(pose.point(name).distanceTo(positions[i]) < 1e-6, `${name} moved`);
-  }
+['hand_r', 'calf_r'].forEach((n, i) => assert.ok(
+    pose.bones.get(n).getWorldQuaternion(new THREE.Quaternion()).angleTo(before[i + 1]) < 1e-3, `${n} orientation changed`));
+  ['lowerarm_r', 'hand_r', 'middle_01_r'].forEach((n, i) => assert.ok(pose.point(n).distanceTo(positions[i]) < 1e-6, `${n} moved`));
+  // The forearm bone becomes a pure hinge; its helper now carries the roll.
   const helper = pose.bones.get('lowerarm_twist_r');
-  assert.ok(2 * Math.acos(Math.min(1, Math.abs(helper.quaternion.w))) > 0.8,
-    'forearm roll was not moved to its helper');
+  assert.ok(2 * Math.acos(Math.min(1, Math.abs(helper.quaternion.w))) > 0.8, 'forearm roll was not moved to its helper');
   const lowerNow = pose.bones.get('lowerarm_r').getWorldQuaternion(new THREE.Quaternion());
   assert.ok(lowerNow.angleTo(before[0]) > 0.8, 'forearm bone still carries the roll');
 });

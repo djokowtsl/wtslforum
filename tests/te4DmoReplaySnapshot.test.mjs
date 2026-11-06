@@ -34,7 +34,6 @@ function viewerData() {
       f: 0,
       g: '1-0',
       tb: 0,
-      set: 1,
       mf: 0,
       fc: 4,
     }],
@@ -56,12 +55,10 @@ test('full TE4 replay court frames and sound events become a live court snapshot
   assert.equal(snapshot.pointCount, 1);
   assert.equal(snapshot.winChance[0], 0.75);
   assert.deepEqual(
-    snapshot.trajectoryEvents.map(({ frame, kind, shotType, changeover }) => ({
-      frame, kind, shotType, ...(kind === 'point-end' ? { changeover } : {}),
-    })),
+    snapshot.trajectoryEvents.map(({ frame, kind, shotType }) => ({ frame, kind, shotType })),
     [
       { frame: 0, kind: 'shot', shotType: 'serve' },
-      { frame: 3, kind: 'point-end', shotType: undefined, changeover: false },
+      { frame: 3, kind: 'point-end', shotType: undefined },
     ],
   );
   assert.deepEqual(snapshot.soundEvents, [
@@ -76,54 +73,14 @@ test('full replay conversion rejects oversized encoded court payloads before dec
   assert.throws(() => te4ViewerToLiveSnapshot(invalid), /court data is incomplete/);
 });
 
-test('full replay point ends are labelled from odd-game and odd-set score changes', async () => {
-  const { changeoversAfterPoints } = await import('../lib/te4DmoReplaySnapshot.ts');
-  const points = [];
-  let server = 1;
-  const addGame = (set, gameScore = '0-0', pointCount = 4) => {
-    for (let point = 0; point < pointCount; point += 1) {
-      points.push({ s: server, set, tb: 0, g: gameScore });
-    }
-    server = server === 1 ? 2 : 1;
-  };
-  for (let game = 0; game < 10; game += 1) {
-    addGame(1);
-  }
-  addGame(2);
-  addGame(2);
-  const flags = changeoversAfterPoints(points);
-  const lastPointOfGame = game => game * 4 - 1;
-  assert.equal(flags[lastPointOfGame(1)], true);
-  assert.equal(flags[lastPointOfGame(2)], false);
-  assert.equal(flags[lastPointOfGame(3)], true);
-  assert.equal(flags[lastPointOfGame(10)], false, 'a 6-4 set break does not change ends');
-  assert.equal(flags[lastPointOfGame(11)], true, 'the first odd game of the next set does');
-});
-
-test('tie-break changeovers occur after six points, not after each server switch', async () => {
-  const { changeoversAfterPoints } = await import('../lib/te4DmoReplaySnapshot.ts');
-  const points = [];
-  let server = 1;
-  for (let game = 0; game < 12; game += 1) {
-    for (let point = 0; point < 4; point += 1) {
-      points.push({ s: server, set: 1, tb: 0, g: '0-0' });
-    }
-    server = server === 1 ? 2 : 1;
-  }
-  for (let point = 0; point < 13; point += 1) {
-    points.push({
-      s: point === 0 || Math.floor((point - 1) / 2) % 2 === 1 ? 1 : 2,
-      set: 1,
-      tb: 1,
-      g: '6-6',
-    });
-  }
-  points.push({ s: 2, set: 2, tb: 0, g: '0-0' });
-  const flags = changeoversAfterPoints(points);
-  assert.equal(flags[47], false, 'the 6-6 set score alone is not a changeover');
-  assert.deepEqual(
-    flags.slice(48, 60).flatMap((flag, index) => flag ? [index + 1] : []),
-    [6, 12],
-  );
-  assert.equal(flags[60], true, 'a 7-6 set has an odd game total');
+test('full replay point ends carry the score-based changeover flag', () => {
+  const data = viewerData();
+  const base = data.pts[0];
+  const point = (k, s, mf) => ({ ...base, k, s, set: 1, tb: 0, g: '0-0', mf, fc: 1, sh: [{ t: 0, p: s, k: 's', v: 0, bt: null }] });
+  // Game 1 (server 1): points 1-2; game 2 (server 2): point 3.
+  data.match.n = 4;
+  data.pts = [point(1, 1, 0), point(2, 1, 1), point(3, 2, 2)];
+  const snapshot = te4ViewerToLiveSnapshot(data);
+  const ends = snapshot.trajectoryEvents.filter((event) => event.kind === 'point-end');
+  assert.deepEqual(ends.map((event) => event.changeover), [false, true, false]);
 });
