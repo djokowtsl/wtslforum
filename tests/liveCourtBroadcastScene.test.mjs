@@ -28,7 +28,7 @@ const { deriveLiveCourtSoundEvents, playLiveCourtEffect } = await loadTs('../lib
   './te4DmoSurface': { courtSurfaceSoundProfile },
 });
 
-test('stadium uses a continuous high seating bowl without blocking walls or an exterior backdrop', () => {
+test('stadium fills three open tiers with crowd, concourses, score displays and four tunnels', () => {
   for (const indoor of [false, true]) {
     const scene = new THREE.Scene();
     sceneApi.buildStadiumEnvironment(scene, indoor);
@@ -46,6 +46,7 @@ test('stadium uses a continuous high seating bowl without blocking walls or an e
     assert.equal(bowl.geometry.userData.continuousPerimeter, true);
     assert.equal(bowl.geometry.userData.inwardFacing, true);
     assert.equal(bowl.geometry.userData.rows, 18, 'the bowl continues well above the sparse detailed crowd');
+    assert.equal(bowl.geometry.userData.tiers, 3);
     bowl.geometry.computeBoundingBox();
     assert.ok(bowl.geometry.boundingBox.max.x > 55, 'stands reach beyond the court in every direction');
     assert.ok(bowl.geometry.boundingBox.max.y > 19, 'upper seating fills the scene height');
@@ -56,6 +57,11 @@ test('stadium uses a continuous high seating bowl without blocking walls or an e
     assert.ok(seats.count > 4_000, 'empty upper rows still read as stands across the full bowl');
     assert.equal(seats.userData.rows, 18);
     assert.equal(seats.userData.inwardFacing, true);
+    const spectators = named(superstructure, 'wtsl-continuous-bowl-spectator-bodies')[0];
+    const heads = named(superstructure, 'wtsl-continuous-bowl-spectator-heads')[0];
+    assert.ok(spectators?.isInstancedMesh && heads?.isInstancedMesh);
+    assert.equal(spectators.count, heads.count);
+    assert.ok(spectators.count > seats.count * 0.85, 'crowd fills nearly every seat across all tiers');
     assert.equal(named(superstructure, 'wtsl-baseline-upper-deck-0').length, 0);
     assert.equal(named(superstructure, 'wtsl-sideline-upper-deck-2').length, 0);
     assert.equal(named(superstructure, 'wtsl-baseline-riser-0').length, 0);
@@ -65,10 +71,24 @@ test('stadium uses a continuous high seating bowl without blocking walls or an e
       if (/retaining|riser|seat-cap|stadium-rib/i.test(object.name)) blockingArchitecture.push(object.name);
     });
     assert.deepEqual(blockingArchitecture, [], 'no retaining walls, caps, or ribs interrupt the court view');
-    assert.equal(named(superstructure, 'wtsl-advertising-board-baseline').length, 2);
-    assert.equal(named(superstructure, 'wtsl-advertising-board-sideline').length, 2);
+    assert.equal(named(superstructure, 'wtsl-advertising-board-baseline').length, 4);
+    assert.equal(named(superstructure, 'wtsl-advertising-board-sideline').length, 4);
     assert.equal(named(superstructure, 'wtsl-scoreboard-screen').length, 2);
-    assert.equal(named(superstructure, 'wtsl-stadium-concourse').length, 0);
+    const concourses = named(superstructure, 'wtsl-stadium-concourse');
+    assert.equal(concourses.length, 2);
+    assert.ok(concourses.every((walkway) => walkway.userData.amenities.includes('concessions')
+      && walkway.userData.amenities.includes('restrooms')));
+    assert.equal(named(superstructure, 'wtsl-court-tunnel-opening').length, 4);
+    assert.equal(superstructure.userData.tunnelOpeningCount, 4);
+    assert.equal(superstructure.userData.concourseCount, 2);
+    assert.equal(typeof superstructure.userData.updateScoreboard, 'function');
+    const scoreboard = {
+      players: ['Taylor Fritz', 'Alex de Minaur'],
+      score: { sets: [[6, 4]], games: [3, 2], pointText: ['30', '15'], tiebreak: false, server: 1 },
+      live: true,
+    };
+    superstructure.userData.updateScoreboard(scoreboard);
+    assert.deepEqual(superstructure.userData.scoreboardData, scoreboard);
     assert.equal(named(superstructure, 'wtsl-stadium-concourse-windows').length, 0);
     assert.equal(named(superstructure, 'wtsl-stadium-support-columns').length, 0);
     assert.equal(named(superstructure, 'wtsl-open-air-canopy').length, 0);
@@ -92,7 +112,11 @@ test('full-detail crowd seats are sparse, near-court and gender-balanced for qua
 test('court-side crowd has no retaining panels that can block the foreground view', () => {
   const scene = new THREE.Scene();
   const crowd = sceneApi.buildCrowd(scene);
-  assert.equal(crowd.seats.length, 7 * 96, 'the detailed near-court crowd remains unchanged');
+  assert.equal(crowd.seats.length, 7 * 72, 'four centered paths stay clear through the near-court crowd');
+  const sidelineSeats = crowd.seats.filter((seat) => Math.abs(seat.z) >= 12 && Math.abs(seat.z) < 18);
+  const baselineSeats = crowd.seats.filter((seat) => Math.abs(seat.x) >= 22);
+  assert.ok(sidelineSeats.every((seat) => Math.abs(seat.x) >= 2.5));
+  assert.ok(baselineSeats.every((seat) => Math.abs(seat.z) >= 2.5));
   const panels = [];
   scene.traverse((object) => {
     if (!object.isMesh || object.geometry?.type !== 'BoxGeometry') return;

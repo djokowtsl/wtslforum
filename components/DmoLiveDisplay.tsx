@@ -10,6 +10,7 @@ import {
 import type { LivePreMatchProbability } from '@/lib/liveBroadcast';
 import type { LiveBroadcastScore } from '@/lib/liveBroadcastScore';
 import { surfaceForDmoTournament } from '@/lib/te4DmoSurface';
+import type { StadiumScoreboardData } from './DmoStadiumArchitecture';
 import DmoLiveCourt from './DmoLiveCourt3D';
 import styles from './DmoLiveDisplay.module.css';
 
@@ -137,6 +138,17 @@ export default function DmoLiveDisplay({
   // Undefined means DMO replay/manual scoring. Null means an automatic
   // broadcast's authoritative score is unavailable; never fall back to DMO.
   const score = liveScore === undefined ? snapshot.score : liveScore;
+  const stadiumScoreboard: StadiumScoreboardData = {
+    players: snapshot.players,
+    score: score ? {
+      sets: score.sets,
+      games: score.games,
+      pointText: score.pointText,
+      tiebreak: score.tiebreak,
+      server: score.server === 1 ? 1 : score.server === 2 ? 2 : null,
+    } : null,
+    live: liveScore !== undefined,
+  };
   const pointScore = score?.pointText.join('–') ?? '—';
   const displayedPointLog = pointLog ?? snapshot.recentPoints;
 
@@ -183,6 +195,7 @@ export default function DmoLiveDisplay({
           playbackSpeed={playbackSpeed}
           isWta={isWta}
           buffering={buffering}
+          scoreboard={stadiumScoreboard}
         />
         <aside className={styles.scoreBug} aria-label="Live match score">
           <div className={styles.scoreBugHeader}>

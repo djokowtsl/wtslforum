@@ -504,6 +504,9 @@ export default function DmoLiveViewer({ canWatch, voiceServer = '' }: Props) {
                           isWta={broadcast.isWta}
                           state={broadcast.status}
                           playbackSpeed={broadcast.replaySpeed}
+                          liveScore={broadcast.broadcastMode === 'auto' && !broadcast.replay
+                            ? broadcast.liveScore ?? null
+                            : undefined}
                           stale={broadcast.stale}
                           updatedAt={broadcast.updatedAt}
                           preMatchPrediction={preMatchPredictions[broadcast.id]}

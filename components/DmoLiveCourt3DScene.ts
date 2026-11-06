@@ -36,7 +36,7 @@ export type PlayerRig = {
 
 export type CrowdRig = {
   update: (timeSeconds: number, applauding: boolean, ballPosition?: THREE.Vector3) => void;
-  seats: Array<{ x: number; y: number; z: number; row: number; facing: number }>;
+  seats: Array<{ x: number; y: number; z: number; row: number; facing: number; sourceIndex?: number }>;
   replacePeople: (update: CrowdRig['update']) => void;
   highDetailEnabled: boolean;
   setHighDetailEnabled: (enabled: boolean) => void;
@@ -165,7 +165,11 @@ function naturalScalpGeometry() {
   return geometry;
 }
 
-export function buildStadiumEnvironment(scene: THREE.Scene, indoor = false) {
+export function buildStadiumEnvironment(
+  scene: THREE.Scene,
+  indoor = false,
+  scoreboard?: import('./DmoStadiumArchitecture').StadiumScoreboardData,
+) {
   const existing = scene.getObjectByName('wtsl-stadium-architecture');
   if (existing && scene.userData.wtslStadiumIndoor === indoor) return;
   existing?.removeFromParent();
@@ -192,7 +196,9 @@ export function buildStadiumEnvironment(scene: THREE.Scene, indoor = false) {
       stadium.add(fixture);
     }
   }
-  stadium.add(buildStadiumArchitecture());
+  const architecture = buildStadiumArchitecture(scoreboard);
+  stadium.add(architecture);
+  stadium.userData.updateScoreboard = architecture.userData.updateScoreboard;
   scene.add(stadium);
   for (const [x, z] of [[-18, -13], [-18, 13], [18, -13], [18, 13]] as const) {
     const spot = new THREE.SpotLight(0xfff0d7, indoor ? 8 : 5, 48, Math.PI / 5, 0.68, 2);
@@ -479,28 +485,38 @@ export function buildCourt(scene: THREE.Scene, surface: Te4CourtSurface) {
 }
 
 export function buildCrowd(scene: THREE.Scene) {
-  const spectators: Array<{ x: number; z: number; row: number; facing: number }> = [];
+  const spectators: Array<{ x: number; z: number; row: number; facing: number; sourceIndex: number }> = [];
   const rowStep = 0.66;
   const platformBaseY = (row: number) => 0.05 + row * rowStep;
   const rowSpacing = 0.82;
+  const tunnelHalfWidth = 2.5;
   for (let row = 0; row < 7; row += 1) {
+    let rowSeatIndex = 0;
     for (const side of [-1, 1]) {
       for (let index = 0; index < 32; index += 1) {
+        const x = -14.2 + (index / 31) * 28.4;
+        const sourceIndex = row * 96 + rowSeatIndex++;
+        if (Math.abs(x) < tunnelHalfWidth) continue;
         spectators.push({
-          x: -14.2 + (index / 31) * 28.4,
+          x,
           z: side * (12 + row * rowSpacing),
           row,
           facing: side > 0 ? Math.PI : 0,
+          sourceIndex,
         });
       }
     }
     for (const end of [-1, 1]) {
       for (let index = 0; index < 16; index += 1) {
+        const z = -7.2 + (index / 15) * 14.4;
+        const sourceIndex = row * 96 + rowSeatIndex++;
+        if (Math.abs(z) < tunnelHalfWidth) continue;
         spectators.push({
           x: end * (22.25 + row * rowSpacing),
-          z: -7.2 + (index / 15) * 14.4,
+          z,
           row,
           facing: end > 0 ? -Math.PI / 2 : Math.PI / 2,
+          sourceIndex,
         });
       }
     }
@@ -510,12 +526,28 @@ export function buildCrowd(scene: THREE.Scene) {
     const y = platformBaseY(row);
     const platformMaterial = material(row % 2 === 0 ? PALETTE.stands : 0x333e4e, 0.96);
     for (const side of [-1, 1]) {
-      const platform = addBox(scene, [30.2, 0.12, 0.72], [0, y, side * (12 + row * rowSpacing)], platformMaterial);
-      platform.castShadow = false;
+      const segmentLength = (30.2 - tunnelHalfWidth * 2) / 2;
+      for (const direction of [-1, 1]) {
+        const platform = addBox(
+          scene,
+          [segmentLength, 0.12, 0.72],
+          [direction * (tunnelHalfWidth + segmentLength / 2), y, side * (12 + row * rowSpacing)],
+          platformMaterial,
+        );
+        platform.castShadow = false;
+      }
     }
     for (const end of [-1, 1]) {
-      const platform = addBox(scene, [0.72, 0.12, 15.6], [end * (22.25 + row * rowSpacing), y, 0], platformMaterial);
-      platform.castShadow = false;
+      const segmentLength = (15.6 - tunnelHalfWidth * 2) / 2;
+      for (const direction of [-1, 1]) {
+        const platform = addBox(
+          scene,
+          [0.72, 0.12, segmentLength],
+          [end * (22.25 + row * rowSpacing), y, direction * (tunnelHalfWidth + segmentLength / 2)],
+          platformMaterial,
+        );
+        platform.castShadow = false;
+      }
     }
   }
 
