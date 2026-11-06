@@ -60,6 +60,7 @@ const snapshotSchema = z.object({
   trajectoryEvents: z.array(z.object({
     frame: z.number().int().min(0).max(1_000_000),
     kind: z.enum(['shot', 'point-end']),
+    changeover: z.boolean().optional(),
   }).strict()).max(256).optional(),
   court: z.array(z.tuple([
     z.number().int().min(-5000).max(5000),

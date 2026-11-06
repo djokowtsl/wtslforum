@@ -23,6 +23,39 @@ function gameScore(point: Te4ViewerPoint | undefined): [number, number] {
     : [0, 0];
 }
 
+type ChangeoverScorePoint = Pick<Te4ViewerPoint, 's' | 'set' | 'tb' | 'g'>;
+
+/** Whether a replay's players switch ends after each completed point. */
+export function changeoversAfterPoints(points: ChangeoverScorePoint[]) {
+  const flags = points.map(() => false);
+  const openingScore = points[0]?.g.match(/\d+/g)?.map(Number);
+  let gamesInSet = openingScore?.length === 2 && openingScore.every(Number.isInteger)
+    ? openingScore[0] + openingScore[1]
+    : 0;
+  let tieBreakPoints = 0;
+
+  for (let index = 0; index + 1 < points.length; index += 1) {
+    const point = points[index];
+    const next = points[index + 1];
+    if (next.set !== point.set) {
+      flags[index] = (gamesInSet + 1) % 2 === 1;
+      gamesInSet = 0;
+      tieBreakPoints = 0;
+    } else if (point.tb && next.tb) {
+      tieBreakPoints += 1;
+      flags[index] = tieBreakPoints % 6 === 0;
+    } else if (!point.tb && next.tb) {
+      gamesInSet += 1;
+      tieBreakPoints = 0;
+      flags[index] = gamesInSet % 2 === 1;
+    } else if (next.s !== point.s) {
+      gamesInSet += 1;
+      flags[index] = gamesInSet % 2 === 1;
+    }
+  }
+  return flags;
+}
+
 function replayPoint(point: Te4ViewerPoint): Te4LiveSnapshot['recentPoints'][number] {
   return {
     number: point.k,
@@ -94,7 +127,8 @@ export function te4ViewerToLiveSnapshot(
     soundEvents.push({ frame, kind });
   };
 
-  for (const point of viewer.pts) {
+  const changeovers = changeoversAfterPoints(viewer.pts);
+  for (const [pointIndex, point] of viewer.pts.entries()) {
     for (const shot of point.sh) {
       const frame = point.mf + shot.t;
       if (Number.isInteger(frame) && frame >= 0 && frame < frameCount) {
@@ -111,7 +145,13 @@ export function te4ViewerToLiveSnapshot(
     }
     if (point.fc > 0) {
       const endFrame = Math.min(frameCount - 1, point.mf + point.fc - 1);
-      if (endFrame >= 0) trajectoryEvents.push({ frame: endFrame, kind: 'point-end' });
+      if (endFrame >= 0) {
+        trajectoryEvents.push({
+          frame: endFrame,
+          kind: 'point-end',
+          changeover: changeovers[pointIndex],
+        });
+      }
     }
   }
   trajectoryEvents.sort((first, second) =>
