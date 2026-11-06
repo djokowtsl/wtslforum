@@ -28,7 +28,7 @@ const { deriveLiveCourtSoundEvents, playLiveCourtEffect } = await loadTs('../lib
   './te4DmoSurface': { courtSurfaceSoundProfile },
 });
 
-test('stadium keeps the court open, with only an indoor ceiling or outdoor sky', () => {
+test('stadium uses a continuous high seating bowl without blocking walls or an exterior backdrop', () => {
   for (const indoor of [false, true]) {
     const scene = new THREE.Scene();
     sceneApi.buildStadiumEnvironment(scene, indoor);
@@ -41,8 +41,30 @@ test('stadium keeps the court open, with only an indoor ceiling or outdoor sky',
       root.traverse((object) => { if (object.name === name) matches.push(object); });
       return matches;
     };
-    assert.equal(named(superstructure, 'wtsl-baseline-upper-deck-0').length, 2);
-    assert.equal(named(superstructure, 'wtsl-sideline-upper-deck-2').length, 2);
+    const bowl = named(superstructure, 'wtsl-continuous-seating-bowl')[0];
+    assert.ok(bowl?.isMesh, 'one continuous mesh carries the full seating rake');
+    assert.equal(bowl.geometry.userData.continuousPerimeter, true);
+    assert.equal(bowl.geometry.userData.inwardFacing, true);
+    assert.equal(bowl.geometry.userData.rows, 18, 'the bowl continues well above the sparse detailed crowd');
+    bowl.geometry.computeBoundingBox();
+    assert.ok(bowl.geometry.boundingBox.max.x > 55, 'stands reach beyond the court in every direction');
+    assert.ok(bowl.geometry.boundingBox.max.y > 19, 'upper seating fills the scene height');
+    const seats = named(superstructure, 'wtsl-continuous-bowl-seats')[0];
+    const seatBacks = named(superstructure, 'wtsl-continuous-bowl-seat-backs')[0];
+    assert.ok(seats?.isInstancedMesh && seatBacks?.isInstancedMesh);
+    assert.equal(seats.count, seatBacks.count);
+    assert.ok(seats.count > 4_000, 'empty upper rows still read as stands across the full bowl');
+    assert.equal(seats.userData.rows, 18);
+    assert.equal(seats.userData.inwardFacing, true);
+    assert.equal(named(superstructure, 'wtsl-baseline-upper-deck-0').length, 0);
+    assert.equal(named(superstructure, 'wtsl-sideline-upper-deck-2').length, 0);
+    assert.equal(named(superstructure, 'wtsl-baseline-riser-0').length, 0);
+    assert.equal(named(superstructure, 'wtsl-sideline-riser-0').length, 0);
+    const blockingArchitecture = [];
+    superstructure.traverse((object) => {
+      if (/retaining|riser|seat-cap|stadium-rib/i.test(object.name)) blockingArchitecture.push(object.name);
+    });
+    assert.deepEqual(blockingArchitecture, [], 'no retaining walls, caps, or ribs interrupt the court view');
     assert.equal(named(superstructure, 'wtsl-advertising-board-baseline').length, 2);
     assert.equal(named(superstructure, 'wtsl-advertising-board-sideline').length, 2);
     assert.equal(named(superstructure, 'wtsl-scoreboard-screen').length, 2);
@@ -51,17 +73,9 @@ test('stadium keeps the court open, with only an indoor ceiling or outdoor sky',
     assert.equal(named(superstructure, 'wtsl-stadium-support-columns').length, 0);
     assert.equal(named(superstructure, 'wtsl-open-air-canopy').length, 0);
     assert.equal(named(superstructure, 'wtsl-indoor-roof-wing').length, 0);
-    assert.equal(Boolean(scene.getObjectByName('wtsl-open-sky')), !indoor);
-    const roof = scene.getObjectByName('wtsl-indoor-ceiling');
-    assert.equal(Boolean(roof), indoor);
-    if (roof) {
-      assert.equal(roof.material.side, THREE.FrontSide);
-      roof.updateMatrixWorld(true);
-      const fromCourt = new THREE.Raycaster(new THREE.Vector3(0, 8, 0), new THREE.Vector3(0, 1, 0));
-      const fromAbove = new THREE.Raycaster(new THREE.Vector3(0, 20, 0), new THREE.Vector3(0, -1, 0));
-      assert.ok(fromCourt.intersectObject(roof).length > 0, 'the underside ceiling is visible from court level');
-      assert.equal(fromAbove.intersectObject(roof).length, 0, 'the ceiling does not block an exterior view down to court');
-    }
+    assert.equal(Boolean(scene.getObjectByName('wtsl-open-sky')), false);
+    assert.equal(Boolean(scene.getObjectByName('wtsl-indoor-ceiling')), false);
+    assert.equal(stadium.children.some(child => /roof|shell|facade|exterior/i.test(child.name)), false);
   }
 });
 
@@ -73,6 +87,19 @@ test('full-detail crowd seats are sparse, near-court and gender-balanced for qua
     assert.ok(selected.every((index) => index % 2 === genderIndex));
     assert.ok(selected.every((index) => Math.floor(index / 96) < crowdLodApi.HIGH_DETAIL_CROWD_ROW_LIMIT));
   }
+});
+
+test('court-side crowd has no retaining panels that can block the foreground view', () => {
+  const scene = new THREE.Scene();
+  const crowd = sceneApi.buildCrowd(scene);
+  assert.equal(crowd.seats.length, 7 * 96, 'the detailed near-court crowd remains unchanged');
+  const panels = [];
+  scene.traverse((object) => {
+    if (!object.isMesh || object.geometry?.type !== 'BoxGeometry') return;
+    const { width, depth } = object.geometry.parameters;
+    if ((width >= 45 && depth <= 1) || (depth >= 30 && width <= 1)) panels.push(object);
+  });
+  assert.deepEqual(panels, [], 'no perimeter wall or cap spans across the court camera');
 });
 
 test('players use realistic materials and natural human proportions', () => {
@@ -185,10 +212,10 @@ test('crowd is human-scaled and separated from deep-baseline player space', () =
   assert.notDeepEqual(matrix.elements, before.elements, 'spectator gaze follows the rally');
 });
 
-test('outdoor sky and indoor stadium treatments are explicit', () => {
+test('venue modes retain the same enclosed bowl without adding roof or sky geometry', () => {
   const outdoor = new THREE.Scene();
   sceneApi.buildStadiumEnvironment(outdoor, false);
-  assert.ok(outdoor.getObjectByName('wtsl-open-sky'));
+  assert.equal(outdoor.getObjectByName('wtsl-open-sky'), undefined);
   assert.ok(outdoor.children.some(item => item.isLight)
     || outdoor.getObjectByName('wtsl-stadium-architecture')?.children.some(item => item.isLight));
   assert.equal(isIndoorDmoVenue('Paris-Bercy'), true);
@@ -196,6 +223,21 @@ test('outdoor sky and indoor stadium treatments are explicit', () => {
   const indoor = new THREE.Scene();
   sceneApi.buildStadiumEnvironment(indoor, true);
   assert.equal(indoor.getObjectByName('wtsl-open-sky'), undefined);
+  assert.equal(indoor.getObjectByName('wtsl-indoor-ceiling'), undefined);
+  assert.ok(indoor.getObjectByName('wtsl-continuous-seating-bowl'));
+  assert.ok(outdoor.getObjectByName('wtsl-continuous-seating-bowl'));
+});
+
+test('court ground ends at the arena apron instead of extending into an exterior landscape', () => {
+  const scene = new THREE.Scene();
+  sceneApi.buildCourt(scene, 'hard');
+  const apron = scene.getObjectByName('wtsl-court-apron');
+  assert.ok(apron?.isMesh);
+  assert.deepEqual(
+    [apron.geometry.parameters.width, apron.geometry.parameters.height],
+    [50, 36],
+    'the playing surface is supported without a huge outdoor ground plane',
+  );
 });
 
 test('umpire face turns both ways with the ball rather than rotating a featureless sphere', () => {
@@ -240,40 +282,71 @@ test('contacts remain audible when the optional source sound list is empty', () 
   assert.equal(deriveLiveCourtSoundEvents([], [{ frame: 0, kind: 'point-end' }], [], samples).length, 0);
 });
 
-test('court contacts keep broadband noise brief and quieter than their resonant body', () => {
+test('court contacts use compact varied sound textures for each effect and surface', () => {
   const param = () => ({ value: 0, setValueAtTime() {}, exponentialRampToValueAtTime() {} });
-  for (const kind of ['racket', 'bounce', 'footstep', 'slide']) {
-    let starts = 0;
-    const envelopes = [];
-    const stops = [];
+  const makeContext = () => {
+    const buffers = [];
+    const sources = [];
     const node = () => ({
-      connect() { return this; }, start() { starts++; }, stop(time) { stops.push(time); },
-      frequency: param(), gain: param(), Q: param(),
+      connect() { return this; },
+      disconnect() {},
+      start() {},
+      stop() {},
+      gain: param(),
+      playbackRate: param(),
+      threshold: param(),
+      knee: param(),
+      ratio: param(),
+      attack: param(),
+      release: param(),
     });
-    const context = {
-      currentTime: 0, sampleRate: 8000, destination: {},
-      createBuffer: (_, length) => ({ getChannelData: () => new Float32Array(length) }),
-      createBufferSource: node, createBiquadFilter: node,
-      createGain: () => {
-        const gain = node();
-        const ramps = [];
-        gain.gain.exponentialRampToValueAtTime = (value, time) => ramps.push({ value, time });
-        envelopes.push(ramps);
-        return gain;
+    return {
+      buffers,
+      sources,
+      context: {
+        currentTime: 0, sampleRate: 8000, destination: {},
+        createBuffer: (_, length, sampleRate) => {
+          const channel = new Float32Array(length);
+          const buffer = {
+            duration: length / sampleRate,
+            length,
+            getChannelData: () => channel,
+          };
+          buffers.push(buffer);
+          return buffer;
+        },
+        createBufferSource: () => {
+          const source = node();
+          sources.push(source);
+          return source;
+        },
+        createGain: node,
+        createDynamicsCompressor: node,
       },
-      createOscillator: node,
-      createDynamicsCompressor: () => ({ ...node(), threshold: param(), knee: param(), ratio: param(),
-        attack: param(), release: param() }),
     };
+  };
+
+  for (const kind of ['racket', 'bounce', 'footstep', 'slide']) {
+    const { context, sources } = makeContext();
     playLiveCourtEffect(context, kind, 'clay', 0.9);
-    assert.equal(starts, 2, `${kind} has noise and body layers`);
-    assert.ok(envelopes[0][0].value <= 0.045, `${kind} noise stays restrained`);
-    if (kind === 'racket' || kind === 'bounce') {
-      assert.ok(stops[0] <= 0.012, `${kind} noise is only a short contact transient`);
-      assert.ok(envelopes[0][0].value < envelopes[1][0].value / 3,
-        `${kind} is body-led rather than noise-led`);
-    }
+    assert.equal(sources.length, 1, `${kind} plays one composed buffer`);
+    const { buffer } = sources[0];
+    assert.ok(buffer.duration > 0.04 && buffer.duration <= 0.2, `${kind} remains a short court cue`);
+    const samples = buffer.getChannelData(0);
+    assert.ok(samples.some(value => Math.abs(value) > 0.05), `${kind} has audible body`);
+    assert.ok(Math.abs(samples[0]) < 0.001, `${kind} has a click-free onset`);
+    assert.ok(sources[0].playbackRate.value >= 0.97 && sources[0].playbackRate.value <= 1.03);
   }
+
+  const { context, sources } = makeContext();
+  for (const surface of ['hard', 'clay', 'grass']) playLiveCourtEffect(context, 'bounce', surface);
+  const bounceSamples = sources.map(source => Array.from(source.buffer.getChannelData(0).slice(0, 64)));
+  assert.equal(new Set(bounceSamples.map(samples => samples.join(','))).size, 3,
+    'surface profiles produce distinct bounce textures');
+
+  const silent = makeContext();
+  playLiveCourtEffect(silent.context, 'racket', 'hard', 0);
+  assert.equal(silent.sources.length, 0, 'zero effects volume remains silent');
 });
 
 test('point and game boundaries do not clear accumulated clay marks', async () => {

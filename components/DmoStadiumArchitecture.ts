@@ -95,8 +95,6 @@ export function buildStadiumArchitecture() {
   const stadium = new THREE.Group();
   stadium.name = 'wtsl-stadium-superstructure';
 
-  const concrete = new THREE.MeshStandardMaterial({ color: 0x687572, roughness: 0.92 });
-  const fascia = new THREE.MeshStandardMaterial({ color: 0x283d42, roughness: 0.82 });
   const steel = new THREE.MeshStandardMaterial({ color: 0x596a68, roughness: 0.58, metalness: 0.18 });
   const ribbonTexture = makeRibbonTexture();
   const ribbonMaterial = new THREE.MeshBasicMaterial({
@@ -116,25 +114,130 @@ export function buildStadiumArchitecture() {
   const decks = new THREE.Group();
   decks.name = 'wtsl-stadium-tiered-bowl';
   stadium.add(decks);
-  const levels = [
-    { y: 3.85, baselineZ: 20.5, sidelineX: 29.1, baselineWidth: 54, sidelineLength: 39 },
-    { y: 5.55, baselineZ: 22.7, sidelineX: 31.3, baselineLength: 43 },
-    { y: 7.25, baselineZ: 24.9, sidelineX: 33.5, baselineLength: 47 },
-  ];
-  for (const [index, level] of levels.entries()) {
-    const width = level.baselineWidth ?? 54 + index * 2;
-    const sidelineLength = level.sidelineLength ?? 39 + index * 4;
-    for (const side of [-1, 1]) {
-      addBox(decks, `wtsl-baseline-upper-deck-${index}`, [width, 0.3, 1.9],
-        [0, level.y, side * level.baselineZ], concrete);
-      addBox(decks, `wtsl-sideline-upper-deck-${index}`, [1.9, 0.3, sidelineLength],
-        [side * level.sidelineX, level.y, 0], concrete);
-      addBox(decks, `wtsl-baseline-riser-${index}`, [width, 1.0, 0.2],
-        [0, level.y - 0.65, side * (level.baselineZ - 0.9)], fascia);
-      addBox(decks, `wtsl-sideline-riser-${index}`, [0.2, 1.0, sidelineLength],
-        [side * (level.sidelineX - 0.9), level.y - 0.65, 0], fascia);
+  // A single lightweight, open 360-degree rake replaces the old isolated
+  // deck slabs and their retaining fascias. The ellipse follows all four
+  // sides of the court, then climbs outward so the spectator bowl fills the
+  // view without a roof, exterior wall, or facade.
+  decks.name = 'wtsl-continuous-inward-facing-bowl';
+  const bowlPositions: number[] = [];
+  const bowlColors: number[] = [];
+  const bowlIndices: number[] = [];
+  const perimeterSegments = 112;
+  const seatRows = 18;
+  const innerX = 27.8;
+  const innerZ = 18.8;
+  const rowWidth = 1.62;
+  const rowRise = 0.94;
+  const baseY = 2.7;
+  for (let row = 0; row < seatRows; row += 1) {
+    const innerRadius = row * rowWidth;
+    const outerRadius = (row + 1) * rowWidth;
+    const y = baseY + row * rowRise;
+    const firstVertex = bowlPositions.length / 3;
+    const tint = row % 2 === 0 ? 0x35474a : 0x405253;
+    const color = new THREE.Color(tint);
+    for (const radius of [innerRadius, outerRadius]) {
+      for (let segment = 0; segment < perimeterSegments; segment += 1) {
+        const angle = (segment / perimeterSegments) * Math.PI * 2;
+        bowlPositions.push(
+          Math.cos(angle) * (innerX + radius),
+          y + ((radius - innerRadius) / rowWidth) * rowRise,
+          Math.sin(angle) * (innerZ + radius),
+        );
+        bowlColors.push(color.r, color.g, color.b);
+      }
+    }
+    for (let segment = 0; segment < perimeterSegments; segment += 1) {
+      const next = (segment + 1) % perimeterSegments;
+      const inner = firstVertex + segment;
+      const innerNext = firstVertex + next;
+      const outer = firstVertex + perimeterSegments + segment;
+      const outerNext = firstVertex + perimeterSegments + next;
+      bowlIndices.push(inner, outer, outerNext, inner, outerNext, innerNext);
     }
   }
+  const bowlGeometry = new THREE.BufferGeometry();
+  bowlGeometry.setAttribute('position', new THREE.Float32BufferAttribute(bowlPositions, 3));
+  bowlGeometry.setAttribute('color', new THREE.Float32BufferAttribute(bowlColors, 3));
+  bowlGeometry.setIndex(bowlIndices);
+  bowlGeometry.computeVertexNormals();
+  bowlGeometry.computeBoundingBox();
+  bowlGeometry.userData = {
+    continuousPerimeter: true,
+    inwardFacing: true,
+    rows: seatRows,
+  };
+  const bowl = new THREE.Mesh(bowlGeometry, new THREE.MeshStandardMaterial({
+    vertexColors: true,
+    roughness: 0.96,
+    side: THREE.DoubleSide,
+  }));
+  bowl.name = 'wtsl-continuous-seating-bowl';
+  bowl.castShadow = false;
+  bowl.receiveShadow = true;
+  decks.add(bowl);
+
+  const upperSeatRows = Array.from({ length: 18 }, (_, row) => {
+    const radius = row * rowWidth + rowWidth / 2;
+    const ellipseX = innerX + radius;
+    const ellipseZ = innerZ + radius;
+    const averageRadius = (ellipseX + ellipseZ) / 2;
+    return {
+      row,
+      radius,
+      ellipseX,
+      ellipseZ,
+      count: Math.round((Math.PI * 2 * averageRadius) / 0.86),
+    };
+  });
+  const totalSeats = upperSeatRows.reduce((total, row) => total + row.count, 0);
+  const emptySeatMesh = new THREE.InstancedMesh(
+    new THREE.BoxGeometry(0.46, 0.1, 0.42),
+    new THREE.MeshStandardMaterial({ color: 0x334146, roughness: 0.86 }),
+    totalSeats,
+  );
+  const emptySeatBackMesh = new THREE.InstancedMesh(
+    new THREE.BoxGeometry(0.46, 0.48, 0.08),
+    new THREE.MeshStandardMaterial({ color: 0x3b494b, roughness: 0.82 }),
+    totalSeats,
+  );
+  emptySeatMesh.name = 'wtsl-continuous-bowl-seats';
+  emptySeatBackMesh.name = 'wtsl-continuous-bowl-seat-backs';
+  emptySeatMesh.userData = { rows: upperSeatRows.length, inwardFacing: true };
+  emptySeatBackMesh.userData = { rows: upperSeatRows.length, inwardFacing: true };
+  const seatTransform = new THREE.Object3D();
+  let seatIndex = 0;
+  for (const row of upperSeatRows) {
+    const y = baseY + row.row * rowRise + rowRise / 2;
+    for (let index = 0; index < row.count; index += 1) {
+      const angle = (index / row.count) * Math.PI * 2;
+      const x = Math.cos(angle) * row.ellipseX;
+      const z = Math.sin(angle) * row.ellipseZ;
+      const facing = Math.atan2(-Math.cos(angle), -Math.sin(angle));
+
+      seatTransform.position.set(x, y + 0.06, z);
+      seatTransform.rotation.set(0, facing, 0);
+      seatTransform.scale.set(1, 1, 1);
+      seatTransform.updateMatrix();
+      emptySeatMesh.setMatrixAt(seatIndex, seatTransform.matrix);
+
+      seatTransform.position.set(
+        x - Math.sin(facing) * 0.16,
+        y + 0.34,
+        z - Math.cos(facing) * 0.16,
+      );
+      seatTransform.updateMatrix();
+      emptySeatBackMesh.setMatrixAt(seatIndex, seatTransform.matrix);
+      seatIndex += 1;
+    }
+  }
+  emptySeatMesh.instanceMatrix.needsUpdate = true;
+  emptySeatBackMesh.instanceMatrix.needsUpdate = true;
+  emptySeatMesh.castShadow = false;
+  emptySeatBackMesh.castShadow = false;
+  emptySeatMesh.receiveShadow = true;
+  emptySeatBackMesh.receiveShadow = true;
+  decks.add(emptySeatMesh, emptySeatBackMesh);
 
   const boards = new THREE.Group();
   boards.name = 'wtsl-stadium-advertising-boards';
