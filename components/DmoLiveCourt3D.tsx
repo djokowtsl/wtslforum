@@ -24,7 +24,9 @@ import {
   deriveLiveCourtSoundEvents,
   loadCourtEffectSamples,
   playLiveCourtEffect as playCue,
+  updateLiveCourtFootstepContact,
   type CourtEffectSamples,
+  type FootstepContactState,
 } from '@/lib/liveCourtAudio';
 import {
   advanceLiveCourtPlayhead,
@@ -980,6 +982,15 @@ function ThreeCourt({
       const landing = 1 - slideWeight * 0.8;
       const leftLift = (stepA.lift + jump + splitStep) * landing;
       const rightLift = (stepB.lift + jump + splitStep) * landing;
+      const footstepState: FootstepContactState = (rig.root.userData.footstepState as FootstepContactState | undefined)
+        ?? { frame, airborne: [false, false] };
+      rig.root.userData.footstepState = footstepState;
+      rig.root.userData.footstepContact = updateLiveCourtFootstepContact(
+        footstepState, frame, [leftLift, rightLift],
+        steppingSpeed > 0.5 && slideWeight < 0.15 && !serving
+          && jump < 0.001 && splitStep < 0.001 && rig.root.userData.stepLegs > 0.5,
+        frameRate,
+      );
       const bodyBounce = (stepA.lift + stepB.lift) * 0.3 + jump + splitStep;
       const crouch = impactWeight * THREE.MathUtils.clamp((1.05 - ballY) / 0.95, 0, 1) * 0.18
         + slideWeight * 0.13 + ready * 0.24;
@@ -1531,6 +1542,8 @@ function ThreeCourt({
               index < soundCues.length && soundCues[index].frame <= currentFrame;
               index += 1) {
               const cue = soundCues[index];
+              // Footsteps come from the rendered foot plants below, not inferred event timers.
+              if (cue.kind === 'footstep') continue;
               if (crossedFrame(cue.frame, previous, currentFrame)) {
                 playCue(context, cue.kind, sceneDataRef.current.surface,
                   effectsVolumeRef.current, courtEffectSamplesRef.current);
@@ -1607,6 +1620,14 @@ function ThreeCourt({
             : -1;
         updatePlayer(players[0], values[3], values[4], 0, values, currentFrame, samples, lastFrame, firstFrame, trajectoryEventsRef.current, strikingPlayer === 0, elapsed, sceneDataRef.current.snapshot.handedness?.[0] ?? 'right');
         updatePlayer(players[1], values[5], values[6], 1, values, currentFrame, samples, lastFrame, firstFrame, trajectoryEventsRef.current, strikingPlayer === 1, elapsed, sceneDataRef.current.snapshot.handedness?.[1] ?? 'right');
+        if (soundOnRef.current && context?.state === 'running') {
+          for (const player of players) {
+            if (player.root.userData.footstepContact) {
+              playCue(context, 'footstep', sceneDataRef.current.surface,
+                effectsVolumeRef.current, courtEffectSamplesRef.current);
+            }
+          }
+        }
         const gazeTarget = trailAllowed(trajectoryEventsRef.current, currentFrame) ? ball.position : undefined;
         crowdRig.update(now / 1000, now < crowdApplauseUntil, gazeTarget);
         fixtureRig.update(gazeTarget);

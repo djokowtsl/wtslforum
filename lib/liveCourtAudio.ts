@@ -6,6 +6,32 @@ export type CourtEffectKind = 'racket' | 'bounce' | 'footstep';
 export type CourtEffectSamples = Partial<Record<CourtEffectKind, AudioBuffer>>;
 export type CourtSoundEvent = { frame: number; kind: CourtEffectKind; player?: 1 | 2 };
 
+export type FootstepContactState = { frame: number; airborne: [boolean, boolean] };
+
+/** Follow the rendered feet: one cue when a lifted foot plants, never a timed loop. */
+export function updateLiveCourtFootstepContact(
+  state: FootstepContactState,
+  frame: number,
+  lifts: [number, number],
+  enabled: boolean,
+  frameRate = 60,
+): boolean {
+  if (frame === state.frame) return false;
+  const continuous = Number.isFinite(state.frame)
+    && frame > state.frame && frame - state.frame <= frameRate * 0.12;
+  state.frame = frame;
+  let contact = false;
+  lifts.forEach((lift, index) => {
+    if (!continuous || !enabled) state.airborne[index] = false;
+    if (enabled && lift > 0.006) state.airborne[index] = true;
+    if (lift <= 0.001) {
+      contact ||= continuous && enabled && state.airborne[index];
+      state.airborne[index] = false;
+    }
+  });
+  return contact;
+}
+
 /** Fill missing contact cues from the same recorded timeline used for animation. */
 export function deriveLiveCourtSoundEvents(
   source: CourtSoundEvent[],
@@ -58,6 +84,10 @@ export function deriveLiveCourtSoundEvents(
 
 const effectBuffers = new WeakMap<BaseAudioContext, Map<string, AudioBuffer[]>>();
 const effectBuses = new WeakMap<BaseAudioContext, DynamicsCompressorNode>();
+// Audio-only spacing across both players and both recorded/derived event sources.
+// Merge coincident contacts, without imposing a cadence on the movement animation.
+const lastFootstepStarts = new WeakMap<BaseAudioContext, number>();
+const MIN_FOOTSTEP_INTERVAL_SECONDS = 0.08;
 const courtEffectAssets: Record<CourtEffectKind, string> = {
   racket: '/audio/dmo-racket-impact.mp3',
   bounce: '/audio/dmo-ball-bounce.mp3',
@@ -221,7 +251,7 @@ const sampleSurfacePitch: Record<Te4CourtSurface, number> = {
 const sampleGain: Record<CourtEffectKind, number> = {
   racket: 0.82,
   bounce: 0.78,
-  footstep: 0.56,
+  footstep: 0.32,
 };
 
 /** Play short court cues. Slide events intentionally have no audio cue. */
@@ -235,11 +265,17 @@ export function playLiveCourtEffect(
 ) {
   const level = Math.max(0, Math.min(1, Number.isFinite(volume) ? volume : 0));
   if (level <= 0 || !Object.hasOwn(sampleGain, kind)) return;
+  const now = context.currentTime;
+  const startAt = now + Math.max(0, Number.isFinite(delaySeconds) ? delaySeconds : 0);
+  if (kind === 'footstep') {
+    const previous = lastFootstepStarts.get(context);
+    if (previous !== undefined && startAt - previous < MIN_FOOTSTEP_INTERVAL_SECONDS) return;
+  }
   const sample = samples[kind];
   const variants = sample ? null : courtEffectVariants(context, kind, surface);
   const buffer = sample ?? variants?.[Math.floor(Math.random() * variants.length)];
   if (!buffer) return;
-  const now = context.currentTime;
+  if (kind === 'footstep') lastFootstepStarts.set(context, startAt);
   const source = context.createBufferSource();
   const output = context.createGain();
   source.buffer = buffer;
@@ -248,10 +284,9 @@ export function playLiveCourtEffect(
     : 0.97 + Math.random() * 0.06;
   const targetGain = sample
     ? level * sampleGain[kind] * (0.96 + Math.random() * 0.08)
-    : level * (0.94 + Math.random() * 0.1);
+    : level * (kind === 'footstep' ? 0.57 : 1) * (0.94 + Math.random() * 0.1);
   output.gain.value = targetGain;
   source.connect(output).connect(effectsBus(context));
-  const startAt = now + Math.max(0, Number.isFinite(delaySeconds) ? delaySeconds : 0);
   source.start(startAt);
   source.stop(startAt + buffer.duration / source.playbackRate.value);
   source.onended = () => {

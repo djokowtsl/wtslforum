@@ -5,6 +5,7 @@ import { createRequire } from 'node:module';
 import * as THREE from 'three';
 import { courtSurfaceSoundProfile, isIndoorDmoVenue } from '../lib/te4DmoSurface.ts';
 import { deriveLiveCourtFootworkEvents, deriveLiveCourtSkidMarks } from '../lib/liveCourtMotion.ts';
+import { advanceGait, gaitFeet, newGaitState } from '../lib/liveCourtGait.ts';
 
 const require = createRequire(import.meta.url);
 const { transformSync } = require('next/dist/build/swc');
@@ -30,6 +31,7 @@ const {
   deriveLiveCourtSoundEvents,
   loadCourtEffectSamples,
   playLiveCourtEffect,
+  updateLiveCourtFootstepContact,
 } = await loadTs('../lib/liveCourtAudio.ts', {
   './te4DmoSurface': { courtSurfaceSoundProfile },
 });
@@ -633,6 +635,63 @@ test('court contacts stay compact and slide squeaks are silent', () => {
   const silent = makeContext();
   playLiveCourtEffect(silent.context, 'racket', 'hard', 0);
   assert.equal(silent.sources.length, 0, 'zero effects volume remains silent');
+
+  for (const recorded of [false, true]) {
+    const spaced = makeContext();
+    const samples = recorded ? { footstep: { duration: 0.45 } } : {};
+    for (let index = 0; index < 20; index += 1) {
+      spaced.context.currentTime = index * 0.025;
+      playLiveCourtEffect(spaced.context, 'footstep', 'hard', 1, samples);
+    }
+    assert.equal(spaced.sources.length, 5,
+      'recorded and backup footsteps merge coincident contacts without imposing a slow cadence');
+    const count = spaced.sources.length;
+    for (let index = 0; index < 20; index += 1) {
+      playLiveCourtEffect(spaced.context, 'footstep', 'hard', 1, samples);
+    }
+    assert.equal(spaced.sources.length, count, 'a delayed batch cannot play footsteps together');
+    playLiveCourtEffect(spaced.context, 'racket', 'hard', 1);
+    playLiveCourtEffect(spaced.context, 'bounce', 'hard', 1);
+    assert.equal(spaced.sources.length, count + 2, 'footstep spacing never suppresses contacts');
+    assert.ok(spaced.gains.slice(0, count).every(gain => gain.gain.value < (recorded ? 0.35 : 0.6)),
+      'footsteps stay quieter in both playback modes');
+  }
+
+  const mutedSteps = makeContext();
+  playLiveCourtEffect(mutedSteps.context, 'footstep', 'hard', 0);
+  playLiveCourtEffect(mutedSteps.context, 'footstep', 'hard', 1);
+  assert.equal(mutedSteps.sources.length, 1, 'muted events do not suppress the first audible step');
+});
+
+test('footsteps sound on animated foot plants, not on a movement timer', () => {
+  for (const fps of [30, 60, 120]) {
+    for (const speed of [1.5, 4]) {
+      const gait = newGaitState();
+      const state = { frame: NaN, airborne: [false, false] };
+      let contacts = 0;
+      for (let index = 0; index < fps * 3; index += 1) {
+        advanceGait(gait, [0, speed / fps], speed);
+        const feet = gaitFeet(gait, speed);
+        const frame = index * 60 / fps;
+        const contact = updateLiveCourtFootstepContact(state, frame, feet.map(foot => foot.lift), true);
+        if (contact) {
+          contacts += 1;
+          assert.ok(feet.some(foot => foot.lift <= 0.001), 'a foot is touching the court');
+        }
+        assert.equal(updateLiveCourtFootstepContact(state, frame, feet.map(foot => foot.lift), true), false,
+          'a paused render cannot repeat a contact');
+      }
+      assert.ok(contacts >= 4 && contacts < 28, `${fps}fps/${speed}m/s has movement-driven landings`);
+    }
+  }
+  const state = { frame: 0, airborne: [false, false] };
+  assert.equal(updateLiveCourtFootstepContact(state, 1, [0, 0], true), false, 'standing is silent');
+  updateLiveCourtFootstepContact(state, 2, [0.03, 0], true);
+  assert.equal(updateLiveCourtFootstepContact(state, 3, [0, 0], false), false, 'slides and non-gait poses are silent');
+  updateLiveCourtFootstepContact(state, 4, [0.03, 0], true);
+  assert.equal(updateLiveCourtFootstepContact(state, 80, [0, 0], true), false, 'a seek does not replay landings');
+  updateLiveCourtFootstepContact(state, 81, [0.03, 0], true);
+  assert.equal(updateLiveCourtFootstepContact(state, 0, [0, 0], true), false, 'rewinding resets contact tracking');
 });
 
 test('court effects load only playable samples and sound checks exclude slides', async () => {

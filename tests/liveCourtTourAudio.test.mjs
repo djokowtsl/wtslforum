@@ -78,3 +78,10 @@ test('the nonfunctional 3D court sound-test control is removed', () => {
   assert.match(threeCourt, /Court effects volume/,
     'the actual court-effects volume control remains available');
 });
+
+test('both viewers discard stale footsteps rather than replaying a backlog', () => {
+  assert.match(threeCourt, /if \(cue\.kind === 'footstep'\) continue/);
+  assert.match(threeCourt, /updateLiveCourtFootstepContact\([\s\S]*?\[leftLift, rightLift\]/);
+  assert.match(threeCourt, /player\.root\.userData\.footstepContact/);
+  assert.match(fallbackCourt, /snapshot\.frameCount - event\.frame > TE4_DMO_FRAMES_PER_SECOND \* 0\.12/);
+});
