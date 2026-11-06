@@ -260,14 +260,4 @@ export function playLiveCourtEffect(
   };
 }
 
-/** Schedule a three-cue check directly from the user's tap. */
-export function playCourtSoundCheck(
-  context: BaseAudioContext,
-  surface: Te4CourtSurface,
-  volume = 0.9,
-  samples: CourtEffectSamples = {},
-) {
-  (['racket', 'bounce', 'footstep'] as const).forEach((kind, index) => {
-    playLiveCourtEffect(context, kind, surface, volume, samples, index * 0.36);
-  });
-}
+// Court audio stays event-driven; no manual sound-check sequence is exported.

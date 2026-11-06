@@ -7,6 +7,7 @@ import { attachArticulatedHands } from './DmoArticulatedHands';
 import { attachNativePlayer } from './DmoNativePlayer';
 import { attachNativePlayer as attachClaudeNativePlayer } from './DmoNativePlayerClaude';
 import type { GroundstrokeMotionSources } from './DmoCapturedGroundstroke';
+import { BROADCAST_PLAYER_KITS, type NativePlayerKit } from './DmoNativeKit';
 
 type Gender = 'male' | 'female';
 type HumanModelDetail = 'player' | 'crowd' | 'crowd-high';
@@ -174,12 +175,14 @@ export function attachHumanPlayer(
   shirtColor: number,
   handTemplate?: THREE.Group,
   nativePlayerVariant: NativePlayerVariant = 'claude',
+  kit: NativePlayerKit = BROADCAST_PLAYER_KITS[0],
+  kitIndex = 0,
 ) {
   if (template.userData.continuousPlayer) {
     const motions = nativeMotionSources.get(template);
     if (!motions) throw new Error('Captured forehand, backhand, and serve motion data was not loaded.');
     const attach = nativePlayerVariant === 'claude' ? attachClaudeNativePlayer : attachNativePlayer;
-    return attach(template, rig, shirtColor, motions);
+    return attach(template, rig, shirtColor, motions, kit, kitIndex);
   }
   const model = clone(template) as THREE.Group;
   model.name = 'wtsl-textured-rigged-player';

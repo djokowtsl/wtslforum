@@ -29,7 +29,6 @@ const crowdLodApi = await loadTs('../lib/dmoCrowdLod.ts');
 const {
   deriveLiveCourtSoundEvents,
   loadCourtEffectSamples,
-  playCourtSoundCheck,
   playLiveCourtEffect,
 } = await loadTs('../lib/liveCourtAudio.ts', {
   './te4DmoSurface': { courtSurfaceSoundProfile },
@@ -261,6 +260,29 @@ test('transparent courtside safety barriers stay outside runoff and preserve fou
     && object.geometry.parameters.width === 42
     && object.geometry.parameters.height === 22);
   assert.ok(continuousCourt, 'the original 42 by 22 court apron geometry is unchanged');
+});
+
+test('professional courtside team areas have compact equipment and lower-stand coach seats', () => {
+  const scene = new THREE.Scene();
+  const fixtures = sceneApi.buildCourtFixtures(scene);
+  assert.ok(fixtures);
+  for (const side of ['left', 'right']) {
+    const bench = scene.getObjectByName(`wtsl-player-bench-${side}`);
+    assert.ok(bench?.userData.courtsideTeamArea);
+    assert.ok(scene.getObjectByName(`wtsl-player-kit-bag-${side}`));
+    assert.ok(scene.getObjectByName(`wtsl-player-water-bottle-${side}`));
+    assert.ok(scene.getObjectByName(`wtsl-player-court-towel-${side}`));
+    assert.equal(bench.getObjectByName(`wtsl-court-coach-${side === 'left' ? 1 : 2}`), undefined,
+      'coaches are not seated on the courtside benches');
+  }
+  const crowd = sceneApi.buildCrowd(scene);
+  assert.equal(crowd.staffSeats.length, 2);
+  assert.ok(crowd.staffSeats.every((seat) => seat.row === 1 && Math.abs(seat.z) > 13),
+    'reserved coach places are in the lower stands beyond the courtside runoff');
+  assert.ok(crowd.staffSeats.every((staffSeat) =>
+    !crowd.seats.some((seat) => seat.sourceIndex === staffSeat.sourceIndex)),
+  'team staff seats are reserved rather than doubled with spectators');
+  assert.ok(scene.getObjectByName('wtsl-umpire-chair'), 'the umpire remains in the chair');
 });
 
 test('upper crowd anchors match the architecture seat coordinates and facing', () => {
@@ -688,13 +710,6 @@ test('court effects load only playable samples and sound checks exclude slides',
   ]).size, 3, 'surface profiles shape the same recording differently');
   assert.ok(clay.gains[0].gain.value < 0.6, 'footsteps stay quieter than racket and ball contacts');
 
-  const soundCheck = makeContext();
-  playCourtSoundCheck(soundCheck.context, 'clay', 0.5, {
-    racket: sample, bounce: sample, footstep: sample,
-  });
-  assert.deepEqual(soundCheck.sources.map(source => source.startedAt), [0, 0.36, 0.72]);
-  assert.equal(soundCheck.sources[0].buffer, sample);
-
   const partial = await loadCourtEffectSamples({
     decodeAudioData: async () => ({ duration: 0.25 }),
   }, async url => ({
@@ -713,9 +728,6 @@ test('point and game boundaries do not clear accumulated clay marks', async () =
   const pointBlock = source.slice(source.indexOf("liveCourtTrajectoryCue(cue, false) === 'cheer'"),
     source.indexOf('const context = audioContextRef.current;', source.indexOf("liveCourtTrajectoryCue(cue, false)")));
   assert.doesNotMatch(pointBlock, /clearSkidMarks/);
-  assert.match(source, /Test court sounds/);
-  assert.match(source, /playCourtSoundCheck\(context, surface, effectsVolumeRef\.current/);
-  assert.doesNotMatch(source.slice(source.lastIndexOf('playCourtSoundCheck('), source.indexOf('Test court sounds')), /setTimeout/);
   assert.match(source, /Court effects volume/);
 });
 

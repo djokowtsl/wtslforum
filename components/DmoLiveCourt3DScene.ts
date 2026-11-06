@@ -38,6 +38,7 @@ export type PlayerRig = {
 export type CrowdRig = {
   update: (timeSeconds: number, applauding: boolean, ballPosition?: THREE.Vector3) => void;
   seats: Array<{ x: number; y: number; z: number; row: number; facing: number; sourceIndex?: number }>;
+  staffSeats: Array<{ x: number; y: number; z: number; row: number; facing: number; sourceIndex?: number }>;
   replacePeople: (update: CrowdRig['update']) => void;
   highDetailEnabled: boolean;
   setHighDetailEnabled: (enabled: boolean) => void;
@@ -61,8 +62,8 @@ export const PALETTE = {
   stands: 0x263b43,
   trim: 0xc0b79e,
   yellow: 0xf0dc63,
-  shirtOne: 0xc7d7c5,
-  shirtTwo: 0xd97861,
+  shirtOne: 0x31545a,
+  shirtTwo: 0xc7baa2,
 };
 
 export const COURT_LENGTH = 23.77;
@@ -680,6 +681,18 @@ function buildUnifiedCrowd(scene: THREE.Scene, venue: DmoVenueProfile): CrowdRig
     }
   }
 
+  // Reserve two lower-stand places for the player teams. The actual seat
+  // geometry remains in the bowl; only the spectator instances are omitted.
+  const staffSeats = [-1, 1].map((side) => {
+    const seat = nearSeats
+      .filter((candidate) => candidate.row === 1 && candidate.z < 0 && Math.abs(candidate.z) > 13)
+      .sort((a, b) => Math.abs(a.x - side * 5.5) - Math.abs(b.x - side * 5.5))[0];
+    if (!seat) throw new Error('Lower stands are missing reserved team seats.');
+    return seat;
+  });
+  const staffSeatSet = new Set(staffSeats);
+  const spectatorSeats = seats.filter((seat) => !staffSeatSet.has(seat));
+
   const nearSupports = new THREE.InstancedMesh(
     new THREE.BoxGeometry(1, 1, 1),
     material(0x465553, 0.92),
@@ -765,17 +778,17 @@ function buildUnifiedCrowd(scene: THREE.Scene, venue: DmoVenueProfile): CrowdRig
   const bodyMesh = new THREE.InstancedMesh(
     new THREE.SphereGeometry(0.5, 8, 6),
     new THREE.MeshStandardMaterial({ color: 0xffffff, roughness: 0.84 }),
-    seats.length,
+    spectatorSeats.length,
   );
   const headMesh = new THREE.InstancedMesh(
     new THREE.SphereGeometry(0.5, 8, 6),
     new THREE.MeshStandardMaterial({ color: 0xffffff, roughness: 0.74 }),
-    seats.length,
+    spectatorSeats.length,
   );
   const armMesh = new THREE.InstancedMesh(
     new THREE.CylinderGeometry(0.045, 0.052, 1, 6),
     new THREE.MeshStandardMaterial({ color: 0xffffff, roughness: 0.9 }),
-    seats.length * 2,
+    spectatorSeats.length * 2,
   );
   bodyMesh.name = 'wtsl-unified-crowd-fallback-bodies';
   headMesh.name = 'wtsl-spectator-heads';
@@ -806,7 +819,7 @@ function buildUnifiedCrowd(scene: THREE.Scene, venue: DmoVenueProfile): CrowdRig
     dummy.updateMatrix();
     armMesh.setMatrixAt(instance, dummy.matrix);
   };
-  seats.forEach((seat, index) => {
+    spectatorSeats.forEach((seat, index) => {
     dummy.position.set(seat.x, seat.y + 0.83, seat.z);
     dummy.rotation.set(0, seat.facing, 0);
     dummy.scale.set(0.42, 0.54, 0.28);
@@ -835,7 +848,8 @@ function buildUnifiedCrowd(scene: THREE.Scene, venue: DmoVenueProfile): CrowdRig
   let lastUpdate = -Infinity;
   let detailedUpdate: CrowdRig['update'] | undefined;
   const crowdRig: CrowdRig = {
-    seats,
+    seats: spectatorSeats,
+    staffSeats,
     highDetailEnabled: true,
     setHighDetailEnabled(enabled) { crowdRig.highDetailEnabled = enabled; },
     setHighDetailModel: () => undefined,
@@ -850,7 +864,7 @@ function buildUnifiedCrowd(scene: THREE.Scene, venue: DmoVenueProfile): CrowdRig
       }
       if (time - lastUpdate < 0.12) return;
       lastUpdate = time;
-      seats.forEach((seat, index) => {
+      spectatorSeats.forEach((seat, index) => {
         let gaze = 0;
         if (ballPosition) {
           const bearing = Math.atan2(ballPosition.x - seat.x, ballPosition.z - seat.z);
@@ -892,6 +906,7 @@ export function buildCourtFixtures(scene: THREE.Scene): CourtFixtureRig {
     const bench = new THREE.Group();
     bench.name = end < 0 ? 'wtsl-player-bench-left' : 'wtsl-player-bench-right';
     bench.position.set(end * 2.4, 0, 6.75);
+    bench.userData.courtsideTeamArea = true;
     scene.add(bench);
     addBox(bench, [2.55, 0.12, 0.62], [0, 0.53, 0], seatMaterial);
     addBox(bench, [2.55, 0.88, 0.12], [0, 1.0, 0.28], backMaterial);
@@ -901,6 +916,48 @@ export function buildCourtFixtures(scene: THREE.Scene): CourtFixtureRig {
     }
     addBox(bench, [2.1, 0.08, 0.08], [0, 0.25, -0.21], frameMaterial);
     addBox(bench, [2.1, 0.08, 0.08], [0, 0.25, 0.21], frameMaterial);
+
+    const kitBag = new THREE.Group();
+    kitBag.name = end < 0 ? 'wtsl-player-kit-bag-left' : 'wtsl-player-kit-bag-right';
+    kitBag.position.set(-1.4, 0.15, 0);
+    const bagColor = material(end < 0 ? 0x314c58 : 0x53444b, 0.78);
+    const bagBody = new THREE.Mesh(new THREE.BoxGeometry(0.58, 0.29, 0.25), bagColor);
+    bagBody.name = 'team-kit-bag-body';
+    bagBody.castShadow = true;
+    kitBag.add(bagBody);
+    const bagEnd = new THREE.Mesh(new THREE.CylinderGeometry(0.125, 0.125, 0.015, 16), bagColor);
+    bagEnd.rotation.z = Math.PI / 2;
+    bagEnd.position.x = 0.29;
+    kitBag.add(bagEnd);
+    const zipper = new THREE.Mesh(new THREE.BoxGeometry(0.4, 0.012, 0.014), material(0xc4bda9, 0.62));
+    zipper.position.set(0, 0.15, 0.13);
+    kitBag.add(zipper);
+    kitBag.userData.contents = 'rackets-and-match-kit';
+    bench.add(kitBag);
+
+    const bottle = new THREE.Group();
+    bottle.name = end < 0 ? 'wtsl-player-water-bottle-left' : 'wtsl-player-water-bottle-right';
+    bottle.position.set(1.05, 0.68, 0.02);
+    const bottleBody = new THREE.Mesh(
+      new THREE.CylinderGeometry(0.052, 0.058, 0.25, 12),
+      new THREE.MeshStandardMaterial({ color: 0xd4d8cf, roughness: 0.32, metalness: 0.12 }),
+    );
+    bottleBody.name = 'reusable-water-bottle';
+    bottleBody.castShadow = true;
+    bottle.add(bottleBody);
+    const bottleCap = new THREE.Mesh(new THREE.CylinderGeometry(0.031, 0.034, 0.035, 12), material(0x48585a, 0.54));
+    bottleCap.position.y = 0.142;
+    bottle.add(bottleCap);
+    bench.add(bottle);
+
+    const towel = new THREE.Mesh(
+      new THREE.BoxGeometry(0.34, 0.035, 0.24),
+      new THREE.MeshStandardMaterial({ color: end < 0 ? 0xb8c3bb : 0xd7b8a8, roughness: 0.98 }),
+    );
+    towel.name = end < 0 ? 'wtsl-player-court-towel-left' : 'wtsl-player-court-towel-right';
+    towel.position.set(0.54, 0.62, -0.02);
+    towel.rotation.y = -0.16 * end;
+    bench.add(towel);
   }
 
   const chair = new THREE.Group();
