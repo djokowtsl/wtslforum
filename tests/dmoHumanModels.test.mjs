@@ -579,18 +579,24 @@ test('crowd uses seated textured instancing and retains gaze/applause updates', 
   const scene = new THREE.Scene();
   const oldCrowd = sceneApi.buildCrowd(scene);
   const batches = crowds.attachHumanCrowd(scene, oldCrowd, [await asset('male', 'crowd'), await asset('female', 'crowd')]);
+  const occupiedSeats = oldCrowd.seats.filter((seat) => seat.occupied);
   assert.equal(batches.length, 24);
-  assert.equal(batches.reduce((sum, mesh) => sum + mesh.count, 0), oldCrowd.seats.length);
+  assert.ok(occupiedSeats.length < oldCrowd.seats.length, 'some seats remain empty');
+  assert.equal(batches.reduce((sum, mesh) => sum + mesh.count, 0), occupiedSeats.length);
   assert.equal(scene.getObjectByName('wtsl-spectator-heads').visible, false);
   oldCrowd.update(2, true, new THREE.Vector3(11, 0.5, 5));
   assert.ok(batches.some((mesh, index) => index % 6 >= 3 && mesh.count > 0));
-  assert.equal(batches.reduce((sum, mesh) => sum + mesh.count, 0), oldCrowd.seats.length);
+  assert.equal(batches.reduce((sum, mesh) => sum + mesh.count, 0), occupiedSeats.length);
   for (const mesh of batches) {
     assert.ok(mesh.geometry.boundingBox.max.y > 1.2);
     assert.ok(mesh.geometry.boundingBox.max.y < 1.7);
     assert.equal(mesh.castShadow, false);
   }
-  assert.ok(scene.getObjectByName('wtsl-crowd-caps'), 'some spectators wear caps');
+  const caps = scene.getObjectByName('wtsl-crowd-caps');
+  assert.ok(caps, 'some spectators wear caps');
+  assert.equal(caps.count,
+    oldCrowd.seats.filter((seat) => seat.occupied && seat.sourceIndex % 17 === 7).length,
+    'empty seats do not receive floating caps');
 });
 
 test('coaches occupy reserved lower-stand seats and the detailed umpire tracks the ball', async () => {

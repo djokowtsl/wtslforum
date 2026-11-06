@@ -11,7 +11,10 @@ export default async function LiveViewerPage() {
   if (!user?.isAdmin) return <LivestreamMaintenance />;
   return (
     <main className="live-broadcast-page">
-      <DmoLiveViewer canWatch={Boolean(user)} />
+      <DmoLiveViewer
+        canWatch={Boolean(user)}
+        voiceServer={process.env.NEXT_PUBLIC_VOICE_SERVER?.trim() ?? ''}
+      />
     </main>
   );
 }

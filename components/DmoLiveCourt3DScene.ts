@@ -35,10 +35,20 @@ export type PlayerRig = {
   };
 };
 
+export type CrowdSeat = {
+  x: number;
+  y: number;
+  z: number;
+  row: number;
+  facing: number;
+  sourceIndex?: number;
+  occupied: boolean;
+};
+
 export type CrowdRig = {
   update: (timeSeconds: number, applauding: boolean, ballPosition?: THREE.Vector3) => void;
-  seats: Array<{ x: number; y: number; z: number; row: number; facing: number; sourceIndex?: number }>;
-  staffSeats: Array<{ x: number; y: number; z: number; row: number; facing: number; sourceIndex?: number }>;
+  seats: CrowdSeat[];
+  staffSeats: CrowdSeat[];
   replacePeople: (update: CrowdRig['update']) => void;
   highDetailEnabled: boolean;
   setHighDetailEnabled: (enabled: boolean) => void;
@@ -591,6 +601,15 @@ export function buildCourt(scene: THREE.Scene, surface: Te4CourtSurface) {
   return surfaceEffects;
 }
 
+function hasCrowdOccupant(sourceIndex: number) {
+  // A stable hash leaves about one seat in 43 empty across the bowl.
+  let hash = sourceIndex;
+  hash = Math.imul(hash ^ (hash >>> 16), 0x7feb352d);
+  hash = Math.imul(hash ^ (hash >>> 15), 0x846ca68b);
+  hash ^= hash >>> 16;
+  return (hash >>> 0) % 43 !== 0;
+}
+
 function buildUnifiedCrowd(scene: THREE.Scene, venue: DmoVenueProfile): CrowdRig {
   const seats: CrowdRig['seats'] = [];
   const nearSeats: CrowdRig['seats'] = [];
@@ -600,10 +619,12 @@ function buildUnifiedCrowd(scene: THREE.Scene, venue: DmoVenueProfile): CrowdRig
   const lowerRowRun = 1.62;
   let lowerSeatIndex = 0;
   const addNearSeat = (x: number, z: number, row: number, facing: number) => {
+    const sourceIndex = row * 10_000 + lowerSeatIndex++;
     const seat = {
       x, z, row, facing,
       y: 0.05 + row * lowerRowRise,
-      sourceIndex: row * 10_000 + lowerSeatIndex++,
+      sourceIndex,
+      occupied: hasCrowdOccupant(sourceIndex),
     };
     seats.push(seat);
     nearSeats.push(seat);
@@ -670,13 +691,15 @@ function buildUnifiedCrowd(scene: THREE.Scene, venue: DmoVenueProfile): CrowdRig
       const z = Math.sin(angle) * ellipseZ;
       // Keep the four centered bowl passageways clear on every upper tier.
       if (Math.abs(x) < tunnelHalfWidth || Math.abs(z) < tunnelHalfWidth) continue;
+      const sourceIndex = (lowerRows + upperRow) * 10_000 + index;
       seats.push({
         x,
         z,
         row: lowerRows + upperRow,
         facing: Math.atan2(-Math.cos(angle), -Math.sin(angle)),
         y: baseY + upperRow * rowRise,
-        sourceIndex: (lowerRows + upperRow) * 10_000 + index,
+        sourceIndex,
+        occupied: hasCrowdOccupant(sourceIndex),
       });
     }
   }
@@ -692,6 +715,7 @@ function buildUnifiedCrowd(scene: THREE.Scene, venue: DmoVenueProfile): CrowdRig
   });
   const staffSeatSet = new Set(staffSeats);
   const spectatorSeats = seats.filter((seat) => !staffSeatSet.has(seat));
+  const occupiedSeats = spectatorSeats.filter((seat) => seat.occupied);
 
   const nearSupports = new THREE.InstancedMesh(
     new THREE.BoxGeometry(1, 1, 1),
@@ -778,17 +802,17 @@ function buildUnifiedCrowd(scene: THREE.Scene, venue: DmoVenueProfile): CrowdRig
   const bodyMesh = new THREE.InstancedMesh(
     new THREE.SphereGeometry(0.5, 8, 6),
     new THREE.MeshStandardMaterial({ color: 0xffffff, roughness: 0.84 }),
-    spectatorSeats.length,
+    occupiedSeats.length,
   );
   const headMesh = new THREE.InstancedMesh(
     new THREE.SphereGeometry(0.5, 8, 6),
     new THREE.MeshStandardMaterial({ color: 0xffffff, roughness: 0.74 }),
-    spectatorSeats.length,
+    occupiedSeats.length,
   );
   const armMesh = new THREE.InstancedMesh(
     new THREE.CylinderGeometry(0.045, 0.052, 1, 6),
     new THREE.MeshStandardMaterial({ color: 0xffffff, roughness: 0.9 }),
-    spectatorSeats.length * 2,
+    occupiedSeats.length * 2,
   );
   bodyMesh.name = 'wtsl-unified-crowd-fallback-bodies';
   headMesh.name = 'wtsl-spectator-heads';
@@ -819,7 +843,7 @@ function buildUnifiedCrowd(scene: THREE.Scene, venue: DmoVenueProfile): CrowdRig
     dummy.updateMatrix();
     armMesh.setMatrixAt(instance, dummy.matrix);
   };
-    spectatorSeats.forEach((seat, index) => {
+  occupiedSeats.forEach((seat, index) => {
     dummy.position.set(seat.x, seat.y + 0.83, seat.z);
     dummy.rotation.set(0, seat.facing, 0);
     dummy.scale.set(0.42, 0.54, 0.28);
@@ -864,7 +888,7 @@ function buildUnifiedCrowd(scene: THREE.Scene, venue: DmoVenueProfile): CrowdRig
       }
       if (time - lastUpdate < 0.12) return;
       lastUpdate = time;
-      spectatorSeats.forEach((seat, index) => {
+      occupiedSeats.forEach((seat, index) => {
         let gaze = 0;
         if (ballPosition) {
           const bearing = Math.atan2(ballPosition.x - seat.x, ballPosition.z - seat.z);

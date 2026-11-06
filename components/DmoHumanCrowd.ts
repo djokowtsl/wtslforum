@@ -18,7 +18,8 @@ function tintedHuman(template: THREE.Group, tint: number) {
 }
 
 function addCrowdAccessories(scene: THREE.Scene, crowd: CrowdRig) {
-  const capSeats = crowd.seats.filter((seat, index) => ((seat.sourceIndex ?? index) % 17) === 7);
+  const capSeats = crowd.seats.filter((seat, index) =>
+    seat.occupied && ((seat.sourceIndex ?? index) % 17) === 7);
   if (capSeats.length) {
     const dome = new THREE.InstancedMesh(
       new THREE.SphereGeometry(1, 12, 8, 0, Math.PI * 2, 0, Math.PI / 2),
@@ -61,7 +62,7 @@ function addCrowdAccessories(scene: THREE.Scene, crowd: CrowdRig) {
   }
 
   const bannerSeats = crowd.seats.filter((seat, index) =>
-    seat.row >= 6 && ((seat.sourceIndex ?? index) % 283) === 37);
+    seat.occupied && seat.row >= 6 && ((seat.sourceIndex ?? index) % 283) === 37);
   bannerSeats.slice(0, 36).forEach((seat, index) => {
     const banner = new THREE.Group();
     banner.name = `wtsl-fan-banner-${index + 1}`;
@@ -215,6 +216,7 @@ function seatedGeometry(template: THREE.Group, look: number, applause: boolean) 
 export function attachHumanCrowd(scene: THREE.Scene, crowd: CrowdRig, templates: THREE.Group[]) {
   const batches: THREE.InstancedMesh[] = [];
   const highDetailBatches: THREE.InstancedMesh[] = [];
+  const occupiedSeatCount = crowd.seats.filter((seat) => seat.occupied).length;
   const makeBatches = (
     template: THREE.Group,
     target: THREE.InstancedMesh[],
@@ -228,7 +230,7 @@ export function attachHumanCrowd(scene: THREE.Scene, crowd: CrowdRig, templates:
     });
     if (!sourceMaterial) throw new Error('Crowd material missing.');
     for (const applauding of [false, true]) for (const look of [-0.5, 0, 0.5]) {
-      const mesh = new THREE.InstancedMesh(seatedGeometry(variant, look, applauding), sourceMaterial.clone(), crowd.seats.length);
+      const mesh = new THREE.InstancedMesh(seatedGeometry(variant, look, applauding), sourceMaterial.clone(), occupiedSeatCount);
       mesh.name = `wtsl-${label}-spectators-${target.length}`;
       mesh.count = 0;
       mesh.frustumCulled = false;
@@ -269,6 +271,7 @@ export function attachHumanCrowd(scene: THREE.Scene, crowd: CrowdRig, templates:
     counts.fill(0);
     highDetailCounts.fill(0);
     crowd.seats.forEach((seat, index) => {
+      if (!seat.occupied) return;
       const sourceIndex = seat.sourceIndex ?? index;
       let delta = ball ? Math.atan2(ball.x - seat.x, ball.z - seat.z) - seat.facing : 0;
       delta = THREE.MathUtils.euclideanModulo(delta + Math.PI, Math.PI * 2) - Math.PI;
@@ -317,7 +320,7 @@ export function attachHumanCrowd(scene: THREE.Scene, crowd: CrowdRig, templates:
     makeBatches(template, highDetailBatches, 'high-detail');
     highDetailSeats = new Set(
       crowd.seats.flatMap((seat, index) =>
-        shouldUseHighDetailCrowdSeat(seat.row, seat.sourceIndex ?? index, genderIndex) ? [index] : []),
+        seat.occupied && shouldUseHighDetailCrowdSeat(seat.row, seat.sourceIndex ?? index, genderIndex) ? [index] : []),
     );
     highDetailCounts = new Uint16Array(highDetailBatches.length);
     highDetailBatches.forEach((mesh) => { mesh.visible = highDetailEnabled; });

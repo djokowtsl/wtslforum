@@ -137,7 +137,7 @@ async function loadGruntSample(context: AudioContext, isWta: boolean) {
 const MIN_CAMERA_HEIGHT = 0.8;
 
 /** Shown under the court so a deployed build can be identified at a glance. */
-const RENDERER_BUILD = 'stadium/audio + player repair r10';
+const RENDERER_BUILD = 'stadium/audio + player repair r11';
 
 function firstEventAfterFrame<T extends { frame: number }>(events: T[], frame: number) {
   let low = 0;
@@ -1196,9 +1196,15 @@ function ThreeCourt({
       // Walking: arms hang nearly straight, hands beside the thighs; running:
       // elbows bent, hands higher. (The running carry used for a walk put the
       // hands on the hips with the elbows flared out.)
-      const runFactor = THREE.MathUtils.smoothstep(smoothSpeed, 2.2, 3.6);
-      const movingCarryHand = new THREE.Vector3(dominantX * 0.68, 0.86 + bodyBounce, 0.12)
-        .lerp(new THREE.Vector3(dominantX * 0.85, 0.98 + bodyBounce, 0.14), runFactor);
+      // (From a jog: a jog with the straight walking arms flared the elbows.)
+      const runFactor = THREE.MathUtils.smoothstep(smoothSpeed, 1.6, 3.0);
+      // (Running: racket hand in front of the hip, close in, elbow bent and
+      // back. It sat out wide at hip height, which flared the elbow out like a
+      // hand on the hip.)
+      // (Walking: hand low beside the thigh so the arm hangs nearly straight; at
+      // 0.86 the elbow bent ~80 degrees and the hand sat on the hip.)
+      const movingCarryHand = new THREE.Vector3(dominantX * 0.64, 0.74 + bodyBounce, 0.1)
+        .lerp(new THREE.Vector3(dominantX * 0.5, 0.98 + bodyBounce, 0.24), runFactor);
       const dominantHand = new THREE.Vector3(dominantX, 1.12 + bodyBounce + armPump, 0.06)
         .lerp(standingCarryHand.lerp(movingCarryHand, onTheMove), carry);
       const nonDominantHand = new THREE.Vector3(-dominantX * 0.72, 0.96 + bodyBounce - armPump, 0.1);
@@ -1211,14 +1217,20 @@ function ThreeCourt({
         const sameSidePhase = gait.phase + (dominantX < 0 ? 0.5 : 0);
         const strideReach = Math.min(1, Math.hypot(stepA.x, stepA.z, stepB.x, stepB.z) / 0.3 + 0.35);
         const swing = -Math.cos(2 * Math.PI * sameSidePhase) * Math.sign(gait.direction[1] || 1) * strideReach;
+        // Running: a runner's arm, elbow bent and close to the body, the hand
+        // swinging from in front of the stomach to just behind the hip (wider
+        // only as it passes the hip). It was held out wide at hip height,
+        // elbows flared: hands on hips.
+        // (Walking: arm hanging, swinging from the shoulder; held higher, the
+        // elbow folded up to ~70 degrees on the back swing, hand on the hip.)
         const runningHand = new THREE.Vector3(
-          -dominantX * 0.7,
-          0.86 + bodyBounce + Math.max(0, swing) * 0.05,
-          0.03 + swing * 0.15,
+          -dominantX * 0.64,
+          0.76 + bodyBounce + Math.abs(swing) * 0.04,
+          0.03 + swing * 0.16,
         ).lerp(new THREE.Vector3(
-          -dominantX * 0.8,
-          1.04 + bodyBounce + Math.max(0, swing) * 0.16,
-          0.08 + swing * 0.24,
+          -dominantX * (0.5 + 0.06 * Math.max(0, -swing)),
+          0.96 + bodyBounce + Math.max(0, swing) * 0.14 - Math.max(0, -swing) * 0.16,
+          0.06 + swing * 0.22,
         ), runFactor);
         nonDominantHand.lerp(runningHand, gait.amount);
       }

@@ -420,8 +420,10 @@ export function attachNativePlayer(
       // (the legacy dummy's elbow hint, which flared the elbows like hands on hips).
       const chestTurn = pose.rotation('spine_03').multiply(pose.rest.get('spine_03')!.rotation.clone().invert());
       const outward = support === 'l' ? 1 : -1;
+      // (Only just outward: further out, a jogging or running arm swung with
+      // the elbow flared, hand on the hip.)
       const relaxedElbow = pose.point(arms[support].root).lerp(relaxedWrist, 0.5)
-        .add(new THREE.Vector3(outward * 0.05, 0, -0.14).applyQuaternion(chestTurn));
+        .add(new THREE.Vector3(outward * 0.02, 0, -0.14).applyQuaternion(chestTurn));
       reachArm(support, null, relaxedWrist, null, relaxedElbow);
     }
 
