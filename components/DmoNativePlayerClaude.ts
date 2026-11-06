@@ -22,6 +22,12 @@ const WRIST_SWING_LIMIT = 1.05;
 const FOREARM_ROLL_LIMIT = 1.65;
 const ELBOW_FLEX_RANGE = [0.06, 2.45] as const;
 
+export function serveTossTuckWeight(frameDelta: number, captureWeight: number) {
+  return THREE.MathUtils.clamp(captureWeight, 0, 1)
+    * THREE.MathUtils.smoothstep(frameDelta, -10, -1)
+    * (1 - THREE.MathUtils.smoothstep(frameDelta, 16, 34));
+}
+
 function ends(mesh: THREE.Mesh) {
   const half = UP.clone().applyQuaternion(mesh.quaternion).multiplyScalar(mesh.scale.y / 2);
   return [mesh.position.clone().sub(half), mesh.position.clone().add(half)];
@@ -195,6 +201,7 @@ export function attachNativePlayer(
   const capturedGroundstroke = new DmoCapturedGroundstroke(model, rig.root, pose.rest, motionSources);
   const previousRoll: Partial<Record<Side, number>> = {};
   const previousSupportHand: Partial<Record<Side, THREE.Quaternion>> = {};
+  const previousCradle: Partial<Record<Side, number>> = {};
 
   /** Pose a two-segment limb through its anatomical hinge (no free twist). */
   const setLimb = (l: Limb, middle: THREE.Vector3, end: THREE.Vector3, hinge: THREE.Vector3) => {
@@ -446,6 +453,33 @@ export function attachNativePlayer(
       }
     }
 
+    // The tossing arm follows the captured lift, then comes down in front
+    // through contact and the landing instead of flinging behind the body.
+    if (capturedBody && playback?.stroke === 'serve') {
+      const frames = playback.deltaSeconds * 60;
+      const tuck = serveTossTuckWeight(frames, captureWeight);
+      if (tuck > 0) {
+        const chest = pose.point('spine_03');
+        const chestTurn = pose.rotation('spine_03')
+          .multiply(pose.rest.get('spine_03')!.rotation.clone().invert());
+        const across = dominant === 'r' ? -1 : 1;
+        const wrist = chest.clone().add(
+          new THREE.Vector3(across * 0.08, -0.24, 0.2).applyQuaternion(chestTurn),
+        );
+        const elbow = chest.clone().add(
+          new THREE.Vector3(-across * 0.24, -0.3, 0.06).applyQuaternion(chestTurn),
+        );
+        const chain = [`clavicle_${support}`, `upperarm_${support}`, `lowerarm_${support}`, `hand_${support}`];
+        const captured = chain.map(name => pose.bones.get(name)!.quaternion.clone());
+        reachArm(support, null, wrist, null, elbow);
+        chain.forEach((name, index) => {
+          const bone = pose.bones.get(name)!;
+          bone.quaternion.copy(captured[index].clone().slerp(bone.quaternion, tuck));
+        });
+        model.updateMatrixWorld(true);
+      }
+    }
+
     // 3. The racket is carried by the dominant hand; the hand never chases a
     //    separately animated racket.
     const handOrientation = pose.rotation(`hand_${dominant}`);
@@ -462,6 +496,48 @@ export function attachNativePlayer(
         .multiply(localRacket[support].clone().invert());
       let grip = rig.racket.position.clone().add(
         new THREE.Vector3(0, Number(rig.root.userData.supportGripOffset ?? 0.11), 0).applyQuaternion(racketRotation));
+      // In a stationary carry, turn the support hand around the shaft to find
+      // the least strained forearm angle. Keep captured two-handed strokes
+      // unchanged, and ease the selected cradle angle between frames.
+      const cradle = twoHanded ? 0 : supportHold;
+      if (cradle > 0) {
+        const shaft = UP.clone().applyQuaternion(racketRotation);
+        const elbowGuess = grip.clone().add(new THREE.Vector3(0, -0.12, -0.02))
+          .addScaledVector(grips[support].forward.clone().applyQuaternion(desired), -arms[support].lengths[1]);
+        const strain = (hand: THREE.Quaternion) => {
+          reachArm(support, grip, null, hand, elbowGuess);
+          const neutral = neutralHand(support);
+          const forearm = pose.point(`hand_${support}`)
+            .sub(pose.point(`lowerarm_${support}`)).normalize();
+          const delta = hand.clone().multiply(neutral.clone().invert());
+          const roll = twistAngle(delta, forearm);
+          const swing = angleOf(delta.clone().multiply(
+            new THREE.Quaternion().setFromAxisAngle(forearm, -roll),
+          ));
+          return Math.abs(roll) + 1.5 * Math.max(0, swing - 0.45);
+        };
+        const previous = previousCradle[support] ?? 0;
+        const savedRoll = previousRoll[support];
+        const chain = [`clavicle_${support}`, `upperarm_${support}`, `lowerarm_${support}`, `hand_${support}`];
+        const savedChain = chain.map(name => pose.bones.get(name)!.quaternion.clone());
+        let best = previous;
+        let bestCost = Number.POSITIVE_INFINITY;
+        for (let step = -6; step <= 6; step += 1) {
+          const angle = step * Math.PI / 12;
+          const candidate = new THREE.Quaternion().setFromAxisAngle(shaft, angle).multiply(desired);
+          const cost = strain(candidate) + 0.25 * Math.abs(angle - previous);
+          if (cost < bestCost) {
+            bestCost = cost;
+            best = angle;
+          }
+        }
+        previousRoll[support] = savedRoll;
+        chain.forEach((name, index) => pose.bones.get(name)!.quaternion.copy(savedChain[index]));
+        model.updateMatrixWorld(true);
+        const turn = previous + THREE.MathUtils.clamp(best - previous, -0.12, 0.12);
+        previousCradle[support] = turn;
+        desired = new THREE.Quaternion().setFromAxisAngle(shaft, turn * cradle).multiply(desired);
+      }
       if (supportHold < 1) {
         // Ease the free hand between its relaxed pose and the racket.
         const relaxed = pose.rotation(`hand_${support}`);
