@@ -550,7 +550,13 @@ export function attachNativePlayer(
         // orientations can be nearly opposite; keep turning the same way round
         // as last frame instead of letting the shortest path flip sides.
         const relaxed = pose.rotation(`hand_${support}`);
-        grip = handGripPoint(support, relaxed).lerp(grip, supportHold);
+        // On the way the hand passes in front of the hip, not into it: a
+        // straight line from the side of the thigh to the throat ran through
+        // the hip and folded the elbow out (the "hand on hip" look).
+        const chestForward = new THREE.Vector3(0, 0, 1).applyQuaternion(
+          pose.rotation('spine_03').multiply(pose.rest.get('spine_03')!.rotation.clone().invert()));
+        grip = handGripPoint(support, relaxed).lerp(grip, supportHold)
+          .addScaledVector(chestForward, 0.12 * Math.sin(Math.PI * supportHold));
         const short = slerpPath(relaxed, desired, supportHold, false);
         const long = slerpPath(relaxed, desired, supportHold, true);
         const last = previousSupportHand[support];
@@ -559,6 +565,14 @@ export function attachNativePlayer(
       previousSupportHand[support] = desired.clone();
       const elbowPreference = grip.clone().addScaledVector(grips[support].forward.clone().applyQuaternion(desired),
         -arms[support].lengths[1]).add(new THREE.Vector3(0, -0.12, -0.02));
+      if (supportHold < 1) {
+        // Part-way there the elbow stays down and back by the body.
+        const chestTurn = pose.rotation('spine_03').multiply(pose.rest.get('spine_03')!.rotation.clone().invert());
+        const outward = support === 'l' ? 1 : -1;
+        const hanging = pose.point(arms[support].root).lerp(grip, 0.5)
+          .add(new THREE.Vector3(outward * 0.03, -0.04, -0.12).applyQuaternion(chestTurn));
+        elbowPreference.lerp(hanging, 1 - supportHold);
+      }
       reachArm(support, grip, null, desired, elbowPreference);
     }
     distributeNativeTwist(pose.bones, pose.rest);

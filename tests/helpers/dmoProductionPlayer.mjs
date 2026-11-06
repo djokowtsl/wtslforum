@@ -20,7 +20,10 @@ async function load(path, overrides = {}, baseline = false) {
   new Function('module', 'exports', 'require', code)(module, module.exports, n => overrides[n] ?? require(n));
   return module.exports;
 }
-const scene = await load('components/DmoLiveCourt3DScene.ts');
+const stadiumArchitecture = await load('components/DmoStadiumArchitecture.ts');
+const scene = await load('components/DmoLiveCourt3DScene.ts', {
+  './DmoStadiumArchitecture': stadiumArchitecture,
+});
 const motion = await load('lib/liveCourtMotion.ts');
 const performance = await load('lib/liveCourtPerformance.ts');
 const gait = await load('lib/liveCourtGait.ts');

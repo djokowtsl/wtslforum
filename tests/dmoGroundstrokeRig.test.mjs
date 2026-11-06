@@ -16,7 +16,11 @@ async function load(name, overrides = {}) {
   new Function('module', 'exports', 'require', code)(module, module.exports, n => overrides[n] ?? require(n));
   return module.exports;
 }
-const scene = await load('DmoLiveCourt3DScene'), racket = await load('DmoRacketOrientation');
+const stadiumArchitecture = await load('DmoStadiumArchitecture');
+const scene = await load('DmoLiveCourt3DScene', {
+  './DmoStadiumArchitecture': stadiumArchitecture,
+});
+const racket = await load('DmoRacketOrientation');
 const capture = await load('DmoCapturedGroundstroke'), grip = await load('DmoNativeGrip'), kit = await load('DmoNativeKit');
 const twist = await load('DmoNativeTwist');
 const strokes = await load('DmoGroundstrokeRig', { './DmoRacketOrientation': racket });

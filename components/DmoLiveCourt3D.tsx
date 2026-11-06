@@ -13,6 +13,7 @@ import type { Te4CourtSurface } from '@/lib/te4DmoTypes';
 import {
   CAPTURE_RECOVERY_FRAMES,
   GROUNDSTROKE_LEAD_FRAMES,
+  SERVE_LEAD_FRAMES,
   groundstrokeCaptureWeight,
   recordedStrokeUsesTwoHands,
   serveCaptureWeight,
@@ -56,9 +57,7 @@ import {
   newGaitState,
   nextShotEvent,
   planReposition,
-  relaxedWalkCarryWeight,
   returnReadiness,
-  serveBaselineGuardWeight,
   splitStepLift,
   type GaitState,
 } from '@/lib/liveCourtGait';
@@ -133,7 +132,7 @@ async function loadGruntSample(context: AudioContext, isWta: boolean) {
 const MIN_CAMERA_HEIGHT = 0.8;
 
 /** Shown under the court so a deployed build can be identified at a glance. */
-const RENDERER_BUILD = 'stadium/audio r9';
+const RENDERER_BUILD = 'stadium/audio + player repair r9';
 
 function firstEventAfterFrame<T extends { frame: number }>(events: T[], frame: number) {
   let low = 0;
@@ -690,7 +689,7 @@ function ThreeCourt({
       const nearbyEvent = findPlayerShotEvent(events, eventPlayer, frame, 24);
       const upcomingServe = nearbyEvent
         ? undefined
-        : findPlayerShotEvent(events, eventPlayer, frame, 64, 'serve');
+        : findPlayerShotEvent(events, eventPlayer, frame, SERVE_LEAD_FRAMES, 'serve');
       const event = nearbyEvent ?? (upcomingServe && upcomingServe.frame > frame ? upcomingServe : undefined);
       const serving = event?.shotType === 'serve';
       const contactCue = event
@@ -726,11 +725,11 @@ function ThreeCourt({
         ? THREE.MathUtils.smoothstep(strokeDelta, 0, 4)
           * (1 - THREE.MathUtils.smoothstep(strokeDelta, 11, 19))
         : 0;
-      const servePreparation = serving
+      let servePreparation = serving
         ? THREE.MathUtils.smoothstep(strokeDelta, -24, -12)
           * (1 - THREE.MathUtils.smoothstep(strokeDelta, -3, 0))
         : 0;
-      const serveToss = serving
+      let serveToss = serving
         ? THREE.MathUtils.smoothstep(strokeDelta, -18, -7)
           * (1 - THREE.MathUtils.smoothstep(strokeDelta, -3, 0))
         : 0;
@@ -792,8 +791,39 @@ function ThreeCourt({
       const settleStep = replaySeconds > 0.5 ? 1 : 1 - Math.exp(-replaySeconds / settleTime);
       const settled = previousSettle + (settleTarget - previousSettle) * settleStep;
       rig.root.userData.settled = settled;
-      const ready = opponentServe ? returnReadiness(framesToServe) * freeOfOwnShot * settled : 0;
-      const splitStep = opponentServe ? splitStepLift(framesToServe) * freeOfOwnShot * settled : 0;
+      // Serve and return set-ups wait until the player is in position: stopped
+      // (not walking), and at the baseline to serve or in the back of his half
+      // to return. After a point TE4 can record the next serve before the
+      // player has got back, and the set-up used to start wherever he was.
+      // Once a serve has set up it plays through.
+      const behindBaseline = COURT_LENGTH / 2 - Math.abs(rig.root.position.x); // + = inside the court
+      const stoppedAt = (place: boolean) => (!walking && place ? 1 - THREE.MathUtils.smoothstep(smoothSpeed, 0.6, 1.2) : 0);
+      const easeGate = (key: string, target: number, latchFrame?: number) => {
+        const latched = latchFrame !== undefined && rig.root.userData[`${key}Latch`] === latchFrame;
+        if (latched) return 1;
+        const previous = Number(rig.root.userData[key] ?? target);
+        const step = replaySeconds > 0.5 ? 1 : replaySeconds / 0.35;
+        const next = THREE.MathUtils.clamp(previous + THREE.MathUtils.clamp(target - previous, -step, step), 0, 1);
+        rig.root.userData[key] = next;
+        if (latchFrame !== undefined && next >= 0.999) rig.root.userData[`${key}Latch`] = latchFrame;
+        return next * next * (3 - 2 * next);
+      };
+      // (Whatever the positions say, the serve itself is fully on by 10 frames
+      // before contact, so it never snaps in at the hit.)
+      const serveGate = serving && event
+        ? Math.max(
+          easeGate('serveGate', stoppedAt(behindBaseline < 0.6), event.frame),
+          THREE.MathUtils.smoothstep(strokeDelta, -30, -10),
+        )
+        : easeGate('serveGate', 0);
+      servePreparation *= serveGate;
+      serveToss *= serveGate;
+      rig.root.userData.serveSetUp = serveGate;
+      const returnGate = opponentServe
+        ? easeGate('returnGate', stoppedAt(behindBaseline < 3.2), opponentServe.frame)
+        : easeGate('returnGate', 0);
+      const ready = opponentServe ? returnReadiness(framesToServe) * freeOfOwnShot * settled * returnGate : 0;
+      const splitStep = opponentServe ? splitStepLift(framesToServe) * freeOfOwnShot * settled * returnGate : 0;
       const stanceHalfWidth = 0.15 + ready * 0.2;
       const slideSpread = slideDirection * slideWeight * 0.15;
       const landing = 1 - slideWeight * 0.8;
@@ -881,9 +911,14 @@ function ThreeCourt({
       const comingShot = event || recovering ? undefined : nextShotEvent(events, eventPlayer, frame);
       const leadEvent = comingShot && comingShot.shotType === 'rally'
         && comingShot.frame - frame <= GROUNDSTROKE_LEAD_FRAMES ? comingShot : undefined;
-      const strokeEvent = event ?? leadEvent;
-      const strokeCue = strokeEvent === event ? contactCue : inferLiveCourtContactCue(
-        strokeEvent!,
+      // A serve coming up does not cut short the previous stroke's recovery
+      // either (its recorded set-up starts ~1.8 s ahead); only a shot about to
+      // be played (within the 24-frame shot window) takes over.
+      const waitForRecovery = recovering && event && event.frame - frame > 24
+        && event.frame !== heldStroke!.frame;
+      const strokeEvent = waitForRecovery ? undefined : event ?? leadEvent;
+      const strokeCue = !strokeEvent ? 'standard' : strokeEvent === event ? contactCue : inferLiveCourtContactCue(
+        strokeEvent,
         samples,
         sceneDataRef.current.snapshot.frameRate ?? TE4_DMO_FRAMES_PER_SECOND,
       );
@@ -929,13 +964,21 @@ function ThreeCourt({
       if (!capturedEvent) delete rig.root.userData.contactTarget;
       if (capturedEvent) {
         const captureDelta = frame - capturedEvent.frame;
-        if (captureDelta < -64 || captureDelta > CAPTURE_RECOVERY_FRAMES) {
+        if (captureDelta < -SERVE_LEAD_FRAMES || captureDelta > CAPTURE_RECOVERY_FRAMES) {
           delete rig.root.userData.capturedGroundstrokeEvent;
           delete rig.root.userData.groundstrokePlayback;
         } else {
-          const weight = capturedEvent.stroke === 'serve'
-            ? serveCaptureWeight(captureDelta)
-            : groundstrokeCaptureWeight(captureDelta);
+          // Fade the next stroke in after the previous one has handed back,
+          // rather than starting part-way up its envelope (a snap). A shot
+          // about to be played still gets its full recorded swing.
+          const previousOwnShot = lastShotFrame(events, eventPlayer, capturedEvent.frame - 1);
+          const handOver = previousOwnShot === undefined ? 1 : Math.max(
+            THREE.MathUtils.smoothstep(frame - previousOwnShot, CAPTURE_RECOVERY_FRAMES, CAPTURE_RECOVERY_FRAMES + 24),
+            THREE.MathUtils.smoothstep(captureDelta, -24, -8),
+          );
+          const weight = handOver * (capturedEvent.stroke === 'serve'
+            ? serveCaptureWeight(captureDelta) * (captureDelta >= 0 ? 1 : Number(rig.root.userData.serveSetUp ?? 1))
+            : groundstrokeCaptureWeight(captureDelta));
           if (weight > 0) {
             rig.root.userData.groundstrokePlayback = {
               stroke: capturedEvent.stroke,
@@ -970,14 +1013,27 @@ function ThreeCourt({
       // flick between the two carries from one frame to the next.
       const carrySpeed = smoothSpeed;
       const ownNextShot = nextShotEvent(events, eventPlayer, frame);
-      const shotDue = ownNextShot !== undefined && ownNextShot.frame - frame < frameRate;
+      // (A serve coming up is handled by the serve set-up, which waits until he
+      // is at the line; it must not take the relaxed walking carry away early.)
+      const shotDue = ownNextShot !== undefined && ownNextShot.shotType !== 'serve'
+        && ownNextShot.frame - frame < frameRate;
       // TE4 records the walk back to the line at the start of the next point;
       // that is walking too, so it gets the same relaxed carry as our own walks.
-      const strolling = isBetweenPoints(events, frame) ? relaxedWalkCarryWeight(carrySpeed) : 0;
-      const carryTarget = walking ? 1 : shotDue ? 0 : Math.max(strolling, THREE.MathUtils.smoothstep(carrySpeed, 3.2, 4.6));
-      const carryBlend = replaySeconds > 0.5 ? 1 : 1 - Math.exp(-replaySeconds / 0.3);
-      const previousCarry = Number(rig.root.userData.carryMove ?? carryTarget);
-      const onTheMove = previousCarry + (carryTarget - previousCarry) * carryBlend;
+      const strolling = isBetweenPoints(events, frame) ? THREE.MathUtils.smoothstep(carrySpeed, 0.5, 1.0) : 0;
+      const carryIntent = walking ? 1 : shotDue ? 0 : Math.max(strolling, THREE.MathUtils.smoothstep(carrySpeed, 3.2, 4.6));
+      // Commit to one carry or the other (with hysteresis) and change over in
+      // a quick, eased 0.3 s. Following the intent directly could leave the
+      // arms hovering between the two carries for seconds at in-between
+      // speeds: free hand half-way to the throat, elbows folded out.
+      let carryMode = Boolean(rig.root.userData.carryMode);
+      if (carryIntent > 0.65) carryMode = true;
+      else if (carryIntent < 0.35) carryMode = false;
+      rig.root.userData.carryMode = carryMode;
+      const previousRamp = Number(rig.root.userData.carryRamp ?? (carryMode ? 1 : 0));
+      const carryRamp = replaySeconds > 0.5 ? (carryMode ? 1 : 0)
+        : THREE.MathUtils.clamp(previousRamp + (carryMode ? 1 : -1) * replaySeconds / 0.3, 0, 1);
+      rig.root.userData.carryRamp = carryRamp;
+      const onTheMove = carryRamp * carryRamp * (3 - 2 * carryRamp);
       rig.root.userData.carryMove = onTheMove;
       // Ready carry: grip hand just to the racket side of the navel, racket
       // pointing at the opponent with the head a little up, so the free hand
@@ -1137,6 +1193,8 @@ function ThreeCourt({
       const movingShaft = new THREE.Vector3(-Math.sign(dominantX) * 0.1, -0.2 - 0.15 * (1 - runFactor), 0.97).normalize();
       const carryRotation = racketContactOrientation(standingShaft, new THREE.Vector3(0, 1, 0).cross(standingShaft))
         .slerp(racketContactOrientation(movingShaft, new THREE.Vector3(0, 1, 0).cross(movingShaft)), onTheMove);
+      // Last frame's racket as the viewer saw it (the detailed player sets it).
+      const visibleRacket = rig.racket.quaternion.clone();
       rig.racket.quaternion.copy(resting).slerp(carryRotation, carry);
       if (serving && servePreparation > 0) rig.racket.quaternion.slerp(serveLoadRotation, servePreparation);
       if (shapedBackswing > 0) rig.racket.quaternion.slerp(backswingRotation, shapedBackswing);
@@ -1155,6 +1213,16 @@ function ThreeCourt({
       // Preserve the original unarticulated hand surface; do not sculpt
       // fingertips or force a wrist roll to simulate missing finger joints.
       rig.root.userData.dominantHandedness = handedness;
+      {
+        // While a recorded stroke hands back, start the procedural racket from
+        // where the viewer last saw it and let it travel to the carry as the
+        // recording fades. Blending a recorded racket into a procedural one
+        // pointing nearly the opposite way could spin it round in one frame.
+        const playback = rig.root.userData.groundstrokePlayback as { weight: number; deltaSeconds: number } | undefined;
+        if (playback && playback.deltaSeconds > 0 && rig.detailed) {
+          rig.racket.quaternion.copy(visibleRacket.slerp(rig.racket.quaternion, THREE.MathUtils.clamp(1 - playback.weight, 0, 1)));
+        }
+      }
       dominantMesh.quaternion.copy(rig.racket.quaternion);
       const wrist = racketGripWrist(rig.racket.position, rig.racket.quaternion, handedness === 'left');
       dominantElbow.copy(racketGripElbow(dominantShoulder, wrist, rig.racket.quaternion, handedness === 'left'));
@@ -1189,9 +1257,14 @@ function ThreeCourt({
       rig.root.userData.supportGripOffset = THREE.MathUtils.lerp(0.2, 0.11, twoHandedWeight);
       // Server's feet must stay behind the baseline until contact; landing
       // inside the court afterwards is legal and eases in. The guard also
-      // eases in as the serve comes up, preventing a sudden backward jump.
+      // eases in as the serve comes up: switched on at full strength it moved
+      // a server still walking up to the line back by up to ~0.6 m in a frame.
       rig.root.userData.baselineGuard = serving
-        ? { weight: serveBaselineGuardWeight(strokeDelta), baseline: COURT_LENGTH / 2 }
+        ? {
+          weight: Math.max(serveGate, THREE.MathUtils.smoothstep(strokeDelta, -12, -4))
+            * THREE.MathUtils.smoothstep(strokeDelta, -64, -40) * (1 - THREE.MathUtils.smoothstep(strokeDelta, 2, 14)),
+          baseline: COURT_LENGTH / 2,
+        }
         : undefined;
       if (rig.root.userData.twoHandedGrip) {
         const supportWrist = racketGripWrist(nonDominantHand, rig.racket.quaternion, handedness !== 'left');

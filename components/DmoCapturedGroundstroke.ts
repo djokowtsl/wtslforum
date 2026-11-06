@@ -126,12 +126,17 @@ export function groundstrokeCaptureWeight(frameDelta: number) {
   return smooth(frameDelta, -GROUNDSTROKE_LEAD_FRAMES, -20) * (1 - smooth(frameDelta, 16, CAPTURE_RECOVERY_FRAMES));
 }
 
+/** Frames before contact at which the recorded serve starts to blend in
+ * (~1.8 s): the capture's own set-up, toss and take-back then play out. Starting
+ * at 64 frames, already mid take-back, swung the arms from the carry into it
+ * in about a quarter of a second. */
+export const SERVE_LEAD_FRAMES = 110;
+
 export function serveCaptureWeight(frameDelta: number) {
   if (!Number.isFinite(frameDelta)) return 0;
   const smooth = THREE.MathUtils.smoothstep;
-  // Continuous from the start of the service motion to the end of recovery;
-  // the old lobes dropped to zero ~6 frames before contact.
-  return smooth(frameDelta, -64, -48) * (1 - smooth(frameDelta, 16, CAPTURE_RECOVERY_FRAMES));
+  // Continuous from the start of the service motion to the end of recovery.
+  return smooth(frameDelta, -SERVE_LEAD_FRAMES, -80) * (1 - smooth(frameDelta, 16, CAPTURE_RECOVERY_FRAMES));
 }
 
 export function readyPosePlayback(
