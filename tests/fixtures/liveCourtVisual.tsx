@@ -101,7 +101,7 @@ function PlayerPortrait() {
 
 async function checkAudio() {
   const results: Record<string, { rms: number; peak: number }> = {};
-  for (const kind of ['racket', 'bounce', 'footstep', 'slide'] as const) {
+  for (const kind of ['racket', 'bounce', 'footstep'] as const) {
     const context = new OfflineAudioContext(1, 44100 * 0.6, 44100);
     playLiveCourtEffect(context, kind, 'clay', 0.9);
     const data = (await context.startRendering()).getChannelData(0);

@@ -13,14 +13,53 @@ export type GaitState = {
   phase: number; // 0..1 step cycle of the "left" foot; the right foot is half a cycle later
   direction: [number, number]; // smoothed local travel direction (x, z), unit
   amount: number; // 0..1 how much the player is stepping (eases in/out)
+  /** Cycle offset of the second foot: 0.5 running; nearer 0.3/0.7 for a side shuffle. */
+  offset?: number;
+  /** Extra half-width of the stance when shuffling sideways (metres). */
+  spread?: number;
+  /** Stride (half, metres, including `amount`) at the last update. */
+  stride?: number;
 };
 
 export type GaitFoot = { x: number; z: number; lift: number };
 
 /** Fraction of the cycle a foot spends planted. */
 export const STANCE = 0.6;
-/** Lateral reach of one foot from its stance position before the feet would cross. */
+/** Lateral reach of one foot from its stance position before the feet would cross (running pattern). */
 export const MAX_LATERAL_REACH = 0.14;
+/** Closest the feet come to each other sideways (metres, centre to centre). */
+export const MIN_FOOT_GAP = 0.09;
+/** Half-distance between the feet in the plain stance (the renderer's stanceHalfWidth). */
+export const STANCE_HALF_WIDTH = 0.15;
+const SIDE_SHUFFLE_OFFSET = 0.2;
+const SIDE_SHUFFLE_SPREAD = 0.06;
+
+/**
+ * How far the second foot's position, minus the first's, can swing toward it
+ * over a cycle, per unit stride, for a cycle offset (`toward` = +1 when the
+ * travel direction points from the first foot to the second).
+ */
+const closingTable = (() => {
+  const table: number[][] = [[], []];
+  for (let i = 0; i <= 100; i++) {
+    let low = Infinity, high = -Infinity;
+    for (let j = 0; j < 240; j++) {
+      const p = j / 240;
+      const difference = footCycle(p + i / 100).along - footCycle(p).along;
+      low = Math.min(low, difference);
+      high = Math.max(high, difference);
+    }
+    table[0].push(-low);
+    table[1].push(high);
+  }
+  return table;
+})();
+
+export function feetClosing(offset: number, directionX: number) {
+  const normalized = ((offset % 1) + 1) % 1;
+  const index = Math.round(normalized * 100);
+  return directionX >= 0 ? closingTable[0][index] : closingTable[1][index];
+}
 
 export function newGaitState(): GaitState {
   return { phase: 0, direction: [0, 1], amount: 0 };
@@ -53,34 +92,75 @@ export function advanceGait(state: GaitState, travel: [number, number], speedMs:
     const dx = travel[0] / distance, dz = travel[1] / distance;
     // A reversal (forward then straight back) passes through a standstill:
     // take the new direction at once; averaging opposite vectors never flips.
-    if (dx * state.direction[0] + dz * state.direction[1] < -0.3) state.direction = [dx, dz];
-    const k = 0.35;
+    // (Only for real movement: a near-standstill wobble must not flip the
+    // stepping direction back and forth.)
+    // Mirror the cycle too, so reversing does not throw either foot sideways.
+    if (speedMs > 0.4 && dx * state.direction[0] + dz * state.direction[1] < -0.3) {
+      state.direction = [dx, dz];
+      state.phase = (((STANCE - state.phase) % 1) + 1) % 1;
+      state.offset = 1 - (state.offset ?? 0.5);
+    }
+    const k = speedMs > 0.4 ? 0.35 : 0.08;
     const nx = state.direction[0] + (dx - state.direction[0]) * k;
     const nz = state.direction[1] + (dz - state.direction[1]) * k;
     const length = Math.hypot(nx, nz) || 1;
     state.direction = [nx / length, nz / length];
   }
-  // Shorter steps sideways so the feet never cross: a quick shuffle instead.
-  const amplitude = effectiveHalfStride(speedMs, state.direction);
+  // Sideways, the trailing foot steps in toward the lead foot and the stance
+  // widens a little. Change timing only while the second foot is airborne.
+  const sideways = Math.min(1, Math.max(0, (Math.abs(state.direction[0]) - 0.45) / 0.4));
+  const targetOffset = 0.5 - SIDE_SHUFFLE_OFFSET * sideways * Math.sign(state.direction[0]);
+  const offset = state.offset ?? 0.5;
+  const secondFootPhase = (((state.phase + offset) % 1) + 1) % 1;
+  if (secondFootPhase >= STANCE || state.amount < 0.05) {
+    state.offset = offset + Math.max(-0.015, Math.min(0.015, targetOffset - offset));
+  }
+  const spread = state.spread ?? 0;
+  state.spread = spread + (SIDE_SHUFFLE_SPREAD * sideways * state.amount - spread) * 0.08;
+  const amplitude = effectiveHalfStride(speedMs, state.direction, state.offset, state.spread);
+  // Re-time as stride changes so a planted foot stays on the court.
+  const stride = amplitude * state.amount;
+  const previousStride = state.stride ?? stride;
+  if (previousStride > 1e-3 && stride > 1e-3 && Math.abs(stride - previousStride) > 1e-5) {
+    const firstPhase = ((state.phase % 1) + 1) % 1;
+    const secondPhase = (((state.phase + (state.offset ?? 0.5)) % 1) + 1) % 1;
+    const planted = firstPhase < STANCE ? firstPhase : secondPhase < STANCE ? secondPhase : undefined;
+    if (planted !== undefined) {
+      const along = Math.max(-1, Math.min(1, footCycle(planted).along * previousStride / stride));
+      const retimed = ((1 - along) * STANCE) / 2;
+      state.phase = (((state.phase + retimed - planted) % 1) + 1) % 1;
+    }
+  }
+  state.stride = stride;
   // Stance sweeps 2*amplitude over STANCE of a cycle: that rate equals ground speed.
   state.phase = (state.phase + (distance * STANCE) / (2 * amplitude)) % 1;
   return state;
 }
 
-export function effectiveHalfStride(speedMs: number, direction: [number, number]) {
+export function effectiveHalfStride(
+  speedMs: number,
+  direction: [number, number],
+  offset = 0.5,
+  spread = 0,
+) {
   const lateral = Math.abs(direction[0]);
   const base = halfStride(speedMs);
-  return lateral > 1e-3 ? Math.min(base, MAX_LATERAL_REACH / lateral) : base;
+  if (lateral <= 1e-3) return base;
+  const room = 2 * (STANCE_HALF_WIDTH + spread) - MIN_FOOT_GAP;
+  return Math.min(base, room / (feetClosing(offset, direction[0]) * lateral));
 }
 
 /** Foot offsets from each foot's stance position, in the rig's local frame. */
 export function gaitFeet(state: GaitState, speedMs: number): [GaitFoot, GaitFoot] {
-  const amplitude = effectiveHalfStride(speedMs, state.direction) * state.amount;
+  const offset = state.offset ?? 0.5;
+  const spread = state.spread ?? 0;
+  const amplitude = effectiveHalfStride(speedMs, state.direction, offset, spread) * state.amount;
   const height = (0.05 + 0.025 * Math.min(4, speedMs)) * state.amount;
-  return [0, 0.5].map(offset => {
-    const { along, lift } = footCycle(state.phase + offset);
+  return [0, offset].map((cycleOffset, foot) => {
+    const { along, lift } = footCycle(state.phase + cycleOffset);
     return {
-      x: state.direction[0] * amplitude * along,
+      // The first foot is on the -x side, the second on +x.
+      x: state.direction[0] * amplitude * along + (foot === 0 ? -spread : spread),
       z: state.direction[1] * amplitude * along,
       lift: lift * height,
     };
@@ -228,4 +308,54 @@ export function lastShotFrame(
     if (events[i].kind === 'shot' && events[i].player === player) return events[i].frame;
   }
   return undefined;
+}
+
+/**
+ * Smoothed court position and velocity for a player (a "one euro" filter).
+ * TE4's centimetre-quantized samples can jitter enough to shake the gait.
+ */
+export type PositionFilter = { x: number; z: number; vx: number; vz: number; tx?: number; tz?: number };
+
+const lowPassAlpha = (cutoffHz: number, dt: number) => {
+  const tau = 1 / (2 * Math.PI * cutoffHz);
+  return 1 / (1 + tau / dt);
+};
+
+export const POSITION_FILTER = {
+  minCutoffHz: 0.6,
+  beta: 4,
+  trendCutoffHz: 1.5,
+  deadZone: 0.6,
+  velocityCutoffHz: 4,
+};
+
+export function filterCourtPosition(
+  state: PositionFilter | undefined,
+  x: number,
+  z: number,
+  dt: number,
+): PositionFilter {
+  if (!state || !Number.isFinite(dt) || dt > 0.5) return { x, z, vx: 0, vz: 0, tx: 0, tz: 0 };
+  if (!(dt > 0)) return state;
+  const trendAlpha = lowPassAlpha(POSITION_FILTER.trendCutoffHz, dt);
+  const priorTx = state.tx ?? state.vx;
+  const priorTz = state.tz ?? state.vz;
+  const tx = priorTx + ((x - state.x) / dt - priorTx) * trendAlpha;
+  const tz = priorTz + ((z - state.z) / dt - priorTz) * trendAlpha;
+  const cutoff = POSITION_FILTER.minCutoffHz
+    + POSITION_FILTER.beta * Math.max(0, Math.hypot(tx, tz) - POSITION_FILTER.deadZone);
+  const alpha = lowPassAlpha(cutoff, dt);
+  const nextX = state.x + (x - state.x) * alpha;
+  const nextZ = state.z + (z - state.z) * alpha;
+  const velocityAlpha = lowPassAlpha(POSITION_FILTER.velocityCutoffHz, dt);
+  const vx = state.vx + ((nextX - state.x) / dt - state.vx) * velocityAlpha;
+  const vz = state.vz + ((nextZ - state.z) / dt - state.vz) * velocityAlpha;
+  return { x: nextX, z: nextZ, vx, vz, tx, tz };
+}
+
+/** Ease a value toward a target in replay time; seeks and long gaps jump. */
+export function easeToward(previous: number | undefined, target: number, dt: number, seconds: number) {
+  if (previous === undefined || !Number.isFinite(previous) || dt > 0.5) return target;
+  if (!(dt > 0)) return previous;
+  return previous + (target - previous) * (1 - Math.exp(-dt / seconds));
 }

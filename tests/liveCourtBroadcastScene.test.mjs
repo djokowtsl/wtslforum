@@ -499,7 +499,17 @@ test('contacts remain audible when the optional source sound list is empty', () 
   assert.equal(deriveLiveCourtSoundEvents([], [{ frame: 0, kind: 'point-end' }], [], samples).length, 0);
 });
 
-test('court contacts stay compact, and slides use a short recorded squeak instead of noise', () => {
+test('slide footwork stays visual and never enters the court audio queue', () => {
+  const queued = deriveLiveCourtSoundEvents(
+    [{ frame: 8, kind: 'slide' }],
+    [],
+    [{ frame: 8, kind: 'slide', player: 1 }, { frame: 12, kind: 'footstep', player: 1 }],
+    [],
+  );
+  assert.deepEqual(queued, [{ frame: 12, kind: 'footstep', player: 1 }]);
+});
+
+test('court contacts stay compact and slide squeaks are silent', () => {
   const param = () => ({
     value: 0,
     setValueAtTime() {},
@@ -575,18 +585,11 @@ test('court contacts stay compact, and slides use a short recorded squeak instea
     assert.ok(sources[0].playbackRate.value >= 0.97 && sources[0].playbackRate.value <= 1.03);
   }
 
-  const squeak = { duration: 0.522 };
-  const slide = makeContext();
-  playLiveCourtEffect(slide.context, 'slide', 'clay', 0.9, { slide: squeak });
-  assert.equal(slide.sources.length, 1);
-  assert.equal(slide.sources[0].buffer, squeak, 'slides play the bundled recorded shoe squeak');
-  assert.deepEqual(slide.sources[0].startArguments.slice(1), [0.02, 0.14],
-    'the recording is cropped to a brief, clean squeak');
-  assert.ok(slide.sources[0].stoppedAt < 0.16);
-  const missingSqueak = makeContext();
-  playLiveCourtEffect(missingSqueak.context, 'slide', 'clay');
-  assert.equal(missingSqueak.sources.length, 0,
-    'missing squeak audio fails quiet instead of substituting broadband noise');
+  const unwantedSlide = makeContext();
+  playLiveCourtEffect(unwantedSlide.context, 'slide', 'clay', 0.9, {
+    slide: { duration: 0.522 },
+  });
+  assert.equal(unwantedSlide.sources.length, 0, 'slide events stay silent even if an old sample is supplied');
 
   const { context, sources } = makeContext();
   for (const surface of ['hard', 'clay', 'grass']) playLiveCourtEffect(context, 'bounce', surface);
@@ -599,7 +602,7 @@ test('court contacts stay compact, and slides use a short recorded squeak instea
   assert.equal(silent.sources.length, 0, 'zero effects volume remains silent');
 });
 
-test('court effects load clean samples, test directly from a tap, and keep slides brief', async () => {
+test('court effects load only playable samples and sound checks exclude slides', async () => {
   const requestedUrls = [];
   const { samples, missing } = await loadCourtEffectSamples({
     decodeAudioData: async () => ({ duration: 0.25 }),
@@ -608,11 +611,10 @@ test('court effects load clean samples, test directly from a tap, and keep slide
     return { ok: true, arrayBuffer: async () => new ArrayBuffer(32) };
   });
   assert.deepEqual(missing, []);
-  assert.deepEqual(Object.keys(samples).sort(), ['bounce', 'footstep', 'racket', 'slide']);
+  assert.deepEqual(Object.keys(samples).sort(), ['bounce', 'footstep', 'racket']);
   assert.deepEqual(requestedUrls.sort(), [
     '/audio/dmo-ball-bounce.mp3',
     '/audio/dmo-court-footstep.mp3',
-    '/audio/dmo-court-slide.mp3',
     '/audio/dmo-racket-impact.mp3',
   ]);
 
@@ -687,14 +689,11 @@ test('court effects load clean samples, test directly from a tap, and keep slide
   assert.ok(clay.gains[0].gain.value < 0.6, 'footsteps stay quieter than racket and ball contacts');
 
   const soundCheck = makeContext();
-  const longSqueak = { duration: 0.522 };
   playCourtSoundCheck(soundCheck.context, 'clay', 0.5, {
-    racket: sample, bounce: sample, footstep: sample, slide: longSqueak,
+    racket: sample, bounce: sample, footstep: sample,
   });
-  assert.deepEqual(soundCheck.sources.map(source => source.startedAt), [0, 0.36, 0.72, 1.08]);
+  assert.deepEqual(soundCheck.sources.map(source => source.startedAt), [0, 0.36, 0.72]);
   assert.equal(soundCheck.sources[0].buffer, sample);
-  assert.equal(soundCheck.sources[3].buffer, longSqueak, 'slide uses the recorded shoe squeak');
-  assert.deepEqual(soundCheck.sources[3].startArguments, [1.08, 0.02, 0.14]);
 
   const partial = await loadCourtEffectSamples({
     decodeAudioData: async () => ({ duration: 0.25 }),
@@ -704,9 +703,9 @@ test('court effects load clean samples, test directly from a tap, and keep slide
   }));
   assert.deepEqual(partial.missing, ['bounce'], 'unavailable samples are reported for the visible fallback status');
   const audioSource = await readFile(new URL('../lib/liveCourtAudio.ts', import.meta.url), 'utf8');
-  assert.match(audioSource, /slide: '\/audio\/dmo-court-slide\.mp3'/);
-  assert.match(audioSource, /kind === 'slide' && !sample/,
-    'there is no noisy procedural substitute if the shoe sample cannot load');
+  assert.doesNotMatch(audioSource, /dmo-court-slide\.mp3/);
+  assert.match(audioSource, /!Object\.hasOwn\(sampleGain, kind\)/,
+    'legacy slide cues fail closed instead of producing any sound');
 });
 
 test('point and game boundaries do not clear accumulated clay marks', async () => {

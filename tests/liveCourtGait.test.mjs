@@ -204,3 +204,91 @@ test('a walk between points finishes at least a second before the serve', async 
   assert.equal(planReposition({ distance, betweenPoints: true, secondsToNextServe: walkTime + 0.6 }), 'cut',
     'arriving with under a second to spare would mean settling into the stance mid-walk');
 });
+
+test('a side shuffle keeps a natural cadence and the feet apart', () => {
+  for (const speed of [1.5, 3, 4.5]) for (const sign of [1, -1]) {
+    const { minSeparation, state } = run([sign, 0], speed, 600);
+    assert.ok(minSeparation > 0.075, `@${speed} m/s: feet ${minSeparation.toFixed(3)} m apart`);
+    const start = state.phase;
+    const step = speed / 60;
+    let cycles = 0;
+    let last = start;
+    for (let f = 0; f < 120; f++) {
+      advanceGait(state, [sign * step, 0], speed);
+      if (state.phase < last) cycles++;
+      last = state.phase;
+    }
+    assert.ok(cycles / 2 <= (speed <= 3 ? 3.2 : 4.5), `@${speed} m/s: ${cycles / 2} step cycles per second`);
+  }
+});
+
+test('changing direction sideways never brings the feet together or crosses them', () => {
+  const state = newGaitState();
+  let minSeparation = Infinity;
+  for (let f = 0; f < 900; f++) {
+    const speed = 2.5;
+    const sign = Math.floor(f / 45) % 2 === 0 ? 1 : -1;
+    advanceGait(state, [sign * speed / 60, 0], speed);
+    const feet = gaitFeet(state, speed);
+    if (f > 30) minSeparation = Math.min(minSeparation, 0.30 + feet[1].x - feet[0].x);
+  }
+  assert.ok(minSeparation > 0.075, `feet ${minSeparation.toFixed(3)} m apart`);
+});
+
+test('position filter smooths sample jitter but keeps up with a sprint', async () => {
+  const { filterCourtPosition } = await import('../lib/liveCourtGait.ts');
+  let state;
+  let seed = 3;
+  const rand = () => ((seed = (seed * 16807) % 2147483647) / 2147483647) * 2 - 1;
+  let maxMove = 0;
+  let previous;
+  for (let f = 0; f < 240; f++) {
+    state = filterCourtPosition(state, rand() * 0.02, rand() * 0.02, 1 / 60);
+    if (previous && f > 30) maxMove = Math.max(maxMove, Math.hypot(state.x - previous.x, state.z - previous.z));
+    previous = state;
+  }
+  assert.ok(maxMove < 0.005, `still: moved ${maxMove.toFixed(4)} m in a frame`);
+  state = undefined;
+  for (let f = 0; f < 120; f++) state = filterCourtPosition(state, (f / 60) * 5, 0, 1 / 60);
+  assert.ok(119 / 60 * 5 - state.x < 0.1, `lag ${(119 / 60 * 5 - state.x).toFixed(3)} m`);
+  assert.ok(Math.abs(state.vx - 5) < 0.2);
+});
+
+test('reversing direction does not move the feet', () => {
+  for (const [a, b] of [[[1, 0], [-1, 0]], [[0, 1], [0, -1]]]) {
+    const state = newGaitState();
+    for (let f = 0; f < 90; f++) advanceGait(state, [a[0] * 2.5 / 60, a[1] * 2.5 / 60], 2.5);
+    const before = gaitFeet(state, 2.5);
+    advanceGait(state, [b[0] * 1e-4, b[1] * 1e-4], 2.5);
+    const after = gaitFeet(state, 2.5);
+    for (let k = 0; k < 2; k++) {
+      const moved = Math.hypot(after[k].x - before[k].x, after[k].z - before[k].z);
+      assert.ok(moved < 0.01, `foot ${k} jumped ${moved.toFixed(3)} m on reversal`);
+    }
+  }
+});
+
+test('speeding up does not drag the planted foot', () => {
+  const state = newGaitState();
+  let body = 0;
+  let worst = 0;
+  let total = 0;
+  let previous = null;
+  for (let f = 0; f < 120; f++) {
+    const speed = Math.min(4, 0.5 + f * 0.06);
+    body += speed / 60;
+    advanceGait(state, [0, speed / 60], speed);
+    const feet = gaitFeet(state, speed);
+    const world = feet.map(foot => ({ z: body + foot.z, lift: foot.lift }));
+    if (previous && f > 20) for (let k = 0; k < 2; k++) {
+      if (world[k].lift === 0 && previous[k].lift === 0) {
+        const slid = Math.abs(world[k].z - previous[k].z);
+        worst = Math.max(worst, slid);
+        total += slid;
+      }
+    }
+    previous = world;
+  }
+  assert.ok(total < 0.04, `planted feet slid ${total.toFixed(3)} m in all while accelerating`);
+  assert.ok(worst < 0.015, `planted foot slid ${worst.toFixed(4)} m in a frame while accelerating`);
+});
