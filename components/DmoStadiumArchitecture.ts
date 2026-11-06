@@ -390,29 +390,12 @@ export function buildStadiumArchitecture(initialScoreboard?: StadiumScoreboardDa
     new THREE.MeshStandardMaterial({ color: 0x3b494b, roughness: 0.82 }),
     totalSeats,
   );
-  const bodyMesh = new THREE.InstancedMesh(
-    new THREE.SphereGeometry(0.5, 8, 6),
-    new THREE.MeshStandardMaterial({ color: 0xffffff, roughness: 0.88 }),
-    occupiedSeats,
-  );
-  const headMesh = new THREE.InstancedMesh(
-    new THREE.SphereGeometry(0.5, 8, 6),
-    new THREE.MeshStandardMaterial({ color: 0xffffff, roughness: 0.78 }),
-    occupiedSeats,
-  );
   seatMesh.name = 'wtsl-continuous-bowl-seats';
   seatBackMesh.name = 'wtsl-continuous-bowl-seat-backs';
-  bodyMesh.name = 'wtsl-continuous-bowl-spectator-bodies';
-  headMesh.name = 'wtsl-continuous-bowl-spectator-heads';
   seatMesh.userData = { rows: upperSeatRows.length, inwardFacing: true, occupied: occupiedSeats };
   seatBackMesh.userData = { rows: upperSeatRows.length, inwardFacing: true, occupied: occupiedSeats };
-  bodyMesh.userData = { rows: upperSeatRows.length, density: occupiedSeats / totalSeats };
-  headMesh.userData = { rows: upperSeatRows.length, density: occupiedSeats / totalSeats };
   const seatTransform = new THREE.Object3D();
   let seatIndex = 0;
-  let spectatorIndex = 0;
-  const shirtColors = [0xc96b52, 0x397e75, 0xd7b253, 0x526b98, 0xefe0c8, 0x885e80, 0x465754];
-  const skinColors = [0xf1c2a0, 0xd8a17c, 0x9e684c, 0xe0b090];
   for (const row of upperSeatRows) {
     const y = baseY + row.row * rowRise + rowRise / 2;
     for (let index = 0; index < row.count; index += 1) {
@@ -435,29 +418,9 @@ export function buildStadiumArchitecture(initialScoreboard?: StadiumScoreboardDa
       seatTransform.updateMatrix();
       seatBackMesh.setMatrixAt(seatIndex, seatTransform.matrix);
       seatIndex += 1;
-
-      if ((row.row * 13 + index * 7) % 12 === 0) continue;
-      seatTransform.position.set(x, y + 0.47, z);
-      seatTransform.rotation.set(0, facing, 0);
-      seatTransform.scale.set(0.62, 0.98, 0.56);
-      seatTransform.updateMatrix();
-      bodyMesh.setMatrixAt(spectatorIndex, seatTransform.matrix);
-      bodyMesh.setColorAt(
-        spectatorIndex,
-        new THREE.Color(shirtColors[(row.row * 5 + index * 3) % shirtColors.length]),
-      );
-      seatTransform.position.set(x, y + 1.02, z);
-      seatTransform.scale.set(0.42, 0.45, 0.42);
-      seatTransform.updateMatrix();
-      headMesh.setMatrixAt(spectatorIndex, seatTransform.matrix);
-      headMesh.setColorAt(
-        spectatorIndex,
-        new THREE.Color(skinColors[(row.row * 3 + index) % skinColors.length]),
-      );
-      spectatorIndex += 1;
     }
   }
-  for (const mesh of [seatMesh, seatBackMesh, bodyMesh, headMesh]) {
+  for (const mesh of [seatMesh, seatBackMesh]) {
     mesh.instanceMatrix.needsUpdate = true;
     mesh.castShadow = false;
     mesh.receiveShadow = true;
