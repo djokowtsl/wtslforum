@@ -14,9 +14,11 @@ import DmoLiveDisplay from './DmoLiveDisplay';
 import LiveBroadcastChat from './LiveBroadcastComments';
 import LiveStreamEmbed from './LiveStreamEmbed';
 import Te4DmoReplayPlayer from './Te4DmoReplayPlayer';
+import VoiceRoom from './VoiceRoom';
+import { voiceRoomForBroadcast } from '@/lib/voiceRoomToken';
 import styles from './DmoLiveViewer.module.css';
 
-type Props = { canWatch: boolean };
+type Props = { canWatch: boolean; voiceServer?: string };
 
 type Broadcast = {
   id: string;
@@ -66,7 +68,7 @@ function mergePointLog(existing: Te4LivePoint[], incoming: Te4LivePoint[]) {
   return [...pointsByNumber.values()].sort((first, second) => first.number - second.number);
 }
 
-export default function DmoLiveViewer({ canWatch }: Props) {
+export default function DmoLiveViewer({ canWatch, voiceServer = '' }: Props) {
   const [broadcasts, setBroadcasts] = useState<Broadcast[]>([]);
   const [pointLogs, setPointLogs] = useState<Record<string, PointLogState>>({});
   const [preMatchPredictions, setPreMatchPredictions] = useState<Record<string, LivePreMatchProbability | null>>({});
@@ -374,6 +376,7 @@ export default function DmoLiveViewer({ canWatch }: Props) {
           {broadcasts.map((broadcast) => {
             const players = broadcast.snapshot?.players ?? broadcast.players;
             const mediaMode = liveBroadcastMediaMode(broadcast.stream, Boolean(broadcast.snapshot));
+            const voiceRoom = voiceRoomForBroadcast(broadcast.id);
             return (
               <article
                 className="live-broadcast-card"
@@ -536,6 +539,12 @@ export default function DmoLiveViewer({ canWatch }: Props) {
                       ? 'The live court view will appear shortly.'
                       : 'This broadcast ended before DMO court data became available.'}</p>
                   </div>
+                )}
+                {voiceServer && voiceRoom && broadcast.status === 'live' && !broadcast.replay && broadcast.stream && (
+                  <VoiceRoom
+                    room={voiceRoom}
+                    server={voiceServer}
+                  />
                 )}
                 <LiveBroadcastChat broadcastId={broadcast.id} />
               </article>
