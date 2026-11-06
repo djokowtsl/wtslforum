@@ -170,52 +170,17 @@ export function buildStadiumEnvironment(scene: THREE.Scene, indoor = false) {
   if (existing && scene.userData.wtslStadiumIndoor === indoor) return;
   existing?.removeFromParent();
   scene.getObjectByName('wtsl-open-sky')?.removeFromParent();
-  scene.background = new THREE.Color(indoor ? 0x444f55 : 0x9babb0);
-  scene.fog = new THREE.Fog(indoor ? 0x444f55 : 0x9babb0, 82, 205);
+  // Keep the horizon inside the arena palette in every venue mode. The bowl
+  // itself closes the view; there is no outdoor sky or landscape backdrop.
+  scene.background = new THREE.Color(0x26383b);
+  scene.fog = new THREE.Fog(0x26383b, 82, 205);
   scene.userData.wtslStadiumIndoor = indoor;
   const stadium = new THREE.Group();
   stadium.name = 'wtsl-stadium-architecture';
-  if (!indoor) {
-    const skyGeometry = new THREE.SphereGeometry(180, 48, 24, 0, Math.PI * 2, 0, Math.PI / 2);
-    const skyPositions = skyGeometry.getAttribute('position');
-    const skyColors: number[] = [];
-    const horizon = new THREE.Color(0xc7d2ce);
-    const zenith = new THREE.Color(0x668797);
-    for (let index = 0; index < skyPositions.count; index += 1) {
-      const height = THREE.MathUtils.clamp(skyPositions.getY(index) / 180, 0, 1);
-      const color = horizon.clone().lerp(zenith, Math.pow(height, 0.72));
-      skyColors.push(color.r, color.g, color.b);
-    }
-    skyGeometry.setAttribute('color', new THREE.Float32BufferAttribute(skyColors, 3));
-    const sky = new THREE.Mesh(skyGeometry, new THREE.MeshBasicMaterial({
-      vertexColors: true, side: THREE.BackSide, depthWrite: false, fog: false,
-    }));
-    sky.name = 'wtsl-open-sky';
-    sky.renderOrder = -10;
-    scene.add(sky);
-  }
   const steel = material(0x3f5051, 0.62);
   const lamp = new THREE.MeshStandardMaterial({
     color: 0xe8dfca, emissive: 0xffe6b9, emissiveIntensity: 0.52, roughness: 0.42,
   });
-  if (indoor) {
-    // An inward-facing ceiling gives indoor courts a roof overhead without
-    // becoming an opaque exterior lid when the camera orbits above it.
-    const roof = new THREE.Mesh(
-      new THREE.PlaneGeometry(74, 56),
-      new THREE.MeshBasicMaterial({
-        color: 0x59666b,
-        side: THREE.FrontSide,
-        toneMapped: false,
-      }),
-    );
-    roof.name = 'wtsl-indoor-ceiling';
-    roof.rotation.x = Math.PI / 2;
-    roof.position.set(0, 15, 0);
-    roof.castShadow = false;
-    roof.receiveShadow = false;
-    stadium.add(roof);
-  }
   for (const x of [-22, 22]) {
     const mast = addBox(stadium, [0.32, 13.5, 0.32], [x, 6.75, 0], steel);
     mast.castShadow = false;
@@ -362,9 +327,10 @@ export function buildCourt(scene: THREE.Scene, surface: Te4CourtSurface) {
   const halfWidth = COURT_WIDTH / 2;
   const singlesHalfWidth = SINGLES_WIDTH / 2;
   const ground = new THREE.Mesh(
-    new THREE.PlaneGeometry(300, 300),
+    new THREE.PlaneGeometry(50, 36),
     material(0x607a78),
   );
+  ground.name = 'wtsl-court-apron';
   ground.rotation.x = -Math.PI / 2;
   ground.position.y = -0.12;
   ground.receiveShadow = true;
@@ -1001,53 +967,6 @@ export function buildCrowd(scene: THREE.Scene) {
     update: (time, applauding, ballPosition) => (detailedUpdate ?? updateApplausePose)(time, applauding, ballPosition),
   };
 
-  // A low, open-sided retaining bowl gives the seating a clear stadium boundary
-  // without placing a roof or scoreboard in aerial and TV camera sightlines.
-  const structure = new THREE.MeshStandardMaterial({ color: 0x354c4e, roughness: 0.84 });
-  const fascia = new THREE.MeshStandardMaterial({ color: 0x8b9586, roughness: 0.76 });
-  const enclosureHeight = 2.1;
-  const sideWalls = [-1, 1].map((side) => addBox(
-    scene,
-    [49, enclosureHeight, 0.45],
-    [0, enclosureHeight / 2, side * 18.3],
-    structure,
-  ));
-  const endWalls = [-1, 1].map((end) => addBox(
-    scene,
-    [0.45, enclosureHeight, 37],
-    [end * 27.8, enclosureHeight / 2, 0],
-    structure,
-  ));
-  for (const wall of [...sideWalls, ...endWalls]) {
-    wall.castShadow = false;
-    wall.receiveShadow = true;
-  }
-  for (const side of [-1, 1]) {
-    const cap = addBox(scene, [49.2, 0.12, 0.55], [0, enclosureHeight + 0.06, side * 18.3], fascia);
-    cap.castShadow = false;
-    for (let index = -2; index <= 2; index += 1) {
-      const rib = addBox(
-        scene,
-        [0.16, enclosureHeight - 0.18, 0.55],
-        [index * 9, enclosureHeight / 2, side * 18.3],
-        fascia,
-      );
-      rib.castShadow = false;
-    }
-  }
-  for (const end of [-1, 1]) {
-    const cap = addBox(scene, [0.55, 0.12, 37.2], [end * 27.8, enclosureHeight + 0.06, 0], fascia);
-    cap.castShadow = false;
-    for (let index = -1; index <= 1; index += 1) {
-      const rib = addBox(
-        scene,
-        [0.55, enclosureHeight - 0.18, 0.16],
-        [end * 27.8, enclosureHeight / 2, index * 11],
-        fascia,
-      );
-      rib.castShadow = false;
-    }
-  }
   return crowdRig;
 }
 
