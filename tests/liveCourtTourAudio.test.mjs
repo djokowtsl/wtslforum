@@ -36,14 +36,28 @@ test('WTA live courts use a dedicated female effort-grunt sample', async () => {
   assert.match(threeCourt, /gruntAudioRef\.current\?\.isWta === isWta/);
 });
 
-test('the 2D fallback uses the same WTA sample and a higher-register synthetic fallback', () => {
+test('the 2D fallback uses the same WTA sample and recorded court effects', () => {
   assert.match(fallbackCourt, /isWta \? 260 : 150/);
   assert.match(fallbackCourt, /isWta \? 520 : 340/);
   assert.match(fallbackCourt, /fetch\(liveGruntAudioUrl\(true\)\)/);
-  assert.match(fallbackCourt, /playLiveCourtCue\(context, cue, activeGruntVoicesRef\.current, isWta, wtaGruntAudioRef\.current\)/);
+  assert.match(fallbackCourt, /playLiveCourtCue\(context, cue, activeGruntVoicesRef\.current, isWta,[\s\S]*?courtEffectSamplesRef\.current\)/);
+  assert.match(fallbackCourt, /deriveLiveCourtFootworkEvents\(/);
+  assert.match(fallbackCourt, /playLiveCourtEffect\(context, kind, surface, 0\.9, courtEffectSamples\)/);
 });
 
-test('court surface labels and procedural impact sounds stay distinct', () => {
+test('generated tennis effect samples stay compact and surface labels remain distinct', async () => {
+  for (const file of [
+    'dmo-racket-impact.mp3',
+    'dmo-ball-bounce.mp3',
+    'dmo-court-footstep.mp3',
+    'dmo-court-slide.mp3',
+  ]) {
+    const asset = await stat(new URL(`../public/audio/${file}`, import.meta.url));
+    assert.ok(asset.size > 1_000 && asset.size < 20_000, `${file} is a small, bundled court cue`);
+  }
+  assert.match(threeCourt, /loadCourtEffectSamples\(context\)/);
+  assert.match(threeCourt, /courtEffectSamplesRef\.current/);
+
   const surfaces = ['clay', 'grass', 'hard', 'unknown'];
   const profiles = surfaces.map((surface) => courtSurfaceSoundProfile(surface));
 

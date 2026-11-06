@@ -3,6 +3,7 @@ import type { LiveCourtFootworkEvent, LiveCourtMotionEvent, LiveCourtSample } fr
 import { courtSurfaceSoundProfile } from './te4DmoSurface';
 
 export type CourtEffectKind = 'racket' | 'bounce' | 'footstep' | 'slide';
+export type CourtEffectSamples = Partial<Record<CourtEffectKind, AudioBuffer>>;
 export type CourtSoundEvent = { frame: number; kind: CourtEffectKind; player?: 1 | 2 };
 
 /** Fill missing contact cues from the same recorded timeline used for animation. */
@@ -52,6 +53,36 @@ export function deriveLiveCourtSoundEvents(
 
 const effectBuffers = new WeakMap<BaseAudioContext, Map<string, AudioBuffer[]>>();
 const effectBuses = new WeakMap<BaseAudioContext, DynamicsCompressorNode>();
+const courtEffectAssets: Record<CourtEffectKind, string> = {
+  racket: '/audio/dmo-racket-impact.mp3',
+  bounce: '/audio/dmo-ball-bounce.mp3',
+  footstep: '/audio/dmo-court-footstep.mp3',
+  slide: '/audio/dmo-court-slide.mp3',
+};
+
+export async function loadCourtEffectSamples(
+  context: BaseAudioContext,
+  fetcher: (url: string) => Promise<Response> = url => fetch(url),
+): Promise<{ samples: CourtEffectSamples; missing: CourtEffectKind[] }> {
+  const results = await Promise.all(
+    (Object.entries(courtEffectAssets) as Array<[CourtEffectKind, string]>).map(async ([kind, url]) => {
+      try {
+        const response = await fetcher(url);
+        if (!response.ok) throw new Error(`Court sound unavailable: ${kind}`);
+        return { kind, buffer: await context.decodeAudioData(await response.arrayBuffer()) };
+      } catch {
+        return { kind, buffer: null };
+      }
+    }),
+  );
+  const samples: CourtEffectSamples = {};
+  const missing: CourtEffectKind[] = [];
+  for (const { kind, buffer } of results) {
+    if (buffer) samples[kind] = buffer;
+    else missing.push(kind);
+  }
+  return { samples, missing };
+}
 
 function effectsBus(context: BaseAudioContext) {
   const existing = effectBuses.get(context);
@@ -185,25 +216,48 @@ function courtEffectVariants(
   return variants;
 }
 
-/** Natural, varied short impacts with distinct surface timbres and no long noise tails. */
+const sampleSurfacePitch: Record<Te4CourtSurface, number> = {
+  hard: 1.02,
+  clay: 0.97,
+  grass: 0.94,
+  unknown: 1,
+};
+
+const sampleGain: Record<CourtEffectKind, number> = {
+  racket: 0.82,
+  bounce: 0.78,
+  footstep: 0.56,
+  slide: 0.52,
+};
+
+/** Play short recorded court cues, retaining surface-specific EQ and a procedural fallback. */
 export function playLiveCourtEffect(
   context: BaseAudioContext,
   kind: CourtEffectKind,
   surface: Te4CourtSurface,
   volume = 0.9,
+  samples: CourtEffectSamples = {},
 ) {
   const level = Math.max(0, Math.min(1, Number.isFinite(volume) ? volume : 0));
   if (level <= 0) return;
-  const variants = courtEffectVariants(context, kind, surface);
-  const buffer = variants[Math.floor(Math.random() * variants.length)];
+  const sample = samples[kind];
+  const variants = sample ? null : courtEffectVariants(context, kind, surface);
+  const buffer = sample ?? variants![Math.floor(Math.random() * variants!.length)];
   const now = context.currentTime;
   const source = context.createBufferSource();
   const output = context.createGain();
   source.buffer = buffer;
-  source.playbackRate.value = 0.97 + Math.random() * 0.06;
-  output.gain.value = level * (0.94 + Math.random() * 0.1);
+  source.playbackRate.value = sample
+    ? sampleSurfacePitch[surface] * (0.99 + Math.random() * 0.02)
+    : 0.97 + Math.random() * 0.06;
+  output.gain.value = sample
+    ? level * sampleGain[kind] * (0.96 + Math.random() * 0.08)
+    : level * (0.94 + Math.random() * 0.1);
   source.connect(output).connect(effectsBus(context));
   source.start(now);
   source.stop(now + buffer.duration);
-  source.onended = () => { source.disconnect(); output.disconnect(); };
+  source.onended = () => {
+    source.disconnect();
+    output.disconnect();
+  };
 }
