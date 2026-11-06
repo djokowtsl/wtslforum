@@ -407,11 +407,23 @@ export function attachNativePlayer(
       const elbowPreference = proceduralGrip.clone().sub(grips[dominant].centre.clone().multiplyScalar(BODY_SCALE)
         .applyQuaternion(desired)).addScaledVector(grips[dominant].forward.clone().applyQuaternion(desired), -arms[dominant].lengths[1])
         .add(new THREE.Vector3(0, -0.08, -0.04));
+      // This is the live renderer's default implementation. Keep the r11
+      // locomotion correction here as well as in the comparison implementation.
+      const chestTurn = pose.rotation('spine_03').multiply(pose.rest.get('spine_03')!.rotation.clone().invert());
+      const relaxedCarry = THREE.MathUtils.clamp(Number(rig.root.userData.relaxedCarry ?? 0), 0, 1);
+      if (relaxedCarry > 0) {
+        const outward = dominant === 'l' ? 1 : -1;
+        const hangingElbow = pose.point(arms[dominant].root).lerp(proceduralGrip, 0.5)
+          .add(new THREE.Vector3(outward * 0.04, 0, -0.14).applyQuaternion(chestTurn));
+        elbowPreference.lerp(hangingElbow, relaxedCarry);
+      }
       reachArm(dominant, proceduralGrip, null, desired, elbowPreference);
-      const arm = support === 'l' ? rig.leftArm : rig.rightArm;
       const forearm = support === 'l' ? rig.leftForearm : rig.rightForearm;
-      const [, elbowHint] = ends(arm), [, relaxedWrist] = ends(forearm);
-      reachArm(support, null, relaxedWrist, null, elbowHint);
+      const [, relaxedWrist] = ends(forearm);
+      const outward = support === 'l' ? 1 : -1;
+      const relaxedElbow = pose.point(arms[support].root).lerp(relaxedWrist, 0.5)
+        .add(new THREE.Vector3(outward * 0.02, 0, -0.14).applyQuaternion(chestTurn));
+      reachArm(support, null, relaxedWrist, null, relaxedElbow);
     }
 
     // 2. Captured stroke motion blends over the whole body, arms included:

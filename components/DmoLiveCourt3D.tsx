@@ -261,7 +261,7 @@ function ThreeCourt({
   const [crowdVolume, setCrowdVolume] = useState(0.24);
   const [effectsVolume, setEffectsVolume] = useState(0.9);
   const [hasCourtData, setHasCourtData] = useState(snapshot.court.length > 0);
-  const [modelStatus, setModelStatus] = useState<'loading' | 'ready' | 'failed'>('loading');
+  const [modelStatus, setModelStatus] = useState<'loading' | 'ready' | 'partial' | 'failed'>('loading');
   const surfaceLabel = courtSurfaceDisplayName(surface);
   const [shotCallout, setShotCallout] = useState<{
     player: string;
@@ -512,6 +512,7 @@ function ThreeCourt({
     });
     players.forEach(({ root }) => scene.add(root));
     const modelLoad = new AbortController();
+    let detailedPlayersReady = false;
     setModelStatus('loading');
     Promise.allSettled([
       loadHumanModel(isWta ? 'female' : 'male', 'player', modelLoad.signal, modelAssetBase),
@@ -524,6 +525,7 @@ function ThreeCourt({
         if (player.status === 'fulfilled') {
           attachHumanPlayer(player.value, players[0], PALETTE.shirtOne, undefined, undefined, BROADCAST_PLAYER_KITS[0], 0);
           attachHumanPlayer(player.value, players[1], PALETTE.shirtTwo, undefined, undefined, BROADCAST_PLAYER_KITS[1], 1);
+          detailedPlayersReady = true;
         }
         if (maleCrowd.status === 'fulfilled' && femaleCrowd.status === 'fulfilled') {
           const crowdTemplates: [THREE.Group, THREE.Group] = [maleCrowd.value, femaleCrowd.value];
@@ -546,7 +548,7 @@ function ThreeCourt({
     }).catch((error: unknown) => {
       if (modelLoad.signal.aborted) return;
       console.error('Detailed DMO character models could not load.', error);
-      setModelStatus('failed');
+      setModelStatus(detailedPlayersReady ? 'partial' : 'failed');
     });
     const ball = new THREE.Mesh(
       new THREE.SphereGeometry(BALL_RADIUS, 18, 14),
@@ -2139,6 +2141,8 @@ function ThreeCourt({
         <p className={styles.modelStatus} role="status">
           {modelStatus === 'loading'
             ? 'Loading textured character models…'
+            : modelStatus === 'partial'
+              ? 'Detailed players loaded; some crowd or staff models could not load.'
             : 'Detailed characters could not load. Simplified reconstruction is shown.'}
         </p>
       )}

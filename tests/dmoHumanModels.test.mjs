@@ -264,6 +264,34 @@ test('retargeted limb directions match the capture rather than its first-frame d
   }
 });
 
+test('the default live player uses the corrected free-arm plane instead of legacy elbow hints', async () => {
+  const template = await nativePlayerTemplate('male');
+  for (const handedness of ['right', 'left']) {
+    const rig = sceneApi.makePlayer(0x275c77, 0x203d48);
+    rig.root.userData.dominantHandedness = handedness;
+    rig.root.userData.relaxedCarry = 1;
+    const attached = humans.attachHumanPlayer(template, rig, 0x275c77);
+    const support = handedness === 'right' ? 'l' : 'r';
+    const sign = support === 'l' ? 1 : -1;
+    const arm = support === 'l' ? rig.leftArm : rig.rightArm;
+    const forearm = support === 'l' ? rig.leftForearm : rig.rightForearm;
+    const shoulder = new THREE.Vector3(sign * 0.23, 1.44, 0);
+    const wrist = new THREE.Vector3(sign * 0.22, 0.78, 0.05);
+    const results = [];
+    for (const legacyElbow of [
+      new THREE.Vector3(sign * 0.6, 1.35, 0.2),
+      new THREE.Vector3(sign * 0.25, 1.1, -0.1),
+    ]) {
+      sceneApi.poseLimb(arm, shoulder, legacyElbow);
+      sceneApi.poseLimb(forearm, legacyElbow, wrist);
+      attached.update();
+      results.push(attached.pose.point(`lowerarm_${support}`).clone());
+    }
+    assert.ok(results[0].distanceTo(results[1]) < 1e-6,
+      `${handedness}: the production default must ignore the old flared elbow hint`);
+  }
+});
+
 test('native grip survives repeated full-body resets and shoes use bind-relative axes', async () => {
   const template = await nativePlayerTemplate('male');
   for (const handedness of ['right', 'left']) {
