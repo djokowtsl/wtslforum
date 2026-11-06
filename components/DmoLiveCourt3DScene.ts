@@ -484,522 +484,251 @@ export function buildCourt(scene: THREE.Scene, surface: Te4CourtSurface) {
   return surfaceEffects;
 }
 
-export function buildCrowd(scene: THREE.Scene) {
-  const spectators: Array<{ x: number; z: number; row: number; facing: number; sourceIndex: number }> = [];
-  const rowStep = 0.66;
-  const platformBaseY = (row: number) => 0.05 + row * rowStep;
-  const rowSpacing = 0.82;
+function buildUnifiedCrowd(scene: THREE.Scene): CrowdRig {
+  const seats: CrowdRig['seats'] = [];
+  const nearSeats: CrowdRig['seats'] = [];
   const tunnelHalfWidth = 2.5;
-  for (let row = 0; row < 7; row += 1) {
-    let rowSeatIndex = 0;
-    for (const side of [-1, 1]) {
-      for (let index = 0; index < 32; index += 1) {
-        const x = -14.2 + (index / 31) * 28.4;
-        const sourceIndex = row * 96 + rowSeatIndex++;
-        if (Math.abs(x) < tunnelHalfWidth) continue;
-        spectators.push({
-          x,
-          z: side * (12 + row * rowSpacing),
-          row,
-          facing: side > 0 ? Math.PI : 0,
-          sourceIndex,
-        });
+  const lowerRows = 4;
+  const lowerRowRise = 0.53;
+  const lowerRowRun = 1.62;
+  let lowerSeatIndex = 0;
+  const addNearSeat = (x: number, z: number, row: number, facing: number) => {
+    const seat = {
+      x, z, row, facing,
+      y: 0.05 + row * lowerRowRise,
+      sourceIndex: row * 10_000 + lowerSeatIndex++,
+    };
+    seats.push(seat);
+    nearSeats.push(seat);
+  };
+
+  // The first four rows are a continuous, human-scaled ring immediately
+  // outside the clear runoff. Each side has its own centered access aisle.
+  for (let row = 0; row < lowerRows; row += 1) {
+    const halfWidth = 22 + row * lowerRowRun;
+    const halfDepth = 12 + row * lowerRowRun;
+    const corner = 1.3;
+    const addRun = (
+      from: number,
+      to: number,
+      spacing: number,
+      place: (value: number) => void,
+      skipCenter: boolean,
+    ) => {
+      const count = Math.max(1, Math.floor(Math.abs(to - from) / spacing));
+      for (let index = 0; index <= count; index += 1) {
+        const value = from + (to - from) * index / count;
+        if (skipCenter && Math.abs(value) < tunnelHalfWidth) continue;
+        place(value);
       }
-    }
-    for (const end of [-1, 1]) {
-      for (let index = 0; index < 16; index += 1) {
-        const z = -7.2 + (index / 15) * 14.4;
-        const sourceIndex = row * 96 + rowSeatIndex++;
-        if (Math.abs(z) < tunnelHalfWidth) continue;
-        spectators.push({
-          x: end * (22.25 + row * rowSpacing),
-          z,
-          row,
-          facing: end > 0 ? -Math.PI / 2 : Math.PI / 2,
-          sourceIndex,
-        });
+    };
+    addRun(-halfWidth, halfWidth, 0.92, (x) => addNearSeat(x, -halfDepth, row, 0), true);
+    addRun(-halfWidth, halfWidth, 0.92, (x) => addNearSeat(x, halfDepth, row, Math.PI), true);
+    addRun(-halfDepth, halfDepth, 0.92, (z) => addNearSeat(halfWidth + corner, z, row, -Math.PI / 2), true);
+    addRun(-halfDepth, halfDepth, 0.92, (z) => addNearSeat(-halfWidth - corner, z, row, Math.PI / 2), true);
+    for (const xSign of [-1, 1]) {
+      for (const zSign of [-1, 1]) {
+        for (const fraction of [0.28, 0.72]) {
+          addNearSeat(
+            xSign * (halfWidth + corner * fraction),
+            zSign * (halfDepth + corner * fraction),
+            row,
+            zSign > 0
+              ? (xSign > 0 ? -Math.PI * 0.75 : Math.PI * 0.75)
+              : (xSign > 0 ? -Math.PI * 0.25 : Math.PI * 0.25),
+          );
+        }
       }
     }
   }
 
-  for (let row = 0; row < 7; row += 1) {
-    const y = platformBaseY(row);
-    const platformMaterial = material(row % 2 === 0 ? PALETTE.stands : 0x333e4e, 0.96);
-    for (const side of [-1, 1]) {
-      const segmentLength = (30.2 - tunnelHalfWidth * 2) / 2;
-      for (const direction of [-1, 1]) {
-        const platform = addBox(
-          scene,
-          [segmentLength, 0.12, 0.72],
-          [direction * (tunnelHalfWidth + segmentLength / 2), y, side * (12 + row * rowSpacing)],
-          platformMaterial,
-        );
-        platform.castShadow = false;
-      }
-    }
-    for (const end of [-1, 1]) {
-      const segmentLength = (15.6 - tunnelHalfWidth * 2) / 2;
-      for (const direction of [-1, 1]) {
-        const platform = addBox(
-          scene,
-          [0.72, 0.12, segmentLength],
-          [end * (22.25 + row * rowSpacing), y, direction * (tunnelHalfWidth + segmentLength / 2)],
-          platformMaterial,
-        );
-        platform.castShadow = false;
-      }
+  // Match the upper bowl's three-tier seating rake, but place every person
+  // into the same animated crowd rig as the new continuous near-court rows.
+  const innerX = 27.8;
+  const innerZ = 18.8;
+  const rowWidth = 1.62;
+  const rowRise = 0.94;
+  const concourseWidth = 2.15;
+  const tierRows = 6;
+  const rowRadiusStart = (row: number) => row * rowWidth + Math.floor(row / tierRows) * concourseWidth;
+  const baseY = 2.7;
+  for (let upperRow = 0; upperRow < 18; upperRow += 1) {
+    const radius = rowRadiusStart(upperRow) + rowWidth / 2;
+    const ellipseX = innerX + radius;
+    const ellipseZ = innerZ + radius;
+    const count = Math.round((Math.PI * 2 * ((ellipseX + ellipseZ) / 2)) / 0.86);
+    for (let index = 0; index < count; index += 1) {
+      const angle = (index / count) * Math.PI * 2;
+      const x = Math.cos(angle) * ellipseX;
+      const z = Math.sin(angle) * ellipseZ;
+      // Keep the four centered bowl passageways clear on every upper tier.
+      if (Math.abs(x) < tunnelHalfWidth || Math.abs(z) < tunnelHalfWidth) continue;
+      seats.push({
+        x,
+        z,
+        row: lowerRows + upperRow,
+        facing: Math.atan2(-Math.cos(angle), -Math.sin(angle)),
+        y: baseY + upperRow * rowRise,
+        sourceIndex: (lowerRows + upperRow) * 10_000 + index,
+      });
     }
   }
 
-  const seatMesh = new THREE.InstancedMesh(
-    new THREE.BoxGeometry(0.45, 0.1, 0.42),
+  const nearSeatMesh = new THREE.InstancedMesh(
+    new THREE.BoxGeometry(0.46, 0.1, 0.42),
     material(0x334146, 0.86),
-    spectators.length,
+    nearSeats.length,
   );
-  const seatBackMesh = new THREE.InstancedMesh(
-    new THREE.BoxGeometry(0.45, 0.48, 0.08),
+  const nearSeatBackMesh = new THREE.InstancedMesh(
+    new THREE.BoxGeometry(0.46, 0.48, 0.08),
     material(0x3b494b, 0.82),
-    spectators.length,
+    nearSeats.length,
   );
+  nearSeatMesh.name = 'wtsl-unified-near-bowl-seats';
+  nearSeatBackMesh.name = 'wtsl-unified-near-bowl-seat-backs';
+  const transform = new THREE.Object3D();
+  nearSeats.forEach((seat, index) => {
+    transform.position.set(seat.x, seat.y + 0.38, seat.z);
+    transform.rotation.set(0, seat.facing, 0);
+    transform.scale.set(1, 1, 1);
+    transform.updateMatrix();
+    nearSeatMesh.setMatrixAt(index, transform.matrix);
+    transform.position.set(
+      seat.x - Math.sin(seat.facing) * 0.16,
+      seat.y + 0.72,
+      seat.z - Math.cos(seat.facing) * 0.16,
+    );
+    transform.updateMatrix();
+    nearSeatBackMesh.setMatrixAt(index, transform.matrix);
+  });
+  for (const mesh of [nearSeatMesh, nearSeatBackMesh]) {
+    mesh.instanceMatrix.needsUpdate = true;
+    mesh.castShadow = false;
+    mesh.receiveShadow = true;
+    scene.add(mesh);
+  }
+
+  // A compact instanced fallback keeps the connected audience animated while
+  // the textured seated-human models load, without multiplying mobile draw cost.
   const bodyMesh = new THREE.InstancedMesh(
-    ellipticalBodyGeometry([
-      [-0.29, 0.02, 0.025],
-      [-0.24, 0.13, 0.085],
-      [-0.13, 0.155, 0.095],
-      [-0.015, 0.15, 0.09],
-      [0.085, 0.17, 0.10],
-      [0.19, 0.20, 0.105],
-      [0.25, 0.17, 0.09],
-      [0.29, 0.025, 0.025],
-    ], 24),
+    new THREE.SphereGeometry(0.5, 8, 6),
     new THREE.MeshStandardMaterial({ color: 0xffffff, roughness: 0.84 }),
-    spectators.length,
+    seats.length,
   );
   const headMesh = new THREE.InstancedMesh(
-    ellipticalBodyGeometry([
-      [-0.125, 0.018, 0.035],
-      [-0.11, 0.047, 0.057],
-      [-0.078, 0.068, 0.072],
-      [-0.025, 0.078, 0.082],
-      [0.035, 0.081, 0.084],
-      [0.087, 0.072, 0.078],
-      [0.12, 0.047, 0.06],
-      [0.132, 0.015, 0.025],
-    ], 24),
-    new THREE.MeshStandardMaterial({ color: 0xffffff, roughness: 0.72 }),
-    spectators.length,
+    new THREE.SphereGeometry(0.5, 8, 6),
+    new THREE.MeshStandardMaterial({ color: 0xffffff, roughness: 0.74 }),
+    seats.length,
   );
-  const eyeMesh = new THREE.InstancedMesh(
-    new THREE.SphereGeometry(0.007, 8, 6),
-    new THREE.MeshStandardMaterial({ color: 0x342b27, roughness: 0.74 }),
-    spectators.length * 2,
+  const armMesh = new THREE.InstancedMesh(
+    new THREE.CylinderGeometry(0.045, 0.052, 1, 6),
+    new THREE.MeshStandardMaterial({ color: 0xffffff, roughness: 0.9 }),
+    seats.length * 2,
   );
-  const mouthMesh = new THREE.InstancedMesh(
-    new THREE.SphereGeometry(0.012, 10, 8),
-    new THREE.MeshStandardMaterial({ color: 0x855b50, roughness: 0.76 }),
-    spectators.length,
-  );
-  const noseMesh = new THREE.InstancedMesh(
-    new THREE.SphereGeometry(0.012, 10, 8),
-    new THREE.MeshStandardMaterial({ color: 0xffffff, roughness: 0.76 }),
-    spectators.length,
-  );
-  const earMesh = new THREE.InstancedMesh(
-    new THREE.SphereGeometry(0.018, 12, 10),
-    new THREE.MeshStandardMaterial({ color: 0xffffff, roughness: 0.78 }),
-    spectators.length * 2,
-  );
+  bodyMesh.name = 'wtsl-unified-crowd-fallback-bodies';
   headMesh.name = 'wtsl-spectator-heads';
-  noseMesh.name = 'wtsl-spectator-noses';
-  earMesh.name = 'wtsl-spectator-ears';
-  const neckMesh = new THREE.InstancedMesh(
-    new THREE.CylinderGeometry(0.039, 0.048, 0.14, 12),
-    new THREE.MeshStandardMaterial({ color: 0xffffff, roughness: 0.78 }),
-    spectators.length,
-  );
-  const shortsMesh = new THREE.InstancedMesh(
-    ellipticalBodyGeometry([
-      [-0.13, 0.11, 0.085],
-      [-0.09, 0.17, 0.11],
-      [0, 0.19, 0.12],
-      [0.09, 0.17, 0.11],
-      [0.13, 0.11, 0.085],
-    ]),
-    new THREE.MeshStandardMaterial({ color: 0xffffff, roughness: 0.9 }),
-    spectators.length,
-  );
-  const segmentGeometry = (proximal: number, mid: number, distal: number) => ellipticalBodyGeometry([
-    [-0.11, distal * 0.7, distal * 0.7],
-    [-0.075, distal, distal],
-    [-0.015, mid, mid],
-    [0.055, proximal, proximal],
-    [0.09, proximal * 0.88, proximal * 0.88],
-    [0.11, proximal * 0.52, proximal * 0.52],
-  ], 16);
-  const upperArmGeometry = segmentGeometry(0.044, 0.038, 0.031);
-  const forearmGeometry = segmentGeometry(0.034, 0.03, 0.024);
-  const thighGeometry = segmentGeometry(0.06, 0.053, 0.044);
-  const calfGeometry = segmentGeometry(0.044, 0.035, 0.026);
-  const upperArmMesh = new THREE.InstancedMesh(
-    upperArmGeometry,
-    new THREE.MeshStandardMaterial({ color: 0xffffff, roughness: 0.9 }),
-    spectators.length * 2,
-  );
-  const forearmMesh = new THREE.InstancedMesh(
-    forearmGeometry,
-    new THREE.MeshStandardMaterial({ color: 0xffffff, roughness: 0.9 }),
-    spectators.length * 2,
-  );
-  const thighMesh = new THREE.InstancedMesh(
-    thighGeometry,
-    new THREE.MeshStandardMaterial({ color: 0xffffff, roughness: 0.9 }),
-    spectators.length * 2,
-  );
-  const calfMesh = new THREE.InstancedMesh(
-    calfGeometry,
-    new THREE.MeshStandardMaterial({ color: 0xffffff, roughness: 0.9 }),
-    spectators.length * 2,
-  );
-  const handMesh = new THREE.InstancedMesh(
-    ellipticalBodyGeometry([
-      [-0.06, 0.025, 0.024], [-0.045, 0.04, 0.031],
-      [0.005, 0.042, 0.03], [0.045, 0.034, 0.026],
-      [0.06, 0.02, 0.02],
-    ], 12),
-    new THREE.MeshStandardMaterial({ color: 0xffffff, roughness: 0.92 }),
-    spectators.length * 2,
-  );
-  const shoeMesh = new THREE.InstancedMesh(
-    new THREE.SphereGeometry(0.5, 12, 8),
-    material(0xe8e5dc, 0.82),
-    spectators.length * 2,
-  );
-  const hairMesh = new THREE.InstancedMesh(
-    new THREE.SphereGeometry(0.5, 16, 10, 0, Math.PI * 2, 0, Math.PI * 0.49),
-    new THREE.MeshStandardMaterial({ color: 0xffffff, roughness: 0.8 }),
-    spectators.length,
-  );
-  const hairTempleMesh = new THREE.InstancedMesh(
-    new THREE.SphereGeometry(0.5, 12, 8),
-    new THREE.MeshStandardMaterial({ color: 0xffffff, roughness: 0.82 }),
-    spectators.length * 2,
-  );
+  armMesh.name = 'wtsl-unified-crowd-fallback-arms';
+  const shirtColors = [0xc96b52, 0x397e75, 0xd7b253, 0x526b98, 0xefe0c8, 0x885e80, 0x465754];
+  const skinColors = [0xf1c2a0, 0xd8a17c, 0x9e684c, 0xe0b090];
   const dummy = new THREE.Object3D();
-  const fromPoint = new THREE.Vector3();
-  const toPoint = new THREE.Vector3();
-  const segmentDirection = new THREE.Vector3();
-  const localToWorld = (spectator: (typeof spectators)[number], x: number, y: number, z: number, target: THREE.Vector3) => {
-    const cosine = Math.cos(spectator.facing);
-    const sine = Math.sin(spectator.facing);
-    return target.set(
-      spectator.x + x * cosine + z * sine,
-      platformBaseY(spectator.row) + y,
-      spectator.z - x * sine + z * cosine,
+  const start = new THREE.Vector3();
+  const end = new THREE.Vector3();
+  const direction = new THREE.Vector3();
+  const upDirection = new THREE.Vector3(0, 1, 0);
+  const placeArm = (instance: number, seat: CrowdRig['seats'][number], side: number, time: number, applauding: boolean) => {
+    const clap = applauding && (seat.sourceIndex ?? instance) % 5 !== 0;
+    const phase = time * 13 + (seat.sourceIndex ?? instance) * 0.73;
+    const handY = clap ? 1.27 + Math.sin(phase) * 0.055 : 0.67;
+    const handX = clap ? side * (0.035 + Math.abs(Math.sin(phase)) * 0.045) : side * 0.2;
+    start.set(seat.x + Math.sin(seat.facing) * side * 0.17, seat.y + 0.92, seat.z + Math.cos(seat.facing) * side * 0.17);
+    end.set(
+      seat.x + Math.sin(seat.facing) * handX + Math.cos(seat.facing) * 0.12,
+      seat.y + handY,
+      seat.z + Math.cos(seat.facing) * handX - Math.sin(seat.facing) * 0.12,
     );
-  };
-  const placePart = (
-    mesh: THREE.InstancedMesh,
-    instance: number,
-    spectator: (typeof spectators)[number],
-    x: number,
-    y: number,
-    z: number,
-    scaleX = 1,
-    scaleY = 1,
-    scaleZ = 1,
-    rotationZ = 0,
-  ) => {
-    localToWorld(spectator, x, y, z, dummy.position);
-    dummy.rotation.set(0, spectator.facing, rotationZ);
-    dummy.scale.set(scaleX, scaleY, scaleZ);
+    direction.subVectors(end, start);
+    const length = direction.length();
+    dummy.position.copy(start).add(end).multiplyScalar(0.5);
+    dummy.quaternion.setFromUnitVectors(upDirection, direction.normalize());
+    dummy.scale.set(1, length, 1);
     dummy.updateMatrix();
-    mesh.setMatrixAt(instance, dummy.matrix);
+    armMesh.setMatrixAt(instance, dummy.matrix);
   };
-  const placeLimb = (
-    mesh: THREE.InstancedMesh,
-    instance: number,
-    spectator: (typeof spectators)[number],
-    from: [number, number, number],
-    to: [number, number, number],
-    width = 1,
-  ) => {
-    localToWorld(spectator, ...from, fromPoint);
-    localToWorld(spectator, ...to, toPoint);
-    segmentDirection.subVectors(toPoint, fromPoint);
-    const length = segmentDirection.length();
-    dummy.position.copy(fromPoint).add(toPoint).multiplyScalar(0.5);
-    dummy.quaternion.setFromUnitVectors(new THREE.Vector3(0, 1, 0), segmentDirection.normalize());
-    dummy.scale.set(width, length / 0.22, width);
-    dummy.updateMatrix();
-    mesh.setMatrixAt(instance, dummy.matrix);
-  };
-  const shirts = [0xc96b52, 0x397e75, 0xd7b253, 0x526b98, 0xefe0c8, 0x885e80, 0x465754];
-  const skinTones = [0xf1c2a0, 0xd8a17c, 0x9e684c, 0xe0b090];
-  const hairColors = [0x272321, 0x4d372c, 0x3c3440, 0x72563b];
-  spectators.forEach((spectator, index) => {
-    const baseY = platformBaseY(spectator.row);
-    dummy.position.set(spectator.x, baseY + 0.45, spectator.z);
-    dummy.rotation.y = spectator.facing;
-    dummy.scale.set(1, 1, 1);
-    dummy.updateMatrix();
-    seatMesh.setMatrixAt(index, dummy.matrix);
-    placePart(seatBackMesh, index, spectator, 0, 0.75, -0.17);
-
-    dummy.position.y = baseY + 0.8;
-    dummy.scale.set(1, 1, 1);
+  seats.forEach((seat, index) => {
+    dummy.position.set(seat.x, seat.y + 0.83, seat.z);
+    dummy.rotation.set(0, seat.facing, 0);
+    dummy.scale.set(0.42, 0.54, 0.28);
     dummy.updateMatrix();
     bodyMesh.setMatrixAt(index, dummy.matrix);
-    bodyMesh.setColorAt(index, new THREE.Color(shirts[(index * 5 + spectator.row) % shirts.length]));
-
-    dummy.position.y = baseY + 1.23;
-    const headScale = 0.92 + (index % 4) * 0.025;
-    dummy.scale.setScalar(headScale);
+    bodyMesh.setColorAt(index, new THREE.Color(shirtColors[(index * 5 + seat.row) % shirtColors.length]));
+    dummy.position.set(seat.x, seat.y + 1.23, seat.z);
+    dummy.scale.set(0.17, 0.24, 0.15);
     dummy.updateMatrix();
     headMesh.setMatrixAt(index, dummy.matrix);
-    const skin = new THREE.Color(skinTones[(index * 3 + spectator.row) % skinTones.length]);
-    headMesh.setColorAt(index, skin);
-
-    const forwardX = Math.sin(spectator.facing);
-    const forwardZ = Math.cos(spectator.facing);
-    const sideX = Math.cos(spectator.facing);
-    const sideZ = -Math.sin(spectator.facing);
-    const facialScale = [0.94, 0.98, 1.02, 1.06][index % 4];
-    for (const eyeSide of [-1, 1]) {
-      dummy.position.set(
-        spectator.x + forwardX * 0.079 * facialScale + sideX * eyeSide * 0.029 * facialScale,
-        baseY + 1.25,
-        spectator.z + forwardZ * 0.079 * facialScale + sideZ * eyeSide * 0.029 * facialScale,
-      );
-      dummy.rotation.y = spectator.facing;
-      dummy.scale.set(0.72, 0.78, 0.68);
-      dummy.updateMatrix();
-      eyeMesh.setMatrixAt(index * 2 + (eyeSide === 1 ? 1 : 0), dummy.matrix);
-      placePart(earMesh, index * 2 + (eyeSide === 1 ? 1 : 0), spectator,
-        eyeSide * 0.074 * facialScale, 1.225, -0.002, 0.62, 0.92, 0.56);
-    }
-    placePart(noseMesh, index, spectator, 0, 1.207, 0.093 * facialScale,
-      0.72, 0.78, 0.88);
-    noseMesh.setColorAt(index, skin);
-    earMesh.setColorAt(index * 2, skin);
-    earMesh.setColorAt(index * 2 + 1, skin);
-    dummy.position.set(
-      spectator.x + forwardX * 0.086 * facialScale,
-      baseY + 1.17,
-      spectator.z + forwardZ * 0.086 * facialScale,
-    );
-    dummy.rotation.y = spectator.facing;
-    dummy.scale.set(1.15, 0.22, 0.48);
-    dummy.updateMatrix();
-    mouthMesh.setMatrixAt(index, dummy.matrix);
-
-    placePart(neckMesh, index, spectator, 0, 1.1, 0.01, 0.9, 0.9, 0.9);
-    neckMesh.setColorAt(index, skin);
-    placePart(shortsMesh, index, spectator, 0, 0.5, -0.01, 0.95, 0.82, 0.92);
-    shortsMesh.setColorAt(index, new THREE.Color(index % 2 ? 0x36465a : 0x4b4050));
-    const hairStyle = index % 5;
-    placePart(hairMesh, index, spectator, 0, 1.30, -0.014,
-      (0.19 + (hairStyle % 3) * 0.012) * headScale,
-      (0.16 + (hairStyle === 3 ? 0.025 : 0)) * headScale,
-      (0.18 + (hairStyle === 4 ? 0.025 : 0)) * headScale);
-    const hairColor = new THREE.Color(hairColors[(index * 7 + spectator.row) % hairColors.length]);
-    hairMesh.setColorAt(index, hairColor);
-    for (const side of [-1, 1]) {
-      const templeIndex = index * 2 + (side === 1 ? 1 : 0);
-      placePart(hairTempleMesh, templeIndex, spectator, side * 0.071, 1.255, -0.01,
-        0.036, (0.052 + (hairStyle % 3) * 0.008), 0.046);
-      hairTempleMesh.setColorAt(templeIndex, hairColor);
-    }
-
-    for (const [sideIndex, side] of [-1, 1].entries()) {
-      const instance = index * 2 + sideIndex;
-      const thighTop: [number, number, number] = [side * 0.11, 0.5, 0];
-      const knee: [number, number, number] = [side * 0.17, 0.43, 0.19];
-      const ankle: [number, number, number] = [side * 0.17, 0.12, 0.28];
-      placeLimb(thighMesh, instance, spectator, thighTop, knee);
-      placeLimb(calfMesh, instance, spectator, knee, ankle);
-      thighMesh.setColorAt(instance, new THREE.Color(index % 2 ? 0x36465a : 0x4b4050));
-      calfMesh.setColorAt(instance, skin);
-      placePart(shoeMesh, instance, spectator, side * 0.17, 0.1, 0.37, 0.19, 0.07, 0.11, side * -0.08);
-      const shoulder: [number, number, number] = [side * 0.17, 0.99, 0.015];
-      const elbow: [number, number, number] = [side * 0.21, 0.78, 0.08];
-      const wrist: [number, number, number] = [side * 0.19, 0.61, 0.15];
-      placeLimb(upperArmMesh, instance, spectator, shoulder, elbow);
-      placeLimb(forearmMesh, instance, spectator, elbow, wrist);
-      upperArmMesh.setColorAt(instance, new THREE.Color(shirts[(index * 5 + spectator.row) % shirts.length]));
-      forearmMesh.setColorAt(instance, skin);
-      placePart(handMesh, instance, spectator, wrist[0], wrist[1], wrist[2] + 0.025,
-        0.82, 0.92, 0.72);
-      handMesh.setColorAt(instance, skin);
-    }
+    headMesh.setColorAt(index, new THREE.Color(skinColors[(index * 3 + seat.row) % skinColors.length]));
+    placeArm(index * 2, seat, -1, 0, false);
+    placeArm(index * 2 + 1, seat, 1, 0, false);
   });
-  const staticInstances = [
-    seatMesh, seatBackMesh, bodyMesh, headMesh, eyeMesh, earMesh, noseMesh, neckMesh, shortsMesh,
-    thighMesh, calfMesh, shoeMesh, upperArmMesh, forearmMesh, handMesh, hairMesh, hairTempleMesh, mouthMesh,
-  ];
-  for (const instances of staticInstances) {
-    instances.instanceMatrix.needsUpdate = true;
-    instances.castShadow = false;
-    instances.receiveShadow = false;
-    scene.add(instances);
-  }
-  for (const instances of [bodyMesh, headMesh, earMesh, noseMesh, neckMesh, shortsMesh, thighMesh, calfMesh, upperArmMesh, forearmMesh, handMesh, hairMesh, hairTempleMesh]) {
-    if (instances.instanceColor) instances.instanceColor.needsUpdate = true;
-  }
-  for (const instances of [upperArmMesh, forearmMesh, handMesh]) {
-    instances.instanceMatrix.setUsage(THREE.DynamicDrawUsage);
-  }
-  for (const instances of [mouthMesh, headMesh, eyeMesh, earMesh, noseMesh, hairMesh, hairTempleMesh]) {
-    instances.instanceMatrix.setUsage(THREE.DynamicDrawUsage);
-  }
-  let previousApplause = false;
-  let lastGazeUpdate = -Infinity;
-  const gazeOffsets = new Float32Array(spectators.length);
-  const updateFaceGaze = (ballPosition: THREE.Vector3) => {
-    for (let index = 0; index < spectators.length; index += 1) {
-      const spectator = spectators[index];
-      const bearing = Math.atan2(ballPosition.x - spectator.x, ballPosition.z - spectator.z);
-      const targetDelta = THREE.MathUtils.clamp(
-        THREE.MathUtils.euclideanModulo(bearing - spectator.facing + Math.PI, Math.PI * 2) - Math.PI,
-        -0.72,
-        0.72,
-      );
-      gazeOffsets[index] += (targetDelta - gazeOffsets[index]) * 0.62;
-      const delta = gazeOffsets[index];
-      const facing = spectator.facing + delta;
-      const headScale = 0.92 + (index % 4) * 0.025;
-      const headY = 1.23;
-      const placeFace = (
-        mesh: THREE.InstancedMesh,
-        instance: number,
-        localX: number,
-        localY: number,
-        localZ: number,
-        scale: number | [number, number, number] = headScale,
-      ) => {
-        const cosine = Math.cos(facing);
-        const sine = Math.sin(facing);
-        dummy.position.set(
-          spectator.x + localX * cosine + localZ * sine,
-          platformBaseY(spectator.row) + headY + localY,
-          spectator.z - localX * sine + localZ * cosine,
-        );
-        dummy.rotation.set(0, facing, 0);
-        if (typeof scale === 'number') dummy.scale.setScalar(scale);
-        else dummy.scale.set(...scale);
-        dummy.updateMatrix();
-        mesh.setMatrixAt(instance, dummy.matrix);
-      };
-      const placeHair = () => {
-        const cosine = Math.cos(facing);
-        const sine = Math.sin(facing);
-        dummy.position.set(
-          spectator.x + 0.014 * sine,
-          platformBaseY(spectator.row) + headY + 0.07,
-          spectator.z + 0.014 * cosine,
-        );
-        dummy.rotation.set(0, facing, 0);
-        dummy.scale.set(0.19 * headScale, 0.16 * headScale, 0.18 * headScale);
-        dummy.updateMatrix();
-        hairMesh.setMatrixAt(index, dummy.matrix);
-        for (const side of [-1, 1]) {
-          const templeIndex = index * 2 + (side === 1 ? 1 : 0);
-          dummy.position.set(
-            spectator.x + side * 0.071 * cosine - 0.01 * sine,
-            platformBaseY(spectator.row) + headY + 0.025,
-            spectator.z - side * 0.071 * sine - 0.01 * cosine,
-          );
-          dummy.rotation.set(0, facing, 0);
-          dummy.scale.set(0.036, 0.052 + (index % 3) * 0.008, 0.046);
-          dummy.updateMatrix();
-          hairTempleMesh.setMatrixAt(templeIndex, dummy.matrix);
-        }
-      };
-      placeFace(headMesh, index, 0, 0, 0);
-      placeHair();
-      placeFace(eyeMesh, index * 2, -0.029 * headScale, 0.02, 0.079 * headScale, [0.72, 0.78, 0.68]);
-      placeFace(eyeMesh, index * 2 + 1, 0.029 * headScale, 0.02, 0.079 * headScale, [0.72, 0.78, 0.68]);
-      placeFace(noseMesh, index, 0, -0.008, 0.093 * headScale, [0.72, 0.78, 0.88]);
-      placeFace(earMesh, index * 2, -0.074 * headScale, -0.005, -0.002, [0.62, 0.92, 0.56]);
-      placeFace(earMesh, index * 2 + 1, 0.074 * headScale, -0.005, -0.002, [0.62, 0.92, 0.56]);
-      placeFace(mouthMesh, index, 0, -0.06, 0.071 * headScale, [1.15, 0.22, 0.48]);
-      if (previousApplause && index % 5 !== 0) {
-        const cosine = Math.cos(facing);
-        const sine = Math.sin(facing);
-        dummy.position.set(
-          spectator.x + 0.071 * headScale * sine,
-          platformBaseY(spectator.row) + headY - 0.05,
-          spectator.z + 0.071 * headScale * cosine,
-        );
-        dummy.rotation.set(0, facing, 0);
-        dummy.scale.set(1.15, 1.21, 0.48);
-        dummy.updateMatrix();
-        mouthMesh.setMatrixAt(index, dummy.matrix);
-      }
-    }
-    for (const instances of [headMesh, eyeMesh, earMesh, noseMesh, hairMesh, hairTempleMesh, mouthMesh]) {
-      instances.instanceMatrix.needsUpdate = true;
-    }
-  };
-  const updateApplausePose = (timeSeconds: number, applauding: boolean, ballPosition?: THREE.Vector3) => {
-    if (ballPosition && timeSeconds - lastGazeUpdate >= 0.12) {
-      updateFaceGaze(ballPosition);
-      lastGazeUpdate = timeSeconds;
-    }
-    if (!applauding && !previousApplause) return;
-    for (let index = 0; index < spectators.length; index += 1) {
-      const spectator = spectators[index];
-      const clapping = applauding && index % 5 !== 0;
-      const phase = timeSeconds * 15 + index * 0.73;
-      const separation = clapping ? 0.012 + (0.5 + Math.sin(phase) * 0.5) * 0.085 : 0.23;
-      const handY = clapping ? 1.42 : 0.61;
-      const elbowY = clapping ? 1.2 : 0.78;
-      const elbowZ = clapping ? 0.11 : 0.105;
-      for (const [sideIndex, side] of [-1, 1].entries()) {
-        const instance = index * 2 + sideIndex;
-        const shoulder: [number, number, number] = [side * 0.17, 0.99, 0.015];
-        const elbow: [number, number, number] = [side * (clapping ? 0.13 : 0.21), elbowY, elbowZ];
-        const wristX = clapping ? side * separation / 2 : side * 0.115;
-        const wrist: [number, number, number] = [wristX, handY, clapping ? 0.16 : 0.17];
-        placeLimb(upperArmMesh, instance, spectator, shoulder, elbow);
-        placeLimb(forearmMesh, instance, spectator, elbow, wrist);
-        placePart(handMesh, instance, spectator, wristX, handY, wrist[2] + 0.025, 1, 1, 1, side * -0.1);
-      }
-      if (applauding !== previousApplause) {
-        const openMouth = applauding && index % 5 !== 0;
-        const facing = spectator.facing + gazeOffsets[index];
-        dummy.position.set(
-          spectator.x + Math.sin(facing) * 0.071,
-          platformBaseY(spectator.row) + 1.18,
-          spectator.z + Math.cos(facing) * 0.071,
-        );
-        dummy.rotation.y = facing;
-        dummy.scale.set(1.15, openMouth ? 1.21 : 0.22, 0.48);
-        dummy.updateMatrix();
-        mouthMesh.setMatrixAt(index, dummy.matrix);
-      }
-    }
-    for (const instances of [upperArmMesh, forearmMesh, handMesh]) {
-      instances.instanceMatrix.needsUpdate = true;
-    }
-    if (applauding !== previousApplause) mouthMesh.instanceMatrix.needsUpdate = true;
-    previousApplause = applauding;
-  };
+  const fallbackMeshes = [bodyMesh, headMesh, armMesh];
+  headMesh.instanceMatrix.setUsage(THREE.DynamicDrawUsage);
+  armMesh.instanceMatrix.setUsage(THREE.DynamicDrawUsage);
+  fallbackMeshes.forEach((mesh) => {
+    mesh.instanceMatrix.needsUpdate = true;
+    mesh.castShadow = false;
+    mesh.receiveShadow = false;
+    scene.add(mesh);
+  });
+  bodyMesh.instanceColor!.needsUpdate = true;
+  headMesh.instanceColor!.needsUpdate = true;
+  let lastUpdate = -Infinity;
   let detailedUpdate: CrowdRig['update'] | undefined;
   const crowdRig: CrowdRig = {
-    seats: spectators.map((spectator) => ({ ...spectator, y: platformBaseY(spectator.row) })),
+    seats,
     highDetailEnabled: true,
-    setHighDetailEnabled: (enabled) => { crowdRig.highDetailEnabled = enabled; },
-    setHighDetailModel: () => {},
-    replacePeople: (update) => {
-      for (const mesh of staticInstances) {
-        if (mesh !== seatMesh && mesh !== seatBackMesh && mesh !== shoeMesh) mesh.visible = false;
-      }
+    setHighDetailEnabled(enabled) { crowdRig.highDetailEnabled = enabled; },
+    setHighDetailModel: () => undefined,
+    replacePeople(update) {
+      fallbackMeshes.forEach((mesh) => { mesh.visible = false; });
       detailedUpdate = update;
     },
-    update: (time, applauding, ballPosition) => (detailedUpdate ?? updateApplausePose)(time, applauding, ballPosition),
+    update(time, applauding, ballPosition) {
+      if (detailedUpdate) {
+        detailedUpdate(time, applauding, ballPosition);
+        return;
+      }
+      if (time - lastUpdate < 0.12) return;
+      lastUpdate = time;
+      seats.forEach((seat, index) => {
+        let gaze = 0;
+        if (ballPosition) {
+          const bearing = Math.atan2(ballPosition.x - seat.x, ballPosition.z - seat.z);
+          gaze = THREE.MathUtils.clamp(
+            THREE.MathUtils.euclideanModulo(bearing - seat.facing + Math.PI, Math.PI * 2) - Math.PI,
+            -0.65,
+            0.65,
+          );
+        }
+        dummy.position.set(
+          seat.x + Math.sin(seat.facing) * 0.018,
+          seat.y + 1.23,
+          seat.z + Math.cos(seat.facing) * 0.018,
+        );
+        dummy.rotation.set(0, seat.facing + gaze, 0);
+        dummy.scale.set(0.17, 0.24, 0.15);
+        dummy.updateMatrix();
+        headMesh.setMatrixAt(index, dummy.matrix);
+        placeArm(index * 2, seat, -1, time, applauding);
+        placeArm(index * 2 + 1, seat, 1, time, applauding);
+      });
+      headMesh.instanceMatrix.needsUpdate = true;
+      armMesh.instanceMatrix.needsUpdate = true;
+    },
   };
-
   return crowdRig;
+}
+
+export function buildCrowd(scene: THREE.Scene) {
+  return buildUnifiedCrowd(scene);
 }
 
 export function buildCourtFixtures(scene: THREE.Scene): CourtFixtureRig {
