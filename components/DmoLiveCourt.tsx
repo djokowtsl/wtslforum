@@ -467,7 +467,7 @@ function playLiveCourtCue(
     playWtaGrunt(context, wtaGrunt, activeGrunts);
     return;
   }
-  if (kind === 'racket' || kind === 'bounce' || kind === 'footstep' || kind === 'slide') {
+  if (kind === 'racket' || kind === 'bounce' || kind === 'footstep') {
     playLiveCourtEffect(context, kind, surface, 0.9, courtEffectSamples);
     return;
   }
@@ -700,6 +700,7 @@ function DmoLiveCourt({
       sampleBufferRef.current,
       TE4_DMO_FRAMES_PER_SECOND,
     )) {
+      if (event.kind !== 'footstep') continue;
       const key = `${event.frame}:${event.kind}:${event.player}`;
       if (event.frame < lastSoundFrameRef.current || playedSoundEventsRef.current.has(key)) continue;
       playLiveCourtCue(context, event.kind, activeGruntVoicesRef.current, isWta,

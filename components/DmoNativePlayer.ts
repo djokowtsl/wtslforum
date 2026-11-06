@@ -420,7 +420,8 @@ export function attachNativePlayer(
     if (capturedBody) {
       // A stroke played on the run keeps the stepping legs: the captured legs
       // stand still and would glide across the court with the moving player.
-      const running = THREE.MathUtils.smoothstep(Number(rig.root.userData.locomotionSpeed ?? 0), 1.2, 3);
+      const running = THREE.MathUtils.clamp(Number(rig.root.userData.stepLegs
+        ?? THREE.MathUtils.smoothstep(Number(rig.root.userData.locomotionSpeed ?? 0), 1.2, 3)), 0, 1);
       if (running > 0) {
         LEG_BONES.forEach((name, i) => pose.bones.get(name)!.quaternion.slerp(steppingLegs[i], running));
         model.updateMatrixWorld(true);

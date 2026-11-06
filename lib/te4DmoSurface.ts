@@ -133,10 +133,7 @@ export function courtSurfaceSoundProfile(surface: Te4CourtSurface) {
   const profiles = {
     clay: {
       stepNoiseHz: 420,
-      slideNoiseHz: 650,
       stepToneHz: [88, 48],
-      slideToneHz: [820, 390],
-      slideToneGain: 0.0055,
       racketHz: [650, 240],
       racketGain: 0.078,
       racketDuration: 0.085,
@@ -146,10 +143,7 @@ export function courtSurfaceSoundProfile(surface: Te4CourtSurface) {
     },
     grass: {
       stepNoiseHz: 320,
-      slideNoiseHz: 430,
       stepToneHz: [72, 40],
-      slideToneHz: [650, 310],
-      slideToneGain: 0.0045,
       racketHz: [680, 250],
       racketGain: 0.08,
       racketDuration: 0.08,
@@ -159,10 +153,7 @@ export function courtSurfaceSoundProfile(surface: Te4CourtSurface) {
     },
     hard: {
       stepNoiseHz: 850,
-      slideNoiseHz: 1_250,
       stepToneHz: [125, 60],
-      slideToneHz: [1_950, 1_250],
-      slideToneGain: 0.009,
       racketHz: [800, 270],
       racketGain: 0.09,
       racketDuration: 0.07,
@@ -172,10 +163,7 @@ export function courtSurfaceSoundProfile(surface: Te4CourtSurface) {
     },
     unknown: {
       stepNoiseHz: 600,
-      slideNoiseHz: 800,
       stepToneHz: [105, 58],
-      slideToneHz: [1_100, 580],
-      slideToneGain: 0.0065,
       racketHz: [720, 260],
       racketGain: 0.085,
       racketDuration: 0.075,
@@ -185,10 +173,7 @@ export function courtSurfaceSoundProfile(surface: Te4CourtSurface) {
     },
   } satisfies Record<Te4CourtSurface, {
     stepNoiseHz: number;
-    slideNoiseHz: number;
     stepToneHz: [number, number];
-    slideToneHz: [number, number];
-    slideToneGain: number;
     racketHz: [number, number];
     racketGain: number;
     racketDuration: number;

@@ -45,12 +45,11 @@ test('the 2D fallback uses the same WTA sample and recorded court effects', () =
   assert.match(fallbackCourt, /playLiveCourtEffect\(context, kind, surface, 0\.9, courtEffectSamples\)/);
 });
 
-test('generated tennis effect samples stay compact and surface labels remain distinct', async () => {
+test('court effect samples stay compact and surface labels remain distinct', async () => {
   for (const file of [
     'dmo-racket-impact.mp3',
     'dmo-ball-bounce.mp3',
     'dmo-court-footstep.mp3',
-    'dmo-court-slide.mp3',
   ]) {
     const asset = await stat(new URL(`../public/audio/${file}`, import.meta.url));
     assert.ok(asset.size > 1_000 && asset.size < 20_000, `${file} is a small, bundled court cue`);
@@ -69,7 +68,8 @@ test('generated tennis effect samples stay compact and surface labels remain dis
     'SURFACE UNKNOWN',
   ]);
   assert.equal(new Set(profiles.map((profile) => profile.stepNoiseHz)).size, 4);
-  assert.equal(new Set(profiles.map((profile) => profile.slideNoiseHz)).size, 4);
   assert.equal(new Set(profiles.map((profile) => profile.bounceHz.join(':'))).size, 4);
   assert.equal(new Set(profiles.map((profile) => profile.racketHz.join(':'))).size, 4);
+  assert.doesNotMatch(threeCourt, /dmo-court-slide\.mp3/);
+  assert.match(fallbackCourt, /if \(event\.kind !== 'footstep'\) continue/);
 });

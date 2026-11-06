@@ -2,10 +2,9 @@ import type { Te4CourtSurface } from './te4DmoTypes';
 import type { LiveCourtFootworkEvent, LiveCourtMotionEvent, LiveCourtSample } from './liveCourtMotion';
 import { courtSurfaceSoundProfile } from './te4DmoSurface';
 
-export type CourtEffectKind = 'racket' | 'bounce' | 'footstep' | 'slide';
+export type CourtEffectKind = 'racket' | 'bounce' | 'footstep';
 export type CourtEffectSamples = Partial<Record<CourtEffectKind, AudioBuffer>>;
 export type CourtSoundEvent = { frame: number; kind: CourtEffectKind; player?: 1 | 2 };
-type ProceduralCourtEffectKind = Exclude<CourtEffectKind, 'slide'>;
 
 /** Fill missing contact cues from the same recorded timeline used for animation. */
 export function deriveLiveCourtSoundEvents(
@@ -16,9 +15,14 @@ export function deriveLiveCourtSoundEvents(
   frameRate = 60,
 ): CourtSoundEvent[] {
   const fps = Number.isFinite(frameRate) && frameRate > 0 ? frameRate : 60;
+  const playableKinds = new Set<string>(['racket', 'bounce', 'footstep']);
   const events: CourtSoundEvent[] = [
-    ...source,
-    ...footwork,
+    ...source.filter(event => playableKinds.has(event.kind)),
+    ...footwork.filter(event => event.kind === 'footstep').map(event => ({
+      frame: event.frame,
+      kind: 'footstep' as const,
+      player: event.player,
+    })),
     ...shots.filter(event => event.kind === 'shot').map(event => ({
       frame: event.frame, kind: 'racket' as const, player: event.player,
     })),
@@ -44,7 +48,7 @@ export function deriveLiveCourtSoundEvents(
   return events.filter(event => {
     if (!Number.isFinite(event.frame) || event.frame < 0) return false;
     // Source contacts and reconstructed contacts must never sound twice.
-    const key = `${event.kind}:${event.kind === 'footstep' || event.kind === 'slide' ? event.player ?? '' : ''}`;
+    const key = `${event.kind}:${event.kind === 'footstep' ? event.player ?? '' : ''}`;
     const previous = lastByKind.get(key);
     if (previous !== undefined && event.frame - previous <= fps * 0.06) return false;
     lastByKind.set(key, event.frame);
@@ -54,11 +58,10 @@ export function deriveLiveCourtSoundEvents(
 
 const effectBuffers = new WeakMap<BaseAudioContext, Map<string, AudioBuffer[]>>();
 const effectBuses = new WeakMap<BaseAudioContext, DynamicsCompressorNode>();
-const courtEffectAssets: Partial<Record<CourtEffectKind, string>> = {
+const courtEffectAssets: Record<CourtEffectKind, string> = {
   racket: '/audio/dmo-racket-impact.mp3',
   bounce: '/audio/dmo-ball-bounce.mp3',
   footstep: '/audio/dmo-court-footstep.mp3',
-  slide: '/audio/dmo-court-slide.mp3',
 };
 
 export async function loadCourtEffectSamples(
@@ -110,7 +113,7 @@ function seededRandom(seedText: string) {
   };
 }
 
-function courtEffectDuration(kind: ProceduralCourtEffectKind, surface: Te4CourtSurface) {
+function courtEffectDuration(kind: CourtEffectKind, surface: Te4CourtSurface) {
   const profile = courtSurfaceSoundProfile(surface);
   if (kind === 'footstep') return 0.07;
   if (kind === 'racket') return Math.max(0.07, profile.racketDuration);
@@ -119,7 +122,7 @@ function courtEffectDuration(kind: ProceduralCourtEffectKind, surface: Te4CourtS
 
 function createCourtEffectBuffer(
   context: BaseAudioContext,
-  kind: ProceduralCourtEffectKind,
+  kind: CourtEffectKind,
   surface: Te4CourtSurface,
   variant: number,
 ) {
@@ -192,7 +195,7 @@ function createCourtEffectBuffer(
 
 function courtEffectVariants(
   context: BaseAudioContext,
-  kind: ProceduralCourtEffectKind,
+  kind: CourtEffectKind,
   surface: Te4CourtSurface,
 ) {
   let buffers = effectBuffers.get(context);
@@ -219,10 +222,9 @@ const sampleGain: Record<CourtEffectKind, number> = {
   racket: 0.82,
   bounce: 0.78,
   footstep: 0.56,
-  slide: 0.28,
 };
 
-/** Play short recorded court cues; slides require the recorded shoe squeak. */
+/** Play short court cues. Slide events intentionally have no audio cue. */
 export function playLiveCourtEffect(
   context: BaseAudioContext,
   kind: CourtEffectKind,
@@ -232,11 +234,9 @@ export function playLiveCourtEffect(
   delaySeconds = 0,
 ) {
   const level = Math.max(0, Math.min(1, Number.isFinite(volume) ? volume : 0));
-  if (level <= 0) return;
+  if (level <= 0 || !Object.hasOwn(sampleGain, kind)) return;
   const sample = samples[kind];
-  if (kind === 'slide' && !sample) return;
-  const fallbackKind: ProceduralCourtEffectKind | null = kind === 'slide' ? null : kind;
-  const variants = sample || !fallbackKind ? null : courtEffectVariants(context, fallbackKind, surface);
+  const variants = sample ? null : courtEffectVariants(context, kind, surface);
   const buffer = sample ?? variants?.[Math.floor(Math.random() * variants.length)];
   if (!buffer) return;
   const now = context.currentTime;
@@ -252,36 +252,22 @@ export function playLiveCourtEffect(
   output.gain.value = targetGain;
   source.connect(output).connect(effectsBus(context));
   const startAt = now + Math.max(0, Number.isFinite(delaySeconds) ? delaySeconds : 0);
-  if (kind === 'slide' && sample) {
-    const offset = Math.min(0.02, sample.duration * 0.08);
-    const clipDuration = Math.min(0.14, Math.max(0, sample.duration - offset));
-    const playbackDuration = clipDuration / source.playbackRate.value;
-    const fadeInEnd = startAt + Math.min(0.008, playbackDuration * 0.15);
-    const fadeOutStart = Math.max(fadeInEnd, startAt + playbackDuration - 0.025);
-    output.gain.setValueAtTime(0, startAt);
-    output.gain.linearRampToValueAtTime(targetGain, fadeInEnd);
-    output.gain.setValueAtTime(targetGain, fadeOutStart);
-    output.gain.exponentialRampToValueAtTime(0.001, startAt + playbackDuration);
-    source.start(startAt, offset, clipDuration);
-    source.stop(startAt + playbackDuration);
-  } else {
-    source.start(startAt);
-    source.stop(startAt + buffer.duration / source.playbackRate.value);
-  }
+  source.start(startAt);
+  source.stop(startAt + buffer.duration / source.playbackRate.value);
   source.onended = () => {
     source.disconnect();
     output.disconnect();
   };
 }
 
-/** Schedule a recognizable four-cue check directly from the user's tap. */
+/** Schedule a three-cue check directly from the user's tap. */
 export function playCourtSoundCheck(
   context: BaseAudioContext,
   surface: Te4CourtSurface,
   volume = 0.9,
   samples: CourtEffectSamples = {},
 ) {
-  (['racket', 'bounce', 'footstep', 'slide'] as const).forEach((kind, index) => {
+  (['racket', 'bounce', 'footstep'] as const).forEach((kind, index) => {
     playLiveCourtEffect(context, kind, surface, volume, samples, index * 0.36);
   });
 }
