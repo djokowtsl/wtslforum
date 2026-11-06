@@ -100,6 +100,7 @@ export type Te4LiveSnapshot = {
     player?: Te4LivePlayer;
     shotType?: 'serve' | 'rally';
     speedKmh?: number;
+    changeover?: boolean;
   }>;
   soundEvents?: Array<{
     frame: number;

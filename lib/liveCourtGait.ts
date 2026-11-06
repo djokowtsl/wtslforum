@@ -128,3 +128,109 @@ export function isBetweenPoints(events: { frame: number; kind: string }[], frame
   }
   return low > 0 && events[low - 1].kind === 'point-end';
 }
+
+/** Smooth noisy recorded signals using replay time; long seeks snap to the target. */
+export function smoothReplayValue(
+  previous: number | undefined,
+  target: number,
+  deltaSeconds: number,
+  timeConstant: number,
+) {
+  if (!Number.isFinite(target)) return previous ?? 0;
+  const elapsed = Math.abs(deltaSeconds);
+  if (!Number.isFinite(previous) || elapsed > 0.5) return target;
+  const alpha = 1 - Math.exp(-elapsed / Math.max(0.001, timeConstant));
+  return previous! + (target - previous!) * alpha;
+}
+
+/** Continuous opposing free-arm swing, independent of the foot lift corner. */
+export function freeArmStrideSwing(phase: number, directionZ: number, reach: number) {
+  return -Math.cos(2 * Math.PI * phase)
+    * Math.sign(directionZ || 1)
+    * Math.min(1, Math.max(0, reach));
+}
+
+/** The player's next shot after `frame`, if one exists. */
+export function nextShotEvent<T extends { frame: number; kind: string; player?: number }>(
+  events: T[],
+  player: number,
+  frame: number,
+): T | undefined {
+  let low = 0, high = events.length;
+  while (low < high) {
+    const middle = (low + high) >> 1;
+    if (events[middle].frame <= frame) low = middle + 1;
+    else high = middle;
+  }
+  for (let index = low; index < events.length; index += 1) {
+    if (events[index].kind === 'shot' && events[index].player === player) return events[index];
+  }
+  return undefined;
+}
+
+/** Frame of this player's latest shot at or before `frame`, however far back. */
+export function lastShotFrame(
+  events: { frame: number; kind: string; player?: number }[],
+  player: number,
+  frame: number,
+) {
+  let low = 0, high = events.length;
+  while (low < high) {
+    const middle = (low + high) >> 1;
+    if (events[middle].frame <= frame) low = middle + 1;
+    else high = middle;
+  }
+  for (let index = low - 1; index >= 0; index -= 1) {
+    if (events[index].kind === 'shot' && events[index].player === player) return events[index].frame;
+  }
+  return undefined;
+}
+
+type ChangeoverEvent = {
+  frame: number;
+  kind: string;
+  shotType?: string;
+  player?: number;
+  changeover?: boolean;
+};
+
+/** Use replay score flags when available; live feeds fall back to server changes. */
+export function isChangeoverCut(events: ChangeoverEvent[], frame: number) {
+  let low = 0, high = events.length;
+  while (low < high) {
+    const middle = (low + high) >> 1;
+    if (events[middle].frame <= frame) low = middle + 1;
+    else high = middle;
+  }
+
+  let pointEnd: ChangeoverEvent | undefined;
+  for (let index = low - 1; index >= 0; index -= 1) {
+    const event = events[index];
+    if (event.kind === 'point-end') {
+      pointEnd = event;
+      break;
+    }
+    if (event.kind === 'shot' && event.shotType === 'serve') break;
+  }
+  if (!pointEnd) {
+    for (let index = low; index < events.length && events[index].frame <= frame + 90; index += 1) {
+      if (events[index].kind === 'point-end') {
+        pointEnd = events[index];
+        break;
+      }
+    }
+  }
+  if (typeof pointEnd?.changeover === 'boolean') return pointEnd.changeover;
+
+  let previousServer: number | undefined;
+  let nextServer: number | undefined;
+  for (const event of events) {
+    if (event.kind !== 'shot' || event.shotType !== 'serve' || !event.player) continue;
+    if (event.frame <= frame) previousServer = event.player;
+    else {
+      nextServer = event.player;
+      break;
+    }
+  }
+  return previousServer !== undefined && nextServer !== undefined && previousServer !== nextServer;
+}

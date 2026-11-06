@@ -152,7 +152,7 @@ function currentRoute(payload, { feedValue = feed(), signedIn = true } = {}) {
   let feedCalls = 0;
   const route = load('app/api/live-dmo/current/route.ts', {
     'next/server': nextServer,
-    '@/lib/auth': { getSession: async () => signedIn ? { discordId: 'viewer' } : null },
+    '@/lib/auth': { getSession: async () => signedIn ? { discordId: 'viewer', isAdmin: true } : null },
     '@/lib/db': { sql: async () => [{
       id: 'live-match', owner_discord_id: 'owner', owner_name: 'Broadcaster',
       status: 'live', started_at: checkedAt, updated_at: checkedAt,

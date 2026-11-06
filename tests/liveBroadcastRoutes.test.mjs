@@ -962,7 +962,7 @@ test('broadcast owners can heartbeat and end only their own active broadcast', a
     courtFrameIndices: [8, 9],
     trajectoryEvents: [
       { frame: 8, kind: 'shot', player: 1, shotType: 'serve', speedKmh: 195 },
-      { frame: 9, kind: 'point-end' },
+      { frame: 9, kind: 'point-end', changeover: true },
     ],
     soundEvents: [{ frame: 8, kind: 'racket' }],
     court: [[0, 0, 0, 0, 0, 0, 0], [1, 1, 0, 0, 0, 0, 0]],
@@ -986,6 +986,7 @@ test('broadcast owners can heartbeat and end only their own active broadcast', a
     speedKmh: 195,
   });
   assert.equal(savedSnapshot.trajectoryEvents[1].kind, 'point-end');
+  assert.equal(savedSnapshot.trajectoryEvents[1].changeover, true);
 
   const invalidStrokeStyle = await route.PATCH(
     request({

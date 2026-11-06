@@ -1,7 +1,8 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
 import {
-  advanceGait, gaitFeet, newGaitState, returnReadiness, splitStepLift, MAX_LATERAL_REACH,
+  advanceGait, freeArmStrideSwing, gaitFeet, isChangeoverCut, newGaitState, nextShotEvent,
+  lastShotFrame, returnReadiness, smoothReplayValue, splitStepLift, MAX_LATERAL_REACH,
 } from '../lib/liveCourtGait.ts';
 
 function run(direction, speedMs, frames = 240, fps = 60) {
@@ -96,4 +97,93 @@ test('an in-progress walk continues to the target instead of snapping at the end
   assert.equal(planReposition({
     distance: 0.01, betweenPoints: true, secondsToNextServe: 5, walking: true,
   }), 'follow');
+});
+
+test('noisy speed samples cannot flip carry style, while a sustained sprint is followed', () => {
+  let speed = 1.5;
+  let carry = 0.2;
+  const values = [];
+  for (let frame = 0; frame < 18; frame += 1) {
+    const noisySpeed = frame % 2 === 0 ? 0.4 : 3.4;
+    speed = smoothReplayValue(speed, noisySpeed, 1 / 60, 0.15);
+    const target = speed > 3.2 ? 1 : 0;
+    carry = smoothReplayValue(carry, target, 1 / 60, 0.3);
+    values.push(carry);
+  }
+  assert.ok(Math.max(...values) - Math.min(...values) < 0.2,
+    'high-frequency position noise must not switch between carry poses');
+
+  for (let frame = 0; frame < 180; frame += 1) {
+    speed = smoothReplayValue(speed, 4, 1 / 60, 0.15);
+    carry = smoothReplayValue(carry, 1, 1 / 60, 0.3);
+  }
+  assert.ok(speed > 3.9);
+  assert.ok(carry > 0.99);
+  assert.equal(smoothReplayValue(carry, 0, 1, 0.3), 0, 'a seek should not retain stale carry state');
+  assert.equal(smoothReplayValue(carry, 0, -1, 0.3), 0, 'a backward seek should reset carry state too');
+  assert.ok(smoothReplayValue(carry, 0, -1 / 60, 0.3) < carry,
+    'small reverse steps should still ease toward their sampled pose');
+});
+
+test('the free-arm stride follows a continuous arc rather than a foot-lift corner', () => {
+  let largestStep = 0;
+  let previous = freeArmStrideSwing(0, 1, 1);
+  for (let index = 1; index <= 100; index += 1) {
+    const current = freeArmStrideSwing(index / 100, 1, 1);
+    largestStep = Math.max(largestStep, Math.abs(current - previous));
+    previous = current;
+  }
+  assert.ok(largestStep < 0.07, `free-arm arc stepped by ${largestStep.toFixed(3)}`);
+  assert.equal(freeArmStrideSwing(0, -1, 1), -freeArmStrideSwing(0, 1, 1));
+});
+
+test('score flags suppress changeover labels on ordinary cuts', () => {
+  const events = [
+    { frame: 0, kind: 'shot', shotType: 'serve', player: 1 },
+    { frame: 100, kind: 'point-end', changeover: false },
+    { frame: 160, kind: 'shot', shotType: 'serve', player: 1 },
+    { frame: 200, kind: 'shot', shotType: 'rally', player: 2 },
+    { frame: 260, kind: 'point-end', changeover: true },
+    { frame: 330, kind: 'shot', shotType: 'serve', player: 2 },
+  ];
+  assert.equal(isChangeoverCut(events, 120), false);
+  assert.equal(isChangeoverCut(events, 270), true);
+  assert.equal(isChangeoverCut(events, 250), true, 'a cut can precede the point-end frame');
+});
+
+test('live feeds without score flags fall back to a server change', () => {
+  const sameServer = [
+    { frame: 0, kind: 'shot', shotType: 'serve', player: 1 },
+    { frame: 50, kind: 'point-end' },
+    { frame: 80, kind: 'shot', shotType: 'serve', player: 1 },
+  ];
+  const changedServer = [
+    ...sameServer,
+    { frame: 100, kind: 'point-end' },
+    { frame: 130, kind: 'shot', shotType: 'serve', player: 2 },
+  ];
+  assert.equal(isChangeoverCut(sameServer, 60), false);
+  assert.equal(isChangeoverCut(changedServer, 110), true);
+});
+
+test('next-shot lookup selects only a future shot by the requested player', () => {
+  const events = [
+    { frame: 10, kind: 'shot', player: 1, shotType: 'serve' },
+    { frame: 20, kind: 'point-end' },
+    { frame: 30, kind: 'shot', player: 2, shotType: 'rally' },
+    { frame: 40, kind: 'shot', player: 1, shotType: 'rally' },
+  ];
+  assert.equal(nextShotEvent(events, 1, 20)?.frame, 40);
+  assert.equal(nextShotEvent(events, 2, 30), undefined);
+});
+
+test('latest-shot lookup keeps the return stance eased through recovery', () => {
+  const events = [
+    { frame: 10, kind: 'shot', player: 1 },
+    { frame: 20, kind: 'shot', player: 2 },
+    { frame: 35, kind: 'point-end' },
+  ];
+  assert.equal(lastShotFrame(events, 1, 34), 10);
+  assert.equal(lastShotFrame(events, 2, 19), undefined);
+  assert.equal(lastShotFrame(events, 2, 20), 20);
 });

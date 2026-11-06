@@ -11,6 +11,8 @@ import {
 } from '@/lib/te4DmoLive';
 import type { Te4CourtSurface } from '@/lib/te4DmoTypes';
 import {
+  CAPTURE_RECOVERY_FRAMES,
+  GROUNDSTROKE_LEAD_FRAMES,
   groundstrokeCaptureWeight,
   serveCaptureWeight,
 } from './DmoCapturedGroundstroke';
@@ -42,11 +44,16 @@ import {
 import {
   WALK_SPEED,
   advanceGait,
+  freeArmStrideSwing,
   gaitFeet,
   isBetweenPoints,
+  isChangeoverCut,
+  lastShotFrame,
+  nextShotEvent,
   newGaitState,
   planReposition,
   returnReadiness,
+  smoothReplayValue,
   splitStepLift,
   type GaitState,
 } from '@/lib/liveCourtGait';
@@ -118,6 +125,9 @@ async function loadGruntSample(context: AudioContext, isWta: boolean) {
   if (!response.ok) throw new Error('Grunt sample unavailable');
   return context.decodeAudioData(await response.arrayBuffer());
 }
+
+/** Shown under the court so a deployed build can be identified at a glance. */
+const RENDERER_BUILD = 'player repair r5';
 
 function firstEventAfterFrame<T extends { frame: number }>(events: T[], frame: number) {
   let low = 0;
@@ -565,6 +575,7 @@ function ThreeCourt({
         changeoverUntil = performance.now() + 650;
         rig.root.position.copy(position);
         if (transitionRef.current) {
+          transitionRef.current.textContent = isChangeoverCut(events, frame) ? 'Change of ends' : '';
           transitionRef.current.style.transition = 'none';
           transitionRef.current.style.opacity = '1';
         }
@@ -573,7 +584,9 @@ function ThreeCourt({
       const wasWalking = Boolean(rig.root.userData.walking);
       // Walking advances with replay time, so pausing or scrubbing stops it.
       const lastWalkFrame = Number(rig.root.userData.lastWalkFrame ?? frame);
-      const replaySeconds = Math.max(0, frame - lastWalkFrame) / replayRate;
+      const frameDeltaSeconds = (frame - lastWalkFrame) / replayRate;
+      const replaySeconds = Math.max(0, frameDeltaSeconds);
+      const smoothingSeconds = Math.abs(frameDeltaSeconds);
       rig.root.userData.lastWalkFrame = frame;
       rig.root.userData.walking = false;
       if (!rig.root.userData.positionInitialized) {
@@ -596,6 +609,7 @@ function ThreeCourt({
           rig.root.position.copy(position);
           rig.root.userData.lastRootPosition = position.clone();
           if (transitionRef.current) {
+            transitionRef.current.textContent = '';
             transitionRef.current.style.transition = 'none';
             transitionRef.current.style.opacity = '1';
           }
@@ -722,9 +736,15 @@ function ThreeCourt({
       const gaitSpeed = gait.amount * Math.min(1, speedMs / 4);
       const opponentServe = findPlayerShotEvent(events, eventPlayer === 1 ? 2 : 1, frame, 90, 'serve');
       const framesToServe = opponentServe ? opponentServe.frame - frame : Number.POSITIVE_INFINITY;
-      const ownShotBusy = Boolean(event && frame - event.frame < 14);
-      const ready = opponentServe && !ownShotBusy ? returnReadiness(framesToServe) : 0;
-      const splitStep = opponentServe && !ownShotBusy ? splitStepLift(framesToServe) : 0;
+      const ownLastShot = lastShotFrame(events, eventPlayer, frame);
+      const upcomingOwnShot = event !== undefined && event.frame > frame;
+      const freeOfOwnShot = upcomingOwnShot
+        ? 0
+        : ownLastShot === undefined
+          ? 1
+          : THREE.MathUtils.smoothstep(frame - ownLastShot, 14, 34);
+      const ready = opponentServe ? returnReadiness(framesToServe) * freeOfOwnShot : 0;
+      const splitStep = opponentServe ? splitStepLift(framesToServe) * freeOfOwnShot : 0;
       const stanceHalfWidth = 0.15 + ready * 0.2;
       const slideSpread = slideDirection * slideWeight * 0.15;
       const landing = 1 - slideWeight * 0.8;
@@ -802,8 +822,29 @@ function ThreeCourt({
       const playerStrokeStyle = sceneDataRef.current.snapshot.strokeStyles?.[index];
       // Classify the shot at contact, not from the travelling ball on every
       // animation frame (which can switch forehand/backhand mid-swing).
-      const contactSample = event
-        ? interpolateLiveCourtFrame(samples, event.frame, maxGapFrames)
+      // Blend the recorded take-back in early, and let the previous capture
+      // finish recovering before it can be replaced by the next stroke.
+      const heldStroke = rig.root.userData.capturedGroundstrokeEvent as { frame: number } | undefined;
+      const recovering = heldStroke !== undefined
+        && frame >= heldStroke.frame
+        && frame - heldStroke.frame <= CAPTURE_RECOVERY_FRAMES;
+      const comingShot = event || recovering ? undefined : nextShotEvent(events, eventPlayer, frame);
+      const leadEvent = comingShot?.shotType === 'rally'
+        && comingShot.frame - frame <= GROUNDSTROKE_LEAD_FRAMES
+        ? comingShot
+        : undefined;
+      const strokeEvent = event ?? leadEvent;
+      const strokeCue = strokeEvent === event
+        ? contactCue
+        : strokeEvent
+          ? inferLiveCourtContactCue(
+            strokeEvent,
+            samples,
+            sceneDataRef.current.snapshot.frameRate ?? TE4_DMO_FRAMES_PER_SECOND,
+          )
+          : 'standard';
+      const contactSample = strokeEvent
+        ? interpolateLiveCourtFrame(samples, strokeEvent.frame, maxGapFrames)
         : undefined;
       const contactSide = contactSample
         ? ((contactSample[0] - contactSample[xIndex]) * localXAxis[0]
@@ -815,15 +856,15 @@ function ThreeCourt({
         hands: 'one' | 'two'; contactTarget?: [number, number, number];
       };
       let capturedEvent = rig.root.userData.capturedGroundstrokeEvent as CapturedEvent | undefined;
-      if (contactCue === 'close-net' || contactCue === 'soft-touch') {
+      if (strokeEvent && (strokeCue === 'close-net' || strokeCue === 'soft-touch')) {
         delete rig.root.userData.capturedGroundstrokeEvent;
         delete rig.root.userData.groundstrokePlayback;
         capturedEvent = undefined;
-      } else if (event) {
-        if (capturedEvent?.frame !== event.frame || capturedEvent.handedness !== handedness) {
+      } else if (strokeEvent) {
+        if (capturedEvent?.frame !== strokeEvent.frame || capturedEvent.handedness !== handedness) {
           capturedEvent = {
-            frame: event.frame,
-            stroke: event.shotType === 'serve' ? 'serve' : stroke,
+            frame: strokeEvent.frame,
+            stroke: strokeEvent.shotType === 'serve' ? 'serve' : stroke,
             handedness,
             hands: (playerStrokeStyle?.[stroke] ?? (stroke === 'backhand' ? 'two' : 'one')) === 'two' ? 'two' : 'one',
             contactTarget: contactSample ? new THREE.Vector3(
@@ -840,7 +881,7 @@ function ThreeCourt({
           const dx = (contactSample[0] - contactSample[xIndex]) * SCALE;
           const dz = (contactSample[1] - contactSample[zIndex]) * SCALE;
           rig.root.userData.contactTarget = {
-            key: `${event.frame}:${capturedEvent.stroke}:${capturedEvent.handedness}`,
+            key: `${strokeEvent.frame}:${capturedEvent.stroke}:${capturedEvent.handedness}`,
             point: [
               (dx * localXAxis[0] + dz * localXAxis[1]) / rig.root.scale.x,
               (Math.max(0, contactSample[2] * SCALE) + BALL_RADIUS) / rig.root.scale.y,
@@ -852,7 +893,7 @@ function ThreeCourt({
       if (!capturedEvent) delete rig.root.userData.contactTarget;
       if (capturedEvent) {
         const captureDelta = frame - capturedEvent.frame;
-        if (captureDelta < -64 || captureDelta > 22) {
+        if (captureDelta < -64 || captureDelta > CAPTURE_RECOVERY_FRAMES) {
           delete rig.root.userData.capturedGroundstrokeEvent;
           delete rig.root.userData.groundstrokePlayback;
           capturedEvent = undefined;
@@ -894,19 +935,46 @@ function ThreeCourt({
         shapedBackswing, strikeWeight, shapedFollowThrough, servePreparation, serveToss, serveFollowThrough,
       ), 0, 1);
       const carry = 1 - strokeActivity;
-      const onTheMove = THREE.MathUtils.smoothstep(steppingSpeed, 1.0, 2.6);
-      const standingCarryHand = new THREE.Vector3(dominantX * 0.16, 1.0, 0.36);
+      // Recorded speed jitters between samples. Smooth speed and carry style in
+      // replay time so the racket and free arm do not switch poses frame to frame.
+      const carrySpeed = smoothReplayValue(
+        rig.root.userData.carrySpeed,
+        steppingSpeed,
+        smoothingSeconds,
+        0.15,
+      );
+      rig.root.userData.carrySpeed = carrySpeed;
+      const ownNextShot = nextShotEvent(events, eventPlayer, frame);
+      const shotDue = ownNextShot !== undefined && ownNextShot.frame - frame < frameRate;
+      const carryTarget = walking
+        ? 1
+        : shotDue
+          ? 0
+          : THREE.MathUtils.smoothstep(carrySpeed, 3.2, 4.6);
+      const onTheMove = smoothReplayValue(
+        rig.root.userData.carryMove,
+        carryTarget,
+        smoothingSeconds,
+        0.3,
+      );
+      rig.root.userData.carryMove = onTheMove;
+      const standingCarryHand = new THREE.Vector3(dominantX * 0.35, 1.0, 0.36);
       const movingCarryHand = new THREE.Vector3(dominantX * 0.85, 0.98 + bodyBounce, 0.14);
       const dominantHand = new THREE.Vector3(dominantX, 1.12 + bodyBounce + armPump, 0.06)
         .lerp(standingCarryHand.lerp(movingCarryHand, onTheMove), carry);
       const nonDominantHand = new THREE.Vector3(-dominantX * 0.72, 0.96 + bodyBounce - armPump, 0.1);
       {
-        // Running arm action: swing the free arm against its same-side leg
-        // with the elbow bent, rather than letting it hang behind the hip.
-        const sameSideStep = dominantX < 0 ? stepB : stepA;
-        nonDominantHand.z += -sameSideStep.z * 0.9 + gait.amount * 0.12;
-        nonDominantHand.y += gait.amount * 0.1 + Math.abs(sameSideStep.z) * 0.15;
-        nonDominantHand.x -= Math.sign(-dominantX) * gait.amount * 0.08;
+        // Use a smooth stride arc instead of the foot's lift curve, whose
+        // corner at lift-off makes the free hand jerk once every step.
+        const sameSidePhase = gait.phase + (dominantX < 0 ? 0.5 : 0);
+        const strideReach = Math.min(1, Math.hypot(stepA.x, stepA.z, stepB.x, stepB.z) / 0.3 + 0.35);
+        const swing = freeArmStrideSwing(sameSidePhase, gait.direction[1], strideReach);
+        const runningHand = new THREE.Vector3(
+          -dominantX * 0.8,
+          1.04 + bodyBounce + Math.max(0, swing) * 0.16,
+          0.08 + swing * 0.24,
+        );
+        nonDominantHand.lerp(runningHand, gait.amount);
       }
       dominantHand.x += dominantX * shapedBackswing * 0.48
         - strokeSide * shapedFollowThrough * 0.42
@@ -1060,10 +1128,25 @@ function ThreeCourt({
       const strokeGrip = twoHandedStroke
         && (impactWeight > 0 || shapedBackswing > 0 || shapedFollowThrough > 0);
       rig.root.userData.twoHandedGrip = strokeGrip;
-      // The support hand holds the throat when waiting or receiving, but
-      // releases to swing naturally while the player runs or walks.
-      rig.root.userData.supportHoldWeight = strokeGrip ? 1 : Math.max(ready, carry * (1 - onTheMove));
-      rig.root.userData.supportGripOffset = strokeGrip ? undefined : 0.2;
+      const recordedStroke = rig.root.userData.capturedGroundstrokeEvent as
+        { frame: number; stroke: 'forehand' | 'backhand' | 'serve'; hands: 'one' | 'two' } | undefined;
+      const recordedTwoHanded = recordedStroke && recordedStroke.stroke !== 'serve'
+        ? recordedStroke.hands === 'two'
+        : twoHandedStroke;
+      const recovery = recordedStroke && frame > recordedStroke.frame
+        ? 1 - THREE.MathUtils.smoothstep(frame - recordedStroke.frame, 16, CAPTURE_RECOVERY_FRAMES)
+        : 0;
+      const twoHandedWeight = recordedTwoHanded
+        ? THREE.MathUtils.clamp(
+          Math.max(strikeWeight, shapedBackswing, shapedFollowThrough, recovery) * 1.6,
+          0,
+          1,
+        )
+        : 0;
+      rig.root.userData.twoHandedStyle = recordedTwoHanded;
+      rig.root.userData.supportHoldWeight = Math.max(twoHandedWeight, ready, carry * (1 - onTheMove));
+      rig.root.userData.supportStrokeWeight = twoHandedWeight;
+      rig.root.userData.supportGripOffset = THREE.MathUtils.lerp(0.2, 0.11, twoHandedWeight);
       rig.root.userData.baselineGuard = serving
         ? { weight: 1 - THREE.MathUtils.smoothstep(strokeDelta, 2, 14), baseline: COURT_LENGTH / 2 }
         : undefined;
@@ -1694,7 +1777,7 @@ function ThreeCourt({
       </div>
       <div className={styles.viewport} ref={viewportRef}>
         <div className={styles.canvasHost} ref={canvasHostRef} />
-        <div ref={transitionRef} className={styles.changeover} aria-hidden="true">Change of ends</div>
+        <div ref={transitionRef} className={styles.changeover} aria-hidden="true" />
         {shotCallout && (
           <div className={styles.shotCallout} role="status" aria-live="polite" key={shotCallout.frame}>
             <span className={styles.shotCalloutLabel}>
@@ -1722,6 +1805,7 @@ function ThreeCourt({
         <span><i className={styles.ball} />Ball</span>
         <span className={styles.hint}>
           {cameraView.startsWith('player-') ? 'Use Look across court to pan laterally · scroll to zoom' : 'Drag to orbit · scroll to zoom'}
+          {` · ${RENDERER_BUILD}`}
         </span>
       </div>
       {fullReplay && hasCourtData && (

@@ -98,22 +98,24 @@ const UPPER_BODY_BONES = [
   'clavicle_l', 'clavicle_r',
 ];
 
+/** Frames after contact over which the recorded motion returns to carry. */
+export const CAPTURE_RECOVERY_FRAMES = 40;
+
+/** Begin recorded groundstroke preparation about two thirds of a second early. */
+export const GROUNDSTROKE_LEAD_FRAMES = 40;
+
 export function groundstrokeCaptureWeight(frameDelta: number) {
   if (!Number.isFinite(frameDelta)) return 0;
   const smooth = THREE.MathUtils.smoothstep;
-  const backswing = smooth(frameDelta, -22, -15) * (1 - smooth(frameDelta, -8, -3));
-  const impact = smooth(frameDelta, -8, -2) * (1 - smooth(frameDelta, 2, 8));
-  const followThrough = smooth(frameDelta, -1, 5) * (1 - smooth(frameDelta, 16, 22));
-  return Math.max(backswing, impact, followThrough);
+  return smooth(frameDelta, -GROUNDSTROKE_LEAD_FRAMES, -20)
+    * (1 - smooth(frameDelta, 16, CAPTURE_RECOVERY_FRAMES));
 }
 
 export function serveCaptureWeight(frameDelta: number) {
   if (!Number.isFinite(frameDelta)) return 0;
   const smooth = THREE.MathUtils.smoothstep;
-  const preparation = smooth(frameDelta, -64, -48) * (1 - smooth(frameDelta, -20, -6));
-  const contact = smooth(frameDelta, -6, -2) * (1 - smooth(frameDelta, 2, 8));
-  const recovery = smooth(frameDelta, -1, 5) * (1 - smooth(frameDelta, 16, 22));
-  return Math.max(preparation, contact, recovery);
+  return smooth(frameDelta, -64, -48)
+    * (1 - smooth(frameDelta, 16, CAPTURE_RECOVERY_FRAMES));
 }
 
 export function readyPosePlayback(
