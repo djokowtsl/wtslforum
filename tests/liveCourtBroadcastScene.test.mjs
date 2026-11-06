@@ -57,11 +57,9 @@ test('stadium fills three open tiers with crowd, concourses, score displays and 
     assert.ok(seats.count > 4_000, 'empty upper rows still read as stands across the full bowl');
     assert.equal(seats.userData.rows, 18);
     assert.equal(seats.userData.inwardFacing, true);
-    const spectators = named(superstructure, 'wtsl-continuous-bowl-spectator-bodies')[0];
-    const heads = named(superstructure, 'wtsl-continuous-bowl-spectator-heads')[0];
-    assert.ok(spectators?.isInstancedMesh && heads?.isInstancedMesh);
-    assert.equal(spectators.count, heads.count);
-    assert.ok(spectators.count > seats.count * 0.85, 'crowd fills nearly every seat across all tiers');
+    assert.equal(named(superstructure, 'wtsl-continuous-bowl-spectator-bodies').length, 0,
+      'the upper bowl does not keep a separate static crowd treatment');
+    assert.equal(named(superstructure, 'wtsl-continuous-bowl-spectator-heads').length, 0);
     assert.equal(named(superstructure, 'wtsl-baseline-upper-deck-0').length, 0);
     assert.equal(named(superstructure, 'wtsl-sideline-upper-deck-2').length, 0);
     assert.equal(named(superstructure, 'wtsl-baseline-riser-0').length, 0);
@@ -99,31 +97,128 @@ test('stadium fills three open tiers with crowd, concourses, score displays and 
   }
 });
 
-test('full-detail crowd seats are sparse, near-court and gender-balanced for quality tiers', () => {
+test('full-detail crowd seats remain sparse, near-court and gender-balanced across the unified bowl', () => {
   for (const genderIndex of [0, 1]) {
-    const selected = Array.from({ length: 7 * 96 }, (_, index) => index)
-      .filter((index) => crowdLodApi.shouldUseHighDetailCrowdSeat(Math.floor(index / 96), index, genderIndex));
-    assert.equal(selected.length, 24);
+    const selected = Array.from({ length: 2 * 10_000 }, (_, index) => index)
+      .filter((index) => crowdLodApi.shouldUseHighDetailCrowdSeat(Math.floor(index / 10_000), index, genderIndex));
+    assert.equal(selected.length, 2_500);
     assert.ok(selected.every((index) => index % 2 === genderIndex));
-    assert.ok(selected.every((index) => Math.floor(index / 96) < crowdLodApi.HIGH_DETAIL_CROWD_ROW_LIMIT));
+    assert.ok(selected.every((index) => Math.floor(index / 10_000) < crowdLodApi.HIGH_DETAIL_CROWD_ROW_LIMIT));
+    assert.equal(crowdLodApi.shouldUseHighDetailCrowdSeat(2, 20_000, genderIndex), false,
+      'high-detail meshes stay limited to the nearest two crowd rows');
   }
 });
 
-test('court-side crowd has no retaining panels that can block the foreground view', () => {
+test('one animated crowd ring fills the near apron and upper bowl with four centered passageways', () => {
   const scene = new THREE.Scene();
+  sceneApi.buildStadiumEnvironment(scene);
   const crowd = sceneApi.buildCrowd(scene);
-  assert.equal(crowd.seats.length, 7 * 72, 'four centered paths stay clear through the near-court crowd');
-  const sidelineSeats = crowd.seats.filter((seat) => Math.abs(seat.z) >= 12 && Math.abs(seat.z) < 18);
-  const baselineSeats = crowd.seats.filter((seat) => Math.abs(seat.x) >= 22);
-  assert.ok(sidelineSeats.every((seat) => Math.abs(seat.x) >= 2.5));
-  assert.ok(baselineSeats.every((seat) => Math.abs(seat.z) >= 2.5));
-  const panels = [];
+  assert.ok(crowd.seats.length > 5_000, 'detailed crowd seats continue through every stadium tier');
+  assert.equal(new Set(crowd.seats.map((seat) => seat.row)).size, 22,
+    'four lower rows connect directly to all eighteen upper-bowl rows');
+  assert.ok(crowd.seats.some((seat) => seat.row === 0 && Math.abs(seat.z) >= 12));
+  assert.ok(crowd.seats.some((seat) => seat.row >= 4 && Math.abs(seat.z) > 18));
+  for (let row = 4; row < 22; row += 1) {
+    const upperRow = crowd.seats.filter((seat) => seat.row === row);
+    assert.ok(upperRow.length > 100, `upper-bowl row ${row} remains populated`);
+    assert.ok(upperRow.every((seat) => Math.abs(seat.x) >= 2.5 && Math.abs(seat.z) >= 2.5),
+      'upper tiers keep the four centered passageways clear');
+  }
+  const nearSeats = crowd.seats.filter((seat) => seat.row < 4);
+  const sidelineSeats = nearSeats.filter((seat) => Math.abs(seat.z) >= 12 && Math.abs(seat.x) < 22);
+  const baselineSeats = nearSeats.filter((seat) => Math.abs(seat.x) >= 22 && Math.abs(seat.z) < 12);
+  assert.ok(sidelineSeats.every((seat) => Math.abs(seat.x) >= 2.5),
+    'the two sideline passageways remain open through the lower crowd');
+  assert.ok(baselineSeats.every((seat) => Math.abs(seat.z) >= 2.5),
+    'the two baseline passageways remain open through the lower crowd');
+  assert.ok(nearSeats.every((seat) => Math.abs(seat.x) >= 21.9 || Math.abs(seat.z) >= 11.7),
+    'all lower spectators remain beyond the clear runoff');
+  const detachedStands = [];
   scene.traverse((object) => {
-    if (!object.isMesh || object.geometry?.type !== 'BoxGeometry') return;
-    const { width, depth } = object.geometry.parameters;
-    if ((width >= 45 && depth <= 1) || (depth >= 30 && width <= 1)) panels.push(object);
+    if (/wtsl-(baseline|sideline)-(upper-deck|riser)|wtsl-courtside-stand/i.test(object.name)) {
+      detachedStands.push(object.name);
+    }
   });
-  assert.deepEqual(panels, [], 'no perimeter wall or cap spans across the court camera');
+  assert.deepEqual(detachedStands, [], 'no detached near-court stand group is built');
+  const heads = scene.getObjectByName('wtsl-spectator-heads');
+  const arms = scene.getObjectByName('wtsl-unified-crowd-fallback-arms');
+  assert.ok(heads?.isInstancedMesh);
+  assert.ok(arms?.isInstancedMesh);
+  const crowdMeshes = [];
+  scene.traverse((object) => {
+    if (/wtsl-(unified|spectator)/.test(object.name)) crowdMeshes.push(object);
+  });
+  assert.ok(crowdMeshes.length > 0);
+  assert.ok(crowdMeshes.every((mesh) => mesh.isInstancedMesh),
+    'crowd body parts and seating use instancing rather than per-spectator meshes');
+  assert.equal(heads.count, crowd.seats.length);
+  assert.equal(arms.count, crowd.seats.length * 2);
+  const animatedSeat = crowd.seats.findIndex((seat) => seat.row >= 4 && seat.sourceIndex % 5 !== 0);
+  assert.ok(animatedSeat >= 0);
+  const before = new THREE.Matrix4();
+  const after = new THREE.Matrix4();
+  const armBefore = new THREE.Matrix4();
+  const armAfter = new THREE.Matrix4();
+  heads.getMatrixAt(crowd.seats.length - 1, before);
+  arms.getMatrixAt(animatedSeat * 2, armBefore);
+  crowd.update(1, true, new THREE.Vector3(-10, 1, 0));
+  heads.getMatrixAt(crowd.seats.length - 1, after);
+  arms.getMatrixAt(animatedSeat * 2, armAfter);
+  assert.notDeepEqual(after.elements, before.elements, 'the same gaze animation reaches upper-bowl spectators');
+  assert.notDeepEqual(armAfter.elements, armBefore.elements, 'the same applause animation reaches upper-bowl spectators');
+});
+
+test('upper crowd anchors match the architecture seat coordinates and facing', () => {
+  const scene = new THREE.Scene();
+  sceneApi.buildStadiumEnvironment(scene);
+  const crowd = sceneApi.buildCrowd(scene);
+  const architectureSeats = scene.getObjectByName('wtsl-continuous-bowl-seats');
+  assert.ok(architectureSeats?.isInstancedMesh);
+  const innerX = 27.8, innerZ = 18.8, rowWidth = 1.62, rowRise = 0.94;
+  const concourseWidth = 2.15, tierRows = 6, baseY = 2.7, tunnelHalfWidth = 2.5;
+  const rowRadiusStart = (row) => row * rowWidth + Math.floor(row / tierRows) * concourseWidth;
+  const matrix = new THREE.Matrix4();
+  const position = new THREE.Vector3();
+  const rotation = new THREE.Quaternion();
+  const scale = new THREE.Vector3();
+  let sourceOffset = 0;
+  for (let row = 0; row < 18; row += 1) {
+    const radius = rowRadiusStart(row) + rowWidth / 2;
+    const ellipseX = innerX + radius;
+    const ellipseZ = innerZ + radius;
+    const count = Math.round((Math.PI * 2 * ((ellipseX + ellipseZ) / 2)) / 0.86);
+    const expected = [];
+    for (let index = 0; index < count; index += 1) {
+      architectureSeats.getMatrixAt(sourceOffset + index, matrix);
+      matrix.decompose(position, rotation, scale);
+      if (Math.abs(position.x) < tunnelHalfWidth || Math.abs(position.z) < tunnelHalfWidth) continue;
+      expected.push({ x: position.x, z: position.z, facing: Math.atan2(matrix.elements[8], matrix.elements[0]) });
+    }
+    const actual = crowd.seats.filter((seat) => seat.row === row + 4);
+    assert.equal(actual.length, expected.length, `crowd row ${row} keeps architecture seat occupancy`);
+    for (let index = 0; index < expected.length; index += 1) {
+      assert.ok(Math.abs(actual[index].x - expected[index].x) < 1e-5, `row ${row} x aligns`);
+      assert.ok(Math.abs(actual[index].z - expected[index].z) < 1e-5, `row ${row} z aligns`);
+      assert.ok(Math.abs(actual[index].facing - expected[index].facing) < 1e-5,
+        `row ${row} index ${index} at ${actual[index].x},${actual[index].z}: facing ${actual[index].facing} != architecture ${expected[index].facing}`);
+      assert.ok(Math.abs(actual[index].y - (baseY + row * rowRise)) < 1e-5, `row ${row} floor height aligns`);
+    }
+    sourceOffset += count;
+  }
+});
+
+test('crowd implementation contains no legacy stand block and keeps textured people instanced', async () => {
+  const sceneSource = await readFile(new URL('../components/DmoLiveCourt3DScene.ts', import.meta.url), 'utf8');
+  const crowdSource = sceneSource.slice(
+    sceneSource.indexOf('export function buildCrowd('),
+    sceneSource.indexOf('export function buildCourtFixtures('),
+  );
+  assert.match(crowdSource, /return buildUnifiedCrowd\(scene\)/);
+  assert.doesNotMatch(crowdSource, /historical reference|rowStep = 0\.66|platformMaterial/);
+  const humanCrowdSource = await readFile(new URL('../components/DmoHumanCrowd.ts', import.meta.url), 'utf8');
+  assert.match(humanCrowdSource, /new THREE\.InstancedMesh/);
+  assert.doesNotMatch(humanCrowdSource, /new THREE\.Mesh\s*\(/,
+    'textured spectators stay in shared batches rather than one draw call per person');
 });
 
 test('players use realistic materials and natural human proportions', () => {
@@ -213,19 +308,16 @@ test('crowd is human-scaled and separated from deep-baseline player space', () =
   const crowd = sceneApi.buildCrowd(scene);
   const heads = scene.getObjectByName('wtsl-spectator-heads');
   assert.ok(heads, 'adult-sized spectator heads');
-  const noses = scene.getObjectByName('wtsl-spectator-noses');
-  const ears = scene.getObjectByName('wtsl-spectator-ears');
-  assert.equal(noses?.count, heads.count, 'each spectator has a facial profile');
-  assert.equal(ears?.count, heads.count * 2, 'each spectator has two ears');
-  heads.geometry.computeBoundingBox();
-  const headSize = heads.geometry.boundingBox.getSize(new THREE.Vector3());
-  assert.ok(headSize.y >= 0.22 && headSize.y <= 0.29, 'heads retain adult human proportions');
-  assert.ok(headSize.x < 0.20, 'heads taper instead of using oversized round spheres');
+  assert.equal(heads.count, crowd.seats.length, 'every near and upper-bowl seat shares one crowd rig');
+  assert.equal(heads.geometry.type, 'SphereGeometry', 'the lightweight fallback is replaced by textured seated humans');
   const matrix = new THREE.Matrix4();
   const before = new THREE.Matrix4();
   heads.getMatrixAt(0, before);
   const position = new THREE.Vector3().setFromMatrixPosition(before);
   assert.ok(position.y >= 1.2 && position.y <= 1.7, `front row head ${position.y}`);
+  const headScale = new THREE.Vector3().setFromMatrixScale(before);
+  assert.ok(headScale.y >= 0.22 && headScale.y <= 0.29, 'heads retain adult human proportions');
+  assert.ok(headScale.x < 0.20, 'heads remain narrower than their height');
   for (let index = 0; index < heads.count; index++) {
     heads.getMatrixAt(index, matrix);
     const p = new THREE.Vector3().setFromMatrixPosition(matrix);
