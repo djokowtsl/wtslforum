@@ -3,6 +3,17 @@ import { BVHLoader } from 'three/examples/jsm/loaders/BVHLoader.js';
 
 export type GroundstrokeName = 'forehand' | 'backhand' | 'serve';
 export type DominantHandedness = 'left' | 'right';
+export type PlayerStrokeHands = 'one' | 'two';
+
+export function recordedStrokeUsesTwoHands(
+  stroke: GroundstrokeName | undefined,
+  style: { forehand?: PlayerStrokeHands; backhand?: PlayerStrokeHands } | undefined,
+  fallback: boolean,
+) {
+  if (!stroke) return fallback;
+  if (stroke === 'serve') return false;
+  return (style?.[stroke] ?? (stroke === 'backhand' ? 'two' : 'one')) === 'two';
+}
 
 export interface GroundstrokeMotionSources {
   forehand: string;

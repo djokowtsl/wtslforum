@@ -14,6 +14,7 @@ import {
   CAPTURE_RECOVERY_FRAMES,
   GROUNDSTROKE_LEAD_FRAMES,
   groundstrokeCaptureWeight,
+  recordedStrokeUsesTwoHands,
   serveCaptureWeight,
 } from './DmoCapturedGroundstroke';
 import { courtSurfaceDisplayName, isIndoorDmoVenue } from '@/lib/te4DmoSurface';
@@ -50,7 +51,9 @@ import {
   newGaitState,
   nextShotEvent,
   planReposition,
+  relaxedWalkCarryWeight,
   returnReadiness,
+  serveBaselineGuardWeight,
   splitStepLift,
   type GaitState,
 } from '@/lib/liveCourtGait';
@@ -121,7 +124,7 @@ async function loadGruntSample(context: AudioContext, isWta: boolean) {
 const MIN_CAMERA_HEIGHT = 0.8;
 
 /** Shown under the court so a deployed build can be identified at a glance. */
-const RENDERER_BUILD = 'player repair r7';
+const RENDERER_BUILD = 'player repair r8';
 
 function firstEventAfterFrame<T extends { frame: number }>(events: T[], frame: number) {
   let low = 0;
@@ -935,7 +938,10 @@ function ThreeCourt({
       const carrySpeed = smoothSpeed;
       const ownNextShot = nextShotEvent(events, eventPlayer, frame);
       const shotDue = ownNextShot !== undefined && ownNextShot.frame - frame < frameRate;
-      const carryTarget = walking ? 1 : shotDue ? 0 : THREE.MathUtils.smoothstep(carrySpeed, 3.2, 4.6);
+      // TE4 records the walk back to the line at the start of the next point;
+      // that is walking too, so it gets the same relaxed carry as our own walks.
+      const strolling = isBetweenPoints(events, frame) ? relaxedWalkCarryWeight(carrySpeed) : 0;
+      const carryTarget = walking ? 1 : shotDue ? 0 : Math.max(strolling, THREE.MathUtils.smoothstep(carrySpeed, 3.2, 4.6));
       const carryBlend = replaySeconds > 0.5 ? 1 : 1 - Math.exp(-replaySeconds / 0.3);
       const previousCarry = Number(rig.root.userData.carryMove ?? carryTarget);
       const onTheMove = previousCarry + (carryTarget - previousCarry) * carryBlend;
@@ -1131,9 +1137,11 @@ function ThreeCourt({
       // its recovery, rather than the ball's current side after the event passes.
       const recordedStroke = rig.root.userData.capturedGroundstrokeEvent as
         { frame: number; stroke: 'forehand' | 'backhand' | 'serve' } | undefined;
-      const recordedTwoHanded = recordedStroke && recordedStroke.stroke !== 'serve'
-        ? (playerStrokeStyle?.[recordedStroke.stroke] ?? (recordedStroke.stroke === 'backhand' ? 'two' : 'one')) === 'two'
-        : twoHandedStroke;
+      const recordedTwoHanded = recordedStrokeUsesTwoHands(
+        recordedStroke?.stroke,
+        playerStrokeStyle,
+        twoHandedStroke,
+      );
       // Two-handed players keep both hands on through the recovery.
       const recovery = recordedStroke && frame > recordedStroke.frame
         ? 1 - THREE.MathUtils.smoothstep(frame - recordedStroke.frame, 16, CAPTURE_RECOVERY_FRAMES)
@@ -1147,9 +1155,10 @@ function ThreeCourt({
       rig.root.userData.supportStrokeWeight = twoHandedWeight;
       rig.root.userData.supportGripOffset = THREE.MathUtils.lerp(0.2, 0.11, twoHandedWeight);
       // Server's feet must stay behind the baseline until contact; landing
-      // inside the court afterwards is legal and eases in.
+      // inside the court afterwards is legal and eases in. The guard also
+      // eases in as the serve comes up, preventing a sudden backward jump.
       rig.root.userData.baselineGuard = serving
-        ? { weight: 1 - THREE.MathUtils.smoothstep(strokeDelta, 2, 14), baseline: COURT_LENGTH / 2 }
+        ? { weight: serveBaselineGuardWeight(strokeDelta), baseline: COURT_LENGTH / 2 }
         : undefined;
       if (rig.root.userData.twoHandedGrip) {
         const supportWrist = racketGripWrist(nonDominantHand, rig.racket.quaternion, handedness !== 'left');

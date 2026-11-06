@@ -1,7 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import {
-  GROUNDSTROKE_LEAD_FRAMES, groundstrokeCaptureWeight, serveCaptureWeight,
+  GROUNDSTROKE_LEAD_FRAMES, groundstrokeCaptureWeight, recordedStrokeUsesTwoHands, serveCaptureWeight,
 } from '../components/DmoCapturedGroundstroke.ts';
 
 test('captured groundstroke blends in before contact and fades after follow-through', () => {
@@ -43,4 +43,11 @@ test('the recorded take-back blends in gradually, not in a few frames', () => {
   }
   assert.ok(GROUNDSTROKE_LEAD_FRAMES >= 36, 'starts at least 0.6 s before contact');
   assert.ok(steepest < 0.1, `blend-in step per frame ${steepest.toFixed(3)} (was ~0.21)`);
+});
+
+test('a recorded serve stays one-handed through recovery', () => {
+  const twoHandedStyle = { forehand: 'two', backhand: 'two' };
+  assert.equal(recordedStrokeUsesTwoHands('serve', twoHandedStyle, true), false);
+  assert.equal(recordedStrokeUsesTwoHands('backhand', twoHandedStyle, false), true);
+  assert.equal(recordedStrokeUsesTwoHands(undefined, twoHandedStyle, true), true);
 });

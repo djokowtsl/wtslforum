@@ -113,6 +113,21 @@ export const WALK_SPEED = 1.5;
 /** Seconds a walk must leave before the next serve. */
 export const ARRIVAL_MARGIN = 1;
 
+function smoothstep(value: number, edge0: number, edge1: number) {
+  const t = Math.min(1, Math.max(0, (value - edge0) / (edge1 - edge0)));
+  return t * t * (3 - 2 * t);
+}
+
+/** Blend the relaxed side-carry in for recorded between-point walks. */
+export function relaxedWalkCarryWeight(speedMs: number) {
+  return smoothstep(speedMs, 0.5, 1.0);
+}
+
+/** Ease the server's baseline guard in before contact and out after contact. */
+export function serveBaselineGuardWeight(frameDelta: number) {
+  return smoothstep(frameDelta, -64, -40) * (1 - smoothstep(frameDelta, 2, 14));
+}
+
 export type RepositionPlan = 'follow' | 'walk' | 'cut';
 
 /**
