@@ -701,6 +701,7 @@ function DmoLiveCourt({
       TE4_DMO_FRAMES_PER_SECOND,
     )) {
       if (event.kind !== 'footstep') continue;
+      if (snapshot.frameCount - event.frame > TE4_DMO_FRAMES_PER_SECOND * 0.12) continue;
       const key = `${event.frame}:${event.kind}:${event.player}`;
       if (event.frame < lastSoundFrameRef.current || playedSoundEventsRef.current.has(key)) continue;
       playLiveCourtCue(context, event.kind, activeGruntVoicesRef.current, isWta,
