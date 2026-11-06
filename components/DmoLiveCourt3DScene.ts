@@ -195,32 +195,26 @@ export function buildStadiumEnvironment(scene: THREE.Scene, indoor = false) {
     scene.add(sky);
   }
   const steel = material(0x3f5051, 0.62);
-  const concrete = material(0x777e79, 0.88);
   const lamp = new THREE.MeshStandardMaterial({
     color: 0xe8dfca, emissive: 0xffe6b9, emissiveIntensity: 0.52, roughness: 0.42,
   });
   if (indoor) {
-    // Full-span trusses and a shallow vaulted roof appear only for indoor venues.
-    for (const side of [-1, 1]) {
-      const z = side * 19.6;
-      const beam = addBox(stadium, [50, 0.34, 0.42], [0, 13.6, z], steel);
-      beam.castShadow = false;
-      for (let x = -22; x <= 22; x += 5.5) {
-        const post = addBox(stadium, [0.24, 8.8, 0.26], [x, 9.3, z], steel);
-        post.castShadow = false;
-        const brace = addBox(stadium, [0.11, 5.5, 0.11], [x + side * 1.7, 11.6, z], steel);
-        brace.rotation.z = side * -0.34;
-        brace.castShadow = false;
-      }
-      const fascia = addBox(stadium, [49, 0.65, 0.35], [0, 12.95, z - side * 0.28], concrete);
-      fascia.castShadow = false;
-    }
-    for (let x = -22; x <= 22; x += 11) {
-      const roofRib = addBox(stadium, [0.22, 0.28, 39.2], [x, 14.4, 0], steel);
-      roofRib.castShadow = false;
-    }
-    const roof = addBox(stadium, [48, 0.28, 38], [0, 15, 0], concrete);
+    // An inward-facing ceiling gives indoor courts a roof overhead without
+    // becoming an opaque exterior lid when the camera orbits above it.
+    const roof = new THREE.Mesh(
+      new THREE.PlaneGeometry(74, 56),
+      new THREE.MeshBasicMaterial({
+        color: 0x59666b,
+        side: THREE.FrontSide,
+        toneMapped: false,
+      }),
+    );
+    roof.name = 'wtsl-indoor-ceiling';
+    roof.rotation.x = Math.PI / 2;
+    roof.position.set(0, 15, 0);
     roof.castShadow = false;
+    roof.receiveShadow = false;
+    stadium.add(roof);
   }
   for (const x of [-22, 22]) {
     const mast = addBox(stadium, [0.32, 13.5, 0.32], [x, 6.75, 0], steel);
@@ -233,7 +227,7 @@ export function buildStadiumEnvironment(scene: THREE.Scene, indoor = false) {
       stadium.add(fixture);
     }
   }
-  stadium.add(buildStadiumArchitecture(indoor));
+  stadium.add(buildStadiumArchitecture());
   scene.add(stadium);
   for (const [x, z] of [[-18, -13], [-18, 13], [18, -13], [18, 13]] as const) {
     const spot = new THREE.SpotLight(0xfff0d7, indoor ? 8 : 5, 48, Math.PI / 5, 0.68, 2);
