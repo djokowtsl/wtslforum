@@ -85,6 +85,7 @@ import {
   type PlayerRig,
 } from './DmoLiveCourt3DScene';
 import styles from './DmoLiveCourt3D.module.css';
+import CourtFullscreenButton from './CourtFullscreenButton';
 import { attachHumanPlayer, disposeHumanModel, loadHumanModel } from './DmoHumanModels';
 import { attachHumanCrowd } from './DmoHumanCrowd';
 import { racketContactOrientation, racketGripElbow, racketGripWrist } from './DmoRacketOrientation';
@@ -177,6 +178,7 @@ function ThreeCourt({
   onGruntsEnabledChange,
   onUnsupported,
 }: Props & GruntControlProps & { onUnsupported: () => void }) {
+  const sceneElementRef = useRef<HTMLElement>(null);
   const viewportRef = useRef<HTMLDivElement>(null);
   const canvasHostRef = useRef<HTMLDivElement>(null);
   const sceneRef = useRef<THREE.Scene | null>(null);
@@ -1671,7 +1673,11 @@ function ThreeCourt({
   };
 
   return (
-    <section className={styles.scene} aria-label={fullReplay ? 'Three-dimensional full match replay' : 'Three-dimensional live court'}>
+    <section
+      ref={sceneElementRef}
+      className={styles.scene}
+      aria-label={fullReplay ? 'Three-dimensional full match replay' : 'Three-dimensional live court'}
+    >
       <div className={styles.toolbar}>
         <div className={styles.title}>
           <span className={styles.liveDot} aria-hidden="true" />
@@ -1709,6 +1715,11 @@ function ThreeCourt({
             <button type="button" aria-label="Zoom in" onClick={() => requestZoom(0.87)}><Plus size={15} /></button>
             <button type="button" aria-label="Reset court camera" onClick={resetCamera}><RotateCcw size={15} /></button>
           </div>
+          <CourtFullscreenButton
+            targetRef={sceneElementRef}
+            className={styles.soundButton}
+            statusClassName={styles.visuallyHidden}
+          />
           {cameraView.startsWith('player-') && (
             <label className={styles.panControl}>
               <span>Look across court</span>

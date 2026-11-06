@@ -34,6 +34,7 @@ import {
   drawLiveCourtBackdrop,
   drawLiveCourtCrowdMotion,
 } from '@/lib/liveCourtStadium';
+import CourtFullscreenButton from './CourtFullscreenButton';
 import { liveGruntAudioUrl } from '@/lib/liveGruntAudio';
 import styles from './DmoLiveCourt.module.css';
 
@@ -468,6 +469,7 @@ function DmoLiveCourt({
   gruntsEnabled,
   onGruntsEnabledChange,
 }: Props) {
+  const sceneElementRef = useRef<HTMLElement>(null);
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const cameraDragRef = useRef<{ x: number; y: number } | null>(null);
   const sampleBufferRef = useRef<LiveCourtSample[]>([]);
@@ -789,7 +791,7 @@ function DmoLiveCourt({
   }, [isWta, soundEnabled, gruntsEnabled]);
 
   return (
-    <section className={styles.scene} aria-label="Live court view">
+    <section ref={sceneElementRef} className={styles.scene} aria-label="Live court view">
       <div className={styles.sceneToolbar}>
         <div className={styles.sceneTitle}>
           <strong>LIVE COURT</strong>
@@ -869,6 +871,11 @@ function DmoLiveCourt({
           >
             Grunts {gruntsEnabled ? 'on' : 'off'}
           </button>
+          <CourtFullscreenButton
+            targetRef={sceneElementRef}
+            className={styles.fullscreenButton}
+            statusClassName={styles.visuallyHidden}
+          />
           {stadiumAtmosphere && (
             <div className={styles.crowdVolumeControl} role="group" aria-label="Crowd volume controls">
               <span>Crowd</span>
