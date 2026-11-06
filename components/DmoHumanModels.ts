@@ -141,7 +141,7 @@ function limbEnds(mesh: THREE.Mesh, from: THREE.Vector3, to: THREE.Vector3) {
 }
 
 /** Tint only the desaturated fabric, not skin, hair or facial features. */
-function tintKit(mesh: THREE.SkinnedMesh, tint: number) {
+export function tintKit(mesh: THREE.SkinnedMesh, tint: number) {
   const material = (Array.isArray(mesh.material) ? mesh.material[0] : mesh.material) as THREE.MeshStandardMaterial;
   const image = material.map?.image as CanvasImageSource & { width: number; height: number };
   if (!image?.width || typeof document === 'undefined') return;

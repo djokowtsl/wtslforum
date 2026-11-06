@@ -20,13 +20,16 @@ async function loadTs(path, overrides = {}) {
   return module.exports;
 }
 const stadiumArchitectureApi = await loadTs('../components/DmoStadiumArchitecture.ts');
+const venueApi = await loadTs('../lib/dmoVenue.ts');
 const sceneApi = await loadTs('../components/DmoLiveCourt3DScene.ts', {
   './DmoStadiumArchitecture': stadiumArchitectureApi,
+  '../lib/dmoVenue': venueApi,
 });
 const crowdLodApi = await loadTs('../lib/dmoCrowdLod.ts');
 const {
   deriveLiveCourtSoundEvents,
   loadCourtEffectSamples,
+  playCourtSoundCheck,
   playLiveCourtEffect,
 } = await loadTs('../lib/liveCourtAudio.ts', {
   './te4DmoSurface': { courtSurfaceSoundProfile },
@@ -99,6 +102,38 @@ test('stadium fills three open tiers with crowd, concourses, score displays and 
     assert.equal(Boolean(scene.getObjectByName('wtsl-indoor-ceiling')), false);
     assert.equal(stadium.children.some(child => /roof|shell|facade|exterior/i.test(child.name)), false);
   }
+});
+
+test('stadium and audience scale with recognized tournament capacities', async () => {
+  const ashe = venueApi.resolveDmoVenueProfile('Arthur Ashe Stadium');
+  const wimbledon = venueApi.resolveDmoVenueProfile('Wimbledon Centre Court');
+  const delray = venueApi.resolveDmoVenueProfile('Delray Beach Tennis Center');
+  assert.equal(ashe.capacity, 23_771);
+  assert.equal(wimbledon.capacity, 14_979);
+  assert.equal(delray.capacity, 8_200);
+  assert.ok(ashe.upperRows > wimbledon.upperRows && wimbledon.upperRows > delray.upperRows);
+
+  const asheScene = new THREE.Scene();
+  const delrayScene = new THREE.Scene();
+  sceneApi.buildStadiumEnvironment(asheScene, false, undefined, 'Arthur Ashe Stadium');
+  sceneApi.buildStadiumEnvironment(delrayScene, false, undefined, 'Delray Beach Tennis Center');
+  const asheBowl = asheScene.getObjectByName('wtsl-continuous-seating-bowl');
+  const delrayBowl = delrayScene.getObjectByName('wtsl-continuous-seating-bowl');
+  assert.equal(asheBowl.geometry.userData.rows, ashe.upperRows);
+  assert.equal(delrayBowl.geometry.userData.rows, delray.upperRows);
+  assert.ok(
+    asheScene.getObjectByName('wtsl-stadium-superstructure').userData.seatCount
+      > delrayScene.getObjectByName('wtsl-stadium-superstructure').userData.seatCount,
+  );
+
+  const asheCrowd = sceneApi.buildCrowd(new THREE.Scene(), 'Arthur Ashe Stadium');
+  const delrayCrowd = sceneApi.buildCrowd(new THREE.Scene(), 'Delray Beach Tennis Center');
+  assert.ok(asheCrowd.seats.length > delrayCrowd.seats.length);
+  const court = await readFile(new URL('../components/DmoLiveCourt3D.tsx', import.meta.url), 'utf8');
+  const viewer = await readFile(new URL('../components/DmoLiveViewer.tsx', import.meta.url), 'utf8');
+  assert.match(court, /sceneDataRef\.current\.snapshot\.stadium/);
+  assert.match(court, /snapshot\.stadium\]\)/);
+  assert.match(viewer, /previousSnapshot\.stadium === nextSnapshot\.stadium/);
 });
 
 test('full-detail crowd seats remain sparse, near-court and gender-balanced across the unified bowl', () => {
@@ -247,12 +282,18 @@ test('crowd implementation contains no legacy stand block and keeps textured peo
     sceneSource.indexOf('export function buildCrowd('),
     sceneSource.indexOf('export function buildCourtFixtures('),
   );
-  assert.match(crowdSource, /return buildUnifiedCrowd\(scene\)/);
+  assert.match(crowdSource, /return buildUnifiedCrowd\(scene, resolveDmoVenueProfile\(venueName\)\)/);
   assert.doesNotMatch(crowdSource, /historical reference|rowStep = 0\.66|platformMaterial/);
   const humanCrowdSource = await readFile(new URL('../components/DmoHumanCrowd.ts', import.meta.url), 'utf8');
   assert.match(humanCrowdSource, /new THREE\.InstancedMesh/);
-  assert.doesNotMatch(humanCrowdSource, /new THREE\.Mesh\s*\(/,
+  const seatedGeometrySource = humanCrowdSource.slice(
+    humanCrowdSource.indexOf('function seatedGeometry('),
+    humanCrowdSource.indexOf('/** Textured seated humans'),
+  );
+  assert.doesNotMatch(seatedGeometrySource, /new THREE\.Mesh\s*\(/,
     'textured spectators stay in shared batches rather than one draw call per person');
+  assert.match(humanCrowdSource, /wtsl-fan-banner-/);
+  assert.match(humanCrowdSource, /wtsl-court-coach-/);
 });
 
 test('players use realistic materials and natural human proportions', () => {
@@ -514,7 +555,7 @@ test('court contacts use compact varied sound textures for each effect and surfa
   assert.equal(silent.sources.length, 0, 'zero effects volume remains silent');
 });
 
-test('court effects load recorded samples and retain quiet, surface-aware footwork', async () => {
+test('court effects load clean samples, test directly from a tap, and keep slides brief', async () => {
   const requestedUrls = [];
   const { samples, missing } = await loadCourtEffectSamples({
     decodeAudioData: async () => ({ duration: 0.25 }),
@@ -523,11 +564,10 @@ test('court effects load recorded samples and retain quiet, surface-aware footwo
     return { ok: true, arrayBuffer: async () => new ArrayBuffer(32) };
   });
   assert.deepEqual(missing, []);
-  assert.deepEqual(Object.keys(samples).sort(), ['bounce', 'footstep', 'racket', 'slide']);
+  assert.deepEqual(Object.keys(samples).sort(), ['bounce', 'footstep', 'racket']);
   assert.deepEqual(requestedUrls.sort(), [
     '/audio/dmo-ball-bounce.mp3',
     '/audio/dmo-court-footstep.mp3',
-    '/audio/dmo-court-slide.mp3',
     '/audio/dmo-racket-impact.mp3',
   ]);
 
@@ -539,7 +579,7 @@ test('court effects load recorded samples and retain quiet, surface-aware footwo
     const node = () => ({
       connect() { return this; },
       disconnect() {},
-      start() {},
+      start(time) { this.startedAt = time; },
       stop() {},
       gain: param(),
       playbackRate: param(),
@@ -553,7 +593,12 @@ test('court effects load recorded samples and retain quiet, surface-aware footwo
     });
     const context = {
       currentTime: 0,
+      sampleRate: 44_100,
       destination: {},
+      createBuffer: (_channels, length, sampleRate) => ({
+        duration: length / sampleRate,
+        getChannelData: () => new Float32Array(length),
+      }),
       createBufferSource: () => {
         const source = node();
         sources.push(source);
@@ -591,13 +636,25 @@ test('court effects load recorded samples and retain quiet, surface-aware footwo
   ]).size, 3, 'surface profiles shape the same recording differently');
   assert.ok(clay.gains[0].gain.value < 0.6, 'footsteps stay quieter than racket and ball contacts');
 
+  const soundCheck = makeContext();
+  const longSqueak = { duration: 0.522 };
+  playCourtSoundCheck(soundCheck.context, 'clay', 0.5, {
+    racket: sample, bounce: sample, footstep: sample, slide: longSqueak,
+  });
+  assert.deepEqual(soundCheck.sources.map(source => source.startedAt), [0, 0.36, 0.72, 1.08]);
+  assert.equal(soundCheck.sources[0].buffer, sample);
+  assert.notEqual(soundCheck.sources[3].buffer, longSqueak, 'slide never uses the long tonal recording');
+  assert.ok(soundCheck.sources[3].buffer.duration < 0.1, 'slide friction is a short burst');
+
   const partial = await loadCourtEffectSamples({
     decodeAudioData: async () => ({ duration: 0.25 }),
   }, async url => ({
-    ok: !url.endsWith('dmo-court-slide.mp3'),
+    ok: !url.endsWith('dmo-ball-bounce.mp3'),
     arrayBuffer: async () => new ArrayBuffer(32),
   }));
-  assert.deepEqual(partial.missing, ['slide'], 'unavailable samples are reported for the visible fallback status');
+  assert.deepEqual(partial.missing, ['bounce'], 'unavailable samples are reported for the visible fallback status');
+  const audioSource = await readFile(new URL('../lib/liveCourtAudio.ts', import.meta.url), 'utf8');
+  assert.doesNotMatch(audioSource, /dmo-court-slide\.mp3/);
 });
 
 test('point and game boundaries do not clear accumulated clay marks', async () => {
@@ -606,6 +663,8 @@ test('point and game boundaries do not clear accumulated clay marks', async () =
     source.indexOf('const context = audioContextRef.current;', source.indexOf("liveCourtTrajectoryCue(cue, false)")));
   assert.doesNotMatch(pointBlock, /clearSkidMarks/);
   assert.match(source, /Test court sounds/);
+  assert.match(source, /playCourtSoundCheck\(context, surface, effectsVolumeRef\.current/);
+  assert.doesNotMatch(source.slice(source.lastIndexOf('playCourtSoundCheck('), source.indexOf('Test court sounds')), /setTimeout/);
   assert.match(source, /Court effects volume/);
 });
 
