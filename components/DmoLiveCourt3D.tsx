@@ -22,6 +22,7 @@ import { courtSurfaceDisplayName, isIndoorDmoVenue } from '@/lib/te4DmoSurface';
 import {
   deriveLiveCourtSoundEvents,
   loadCourtEffectSamples,
+  playCourtSoundCheck,
   playLiveCourtEffect as playCue,
   type CourtEffectSamples,
 } from '@/lib/liveCourtAudio';
@@ -92,7 +93,7 @@ import styles from './DmoLiveCourt3D.module.css';
 import CourtFullscreenButton from './CourtFullscreenButton';
 import CourtPictureInPictureButton from './CourtPictureInPictureButton';
 import { attachHumanPlayer, disposeHumanModel, loadHumanModel } from './DmoHumanModels';
-import { attachHumanCrowd } from './DmoHumanCrowd';
+import { attachHumanCourtStaff, attachHumanCrowd } from './DmoHumanCrowd';
 import { racketContactOrientation, racketGripElbow, racketGripWrist } from './DmoRacketOrientation';
 import type { StadiumScoreboardData } from './DmoStadiumArchitecture';
 
@@ -416,6 +417,7 @@ function ThreeCourt({
       scene,
       isIndoorDmoVenue(sceneDataRef.current.snapshot.stadium),
       sceneDataRef.current.scoreboard,
+      sceneDataRef.current.snapshot.stadium,
     );
     const camera = new THREE.PerspectiveCamera(34, 1, 0.1, 260);
     camera.position.copy(DEFAULT_CAMERA);
@@ -463,7 +465,7 @@ function ThreeCourt({
 
     const courtEffects = buildCourt(scene, sceneDataRef.current.surface);
     const fixtureRig = buildCourtFixtures(scene);
-    const crowdRig = buildCrowd(scene);
+    const crowdRig = buildCrowd(scene, sceneDataRef.current.snapshot.stadium);
     const players = [
       makePlayer(PALETTE.shirtOne, 0x335d58, isWta),
       makePlayer(PALETTE.shirtTwo, 0x514b61, isWta),
@@ -487,7 +489,14 @@ function ThreeCourt({
           attachHumanPlayer(player.value, players[1], PALETTE.shirtTwo);
         }
         if (maleCrowd.status === 'fulfilled' && femaleCrowd.status === 'fulfilled') {
-          attachHumanCrowd(scene, crowdRig, [maleCrowd.value, femaleCrowd.value]);
+          const crowdTemplates: [THREE.Group, THREE.Group] = [maleCrowd.value, femaleCrowd.value];
+          attachHumanCrowd(scene, crowdRig, crowdTemplates);
+          attachHumanCourtStaff(
+            scene,
+            fixtureRig,
+            crowdTemplates,
+            player.status === 'fulfilled' ? player.value : crowdTemplates[0],
+          );
         }
         const failed = results.find((result) => result.status === 'rejected');
         if (failed?.status === 'rejected') throw failed.reason;
@@ -1615,7 +1624,7 @@ function ThreeCourt({
       materials.forEach((item) => item.dispose());
       textures.forEach((texture) => texture.dispose());
     };
-  }, [fullReplay, isWta, modelAssetBase, onUnsupported, snapshot.filename]);
+  }, [fullReplay, isWta, modelAssetBase, onUnsupported, snapshot.filename, snapshot.stadium]);
 
   const requestZoom = (factor: number) => {
     viewportRef.current?.dispatchEvent(new CustomEvent<number>('courtzoom', { detail: factor }));
@@ -1924,14 +1933,12 @@ function ThreeCourt({
                   }} />
               </label>
               <button type="button" className={styles.soundButton} onClick={() => {
-                (['racket', 'bounce', 'footstep', 'slide'] as const).forEach((kind, index) => {
-                  window.setTimeout(() => {
-                    const context = audioContextRef.current;
-                    if (soundOnRef.current && context?.state === 'running') {
-                      playCue(context, kind, surface, effectsVolumeRef.current, courtEffectSamplesRef.current);
-                    }
-                  }, index * 400);
-                });
+                const context = audioContextRef.current;
+                if (!context || !soundOnRef.current || context.state === 'closed') return;
+                // Start all four sources synchronously from the tap, then let
+                // Web Audio sequence them without losing the mobile gesture.
+                void context.resume().catch(() => setSoundError('Court audio could not be resumed.'));
+                playCourtSoundCheck(context, surface, effectsVolumeRef.current, courtEffectSamplesRef.current);
               }}>Test court sounds</button>
             </>
           )}

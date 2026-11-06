@@ -1,4 +1,5 @@
 import * as THREE from 'three';
+import { resolveDmoVenueProfile, type DmoVenueProfile } from '../lib/dmoVenue';
 import type { Te4CourtSurface } from '@/lib/te4DmoTypes';
 import { buildStadiumArchitecture } from './DmoStadiumArchitecture';
 
@@ -45,6 +46,7 @@ export type CrowdRig = {
 
 export type CourtFixtureRig = {
   update: (ballPosition?: THREE.Vector3) => void;
+  setDetailedUmpireUpdater: (update: (ballPosition?: THREE.Vector3) => void) => void;
 };
 
 export type CourtSurfaceEffects = {
@@ -169,9 +171,15 @@ export function buildStadiumEnvironment(
   scene: THREE.Scene,
   indoor = false,
   scoreboard?: import('./DmoStadiumArchitecture').StadiumScoreboardData,
+  venueName?: string | null,
 ) {
+  const venue = resolveDmoVenueProfile(venueName);
   const existing = scene.getObjectByName('wtsl-stadium-architecture');
-  if (existing && scene.userData.wtslStadiumIndoor === indoor) return;
+  if (
+    existing
+    && scene.userData.wtslStadiumIndoor === indoor
+    && scene.userData.wtslStadiumVenue === venue.label
+  ) return;
   existing?.removeFromParent();
   scene.getObjectByName('wtsl-open-sky')?.removeFromParent();
   // Keep the horizon inside the arena palette in every venue mode. The bowl
@@ -179,8 +187,11 @@ export function buildStadiumEnvironment(
   scene.background = new THREE.Color(0x26383b);
   scene.fog = new THREE.Fog(0x26383b, 82, 205);
   scene.userData.wtslStadiumIndoor = indoor;
+  scene.userData.wtslStadiumVenue = venue.label;
   const stadium = new THREE.Group();
   stadium.name = 'wtsl-stadium-architecture';
+  stadium.userData.venueName = venue.label;
+  stadium.userData.capacity = venue.capacity;
   const steel = material(0x3f5051, 0.62);
   const lamp = new THREE.MeshStandardMaterial({
     color: 0xe8dfca, emissive: 0xffe6b9, emissiveIntensity: 0.52, roughness: 0.42,
@@ -196,7 +207,7 @@ export function buildStadiumEnvironment(
       stadium.add(fixture);
     }
   }
-  const architecture = buildStadiumArchitecture(scoreboard);
+  const architecture = buildStadiumArchitecture(scoreboard, venue);
   stadium.add(architecture);
   stadium.userData.updateScoreboard = architecture.userData.updateScoreboard;
   scene.add(stadium);
@@ -579,7 +590,7 @@ export function buildCourt(scene: THREE.Scene, surface: Te4CourtSurface) {
   return surfaceEffects;
 }
 
-function buildUnifiedCrowd(scene: THREE.Scene): CrowdRig {
+function buildUnifiedCrowd(scene: THREE.Scene, venue: DmoVenueProfile): CrowdRig {
   const seats: CrowdRig['seats'] = [];
   const nearSeats: CrowdRig['seats'] = [];
   const tunnelHalfWidth = 2.5;
@@ -644,10 +655,10 @@ function buildUnifiedCrowd(scene: THREE.Scene): CrowdRig {
   const rowWidth = 1.62;
   const rowRise = 0.94;
   const concourseWidth = 2.15;
-  const tierRows = 6;
+  const tierRows = venue.tierRows;
   const rowRadiusStart = (row: number) => row * rowWidth + Math.floor(row / tierRows) * concourseWidth;
   const baseY = 2.7;
-  for (let upperRow = 0; upperRow < 18; upperRow += 1) {
+  for (let upperRow = 0; upperRow < venue.upperRows; upperRow += 1) {
     const radius = rowRadiusStart(upperRow) + rowWidth / 2;
     const ellipseX = innerX + radius;
     const ellipseZ = innerZ + radius;
@@ -907,8 +918,8 @@ function buildUnifiedCrowd(scene: THREE.Scene): CrowdRig {
   return crowdRig;
 }
 
-export function buildCrowd(scene: THREE.Scene) {
-  return buildUnifiedCrowd(scene);
+export function buildCrowd(scene: THREE.Scene, venueName?: string | null) {
+  return buildUnifiedCrowd(scene, resolveDmoVenueProfile(venueName));
 }
 
 export function buildCourtFixtures(scene: THREE.Scene): CourtFixtureRig {
@@ -918,6 +929,7 @@ export function buildCourtFixtures(scene: THREE.Scene): CourtFixtureRig {
 
   for (const end of [-1, 1]) {
     const bench = new THREE.Group();
+    bench.name = end < 0 ? 'wtsl-player-bench-left' : 'wtsl-player-bench-right';
     bench.position.set(end * 2.4, 0, 6.75);
     scene.add(bench);
     addBox(bench, [2.55, 0.12, 0.62], [0, 0.53, 0], seatMaterial);
@@ -931,9 +943,13 @@ export function buildCourtFixtures(scene: THREE.Scene): CourtFixtureRig {
   }
 
   const chair = new THREE.Group();
+  chair.name = 'wtsl-umpire-chair';
   chair.position.set(0, 0, 6.75);
   chair.rotation.y = Math.PI;
   scene.add(chair);
+  const placeholder = new THREE.Group();
+  placeholder.name = 'wtsl-umpire-placeholder';
+  chair.add(placeholder);
   for (const x of [-0.34, 0.34]) {
     addBox(chair, [0.08, 1.5, 0.08], [x, 0.75, 0], frameMaterial);
   }
@@ -951,15 +967,15 @@ export function buildCourtFixtures(scene: THREE.Scene): CourtFixtureRig {
   const torso = new THREE.Mesh(new THREE.CapsuleGeometry(0.16, 0.3, 4, 8), umpireShirt);
   torso.position.set(0, 2.02, 0.02);
   torso.castShadow = true;
-  chair.add(torso);
+  placeholder.add(torso);
   const headRig = new THREE.Group();
   headRig.name = 'wtsl-umpire-gaze';
   headRig.position.set(0, 2.35, 0.02);
-  chair.add(headRig);
+  placeholder.add(headRig);
   const head = new THREE.Mesh(new THREE.SphereGeometry(0.125, 20, 16), umpireSkin);
   head.scale.set(0.9, 1.08, 0.92);
   head.castShadow = true;
-  headRig.add(head);
+    headRig.add(head);
   const hair = new THREE.Mesh(new THREE.SphereGeometry(0.13, 16, 10, 0, Math.PI * 2, 0, Math.PI * 0.39), umpireHair);
   hair.position.set(0, 0.035, -0.026);
   headRig.add(hair);
@@ -986,11 +1002,20 @@ export function buildCourtFixtures(scene: THREE.Scene): CourtFixtureRig {
     arm.rotation.x = Math.PI / 2.7;
     arm.rotation.z = side * -0.24;
     arm.castShadow = true;
-    chair.add(arm);
+    placeholder.add(arm);
     addBox(chair, [0.13, 0.16, 0.47], [side * 0.15, 1.68, 0.36], frameMaterial);
   }
+  let detailedUmpireUpdater: ((ballPosition?: THREE.Vector3) => void) | null = null;
   const fixtureRig: CourtFixtureRig = {
+    setDetailedUmpireUpdater: (update) => {
+      detailedUmpireUpdater = update;
+      placeholder.visible = false;
+    },
     update: (ballPosition?: THREE.Vector3) => {
+      if (detailedUmpireUpdater) {
+        detailedUmpireUpdater(ballPosition);
+        return;
+      }
       if (!ballPosition) return;
       const dx = ballPosition.x - chair.position.x;
       const dz = ballPosition.z - chair.position.z;

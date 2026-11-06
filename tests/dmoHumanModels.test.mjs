@@ -18,8 +18,10 @@ async function loadTs(file, overrides = {}) {
   return module.exports;
 }
 const stadiumArchitectureApi = await loadTs('../components/DmoStadiumArchitecture.ts');
+const venueApi = await loadTs('../lib/dmoVenue.ts');
 const sceneApi = await loadTs('../components/DmoLiveCourt3DScene.ts', {
   './DmoStadiumArchitecture': stadiumArchitectureApi,
+  '../lib/dmoVenue': venueApi,
 });
 const racketPose = await loadTs('../components/DmoRacketOrientation.ts');
 const articulated = await loadTs('../components/DmoArticulatedHands.ts', { './DmoRacketOrientation': racketPose });
@@ -551,7 +553,7 @@ test('crowd uses seated textured instancing and retains gaze/applause updates', 
   const scene = new THREE.Scene();
   const oldCrowd = sceneApi.buildCrowd(scene);
   const batches = crowds.attachHumanCrowd(scene, oldCrowd, [await asset('male', 'crowd'), await asset('female', 'crowd')]);
-  assert.equal(batches.length, 12);
+  assert.equal(batches.length, 24);
   assert.equal(batches.reduce((sum, mesh) => sum + mesh.count, 0), oldCrowd.seats.length);
   assert.equal(scene.getObjectByName('wtsl-spectator-heads').visible, false);
   oldCrowd.update(2, true, new THREE.Vector3(11, 0.5, 5));
@@ -562,6 +564,31 @@ test('crowd uses seated textured instancing and retains gaze/applause updates', 
     assert.ok(mesh.geometry.boundingBox.max.y < 1.7);
     assert.equal(mesh.castShadow, false);
   }
+  assert.ok(scene.getObjectByName('wtsl-crowd-caps'), 'some spectators wear caps');
+});
+
+test('both players have a seated coach and the detailed umpire tracks the ball', async () => {
+  const scene = new THREE.Scene();
+  const fixtures = sceneApi.buildCourtFixtures(scene);
+  const male = await asset('male', 'crowd');
+  const female = await asset('female', 'crowd');
+  const detailedUmpire = await asset('male', 'player');
+  crowds.attachHumanCourtStaff(scene, fixtures, [male, female], detailedUmpire);
+  assert.ok(scene.getObjectByName('wtsl-court-coach-1'));
+  assert.ok(scene.getObjectByName('wtsl-court-coach-2'));
+  assert.equal(scene.getObjectByName('wtsl-umpire-placeholder').visible, false);
+  const umpire = scene.getObjectByName('wtsl-detailed-umpire');
+  const head = umpire.getObjectByName('Head');
+  const before = head.quaternion.clone();
+  fixtures.update(new THREE.Vector3(7, 2, -10));
+  assert.ok(head.quaternion.angleTo(before) > 0.01);
+});
+
+test('native player model supports the same landmark pose used for a detailed umpire', async () => {
+  const template = await asset('male', 'player');
+  const space = new THREE.Group();
+  space.add(template);
+  assert.doesNotThrow(() => new humans.HumanPose(template, space));
 });
 
 test('limb roll is spread along helper twist bones without changing hand or forearm orientation', async () => {

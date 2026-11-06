@@ -148,6 +148,7 @@ export default function DmoLiveViewer({ canWatch, voiceServer = '' }: Props) {
               && previousSnapshot.bestOf === nextSnapshot.bestOf
               && previousSnapshot.players[0] === nextSnapshot.players[0]
               && previousSnapshot.players[1] === nextSnapshot.players[1]
+              && previousSnapshot.stadium === nextSnapshot.stadium
             ) {
               return {
                 ...broadcast,

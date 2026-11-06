@@ -1,4 +1,5 @@
 import * as THREE from 'three';
+import type { DmoVenueProfile } from '@/lib/dmoVenue';
 
 export type StadiumScoreboardData = {
   players: [string, string];
@@ -173,7 +174,10 @@ function addPlane(
   return mesh;
 }
 
-export function buildStadiumArchitecture(initialScoreboard?: StadiumScoreboardData) {
+export function buildStadiumArchitecture(
+  initialScoreboard?: StadiumScoreboardData,
+  venue: DmoVenueProfile = { label: 'Unspecified tennis venue', capacity: 0, upperRows: 18, tierRows: 6 },
+) {
   const stadium = new THREE.Group();
   stadium.name = 'wtsl-stadium-superstructure';
 
@@ -218,13 +222,13 @@ export function buildStadiumArchitecture(initialScoreboard?: StadiumScoreboardDa
   const bowlColors: number[] = [];
   const bowlIndices: number[] = [];
   const perimeterSegments = 112;
-  const seatRows = 18;
+  const seatRows = venue.upperRows;
   const innerX = 27.8;
   const innerZ = 18.8;
   const rowWidth = 1.62;
   const rowRise = 0.94;
   const concourseWidth = 2.15;
-  const tierRows = 6;
+  const tierRows = venue.tierRows;
   const rowRadiusStart = (row: number) => row * rowWidth + Math.floor(row / tierRows) * concourseWidth;
   const baseY = 2.7;
   for (let row = 0; row < seatRows; row += 1) {
@@ -498,6 +502,8 @@ export function buildStadiumArchitecture(initialScoreboard?: StadiumScoreboardDa
   stadium.userData.tierCount = 3;
   stadium.userData.concourseCount = 2;
   stadium.userData.tunnelOpeningCount = 4;
+  stadium.userData.venueName = venue.label;
+  stadium.userData.capacity = venue.capacity;
   stadium.userData.seatCount = totalSeats;
   stadium.userData.spectatorCount = occupiedSeats;
   return stadium;
