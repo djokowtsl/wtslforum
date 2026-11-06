@@ -90,6 +90,31 @@ export function returnReadiness(framesToServe: number) {
   return s(-framesToServe, -90, -60) * (1 - s(-framesToServe, 6, 16));
 }
 
+/** Seconds a between-point walk must leave before the next serve. */
+export const ARRIVAL_MARGIN = 1;
+
+/** Keep the return stance upright while the receiver is walking or moving. */
+export function returnSettleTarget(speedMs: number, walking: boolean) {
+  if (walking || !Number.isFinite(speedMs)) return 0;
+  const t = Math.min(1, Math.max(0, (speedMs - 0.45) / (0.9 - 0.45)));
+  return 1 - t * t * (3 - 2 * t);
+}
+
+/** Stand up quickly on movement; ease into the return stance after stopping. */
+export function advanceReturnSettle(
+  previous: number | undefined,
+  speedMs: number,
+  walking: boolean,
+  deltaSeconds: number,
+) {
+  const target = returnSettleTarget(speedMs, walking);
+  const current = Number.isFinite(previous) ? Math.min(1, Math.max(0, previous!)) : target;
+  const elapsed = Math.max(0, deltaSeconds);
+  const timeConstant = target < current ? 0.08 : 0.2;
+  const alpha = elapsed > 0.5 ? 1 : 1 - Math.exp(-elapsed / timeConstant);
+  return current + (target - current) * alpha;
+}
+
 /** Small unweighting timed to the opponent's serve contact. */
 export function splitStepLift(framesToServe: number) {
   const t = (-framesToServe + 8) / 10;
@@ -110,11 +135,12 @@ export function planReposition(options: {
   walking?: boolean;
 }): RepositionPlan {
   const { distance, betweenPoints, secondsToNextServe, walking } = options;
-  if (walking && betweenPoints && distance > 0.02 && distance / WALK_SPEED <= secondsToNextServe) return 'walk';
+  if (walking && betweenPoints && distance > 0.02
+    && distance / WALK_SPEED <= secondsToNextServe - ARRIVAL_MARGIN) return 'walk';
   if (!Number.isFinite(distance) || distance <= 0.6) return 'follow';
   if (!betweenPoints) return distance > 3 ? 'cut' : 'follow';
   if (distance > 7) return 'cut';
-  if (distance / WALK_SPEED > secondsToNextServe - 0.4) return 'cut';
+  if (distance / WALK_SPEED > secondsToNextServe - ARRIVAL_MARGIN) return 'cut';
   return 'walk';
 }
 

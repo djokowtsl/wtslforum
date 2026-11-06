@@ -104,6 +104,52 @@ test('Claude full-body rewrite is the default production player', async () => {
     bone.matrixWorld.elements.every(Number.isFinite)));
 });
 
+test('serve tossing arm blends from the lift into a front tuck through landing', () => {
+  const tuck = claudeNativePlayer.serveTossTuckWeight;
+  assert.equal(tuck(-11, 1), 0);
+  assert.equal(tuck(-1, 1), 1);
+  assert.equal(tuck(0, 1), 1);
+  assert.ok(tuck(25, 1) > 0 && tuck(25, 1) < 1);
+  assert.equal(tuck(34, 1), 0);
+  assert.equal(tuck(0, 0.4), 0.4);
+});
+
+test('Claude support hand chooses a low-strain, continuous throat cradle', async () => {
+  const template = await nativePlayerTemplate('male');
+  for (const handedness of ['right', 'left']) {
+    const rig = sceneApi.makePlayer(0x275c77, 0x333333);
+    rig.root.userData.dominantHandedness = handedness;
+    rig.root.userData.waitingPose = true;
+    rig.root.userData.twoHandedGrip = false;
+    rig.root.userData.supportHoldWeight = 1;
+    rig.root.userData.supportGripOffset = 0.11;
+    rig.racket.position.set(handedness === 'right' ? -0.22 : 0.22, 1, 0.32);
+    const shaft = new THREE.Vector3(handedness === 'right' ? 0.18 : -0.18, 0.32, 0.93).normalize();
+    rig.racket.quaternion.copy(racketPose.racketContactOrientation(
+      shaft, new THREE.Vector3(0, 1, 0).cross(shaft),
+    ));
+    const attached = humans.attachHumanPlayer(template, rig, 0x275c77);
+    const support = handedness === 'right' ? 'l' : 'r';
+    let previous;
+    let finalRoll = 0;
+    for (let frame = 0; frame < 36; frame += 1) {
+      attached.update();
+      const hand = attached.pose.rotation(`hand_${support}`);
+      if (previous) assert.ok(hand.angleTo(previous) < 0.4, 'cradle orientation must not jump between frames');
+      previous = hand.clone();
+      const neutral = attached.pose.rotation(`lowerarm_${support}`)
+        .multiply(attached.pose.rest.get(`lowerarm_${support}`).rotation.clone().invert())
+        .multiply(attached.pose.rest.get(`hand_${support}`).rotation);
+      const forearm = attached.pose.point(`hand_${support}`)
+        .sub(attached.pose.point(`lowerarm_${support}`)).normalize();
+      finalRoll = Math.abs(nativeTwist.twistAngle(
+        hand.clone().multiply(neutral.clone().invert()), forearm,
+      ));
+    }
+    assert.ok(finalRoll < 1.4, `${handedness}: free forearm roll should stay below ${finalRoll.toFixed(2)} radians`);
+  }
+});
+
 test('Claude stroke hand selection overrides stale grip state and wrist roll stays continuous', async () => {
   const template = await nativePlayerTemplate('male');
   const rig = sceneApi.makePlayer(0x275c77, 0x333333);

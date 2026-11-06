@@ -72,6 +72,19 @@ test('return stance settles before the serve, split-steps at contact, releases a
   assert.equal(splitStepLift(-5), 0);
 });
 
+test('return stance stays upright while moving and settles after stopping', async () => {
+  const { returnSettleTarget, advanceReturnSettle } = await import('../lib/liveCourtGait.ts');
+  assert.equal(returnSettleTarget(0.2, true), 0);
+  assert.equal(returnSettleTarget(1.2, false), 0);
+  assert.equal(returnSettleTarget(0.2, false), 1);
+  assert.ok(advanceReturnSettle(0.8, 0.2, true, 1 / 60) < 0.8,
+    'a moving player should begin standing up immediately');
+  assert.ok(advanceReturnSettle(0, 0.2, false, 0.1) > 0,
+    'settling into the stance should ease in after movement stops');
+  assert.ok(advanceReturnSettle(1, 1.2, false, 1 / 60) < 0.9,
+    'the stance should release quickly when the player moves off');
+});
+
 test('between points a player walks nearby and cuts to distant positions', async () => {
   const { planReposition, isBetweenPoints, WALK_SPEED } = await import('../lib/liveCourtGait.ts');
   assert.equal(planReposition({ distance: 0.3, betweenPoints: true, secondsToNextServe: 10 }), 'follow');
@@ -79,6 +92,8 @@ test('between points a player walks nearby and cuts to distant positions', async
   assert.equal(planReposition({
     distance: 3, betweenPoints: true, secondsToNextServe: 3 / WALK_SPEED,
   }), 'cut');
+  assert.equal(planReposition({ distance: 3, betweenPoints: true, secondsToNextServe: 3 }), 'walk');
+  assert.equal(planReposition({ distance: 3, betweenPoints: true, secondsToNextServe: 2.9 }), 'cut');
   assert.equal(planReposition({ distance: 9, betweenPoints: true, secondsToNextServe: 30 }), 'cut');
   assert.equal(planReposition({ distance: 1.2, betweenPoints: false, secondsToNextServe: 30 }), 'follow');
   assert.equal(planReposition({ distance: 5, betweenPoints: false, secondsToNextServe: 30 }), 'cut');
@@ -94,6 +109,9 @@ test('an in-progress walk continues to the target instead of snapping at the end
   assert.equal(planReposition({
     distance: 0.4, betweenPoints: true, secondsToNextServe: 5, walking: true,
   }), 'walk');
+  assert.equal(planReposition({
+    distance: 1.65, betweenPoints: true, secondsToNextServe: 2, walking: true,
+  }), 'cut', 'an ongoing walk must still leave one second before serve');
   assert.equal(planReposition({
     distance: 0.01, betweenPoints: true, secondsToNextServe: 5, walking: true,
   }), 'follow');

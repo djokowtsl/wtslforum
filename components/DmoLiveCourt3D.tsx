@@ -41,8 +41,10 @@ import {
   type LiveCourtSample,
   type LiveCourtSkidMark,
 } from '@/lib/liveCourtMotion';
+import { dmoCameraFloorLift } from '@/lib/dmoCameraConstraints';
 import {
   WALK_SPEED,
+  advanceReturnSettle,
   advanceGait,
   freeArmStrideSwing,
   gaitFeet,
@@ -127,7 +129,7 @@ async function loadGruntSample(context: AudioContext, isWta: boolean) {
 }
 
 /** Shown under the court so a deployed build can be identified at a glance. */
-const RENDERER_BUILD = 'player repair r5';
+const RENDERER_BUILD = 'player repair r6';
 
 function firstEventAfterFrame<T extends { frame: number }>(events: T[], frame: number) {
   let low = 0;
@@ -405,6 +407,13 @@ function ThreeCourt({
     controls.minPolarAngle = 0.04;
     controls.maxPolarAngle = THREE.MathUtils.degToRad(84);
     controls.update();
+    controls.addEventListener('change', () => {
+      const lift = dmoCameraFloorLift(camera.position.y, controls.target.y);
+      if (lift > 0) {
+        controls.target.y += lift;
+        camera.position.y += lift;
+      }
+    });
     controls.addEventListener('start', () => {
       cameraViewRef.current = 'custom';
       setCameraView('custom');
@@ -743,8 +752,19 @@ function ThreeCourt({
         : ownLastShot === undefined
           ? 1
           : THREE.MathUtils.smoothstep(frame - ownLastShot, 14, 34);
-      const ready = opponentServe ? returnReadiness(framesToServe) * freeOfOwnShot : 0;
-      const splitStep = opponentServe ? splitStepLift(framesToServe) * freeOfOwnShot : 0;
+      const speedStep = replaySeconds > 0.5 ? 1 : 1 - Math.exp(-replaySeconds / 0.15);
+      const previousSpeed = Number(rig.root.userData.smoothSpeed ?? steppingSpeed);
+      const smoothSpeed = previousSpeed + (steppingSpeed - previousSpeed) * speedStep;
+      rig.root.userData.smoothSpeed = smoothSpeed;
+      const settled = advanceReturnSettle(
+        Number(rig.root.userData.settled),
+        smoothSpeed,
+        walking,
+        replaySeconds,
+      );
+      rig.root.userData.settled = settled;
+      const ready = opponentServe ? returnReadiness(framesToServe) * freeOfOwnShot * settled : 0;
+      const splitStep = opponentServe ? splitStepLift(framesToServe) * freeOfOwnShot * settled : 0;
       const stanceHalfWidth = 0.15 + ready * 0.2;
       const slideSpread = slideDirection * slideWeight * 0.15;
       const landing = 1 - slideWeight * 0.8;
@@ -937,12 +957,7 @@ function ThreeCourt({
       const carry = 1 - strokeActivity;
       // Recorded speed jitters between samples. Smooth speed and carry style in
       // replay time so the racket and free arm do not switch poses frame to frame.
-      const carrySpeed = smoothReplayValue(
-        rig.root.userData.carrySpeed,
-        steppingSpeed,
-        smoothingSeconds,
-        0.15,
-      );
+      const carrySpeed = smoothSpeed;
       rig.root.userData.carrySpeed = carrySpeed;
       const ownNextShot = nextShotEvent(events, eventPlayer, frame);
       const shotDue = ownNextShot !== undefined && ownNextShot.frame - frame < frameRate;
@@ -958,7 +973,7 @@ function ThreeCourt({
         0.3,
       );
       rig.root.userData.carryMove = onTheMove;
-      const standingCarryHand = new THREE.Vector3(dominantX * 0.35, 1.0, 0.36);
+      const standingCarryHand = new THREE.Vector3(dominantX * 0.22, 1.0, 0.32);
       const movingCarryHand = new THREE.Vector3(dominantX * 0.85, 0.98 + bodyBounce, 0.14);
       const dominantHand = new THREE.Vector3(dominantX, 1.12 + bodyBounce + armPump, 0.06)
         .lerp(standingCarryHand.lerp(movingCarryHand, onTheMove), carry);
@@ -1098,7 +1113,7 @@ function ThreeCourt({
       const serveFollowRotation = contactRotation.clone().multiply(
         new THREE.Quaternion().setFromEuler(new THREE.Euler(strokeSide * 0.28, 0, -strokeSide * 0.88)),
       );
-      const standingShaft = new THREE.Vector3(-Math.sign(dominantX) * 0.35, 0.5, 0.79).normalize();
+      const standingShaft = new THREE.Vector3(-Math.sign(dominantX) * 0.18, 0.32, 0.93).normalize();
       const movingShaft = new THREE.Vector3(-Math.sign(dominantX) * 0.1, -0.2, 0.97).normalize();
       const carryRotation = racketContactOrientation(standingShaft, new THREE.Vector3(0, 1, 0).cross(standingShaft))
         .slerp(racketContactOrientation(movingShaft, new THREE.Vector3(0, 1, 0).cross(movingShaft)), onTheMove);
@@ -1109,7 +1124,7 @@ function ThreeCourt({
       if (shapedFollowThrough > 0) rig.racket.quaternion.slerp(followRotation, shapedFollowThrough);
       if (serveFollowThrough > 0) rig.racket.quaternion.slerp(serveFollowRotation, serveFollowThrough);
       if (ready > 0) {
-        const readyShaft = new THREE.Vector3(-Math.sign(dominantX) * 0.55, -0.12, 0.83).normalize();
+        const readyShaft = new THREE.Vector3(-Math.sign(dominantX) * 0.35, 0.05, 0.94).normalize();
         const readyRotation = racketContactOrientation(
           readyShaft,
           new THREE.Vector3(0, 1, 0).cross(readyShaft),
