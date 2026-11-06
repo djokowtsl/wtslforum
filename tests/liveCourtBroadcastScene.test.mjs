@@ -146,6 +146,8 @@ test('stadium and audience scale with recognized tournament capacities', async (
   const viewer = await readFile(new URL('../components/DmoLiveViewer.tsx', import.meta.url), 'utf8');
   assert.match(court, /sceneDataRef\.current\.snapshot\.stadium/);
   assert.match(court, /snapshot\.stadium\]\)/);
+  assert.match(court, /const RENDERER_BUILD = 'stadium\/audio \+ player repair r11';/);
+  assert.ok(court.includes('· ${RENDERER_BUILD}'), 'the renderer build hint remains visible under the court');
   assert.match(court, /maxInteriorCameraDistance/);
   assert.match(court, /controls\.maxDistance = maxDistanceForTarget\(cameraTargetAnchor\)/);
   assert.match(court, /maxPolarAngle = THREE\.MathUtils\.degToRad\(75\)/);
@@ -171,6 +173,14 @@ test('one animated crowd ring fills the near apron and upper bowl with four cent
   sceneApi.buildStadiumEnvironment(scene);
   const crowd = sceneApi.buildCrowd(scene);
   assert.ok(crowd.seats.length > 5_000, 'detailed crowd seats continue through every stadium tier');
+  const occupiedSeats = crowd.seats.filter((seat) => seat.occupied);
+  const emptySeats = crowd.seats.filter((seat) => !seat.occupied);
+  assert.ok(emptySeats.length > 50 && emptySeats.length < crowd.seats.length * 0.04,
+    'a small, distributed number of seats remain empty');
+  assert.ok(occupiedSeats.length > crowd.seats.length * 0.96,
+    'the stands remain mostly full');
+  assert.ok(emptySeats.some((seat) => seat.row < 4) && emptySeats.some((seat) => seat.row >= 4),
+    'empty seats are distributed across lower and upper stands');
   assert.equal(new Set(crowd.seats.map((seat) => seat.row)).size, 22,
     'four lower rows connect directly to all eighteen upper-bowl rows');
   assert.ok(crowd.seats.some((seat) => seat.row === 0 && Math.abs(seat.z) >= 12));
@@ -222,18 +232,18 @@ test('one animated crowd ring fills the near apron and upper bowl with four cent
   assert.ok(crowdMeshes.length > 0);
   assert.ok(crowdMeshes.every((mesh) => mesh.isInstancedMesh),
     'crowd body parts and seating use instancing rather than per-spectator meshes');
-  assert.equal(heads.count, crowd.seats.length);
-  assert.equal(arms.count, crowd.seats.length * 2);
-  const animatedSeat = crowd.seats.findIndex((seat) => seat.row >= 4 && seat.sourceIndex % 5 !== 0);
+  assert.equal(heads.count, occupiedSeats.length);
+  assert.equal(arms.count, occupiedSeats.length * 2);
+  const animatedSeat = occupiedSeats.findIndex((seat) => seat.row >= 4 && seat.sourceIndex % 5 !== 0);
   assert.ok(animatedSeat >= 0);
   const before = new THREE.Matrix4();
   const after = new THREE.Matrix4();
   const armBefore = new THREE.Matrix4();
   const armAfter = new THREE.Matrix4();
-  heads.getMatrixAt(crowd.seats.length - 1, before);
+  heads.getMatrixAt(occupiedSeats.length - 1, before);
   arms.getMatrixAt(animatedSeat * 2, armBefore);
   crowd.update(1, true, new THREE.Vector3(-10, 1, 0));
-  heads.getMatrixAt(crowd.seats.length - 1, after);
+  heads.getMatrixAt(occupiedSeats.length - 1, after);
   arms.getMatrixAt(animatedSeat * 2, armAfter);
   assert.notDeepEqual(after.elements, before.elements, 'the same gaze animation reaches upper-bowl spectators');
   assert.notDeepEqual(armAfter.elements, armBefore.elements, 'the same applause animation reaches upper-bowl spectators');
@@ -431,7 +441,8 @@ test('crowd is human-scaled and separated from deep-baseline player space', () =
   const crowd = sceneApi.buildCrowd(scene);
   const heads = scene.getObjectByName('wtsl-spectator-heads');
   assert.ok(heads, 'adult-sized spectator heads');
-  assert.equal(heads.count, crowd.seats.length, 'every near and upper-bowl seat shares one crowd rig');
+  assert.equal(heads.count, crowd.seats.filter((seat) => seat.occupied).length,
+    'people occupy most but not all near and upper-bowl seats');
   assert.equal(heads.geometry.type, 'SphereGeometry', 'the lightweight fallback is replaced by textured seated humans');
   const matrix = new THREE.Matrix4();
   const before = new THREE.Matrix4();

@@ -228,7 +228,7 @@ test('the host Viewer page link opens a dedicated viewer-only route', () => {
   const viewerPage = readFileSync(new URL('../app/livestreams/viewer/page.tsx', import.meta.url), 'utf8');
   assert.match(host, /href="\/livestreams\/viewer"/);
   assert.match(host, /Watch Matches/);
-  assert.match(viewerPage, /<DmoLiveViewer canWatch={Boolean\(user\)} \/>/);
+  assert.match(viewerPage, /<DmoLiveViewer[\s\S]*canWatch={Boolean\(user\)}[\s\S]*voiceServer={process\.env\.NEXT_PUBLIC_VOICE_SERVER\?\.trim\(\) \?\? ''}/);
   assert.doesNotMatch(viewerPage, /DmoLiveHost/);
 });
 
