@@ -42,6 +42,138 @@
   object-fit: contain;
 }
 
+.scene.fullscreenFallback {
+  position: fixed !important;
+  inset: 0;
+  z-index: 2147483000;
+  display: flex;
+  flex-direction: column;
+  width: 100vw;
+  height: 100vh;
+  height: 100dvh;
+  min-height: 100vh;
+  margin: 0;
+  overflow: hidden;
+  border: 0;
+  border-radius: 0;
+  background: #081328;
+  box-shadow: none;
+}
+
+.scene.fullscreenFallback .sceneToolbar {
+  flex-shrink: 0;
+  padding-top: max(10px, env(safe-area-inset-top));
+  padding-right: max(12px, env(safe-area-inset-right));
+  padding-left: max(12px, env(safe-area-inset-left));
+}
+
+.scene.fullscreenFallback .viewport {
+  display: flex;
+  flex: 1 1 auto;
+  align-items: center;
+  justify-content: center;
+  min-height: 0;
+}
+
+.scene.fullscreenFallback .viewport canvas {
+  width: 100%;
+  height: 100%;
+  object-fit: contain;
+}
+
+.scene.fullscreenFallback .legend {
+  flex-shrink: 0;
+}
+
+.scene.pictureInPictureFallback {
+  position: fixed !important;
+  right: max(12px, env(safe-area-inset-right));
+  bottom: max(12px, env(safe-area-inset-bottom));
+  left: auto;
+  top: auto;
+  z-index: 2147482000;
+  width: min(460px, calc(100vw - 24px));
+  max-height: 56dvh;
+  overflow: hidden;
+  border: 1px solid rgba(183, 211, 205, .65);
+  border-radius: 12px;
+  box-shadow: 0 10px 34px rgba(0, 0, 0, .52);
+}
+
+.scene.pictureInPictureFallback .legend {
+  display: none;
+}
+
+.pictureInPictureButton {
+  display: inline-flex !important;
+  align-items: center;
+  justify-content: center;
+  gap: 5px;
+  width: auto !important;
+  min-width: 64px;
+  padding: 0 8px !important;
+  font-size: 9px;
+  font-weight: 700;
+}
+
+.pictureInPictureSource {
+  position: fixed;
+  top: 0;
+  left: 0;
+  z-index: -1;
+  width: 1px;
+  height: 1px;
+  overflow: hidden;
+  opacity: 0;
+  pointer-events: none;
+}
+
+.pictureInPictureOverlay,
+.pictureInPictureOverlayActive {
+  position: fixed;
+  right: max(12px, env(safe-area-inset-right));
+  bottom: max(12px, env(safe-area-inset-bottom));
+  z-index: 2147483001;
+  width: min(460px, calc(100vw - 24px));
+  aspect-ratio: 16 / 9;
+  overflow: hidden;
+  border: 1px solid rgba(183, 211, 205, .65);
+  border-radius: 12px;
+  background: #081328;
+  box-shadow: 0 10px 34px rgba(0, 0, 0, .52);
+}
+
+.pictureInPictureOverlay {
+  display: none;
+}
+
+.pictureInPictureOverlayActive {
+  display: block;
+}
+
+.pictureInPictureVideo {
+  display: block;
+  width: 100%;
+  height: 100%;
+  object-fit: contain;
+  background: #081328;
+}
+
+.pictureInPictureClose {
+  position: absolute;
+  top: 8px;
+  right: 8px;
+  display: grid;
+  width: 32px;
+  height: 32px;
+  place-items: center;
+  border: 1px solid rgba(255, 255, 255, .35);
+  border-radius: 7px;
+  background: rgba(5, 15, 34, .88);
+  color: #f1f5fb;
+  cursor: pointer;
+}
+
 .sceneToolbar {
   display: flex;
   align-items: flex-start;

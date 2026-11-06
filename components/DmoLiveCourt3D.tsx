@@ -91,6 +91,7 @@ import {
 } from './DmoLiveCourt3DScene';
 import styles from './DmoLiveCourt3D.module.css';
 import CourtFullscreenButton from './CourtFullscreenButton';
+import CourtPictureInPictureButton from './CourtPictureInPictureButton';
 import { attachHumanPlayer, disposeHumanModel, loadHumanModel } from './DmoHumanModels';
 import { attachHumanCrowd } from './DmoHumanCrowd';
 import { racketContactOrientation, racketGripElbow, racketGripWrist } from './DmoRacketOrientation';
@@ -186,6 +187,7 @@ function ThreeCourt({
   const sceneElementRef = useRef<HTMLElement>(null);
   const viewportRef = useRef<HTMLDivElement>(null);
   const canvasHostRef = useRef<HTMLDivElement>(null);
+  const canvasElementRef = useRef<HTMLCanvasElement>(null);
   const sceneRef = useRef<THREE.Scene | null>(null);
   const audioContextRef = useRef<AudioContext | null>(null);
   const crowdAudioRef = useRef<HTMLAudioElement | null>(null);
@@ -407,6 +409,7 @@ function ThreeCourt({
     );
     renderer.domElement.tabIndex = 0;
     host.appendChild(renderer.domElement);
+    canvasElementRef.current = renderer.domElement;
 
     const scene = new THREE.Scene();
     sceneRef.current = scene;
@@ -1516,6 +1519,7 @@ function ThreeCourt({
       viewport.removeEventListener('courtplayerpan', onPlayerPan);
       renderer.dispose();
       renderer.domElement.remove();
+      if (canvasElementRef.current === renderer.domElement) canvasElementRef.current = null;
       const geometries = new Set<THREE.BufferGeometry>();
       const materials = new Set<THREE.Material>();
       const textures = new Set<THREE.Texture>();
@@ -1742,6 +1746,19 @@ function ThreeCourt({
             targetRef={sceneElementRef}
             className={styles.soundButton}
             statusClassName={styles.visuallyHidden}
+            fallbackClassName={styles.fullscreenFallback}
+          />
+          <CourtPictureInPictureButton
+            canvasRef={canvasElementRef}
+            targetRef={sceneElementRef}
+            className={styles.pictureInPictureButton}
+            statusClassName={styles.visuallyHidden}
+            fallbackClassName={styles.pictureInPictureFallback}
+            overlayClassName={styles.pictureInPictureOverlay}
+            activeOverlayClassName={styles.pictureInPictureOverlayActive}
+            videoClassName={styles.pictureInPictureVideo}
+            sourceClassName={styles.pictureInPictureSource}
+            closeClassName={styles.pictureInPictureClose}
           />
           {cameraView.startsWith('player-') && (
             <label className={styles.panControl}>
