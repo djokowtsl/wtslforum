@@ -1,6 +1,7 @@
 import * as THREE from 'three';
 import { resolveDmoVenueProfile, type DmoVenueProfile } from '../lib/dmoVenue';
 import type { Te4CourtSurface } from '@/lib/te4DmoTypes';
+import { courtSurfaceVisualProfile } from '@/lib/te4DmoSurface';
 import { buildStadiumArchitecture } from './DmoStadiumArchitecture';
 
 export type PlayerRig = {
@@ -245,27 +246,18 @@ function addBox(
   return mesh;
 }
 
-function courtColor(surface: Te4CourtSurface) {
-  if (surface === 'grass') return 0x63795b;
-  if (surface === 'clay') return 0x9c5a4c;
-  if (surface === 'hard') return 0x4c6b99;
-  return 0x667283;
+function courtColor(surface: Te4CourtSurface, region: 'playing' | 'runoff') {
+  return Number.parseInt(courtSurfaceVisualProfile(surface)[region].slice(1), 16);
 }
 
-function courtSurfaceTexture(surface: Te4CourtSurface) {
+function courtSurfaceTexture(surface: Te4CourtSurface, region: 'playing' | 'runoff') {
   if (typeof document === 'undefined') return null;
   const canvas = document.createElement('canvas');
   canvas.width = 1024;
   canvas.height = 512;
   const context = canvas.getContext('2d');
   if (!context) return null;
-  const colors: Record<Te4CourtSurface, string> = {
-    clay: '#9c5a4c',
-    grass: '#63795b',
-    hard: '#4c6b99',
-    unknown: '#667283',
-  };
-  context.fillStyle = colors[surface];
+  context.fillStyle = courtSurfaceVisualProfile(surface)[region];
   context.fillRect(0, 0, canvas.width, canvas.height);
 
   let seed = surface.split('').reduce((value, letter) => value * 31 + letter.charCodeAt(0), 17);
@@ -317,6 +309,32 @@ function courtSurfaceTexture(surface: Te4CourtSurface) {
   const texture = new THREE.CanvasTexture(canvas);
   texture.colorSpace = THREE.SRGBColorSpace;
   texture.minFilter = THREE.LinearMipmapLinearFilter;
+  texture.magFilter = THREE.LinearFilter;
+  return texture;
+}
+
+function tourNetTexture(isWta: boolean) {
+  if (typeof document === 'undefined') return null;
+  const canvas = document.createElement('canvas');
+  canvas.width = 1024;
+  canvas.height = 64;
+  const context = canvas.getContext('2d');
+  if (!context) return null;
+  const accent = isWta ? '#bd2f68' : '#2878aa';
+  const ink = isWta ? '#54223a' : '#173c58';
+  const label = isWta ? 'WTA' : 'ATP TOUR';
+  context.fillStyle = '#e9e6d9';
+  context.fillRect(0, 0, canvas.width, canvas.height);
+  context.fillStyle = accent;
+  context.fillRect(0, 0, canvas.width, 7);
+  context.font = '700 28px Arial, sans-serif';
+  context.textBaseline = 'middle';
+  context.textAlign = 'center';
+  context.fillStyle = ink;
+  for (const x of [170, 512, 854]) context.fillText(label, x, 38);
+  const texture = new THREE.CanvasTexture(canvas);
+  texture.colorSpace = THREE.SRGBColorSpace;
+  texture.minFilter = THREE.LinearFilter;
   texture.magFilter = THREE.LinearFilter;
   return texture;
 }
@@ -444,7 +462,7 @@ function addCourtsideSafetyBarrier(scene: THREE.Scene) {
   scene.add(barrier);
 }
 
-export function buildCourt(scene: THREE.Scene, surface: Te4CourtSurface) {
+export function buildCourt(scene: THREE.Scene, surface: Te4CourtSurface, isWta = false) {
   const halfLength = COURT_LENGTH / 2;
   const halfWidth = COURT_WIDTH / 2;
   const singlesHalfWidth = SINGLES_WIDTH / 2;
@@ -458,20 +476,36 @@ export function buildCourt(scene: THREE.Scene, surface: Te4CourtSurface) {
   ground.receiveShadow = true;
   scene.add(ground);
 
-  const texture = courtSurfaceTexture(surface);
-  const court = new THREE.Mesh(
-    // The playing surface continues behind both baselines and beyond the
-    // sidelines. One continuous mesh avoids a different-material runoff seam.
+  const runoffTexture = courtSurfaceTexture(surface, 'runoff');
+  const runoff = new THREE.Mesh(
     new THREE.PlaneGeometry(42, 22),
     new THREE.MeshStandardMaterial({
-      color: texture ? 0xffffff : courtColor(surface),
-      map: texture ?? undefined,
+      color: runoffTexture ? 0xffffff : courtColor(surface, 'runoff'),
+      map: runoffTexture ?? undefined,
       roughness: 0.94,
     }),
   );
-  court.rotation.x = -Math.PI / 2;
-  court.receiveShadow = true;
-  scene.add(court);
+  runoff.name = 'wtsl-court-runoff';
+  runoff.userData.surface = surface;
+  runoff.rotation.x = -Math.PI / 2;
+  runoff.receiveShadow = true;
+  scene.add(runoff);
+
+  const playingTexture = courtSurfaceTexture(surface, 'playing');
+  const playingSurface = new THREE.Mesh(
+    new THREE.PlaneGeometry(COURT_LENGTH, COURT_WIDTH),
+    new THREE.MeshStandardMaterial({
+      color: playingTexture ? 0xffffff : courtColor(surface, 'playing'),
+      map: playingTexture ?? undefined,
+      roughness: 0.94,
+    }),
+  );
+  playingSurface.name = 'wtsl-court-playing-surface';
+  playingSurface.userData.surface = surface;
+  playingSurface.rotation.x = -Math.PI / 2;
+  playingSurface.position.y = 0.006;
+  playingSurface.receiveShadow = true;
+  scene.add(playingSurface);
 
   const lineMaterial = material(0xf2efdf, 0.72);
   const lineY = 0.018;
@@ -520,6 +554,32 @@ export function buildCourt(scene: THREE.Scene, surface: Te4CourtSurface) {
   scene.add(net);
   const tape = material(0xe9e6d9, 0.76);
   addBox(scene, [0.08, 0.045, COURT_WIDTH + 0.12], [0, NET_CENTER_HEIGHT, 0], tape);
+  const netAccentColor = isWta ? 0xbd2f68 : 0x2878aa;
+  const netAccent = new THREE.Mesh(
+    new THREE.BoxGeometry(0.082, 0.008, COURT_WIDTH + 0.12),
+    new THREE.MeshBasicMaterial({ color: netAccentColor }),
+  );
+  netAccent.name = 'wtsl-net-tour-accent';
+  netAccent.userData.tour = isWta ? 'WTA' : 'ATP';
+  netAccent.position.set(0, NET_CENTER_HEIGHT - 0.018, 0);
+  scene.add(netAccent);
+  const brandTexture = tourNetTexture(isWta);
+  const brandMaterial = new THREE.MeshBasicMaterial({
+    color: brandTexture ? 0xffffff : netAccentColor,
+    map: brandTexture ?? undefined,
+    side: THREE.DoubleSide,
+  });
+  for (const [x, rotationY] of [[0.041, Math.PI / 2], [-0.041, -Math.PI / 2]] as const) {
+    const brandMark = new THREE.Mesh(
+      new THREE.PlaneGeometry(COURT_WIDTH, 0.045),
+      brandMaterial,
+    );
+    brandMark.name = 'wtsl-net-tour-mark';
+    brandMark.userData.tour = isWta ? 'WTA' : 'ATP';
+    brandMark.rotation.y = rotationY;
+    brandMark.position.set(x, NET_CENTER_HEIGHT, 0);
+    scene.add(brandMark);
+  }
   for (const z of [-halfWidth - 0.08, halfWidth + 0.08]) {
     addBox(scene, [0.08, NET_POST_HEIGHT, 0.08], [0, NET_POST_HEIGHT / 2, z], tape);
   }
