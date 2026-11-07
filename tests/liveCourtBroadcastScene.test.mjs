@@ -222,11 +222,13 @@ test('stadium keeps its structure and clear score screen without smeared ribbon 
       return matches;
     };
     const bowl = named(superstructure, 'wtsl-continuous-seating-bowl')[0];
-    assert.ok(bowl?.isMesh, 'one continuous mesh carries the full seating rake');
+    assert.ok(bowl?.isMesh, 'one uninterrupted bowl surface carries the full seating rake');
     assert.equal(bowl.geometry.userData.continuousPerimeter, true);
     assert.equal(bowl.geometry.userData.inwardFacing, true);
     assert.equal(bowl.geometry.userData.rows, 18, 'the bowl continues well above the sparse detailed crowd');
     assert.equal(bowl.geometry.userData.tiers, 3);
+    assert.equal(bowl.geometry.userData.sectionAisleCount, 16);
+    assert.equal(bowl.geometry.userData.passageGaps, 4);
     assert.ok(superstructure.userData.maxInteriorCameraDistance >= 26);
     assert.ok(superstructure.userData.maxInteriorCameraDistance <= 44,
       'manual zoom remains inside the venue rather than exposing the complete stadium');
@@ -246,6 +248,32 @@ test('stadium keeps its structure and clear score screen without smeared ribbon 
     assert.ok(seats.count > 4_000, 'empty upper rows still read as stands across the full bowl');
     assert.equal(seats.userData.rows, 18);
     assert.equal(seats.userData.inwardFacing, true);
+    assert.equal(seats.userData.sectionAisleCount, 16);
+    assert.equal(seats.userData.passageGaps, 4);
+    const stairs = named(superstructure, 'wtsl-stadium-section-stair-treads')[0];
+    assert.ok(stairs?.isInstancedMesh);
+    assert.equal(stairs.count, 18 * 16, 'stair treads repeat through every seating row and tier');
+    assert.equal(stairs.userData.alignedWithSeatGaps, true);
+    assert.equal(stairs.userData.continuousThroughTiers, true);
+    const stairPosition = new THREE.Vector3();
+    const stairMatrix = new THREE.Matrix4();
+    for (let index = 0; index < stairs.count; index += 1) {
+      stairs.getMatrixAt(index, stairMatrix);
+      stairPosition.setFromMatrixPosition(stairMatrix);
+      assert.equal(stadiumArchitectureApi.isUpperBowlSectionAisle(stairPosition.x, stairPosition.z), true,
+        'seat-row treads land in the matching radial section gap');
+    }
+    const concourseStairs = named(superstructure, 'wtsl-stadium-concourse-stair-treads')[0];
+    assert.ok(concourseStairs?.isInstancedMesh);
+    assert.equal(concourseStairs.count, 2 * 16 * 4,
+      'stair aisles bridge both horizontal concourse level transitions');
+    assert.equal(concourseStairs.userData.alignedWithSectionStairs, true);
+    for (let index = 0; index < concourseStairs.count; index += 1) {
+      concourseStairs.getMatrixAt(index, stairMatrix);
+      stairPosition.setFromMatrixPosition(stairMatrix);
+      assert.equal(stadiumArchitectureApi.isUpperBowlSectionAisle(stairPosition.x, stairPosition.z), true,
+        'concourse transition treads continue through the same radial aisle');
+    }
     const firstSeatMatrix = new THREE.Matrix4();
     const firstSeatPosition = new THREE.Vector3();
     seats.getMatrixAt(0, firstSeatMatrix);
@@ -278,6 +306,28 @@ test('stadium keeps its structure and clear score screen without smeared ribbon 
     assert.equal(concourses.length, 2);
     assert.ok(concourses.every((walkway) => walkway.userData.amenities.includes('concessions')
       && walkway.userData.amenities.includes('restrooms')));
+    const suiteFronts = named(superstructure, 'wtsl-stadium-suite-front');
+    const suiteWindows = named(superstructure, 'wtsl-stadium-suite-window');
+    assert.equal(suiteFronts.length, 2);
+    assert.equal(suiteWindows.length, 2);
+    assert.ok(suiteFronts.every((front) => front.isInstancedMesh
+      && front.userData.concourseBand === true
+      && front.userData.suiteCount === front.count
+      && front.count > 32
+      && front.count < 48), 'suite fronts avoid the main tunnels and stair aisles');
+    assert.ok(suiteWindows.every((front, index) => front.isInstancedMesh
+      && front.userData.integratedWith === 'concourse'
+      && front.count === suiteFronts[index].count), 'visible booth glazing repeats across both concourses');
+    const suitePosition = new THREE.Vector3();
+    const suiteMatrix = new THREE.Matrix4();
+    for (const front of suiteFronts) {
+      for (let index = 0; index < front.count; index += 1) {
+        front.getMatrixAt(index, suiteMatrix);
+        suitePosition.setFromMatrixPosition(suiteMatrix);
+        assert.equal(stadiumArchitectureApi.isUpperBowlAccessGap(suitePosition.x, suitePosition.z), false,
+          'suite fronts do not block tunnel passages or section stairs');
+      }
+    }
     assert.equal(named(superstructure, 'wtsl-court-tunnel-opening').length, 4);
     assert.equal(superstructure.userData.tunnelOpeningCount, 4);
     assert.equal(superstructure.userData.concourseCount, 2);
@@ -289,7 +339,6 @@ test('stadium keeps its structure and clear score screen without smeared ribbon 
     };
     superstructure.userData.updateScoreboard(scoreboard);
     assert.deepEqual(superstructure.userData.scoreboardData, scoreboard);
-    assert.equal(named(superstructure, 'wtsl-stadium-concourse-windows').length, 0);
     assert.equal(named(superstructure, 'wtsl-stadium-support-columns').length, 0);
     assert.equal(named(superstructure, 'wtsl-open-air-canopy').length, 0);
     assert.equal(named(superstructure, 'wtsl-indoor-roof-wing').length, 0);
@@ -377,7 +426,7 @@ test('one animated crowd ring fills the near apron and upper bowl with four cent
   const scene = new THREE.Scene();
   sceneApi.buildStadiumEnvironment(scene);
   const crowd = sceneApi.buildCrowd(scene);
-  assert.ok(crowd.seats.length > 5_000, 'detailed crowd seats continue through every stadium tier');
+  assert.ok(crowd.seats.length > 4_800, 'detailed crowd seats continue through every stadium tier');
   const occupiedSeats = crowd.seats.filter((seat) => seat.occupied);
   const emptySeats = crowd.seats.filter((seat) => !seat.occupied);
   assert.ok(emptySeats.length > 50 && emptySeats.length < crowd.seats.length * 0.04,
@@ -507,7 +556,7 @@ test('upper crowd anchors match the architecture seat coordinates and facing', (
   const architectureSeats = scene.getObjectByName('wtsl-continuous-bowl-seats');
   assert.ok(architectureSeats?.isInstancedMesh);
   const innerX = 27.8, innerZ = 18.8, rowWidth = 1.62, rowRise = 0.94;
-  const concourseWidth = 2.15, tierRows = 6, baseY = 2.7, tunnelHalfWidth = 2.5;
+  const concourseWidth = 2.15, tierRows = 6, baseY = 2.7;
   const rowRadiusStart = (row) => row * rowWidth + Math.floor(row / tierRows) * concourseWidth;
   const matrix = new THREE.Matrix4();
   const position = new THREE.Vector3();
@@ -521,9 +570,12 @@ test('upper crowd anchors match the architecture seat coordinates and facing', (
     const count = Math.round((Math.PI * 2 * ((ellipseX + ellipseZ) / 2)) / 0.86);
     const expected = [];
     for (let index = 0; index < count; index += 1) {
-      architectureSeats.getMatrixAt(sourceOffset + index, matrix);
+      const angle = (index / count) * Math.PI * 2;
+      const expectedX = Math.cos(angle) * ellipseX;
+      const expectedZ = Math.sin(angle) * ellipseZ;
+      if (stadiumArchitectureApi.isUpperBowlAccessGap(expectedX, expectedZ)) continue;
+      architectureSeats.getMatrixAt(sourceOffset + expected.length, matrix);
       matrix.decompose(position, rotation, scale);
-      if (Math.abs(position.x) < tunnelHalfWidth || Math.abs(position.z) < tunnelHalfWidth) continue;
       expected.push({ x: position.x, z: position.z, facing: Math.atan2(matrix.elements[8], matrix.elements[0]) });
     }
     const actual = crowd.seats.filter((seat) => seat.row === row + 4);
@@ -536,7 +588,18 @@ test('upper crowd anchors match the architecture seat coordinates and facing', (
      assert.ok(Math.abs(actual[index].y - (baseY + row * rowRise + rowRise / 2)) < 1e-5,
        `row ${row} seat height follows the sloped bowl row center`);
     }
-    sourceOffset += count;
+    sourceOffset += expected.length;
+  }
+  const upperCrowd = crowd.seats.filter((seat) => seat.row >= 4);
+  assert.ok(upperCrowd.every((seat) => !stadiumArchitectureApi.isUpperBowlAccessGap(seat.x, seat.z)),
+    'animated crowd anchors leave every section stair and centered passageway open');
+  for (let aisle = 0; aisle < stadiumArchitectureApi.UPPER_BOWL_AISLE_COUNT; aisle += 1) {
+    const angle = ((aisle + 0.5) / stadiumArchitectureApi.UPPER_BOWL_AISLE_COUNT) * Math.PI * 2;
+    const sampleRadius = 40;
+    assert.ok(stadiumArchitectureApi.isUpperBowlSectionAisle(
+      Math.cos(angle) * sampleRadius,
+      Math.sin(angle) * sampleRadius,
+    ), `aisle ${aisle} stays aligned along the rake`);
   }
 });
 
