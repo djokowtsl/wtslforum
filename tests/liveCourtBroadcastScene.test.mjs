@@ -3,7 +3,11 @@ import test from 'node:test';
 import { readFile } from 'node:fs/promises';
 import { createRequire } from 'node:module';
 import * as THREE from 'three';
-import { courtSurfaceSoundProfile, isIndoorDmoVenue } from '../lib/te4DmoSurface.ts';
+import {
+  courtSurfaceSoundProfile,
+  courtSurfaceVisualProfile,
+  isIndoorDmoVenue,
+} from '../lib/te4DmoSurface.ts';
 import { deriveLiveCourtFootworkEvents, deriveLiveCourtSkidMarks } from '../lib/liveCourtMotion.ts';
 import { advanceGait, gaitFeet, newGaitState } from '../lib/liveCourtGait.ts';
 
@@ -22,9 +26,11 @@ async function loadTs(path, overrides = {}) {
 }
 const stadiumArchitectureApi = await loadTs('../components/DmoStadiumArchitecture.ts');
 const venueApi = await loadTs('../lib/dmoVenue.ts');
+const courtSurfaceApi = await loadTs('../lib/te4DmoSurface.ts');
 const sceneApi = await loadTs('../components/DmoLiveCourt3DScene.ts', {
   './DmoStadiumArchitecture': stadiumArchitectureApi,
   '../lib/dmoVenue': venueApi,
+  '@/lib/te4DmoSurface': courtSurfaceApi,
 });
 const crowdLodApi = await loadTs('../lib/dmoCrowdLod.ts');
 const {
@@ -914,10 +920,75 @@ test('umpire calls have independent controls in both court renderers', async () 
   const primary = await readFile(new URL('../components/DmoLiveCourt3D.tsx', import.meta.url), 'utf8');
   const fallback = await readFile(new URL('../components/DmoLiveCourt.tsx', import.meta.url), 'utf8');
   for (const source of [primary, fallback]) {
-    assert.match(source, /aria-label=\{umpireCallsEnabled \? 'Turn umpire calls off'/);
-    assert.match(source, /aria-pressed=\{umpireCallsEnabled\}/);
+    assert.match(source, /aria-label=\{umpireCallsEnabled && !umpireSpeechReady/);
+    assert.match(source, /aria-pressed=\{umpireCallsEnabled && umpireSpeechReady\}/);
     assert.match(source, /formatLiveUmpireScoreCall\(current, previous, scoreboardData\.players\)/);
+    assert.match(source, /unlockBrowserUmpireSpeech\(\)/);
+    assert.match(source, /Enable calls/);
   }
   assert.match(primary, /call\.kind === 'score' && !fullReplay/);
   assert.match(fallback, /call\.kind === 'score' && !fullReplayRef\.current/);
+  assert.doesNotMatch(primary, /soundOnRef\.current && umpireCallsEnabledRef\.current/);
+  assert.doesNotMatch(fallback, /soundEnabledRef\.current && umpireCallsEnabledRef\.current/);
+});
+
+test('mobile speech unlock is silent and happens only when called from a user gesture', () => {
+  const originalWindow = globalThis.window;
+  const originalUtterance = globalThis.SpeechSynthesisUtterance;
+  const utterances = [];
+  globalThis.window = {
+    speechSynthesis: {
+      speak: (utterance) => utterances.push(utterance),
+    },
+  };
+  globalThis.SpeechSynthesisUtterance = class {
+    constructor(text) {
+      this.text = text;
+    }
+  };
+  try {
+    assert.equal(umpireApi.unlockBrowserUmpireSpeech(), true);
+    assert.equal(utterances.length, 1);
+    assert.equal(utterances[0].volume, 0);
+    assert.equal(utterances[0].lang, 'en-GB');
+    assert.equal(umpireApi.isBrowserUmpireSpeechUnlocked(), true);
+  } finally {
+    if (originalWindow === undefined) delete globalThis.window;
+    else globalThis.window = originalWindow;
+    if (originalUtterance === undefined) delete globalThis.SpeechSynthesisUtterance;
+    else globalThis.SpeechSynthesisUtterance = originalUtterance;
+  }
+});
+
+test('surface finishes and ATP/WTA net treatments follow detected viewer metadata', async () => {
+  const surfaces = ['hard', 'clay', 'grass', 'unknown'];
+  const profiles = surfaces.map(surface => courtSurfaceVisualProfile(surface));
+  assert.equal(new Set(profiles.map(profile => profile.playing)).size, surfaces.length);
+  assert.equal(new Set(profiles.map(profile => profile.runoff)).size, surfaces.length);
+  for (const profile of profiles) {
+    assert.notEqual(profile.playing, profile.runoff);
+  }
+
+  const wtaScene = new THREE.Scene();
+  sceneApi.buildCourt(wtaScene, 'clay', true);
+  assert.equal(wtaScene.getObjectByName('wtsl-court-runoff').userData.surface, 'clay');
+  assert.equal(wtaScene.getObjectByName('wtsl-court-playing-surface').userData.surface, 'clay');
+  assert.equal(wtaScene.getObjectByName('wtsl-net-tour-mark').userData.tour, 'WTA');
+  assert.equal(wtaScene.getObjectByName('wtsl-net-tour-accent').userData.tour, 'WTA');
+
+  const atpScene = new THREE.Scene();
+  sceneApi.buildCourt(atpScene, 'hard', false);
+  assert.equal(atpScene.getObjectByName('wtsl-net-tour-mark').userData.tour, 'ATP');
+  assert.notEqual(
+    atpScene.getObjectByName('wtsl-net-tour-accent').material.color.getHex(),
+    wtaScene.getObjectByName('wtsl-net-tour-accent').material.color.getHex(),
+  );
+
+  const stadiumSource = await readFile(new URL('../lib/liveCourtStadium.ts', import.meta.url), 'utf8');
+  const canvasSource = await readFile(new URL('../components/DmoLiveCourt.tsx', import.meta.url), 'utf8');
+  const threeSource = await readFile(new URL('../components/DmoLiveCourt3D.tsx', import.meta.url), 'utf8');
+  assert.match(stadiumSource, /palette\.runoff/);
+  assert.match(stadiumSource, /isWta \? '#bd2f68' : '#2878aa'/);
+  assert.match(canvasSource, /drawLiveCourtBackdrop\(context, surface, camera, zoom, stadiumAtmosphere, isWta\)/);
+  assert.match(threeSource, /sceneDataRef\.current\.isWta/);
 });

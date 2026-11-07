@@ -123,6 +123,44 @@ export function courtSurfaceDisplayName(surface: Te4CourtSurface): string {
   return surface === 'unknown' ? 'SURFACE UNKNOWN' : `${surface.toUpperCase()} COURT`;
 }
 
+export type CourtSurfaceVisualProfile = {
+  playing: string;
+  runoff: string;
+  stadiumApron: string;
+  practiceApron: string;
+};
+
+const courtSurfaceVisualProfiles: Record<Te4CourtSurface, CourtSurfaceVisualProfile> = {
+  hard: {
+    playing: '#2878aa',
+    runoff: '#3d718b',
+    stadiumApron: '#263752',
+    practiceApron: '#d4dce8',
+  },
+  clay: {
+    playing: '#b96045',
+    runoff: '#914c3c',
+    stadiumApron: '#353d4c',
+    practiceApron: '#ebe1d7',
+  },
+  grass: {
+    playing: '#477644',
+    runoff: '#355d3a',
+    stadiumApron: '#2e3d4b',
+    practiceApron: '#e0e6dc',
+  },
+  unknown: {
+    playing: '#68788a',
+    runoff: '#526273',
+    stadiumApron: '#2a3a52',
+    practiceApron: '#e0e6ec',
+  },
+};
+
+export function courtSurfaceVisualProfile(surface: Te4CourtSurface): CourtSurfaceVisualProfile {
+  return courtSurfaceVisualProfiles[surface];
+}
+
 /** Decorative venue treatment; never changes the recorded surface or ball physics. */
 export function isIndoorDmoVenue(stadium: string | null | undefined): boolean {
   return /\b(indoor|bercy|paris masters|atp finals|rotterdam|vienna|basel|stockholm|metz|antwerp)\b/i

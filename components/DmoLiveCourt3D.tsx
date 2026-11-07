@@ -110,8 +110,10 @@ import {
   cancelBrowserUmpireCall,
   deriveUmpireCallEvents,
   formatLiveUmpireScoreCall,
+  isBrowserUmpireSpeechUnlocked,
   sameUmpireScore,
   speakBrowserUmpireCall,
+  unlockBrowserUmpireSpeech,
   umpireCallsBetween,
   type UmpireCallEvent,
   type UmpireScore,
@@ -231,6 +233,7 @@ function ThreeCourt({
   const umpireCallEventsRef = useRef<UmpireCallEvent[]>([]);
   const playheadRef = useRef<number | null>(null);
   const lastSoundFrameRef = useRef(Math.max(0, snapshot.frameCount - 3));
+  const lastUmpireCallFrameRef = useRef(snapshot.courtFrameIndices?.[0] ?? 0);
   const lastCalloutFrameRef = useRef<number | null>(null);
   const shotCalloutTimerRef = useRef<number | null>(null);
   const previousSnapshotRef = useRef({
@@ -262,12 +265,20 @@ function ThreeCourt({
     scoreboardData.live ? scoreboardData.score : null,
   );
   const hasObservedLiveScoreRef = useRef(false);
-  const sceneDataRef = useRef({ snapshot, surface, playbackSpeed, stadiumAtmosphere, scoreboard: scoreboardData });
+  const sceneDataRef = useRef({
+    snapshot,
+    surface,
+    playbackSpeed,
+    stadiumAtmosphere,
+    isWta,
+    scoreboard: scoreboardData,
+  });
   sceneDataRef.current = {
     snapshot,
     surface,
     playbackSpeed: fullReplay ? replaySpeed : playbackSpeed,
     stadiumAtmosphere,
+    isWta,
     scoreboard: scoreboardData,
   };
   const soundOnRef = useRef(false);
@@ -278,6 +289,7 @@ function ThreeCourt({
   const [playerCameraPan, setPlayerCameraPan] = useState(0);
   const [soundEnabled, setSoundEnabled] = useState(false);
   const [umpireCallsEnabled, setUmpireCallsEnabled] = useState(true);
+  const [umpireSpeechReady, setUmpireSpeechReady] = useState(isBrowserUmpireSpeechUnlocked());
   const [soundError, setSoundError] = useState('');
   const [crowdVolume, setCrowdVolume] = useState(0.24);
   const [effectsVolume, setEffectsVolume] = useState(0.9);
@@ -291,6 +303,8 @@ function ThreeCourt({
     frame: number;
   } | null>(null);
   umpireCallsEnabledRef.current = umpireCallsEnabled;
+  const umpireSpeechReadyRef = useRef(umpireSpeechReady);
+  umpireSpeechReadyRef.current = umpireSpeechReady;
 
   useEffect(() => {
     const previous = previousSnapshotRef.current;
@@ -307,6 +321,7 @@ function ThreeCourt({
       footworkEventsRef.current = [];
       playheadRef.current = null;
       lastCalloutFrameRef.current = null;
+      lastUmpireCallFrameRef.current = snapshot.courtFrameIndices?.[0] ?? 0;
       setShotCallout(null);
       if (shotCalloutTimerRef.current !== null) {
         window.clearTimeout(shotCalloutTimerRef.current);
@@ -376,6 +391,7 @@ function ThreeCourt({
     if (playheadRef.current === null && sampleBufferRef.current.length) {
       playheadRef.current = sampleBufferRef.current[0].frame;
       lastCalloutFrameRef.current = sampleBufferRef.current[0].frame;
+      lastUmpireCallFrameRef.current = sampleBufferRef.current[0].frame;
       if (fullReplay) {
         replayFrameRef.current = sampleBufferRef.current[0].frame;
         setReplayFrame(sampleBufferRef.current[0].frame);
@@ -385,6 +401,7 @@ function ThreeCourt({
     } else if (playheadRef.current !== null && playheadRef.current < earliestFrame) {
       playheadRef.current = earliestFrame;
       lastCalloutFrameRef.current = earliestFrame;
+      lastUmpireCallFrameRef.current = earliestFrame;
       if (fullReplay) {
         replayFrameRef.current = earliestFrame;
         setReplayFrame(earliestFrame);
@@ -404,14 +421,14 @@ function ThreeCourt({
       || !current
       || firstObservation
       || (previous && sameUmpireScore(current, previous))
-      || !soundOnRef.current
       || !umpireCallsEnabledRef.current
+      || !umpireSpeechReadyRef.current
     ) return;
     const call = formatLiveUmpireScoreCall(current, previous, scoreboardData.players);
     if (call && !speakBrowserUmpireCall(call)) {
       setSoundError('Spoken umpire calls are unavailable in this browser.');
     }
-  }, [scoreboardData, soundEnabled, umpireCallsEnabled]);
+  }, [scoreboardData, umpireCallsEnabled, umpireSpeechReady]);
 
   // Cues are consumed by the animation playhead, never snapshot arrival.
 
@@ -552,7 +569,11 @@ function ThreeCourt({
     fillLight.position.set(17, 9, -14);
     scene.add(fillLight);
 
-    const courtEffects = buildCourt(scene, sceneDataRef.current.surface);
+    const courtEffects = buildCourt(
+      scene,
+      sceneDataRef.current.surface,
+      sceneDataRef.current.isWta,
+    );
     const fixtureRig = buildCourtFixtures(scene);
     const crowdRig = buildCrowd(scene, sceneDataRef.current.snapshot.stadium);
     const players = [
@@ -1626,7 +1647,6 @@ function ThreeCourt({
         const context = audioContextRef.current;
         if (soundOnRef.current && context?.state === 'running') {
           const previous = lastSoundFrameRef.current;
-          if (currentFrame < previous) cancelBrowserUmpireCall();
           if (currentFrame >= previous && currentFrame - previous < 120) {
             const soundCues = soundEventsRef.current;
             for (let index = firstEventAfterFrame(soundCues, previous);
@@ -1656,21 +1676,29 @@ function ThreeCourt({
                   activeApplauseRef.current, 1, crowdGainRef.current ?? undefined);
               }
             }
-            if (umpireCallsEnabledRef.current) {
-              for (const call of umpireCallsBetween(
-                umpireCallEventsRef.current,
-                previous,
-                currentFrame,
-              )) {
-                if (call.kind === 'score' && !fullReplay) continue;
-                if (!speakBrowserUmpireCall(call.text)) {
-                  setSoundError('Spoken umpire calls are unavailable in this browser.');
-                }
-              }
-            }
           }
         }
         lastSoundFrameRef.current = currentFrame;
+        const previousCallFrame = lastUmpireCallFrameRef.current;
+        if (currentFrame < previousCallFrame) cancelBrowserUmpireCall();
+        if (
+          currentFrame >= previousCallFrame
+          && currentFrame - previousCallFrame < 120
+          && umpireCallsEnabledRef.current
+          && umpireSpeechReadyRef.current
+        ) {
+          for (const call of umpireCallsBetween(
+            umpireCallEventsRef.current,
+            previousCallFrame,
+            currentFrame,
+          )) {
+            if (call.kind === 'score' && !fullReplay) continue;
+            if (!speakBrowserUmpireCall(call.text)) {
+              setSoundError('Spoken umpire calls are unavailable in this browser.');
+            }
+          }
+        }
+        lastUmpireCallFrameRef.current = currentFrame;
         const previousCalloutFrame = lastCalloutFrameRef.current;
         if (previousCalloutFrame === null || currentFrame < previousCalloutFrame) {
           lastCalloutFrameRef.current = currentFrame;
@@ -1926,7 +1954,6 @@ function ThreeCourt({
 
   const toggleSound = async () => {
     if (soundEnabled) {
-      cancelBrowserUmpireCall();
       crowdAudioRef.current?.pause();
       for (const voice of activeGruntsRef.current) voice.stop();
       activeGruntsRef.current.clear();
@@ -2042,14 +2069,40 @@ function ThreeCourt({
       activeGruntsRef.current.clear();
     }
   };
+  const activateUmpireSpeechFromGesture = () => {
+    if (umpireSpeechReadyRef.current) return true;
+    if (!unlockBrowserUmpireSpeech()) {
+      setSoundError('Spoken umpire calls are unavailable in this browser.');
+      return false;
+    }
+    umpireSpeechReadyRef.current = true;
+    setUmpireSpeechReady(true);
+    setSoundError('');
+    lastUmpireCallFrameRef.current = playheadRef.current
+      ?? replayFrameRef.current
+      ?? snapshot.courtFrameIndices?.[0]
+      ?? 0;
+    return true;
+  };
   const changeUmpireCallsEnabled = (enabled: boolean) => {
+    if (enabled && !activateUmpireSpeechFromGesture()) return;
     umpireCallsEnabledRef.current = enabled;
     setUmpireCallsEnabled(enabled);
     if (!enabled) {
       cancelBrowserUmpireCall();
       return;
     }
-    lastSoundFrameRef.current = playheadRef.current ?? snapshot.frameCount;
+    lastUmpireCallFrameRef.current = playheadRef.current
+      ?? replayFrameRef.current
+      ?? snapshot.courtFrameIndices?.[0]
+      ?? 0;
+  };
+  const handleUmpireCallsToggle = () => {
+    if (umpireCallsEnabledRef.current && !umpireSpeechReadyRef.current) {
+      activateUmpireSpeechFromGesture();
+      return;
+    }
+    changeUmpireCallsEnabled(!umpireCallsEnabledRef.current);
   };
   const replayFrameRate = snapshot.frameRate ?? TE4_DMO_FRAMES_PER_SECOND;
   const replayStartFrame = sampleBufferRef.current[0]?.frame ?? snapshot.courtFrameIndices?.[0] ?? 0;
@@ -2061,11 +2114,13 @@ function ThreeCourt({
     replayFrameRef.current = frame;
     playheadRef.current = frame;
     lastSoundFrameRef.current = frame;
+    lastUmpireCallFrameRef.current = frame;
     lastCalloutFrameRef.current = frame;
     replayUiUpdateAt.current = 0;
     setReplayFrame(frame);
   };
   const toggleReplay = () => {
+    if (umpireCallsEnabledRef.current) activateUmpireSpeechFromGesture();
     if (replayPlayingRef.current) {
       replayPlayingRef.current = false;
       setReplayPlaying(false);
@@ -2179,12 +2234,18 @@ function ThreeCourt({
           <button
             className={styles.soundButton}
             type="button"
-            aria-label={umpireCallsEnabled ? 'Turn umpire calls off' : 'Turn umpire calls on'}
-            aria-pressed={umpireCallsEnabled}
-            title={umpireCallsEnabled ? 'Turn umpire calls off' : 'Turn umpire calls on'}
-            onClick={() => changeUmpireCallsEnabled(!umpireCallsEnabled)}
+            aria-label={umpireCallsEnabled && !umpireSpeechReady
+              ? 'Enable spoken umpire calls on this device'
+              : umpireCallsEnabled ? 'Turn umpire calls off' : 'Turn umpire calls on'}
+            aria-pressed={umpireCallsEnabled && umpireSpeechReady}
+            title={umpireCallsEnabled && !umpireSpeechReady
+              ? 'Tap to enable spoken umpire calls'
+              : umpireCallsEnabled ? 'Turn umpire calls off' : 'Turn umpire calls on'}
+            onClick={handleUmpireCallsToggle}
           >
-            <span>Calls {umpireCallsEnabled ? 'on' : 'off'}</span>
+            <span>{umpireCallsEnabled && !umpireSpeechReady
+              ? 'Enable calls'
+              : `Calls ${umpireCallsEnabled ? 'on' : 'off'}`}</span>
           </button>
           <button
             className={styles.soundButton}
