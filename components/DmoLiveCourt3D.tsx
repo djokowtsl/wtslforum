@@ -118,13 +118,12 @@ import {
   cancelUmpireCall,
   createLiveUmpireScoreTether,
   deriveUmpireCallEvents,
-  isBrowserUmpireSpeechUnlocked,
   liveUmpireMatchKey,
   matchLiveUmpireScoreToDmoPointEnd,
   observeLiveUmpireScore,
   resetLiveUmpireScoreTether,
+  resumeUmpireAudioContext,
   speakUmpireCall,
-  unlockBrowserUmpireSpeech,
   umpireCallsBetween,
   type UmpireCallEvent,
 } from '@/lib/liveCourtUmpire';
@@ -307,7 +306,7 @@ function ThreeCourt({
   const [playerCameraPan, setPlayerCameraPan] = useState(0);
   const [soundEnabled, setSoundEnabled] = useState(true);
   const [umpireCallsEnabled, setUmpireCallsEnabled] = useState(true);
-  const [umpireSpeechReady, setUmpireSpeechReady] = useState(isBrowserUmpireSpeechUnlocked());
+  const [umpireSpeechReady, setUmpireSpeechReady] = useState(false);
   const [soundError, setSoundError] = useState('');
   const [crowdVolume, setCrowdVolume] = useState(0.24);
   const [effectsVolume, setEffectsVolume] = useState(0.9);
@@ -2154,18 +2153,16 @@ function ThreeCourt({
       activeGruntsRef.current.clear();
     }
   };
-  const activateUmpireSpeechFromGesture = () => {
-    let audioReady = false;
+  const activateUmpireSpeechFromGesture = async () => {
     try {
-      if (!audioContextRef.current) audioContextRef.current = new AudioContext();
-      void audioContextRef.current.resume().catch(() => {});
-      audioReady = true;
+      if (!audioContextRef.current || audioContextRef.current.state === 'closed') {
+        audioContextRef.current = new AudioContext();
+      }
+      if (!await resumeUmpireAudioContext(audioContextRef.current)) {
+        throw new Error('Audio context is not running');
+      }
     } catch {
-      audioReady = false;
-    }
-    const speechReady = unlockBrowserUmpireSpeech();
-    if (!audioReady && !speechReady) {
-      setSoundError('Recorded umpire audio is unavailable for this call.');
+      setSoundError('Recorded umpire audio could not start. Tap Enable calls to try again.');
       return false;
     }
     umpireSpeechReadyRef.current = true;
@@ -2178,21 +2175,25 @@ function ThreeCourt({
     return true;
   };
   const changeUmpireCallsEnabled = (enabled: boolean) => {
-    if (enabled && !activateUmpireSpeechFromGesture()) return;
-    umpireCallsEnabledRef.current = enabled;
-    setUmpireCallsEnabled(enabled);
     if (!enabled) {
+      umpireCallsEnabledRef.current = false;
+      setUmpireCallsEnabled(false);
       cancelUmpireCall(audioContextRef.current, liveUmpireMatchKey(snapshot.players, isWta));
       return;
     }
-    lastUmpireCallFrameRef.current = playheadRef.current
-      ?? replayFrameRef.current
-      ?? snapshot.courtFrameIndices?.[0]
-      ?? 0;
+    void activateUmpireSpeechFromGesture().then((ready) => {
+      if (!ready) return;
+      umpireCallsEnabledRef.current = true;
+      setUmpireCallsEnabled(true);
+      lastUmpireCallFrameRef.current = playheadRef.current
+        ?? replayFrameRef.current
+        ?? snapshot.courtFrameIndices?.[0]
+        ?? 0;
+    });
   };
   const handleUmpireCallsToggle = () => {
     if (umpireCallsEnabledRef.current && !umpireSpeechReadyRef.current) {
-      activateUmpireSpeechFromGesture();
+      void activateUmpireSpeechFromGesture();
       return;
     }
     changeUmpireCallsEnabled(!umpireCallsEnabledRef.current);
@@ -2200,7 +2201,9 @@ function ThreeCourt({
   const handleSoundActivationGesture = (target: EventTarget | null) => {
     if (target instanceof Element && target.closest('[data-sound-toggle], [data-pip-toggle]')) return;
     if (!soundPreferenceRef.current || soundOnRef.current) return;
-    if (umpireCallsEnabledRef.current && !umpireSpeechReadyRef.current) activateUmpireSpeechFromGesture();
+    if (umpireCallsEnabledRef.current && !umpireSpeechReadyRef.current) {
+      void activateUmpireSpeechFromGesture();
+    }
     void activateSoundFromGesture();
   };
   const replayFrameRate = snapshot.frameRate ?? TE4_DMO_FRAMES_PER_SECOND;
@@ -2218,12 +2221,14 @@ function ThreeCourt({
     replayUiUpdateAt.current = 0;
     setReplayFrame(frame);
   };
-  const toggleReplay = () => {
-    if (umpireCallsEnabledRef.current) activateUmpireSpeechFromGesture();
+  const toggleReplay = async () => {
     if (replayPlayingRef.current) {
       replayPlayingRef.current = false;
       setReplayPlaying(false);
       return;
+    }
+    if (umpireCallsEnabledRef.current && !umpireSpeechReadyRef.current) {
+      await activateUmpireSpeechFromGesture();
     }
     if (replayFrameRef.current === null || replayFrameRef.current >= replayEndFrame) {
       seekReplay(replayStartFrame);
