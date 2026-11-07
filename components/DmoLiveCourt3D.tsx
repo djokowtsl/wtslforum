@@ -311,6 +311,7 @@ function ThreeCourt({
   const [cameraView, setCameraView] = useState<CameraView>('court');
   const [playerCameraPan, setPlayerCameraPan] = useState(0);
   const [soundEnabled, setSoundEnabled] = useState(true);
+  const [soundReady, setSoundReady] = useState(false);
   const [umpireCallsEnabled, setUmpireCallsEnabled] = useState(true);
   const [umpireSpeechReady, setUmpireSpeechReady] = useState(false);
   const [soundError, setSoundError] = useState('');
@@ -465,15 +466,18 @@ function ThreeCourt({
 
   useEffect(() => {
     const context = audioContextRef.current;
-    if (!umpireSpeechReady || !context) return;
+    if ((!umpireSpeechReady && !soundReady) || !context) return;
     return watchUmpireAudioContext(context, () => {
+      soundOnRef.current = false;
+      setSoundReady(false);
+      crowdAudioRef.current?.pause();
       umpireSpeechReadyRef.current = false;
       setUmpireSpeechReady(false);
       cancelUmpireCall(context, liveUmpireMatchKey(snapshot.players, isWta));
       resetLiveUmpireEventCursor(liveUmpireEventCursorRef.current);
-      setSoundError('The browser paused umpire audio. Tap Enable calls to resume.');
+      setSoundError('The browser paused audio. Tap Enable sound or Enable calls to resume.');
     });
-  }, [umpireSpeechReady, isWta, snapshot.players]);
+  }, [umpireSpeechReady, soundReady, isWta, snapshot.players]);
 
   // Cues are consumed by the animation playhead, never snapshot arrival.
 
@@ -2047,19 +2051,22 @@ function ThreeCourt({
   };
 
   const activateSoundFromGesture = async () => {
-    if (!soundPreferenceRef.current || soundOnRef.current || soundActivationPendingRef.current) return;
+    if (!soundPreferenceRef.current
+      || (soundOnRef.current && audioContextRef.current?.state === 'running')
+      || soundActivationPendingRef.current) return;
     soundActivationPendingRef.current = true;
     try {
       if (!audioContextRef.current || audioContextRef.current.state === 'closed') {
         audioContextRef.current = createCourtAudioContext();
       }
       const context = audioContextRef.current;
-      await context.resume();
+      const resumed = await resumeUmpireAudioContext(context);
       if (!soundPreferenceRef.current) return;
-      if (context.state !== 'running') throw new Error('Audio context is not running');
+      if (!resumed) throw new Error(`Audio context is ${context.state}`);
       // Core court effects must not wait for, or fail with, optional MP3 layers.
       lastSoundFrameRef.current = playheadRef.current ?? snapshot.frameCount;
       soundOnRef.current = true;
+      setSoundReady(true);
       setSoundError('');
       const layers: Array<Promise<unknown>> = [];
       let sampleLoad = courtEffectSamplesLoadRef.current;
@@ -2111,17 +2118,29 @@ function ThreeCourt({
           if (soundOnRef.current) setSoundError('Court effects are on; applause audio could not be loaded.');
         }));
       }
-      await Promise.all(layers);
-    } catch {
+      void Promise.all(layers);
+    } catch (error) {
       crowdAudioRef.current?.pause();
       soundOnRef.current = false;
-      if (soundPreferenceRef.current) setSoundError('Sound could not be enabled in this browser.');
+      setSoundReady(false);
+      if (soundPreferenceRef.current) {
+        const reason = error instanceof Error ? error.message : 'Audio activation failed';
+        setSoundError(`Sound could not start: ${reason}. Tap Enable sound to retry.`);
+      }
     } finally {
       soundActivationPendingRef.current = false;
     }
   };
 
   const toggleSound = async () => {
+    if (soundPreferenceRef.current
+      && (!soundOnRef.current || audioContextRef.current?.state !== 'running')) {
+      if (umpireCallsEnabledRef.current && !umpireSpeechReadyRef.current) {
+        void activateUmpireSpeechFromGesture();
+      }
+      await activateSoundFromGesture();
+      return;
+    }
     if (soundPreferenceRef.current) {
       soundPreferenceRef.current = false;
       crowdAudioRef.current?.pause();
@@ -2130,11 +2149,15 @@ function ThreeCourt({
       for (const voice of activeApplauseRef.current) voice.stop();
       activeApplauseRef.current.clear();
       soundOnRef.current = false;
+      setSoundReady(false);
       setSoundEnabled(false);
       return;
     }
     soundPreferenceRef.current = true;
     setSoundEnabled(true);
+    if (umpireCallsEnabledRef.current && !umpireSpeechReadyRef.current) {
+      void activateUmpireSpeechFromGesture();
+    }
     await activateSoundFromGesture();
   };
 
@@ -2177,15 +2200,17 @@ function ThreeCourt({
     }
   };
   const activateUmpireSpeechFromGesture = async () => {
+    if (soundPreferenceRef.current) void activateSoundFromGesture();
     try {
       if (!audioContextRef.current || audioContextRef.current.state === 'closed') {
         audioContextRef.current = createCourtAudioContext();
       }
       if (!await resumeUmpireAudioContext(audioContextRef.current)) {
-        throw new Error('Audio context is not running');
+        throw new Error(`Audio context is ${audioContextRef.current.state}`);
       }
-    } catch {
-      setSoundError('Recorded umpire audio could not start. Tap Enable calls to try again.');
+    } catch (error) {
+      const reason = error instanceof Error ? error.message : 'Audio activation failed';
+      setSoundError(`Recorded umpire audio could not start: ${reason}. Tap Enable calls to retry.`);
       return false;
     }
     umpireSpeechReadyRef.current = true;
@@ -2242,7 +2267,7 @@ function ThreeCourt({
     if (umpireCallsEnabledRef.current && !umpireSpeechReadyRef.current) {
       void activateUmpireSpeechFromGesture();
     }
-    if (!soundPreferenceRef.current || soundOnRef.current) return;
+    if (!soundPreferenceRef.current) return;
     void activateSoundFromGesture();
   };
   const replayFrameRate = snapshot.frameRate ?? TE4_DMO_FRAMES_PER_SECOND;
@@ -2369,11 +2394,12 @@ function ThreeCourt({
             className={styles.soundButton}
             data-sound-toggle
             type="button"
-            aria-pressed={soundEnabled}
+            aria-pressed={soundEnabled && soundReady}
+            aria-label={soundEnabled && !soundReady ? 'Enable court sound on this device' : undefined}
             onClick={() => void toggleSound()}
           >
             {soundEnabled ? <Volume2 size={15} /> : <VolumeX size={15} />}
-            <span>{soundEnabled ? 'Sound on' : 'Sound off'}</span>
+            <span>{soundEnabled ? soundReady ? 'Sound on' : 'Enable sound' : 'Sound off'}</span>
           </button>
           <button
             className={styles.soundButton}

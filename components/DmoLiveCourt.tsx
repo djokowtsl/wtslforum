@@ -574,6 +574,7 @@ function DmoLiveCourt({
   const umpireCallsEnabledRef = useRef(true);
   const umpireSpeechReadyRef = useRef(false);
   const [soundEnabled, setSoundEnabled] = useState(true);
+  const [soundReady, setSoundReady] = useState(false);
   const [umpireCallsEnabled, setUmpireCallsEnabled] = useState(true);
   const [umpireSpeechReady, setUmpireSpeechReady] = useState(false);
   const [crowdVolume, setCrowdVolume] = useState(0.38);
@@ -740,15 +741,17 @@ function DmoLiveCourt({
 
   useEffect(() => {
     const context = audioContextRef.current;
-    if (!umpireSpeechReady || !context) return;
+    if ((!umpireSpeechReady && !soundReady) || !context) return;
     return watchUmpireAudioContext(context, () => {
+      soundRuntimeActiveRef.current = false;
+      setSoundReady(false);
       umpireSpeechReadyRef.current = false;
       setUmpireSpeechReady(false);
       cancelUmpireCall(context, liveUmpireMatchKey(snapshot.players, isWta));
       resetLiveUmpireEventCursor(liveUmpireEventCursorRef.current);
-      setSoundError('The browser paused umpire audio. Tap Enable calls to resume.');
+      setSoundError('The browser paused audio. Tap Enable sound or Enable calls to resume.');
     });
-  }, [umpireSpeechReady, isWta, snapshot.players]);
+  }, [umpireSpeechReady, soundReady, isWta, snapshot.players]);
 
   useEffect(() => {
     const canvas = canvasRef.current;
@@ -951,15 +954,17 @@ function DmoLiveCourt({
     onGruntsEnabledChange(enabled);
   };
   const activateUmpireSpeechFromGesture = async () => {
+    if (soundEnabledRef.current) void activateSoundFromGesture();
     try {
       if (!audioContextRef.current || audioContextRef.current.state === 'closed') {
         audioContextRef.current = createCourtAudioContext();
       }
       if (!await resumeUmpireAudioContext(audioContextRef.current)) {
-        throw new Error('Audio context is not running');
+        throw new Error(`Audio context is ${audioContextRef.current.state}`);
       }
-    } catch {
-      setSoundError('Recorded umpire audio could not start. Tap Enable calls to try again.');
+    } catch (error) {
+      const reason = error instanceof Error ? error.message : 'Audio activation failed';
+      setSoundError(`Recorded umpire audio could not start: ${reason}. Tap Enable calls to retry.`);
       return false;
     }
     umpireSpeechReadyRef.current = true;
@@ -1008,23 +1013,27 @@ function DmoLiveCourt({
   };
 
   const activateSoundFromGesture = async () => {
-    if (!soundEnabledRef.current || soundRuntimeActiveRef.current || soundActivationPendingRef.current) return;
+    if (!soundEnabledRef.current
+      || (soundRuntimeActiveRef.current && audioContextRef.current?.state === 'running')
+      || soundActivationPendingRef.current) return;
     soundActivationPendingRef.current = true;
     try {
       if (!audioContextRef.current || audioContextRef.current.state === 'closed') {
         audioContextRef.current = createCourtAudioContext();
       }
       const context = audioContextRef.current;
-      await context.resume();
+      const resumed = await resumeUmpireAudioContext(context);
       if (!soundEnabledRef.current) return;
-      if (context.state !== 'running') throw new Error('Audio context is not running');
+      if (!resumed) throw new Error(`Audio context is ${context.state}`);
 
       const currentGruntSamples = isWta ? wtaGruntAudioRef.current : atpGruntAudioRef.current;
       if (gruntsEnabled && !currentGruntSamples) {
-        const samples = await loadLiveGruntSamples(context, isWta);
-        if (!soundEnabledRef.current) return;
-        if (isWta) wtaGruntAudioRef.current = samples;
-        else atpGruntAudioRef.current = samples;
+        void loadLiveGruntSamples(context, isWta).then((samples) => {
+          if (isWta) wtaGruntAudioRef.current = samples;
+          else atpGruntAudioRef.current = samples;
+        }).catch(() => {
+          if (soundEnabledRef.current) setSoundError('Player grunt audio could not be loaded; court effects remain enabled.');
+        });
       }
       if (!crowdBedRef.current) crowdBedRef.current = createCrowdBed(context);
       crowdBedRef.current.gain.gain.setTargetAtTime(
@@ -1034,6 +1043,7 @@ function DmoLiveCourt({
       );
       lastSoundFrameRef.current = Math.max(0, snapshot.frameCount - 3);
       soundRuntimeActiveRef.current = true;
+      setSoundReady(true);
       setSoundError('');
       if (!courtEffectSamplesLoadRef.current) {
         courtEffectSamplesLoadRef.current = loadCourtEffectSamples(context).then(({ samples, missing }) => {
@@ -1047,18 +1057,31 @@ function DmoLiveCourt({
           }
         });
       }
-    } catch {
+    } catch (error) {
       soundRuntimeActiveRef.current = false;
-      if (soundEnabledRef.current) setSoundError('Sound could not be enabled in this browser.');
+      setSoundReady(false);
+      if (soundEnabledRef.current) {
+        const reason = error instanceof Error ? error.message : 'Audio activation failed';
+        setSoundError(`Sound could not start: ${reason}. Tap Enable sound to retry.`);
+      }
     } finally {
       soundActivationPendingRef.current = false;
     }
   };
 
   const toggleSound = async () => {
+    if (soundEnabledRef.current
+      && (!soundRuntimeActiveRef.current || audioContextRef.current?.state !== 'running')) {
+      if (umpireCallsEnabledRef.current && !umpireSpeechReadyRef.current) {
+        void activateUmpireSpeechFromGesture();
+      }
+      await activateSoundFromGesture();
+      return;
+    }
     if (soundEnabledRef.current) {
       soundEnabledRef.current = false;
       soundRuntimeActiveRef.current = false;
+      setSoundReady(false);
       stopActiveGrunts();
       const context = audioContextRef.current;
       const crowdBed = crowdBedRef.current;
@@ -1072,6 +1095,9 @@ function DmoLiveCourt({
     }
     soundEnabledRef.current = true;
     setSoundEnabled(true);
+    if (umpireCallsEnabledRef.current && !umpireSpeechReadyRef.current) {
+      void activateUmpireSpeechFromGesture();
+    }
     await activateSoundFromGesture();
   };
 
@@ -1156,7 +1182,6 @@ function DmoLiveCourt({
             <output>{cameraElevation}°</output>
           </label>
           <button
-            data-sound-toggle
             type="button"
             aria-label="Reset court camera"
             title="Reset court camera"
@@ -1186,17 +1211,18 @@ function DmoLiveCourt({
           </button>
           <output>{Math.round(zoom * 100)}%</output>
           <button
+            data-sound-toggle
             type="button"
-            aria-label={soundEnabled ? 'Mute generated crowd and court sounds' : 'Enable generated crowd and court sounds'}
-            aria-pressed={soundEnabled}
-            title={soundEnabled ? 'Mute generated crowd and court sounds' : 'Enable generated crowd and court sounds'}
+            aria-label={soundEnabled && soundReady ? 'Mute crowd and court sounds' : 'Enable court sound on this device'}
+            aria-pressed={soundEnabled && soundReady}
+            title={soundEnabled && soundReady ? 'Mute crowd and court sounds' : 'Enable court sound on this device'}
             onClick={() => void toggleSound()}
           >
             {soundEnabled ? <Volume2 size={15} /> : <VolumeX size={15} />}
+            <span>{soundEnabled ? soundReady ? 'Sound on' : 'Enable sound' : 'Sound off'}</span>
           </button>
           <button
             className={styles.gruntControl}
-            data-umpire-calls-toggle
             type="button"
             aria-label={gruntsEnabled ? 'Turn player grunts off' : 'Turn player grunts on'}
             aria-pressed={gruntsEnabled}
@@ -1207,6 +1233,7 @@ function DmoLiveCourt({
           </button>
           <button
             className={styles.gruntControl}
+            data-umpire-calls-toggle
             type="button"
             aria-label={umpireCallsEnabled && !umpireSpeechReady
               ? 'Enable spoken umpire calls on this device'

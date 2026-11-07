@@ -78,6 +78,33 @@ test('court audio falls back to the WebKit constructor when the standard name is
   }
 });
 
+test('a browser that leaves audio resume pending cannot hide the failure indefinitely', async () => {
+  const context = { state: 'suspended', resume: () => new Promise(() => {}) };
+  assert.equal(await api.resumeUmpireAudioContext(context, 5), false);
+  const ready = { state: 'running', resume: () => { throw new Error('already running'); } };
+  assert.equal(await api.resumeUmpireAudioContext(ready, 5), true);
+});
+
+test('sound readiness, recovery, and control markers match the actual audio controls', async () => {
+  for (const file of ['DmoLiveCourt.tsx', 'DmoLiveCourt3D.tsx']) {
+    const renderer = await readFile(new URL(`../components/${file}`, import.meta.url), 'utf8');
+    const buttons = [...renderer.matchAll(/<button\b[\s\S]*?<\/button>/g)].map(match => match[0]);
+    const sound = buttons.find(button => button.includes('toggleSound()'));
+    const calls = buttons.find(button => button.includes('onClick={handleUmpireCallsToggle}'));
+    const grunts = buttons.find(button => button.includes('changeGruntsEnabled(!gruntsEnabled)'));
+    assert.match(sound, /data-sound-toggle/);
+    assert.match(sound, /aria-pressed=\{soundEnabled && soundReady\}/);
+    assert.match(sound, /Enable sound/);
+    assert.match(calls, /data-umpire-calls-toggle/);
+    assert.doesNotMatch(grunts, /data-umpire-calls-toggle|data-sound-toggle/);
+    assert.match(renderer, /setSoundReady\(false\)/);
+    assert.match(renderer, /setSoundReady\(true\)/);
+    assert.match(renderer, /const activateUmpireSpeechFromGesture = async \(\) => \{\s*if \([^)]*\) void activateSoundFromGesture\(\);/);
+    assert.match(renderer, /audioContextRef\.current\?\.state === 'running'/);
+    assert.match(renderer, /const resumed = await resumeUmpireAudioContext\(context\)/);
+  }
+});
+
 test('both renderers consume late events and restore the enable control after browser suspension', async () => {
   for (const file of ['DmoLiveCourt.tsx', 'DmoLiveCourt3D.tsx']) {
     const renderer = await readFile(new URL(`../components/${file}`, import.meta.url), 'utf8');
