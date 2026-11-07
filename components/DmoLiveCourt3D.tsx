@@ -116,6 +116,7 @@ import {
 } from '@/lib/dmoCrowdDensity';
 import {
   cancelUmpireCall,
+  createCourtAudioContext,
   createLiveUmpireScoreTether,
   deriveUmpireCallEvents,
   createLiveUmpireEventCursor,
@@ -328,6 +329,7 @@ function ThreeCourt({
   umpireCallsEnabledRef.current = umpireCallsEnabled;
   const umpireSpeechReadyRef = useRef(umpireSpeechReady);
   umpireSpeechReadyRef.current = umpireSpeechReady;
+  const umpireSpeechPointerActivationRef = useRef(false);
 
   useEffect(() => {
     const previous = previousSnapshotRef.current;
@@ -2048,7 +2050,9 @@ function ThreeCourt({
     if (!soundPreferenceRef.current || soundOnRef.current || soundActivationPendingRef.current) return;
     soundActivationPendingRef.current = true;
     try {
-      if (!audioContextRef.current) audioContextRef.current = new AudioContext();
+      if (!audioContextRef.current || audioContextRef.current.state === 'closed') {
+        audioContextRef.current = createCourtAudioContext();
+      }
       const context = audioContextRef.current;
       await context.resume();
       if (!soundPreferenceRef.current) return;
@@ -2175,7 +2179,7 @@ function ThreeCourt({
   const activateUmpireSpeechFromGesture = async () => {
     try {
       if (!audioContextRef.current || audioContextRef.current.state === 'closed') {
-        audioContextRef.current = new AudioContext();
+        audioContextRef.current = createCourtAudioContext();
       }
       if (!await resumeUmpireAudioContext(audioContextRef.current)) {
         throw new Error('Audio context is not running');
@@ -2212,6 +2216,10 @@ function ThreeCourt({
     });
   };
   const handleUmpireCallsToggle = () => {
+    if (umpireSpeechPointerActivationRef.current) {
+      umpireSpeechPointerActivationRef.current = false;
+      return;
+    }
     if (umpireCallsEnabledRef.current && !umpireSpeechReadyRef.current) {
       void activateUmpireSpeechFromGesture();
       return;
@@ -2219,9 +2227,18 @@ function ThreeCourt({
     changeUmpireCallsEnabled(!umpireCallsEnabledRef.current);
   };
   const handleSoundActivationGesture = (target: EventTarget | null) => {
-    if (target instanceof Element && target.closest(
-      '[data-sound-toggle], [data-pip-toggle], [data-umpire-calls-toggle]',
-    )) return;
+    if (target instanceof Element) {
+      if (target.closest('[data-umpire-calls-toggle]')) {
+        if (umpireCallsEnabledRef.current && !umpireSpeechReadyRef.current) {
+          // Resume synchronously on pointerdown; mobile browsers may discard
+          // user activation by the time the later click event runs.
+          umpireSpeechPointerActivationRef.current = true;
+          void activateUmpireSpeechFromGesture();
+        }
+        return;
+      }
+      if (target.closest('[data-sound-toggle], [data-pip-toggle]')) return;
+    }
     if (umpireCallsEnabledRef.current && !umpireSpeechReadyRef.current) {
       void activateUmpireSpeechFromGesture();
     }
@@ -2265,7 +2282,11 @@ function ThreeCourt({
       className={styles.scene}
       aria-label={fullReplay ? 'Three-dimensional full match replay' : 'Three-dimensional live court'}
       onPointerDownCapture={(event) => handleSoundActivationGesture(event.target)}
-      onKeyDownCapture={(event) => handleSoundActivationGesture(event.target)}
+      onPointerCancelCapture={() => { umpireSpeechPointerActivationRef.current = false; }}
+      onKeyDownCapture={(event) => {
+        if (event.target instanceof Element && event.target.closest('[data-umpire-calls-toggle]')) return;
+        handleSoundActivationGesture(event.target);
+      }}
     >
       <div className={styles.toolbar}>
         <div className={styles.title}>

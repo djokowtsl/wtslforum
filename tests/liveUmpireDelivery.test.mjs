@@ -65,6 +65,19 @@ test('browser suspension is observed and the listener is cleaned up', () => {
   assert.equal(paused, 1);
 });
 
+test('court audio falls back to the WebKit constructor when the standard name is missing', () => {
+  const originalWindow = globalThis.window;
+  class WebKitAudioContext {}
+  globalThis.window = { AudioContext: undefined, webkitAudioContext: WebKitAudioContext };
+  try {
+    const context = api.createCourtAudioContext();
+    assert.ok(context instanceof WebKitAudioContext);
+  } finally {
+    if (originalWindow === undefined) delete globalThis.window;
+    else globalThis.window = originalWindow;
+  }
+});
+
 test('both renderers consume late events and restore the enable control after browser suspension', async () => {
   for (const file of ['DmoLiveCourt.tsx', 'DmoLiveCourt3D.tsx']) {
     const renderer = await readFile(new URL(`../components/${file}`, import.meta.url), 'utf8');

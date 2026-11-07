@@ -47,6 +47,7 @@ import CourtPictureInPictureButton from './CourtPictureInPictureButton';
 import { loadLiveGruntSamples } from '@/lib/liveGruntAudio';
 import {
   cancelUmpireCall,
+  createCourtAudioContext,
   createLiveUmpireScoreTether,
   deriveUmpireCallEvents,
   createLiveUmpireEventCursor,
@@ -583,6 +584,7 @@ function DmoLiveCourt({
   soundEnabledRef.current = soundEnabled;
   umpireCallsEnabledRef.current = umpireCallsEnabled;
   umpireSpeechReadyRef.current = umpireSpeechReady;
+  const umpireSpeechPointerActivationRef = useRef(false);
   const sceneRef = useRef({
     samples: sampleBufferRef.current,
     trajectoryEvents: trajectoryEventsRef.current,
@@ -951,7 +953,7 @@ function DmoLiveCourt({
   const activateUmpireSpeechFromGesture = async () => {
     try {
       if (!audioContextRef.current || audioContextRef.current.state === 'closed') {
-        audioContextRef.current = new AudioContext();
+        audioContextRef.current = createCourtAudioContext();
       }
       if (!await resumeUmpireAudioContext(audioContextRef.current)) {
         throw new Error('Audio context is not running');
@@ -984,6 +986,10 @@ function DmoLiveCourt({
     });
   };
   const handleUmpireCallsToggle = () => {
+    if (umpireSpeechPointerActivationRef.current) {
+      umpireSpeechPointerActivationRef.current = false;
+      return;
+    }
     if (umpireCallsEnabledRef.current && !umpireSpeechReadyRef.current) {
       void activateUmpireSpeechFromGesture();
       return;
@@ -1005,7 +1011,9 @@ function DmoLiveCourt({
     if (!soundEnabledRef.current || soundRuntimeActiveRef.current || soundActivationPendingRef.current) return;
     soundActivationPendingRef.current = true;
     try {
-      if (!audioContextRef.current) audioContextRef.current = new AudioContext();
+      if (!audioContextRef.current || audioContextRef.current.state === 'closed') {
+        audioContextRef.current = createCourtAudioContext();
+      }
       const context = audioContextRef.current;
       await context.resume();
       if (!soundEnabledRef.current) return;
@@ -1068,9 +1076,16 @@ function DmoLiveCourt({
   };
 
   const handleSoundActivationGesture = (target: EventTarget | null) => {
-    if (target instanceof Element && target.closest(
-      '[data-sound-toggle], [data-pip-toggle], [data-umpire-calls-toggle]',
-    )) return;
+    if (target instanceof Element) {
+      if (target.closest('[data-umpire-calls-toggle]')) {
+        if (umpireCallsEnabledRef.current && !umpireSpeechReadyRef.current) {
+          umpireSpeechPointerActivationRef.current = true;
+          void activateUmpireSpeechFromGesture();
+        }
+        return;
+      }
+      if (target.closest('[data-sound-toggle], [data-pip-toggle]')) return;
+    }
     if (umpireCallsEnabledRef.current && !umpireSpeechReadyRef.current) {
       void activateUmpireSpeechFromGesture();
     }
@@ -1103,7 +1118,11 @@ function DmoLiveCourt({
       className={styles.scene}
       aria-label="Live court view"
       onPointerDownCapture={(event) => handleSoundActivationGesture(event.target)}
-      onKeyDownCapture={(event) => handleSoundActivationGesture(event.target)}
+      onPointerCancelCapture={() => { umpireSpeechPointerActivationRef.current = false; }}
+      onKeyDownCapture={(event) => {
+        if (event.target instanceof Element && event.target.closest('[data-umpire-calls-toggle]')) return;
+        handleSoundActivationGesture(event.target);
+      }}
     >
       <div className={styles.sceneToolbar}>
         <div className={styles.sceneTitle}>

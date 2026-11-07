@@ -424,6 +424,17 @@ export function unlockBrowserUmpireSpeech(): boolean {
   }
 }
 
+type CourtAudioWindow = Window & { webkitAudioContext?: typeof AudioContext };
+
+/** Safari versions that lack the unprefixed Web Audio constructor still expose the WebKit name. */
+export function createCourtAudioContext(): AudioContext {
+  if (typeof window === 'undefined') throw new Error('Web Audio is unavailable outside the browser.');
+  const AudioContextConstructor = window.AudioContext
+    ?? (window as CourtAudioWindow).webkitAudioContext;
+  if (!AudioContextConstructor) throw new Error('This browser does not support Web Audio.');
+  return new AudioContextConstructor();
+}
+
 export async function resumeUmpireAudioContext(
   context: Pick<AudioContext, 'state' | 'resume'>,
 ): Promise<boolean> {
