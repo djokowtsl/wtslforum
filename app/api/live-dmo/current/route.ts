@@ -95,6 +95,11 @@ export async function GET() {
         stream,
         sourceMessageUrl: typeof stored.sourceMessageUrl === 'string' ? stored.sourceMessageUrl : null,
         broadcastMode: stored.mode === 'auto' ? 'auto' : 'manual',
+        tournamentRound: typeof stored.tournamentRound === 'string'
+          && ['auto', 'round-of-64', 'round-of-32', 'round-of-16', 'quarterfinal', 'semifinal', 'final']
+            .some((round) => round === stored.tournamentRound)
+          ? stored.tournamentRound
+          : 'auto',
         isWta: stored.isWta === true,
         officialByBroadcaster: stored.officialByBroadcaster === true,
         officialByTournament: stored.officialByTournament === true,

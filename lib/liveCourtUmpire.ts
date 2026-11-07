@@ -2,6 +2,15 @@ import type { LiveCourtMotionEvent, LiveCourtSample } from './liveCourtMotion';
 import { cancelXktUmpireCalls, playXktUmpireCall } from './xktUmpireAudio';
 
 let browserUmpireSpeechUnlocked = false;
+const activeXktUmpireContexts = new Map<string, BaseAudioContext>();
+let activeBrowserUmpireMatchKey: string | null = null;
+
+export function liveUmpireMatchKey(players: [string, string], isWta: boolean) {
+  const pair = players
+    .map((name) => name.trim().normalize('NFKC').toLocaleLowerCase('en-GB'))
+    .sort();
+  return `${isWta ? 'wta' : 'atp'}:${pair.join('|')}`;
+}
 
 export type UmpireCallEvent = {
   frame: number;
@@ -102,7 +111,7 @@ export function formatLiveUmpireScoreCall(
       const winner = completedSet
         ? completedSet[0] > completedSet[1] ? 0 : completedSet[1] > completedSet[0] ? 1 : null
         : null;
-      if (winner !== null) return `Game and set, ${players[winner]}`;
+      if (winner !== null) return formatUmpireSetCall(current.sets.length, players[winner]);
     }
     if (current.games[0] > previous.games[0]) return `Game, ${players[0]}`;
     if (current.games[1] > previous.games[1]) return `Game, ${players[1]}`;
@@ -113,6 +122,15 @@ export function formatLiveUmpireScoreCall(
     players,
     current.tiebreak,
   );
+}
+
+const SET_ORDINALS = ['first', 'second', 'third', 'fourth', 'fifth'] as const;
+
+export function formatUmpireSetCall(setNumber: number, winnerName: string): string {
+  const ordinal = SET_ORDINALS[setNumber - 1];
+  return ordinal
+    ? `Game and ${ordinal} set, ${winnerName}`
+    : `Game and set, ${winnerName}`;
 }
 
 export function sameUmpireScore(first: UmpireScore, second: UmpireScore): boolean {
@@ -373,24 +391,59 @@ export async function speakUmpireCall(
   context: BaseAudioContext | null | undefined,
   isWta: boolean,
   shouldSpeak: () => boolean = () => true,
+  matchKey = 'default',
 ): Promise<boolean> {
-  if (context && await playXktUmpireCall(context, text, isWta)) {
-    if (typeof window !== 'undefined') window.speechSynthesis?.cancel();
-    return true;
+  const activeContext = activeXktUmpireContexts.get(matchKey);
+  if (activeContext && activeContext !== context) {
+    cancelXktUmpireCalls(activeContext);
+    activeXktUmpireContexts.delete(matchKey);
+  }
+  if (activeBrowserUmpireMatchKey === matchKey) cancelBrowserUmpireCall(matchKey);
+
+  if (context) {
+    activeXktUmpireContexts.set(matchKey, context);
+    if (await playXktUmpireCall(context, text, isWta)) return true;
+    if (activeXktUmpireContexts.get(matchKey) === context) {
+      cancelXktUmpireCalls(context);
+      activeXktUmpireContexts.delete(matchKey);
+    }
   }
   if (!shouldSpeak()) return false;
-  return speakBrowserUmpireCall(text);
+  // Web Speech serializes utterances globally; replace an existing utterance
+  // for this match, but preserve queued calls belonging to other matches.
+  cancelBrowserUmpireCall(matchKey);
+  const spoken = speakBrowserUmpireCall(text);
+  if (spoken) activeBrowserUmpireMatchKey = matchKey;
+  return spoken;
 }
 
 export function isBrowserUmpireSpeechUnlocked(): boolean {
   return browserUmpireSpeechUnlocked;
 }
 
-export function cancelBrowserUmpireCall(): void {
+export function cancelBrowserUmpireCall(matchKey?: string): void {
+  if (matchKey && activeBrowserUmpireMatchKey !== matchKey) return;
   if (typeof window !== 'undefined') window.speechSynthesis?.cancel();
+  activeBrowserUmpireMatchKey = null;
 }
 
-export function cancelUmpireCall(context: BaseAudioContext | null | undefined): void {
+export function cancelUmpireCall(
+  context: BaseAudioContext | null | undefined,
+  matchKey?: string,
+): void {
+  if (matchKey) {
+    const activeContext = activeXktUmpireContexts.get(matchKey);
+    if (activeContext && (!context || context === activeContext)) {
+      cancelXktUmpireCalls(activeContext);
+      activeXktUmpireContexts.delete(matchKey);
+    }
+    cancelBrowserUmpireCall(matchKey);
+    if (context && activeContext !== context) cancelXktUmpireCalls(context);
+    return;
+  }
   cancelBrowserUmpireCall();
   cancelXktUmpireCalls(context);
+  for (const [key, active] of activeXktUmpireContexts) {
+    if (!context || active === context) activeXktUmpireContexts.delete(key);
+  }
 }

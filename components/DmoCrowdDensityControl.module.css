@@ -1,0 +1,41 @@
+.courtDensityShell {
+  position: relative;
+  min-width: 0;
+}
+
+.crowdDensityControl {
+  position: absolute;
+  z-index: 12;
+  top: 14px;
+  right: 14px;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  max-width: calc(100% - 28px);
+  padding: 7px 9px;
+  border: 1px solid rgba(190, 205, 222, .24);
+  border-radius: 9px;
+  background: rgba(8, 18, 31, .9);
+  color: #d8e1ed;
+  font: 650 11px/1.2 system-ui, sans-serif;
+  backdrop-filter: blur(8px);
+}
+
+.crowdDensityControl select {
+  min-height: 32px;
+  border: 1px solid rgba(190, 205, 222, .22);
+  border-radius: 6px;
+  background: #111f2d;
+  color: inherit;
+  font: inherit;
+  padding: 0 7px;
+}
+
+@media (max-width: 560px) {
+  .crowdDensityControl {
+    top: 9px;
+    right: 9px;
+    gap: 5px;
+    padding: 6px;
+  }
+}

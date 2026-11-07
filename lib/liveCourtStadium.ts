@@ -389,10 +389,12 @@ export function drawLiveCourtCrowdMotion(
   context: CanvasRenderingContext2D,
   project: Project,
   timestampMs: number,
+  density = 0.76,
 ) {
   context.save();
   context.lineCap = 'round';
   for (let index = 0; index < 24; index += 1) {
+    if (((index * 17) % 24) / 24 >= Math.max(0, Math.min(1, density))) continue;
     const column = index % 12;
     const row = Math.floor(index / 12);
     const x = -1700 + column * 305;

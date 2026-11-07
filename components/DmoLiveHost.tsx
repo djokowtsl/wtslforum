@@ -16,6 +16,7 @@ import {
   type Te4LiveBestOf,
   type Te4LiveSnapshot,
 } from '@/lib/te4DmoLive';
+import type { TournamentRoundChoice } from '@/lib/dmoCrowdDensity';
 import { findMatchingWtslLiveMatch } from '@/lib/liveBroadcast';
 import { consumePendingDmoReaderReset } from '@/lib/dmoReaderState';
 import { hasPlayerPositionData } from '@/lib/te4LiveSetup';
@@ -140,6 +141,7 @@ export default function DmoLiveHost({ displayName, canPrepareFullReplay }: Props
   const [realTimeObserved, setRealTimeObserved] = useState(false);
   const [positionsPresent, setPositionsPresent] = useState<boolean | null>(null);
   const [bestOf, setBestOf] = useState<Te4LiveBestOf>(3);
+  const [tournamentRound, setTournamentRound] = useState<TournamentRoundChoice>('auto');
   const [isWta, setIsWta] = useState(false);
   const [broadcastId, setBroadcastId] = useState<string | null>(null);
   const [broadcastMode, setBroadcastMode] = useState<'manual' | 'auto' | null>(null);
@@ -508,6 +510,7 @@ export default function DmoLiveHost({ displayName, canPrepareFullReplay }: Props
           character: character.trim() || null,
           mode,
           bestOf: broadcastBestOf,
+          tournamentRound,
           isWta: mode === 'manual' && isWta,
           officialByBroadcaster: officialByBroadcaster && broadcastBestOf !== 1,
         }),
@@ -1053,6 +1056,23 @@ export default function DmoLiveHost({ displayName, canPrepareFullReplay }: Props
             <option value={1}>Best of 1 set</option>
             <option value={3}>Best of 3 sets</option>
             <option value={5}>Best of 5 sets</option>
+          </select>
+        </label>
+        <label className={styles.bestOf}>
+          <span>Tournament round for crowd default</span>
+          <select
+            value={tournamentRound}
+            onChange={(event) => setTournamentRound(event.currentTarget.value as TournamentRoundChoice)}
+            disabled={busy || Boolean(broadcastId)}
+            aria-label="Tournament round for automatic crowd density"
+          >
+            <option value="auto">Auto / not specified</option>
+            <option value="round-of-64">Round of 64</option>
+            <option value="round-of-32">Round of 32</option>
+            <option value="round-of-16">Round of 16</option>
+            <option value="quarterfinal">Quarterfinal</option>
+            <option value="semifinal">Semifinal</option>
+            <option value="final">Final</option>
           </select>
         </label>
         <label className={styles.bestOf}>

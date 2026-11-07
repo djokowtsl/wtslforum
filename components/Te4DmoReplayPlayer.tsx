@@ -22,6 +22,7 @@ type Props = {
   replayUrl?: string;
   initialSpeed: 1 | 2 | 4;
   isWta?: boolean;
+  tournamentRound?: string | null;
   handedness: ['left' | 'right', 'left' | 'right'];
   fallback?: ReactNode;
 };
@@ -44,6 +45,7 @@ export default function Te4DmoReplayPlayer({
   replayUrl,
   initialSpeed,
   isWta,
+  tournamentRound = 'auto',
   handedness,
   fallback,
 }: Props) {
@@ -203,6 +205,7 @@ export default function Te4DmoReplayPlayer({
             surface={viewer.surface}
             playbackSpeed={initialSpeed}
             isWta={isWta ?? false}
+            tournamentRound={tournamentRound}
             fullReplay
             scoreboard={replayScoreboard}
             onReplayFrameChange={handleReplayFrameChange}

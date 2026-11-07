@@ -30,6 +30,7 @@ type Broadcast = {
   players: [string, string] | null;
   broadcastMode: 'manual' | 'auto';
   isWta: boolean;
+  tournamentRound?: string;
   canManageTour: boolean;
   replay: boolean;
   replayDataReady: boolean;
@@ -498,11 +499,13 @@ export default function DmoLiveViewer({ canWatch, voiceServer = '' }: Props) {
                       broadcastId={broadcast.id}
                       initialSpeed={broadcast.replaySpeed}
                       isWta={broadcast.isWta}
+                      tournamentRound={broadcast.tournamentRound}
                       handedness={broadcast.snapshot.handedness ?? ['right', 'right']}
                       fallback={(
                         <DmoLiveDisplay
                           snapshot={broadcast.snapshot}
                           isWta={broadcast.isWta}
+                          tournamentRound={broadcast.tournamentRound}
                           state={broadcast.status}
                           playbackSpeed={broadcast.replaySpeed}
                           liveScore={broadcast.broadcastMode === 'auto' && !broadcast.replay
@@ -520,6 +523,7 @@ export default function DmoLiveViewer({ canWatch, voiceServer = '' }: Props) {
                     <DmoLiveDisplay
                       snapshot={broadcast.snapshot}
                       isWta={broadcast.isWta}
+                      tournamentRound={broadcast.tournamentRound}
                       state={broadcast.status}
                       playbackSpeed={broadcast.replay ? broadcast.replaySpeed : 1}
                       liveScore={broadcast.broadcastMode === 'auto' && !broadcast.replay

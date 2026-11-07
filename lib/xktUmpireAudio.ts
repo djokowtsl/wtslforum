@@ -77,11 +77,12 @@ export function resolveXktUmpireCallPaths(
   const call = text.trim();
   if (!call) return null;
 
-  const gameAndSet = call.match(/^Game and set,\s*(.+)$/i);
+  const gameAndSet = call.match(/^Game and (first|second|third|fourth|fifth) set,\s*(.+)$/i);
   if (gameAndSet) {
-    const name = resolvePlayerNameAudio(gameAndSet[1], names, isWta);
+    const setIndex = ['first', 'second', 'third', 'fourth', 'fifth'].indexOf(gameAndSet[1].toLowerCase());
+    const name = resolvePlayerNameAudio(gameAndSet[2], names, isWta);
     const game = pick(umpire.gameCalls, random);
-    const set = pick(umpire.setCalls, random);
+    const set = umpire.setCalls[setIndex];
     return name && game && set ? [game, set, name] : null;
   }
 

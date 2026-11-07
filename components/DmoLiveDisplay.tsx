@@ -25,6 +25,7 @@ type Props = {
   pointLog?: Te4LivePoint[];
   pointLogLoaded?: boolean;
   liveScore?: LiveBroadcastScore | null;
+  tournamentRound?: string | null;
 };
 
 function scoreLabel(sets: [number, number][]) {
@@ -122,6 +123,7 @@ export default function DmoLiveDisplay({
   pointLog,
   pointLogLoaded = false,
   liveScore,
+  tournamentRound = 'auto',
 }: Props) {
   const [frameStalled, setFrameStalled] = useState(false);
   const frameProgressRef = useRef({
@@ -196,6 +198,7 @@ export default function DmoLiveDisplay({
           isWta={isWta}
           buffering={buffering}
           scoreboard={stadiumScoreboard}
+          tournamentRound={tournamentRound}
         />
         <aside className={styles.scoreBug} aria-label="Live match score">
           <div className={styles.scoreBugHeader}>

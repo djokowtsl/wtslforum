@@ -5,6 +5,7 @@ export type GroundstrokeName =
   | 'forehand'
   | 'backhand'
   | 'serve'
+  | 'smash'
   | 'volley-forehand'
   | 'volley-backhand';
 export type DominantHandedness = 'left' | 'right';
@@ -25,7 +26,12 @@ export function recordedStrokeUsesTwoHands(
   fallback: boolean,
 ) {
   if (!stroke) return fallback;
-  if (stroke === 'serve' || stroke === 'volley-forehand' || stroke === 'volley-backhand') return false;
+  if (
+    stroke === 'serve'
+    || stroke === 'smash'
+    || stroke === 'volley-forehand'
+    || stroke === 'volley-backhand'
+  ) return false;
   return (style?.[stroke] ?? (stroke === 'backhand' ? 'two' : 'one')) === 'two';
 }
 
@@ -81,6 +87,9 @@ const CONTACT_SECONDS: Record<GroundstrokeName, number> = {
   forehand: 13.4,
   backhand: 9.28,
   serve: 2.56,
+  // Tennis-MoCap's overhead-smash clip peaks at a right-wrist speed maximum
+  // near 7.85 s; the source recording has no ball-contact marker.
+  smash: 7.85,
   // Tennis-MoCap volley excerpts use a 25 Hz BVH and retain the selected
   // right-wrist speed peak at frame 23. The dataset has no ball marker.
   'volley-forehand': 0.92,
@@ -244,6 +253,7 @@ export class DmoCapturedGroundstroke {
       forehand: this.prepare('forehand', sources.forehand, rest),
       backhand: this.prepare('backhand', sources.backhand, rest),
       serve: this.prepare('serve', sources.serve, rest),
+      smash: this.prepare('smash', sources.smash, rest),
       'volley-forehand': this.prepare('volley-forehand', sources['volley-forehand'], rest),
       'volley-backhand': this.prepare('volley-backhand', sources['volley-backhand'], rest),
     };
