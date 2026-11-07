@@ -7,7 +7,7 @@
     "build": "next build",
     "start": "next start",
     "lint": "next lint",
-    "test:broadcast-scene": "node --test tests/liveCourtBroadcastScene.test.mjs",
+    "test:broadcast-scene": "node --test tests/liveCourtBroadcastScene.test.mjs tests/dmoBaselineMotion.test.mjs",
     "test:dmo-waiting": "node --test tests/dmoWaitingPose.test.mjs tests/dmoGroundstrokeRig.test.mjs",
     "test:dmo-humans": "node --test tests/dmoHumanModels.test.mjs",
     "posttest": "npm run test:livestream-access && npm run test:broadcast-scene",
