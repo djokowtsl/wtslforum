@@ -1,5 +1,6 @@
 import type { Te4LiveSnapshot, Te4LiveSoundEvent } from './te4DmoLive';
 import type { Te4ViewerData, Te4ViewerPoint } from './te4DmoTypes';
+import { formatTennisPointScoreCall } from './liveCourtUmpire';
 
 const MAX_MATCH_BYTES = 64 * 1024 * 1024;
 const COURT_SAMPLE_STEP = 2;
@@ -16,11 +17,15 @@ function zeroStats(): Te4LiveSnapshot['stats'][number] {
 }
 
 function gameScore(point: Te4ViewerPoint | undefined): [number, number] {
-  if (!point) return [0, 0];
+  return parsedGameScore(point) ?? [0, 0];
+}
+
+function parsedGameScore(point: Te4ViewerPoint | undefined): [number, number] | null {
+  if (!point) return null;
   const values = point.g.match(/\d+/g)?.map(Number);
   return values?.length === 2 && values.every(Number.isInteger)
     ? [values[0], values[1]]
-    : [0, 0];
+    : null;
 }
 
 type ScorePoint = { s?: number; set?: number; tb?: number; g?: string };
@@ -153,7 +158,26 @@ export function te4ViewerToLiveSnapshot(
     if (point.fc > 0) {
       const endFrame = Math.min(frameCount - 1, point.mf + point.fc - 1);
       if (endFrame >= 0) {
-        trajectoryEvents.push({ frame: endFrame, kind: 'point-end', changeover: changeovers[pointIndex] });
+        const previousPoint = viewer.pts[pointIndex - 1];
+        const previousGames = parsedGameScore(previousPoint);
+        const currentGames = parsedGameScore(point);
+        const gameWinner = previousGames && currentGames && (
+          currentGames[0] > previousGames[0] || currentGames[1] > previousGames[1]
+        );
+        const scoreCall = gameWinner
+          ? `Game, ${viewer.names[point.w - 1]}`
+          : formatTennisPointScoreCall(
+            point.pt,
+            viewer.pts[pointIndex + 1]?.s ?? point.s,
+            viewer.names,
+            point.tb === 1,
+          );
+        trajectoryEvents.push({
+          frame: endFrame,
+          kind: 'point-end',
+          changeover: changeovers[pointIndex],
+          ...(scoreCall ? { scoreCall } : {}),
+        });
       }
     }
   }

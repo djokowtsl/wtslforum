@@ -76,6 +76,7 @@ const snapshotSchema = z.object({
     shotType: z.enum(['serve', 'rally']).optional(),
     speedKmh: z.number().min(0).max(500).optional(),
     changeover: z.boolean().optional(),
+    scoreCall: z.string().min(1).max(120).optional(),
   }).strict()).max(256).optional(),
   soundEvents: z.array(z.object({
     frame: z.number().int().min(0).max(1_000_000),
