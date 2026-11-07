@@ -1150,6 +1150,21 @@ test('umpire calls have independent controls in both court renderers', async () 
   assert.doesNotMatch(fallback, /soundEnabledRef\.current && umpireCallsEnabledRef\.current/);
 });
 
+test('broadcast court audio defaults on and the Court camera remains the initial preset', async () => {
+  const primary = await readFile(new URL('../components/DmoLiveCourt3D.tsx', import.meta.url), 'utf8');
+  const fallback = await readFile(new URL('../components/DmoLiveCourt.tsx', import.meta.url), 'utf8');
+  assert.match(primary, /const \[soundEnabled, setSoundEnabled\] = useState\(true\)/);
+  assert.match(fallback, /const \[soundEnabled, setSoundEnabled\] = useState\(true\)/);
+  assert.match(primary, /const \[umpireCallsEnabled, setUmpireCallsEnabled\] = useState\(true\)/);
+  assert.match(fallback, /const \[umpireCallsEnabled, setUmpireCallsEnabled\] = useState\(true\)/);
+  assert.match(primary, /const \[gruntsEnabled, setGruntsEnabled\] = useState\(true\)/);
+  assert.match(primary, /const \[cameraView, setCameraView\] = useState<CameraView>\('court'\)/);
+  assert.match(primary, /onPointerDownCapture=\{\(event\) => handleSoundActivationGesture\(event\.target\)\}/);
+  assert.match(fallback, /onPointerDownCapture=\{\(event\) => handleSoundActivationGesture\(event\.target\)\}/);
+  assert.match(primary, /data-sound-toggle/);
+  assert.match(fallback, /data-sound-toggle/);
+});
+
 test('mobile speech unlock is silent and happens only when called from a user gesture', () => {
   const originalWindow = globalThis.window;
   const originalUtterance = globalThis.SpeechSynthesisUtterance;

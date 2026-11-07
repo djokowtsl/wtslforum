@@ -550,10 +550,12 @@ function DmoLiveCourt({
   const courtEffectSamplesLoadRef = useRef<Promise<void> | null>(null);
   const lastSoundFrameRef = useRef(Math.max(0, snapshot.frameCount - 3));
   const playedSoundEventsRef = useRef(new Set<string>());
-  const soundEnabledRef = useRef(false);
+  const soundEnabledRef = useRef(true);
+  const soundRuntimeActiveRef = useRef(false);
+  const soundActivationPendingRef = useRef(false);
   const umpireCallsEnabledRef = useRef(true);
   const umpireSpeechReadyRef = useRef(isBrowserUmpireSpeechUnlocked());
-  const [soundEnabled, setSoundEnabled] = useState(false);
+  const [soundEnabled, setSoundEnabled] = useState(true);
   const [umpireCallsEnabled, setUmpireCallsEnabled] = useState(true);
   const [umpireSpeechReady, setUmpireSpeechReady] = useState(isBrowserUmpireSpeechUnlocked());
   const [crowdVolume, setCrowdVolume] = useState(0.38);
@@ -943,9 +945,56 @@ function DmoLiveCourt({
     }
   };
 
+  const activateSoundFromGesture = async () => {
+    if (!soundEnabledRef.current || soundRuntimeActiveRef.current || soundActivationPendingRef.current) return;
+    soundActivationPendingRef.current = true;
+    try {
+      if (!audioContextRef.current) audioContextRef.current = new AudioContext();
+      const context = audioContextRef.current;
+      await context.resume();
+      if (!soundEnabledRef.current) return;
+      if (context.state !== 'running') throw new Error('Audio context is not running');
+
+      const currentGruntSamples = isWta ? wtaGruntAudioRef.current : atpGruntAudioRef.current;
+      if (gruntsEnabled && !currentGruntSamples) {
+        const samples = await loadLiveGruntSamples(context, isWta);
+        if (!soundEnabledRef.current) return;
+        if (isWta) wtaGruntAudioRef.current = samples;
+        else atpGruntAudioRef.current = samples;
+      }
+      if (!crowdBedRef.current) crowdBedRef.current = createCrowdBed(context);
+      crowdBedRef.current.gain.gain.setTargetAtTime(
+        crowdVolume * 0.02368421,
+        context.currentTime,
+        0.45,
+      );
+      lastSoundFrameRef.current = Math.max(0, snapshot.frameCount - 3);
+      soundRuntimeActiveRef.current = true;
+      setSoundError('');
+      if (!courtEffectSamplesLoadRef.current) {
+        courtEffectSamplesLoadRef.current = loadCourtEffectSamples(context).then(({ samples, missing }) => {
+          courtEffectSamplesRef.current = samples;
+          if (missing.length && soundEnabledRef.current) {
+            setSoundError('Some tennis court samples could not be loaded; backup effects are active.');
+          }
+        }).catch(() => {
+          if (soundEnabledRef.current) {
+            setSoundError('Tennis court samples could not be loaded; backup effects are active.');
+          }
+        });
+      }
+    } catch {
+      soundRuntimeActiveRef.current = false;
+      if (soundEnabledRef.current) setSoundError('Sound could not be enabled in this browser.');
+    } finally {
+      soundActivationPendingRef.current = false;
+    }
+  };
+
   const toggleSound = async () => {
-    if (soundEnabled) {
+    if (soundEnabledRef.current) {
       soundEnabledRef.current = false;
+      soundRuntimeActiveRef.current = false;
       stopActiveGrunts();
       const context = audioContextRef.current;
       const crowdBed = crowdBedRef.current;
@@ -957,40 +1006,16 @@ function DmoLiveCourt({
       setSoundEnabled(false);
       return;
     }
-    try {
-      if (!audioContextRef.current) audioContextRef.current = new AudioContext();
-      const context = audioContextRef.current;
-      await context.resume();
-      const currentGruntSamples = isWta ? wtaGruntAudioRef.current : atpGruntAudioRef.current;
-      if (gruntsEnabled && !currentGruntSamples) {
-        const samples = await loadLiveGruntSamples(context, isWta);
-        if (isWta) wtaGruntAudioRef.current = samples;
-        else atpGruntAudioRef.current = samples;
-      }
-      if (!crowdBedRef.current) crowdBedRef.current = createCrowdBed(context);
-      crowdBedRef.current.gain.gain.setTargetAtTime(
-        crowdVolume * 0.02368421,
-        context.currentTime,
-        0.45,
-      );
-      lastSoundFrameRef.current = Math.max(0, snapshot.frameCount - 3);
-      soundEnabledRef.current = true;
-      setSoundError('');
-      setSoundEnabled(true);
-      if (!courtEffectSamplesLoadRef.current) {
-        courtEffectSamplesLoadRef.current = loadCourtEffectSamples(context).then(({ samples, missing }) => {
-          courtEffectSamplesRef.current = samples;
-          if (missing.length) {
-            setSoundError('Some tennis court samples could not be loaded; backup effects are active.');
-          }
-        }).catch(() => {
-          setSoundError('Tennis court samples could not be loaded; backup effects are active.');
-        });
-      }
-    } catch {
-      soundEnabledRef.current = false;
-      setSoundError('Sound could not be enabled in this browser.');
-    }
+    soundEnabledRef.current = true;
+    setSoundEnabled(true);
+    await activateSoundFromGesture();
+  };
+
+  const handleSoundActivationGesture = (target: EventTarget | null) => {
+    if (target instanceof Element && target.closest('[data-sound-toggle]')) return;
+    if (!soundEnabledRef.current) return;
+    if (umpireCallsEnabledRef.current && !umpireSpeechReadyRef.current) activateUmpireSpeechFromGesture();
+    void activateSoundFromGesture();
   };
 
   useEffect(() => {
@@ -1013,7 +1038,13 @@ function DmoLiveCourt({
   }, [isWta, soundEnabled, gruntsEnabled]);
 
   return (
-    <section ref={sceneElementRef} className={styles.scene} aria-label="Live court view">
+    <section
+      ref={sceneElementRef}
+      className={styles.scene}
+      aria-label="Live court view"
+      onPointerDownCapture={(event) => handleSoundActivationGesture(event.target)}
+      onKeyDownCapture={(event) => handleSoundActivationGesture(event.target)}
+    >
       <div className={styles.sceneToolbar}>
         <div className={styles.sceneTitle}>
           <strong>LIVE COURT</strong>
@@ -1046,6 +1077,7 @@ function DmoLiveCourt({
             <output>{cameraElevation}°</output>
           </label>
           <button
+            data-sound-toggle
             type="button"
             aria-label="Reset court camera"
             title="Reset court camera"

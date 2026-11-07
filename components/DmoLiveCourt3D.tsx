@@ -283,12 +283,14 @@ function ThreeCourt({
     scoreboard: scoreboardData,
   };
   const soundOnRef = useRef(false);
+  const soundPreferenceRef = useRef(true);
+  const soundActivationPendingRef = useRef(false);
   const umpireCallsEnabledRef = useRef(true);
   const cameraViewRef = useRef<CameraView>('court');
   const playerCameraPanRef = useRef(0);
   const [cameraView, setCameraView] = useState<CameraView>('court');
   const [playerCameraPan, setPlayerCameraPan] = useState(0);
-  const [soundEnabled, setSoundEnabled] = useState(false);
+  const [soundEnabled, setSoundEnabled] = useState(true);
   const [umpireCallsEnabled, setUmpireCallsEnabled] = useState(true);
   const [umpireSpeechReady, setUmpireSpeechReady] = useState(isBrowserUmpireSpeechUnlocked());
   const [soundError, setSoundError] = useState('');
@@ -303,6 +305,7 @@ function ThreeCourt({
     speedKmh: number;
     frame: number;
   } | null>(null);
+  soundPreferenceRef.current = soundEnabled;
   umpireCallsEnabledRef.current = umpireCallsEnabled;
   const umpireSpeechReadyRef = useRef(umpireSpeechReady);
   umpireSpeechReadyRef.current = umpireSpeechReady;
@@ -1971,27 +1974,19 @@ function ThreeCourt({
     viewportRef.current?.dispatchEvent(new CustomEvent<number>('courtplayerpan', { detail: pan }));
   };
 
-  const toggleSound = async () => {
-    if (soundEnabled) {
-      crowdAudioRef.current?.pause();
-      for (const voice of activeGruntsRef.current) voice.stop();
-      activeGruntsRef.current.clear();
-      for (const voice of activeApplauseRef.current) voice.stop();
-      activeApplauseRef.current.clear();
-      soundOnRef.current = false;
-      setSoundEnabled(false);
-      return;
-    }
+  const activateSoundFromGesture = async () => {
+    if (!soundPreferenceRef.current || soundOnRef.current || soundActivationPendingRef.current) return;
+    soundActivationPendingRef.current = true;
     try {
       if (!audioContextRef.current) audioContextRef.current = new AudioContext();
       const context = audioContextRef.current;
       await context.resume();
+      if (!soundPreferenceRef.current) return;
       if (context.state !== 'running') throw new Error('Audio context is not running');
       // Core court effects must not wait for, or fail with, optional MP3 layers.
       lastSoundFrameRef.current = playheadRef.current ?? snapshot.frameCount;
       soundOnRef.current = true;
       setSoundError('');
-      setSoundEnabled(true);
       const layers: Array<Promise<unknown>> = [];
       let sampleLoad = courtEffectSamplesLoadRef.current;
       if (!sampleLoad) {
@@ -2027,7 +2022,7 @@ function ThreeCourt({
       }
       if (gruntAudioRef.current?.isWta !== isWta) {
         layers.push(loadLiveGruntSamples(context, isWta).then(samples => {
-          gruntAudioRef.current = { isWta, samples };
+          if (soundOnRef.current) gruntAudioRef.current = { isWta, samples };
         }).catch(() => {
           if (soundOnRef.current) setSoundError('Court effects are on; player grunt audio could not be loaded.');
         }));
@@ -2036,7 +2031,8 @@ function ThreeCourt({
         layers.push((async () => {
           const response = await fetch('/audio/te4-point-applause.mp3');
           if (!response.ok) throw new Error('Applause sample unavailable');
-          applauseAudioRef.current = await context.decodeAudioData(await response.arrayBuffer());
+          const sample = await context.decodeAudioData(await response.arrayBuffer());
+          if (soundOnRef.current) applauseAudioRef.current = sample;
         })().catch(() => {
           if (soundOnRef.current) setSoundError('Court effects are on; applause audio could not be loaded.');
         }));
@@ -2045,9 +2041,27 @@ function ThreeCourt({
     } catch {
       crowdAudioRef.current?.pause();
       soundOnRef.current = false;
-      setSoundEnabled(false);
-      setSoundError('Sound could not be enabled in this browser.');
+      if (soundPreferenceRef.current) setSoundError('Sound could not be enabled in this browser.');
+    } finally {
+      soundActivationPendingRef.current = false;
     }
+  };
+
+  const toggleSound = async () => {
+    if (soundPreferenceRef.current) {
+      soundPreferenceRef.current = false;
+      crowdAudioRef.current?.pause();
+      for (const voice of activeGruntsRef.current) voice.stop();
+      activeGruntsRef.current.clear();
+      for (const voice of activeApplauseRef.current) voice.stop();
+      activeApplauseRef.current.clear();
+      soundOnRef.current = false;
+      setSoundEnabled(false);
+      return;
+    }
+    soundPreferenceRef.current = true;
+    setSoundEnabled(true);
+    await activateSoundFromGesture();
   };
 
   useEffect(() => {
@@ -2131,6 +2145,12 @@ function ThreeCourt({
     }
     changeUmpireCallsEnabled(!umpireCallsEnabledRef.current);
   };
+  const handleSoundActivationGesture = (target: EventTarget | null) => {
+    if (target instanceof Element && target.closest('[data-sound-toggle]')) return;
+    if (!soundPreferenceRef.current || soundOnRef.current) return;
+    if (umpireCallsEnabledRef.current && !umpireSpeechReadyRef.current) activateUmpireSpeechFromGesture();
+    void activateSoundFromGesture();
+  };
   const replayFrameRate = snapshot.frameRate ?? TE4_DMO_FRAMES_PER_SECOND;
   const replayStartFrame = sampleBufferRef.current[0]?.frame ?? snapshot.courtFrameIndices?.[0] ?? 0;
   const replayEndFrame = sampleBufferRef.current.at(-1)?.frame
@@ -2165,6 +2185,8 @@ function ThreeCourt({
       ref={sceneElementRef}
       className={styles.scene}
       aria-label={fullReplay ? 'Three-dimensional full match replay' : 'Three-dimensional live court'}
+      onPointerDownCapture={(event) => handleSoundActivationGesture(event.target)}
+      onKeyDownCapture={(event) => handleSoundActivationGesture(event.target)}
     >
       <div className={styles.toolbar}>
         <div className={styles.title}>
@@ -2245,6 +2267,7 @@ function ThreeCourt({
           )}
           <button
             className={styles.soundButton}
+            data-sound-toggle
             type="button"
             aria-pressed={soundEnabled}
             onClick={() => void toggleSound()}
