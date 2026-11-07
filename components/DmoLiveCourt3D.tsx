@@ -446,7 +446,7 @@ function ThreeCourt({
         liveUmpireMatchKey(snapshot.players, isWta),
       ).then((spoken) => {
         if (!spoken && umpireCallsEnabledRef.current && umpireSpeechReadyRef.current) {
-          setSoundError('Spoken umpire calls are unavailable in this browser.');
+          setSoundError('Recorded umpire audio is unavailable for this call.');
         }
       });
     }
@@ -1751,7 +1751,7 @@ function ThreeCourt({
                   liveUmpireMatchKey(snapshot.players, isWta),
                 ).then((spoken) => {
                   if (!spoken && umpireCallsEnabledRef.current && umpireSpeechReadyRef.current) {
-                    setSoundError('Spoken umpire calls are unavailable in this browser.');
+                    setSoundError('Recorded umpire audio is unavailable for this call.');
                   }
                 });
               }
@@ -1766,7 +1766,7 @@ function ThreeCourt({
               liveUmpireMatchKey(snapshot.players, isWta),
             ).then((spoken) => {
               if (!spoken && umpireCallsEnabledRef.current && umpireSpeechReadyRef.current) {
-                setSoundError('Spoken umpire calls are unavailable in this browser.');
+                setSoundError('Recorded umpire audio is unavailable for this call.');
               }
             });
           }
@@ -2165,7 +2165,7 @@ function ThreeCourt({
     }
     const speechReady = unlockBrowserUmpireSpeech();
     if (!audioReady && !speechReady) {
-      setSoundError('Spoken umpire calls are unavailable in this browser.');
+      setSoundError('Recorded umpire audio is unavailable for this call.');
       return false;
     }
     umpireSpeechReadyRef.current = true;

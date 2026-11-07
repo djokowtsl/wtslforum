@@ -200,46 +200,6 @@ export default function DmoLiveDisplay({
           scoreboard={stadiumScoreboard}
           tournamentRound={tournamentRound}
         />
-        <aside className={styles.scoreBug} aria-label="Live match score">
-          <div className={styles.scoreBugHeader}>
-            <span className={styles.scoreBugStatus}>
-              <i aria-hidden="true" className={styles.scoreBugDot} />
-              {statusLabel}
-            </span>
-            {score && scoreLabel(score.sets) && (
-              <strong className={styles.scoreBugSets} aria-label="Set scores">
-                {scoreLabel(score.sets)}
-              </strong>
-            )}
-          </div>
-          <div className={styles.scoreBugTable} role="table" aria-label="Player, games, points and serve percentage">
-            <div className={styles.scoreBugHeading} role="row">
-              <span role="columnheader">Player</span>
-              <span role="columnheader">Games</span>
-              <span role="columnheader">{score?.tiebreak ? 'TB' : 'Points'}</span>
-              <span role="columnheader">Serve</span>
-            </div>
-            {snapshot.players.map((name, index) => (
-              <div className={styles.scoreBugRow} role="row" key={`${index}-${name}`}>
-                <strong role="cell" className={styles.scoreBugPlayer} title={name}>
-                  {score?.server === index + 1 && (
-                    <i className={styles.scoreBugServeDot} role="img" aria-label="Serving" />
-                  )}
-                  <span>{name}</span>
-                </strong>
-                <strong role="cell">{score?.games[index] ?? '—'}</strong>
-                <strong role="cell" className={styles.scoreBugPoints}>
-                  {score?.pointText[index] ?? '—'}
-                </strong>
-                <span role="cell" className={styles.scoreBugServe}>
-                  {playerStats[index].serviceWinRate === null
-                    ? '—'
-                    : `${Math.round(playerStats[index].serviceWinRate * 100)}%`}
-                </span>
-              </div>
-            ))}
-          </div>
-        </aside>
         <p className={styles.pointNote}>
           {liveScore !== undefined
             ? liveScore
@@ -250,6 +210,47 @@ export default function DmoLiveDisplay({
             : `Next point · ${pointScore}${score?.tiebreak ? ' (tiebreak)' : ''}`}
         </p>
       </div>
+
+      <aside className={styles.scoreBug} aria-label="Live match score">
+        <div className={styles.scoreBugHeader}>
+          <span className={styles.scoreBugStatus}>
+            <i aria-hidden="true" className={styles.scoreBugDot} />
+            {statusLabel}
+          </span>
+          {score && scoreLabel(score.sets) && (
+            <strong className={styles.scoreBugSets} aria-label="Set scores">
+              {scoreLabel(score.sets)}
+            </strong>
+          )}
+        </div>
+        <div className={styles.scoreBugTable} role="table" aria-label="Player, games, points and serve percentage">
+          <div className={styles.scoreBugHeading} role="row">
+            <span role="columnheader">Player</span>
+            <span role="columnheader">Games</span>
+            <span role="columnheader">{score?.tiebreak ? 'TB' : 'Points'}</span>
+            <span role="columnheader">Serve</span>
+          </div>
+          {snapshot.players.map((name, index) => (
+            <div className={styles.scoreBugRow} role="row" key={`${index}-${name}`}>
+              <strong role="cell" className={styles.scoreBugPlayer} title={name}>
+                {score?.server === index + 1 && (
+                  <i className={styles.scoreBugServeDot} role="img" aria-label="Serving" />
+                )}
+                <span>{name}</span>
+              </strong>
+              <strong role="cell">{score?.games[index] ?? '—'}</strong>
+              <strong role="cell" className={styles.scoreBugPoints}>
+                {score?.pointText[index] ?? '—'}
+              </strong>
+              <span role="cell" className={styles.scoreBugServe}>
+                {playerStats[index].serviceWinRate === null
+                  ? '—'
+                  : `${Math.round(playerStats[index].serviceWinRate * 100)}%`}
+              </span>
+            </div>
+          ))}
+        </div>
+      </aside>
 
       <div className={styles.mainGrid}>
         <div className={styles.leftColumn}>
