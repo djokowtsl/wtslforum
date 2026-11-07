@@ -400,20 +400,13 @@ export async function speakUmpireCall(
   }
   if (activeBrowserUmpireMatchKey === matchKey) cancelBrowserUmpireCall(matchKey);
 
-  if (context) {
-    activeXktUmpireContexts.set(matchKey, context);
-    if (await playXktUmpireCall(context, text, isWta)) return true;
-    if (activeXktUmpireContexts.get(matchKey) === context) {
-      cancelXktUmpireCalls(context);
-      activeXktUmpireContexts.delete(matchKey);
-    }
+  if (!context || !shouldSpeak()) return false;
+  activeXktUmpireContexts.set(matchKey, context);
+  const spoken = await playXktUmpireCall(context, text, isWta);
+  if (!spoken && activeXktUmpireContexts.get(matchKey) === context) {
+    cancelXktUmpireCalls(context);
+    activeXktUmpireContexts.delete(matchKey);
   }
-  if (!shouldSpeak()) return false;
-  // Web Speech serializes utterances globally; replace an existing utterance
-  // for this match, but preserve queued calls belonging to other matches.
-  cancelBrowserUmpireCall(matchKey);
-  const spoken = speakBrowserUmpireCall(text);
-  if (spoken) activeBrowserUmpireMatchKey = matchKey;
   return spoken;
 }
 
