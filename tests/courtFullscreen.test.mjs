@@ -57,7 +57,16 @@ test('court picture-in-picture opens a native system window or reports unsupport
   assert.match(pictureInPictureButton, /webkitSupportsPresentationMode/);
   assert.match(pictureInPictureButton, /webkitSetPresentationMode/);
   assert.match(pictureInPictureButton, /waitForVideoFrame/);
+  assert.match(pictureInPictureButton, /setVideoReady\(true\)/);
+  assert.match(pictureInPictureButton, /disabled=\{!videoReady\}/);
+  assert.match(pictureInPictureButton, /data-pip-toggle/);
   assert.match(pictureInPictureButton, /This browser cannot open a system Picture in Picture window/);
+  const toggleStart = pictureInPictureButton.indexOf('const togglePictureInPicture = () =>');
+  const requestCall = pictureInPictureButton.indexOf('video.requestPictureInPicture!()', toggleStart);
+  assert.ok(toggleStart >= 0 && requestCall > toggleStart);
+  assert.doesNotMatch(pictureInPictureButton.slice(toggleStart, requestCall), /\bawait\b/);
+  assert.match(liveCourt, /target\.closest\('\[data-sound-toggle\], \[data-pip-toggle\]'\)/);
+  assert.match(fallbackCourt, /target\.closest\('\[data-sound-toggle\], \[data-pip-toggle\]'\)/);
   assert.doesNotMatch(pictureInPictureButton, /setPipMode\('(inline|mini)'\)/);
   assert.match(liveCourt, /CourtPictureInPictureButton/);
   assert.match(fallbackCourt, /CourtPictureInPictureButton/);

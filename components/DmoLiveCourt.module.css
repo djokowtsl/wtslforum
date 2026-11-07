@@ -97,6 +97,11 @@
   font-weight: 700;
 }
 
+.pictureInPictureButton:disabled {
+  cursor: wait;
+  opacity: .62;
+}
+
 .pictureInPictureSource {
   position: fixed;
   top: 0;

@@ -1018,7 +1018,7 @@ function DmoLiveCourt({
   };
 
   const handleSoundActivationGesture = (target: EventTarget | null) => {
-    if (target instanceof Element && target.closest('[data-sound-toggle]')) return;
+    if (target instanceof Element && target.closest('[data-sound-toggle], [data-pip-toggle]')) return;
     if (!soundEnabledRef.current) return;
     if (umpireCallsEnabledRef.current && !umpireSpeechReadyRef.current) activateUmpireSpeechFromGesture();
     void activateSoundFromGesture();

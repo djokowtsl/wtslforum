@@ -86,6 +86,7 @@ export default function CourtPictureInPictureButton({
   const streamRef = useRef<MediaStream | null>(null);
   const modeRef = useRef<PipMode>('off');
   const [mode, setMode] = useState<PipMode>('off');
+  const [videoReady, setVideoReady] = useState(false);
   const [error, setError] = useState('');
 
   const setPipMode = (next: PipMode) => {
@@ -120,28 +121,73 @@ export default function CourtPictureInPictureButton({
         // The browser may already have closed its floating video window.
       }
     }
-    stopStream();
   };
 
   useEffect(() => {
     const video = videoRef.current;
-    const onEnterPictureInPicture = () => setPipMode('native');
-    const onLeavePictureInPicture = () => {
-      stopStream();
-      setPipMode('off');
+    let disposed = false;
+    let preparationStarted = false;
+    let preparationFrame = 0;
+    const prepareVideo = () => {
+      if (disposed || preparationStarted) return;
+      const canvas = canvasRef.current as (HTMLCanvasElement & {
+        captureStream?: (frameRate?: number) => MediaStream;
+      }) | null;
+      if (!canvas || !video || !canvas.width || !canvas.height) {
+        preparationFrame = window.requestAnimationFrame(prepareVideo);
+        return;
+      }
+      if (typeof canvas.captureStream !== 'function') {
+        setError('System Picture in Picture is unavailable for this court view.');
+        return;
+      }
+      preparationStarted = true;
+      try {
+        const stream = canvas.captureStream(30);
+        if (!stream.getVideoTracks().length) {
+          stream.getTracks().forEach(track => track.stop());
+          throw new Error('The court canvas did not provide a video track.');
+        }
+        streamRef.current = stream;
+        video.muted = true;
+        video.playsInline = true;
+        video.srcObject = stream;
+        void video.play()
+          .then(() => waitForVideoFrame(video))
+          .then(() => {
+            if (disposed) return;
+            setError('');
+            setVideoReady(true);
+          })
+          .catch((reason: unknown) => {
+            if (disposed) return;
+            stopStream();
+            setError(reason instanceof Error
+              ? `Picture in Picture preview could not start: ${reason.message}`
+              : 'Picture in Picture preview could not start.');
+          });
+      } catch (reason) {
+        setError(reason instanceof Error
+          ? reason.message
+          : 'Picture in Picture preview could not start.');
+      }
     };
+    const onEnterPictureInPicture = () => setPipMode('native');
+    const onLeavePictureInPicture = () => setPipMode('off');
     const onWebkitPresentationModeChange = () => {
       if (video?.webkitPresentationMode === 'picture-in-picture') {
         setPipMode('native');
       } else if (modeRef.current === 'native') {
-        stopStream();
         setPipMode('off');
       }
     };
     video?.addEventListener('enterpictureinpicture', onEnterPictureInPicture);
     video?.addEventListener('leavepictureinpicture', onLeavePictureInPicture);
     video?.addEventListener('webkitpresentationmodechanged', onWebkitPresentationModeChange);
+    preparationFrame = window.requestAnimationFrame(prepareVideo);
     return () => {
+      disposed = true;
+      window.cancelAnimationFrame(preparationFrame);
       video?.removeEventListener('enterpictureinpicture', onEnterPictureInPicture);
       video?.removeEventListener('leavepictureinpicture', onLeavePictureInPicture);
       video?.removeEventListener('webkitpresentationmodechanged', onWebkitPresentationModeChange);
@@ -150,22 +196,19 @@ export default function CourtPictureInPictureButton({
       }
       stopStream();
     };
-    // This effect owns listeners for the video element created by this component.
+    // This effect owns the captured canvas preview and its video element.
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []);
+  }, [canvasRef]);
 
-  const togglePictureInPicture = async () => {
+  const togglePictureInPicture = () => {
     if (modeRef.current !== 'off') {
-      await exitPictureInPicture();
+      void exitPictureInPicture();
       return;
     }
     setError('');
-    const canvas = canvasRef.current as (HTMLCanvasElement & {
-      captureStream?: (frameRate?: number) => MediaStream;
-    }) | null;
     const video = videoRef.current;
-    if (!canvas || !video || typeof canvas.captureStream !== 'function') {
-      setError('System Picture in Picture is unavailable for this court view.');
+    if (!video || !streamRef.current || !videoReady) {
+      setError('Picture in Picture is still preparing. Try again in a moment.');
       return;
     }
 
@@ -180,44 +223,24 @@ export default function CourtPictureInPictureButton({
     }
 
     try {
-      const stream = canvas.captureStream(30);
-      if (!stream.getVideoTracks().length) {
-        stream.getTracks().forEach(track => track.stop());
-        throw new Error('The court canvas did not provide a video track.');
-      }
-      streamRef.current = stream;
-      video.muted = true;
-      video.playsInline = true;
-      video.srcObject = stream;
-      const playback = video.play();
-      if (supportsWebkitPip) {
-        try {
-          const pictureInPicture = requestWebkitPictureInPicture(video);
-          await Promise.all([playback, pictureInPicture]);
-        } catch (webkitError) {
-          if (!supportsStandardPip) throw webkitError;
-          await playback;
-          await waitForVideoFrame(video);
-          await video.requestPictureInPicture!();
-        }
-      } else {
-        try {
-          const pictureInPicture = video.requestPictureInPicture!();
-          await Promise.all([playback, pictureInPicture]);
-        } catch {
-          await playback;
-          await waitForVideoFrame(video);
-          await video.requestPictureInPicture!();
-        }
-      }
-      setError('');
-      setPipMode('native');
-    } catch (error) {
-      stopStream();
+      // Keep the browser request in the click's user-activation window.
+      const pictureInPicture = supportsWebkitPip
+        ? requestWebkitPictureInPicture(video)
+        : video.requestPictureInPicture!();
+      void pictureInPicture.then(() => {
+        setError('');
+        setPipMode('native');
+      }).catch((reason: unknown) => {
+        setPipMode('off');
+        setError(reason instanceof Error
+          ? `${reason.message} Tap PiP to try again.`
+          : 'System Picture in Picture could not start. Tap PiP to try again.');
+      });
+    } catch (reason) {
       setPipMode('off');
-      setError(error instanceof Error
-        ? `${error.message} Try again after the court has finished loading.`
-        : 'System Picture in Picture could not start. Check your browser permissions and try again.');
+      setError(reason instanceof Error
+        ? `${reason.message} Tap PiP to try again.`
+        : 'System Picture in Picture could not start. Tap PiP to try again.');
     }
   };
 
@@ -227,16 +250,22 @@ export default function CourtPictureInPictureButton({
     <>
       <button
         className={className}
+        data-pip-toggle
         type="button"
-        aria-label={isActive ? 'Close system picture in picture' : 'Open system picture in picture'}
+        aria-label={isActive
+          ? 'Close system picture in picture'
+          : videoReady ? 'Open system picture in picture' : 'Preparing picture in picture'}
         aria-pressed={isActive}
-        title={isActive ? 'Close system picture in picture' : 'Open system picture in picture'}
-        onClick={() => void togglePictureInPicture()}
+        title={isActive
+          ? 'Close system picture in picture'
+          : videoReady ? 'Open system picture in picture' : 'Preparing court video for Picture in Picture'}
+        disabled={!videoReady}
+        onClick={togglePictureInPicture}
       >
         {isActive
           ? <Minimize2 size={15} aria-hidden="true" />
           : <PictureInPicture2 size={15} aria-hidden="true" />}
-        <span>{isActive ? 'PiP on' : 'PiP'}</span>
+        <span>{isActive ? 'PiP on' : videoReady ? 'PiP' : 'Preparing PiP'}</span>
       </button>
       <video
         ref={videoRef}
