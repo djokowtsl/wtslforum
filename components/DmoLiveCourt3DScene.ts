@@ -3,7 +3,7 @@ import { resolveDmoVenueProfile, type DmoVenueProfile } from '../lib/dmoVenue';
 import type { Te4CourtSurface } from '@/lib/te4DmoTypes';
 import { courtSurfaceVisualProfile } from '@/lib/te4DmoSurface';
 import { isCrowdSeatOccupied } from '@/lib/dmoCrowdDensity';
-import { buildStadiumArchitecture } from './DmoStadiumArchitecture';
+import { buildStadiumArchitecture, isUpperBowlAccessGap } from './DmoStadiumArchitecture';
 
 export type PlayerRig = {
   detailed?: { update: () => void };
@@ -783,8 +783,9 @@ function buildUnifiedCrowd(scene: THREE.Scene, venue: DmoVenueProfile, density: 
       const angle = (index / count) * Math.PI * 2;
       const x = Math.cos(angle) * ellipseX;
       const z = Math.sin(angle) * ellipseZ;
-      // Keep the four centered bowl passageways clear on every upper tier.
-      if (Math.abs(x) < tunnelHalfWidth || Math.abs(z) < tunnelHalfWidth) continue;
+      // Match the architecture exactly: section stairs and the four centered
+      // passageways are kept clear of both seats and animated crowd anchors.
+      if (isUpperBowlAccessGap(x, z)) continue;
       const sourceIndex = (lowerRows + upperRow) * 10_000 + index;
       seats.push({
         x,
