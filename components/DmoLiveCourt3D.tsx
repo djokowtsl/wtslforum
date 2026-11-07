@@ -1204,8 +1204,14 @@ function ThreeCourt({
           + (contactSample[1] - contactSample[zIndex]) * localXAxis[1]) * SCALE / rig.root.scale.x
         : localX;
       const baseStroke = groundstrokeForBallSide(contactSide, handedness);
-      const isOverheadSmash = strokeCue !== 'soft-touch'
-        && isCapturedSmashShot(strokeEvent?.shotType, contactSample?.[2]);
+      const isOverheadSmash = strokeCue === 'close-net'
+        && isCapturedSmashShot(
+          strokeEvent,
+          contactSample,
+          samples,
+          events,
+          sceneDataRef.current.snapshot.frameRate ?? TE4_DMO_FRAMES_PER_SECOND,
+        );
       const stroke: GroundstrokeName = isOverheadSmash
         ? 'smash'
         : recordedStrokeForSide(baseStroke, strokeCue === 'close-net');
