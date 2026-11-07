@@ -33,10 +33,9 @@
 .header p span { padding: 0 5px; color: var(--live-lime); }
 
 .liveCourtStage { padding: 18px 18px 0; }
-.liveCourtStage { position: relative; }
 .mainGrid { display: grid; grid-template-columns: minmax(0, 1.1fr) minmax(0, .9fr); gap: 18px; padding: 18px; }
 .leftColumn, .rightColumn { min-width: 0; }
-.scoreBug { --live-text: #f1f5fb; --live-soft: #d9e2f0; --live-muted: #b1bfd4; --live-lime: #b0f43b; position: absolute; z-index: 4; top: 86px; right: 26px; width: min(232px, calc(100% - 44px)); padding: 7px 8px 6px; border: 1px solid rgba(196, 208, 226, .24); border-radius: 10px; background: rgba(6, 13, 29, .9); box-shadow: 0 6px 16px rgba(0, 0, 0, .22); color: var(--live-text); backdrop-filter: blur(8px); pointer-events: none; }
+.scoreBug { --live-text: #f1f5fb; --live-soft: #d9e2f0; --live-muted: #b1bfd4; --live-lime: #b0f43b; position: static; width: min(560px, calc(100% - 36px)); margin: 12px auto 0; padding: 7px 8px 6px; border: 1px solid rgba(196, 208, 226, .24); border-radius: 10px; background: rgba(6, 13, 29, .9); box-shadow: 0 6px 16px rgba(0, 0, 0, .22); color: var(--live-text); backdrop-filter: blur(8px); pointer-events: none; }
 .scoreBugHeader { display: flex; align-items: center; justify-content: space-between; gap: 8px; padding: 0 2px 5px; }
 .scoreBugStatus { display: inline-flex; align-items: center; gap: 5px; color: var(--live-lime); font-size: 7px; font-weight: 800; letter-spacing: .1em; text-transform: uppercase; }
 .scoreBugDot, .scoreBugServeDot { flex: none; width: 5px; height: 5px; border-radius: 50%; background: var(--live-lime); box-shadow: 0 0 0 3px rgba(176, 244, 59, .1); }
@@ -122,14 +121,9 @@
     gap: 10px;
   }
 
-  .liveCourtStage > :first-child { order: 2; }
   .scoreBug {
-    position: relative;
-    top: auto;
-    right: auto;
-    order: 1;
-    width: min(100%, 440px);
-    margin: 0 auto;
+    width: min(440px, calc(100% - 36px));
+    margin: 12px auto 0;
     padding: 8px 10px;
     background: rgba(6, 13, 29, .94);
   }
@@ -144,7 +138,7 @@
   .scoreBugRow { min-height: 29px; font-size: 11px; }
   .scoreBugPoints { font-size: 13px; }
   .scoreBugServe { font-size: 10px; }
-  .pointNote { order: 3; margin: 0 2px; }
+  .pointNote { margin: 0 2px; }
 }
 
 @media (max-width: 420px) {
