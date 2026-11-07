@@ -935,7 +935,7 @@ test('court contacts stay compact and slide squeaks are silent', () => {
 
   for (const recorded of [false, true]) {
     const spaced = makeContext();
-    const samples = recorded ? { footstep: { duration: 0.45 } } : {};
+    const samples = recorded ? { footstep: { hard: [{ duration: 0.45 }] } } : {};
     for (let index = 0; index < 20; index += 1) {
       spaced.context.currentTime = index * 0.025;
       playLiveCourtEffect(spaced.context, 'footstep', 'hard', 1, samples);
@@ -950,7 +950,7 @@ test('court contacts stay compact and slide squeaks are silent', () => {
     playLiveCourtEffect(spaced.context, 'racket', 'hard', 1);
     playLiveCourtEffect(spaced.context, 'bounce', 'hard', 1);
     assert.equal(spaced.sources.length, count + 2, 'footstep spacing never suppresses contacts');
-    assert.ok(spaced.gains.slice(0, count).every(gain => gain.gain.value < (recorded ? 0.35 : 0.6)),
+    assert.ok(spaced.gains.slice(0, count).every(gain => gain.gain.value < (recorded ? 0.07 : 0.11)),
       'footsteps stay quieter in both playback modes');
   }
 
@@ -1078,11 +1078,11 @@ test('court effects load only playable samples and sound checks exclude slides',
     clay.sources[0].playbackRate.value.toFixed(3),
     grass.sources[0].playbackRate.value.toFixed(3),
   ]).size, 3, 'surface profiles shape the same recording differently');
-  assert.ok(clay.gains[0].gain.value < 0.2, 'sampled footsteps are reduced beneath racket and ball contacts');
+  assert.ok(clay.gains[0].gain.value < 0.07, 'sampled footsteps are strongly reduced beneath racket and ball contacts');
   const synthesized = makeContext();
   playLiveCourtEffect(synthesized.context, 'footstep', 'clay', 1);
   assert.ok(
-    synthesized.gains[0].gain.value < 0.32,
+    synthesized.gains[0].gain.value < 0.11,
     'synthesized fallback footsteps also remain subdued',
   );
 
@@ -1472,6 +1472,18 @@ test('umpire calls have independent controls in both court renderers', async () 
     assert.match(source, /resumeUmpireAudioContext\(/);
     assert.doesNotMatch(source, /unlockBrowserUmpireSpeech\(\)/);
     assert.match(source, /Enable calls/);
+    assert.match(source, /data-umpire-calls-toggle/);
+    const activationStart = source.indexOf('const handleSoundActivationGesture');
+    const activationEnd = source.indexOf('\n  };', activationStart);
+    const activationHandler = source.slice(activationStart, activationEnd);
+    assert.match(activationHandler, /data-umpire-calls-toggle/);
+    assert.ok(
+      activationHandler.indexOf('activateUmpireSpeechFromGesture()')
+        < activationHandler.indexOf('soundEnabledRef.current')
+        || activationHandler.indexOf('activateUmpireSpeechFromGesture()')
+          < activationHandler.indexOf('soundPreferenceRef.current'),
+      'umpire activation is attempted before checking whether court effects are active',
+    );
   }
   assert.match(primary, /call\.kind === 'score' \|\| call\.kind === 'point-end'/);
   assert.match(fallback, /call\.kind === 'score' \|\| call\.kind === 'point-end'/);
