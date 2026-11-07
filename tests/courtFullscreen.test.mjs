@@ -15,6 +15,10 @@ const [
   styles,
   fallbackStyles,
   replayScoreBugStyles,
+  liveDisplay,
+  liveDisplayStyles,
+  crowdDensityStyles,
+  broadcastViewer,
 ] =
   await Promise.all([
     source('../components/CourtFullscreenButton.tsx'),
@@ -27,6 +31,10 @@ const [
     source('../components/DmoLiveCourt3D.module.css'),
     source('../components/DmoLiveCourt.module.css'),
     source('../components/DmoReplayScoreBug.module.css'),
+    source('../components/DmoLiveDisplay.tsx'),
+    source('../components/DmoLiveDisplay.module.css'),
+    source('../components/DmoCrowdDensityControl.module.css'),
+    source('../components/DmoLiveViewer.tsx'),
   ]);
 
 test('live and replay court renderers share an accessible fullscreen control', () => {
@@ -83,6 +91,22 @@ test('full replay scoreboard renders below the 3D court instead of covering it',
   assert.doesNotMatch(replayPlayer, /replayOverlay=/);
   assert.doesNotMatch(replayScoreBugStyles, /position:\s*absolute/);
   assert.match(replayScoreBugStyles, /margin:\s*12px auto/);
+});
+
+test('live score table stays below the broadcast scene and crowd control stays in layout', () => {
+  const stageStart = liveDisplay.indexOf('<div className={styles.liveCourtStage}>');
+  const stageEnd = liveDisplay.indexOf('</div>', stageStart);
+  const scoreBug = liveDisplay.indexOf('<aside className={styles.scoreBug}', stageEnd);
+  assert.ok(stageStart >= 0 && stageEnd > stageStart && scoreBug > stageEnd);
+  assert.match(liveDisplayStyles, /\.scoreBug\s*\{[^}]*position:\s*static/s);
+  assert.doesNotMatch(liveDisplayStyles, /\.scoreBug\s*\{[^}]*position:\s*absolute/s);
+  assert.match(crowdDensityStyles, /\.courtDensityShell\s*\{[^}]*display:\s*flex/s);
+  assert.doesNotMatch(crowdDensityStyles, /\.crowdDensityControl\s*\{[^}]*position:\s*absolute/s);
+});
+
+test('saved player stroke setup reaches the full broadcast replay', () => {
+  assert.match(broadcastViewer, /strokeStyles=\{broadcast\.snapshot\.strokeStyles\}/);
+  assert.match(replayPlayer, /strokeStyles: strokeStyles \?\? initialSnapshot\.strokeStyles/);
 });
 
 test('fullscreen expands the court while keeping playback controls available', () => {
