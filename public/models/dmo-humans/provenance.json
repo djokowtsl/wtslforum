@@ -42,5 +42,32 @@
     "license": "MIT",
     "notice": "ARTICULATED-HAND-LICENSE.md",
     "modifications": "Authored finger-joint grasp and mirrored left hand at runtime; mesh positions unchanged."
+  },
+  {
+    "filename": "locomotion-walk.bvh",
+    "bytes": 54538,
+    "source": "https://github.com/una-dinosauria/cmu-mocap/blob/master/data/035/35_01.bvh",
+    "origin": "CMU Graphics Lab Motion Capture Database, http://mocap.cs.cmu.edu/ (BVH conversion by B. Hahne)",
+    "license": "CMU mocap terms: free for research and commercial use; do not resell the raw data",
+    "notice": "NATIVE-RIG-AND-MOTION.md",
+    "modifications": "One step cycle cut out, resampled 120 Hz -> 60 Hz (every second frame); rotations unchanged."
+  },
+  {
+    "filename": "locomotion-jog.bvh",
+    "bytes": 39309,
+    "source": "https://github.com/una-dinosauria/cmu-mocap/blob/master/data/035/35_17.bvh",
+    "origin": "CMU Graphics Lab Motion Capture Database, http://mocap.cs.cmu.edu/ (BVH conversion by B. Hahne)",
+    "license": "CMU mocap terms: free for research and commercial use; do not resell the raw data",
+    "notice": "NATIVE-RIG-AND-MOTION.md",
+    "modifications": "One step cycle cut out, resampled 120 Hz -> 60 Hz (every second frame); rotations unchanged."
+  },
+  {
+    "filename": "locomotion-run.bvh",
+    "bytes": 37166,
+    "source": "https://github.com/una-dinosauria/cmu-mocap/blob/master/data/035/35_26.bvh",
+    "origin": "CMU Graphics Lab Motion Capture Database, http://mocap.cs.cmu.edu/ (BVH conversion by B. Hahne)",
+    "license": "CMU mocap terms: free for research and commercial use; do not resell the raw data",
+    "notice": "NATIVE-RIG-AND-MOTION.md",
+    "modifications": "One step cycle cut out, resampled 120 Hz -> 60 Hz (every second frame); rotations unchanged."
   }
 ]

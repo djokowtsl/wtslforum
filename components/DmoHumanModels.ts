@@ -21,10 +21,29 @@ async function loadGroundstrokeMotionSources(base: string, signal: AbortSignal):
     if (!response.ok) throw new Error(`Captured ${stroke} motion request failed (${response.status}).`);
     return response.text();
   };
-  const [forehand, backhand, serve] = await Promise.all([
-    load('forehand'), load('backhand'), load('serve'),
+  // Walking / jogging / running arms are optional: if they cannot load, the
+  // player still loads with the existing carry behavior.
+  const loadLocomotion = async () => {
+    try {
+      const fetchText = async (name: 'walk' | 'jog' | 'run') => {
+        const response = await fetch(`${base}/locomotion-${name}.bvh`, { signal });
+        if (!response.ok) throw new Error(`Captured ${name} motion request failed (${response.status}).`);
+        return response.text();
+      };
+      const [walk, jog, run] = await Promise.all([
+        fetchText('walk'), fetchText('jog'), fetchText('run'),
+      ]);
+      return { walk, jog, run };
+    } catch (error) {
+      if (signal.aborted) throw error;
+      console.warn('Captured walking motion could not load; using the existing carry behavior.', error);
+      return undefined;
+    }
+  };
+  const [forehand, backhand, serve, locomotion] = await Promise.all([
+    load('forehand'), load('backhand'), load('serve'), loadLocomotion(),
   ]);
-  return { forehand, backhand, serve };
+  return { forehand, backhand, serve, locomotion };
 }
 
 export function humanModelAssetFilename(gender: Gender, detail: HumanModelDetail) {

@@ -19,6 +19,8 @@ export interface GroundstrokeMotionSources {
   forehand: string;
   backhand: string;
   serve: string;
+  /** Recorded walk / jog / run for the arms between points (optional). */
+  locomotion?: { walk: string; jog: string; run: string };
 }
 
 export interface GroundstrokePlayback {
@@ -110,8 +112,16 @@ const UPPER_BODY_BONES = [
 ];
 
 /** Frames after contact by which the recorded stroke has handed back to the
- * between-shot carry (~0.4 s of recovery rather than a 0.1 s snap). */
-export const CAPTURE_RECOVERY_FRAMES = 40;
+ * between-shot carry (1 s). */
+export const CAPTURE_RECOVERY_FRAMES = 60;
+
+/** Frames after contact at which the hand-back starts (0.7 s). The recordings
+ * finish with the arm wrapped round high (forehand, backhand) or across the body
+ * (serve) until ~0.6 s and are back in front by ~0.8 s. Handing back from 16 to
+ * 40 frames blended that wrapped finish, bone by bone, into the carry in front:
+ * the arm passed through the chest, folded and creased. Now the recording's own
+ * recovery brings the racket back round first. */
+export const RECOVERY_FADE_START = 42;
 
 /** Frames before contact at which a groundstroke's recorded preparation
  * starts to blend in (~0.65 s, so the take-back is not a few-frame whip). */
@@ -123,7 +133,8 @@ export function groundstrokeCaptureWeight(frameDelta: number) {
   // One continuous envelope. (Separate backswing/impact/follow-through lobes
   // crossed ~5 frames before contact, dipping the weight to ~0.5 and pulling
   // the arm halfway back to the procedural pose mid-swing.)
-  return smooth(frameDelta, -GROUNDSTROKE_LEAD_FRAMES, -20) * (1 - smooth(frameDelta, 16, CAPTURE_RECOVERY_FRAMES));
+  return smooth(frameDelta, -GROUNDSTROKE_LEAD_FRAMES, -20)
+    * (1 - smooth(frameDelta, RECOVERY_FADE_START, CAPTURE_RECOVERY_FRAMES));
 }
 
 /** Frames before contact at which the recorded serve starts to blend in
@@ -136,7 +147,8 @@ export function serveCaptureWeight(frameDelta: number) {
   if (!Number.isFinite(frameDelta)) return 0;
   const smooth = THREE.MathUtils.smoothstep;
   // Continuous from the start of the service motion to the end of recovery.
-  return smooth(frameDelta, -SERVE_LEAD_FRAMES, -80) * (1 - smooth(frameDelta, 16, CAPTURE_RECOVERY_FRAMES));
+  return smooth(frameDelta, -SERVE_LEAD_FRAMES, -80)
+    * (1 - smooth(frameDelta, RECOVERY_FADE_START, CAPTURE_RECOVERY_FRAMES));
 }
 
 export function readyPosePlayback(

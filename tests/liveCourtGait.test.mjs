@@ -292,3 +292,36 @@ test('speeding up does not drag the planted foot', () => {
   assert.ok(total < 0.04, `planted feet slid ${total.toFixed(3)} m in all while accelerating`);
   assert.ok(worst < 0.015, `planted foot slid ${worst.toFixed(4)} m in a frame while accelerating`);
 });
+
+test('walking and jogging use a natural step cadence', () => {
+  for (const [speed, low, high] of [[1.4, 1.7, 2.4], [3, 2.6, 3.6]]) {
+    const state = newGaitState();
+    let wraps = 0, last = 0;
+    for (let frame = 0; frame < 600; frame++) {
+      advanceGait(state, [0, speed / 60], speed);
+      if (frame > 120 && state.phase < last - 0.5) wraps++;
+      last = state.phase;
+    }
+    const stepsPerSecond = 2 * wraps / (480 / 60);
+    assert.ok(stepsPerSecond >= low && stepsPerSecond <= high,
+      `@${speed} m/s: ${stepsPerSecond} steps/s`);
+  }
+});
+
+test('erratic speed and direction keep both feet finite and separated in the gait', () => {
+  const state = newGaitState();
+  let seed = 9;
+  const rand = () => ((seed = (seed * 16807) % 2147483647) / 2147483647);
+  let speed = 2, angle = 0;
+  for (let frame = 0; frame < 3000; frame++) {
+    speed = Math.max(0, Math.min(6, speed + (rand() - 0.5) * 0.8));
+    if (rand() < 0.03) angle += Math.PI * (rand() < 0.5 ? 1 : 0.5);
+    advanceGait(state, [Math.sin(angle) * speed / 60, Math.cos(angle) * speed / 60], speed);
+    const feet = gaitFeet(state, speed);
+    for (const foot of feet) {
+      assert.ok(Number.isFinite(foot.x) && Number.isFinite(foot.z) && Number.isFinite(foot.lift),
+        `frame ${frame}: ${JSON.stringify(foot)}`);
+    }
+    assert.ok(state.offset === undefined || (state.offset >= 0.25 && state.offset <= 0.75));
+  }
+});

@@ -27,3 +27,23 @@ Ramos-Bermudez S., Castellanos-Dominguez G. “A Similarity Indicator for
 Differentiating Kinematic Performance Between Qualified Tennis Players.”
 LNCS 10125, pp. 309–317 (2017).
 https://doi.org/10.1007/978-3-319-52277-7_38
+
+## Walking, jogging and running (arms between points)
+Carnegie Mellon University Graphics Lab Motion Capture Database.
+http://mocap.cs.cmu.edu/ — BVH conversion by Bruce Hahne (cgspeed.com, 2010
+release), as mirrored at https://github.com/una-dinosauria/cmu-mocap.
+
+Terms (mocap.cs.cmu.edu): "This data is free for use in research and commercial
+projects worldwide." The BVH conversion adds no restrictions. The raw data must
+not be resold. Acknowledgement requested by CMU:
+
+"The data used in this project was obtained from mocap.cs.cmu.edu.
+The database was created with funding from NSF EIA-0196217."
+
+Files: locomotion-walk.bvh (subject 35, trial 01, "walk"), locomotion-jog.bvh
+(35_17, "run/jog") and locomotion-run.bvh (35_26, "run/jog"). Each is one step
+cycle, starting as the right foot lands, cut from the source and resampled from
+120 Hz to 60 Hz by keeping every second frame; joint rotations unchanged. Only
+the chest, clavicles, arms and hands are retargeted at runtime (the legs keep
+their own ground-locked stepping), and the racket hand's wrist is turned to hold
+the racket forward and down.
