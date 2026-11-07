@@ -5,7 +5,7 @@ let browserUmpireSpeechUnlocked = false;
 
 export type UmpireCallEvent = {
   frame: number;
-  kind: 'score' | 'out';
+  kind: 'score' | 'point-end' | 'out';
   text: string;
 };
 
@@ -16,6 +16,17 @@ export type UmpireScore = {
   tiebreak: boolean;
   server: 1 | 2 | null;
 } | null;
+
+export type LiveUmpireScoreTether = {
+  previousScore: UmpireScore;
+  hasObservedScore: boolean;
+  pendingScoreCalls: string[];
+  waitingForDmoPointEnd: boolean;
+};
+
+// Keep the current score change and at most the two immediately before it.
+export const MAX_LIVE_UMPIRE_SCORE_LAG_POINTS = 2;
+const MAX_PENDING_LIVE_UMPIRE_SCORE_CALLS = MAX_LIVE_UMPIRE_SCORE_LAG_POINTS + 1;
 
 type UmpireSoundEvent = { frame: number; kind: string };
 
@@ -117,6 +128,89 @@ export function sameUmpireScore(first: UmpireScore, second: UmpireScore): boolea
     && first.server === second.server;
 }
 
+export function createLiveUmpireScoreTether(): LiveUmpireScoreTether {
+  return {
+    previousScore: null,
+    hasObservedScore: false,
+    pendingScoreCalls: [],
+    waitingForDmoPointEnd: false,
+  };
+}
+
+export function resetLiveUmpireScoreTether(tether: LiveUmpireScoreTether): void {
+  tether.previousScore = null;
+  tether.hasObservedScore = false;
+  tether.pendingScoreCalls = [];
+  tether.waitingForDmoPointEnd = false;
+}
+
+export function observeLiveUmpireScore(
+  tether: LiveUmpireScoreTether,
+  current: UmpireScore,
+  players: [string, string],
+  shouldSpeak: boolean,
+): string | null {
+  if (!shouldSpeak) {
+    tether.previousScore = current;
+    tether.hasObservedScore = Boolean(current);
+    tether.pendingScoreCalls = [];
+    tether.waitingForDmoPointEnd = false;
+    return null;
+  }
+  if (!current) {
+    resetLiveUmpireScoreTether(tether);
+    return null;
+  }
+
+  const previous = tether.previousScore;
+  const firstObservation = !tether.hasObservedScore;
+  tether.previousScore = current;
+  tether.hasObservedScore = true;
+  if (firstObservation || !previous || sameUmpireScore(current, previous)) {
+    if (firstObservation) {
+      tether.pendingScoreCalls = [];
+      tether.waitingForDmoPointEnd = false;
+    }
+    return null;
+  }
+
+  const call = formatLiveUmpireScoreCall(current, previous, players);
+  if (!call) {
+    tether.waitingForDmoPointEnd = false;
+    return null;
+  }
+  if (tether.waitingForDmoPointEnd) {
+    tether.waitingForDmoPointEnd = false;
+    return call;
+  }
+
+  tether.pendingScoreCalls.push(call);
+  if (tether.pendingScoreCalls.length > MAX_PENDING_LIVE_UMPIRE_SCORE_CALLS) {
+    // Drop stale speech instead of letting a delayed DMO feed create a long backlog.
+    tether.pendingScoreCalls.splice(
+      0,
+      tether.pendingScoreCalls.length - MAX_PENDING_LIVE_UMPIRE_SCORE_CALLS,
+    );
+  }
+  return null;
+}
+
+export function matchLiveUmpireScoreToDmoPointEnd(
+  tether: LiveUmpireScoreTether,
+  shouldSpeak: boolean,
+): string | null {
+  if (!shouldSpeak) {
+    tether.pendingScoreCalls = [];
+    tether.waitingForDmoPointEnd = false;
+    return null;
+  }
+  const call = tether.pendingScoreCalls.shift();
+  if (call) return call;
+  // Keep only the latest unmatched DMO event; never replay a long audio backlog.
+  tether.waitingForDmoPointEnd = true;
+  return null;
+}
+
 function lowerBoundFrame<T extends { frame: number }>(events: T[], frame: number): number {
   let low = 0;
   let high = events.length;
@@ -149,8 +243,13 @@ export function deriveUmpireCallEvents(
 ): UmpireCallEvent[] {
   const calls: UmpireCallEvent[] = [];
   for (const event of trajectoryEvents) {
-    if (event.kind === 'point-end' && event.scoreCall?.trim()) {
-      calls.push({ frame: event.frame, kind: 'score', text: event.scoreCall });
+    if (event.kind === 'point-end') {
+      const scoreCall = event.scoreCall?.trim();
+      calls.push({
+        frame: event.frame,
+        kind: scoreCall ? 'score' : 'point-end',
+        text: scoreCall ?? '',
+      });
     }
   }
 
@@ -205,8 +304,9 @@ export function deriveUmpireCallEvents(
 
   const unique = new Map<string, UmpireCallEvent>();
   for (const call of calls) unique.set(`${call.frame}:${call.kind}`, call);
+  const priority = { out: 0, 'point-end': 1, score: 2 };
   return [...unique.values()].sort((first, second) =>
-    first.frame - second.frame || (first.kind === 'out' ? -1 : 1),
+    first.frame - second.frame || priority[first.kind] - priority[second.kind],
   );
 }
 
