@@ -224,7 +224,7 @@ function seatedGeometry(template: THREE.Group, look: number, applause: boolean) 
 export function attachHumanCrowd(scene: THREE.Scene, crowd: CrowdRig, templates: THREE.Group[]) {
   const batches: THREE.InstancedMesh[] = [];
   const highDetailBatches: THREE.InstancedMesh[] = [];
-  const occupiedSeatCount = crowd.seats.filter((seat) => seat.occupied).length;
+  const maxSeatCount = crowd.seats.length;
   const makeBatches = (
     template: THREE.Group,
     target: THREE.InstancedMesh[],
@@ -238,7 +238,7 @@ export function attachHumanCrowd(scene: THREE.Scene, crowd: CrowdRig, templates:
     });
     if (!sourceMaterial) throw new Error('Crowd material missing.');
     for (const applauding of [false, true]) for (const look of [-0.5, 0, 0.5]) {
-      const mesh = new THREE.InstancedMesh(seatedGeometry(variant, look, applauding), sourceMaterial.clone(), occupiedSeatCount);
+      const mesh = new THREE.InstancedMesh(seatedGeometry(variant, look, applauding), sourceMaterial.clone(), maxSeatCount);
       mesh.name = `wtsl-${label}-spectators-${target.length}`;
       mesh.count = 0;
       mesh.frustumCulled = false;
@@ -318,11 +318,15 @@ export function attachHumanCrowd(scene: THREE.Scene, crowd: CrowdRig, templates:
     makeBatches(template, highDetailBatches, 'high-detail');
     highDetailSeats = new Set(
       crowd.seats.flatMap((seat, index) =>
-        seat.occupied && shouldUseHighDetailCrowdSeat(seat.row, seat.sourceIndex ?? index, genderIndex) ? [index] : []),
+        shouldUseHighDetailCrowdSeat(seat.row, seat.sourceIndex ?? index, genderIndex) ? [index] : []),
     );
     highDetailCounts = new Uint16Array(highDetailBatches.length);
     highDetailBatches.forEach((mesh) => { mesh.visible = highDetailEnabled; });
     forceUpdate = true;
+  };
+  crowd.invalidateUpdate = () => {
+    forceUpdate = true;
+    lastUpdate = -Infinity;
   };
   crowd.replacePeople(update);
   addCrowdAccessories(scene, crowd);

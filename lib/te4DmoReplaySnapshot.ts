@@ -1,6 +1,6 @@
 import type { Te4LiveSnapshot, Te4LiveSoundEvent } from './te4DmoLive';
 import type { Te4ViewerData, Te4ViewerPoint } from './te4DmoTypes';
-import { formatTennisPointScoreCall } from './liveCourtUmpire';
+import { formatTennisPointScoreCall, formatUmpireSetCall } from './liveCourtUmpire';
 
 const MAX_MATCH_BYTES = 64 * 1024 * 1024;
 const COURT_SAMPLE_STEP = 2;
@@ -69,7 +69,7 @@ function scoreCallAfterLastPoint(
 
   if (point.tb === 1) {
     if (Math.max(...after) >= 7 && Math.abs(after[0] - after[1]) >= 2) {
-      return `Game and set, ${winnerName}`;
+      return formatUmpireSetCall(point.set, winnerName);
     }
     return formatTennisPointScoreCall(`${after[0]}-${after[1]}`, null, names, true);
   }
@@ -79,7 +79,7 @@ function scoreCallAfterLastPoint(
     if (games) {
       games[winner] += 1;
       if (Math.max(...games) >= 6 && Math.abs(games[0] - games[1]) >= 2) {
-        return `Game and set, ${winnerName}`;
+        return formatUmpireSetCall(point.set, winnerName);
       }
     }
     return `Game, ${winnerName}`;
@@ -108,7 +108,7 @@ function replayPointScoreCall(
   if (!nextPoint) return scoreCallAfterLastPoint(point, names);
 
   const winnerName = names[point.w - 1];
-  if (nextPoint.set !== point.set) return `Game and set, ${winnerName}`;
+  if (nextPoint.set !== point.set) return formatUmpireSetCall(point.set, winnerName);
   const currentGames = parsedGameScore(point);
   const nextGames = parsedGameScore(nextPoint);
   if (

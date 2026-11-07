@@ -11,6 +11,7 @@ import {
 } from '@/lib/te4DmoLive';
 import type { Te4CourtSurface } from '@/lib/te4DmoTypes';
 import { clampDmoCameraTarget, dmoCameraMaxDistanceInsideBowl } from '@/lib/dmoCameraConstraints';
+import { isCapturedSmashShot } from '@/lib/dmoSmash';
 import {
   CAPTURE_RECOVERY_FRAMES,
   RECOVERY_FADE_START,
@@ -96,6 +97,7 @@ import {
   buildStadiumEnvironment,
   makePlayer,
   poseLimb,
+  type CrowdRig,
   type PlayerRig,
 } from './DmoLiveCourt3DScene';
 import styles from './DmoLiveCourt3D.module.css';
@@ -106,11 +108,18 @@ import { attachHumanCourtStaff, attachHumanCrowd } from './DmoHumanCrowd';
 import { BROADCAST_PLAYER_KITS } from './DmoNativeKit';
 import { racketContactOrientation, racketGripElbow, racketGripWrist } from './DmoRacketOrientation';
 import type { StadiumScoreboardData } from './DmoStadiumArchitecture';
+import densityStyles from './DmoCrowdDensityControl.module.css';
+import {
+  CROWD_DENSITY_CHOICES,
+  resolveCrowdDensity,
+  type CrowdDensityChoice,
+} from '@/lib/dmoCrowdDensity';
 import {
   cancelUmpireCall,
   createLiveUmpireScoreTether,
   deriveUmpireCallEvents,
   isBrowserUmpireSpeechUnlocked,
+  liveUmpireMatchKey,
   matchLiveUmpireScoreToDmoPointEnd,
   observeLiveUmpireScore,
   resetLiveUmpireScoreTether,
@@ -130,6 +139,8 @@ type Props = {
   buffering?: boolean;
   fullReplay?: boolean;
   scoreboard?: StadiumScoreboardData;
+  crowdDensity?: number;
+  tournamentRound?: string | null;
   onReplayFrameChange?: (frame: number) => void;
 };
 
@@ -192,6 +203,7 @@ function ThreeCourt({
   snapshot,
   surface,
   playbackSpeed,
+  crowdDensity = 0.98,
   fullReplay = false,
   stadiumAtmosphere = true,
   isWta = false,
@@ -207,10 +219,14 @@ function ThreeCourt({
   const canvasHostRef = useRef<HTMLDivElement>(null);
   const canvasElementRef = useRef<HTMLCanvasElement>(null);
   const sceneRef = useRef<THREE.Scene | null>(null);
+  const crowdRigRef = useRef<CrowdRig | null>(null);
   const audioContextRef = useRef<AudioContext | null>(null);
   const crowdAudioRef = useRef<HTMLAudioElement | null>(null);
   const crowdGainRef = useRef<GainNode | null>(null);
   const crowdVolumeRef = useRef(0.24);
+  useEffect(() => {
+    crowdRigRef.current?.setDensity(crowdDensity);
+  }, [crowdDensity]);
   const gruntAudioRef = useRef<{ isWta: boolean; samples: AudioBuffer[] } | null>(null);
   const applauseAudioRef = useRef<AudioBuffer | null>(null);
   const courtEffectSamplesRef = useRef<CourtEffectSamples>({});
@@ -332,7 +348,7 @@ function ThreeCourt({
       }
       lastSoundFrameRef.current = Math.max(0, snapshot.frameCount - 3);
       resetLiveUmpireScoreTether(liveUmpireScoreTetherRef.current);
-      cancelUmpireCall(audioContextRef.current);
+      cancelUmpireCall(audioContextRef.current, liveUmpireMatchKey(snapshot.players, isWta));
       setHasCourtData(false);
     }
     previousSnapshotRef.current = {
@@ -427,6 +443,7 @@ function ThreeCourt({
         audioContextRef.current,
         isWta,
         () => umpireCallsEnabledRef.current && umpireSpeechReadyRef.current,
+        liveUmpireMatchKey(snapshot.players, isWta),
       ).then((spoken) => {
         if (!spoken && umpireCallsEnabledRef.current && umpireSpeechReadyRef.current) {
           setSoundError('Spoken umpire calls are unavailable in this browser.');
@@ -438,7 +455,7 @@ function ThreeCourt({
   // Cues are consumed by the animation playhead, never snapshot arrival.
 
   useEffect(() => () => {
-    cancelUmpireCall(audioContextRef.current);
+    cancelUmpireCall(audioContextRef.current, liveUmpireMatchKey(snapshot.players, isWta));
     const crowdAudio = crowdAudioRef.current;
     crowdAudio?.pause();
     crowdAudio?.removeAttribute('src');
@@ -580,7 +597,8 @@ function ThreeCourt({
       sceneDataRef.current.isWta,
     );
     const fixtureRig = buildCourtFixtures(scene);
-    const crowdRig = buildCrowd(scene, sceneDataRef.current.snapshot.stadium);
+    const crowdRig = buildCrowd(scene, sceneDataRef.current.snapshot.stadium, crowdDensity);
+    crowdRigRef.current = crowdRig;
     const players = [
       makePlayer(PALETTE.shirtOne, 0x335d58, isWta),
       makePlayer(PALETTE.shirtTwo, 0x514b61, isWta),
@@ -1186,7 +1204,11 @@ function ThreeCourt({
           + (contactSample[1] - contactSample[zIndex]) * localXAxis[1]) * SCALE / rig.root.scale.x
         : localX;
       const baseStroke = groundstrokeForBallSide(contactSide, handedness);
-      const stroke = recordedStrokeForSide(baseStroke, strokeCue === 'close-net');
+      const isOverheadSmash = strokeCue !== 'soft-touch'
+        && isCapturedSmashShot(strokeEvent?.shotType, contactSample?.[2]);
+      const stroke: GroundstrokeName = isOverheadSmash
+        ? 'smash'
+        : recordedStrokeForSide(baseStroke, strokeCue === 'close-net');
       type CapturedEvent = { frame: number; stroke: GroundstrokeName; handedness: 'left' | 'right' };
       let capturedEvent = rig.root.userData.capturedGroundstrokeEvent as CapturedEvent | undefined;
       if (strokeEvent && strokeCue === 'soft-touch') {
@@ -1194,7 +1216,11 @@ function ThreeCourt({
         delete rig.root.userData.groundstrokePlayback;
         capturedEvent = undefined;
       } else if (strokeEvent) {
-        if (capturedEvent?.frame !== strokeEvent.frame || capturedEvent.handedness !== handedness) {
+        if (
+          capturedEvent?.frame !== strokeEvent.frame
+          || capturedEvent.handedness !== handedness
+          || capturedEvent.stroke !== stroke
+        ) {
           capturedEvent = {
             frame: strokeEvent.frame,
             stroke: strokeEvent.shotType === 'serve' ? 'serve' : stroke,
@@ -1687,7 +1713,12 @@ function ThreeCourt({
         }
         lastSoundFrameRef.current = currentFrame;
         const previousCallFrame = lastUmpireCallFrameRef.current;
-        if (currentFrame < previousCallFrame) cancelUmpireCall(audioContextRef.current);
+        if (currentFrame < previousCallFrame) {
+          cancelUmpireCall(
+            audioContextRef.current,
+            liveUmpireMatchKey(sceneDataRef.current.snapshot.players, sceneDataRef.current.isWta),
+          );
+        }
         if (
           currentFrame >= previousCallFrame
           && currentFrame - previousCallFrame < 120
@@ -1712,6 +1743,7 @@ function ThreeCourt({
                   audioContextRef.current,
                   isWta,
                   () => umpireCallsEnabledRef.current && umpireSpeechReadyRef.current,
+                  liveUmpireMatchKey(snapshot.players, isWta),
                 ).then((spoken) => {
                   if (!spoken && umpireCallsEnabledRef.current && umpireSpeechReadyRef.current) {
                     setSoundError('Spoken umpire calls are unavailable in this browser.');
@@ -1726,6 +1758,7 @@ function ThreeCourt({
               audioContextRef.current,
               isWta,
               () => umpireCallsEnabledRef.current && umpireSpeechReadyRef.current,
+              liveUmpireMatchKey(snapshot.players, isWta),
             ).then((spoken) => {
               if (!spoken && umpireCallsEnabledRef.current && umpireSpeechReadyRef.current) {
                 setSoundError('Spoken umpire calls are unavailable in this browser.');
@@ -1941,6 +1974,7 @@ function ThreeCourt({
     viewport.addEventListener('courtplayerpan', onPlayerPan);
 
     return () => {
+      if (crowdRigRef.current === crowdRig) crowdRigRef.current = null;
       modelLoad.abort();
       window.cancelAnimationFrame(animation);
       observer.disconnect();
@@ -2143,7 +2177,7 @@ function ThreeCourt({
     umpireCallsEnabledRef.current = enabled;
     setUmpireCallsEnabled(enabled);
     if (!enabled) {
-      cancelUmpireCall(audioContextRef.current);
+      cancelUmpireCall(audioContextRef.current, liveUmpireMatchKey(snapshot.players, isWta));
       return;
     }
     lastUmpireCallFrameRef.current = playheadRef.current
@@ -2440,11 +2474,42 @@ function ThreeCourt({
 export default function DmoLiveCourt3D(props: Props) {
   const [use2dFallback, setUse2dFallback] = useState(false);
   const [gruntsEnabled, setGruntsEnabled] = useState(true);
+  const [crowdDensityChoice, setCrowdDensityChoice] = useState<CrowdDensityChoice>('auto');
+  const crowdDensity = resolveCrowdDensity(crowdDensityChoice, props.tournamentRound);
   const useFallback = useCallback(() => setUse2dFallback(true), []);
   const gruntControls = { gruntsEnabled, onGruntsEnabledChange: setGruntsEnabled };
   const { fullReplay = false, ...courtProps } = props;
-  if (use2dFallback) {
-    return <DmoLiveCourt {...courtProps} fullReplay={fullReplay} {...gruntControls} />;
-  }
-  return <ThreeCourt {...props} {...gruntControls} onUnsupported={useFallback} />;
+  return (
+    <div className={densityStyles.courtDensityShell}>
+      <label className={densityStyles.crowdDensityControl}>
+        <span>Crowd density</span>
+        <select
+          value={crowdDensityChoice}
+          aria-label="Crowd density"
+          onChange={(event) => setCrowdDensityChoice(event.currentTarget.value as CrowdDensityChoice)}
+        >
+          {CROWD_DENSITY_CHOICES.map((choice) => (
+            <option key={choice} value={choice}>
+              {choice === 'auto' ? 'Auto by round' : choice[0].toUpperCase() + choice.slice(1)}
+            </option>
+          ))}
+        </select>
+      </label>
+      {use2dFallback ? (
+        <DmoLiveCourt
+          {...courtProps}
+          fullReplay={fullReplay}
+          crowdDensity={crowdDensity}
+          {...gruntControls}
+        />
+      ) : (
+        <ThreeCourt
+          {...props}
+          crowdDensity={crowdDensity}
+          {...gruntControls}
+          onUnsupported={useFallback}
+        />
+      )}
+    </div>
+  );
 }

@@ -50,6 +50,7 @@ import {
   createLiveUmpireScoreTether,
   deriveUmpireCallEvents,
   isBrowserUmpireSpeechUnlocked,
+  liveUmpireMatchKey,
   matchLiveUmpireScoreToDmoPointEnd,
   observeLiveUmpireScore,
   resetLiveUmpireScoreTether,
@@ -74,6 +75,8 @@ type Props = {
   stadiumAtmosphere?: boolean;
   isWta?: boolean;
   buffering?: boolean;
+  crowdDensity?: number;
+  tournamentRound?: string | null;
   gruntsEnabled: boolean;
   onGruntsEnabledChange: (enabled: boolean) => void;
 };
@@ -98,6 +101,7 @@ function drawScene(
   stadiumAtmosphere: boolean,
   timestampMs: number,
   isWta: boolean,
+  crowdDensity = 0.98,
 ) {
   const width = 900;
   const height = 520;
@@ -108,7 +112,7 @@ function drawScene(
   const rawProject = createCourtProjector(camera, zoom);
   const project = (x: number, y: number, z: number): ProjectedPoint => rawProject([x, y, z]);
   drawLiveCourtBackdrop(context, surface, camera, zoom, stadiumAtmosphere, isWta);
-  if (stadiumAtmosphere) drawLiveCourtCrowdMotion(context, project, timestampMs);
+  if (stadiumAtmosphere) drawLiveCourtCrowdMotion(context, project, timestampMs, crowdDensity);
 
   if (!samples.length) {
     context.fillStyle = 'rgba(8,19,40,.72)';
@@ -512,6 +516,7 @@ function DmoLiveCourt({
   stadiumAtmosphere = true,
   isWta = false,
   buffering = false,
+  crowdDensity = 0.76,
   gruntsEnabled,
   onGruntsEnabledChange,
 }: Props) {
@@ -522,6 +527,8 @@ function DmoLiveCourt({
   };
   const sceneElementRef = useRef<HTMLElement>(null);
   const canvasRef = useRef<HTMLCanvasElement>(null);
+  const crowdDensityRef = useRef(crowdDensity);
+  crowdDensityRef.current = crowdDensity;
   const cameraDragRef = useRef<{ x: number; y: number } | null>(null);
   const sampleBufferRef = useRef<LiveCourtSample[]>([]);
   const trajectoryEventsRef = useRef<LiveCourtMotionEvent[]>([]);
@@ -633,7 +640,7 @@ function DmoLiveCourt({
       playheadRef.current = null;
       lastUmpireCallFrameRef.current = null;
       resetLiveUmpireScoreTether(liveUmpireScoreTetherRef.current);
-      cancelUmpireCall(audioContextRef.current);
+      cancelUmpireCall(audioContextRef.current, liveUmpireMatchKey(snapshot.players, isWta));
     }
     previousSnapshotRef.current = {
       filename: snapshot.filename,
@@ -711,6 +718,7 @@ function DmoLiveCourt({
         audioContextRef.current,
         isWta,
         () => umpireCallsEnabledRef.current && umpireSpeechReadyRef.current,
+        liveUmpireMatchKey(snapshot.players, isWta),
       ).then((spoken) => {
         if (!spoken && umpireCallsEnabledRef.current && umpireSpeechReadyRef.current) {
           setSoundError('Spoken umpire calls are unavailable in this browser.');
@@ -753,7 +761,7 @@ function DmoLiveCourt({
         lastUmpireCallFrameRef.current = cursor;
       } else if (previousCallFrame === null || cursor < previousCallFrame) {
         if (previousCallFrame !== null && cursor < previousCallFrame) {
-          cancelUmpireCall(audioContextRef.current);
+          cancelUmpireCall(audioContextRef.current, liveUmpireMatchKey(snapshot.players, isWta));
         }
         lastUmpireCallFrameRef.current = cursor;
       } else {
@@ -776,6 +784,7 @@ function DmoLiveCourt({
                   audioContextRef.current,
                   isWta,
                   () => umpireCallsEnabledRef.current && umpireSpeechReadyRef.current,
+                  liveUmpireMatchKey(snapshot.players, isWta),
                 ).then((spoken) => {
                   if (!spoken && umpireCallsEnabledRef.current && umpireSpeechReadyRef.current) {
                     setSoundError('Spoken umpire calls are unavailable in this browser.');
@@ -790,6 +799,7 @@ function DmoLiveCourt({
               audioContextRef.current,
               isWta,
               () => umpireCallsEnabledRef.current && umpireSpeechReadyRef.current,
+              liveUmpireMatchKey(snapshot.players, isWta),
             ).then((spoken) => {
               if (!spoken && umpireCallsEnabledRef.current && umpireSpeechReadyRef.current) {
                 setSoundError('Spoken umpire calls are unavailable in this browser.');
@@ -813,6 +823,7 @@ function DmoLiveCourt({
           current.stadiumAtmosphere,
           now,
           current.isWta,
+          crowdDensityRef.current,
         );
         if (renderErrorRef.current) {
           renderErrorRef.current = false;
@@ -885,7 +896,7 @@ function DmoLiveCourt({
   }, [snapshot.frameCount, snapshot.soundEvents, snapshot.trajectoryEvents, soundEnabled, gruntsEnabled, isWta, surface]);
 
   useEffect(() => () => {
-    cancelUmpireCall(audioContextRef.current);
+    cancelUmpireCall(audioContextRef.current, liveUmpireMatchKey(snapshot.players, isWta));
     try {
       crowdBedRef.current?.source.stop();
       crowdBedRef.current?.source.disconnect();
@@ -942,7 +953,7 @@ function DmoLiveCourt({
     umpireCallsEnabledRef.current = enabled;
     setUmpireCallsEnabled(enabled);
     if (!enabled) {
-      cancelUmpireCall(audioContextRef.current);
+      cancelUmpireCall(audioContextRef.current, liveUmpireMatchKey(snapshot.players, isWta));
       return;
     }
     lastUmpireCallFrameRef.current = playheadRef.current;

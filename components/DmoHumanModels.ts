@@ -40,10 +40,11 @@ async function loadGroundstrokeMotionSources(base: string, signal: AbortSignal):
       return undefined;
     }
   };
-  const [forehand, backhand, serve, volleyForehand, volleyBackhand, locomotion] = await Promise.all([
+  const [forehand, backhand, serve, smash, volleyForehand, volleyBackhand, locomotion] = await Promise.all([
     load('forehand'),
     load('backhand'),
     load('serve'),
+    load('smash'),
     load('volley-forehand'),
     load('volley-backhand'),
     loadLocomotion(),
@@ -52,6 +53,7 @@ async function loadGroundstrokeMotionSources(base: string, signal: AbortSignal):
     forehand,
     backhand,
     serve,
+    smash,
     'volley-forehand': volleyForehand,
     'volley-backhand': volleyBackhand,
     locomotion,

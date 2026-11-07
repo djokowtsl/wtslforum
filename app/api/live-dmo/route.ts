@@ -39,6 +39,15 @@ const startSchema = z.object({
   replaySpeed: z.union([z.literal(1), z.literal(2), z.literal(4)]).optional().default(1),
   bestOf: z.union([z.literal(1), z.literal(3), z.literal(5)]).optional(),
   isWta: z.boolean().optional().default(false),
+  tournamentRound: z.enum([
+    'auto',
+    'round-of-64',
+    'round-of-32',
+    'round-of-16',
+    'quarterfinal',
+    'semifinal',
+    'final',
+  ]).optional().default('auto'),
   officialByBroadcaster: z.boolean().optional().default(false),
 }).strict();
 const MAX_BODY_BYTES = 4_000;
@@ -215,6 +224,7 @@ export async function POST(request: Request) {
     replay: body.replay,
     replaySpeed: body.replay ? body.replaySpeed : 1,
     bestOf: broadcastBestOf,
+    tournamentRound: body.tournamentRound,
     ownerName: user.username,
     isWta,
     officialByBroadcaster: body.officialByBroadcaster,

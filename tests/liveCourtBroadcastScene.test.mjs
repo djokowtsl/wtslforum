@@ -3,6 +3,7 @@ import test from 'node:test';
 import { readFile } from 'node:fs/promises';
 import { createRequire } from 'node:module';
 import * as THREE from 'three';
+import { BVHLoader } from 'three/examples/jsm/loaders/BVHLoader.js';
 import {
   courtSurfaceSoundProfile,
   courtSurfaceVisualProfile,
@@ -27,12 +28,15 @@ async function loadTs(path, overrides = {}) {
 const stadiumArchitectureApi = await loadTs('../components/DmoStadiumArchitecture.ts');
 const venueApi = await loadTs('../lib/dmoVenue.ts');
 const courtSurfaceApi = await loadTs('../lib/te4DmoSurface.ts');
+const crowdDensityApi = await loadTs('../lib/dmoCrowdDensity.ts');
 const sceneApi = await loadTs('../components/DmoLiveCourt3DScene.ts', {
   './DmoStadiumArchitecture': stadiumArchitectureApi,
   '../lib/dmoVenue': venueApi,
   '@/lib/te4DmoSurface': courtSurfaceApi,
+  '@/lib/dmoCrowdDensity': crowdDensityApi,
 });
 const crowdLodApi = await loadTs('../lib/dmoCrowdLod.ts');
+const smashApi = await loadTs('../lib/dmoSmash.ts');
 const {
   deriveLiveCourtSoundEvents,
   loadCourtEffectSamples,
@@ -44,6 +48,102 @@ const {
 const xktUmpireAudioApi = await loadTs('../lib/xktUmpireAudio.ts');
 const umpireApi = await loadTs('../lib/liveCourtUmpire.ts', {
   './xktUmpireAudio': xktUmpireAudioApi,
+});
+
+test('automatic crowd density follows the broadcaster-selected tournament round', () => {
+  assert.equal(crowdDensityApi.resolveCrowdDensity('auto', 'round-of-64'), 0.58);
+  assert.equal(crowdDensityApi.resolveCrowdDensity('auto', 'semifinal'), 0.94);
+  assert.equal(crowdDensityApi.resolveCrowdDensity('auto', 'final'), 0.99);
+  assert.equal(crowdDensityApi.resolveCrowdDensity('light', 'final'), 0.42);
+  assert.equal(crowdDensityApi.resolveCrowdDensity('standard', 'final'), 0.98);
+  assert.equal(crowdDensityApi.resolveCrowdDensity('auto', 'unknown'), 0.98);
+  assert.equal(crowdDensityApi.isCrowdSeatOccupied(17, 0), false);
+  assert.equal(crowdDensityApi.isCrowdSeatOccupied(17, 1), true);
+  assert.equal(crowdDensityApi.isCrowdSeatOccupied(17, 0.5), crowdDensityApi.isCrowdSeatOccupied(17, 0.5));
+});
+
+test('crowd occupancy updates in place without changing the seating layout', () => {
+  const scene = new THREE.Scene();
+  const crowd = sceneApi.buildCrowd(scene);
+  const heads = scene.getObjectByName('wtsl-spectator-heads');
+  const seatCount = crowd.seats.length;
+  assert.ok(heads);
+
+  crowd.setDensity(0);
+  assert.equal(crowd.seats.filter((seat) => seat.occupied).length, 0);
+  assert.equal(heads.count, 0);
+  crowd.setDensity(1);
+  assert.equal(crowd.seats.filter((seat) => seat.occupied).length, seatCount);
+  assert.equal(heads.count, seatCount);
+});
+
+test('only high-contact rally shots select the captured overhead smash', () => {
+  assert.equal(smashApi.isCapturedSmashShot('rally', 2.25), true);
+  assert.equal(smashApi.isCapturedSmashShot('rally', 2.24), false);
+  assert.equal(smashApi.isCapturedSmashShot('serve', 2.8), false);
+  assert.equal(smashApi.isCapturedSmashShot(undefined, 2.8), false);
+});
+
+test('captured smash source parses, reaches its selected contact frame, and is credited', async () => {
+  const motion = await readFile(new URL('../public/models/dmo-humans/tennis-smash.bvh', import.meta.url), 'utf8');
+  const parsed = new BVHLoader().parse(motion);
+  assert.ok(parsed.clip.duration > 7.85, 'the selected contact frame is in the recording');
+  assert.ok(parsed.skeleton.bones.some((bone) => bone.name === 'RightWrist'));
+  assert.match(
+    await readFile(new URL('../public/models/dmo-humans/SMASH-MOCAP-CREDIT.md', import.meta.url), 'utf8'),
+    /CC BY-SA 3\.0/,
+  );
+});
+
+test('captured smash motion is fetched and registered with the player retargeter', async () => {
+  const [modelSource, rigSource, courtSource] = await Promise.all([
+    readFile(new URL('../components/DmoHumanModels.ts', import.meta.url), 'utf8'),
+    readFile(new URL('../components/DmoCapturedGroundstroke.ts', import.meta.url), 'utf8'),
+    readFile(new URL('../components/DmoLiveCourt3D.tsx', import.meta.url), 'utf8'),
+  ]);
+  assert.match(modelSource, /load\('smash'\)/);
+  assert.match(rigSource, /smash: this\.prepare\('smash', sources\.smash, rest\)/);
+  assert.match(courtSource, /isCapturedSmashShot\(strokeEvent\?\.shotType, contactSample\?\.\[2\]\)/);
+});
+
+test('umpire match keys normalize player order and keep tours distinct', () => {
+  assert.equal(
+    umpireApi.liveUmpireMatchKey(['Player Two', 'Player One'], false),
+    umpireApi.liveUmpireMatchKey(['Player One', 'Player Two'], false),
+  );
+  assert.notEqual(
+    umpireApi.liveUmpireMatchKey(['Player One', 'Player Two'], false),
+    umpireApi.liveUmpireMatchKey(['Player One', 'Player Two'], true),
+  );
+});
+
+test('recorded umpire playback replaces the previous voice for the same match', async () => {
+  const cancelled = [];
+  const played = [];
+  const playbackApi = await loadTs('../lib/liveCourtUmpire.ts', {
+    './xktUmpireAudio': {
+      cancelXktUmpireCalls: (context) => cancelled.push(context),
+      playXktUmpireCall: async (context, text) => {
+        played.push({ context, text });
+        return true;
+      },
+    },
+  });
+  const firstContext = {};
+  const secondContext = {};
+  const otherMatchContext = {};
+  await playbackApi.speakUmpireCall('Game, Player One', firstContext, false, () => true, 'match-one');
+  await playbackApi.speakUmpireCall('15-all', firstContext, false, () => true, 'match-one');
+  await playbackApi.speakUmpireCall('30-all', secondContext, false, () => true, 'match-one');
+  await playbackApi.speakUmpireCall('Game, Player Three', otherMatchContext, false, () => true, 'match-two');
+
+  assert.deepEqual(cancelled, [firstContext]);
+  assert.deepEqual(played.map((call) => call.context), [
+    firstContext,
+    firstContext,
+    secondContext,
+    otherMatchContext,
+  ]);
 });
 
 test('stadium fills three open tiers with crowd, concourses, score displays and four tunnels', () => {
@@ -363,7 +463,7 @@ test('crowd implementation contains no legacy stand block and keeps textured peo
     sceneSource.indexOf('export function buildCrowd('),
     sceneSource.indexOf('export function buildCourtFixtures('),
   );
-  assert.match(crowdSource, /return buildUnifiedCrowd\(scene, resolveDmoVenueProfile\(venueName\)\)/);
+  assert.match(crowdSource, /return buildUnifiedCrowd\(scene, resolveDmoVenueProfile\(venueName\), density\)/);
   assert.doesNotMatch(crowdSource, /historical reference|rowStep = 0\.66|platformMaterial/);
   const humanCrowdSource = await readFile(new URL('../components/DmoHumanCrowd.ts', import.meta.url), 'utf8');
   assert.match(humanCrowdSource, /new THREE\.InstancedMesh/);
@@ -909,7 +1009,7 @@ test('XKT umpire calls resolve score, tiebreak and recorded player-name clips', 
     },
     tiebreakScores: { '1_0': ['/tiebreak/1-0.mp3'] },
     gameCalls: ['/game/game.mp3'],
-    setCalls: ['/set/set.mp3'],
+    setCalls: ['/set/set-one.mp3', '/set/set-two.mp3', '/set/set-three.mp3', '/set/set-four.mp3'],
   };
   const names = {
     atp: { alcaraz: '/names/alcaraz.mp3' },
@@ -931,11 +1031,13 @@ test('XKT umpire calls resolve score, tiebreak and recorded player-name clips', 
     '/game/game.mp3',
     '/names/alcaraz.mp3',
   ]);
-  assert.deepEqual(resolve('Game and set, Iga Świątek', true), [
+  assert.deepEqual(resolve('Game and second set, Iga Świątek', true), [
     '/game/game.mp3',
-    '/set/set.mp3',
+    '/set/set-two.mp3',
     '/names/swiatek.mp3',
   ]);
+  assert.equal(resolve('Game and set, Iga Świątek', true), null,
+    'set calls without a known set number never choose a random ordinal');
   assert.equal(resolve('Out'), null, 'out calls retain the existing browser-speech fallback');
   assert.equal(resolve('Game, Unlisted Player'), null, 'missing recorded names fall back instead of being mislabelled');
 });
@@ -1071,7 +1173,16 @@ test('live TE4 score changes format games and scores without repeating the initi
       previous,
       players,
     ),
-    'Game and set, Player One',
+    'Game and first set, Player One',
+  );
+  assert.equal(
+    umpireApi.formatLiveUmpireScoreCall(
+      { ...previous, sets: [[6, 4], [4, 6]], games: [0, 0] },
+      { ...previous, sets: [[6, 4]], games: [5, 4] },
+      players,
+    ),
+    'Game and second set, Player Two',
+    'set-ending calls state the number of the set that just finished',
   );
 });
 
