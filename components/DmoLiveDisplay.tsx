@@ -22,6 +22,7 @@ type Props = {
   stale?: boolean;
   updatedAt?: string;
   preMatchPrediction?: LivePreMatchProbability | null;
+  preMatchStatus?: 'loading' | 'unavailable';
   pointLog?: Te4LivePoint[];
   pointLogLoaded?: boolean;
   liveScore?: LiveBroadcastScore | null;
@@ -51,10 +52,12 @@ function ChanceChart({
   values,
   players,
   preMatchPrediction,
+  preMatchStatus,
 }: {
   values: number[];
   players: [string, string];
   preMatchPrediction?: LivePreMatchProbability | null;
+  preMatchStatus?: 'loading' | 'unavailable';
 }) {
   const safeValues = values.length ? values : [0.5, 0.5];
   const secondPreMatchProbability = preMatchPrediction
@@ -108,6 +111,17 @@ function ChanceChart({
           <p>Shown separately; it does not change the live estimate.</p>
         </div>
       )}
+      {!preMatchPrediction && preMatchStatus && (
+        <div className={styles.preMatchChance} role="status" aria-live="polite">
+          <div className={styles.preMatchHead}>
+            <strong>PRE-MATCH</strong>
+            <span>{preMatchStatus === 'loading' ? 'Loading estimate' : 'Unavailable'}</span>
+          </div>
+          <p>{preMatchStatus === 'loading'
+            ? 'Fetching the separate WTSL pre-match estimate.'
+            : 'A WTSL pre-match estimate is not available for this pairing right now.'}</p>
+        </div>
+      )}
     </div>
   );
 }
@@ -120,6 +134,7 @@ export default function DmoLiveDisplay({
   stale = false,
   updatedAt,
   preMatchPrediction,
+  preMatchStatus,
   pointLog,
   pointLogLoaded = false,
   liveScore,
@@ -200,56 +215,57 @@ export default function DmoLiveDisplay({
           scoreboard={stadiumScoreboard}
           tournamentRound={tournamentRound}
         />
-        <aside className={styles.scoreBug} aria-label="Live match score">
-          <div className={styles.scoreBugHeader}>
-            <span className={styles.scoreBugStatus}>
-              <i aria-hidden="true" className={styles.scoreBugDot} />
-              {statusLabel}
-            </span>
-            {score && scoreLabel(score.sets) && (
-              <strong className={styles.scoreBugSets} aria-label="Set scores">
-                {scoreLabel(score.sets)}
-              </strong>
-            )}
-          </div>
-          <div className={styles.scoreBugTable} role="table" aria-label="Player, games, points and serve percentage">
-            <div className={styles.scoreBugHeading} role="row">
-              <span role="columnheader">Player</span>
-              <span role="columnheader">Games</span>
-              <span role="columnheader">{score?.tiebreak ? 'TB' : 'Points'}</span>
-              <span role="columnheader">Serve</span>
-            </div>
-            {snapshot.players.map((name, index) => (
-              <div className={styles.scoreBugRow} role="row" key={`${index}-${name}`}>
-                <strong role="cell" className={styles.scoreBugPlayer} title={name}>
-                  {score?.server === index + 1 && (
-                    <i className={styles.scoreBugServeDot} role="img" aria-label="Serving" />
-                  )}
-                  <span>{name}</span>
-                </strong>
-                <strong role="cell">{score?.games[index] ?? '—'}</strong>
-                <strong role="cell" className={styles.scoreBugPoints}>
-                  {score?.pointText[index] ?? '—'}
-                </strong>
-                <span role="cell" className={styles.scoreBugServe}>
-                  {playerStats[index].serviceWinRate === null
-                    ? '—'
-                    : `${Math.round(playerStats[index].serviceWinRate * 100)}%`}
-                </span>
-              </div>
-            ))}
-          </div>
-        </aside>
         <p className={styles.pointNote}>
           {liveScore !== undefined
             ? liveScore
               ? `TE4 live score · ${timeAgo(liveScore.checkedAt)}`
               : 'Live score temporarily unavailable.'
             : snapshot.currentPoint.inProgress
-            ? `Point ${snapshot.currentPoint.number} in progress · ${snapshot.currentPoint.rallyHits} recorded rally shots${snapshot.currentPoint.serveSpeedKmh ? ` · serve ${snapshot.currentPoint.serveSpeedKmh} km/h` : ''}`
-            : `Next point · ${pointScore}${score?.tiebreak ? ' (tiebreak)' : ''}`}
+              ? `Point ${snapshot.currentPoint.number} in progress · ${snapshot.currentPoint.rallyHits} recorded rally shots${snapshot.currentPoint.serveSpeedKmh ? ` · serve ${snapshot.currentPoint.serveSpeedKmh} km/h` : ''}`
+              : `Next point · ${pointScore}${score?.tiebreak ? ' (tiebreak)' : ''}`}
         </p>
       </div>
+
+      <aside className={styles.scoreBug} aria-label="Live match score">
+        <div className={styles.scoreBugHeader}>
+          <span className={styles.scoreBugStatus}>
+            <i aria-hidden="true" className={styles.scoreBugDot} />
+            {statusLabel}
+          </span>
+          {score && scoreLabel(score.sets) && (
+            <strong className={styles.scoreBugSets} aria-label="Set scores">
+              {scoreLabel(score.sets)}
+            </strong>
+          )}
+        </div>
+        <div className={styles.scoreBugTable} role="table" aria-label="Player, games, points and serve percentage">
+          <div className={styles.scoreBugHeading} role="row">
+            <span role="columnheader">Player</span>
+            <span role="columnheader">Games</span>
+            <span role="columnheader">{score?.tiebreak ? 'TB' : 'Points'}</span>
+            <span role="columnheader">Serve</span>
+          </div>
+          {snapshot.players.map((name, index) => (
+            <div className={styles.scoreBugRow} role="row" key={`${index}-${name}`}>
+              <strong role="cell" className={styles.scoreBugPlayer} title={name}>
+                {score?.server === index + 1 && (
+                  <i className={styles.scoreBugServeDot} role="img" aria-label="Serving" />
+                )}
+                <span>{name}</span>
+              </strong>
+              <strong role="cell">{score?.games[index] ?? '—'}</strong>
+              <strong role="cell" className={styles.scoreBugPoints}>
+                {score?.pointText[index] ?? '—'}
+              </strong>
+              <span role="cell" className={styles.scoreBugServe}>
+                {playerStats[index].serviceWinRate === null
+                  ? '—'
+                  : `${Math.round(playerStats[index].serviceWinRate * 100)}%`}
+              </span>
+            </div>
+          ))}
+        </div>
+      </aside>
 
       <div className={styles.mainGrid}>
         <div className={styles.leftColumn}>
@@ -289,6 +305,7 @@ export default function DmoLiveDisplay({
             values={snapshot.winHistory}
             players={snapshot.players}
             preMatchPrediction={preMatchPrediction}
+            preMatchStatus={preMatchStatus}
           />
         </div>
 
