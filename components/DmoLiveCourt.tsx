@@ -47,15 +47,16 @@ import CourtPictureInPictureButton from './CourtPictureInPictureButton';
 import { loadLiveGruntSamples } from '@/lib/liveGruntAudio';
 import {
   cancelUmpireCall,
+  createLiveUmpireScoreTether,
   deriveUmpireCallEvents,
-  formatLiveUmpireScoreCall,
   isBrowserUmpireSpeechUnlocked,
-  sameUmpireScore,
+  matchLiveUmpireScoreToDmoPointEnd,
+  observeLiveUmpireScore,
+  resetLiveUmpireScoreTether,
   speakUmpireCall,
   unlockBrowserUmpireSpeech,
   umpireCallsBetween,
   type UmpireCallEvent,
-  type UmpireScore,
 } from '@/lib/liveCourtUmpire';
 import type { StadiumScoreboardData } from './DmoStadiumArchitecture';
 import styles from './DmoLiveCourt.module.css';
@@ -528,10 +529,9 @@ function DmoLiveCourt({
   const umpireCallEventsRef = useRef<UmpireCallEvent[]>([]);
   const playheadRef = useRef<number | null>(null);
   const lastUmpireCallFrameRef = useRef<number | null>(null);
-  const previousLiveScoreRef = useRef<UmpireScore>(
-    scoreboardData.live ? scoreboardData.score : null,
-  );
-  const hasObservedLiveScoreRef = useRef(false);
+  const liveUmpireScoreTetherRef = useRef(createLiveUmpireScoreTether());
+  const liveScoreboardRef = useRef(scoreboardData.live);
+  liveScoreboardRef.current = scoreboardData.live;
   const fullReplayRef = useRef(fullReplay);
   fullReplayRef.current = fullReplay;
   const replayFrameCallbackRef = useRef(onReplayFrameChange);
@@ -632,8 +632,7 @@ function DmoLiveCourt({
       umpireCallEventsRef.current = [];
       playheadRef.current = null;
       lastUmpireCallFrameRef.current = null;
-      previousLiveScoreRef.current = scoreboardData.live ? scoreboardData.score : null;
-      hasObservedLiveScoreRef.current = false;
+      resetLiveUmpireScoreTether(liveUmpireScoreTetherRef.current);
       cancelUmpireCall(audioContextRef.current);
     }
     previousSnapshotRef.current = {
@@ -698,20 +697,14 @@ function DmoLiveCourt({
   }, [snapshot, playbackSpeed, fullReplay]);
 
   useEffect(() => {
-    const current = scoreboardData.live ? scoreboardData.score : null;
-    const previous = previousLiveScoreRef.current;
-    const firstObservation = !hasObservedLiveScoreRef.current;
-    hasObservedLiveScoreRef.current = true;
-    previousLiveScoreRef.current = current;
-    if (
-      !scoreboardData.live
-      || !current
-      || firstObservation
-      || (previous && sameUmpireScore(current, previous))
-      || !umpireCallsEnabledRef.current
-      || !umpireSpeechReadyRef.current
-    ) return;
-    const call = formatLiveUmpireScoreCall(current, previous, scoreboardData.players);
+    const call = observeLiveUmpireScore(
+      liveUmpireScoreTetherRef.current,
+      scoreboardData.live ? scoreboardData.score : null,
+      scoreboardData.players,
+      scoreboardData.live
+        && umpireCallsEnabledRef.current
+        && umpireSpeechReadyRef.current,
+    );
     if (call) {
       void speakUmpireCall(
         call,
@@ -770,7 +763,28 @@ function DmoLiveCourt({
             previousCallFrame,
             cursor,
           )) {
-            if (call.kind === 'score' && !fullReplayRef.current) continue;
+            if (!fullReplayRef.current && (call.kind === 'score' || call.kind === 'point-end')) {
+              const liveScoreCall = matchLiveUmpireScoreToDmoPointEnd(
+                liveUmpireScoreTetherRef.current,
+                liveScoreboardRef.current
+                  && umpireCallsEnabledRef.current
+                  && umpireSpeechReadyRef.current,
+              );
+              if (liveScoreCall) {
+                void speakUmpireCall(
+                  liveScoreCall,
+                  audioContextRef.current,
+                  isWta,
+                  () => umpireCallsEnabledRef.current && umpireSpeechReadyRef.current,
+                ).then((spoken) => {
+                  if (!spoken && umpireCallsEnabledRef.current && umpireSpeechReadyRef.current) {
+                    setSoundError('Spoken umpire calls are unavailable in this browser.');
+                  }
+                });
+              }
+              continue;
+            }
+            if (call.kind === 'point-end') continue;
             void speakUmpireCall(
               call.text,
               audioContextRef.current,

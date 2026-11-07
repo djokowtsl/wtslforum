@@ -1040,7 +1040,7 @@ test('umpire score calls use server order and tennis point language', () => {
     'numeric tiebreak scores are recognized from the DMO timeline');
 });
 
-test('live TE4 score changes announce games and scores without replaying the initial score', () => {
+test('live TE4 score changes format games and scores without repeating the initial score', () => {
   const players = ['Player One', 'Player Two'];
   const previous = {
     sets: [],
@@ -1072,6 +1072,53 @@ test('live TE4 score changes announce games and scores without replaying the ini
       players,
     ),
     'Game and set, Player One',
+  );
+});
+
+test('live score calls follow DMO point ends and stay within two score transitions', () => {
+  const players = ['Player One', 'Player Two'];
+  const scores = [
+    { sets: [], games: [0, 0], pointText: ['0', '0'], tiebreak: false, server: 1 },
+    { sets: [], games: [0, 0], pointText: ['15', '0'], tiebreak: false, server: 1 },
+    { sets: [], games: [0, 0], pointText: ['30', '0'], tiebreak: false, server: 1 },
+    { sets: [], games: [0, 0], pointText: ['40', '0'], tiebreak: false, server: 1 },
+    { sets: [], games: [1, 0], pointText: ['0', '0'], tiebreak: false, server: 2 },
+  ];
+  const tether = umpireApi.createLiveUmpireScoreTether();
+
+  assert.equal(umpireApi.observeLiveUmpireScore(tether, scores[0], players, true), null);
+  assert.equal(umpireApi.observeLiveUmpireScore(tether, scores[1], players, true), null,
+    'a TE4 score update is queued instead of being announced early');
+  assert.equal(umpireApi.matchLiveUmpireScoreToDmoPointEnd(tether, true), 'fifteen-love');
+
+  assert.equal(umpireApi.matchLiveUmpireScoreToDmoPointEnd(tether, true), null,
+    'a DMO point-end can arrive before its TE4 score update');
+  assert.equal(umpireApi.observeLiveUmpireScore(tether, scores[2], players, true), 'thirty-love',
+    'the delayed TE4 update is announced only after the matching DMO event');
+
+  const capped = umpireApi.createLiveUmpireScoreTether();
+  assert.equal(umpireApi.observeLiveUmpireScore(capped, scores[0], players, true), null);
+  for (const score of scores.slice(1)) {
+    assert.equal(umpireApi.observeLiveUmpireScore(capped, score, players, true), null);
+  }
+  assert.equal(capped.pendingScoreCalls.length, 3);
+  assert.equal(umpireApi.MAX_LIVE_UMPIRE_SCORE_LAG_POINTS, 2);
+  assert.equal(umpireApi.matchLiveUmpireScoreToDmoPointEnd(capped, true), 'thirty-love',
+    'stale calls are trimmed so the oldest queued call is at most two transitions behind');
+  assert.equal(umpireApi.matchLiveUmpireScoreToDmoPointEnd(capped, true), 'forty-love');
+  assert.equal(umpireApi.matchLiveUmpireScoreToDmoPointEnd(capped, true), 'Game, Player One');
+
+  const disabled = umpireApi.createLiveUmpireScoreTether();
+  umpireApi.observeLiveUmpireScore(disabled, scores[0], players, true);
+  umpireApi.observeLiveUmpireScore(disabled, scores[1], players, true);
+  assert.equal(disabled.pendingScoreCalls.length, 1);
+  assert.equal(umpireApi.observeLiveUmpireScore(disabled, scores[1], players, false), null);
+  assert.equal(disabled.pendingScoreCalls.length, 0, 'disabling speech drops queued announcements');
+  assert.equal(umpireApi.matchLiveUmpireScoreToDmoPointEnd(disabled, true), null);
+  assert.equal(
+    umpireApi.observeLiveUmpireScore(disabled, scores[2], players, true),
+    'thirty-love',
+    'only score updates after a new DMO event are announced when speech is re-enabled',
   );
 });
 
@@ -1112,6 +1159,15 @@ test('replay score calls follow point-end frames and only clear rally-outs are c
     [{ frame: 14, kind: 'score', text: 'fifteen-love' }],
     'a serve bounce is not presented as an authoritative line call',
   );
+  assert.deepEqual(
+    umpireApi.deriveUmpireCallEvents(
+      [{ frame: 16, kind: 'point-end' }],
+      [],
+      [],
+    ),
+    [{ frame: 16, kind: 'point-end', text: '' }],
+    'live score synchronization still gets a timing cue without a DMO score string',
+  );
 });
 
 test('only the first bounce associated with a point can trigger an out call', () => {
@@ -1151,12 +1207,14 @@ test('umpire calls have independent controls in both court renderers', async () 
   for (const source of [primary, fallback]) {
     assert.match(source, /aria-label=\{umpireCallsEnabled && !umpireSpeechReady/);
     assert.match(source, /aria-pressed=\{umpireCallsEnabled && umpireSpeechReady\}/);
-    assert.match(source, /formatLiveUmpireScoreCall\(current, previous, scoreboardData\.players\)/);
+    assert.match(source, /observeLiveUmpireScore\(/);
+    assert.match(source, /matchLiveUmpireScoreToDmoPointEnd\(/);
+    assert.doesNotMatch(source, /formatLiveUmpireScoreCall\(current, previous, scoreboardData\.players\)/);
     assert.match(source, /unlockBrowserUmpireSpeech\(\)/);
     assert.match(source, /Enable calls/);
   }
-  assert.match(primary, /call\.kind === 'score' && !fullReplay/);
-  assert.match(fallback, /call\.kind === 'score' && !fullReplayRef\.current/);
+  assert.match(primary, /call\.kind === 'score' \|\| call\.kind === 'point-end'/);
+  assert.match(fallback, /call\.kind === 'score' \|\| call\.kind === 'point-end'/);
   assert.doesNotMatch(primary, /soundOnRef\.current && umpireCallsEnabledRef\.current/);
   assert.doesNotMatch(fallback, /soundEnabledRef\.current && umpireCallsEnabledRef\.current/);
 });
