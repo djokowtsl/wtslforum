@@ -5,6 +5,8 @@ import {
   CROWD_SKIN_TONES,
   getChairUmpireLegTargets,
   getCrowdAppearance,
+  getSeatedCoachLegTargets,
+  getSeatedCrowdLegTargets,
   type CourtFixtureRig,
   type CrowdRig,
 } from './DmoLiveCourt3DScene';
@@ -139,11 +141,15 @@ function poseSeatedStaff(model: THREE.Group, space: THREE.Group, hipsY: number, 
     pose.place(`${side}Arm`, shoulder, elbow);
     pose.place(`${side}ForeArm`, elbow, wrist);
     pose.place(`${side}Hand`, wrist, wrist.clone().add(v(-sign * 0.05, 0, 0.08)));
-    const chairTargets = chairUmpire ? getChairUmpireLegTargets(sign, hipsY) : undefined;
-    const hip = chairTargets ? v(...chairTargets.hip) : v(sign * 0.11, hipsY);
-    const knee = chairTargets ? v(...chairTargets.knee) : v(sign * 0.14, hipsY - 0.34, 0.48);
-    const ankle = chairTargets ? v(...chairTargets.ankle) : v(sign * 0.14, hipsY - 1.02, 0.56);
-    const toe = chairTargets ? v(...chairTargets.toe) : v(sign * 0.14, hipsY - 1.12, 0.72);
+    const legTargets = chairUmpire
+      ? getChairUmpireLegTargets(sign, hipsY)
+      : getSeatedCoachLegTargets(sign, hipsY);
+    const point = (coordinates: readonly [number, number, number]) =>
+      v(coordinates[0], coordinates[1], coordinates[2]);
+    const hip = point(legTargets.hip);
+    const knee = point(legTargets.knee);
+    const ankle = point(legTargets.ankle);
+    const toe = point(legTargets.toe);
     pose.place(`${side}UpLeg`, hip, knee);
     pose.place(`${side}Leg`, knee, ankle);
     pose.place(`${side}Foot`, ankle, toe);
@@ -189,10 +195,11 @@ function seatedGeometry(template: THREE.Group, look: number, applause: boolean) 
     pose.place(`${side}Arm`, shoulder, elbow);
     pose.place(`${side}ForeArm`, elbow, wrist);
     pose.place(`${side}Hand`, wrist, wrist.clone().add(v(-sign * 0.05, 0, 0.08)));
-    const hip = v(sign * 0.11, 0.63);
-    const knee = v(sign * 0.14, 0.43, 0.26);
-    const ankle = v(sign * 0.14, 0.12, 0.19);
-    const toe = v(sign * 0.14, 0.05, 0.29);
+    const legTargets = getSeatedCrowdLegTargets(sign);
+    const hip = v(...legTargets.hip);
+    const knee = v(...legTargets.knee);
+    const ankle = v(...legTargets.ankle);
+    const toe = v(...legTargets.toe);
     pose.place(`${side}UpLeg`, hip, knee);
     pose.place(`${side}Leg`, knee, ankle);
     pose.place(`${side}Foot`, ankle, toe);
