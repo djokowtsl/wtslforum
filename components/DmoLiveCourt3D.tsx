@@ -17,6 +17,7 @@ import {
   GROUNDSTROKE_LEAD_FRAMES,
   SERVE_LEAD_FRAMES,
   groundstrokeCaptureWeight,
+  groundstrokeLeadFrames,
   recordedStrokeForSide,
   recordedStrokeUsesTwoHands,
   serveCaptureWeight,
@@ -142,7 +143,7 @@ async function loadGruntSample(context: AudioContext, isWta: boolean) {
 const MIN_CAMERA_HEIGHT = 0.8;
 
 /** Shown under the court so a deployed build can be identified at a glance. */
-const RENDERER_BUILD = 'stadium/audio + recorded volleys + player repair r13';
+const RENDERER_BUILD = 'stadium/audio + recorded volleys + player repair r14';
 
 function firstEventAfterFrame<T extends { frame: number }>(events: T[], frame: number) {
   let low = 0;
@@ -978,7 +979,17 @@ function ThreeCourt({
         : settled;
       rig.root.userData.stanceHold = stanceHold;
       const ready = opponentServe ? returnReadiness(framesToServe) * freeOfOwnShot * stanceHold * returnGate : 0;
-      const splitStep = opponentServe ? splitStepLift(framesToServe) * freeOfOwnShot * stanceHold * returnGate : 0;
+      // A small split-step as the opponent hits in a rally too (players are
+      // neutral then, before turning to the ball), when not running hard.
+      const opponentRallyShot = opponentServe ? undefined
+        : findPlayerShotEvent(events, eventPlayer === 1 ? 2 : 1, frame, 12, 'rally');
+      const rallySplit = opponentRallyShot && !walking
+        ? splitStepLift(opponentRallyShot.frame - frame) * 0.6 * freeOfOwnShot
+          * (1 - THREE.MathUtils.smoothstep(travelSpeed, 1.5, 3))
+        : 0;
+      const splitStep = opponentServe
+        ? splitStepLift(framesToServe) * freeOfOwnShot * stanceHold * returnGate
+        : rallySplit;
       // Ease the switch between captured and procedural legs over replay time.
       rig.root.userData.stepLegs = easeToward(
         rig.root.userData.stepLegs as number | undefined,
@@ -1144,13 +1155,21 @@ function ThreeCourt({
           // rather than starting part-way up its envelope (a snap). A shot
           // about to be played still gets its full recorded swing.
           const previousOwnShot = lastShotFrame(events, eventPlayer, capturedEvent.frame - 1);
+          // The opponent's contact before this shot: the take-back waits until
+          // the player has had time to read the ball.
+          const opponentContact = lastShotFrame(
+            events, eventPlayer === 1 ? 2 : 1, capturedEvent.frame - 1,
+          );
+          const opponentContactGap = opponentContact === undefined
+            ? undefined
+            : capturedEvent.frame - opponentContact;
           const handOver = previousOwnShot === undefined ? 1 : Math.max(
             THREE.MathUtils.smoothstep(frame - previousOwnShot, CAPTURE_RECOVERY_FRAMES, CAPTURE_RECOVERY_FRAMES + 24),
             THREE.MathUtils.smoothstep(captureDelta, -24, -8),
           );
           const weight = handOver * (capturedEvent.stroke === 'serve'
             ? serveCaptureWeight(captureDelta) * (captureDelta >= 0 ? 1 : Number(rig.root.userData.serveSetUp ?? 1))
-            : groundstrokeCaptureWeight(captureDelta));
+            : groundstrokeCaptureWeight(captureDelta, groundstrokeLeadFrames(opponentContactGap)));
           if (weight > 0) {
             rig.root.userData.groundstrokePlayback = {
               stroke: capturedEvent.stroke,

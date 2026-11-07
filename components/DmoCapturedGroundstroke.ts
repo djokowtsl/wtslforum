@@ -129,28 +129,54 @@ const UPPER_BODY_BONES = [
 ];
 
 /** Frames after contact by which the recorded stroke has handed back to the
- * between-shot carry (1 s). */
-export const CAPTURE_RECOVERY_FRAMES = 60;
+ * neutral ready position (0.87 s). */
+export const CAPTURE_RECOVERY_FRAMES = 52;
 
-/** Frames after contact at which the hand-back starts (0.7 s). The recordings
+/** Frames after contact at which the hand-back starts (0.57 s). The recordings
  * finish with the arm wrapped round high (forehand, backhand) or across the body
- * (serve) until ~0.6 s and are back in front by ~0.8 s. Handing back from 16 to
- * 40 frames blended that wrapped finish, bone by bone, into the carry in front:
- * the arm passed through the chest, folded and creased. Now the recording's own
- * recovery brings the racket back round first. */
-export const RECOVERY_FADE_START = 42;
+ * (serve) until ~0.5 s and are back in front by ~0.6 s; handing back while the
+ * arm was still wrapped round folded it through the chest. They then settle into
+ * the recorded player's forehand- or backhand-side ready (the clips are repeated
+ * forehands, repeated backhands), so handing back much later than this kept the
+ * player turned as if about to hit again, rarely neutral. */
+export const RECOVERY_FADE_START = 34;
 
 /** Frames before contact at which a groundstroke's recorded preparation
  * starts to blend in (~0.65 s, so the take-back is not a few-frame whip). */
 export const GROUNDSTROKE_LEAD_FRAMES = 40;
 
-export function groundstrokeCaptureWeight(frameDelta: number) {
+/** Shortest lead-in (frames): the take-back still eases in over ~0.33 s. */
+export const GROUNDSTROKE_MIN_LEAD_FRAMES = 24;
+
+/**
+ * Frames before contact at which a groundstroke's take-back starts, given the
+ * opponent's last contact: not before he has had ~0.4 s to read the ball (a
+ * player is neutral, split-stepping, as the opponent hits), and no earlier than
+ * GROUNDSTROKE_LEAD_FRAMES.
+ */
+export function groundstrokeLeadFrames(framesSinceOpponentContactAtOwnContact?: number) {
+  if (framesSinceOpponentContactAtOwnContact === undefined
+    || !Number.isFinite(framesSinceOpponentContactAtOwnContact)) {
+    return GROUNDSTROKE_LEAD_FRAMES;
+  }
+  return THREE.MathUtils.clamp(
+    framesSinceOpponentContactAtOwnContact - 24,
+    GROUNDSTROKE_MIN_LEAD_FRAMES,
+    GROUNDSTROKE_LEAD_FRAMES,
+  );
+}
+
+export function groundstrokeCaptureWeight(
+  frameDelta: number,
+  leadFrames = GROUNDSTROKE_LEAD_FRAMES,
+) {
   if (!Number.isFinite(frameDelta)) return 0;
   const smooth = THREE.MathUtils.smoothstep;
+  const lead = THREE.MathUtils.clamp(leadFrames, GROUNDSTROKE_MIN_LEAD_FRAMES, GROUNDSTROKE_LEAD_FRAMES);
   // One continuous envelope. (Separate backswing/impact/follow-through lobes
   // crossed ~5 frames before contact, dipping the weight to ~0.5 and pulling
   // the arm halfway back to the procedural pose mid-swing.)
-  return smooth(frameDelta, -GROUNDSTROKE_LEAD_FRAMES, -20)
+  return smooth(frameDelta, -lead, -lead + 20)
     * (1 - smooth(frameDelta, RECOVERY_FADE_START, CAPTURE_RECOVERY_FRAMES));
 }
 
