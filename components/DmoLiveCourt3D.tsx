@@ -1204,17 +1204,7 @@ function ThreeCourt({
           + (contactSample[1] - contactSample[zIndex]) * localXAxis[1]) * SCALE / rig.root.scale.x
         : localX;
       const baseStroke = groundstrokeForBallSide(contactSide, handedness);
-      const isOverheadSmash = strokeCue === 'close-net'
-        && isCapturedSmashShot(
-          strokeEvent,
-          contactSample,
-          samples,
-          events,
-          sceneDataRef.current.snapshot.frameRate ?? TE4_DMO_FRAMES_PER_SECOND,
-        );
-      const stroke: GroundstrokeName = isOverheadSmash
-        ? 'smash'
-        : recordedStrokeForSide(baseStroke, strokeCue === 'close-net');
+      const stroke = recordedStrokeForSide(baseStroke, strokeCue === 'close-net');
       type CapturedEvent = { frame: number; stroke: GroundstrokeName; handedness: 'left' | 'right' };
       let capturedEvent = rig.root.userData.capturedGroundstrokeEvent as CapturedEvent | undefined;
       if (strokeEvent && strokeCue === 'soft-touch') {
@@ -1222,16 +1212,25 @@ function ThreeCourt({
         delete rig.root.userData.groundstrokePlayback;
         capturedEvent = undefined;
       } else if (strokeEvent) {
-        if (
-          capturedEvent?.frame !== strokeEvent.frame
-          || capturedEvent.handedness !== handedness
-          || capturedEvent.stroke !== stroke
-        ) {
+        if (capturedEvent?.frame !== strokeEvent.frame || capturedEvent.handedness !== handedness) {
           capturedEvent = {
             frame: strokeEvent.frame,
             stroke: strokeEvent.shotType === 'serve' ? 'serve' : stroke,
             handedness,
           };
+          // Smash-only override: keep the ordinary PR 329 player update intact.
+          // Select once per contact; never reselect a normal stroke as facing changes.
+          if (capturedEvent.stroke !== 'serve' && strokeCue === 'close-net'
+            && isCapturedSmashShot(
+              strokeEvent,
+              contactSample,
+              samples,
+              events,
+              sceneDataRef.current.snapshot.frameRate ?? TE4_DMO_FRAMES_PER_SECOND,
+            )) {
+            capturedEvent.stroke = 'smash';
+          }
+          // End smash-only override.
         }
         rig.root.userData.capturedGroundstrokeEvent = capturedEvent;
         if (contactSample) {

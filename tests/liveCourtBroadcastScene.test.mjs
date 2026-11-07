@@ -164,7 +164,8 @@ test('captured smash motion is fetched and registered with the player retargeter
   assert.match(modelSource, /load\('smash'\)/);
   assert.match(rigSource, /smash: this\.prepare\('smash', sources\.smash, rest\)/);
   assert.match(courtSource, /strokeCue === 'close-net'\s*&& isCapturedSmashShot\(\s*strokeEvent,\s*contactSample,\s*samples,\s*events,/);
-  assert.match(courtSource, /: recordedStrokeForSide\(baseStroke, strokeCue === 'close-net'\)/);
+  assert.match(courtSource, /const stroke = recordedStrokeForSide\(baseStroke, strokeCue === 'close-net'\)/);
+  assert.match(courtSource, /capturedEvent\.stroke = 'smash'/);
 });
 
 test('umpire match keys normalize player order and keep tours distinct', () => {
