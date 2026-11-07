@@ -1186,7 +1186,7 @@ test('live TE4 score changes format games and scores without repeating the initi
   );
 });
 
-test('live score calls follow DMO point ends and stay within two score transitions', () => {
+test('live score calls follow DMO point ends and stay within one score transition', () => {
   const players = ['Player One', 'Player Two'];
   const scores = [
     { sets: [], games: [0, 0], pointText: ['0', '0'], tiebreak: false, server: 1 },
@@ -1212,12 +1212,13 @@ test('live score calls follow DMO point ends and stay within two score transitio
   for (const score of scores.slice(1)) {
     assert.equal(umpireApi.observeLiveUmpireScore(capped, score, players, true), null);
   }
-  assert.equal(capped.pendingScoreCalls.length, 3);
-  assert.equal(umpireApi.MAX_LIVE_UMPIRE_SCORE_LAG_POINTS, 2);
-  assert.equal(umpireApi.matchLiveUmpireScoreToDmoPointEnd(capped, true), 'thirty-love',
-    'stale calls are trimmed so the oldest queued call is at most two transitions behind');
-  assert.equal(umpireApi.matchLiveUmpireScoreToDmoPointEnd(capped, true), 'forty-love');
+  assert.equal(capped.pendingScoreCalls.length, 2);
+  assert.equal(umpireApi.MAX_LIVE_UMPIRE_SCORE_LAG_POINTS, 1);
+  assert.equal(umpireApi.matchLiveUmpireScoreToDmoPointEnd(capped, true), 'forty-love',
+    'stale calls are trimmed so the oldest queued call is at most one transition behind');
   assert.equal(umpireApi.matchLiveUmpireScoreToDmoPointEnd(capped, true), 'Game, Player One');
+  assert.equal(umpireApi.matchLiveUmpireScoreToDmoPointEnd(capped, true), null,
+    'a point end without a recent score waits for its corresponding TE4 update');
 
   const disabled = umpireApi.createLiveUmpireScoreTether();
   umpireApi.observeLiveUmpireScore(disabled, scores[0], players, true);
