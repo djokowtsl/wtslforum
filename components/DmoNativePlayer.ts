@@ -546,7 +546,7 @@ export function attachNativePlayer(
     if (capturedBody && playback?.stroke === 'serve') {
       const frames = playback.deltaSeconds * 60;
       const tuck = captureWeight
-        * THREE.MathUtils.smoothstep(frames, -10, -1) * (1 - THREE.MathUtils.smoothstep(frames, 16, 34));
+        * THREE.MathUtils.smoothstep(frames, -10, -1) * (1 - THREE.MathUtils.smoothstep(frames, 36, 54));
       if (tuck > 0) {
         const chest = pose.point('spine_03');
         const chestTurn = pose.rotation('spine_03').multiply(pose.rest.get('spine_03')!.rotation.clone().invert());
