@@ -149,8 +149,11 @@ export function deriveUmpireCallEvents(
     }
   }
 
-  for (const bounce of soundEvents) {
-    if (bounce.kind !== 'bounce') continue;
+  const checkedPointEnds = new Set<number>();
+  const bounces = soundEvents
+    .filter((event) => event.kind === 'bounce')
+    .sort((first, second) => first.frame - second.frame);
+  for (const bounce of bounces) {
     const eventIndex = lowerBoundFrame(trajectoryEvents, bounce.frame);
     let previousShot: LiveCourtMotionEvent | undefined;
     for (let index = eventIndex - 1; index >= 0; index -= 1) {
@@ -180,6 +183,11 @@ export function deriveUmpireCallEvents(
       || pointEnd.frame < bounce.frame
       || pointEnd.frame - bounce.frame > 120
     ) continue;
+
+    // Multiple reconstructed bounces can follow the point-ending contact.
+    // Only the first bounce associated with a point may determine an out call.
+    if (checkedPointEnds.has(pointEnd.frame)) continue;
+    checkedPointEnds.add(pointEnd.frame);
 
     const sample = nearestSample(samples, bounce.frame, 4);
     if (!sample || sample.values[2] > 30) continue;

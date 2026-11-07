@@ -916,6 +916,37 @@ test('replay score calls follow point-end frames and only clear rally-outs are c
   );
 });
 
+test('only the first bounce associated with a point can trigger an out call', () => {
+  const trajectory = [
+    { frame: 10, kind: 'shot', shotType: 'rally' },
+    { frame: 30, kind: 'point-end', scoreCall: 'fifteen-love' },
+    { frame: 40, kind: 'shot', shotType: 'rally' },
+    { frame: 70, kind: 'point-end', scoreCall: 'thirty-love' },
+  ];
+  const sounds = [
+    { frame: 12, kind: 'bounce' },
+    { frame: 18, kind: 'bounce' },
+    { frame: 42, kind: 'bounce' },
+    { frame: 48, kind: 'bounce' },
+  ];
+  const samples = [
+    { frame: 12, values: [1_215, 0, 2, 0, 0, 0, 0] },
+    { frame: 18, values: [1_220, 0, 2, 0, 0, 0, 0] },
+    { frame: 42, values: [0, 0, 2, 0, 0, 0, 0] },
+    { frame: 48, values: [1_220, 0, 2, 0, 0, 0, 0] },
+  ];
+
+  assert.deepEqual(
+    umpireApi.deriveUmpireCallEvents(trajectory, sounds, samples),
+    [
+      { frame: 12, kind: 'out', text: 'Out' },
+      { frame: 30, kind: 'score', text: 'fifteen-love' },
+      { frame: 70, kind: 'score', text: 'thirty-love' },
+    ],
+    'later dead-ball bounces cannot repeat or overturn the first-bounce decision',
+  );
+});
+
 test('umpire calls have independent controls in both court renderers', async () => {
   const primary = await readFile(new URL('../components/DmoLiveCourt3D.tsx', import.meta.url), 'utf8');
   const fallback = await readFile(new URL('../components/DmoLiveCourt.tsx', import.meta.url), 'utf8');
