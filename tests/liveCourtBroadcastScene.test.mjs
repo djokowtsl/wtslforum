@@ -1638,6 +1638,12 @@ test('umpire calls have independent controls in both court renderers', async () 
     const activationEnd = source.indexOf('\n  };', activationStart);
     const activationHandler = source.slice(activationStart, activationEnd);
     assert.match(activationHandler, /data-umpire-calls-toggle/);
+    assert.match(activationHandler, /umpireSpeechPointerActivationRef\.current = true/);
+    assert.match(activationHandler, /activateUmpireSpeechFromGesture\(\)/);
+    assert.match(
+      source,
+      /if \(umpireSpeechPointerActivationRef\.current\) \{\s*umpireSpeechPointerActivationRef\.current = false;\s*return;/,
+    );
     assert.ok(
       activationHandler.indexOf('activateUmpireSpeechFromGesture()')
         < activationHandler.indexOf('soundEnabledRef.current')
