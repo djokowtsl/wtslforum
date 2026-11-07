@@ -501,6 +501,7 @@ export default function DmoLiveViewer({ canWatch, voiceServer = '' }: Props) {
                       isWta={broadcast.isWta}
                       tournamentRound={broadcast.tournamentRound}
                       handedness={broadcast.snapshot.handedness ?? ['right', 'right']}
+                      strokeStyles={broadcast.snapshot.strokeStyles}
                       fallback={(
                         <DmoLiveDisplay
                           snapshot={broadcast.snapshot}
