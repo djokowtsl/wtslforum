@@ -19,6 +19,32 @@ type ScoreboardTexture = {
   update: (data: StadiumScoreboardData) => void;
 };
 
+export const UPPER_BOWL_AISLE_COUNT = 16;
+
+/** Shared aisle mask for upper-bowl seats and animated spectator anchors. */
+export function isUpperBowlSectionAisle(x: number, z: number) {
+  const angle = Math.atan2(z, x);
+  const sectionAngle = (Math.PI * 2) / UPPER_BOWL_AISLE_COUNT;
+  const nearestCenter = Math.round(angle / sectionAngle - 0.5) + 0.5;
+  let difference = angle - nearestCenter * sectionAngle;
+  difference = Math.atan2(Math.sin(difference), Math.cos(difference));
+  return Math.abs(difference) * Math.hypot(x, z) < 0.82;
+}
+
+export function isUpperBowlAccessGap(x: number, z: number) {
+  return isUpperBowlSectionAisle(x, z) || Math.abs(x) < 2.5 || Math.abs(z) < 2.5;
+}
+
+function pointOnEllipseAtBearing(angle: number, semiAxisX: number, semiAxisZ: number) {
+  const directionX = Math.cos(angle);
+  const directionZ = Math.sin(angle);
+  const radius = 1 / Math.sqrt(
+    (directionX * directionX) / (semiAxisX * semiAxisX)
+    + (directionZ * directionZ) / (semiAxisZ * semiAxisZ),
+  );
+  return { x: directionX * radius, z: directionZ * radius };
+}
+
 function makeScreenTexture(): ScoreboardTexture {
   if (typeof document === 'undefined') return { update: () => undefined };
   const canvas = document.createElement('canvas');
@@ -178,7 +204,7 @@ export function buildStadiumArchitecture(
   const bowlPositions: number[] = [];
   const bowlColors: number[] = [];
   const bowlIndices: number[] = [];
-  const perimeterSegments = 112;
+  const perimeterSegments = 224;
   const seatRows = venue.upperRows;
   const innerX = 27.8;
   const innerZ = 18.8;
@@ -215,6 +241,11 @@ export function buildStadiumArchitecture(
     }
     for (let segment = 0; segment < perimeterSegments; segment += 1) {
       const next = (segment + 1) % perimeterSegments;
+      const angle = ((segment + 0.5) / perimeterSegments) * Math.PI * 2;
+      const midRadius = innerRadius + rowWidth / 2;
+      const midX = Math.cos(angle) * (innerX + midRadius);
+      const midZ = Math.sin(angle) * (innerZ + midRadius);
+      if (isUpperBowlAccessGap(midX, midZ)) continue;
       const inner = firstVertex + segment;
       const innerNext = firstVertex + next;
       const outer = firstVertex + perimeterSegments + segment;
@@ -233,6 +264,8 @@ export function buildStadiumArchitecture(
     inwardFacing: true,
     rows: seatRows,
     tiers: 3,
+    sectionAisleCount: UPPER_BOWL_AISLE_COUNT,
+    passageGaps: 4,
   };
   const bowl = new THREE.Mesh(bowlGeometry, new THREE.MeshStandardMaterial({
     vertexColors: true,
@@ -255,6 +288,16 @@ export function buildStadiumArchitecture(
     roughness: 0.72,
     metalness: 0.12,
     side: THREE.DoubleSide,
+  });
+  const suiteFrontMaterial = new THREE.MeshStandardMaterial({
+    color: 0x17333b,
+    roughness: 0.48,
+    metalness: 0.16,
+  });
+  const suiteGlassMaterial = new THREE.MeshStandardMaterial({
+    color: 0x526c6b,
+    roughness: 0.28,
+    metalness: 0.22,
   });
   const makeConcourseRing = (
     name: string,
@@ -325,6 +368,55 @@ export function buildStadiumArchitecture(
       y + 0.025,
       concourseTrimMaterial,
     );
+
+    // Suite windows are set into the concourse fascia rather than forming
+    // another opaque wall around the arena.
+    const suiteAngles = Array.from({ length: 48 }, (_, index) => (index / 48) * Math.PI * 2)
+      .filter((angle) => {
+        const radius = (innerRadius + outerRadius) / 2;
+        const x = Math.cos(angle) * (innerX + radius);
+        const z = Math.sin(angle) * (innerZ + radius);
+        return !isUpperBowlAccessGap(x, z);
+      });
+    const suiteCount = suiteAngles.length;
+    const suiteY = y - 0.88;
+    const suiteFronts = new THREE.InstancedMesh(
+      new THREE.BoxGeometry(2.7, 1.18, 0.16),
+      suiteFrontMaterial,
+      suiteCount,
+    );
+    suiteFronts.name = 'wtsl-stadium-suite-front';
+    suiteFronts.userData = { tierAfter: boundary, suiteCount, concourseBand: true };
+    const windows = new THREE.InstancedMesh(
+      new THREE.BoxGeometry(1.72, 0.48, 0.035),
+      suiteGlassMaterial,
+      suiteCount,
+    );
+    windows.name = 'wtsl-stadium-suite-window';
+    windows.userData = { tierAfter: boundary, suiteCount, integratedWith: 'concourse' };
+    const suiteTransform = new THREE.Object3D();
+    for (let index = 0; index < suiteAngles.length; index += 1) {
+      const angle = suiteAngles[index];
+      const radius = (innerRadius + outerRadius) / 2;
+      const x = Math.cos(angle) * (innerX + radius);
+      const z = Math.sin(angle) * (innerZ + radius);
+      suiteTransform.position.set(x, suiteY, z);
+      suiteTransform.rotation.set(0, -angle - Math.PI / 2, 0);
+      suiteTransform.updateMatrix();
+      suiteFronts.setMatrixAt(index, suiteTransform.matrix);
+      suiteTransform.position.set(
+        x - Math.cos(angle) * 0.095,
+        suiteY + 0.05,
+        z - Math.sin(angle) * 0.095,
+      );
+      suiteTransform.updateMatrix();
+      windows.setMatrixAt(index, suiteTransform.matrix);
+    }
+    suiteFronts.instanceMatrix.needsUpdate = true;
+    windows.instanceMatrix.needsUpdate = true;
+    suiteFronts.castShadow = false;
+    windows.castShadow = false;
+    decks.add(suiteFronts, windows);
   }
 
   const upperSeatRows = Array.from({ length: seatRows }, (_, row) => {
@@ -337,9 +429,22 @@ export function buildStadiumArchitecture(
       radius,
       ellipseX,
       ellipseZ,
-      count: Math.round((Math.PI * 2 * averageRadius) / 0.86),
+      nominalCount: Math.round((Math.PI * 2 * averageRadius) / 0.86),
+      count: 0,
     };
   });
+  const seatLocations = upperSeatRows.map((row) => {
+    const locations = [];
+    for (let index = 0; index < row.nominalCount; index += 1) {
+      const angle = (index / row.nominalCount) * Math.PI * 2;
+      const x = Math.cos(angle) * row.ellipseX;
+      const z = Math.sin(angle) * row.ellipseZ;
+      if (isUpperBowlAccessGap(x, z)) continue;
+      locations.push({ angle, x, z });
+    }
+    return locations;
+  });
+  for (const row of upperSeatRows) row.count = seatLocations[row.row].length;
   const totalSeats = upperSeatRows.reduce((total, row) => total + row.count, 0);
   const occupiedSeats = upperSeatRows.reduce((total, row) => {
     let count = 0;
@@ -362,14 +467,15 @@ export function buildStadiumArchitecture(
   seatBackMesh.name = 'wtsl-continuous-bowl-seat-backs';
   seatMesh.userData = { rows: upperSeatRows.length, inwardFacing: true, occupied: occupiedSeats };
   seatBackMesh.userData = { rows: upperSeatRows.length, inwardFacing: true, occupied: occupiedSeats };
+  seatMesh.userData.sectionAisleCount = UPPER_BOWL_AISLE_COUNT;
+  seatMesh.userData.passageGaps = 4;
+  seatBackMesh.userData.sectionAisleCount = UPPER_BOWL_AISLE_COUNT;
+  seatBackMesh.userData.passageGaps = 4;
   const seatTransform = new THREE.Object3D();
   let seatIndex = 0;
   for (const row of upperSeatRows) {
     const y = baseY + row.row * rowRise + rowRise / 2;
-    for (let index = 0; index < row.count; index += 1) {
-      const angle = (index / row.count) * Math.PI * 2;
-      const x = Math.cos(angle) * row.ellipseX;
-      const z = Math.sin(angle) * row.ellipseZ;
+    for (const { angle, x, z } of seatLocations[row.row]) {
       const facing = Math.atan2(-Math.cos(angle), -Math.sin(angle));
 
       seatTransform.position.set(x, y + 0.38, z);
@@ -394,6 +500,77 @@ export function buildStadiumArchitecture(
     mesh.receiveShadow = true;
     decks.add(mesh);
   }
+  const stairTreads = new THREE.InstancedMesh(
+    new THREE.BoxGeometry(1.64, 0.11, rowWidth),
+    walkwayMaterial,
+    seatRows * UPPER_BOWL_AISLE_COUNT,
+  );
+  stairTreads.name = 'wtsl-stadium-section-stair-treads';
+  stairTreads.userData = {
+    sectionAisleCount: UPPER_BOWL_AISLE_COUNT,
+    rowsPerAisle: seatRows,
+    continuousThroughTiers: true,
+    alignedWithSeatGaps: true,
+  };
+  const stairTransform = new THREE.Object3D();
+  let stairIndex = 0;
+  for (let row = 0; row < seatRows; row += 1) {
+    const radius = rowRadiusStart(row) + rowWidth / 2;
+    for (let aisle = 0; aisle < UPPER_BOWL_AISLE_COUNT; aisle += 1) {
+      const angle = ((aisle + 0.5) / UPPER_BOWL_AISLE_COUNT) * Math.PI * 2;
+      const point = pointOnEllipseAtBearing(angle, innerX + radius, innerZ + radius);
+      stairTransform.position.set(
+        point.x,
+        baseY + row * rowRise + rowRise * 0.47,
+        point.z,
+      );
+      stairTransform.rotation.set(0, -angle - Math.PI / 2, 0);
+      stairTransform.updateMatrix();
+      stairTreads.setMatrixAt(stairIndex++, stairTransform.matrix);
+    }
+  }
+  stairTreads.instanceMatrix.needsUpdate = true;
+  stairTreads.castShadow = false;
+  stairTreads.receiveShadow = true;
+  decks.add(stairTreads);
+  const concourseStepsPerTier = 4;
+  const concourseStairs = new THREE.InstancedMesh(
+    new THREE.BoxGeometry(1.64, 0.11, concourseWidth / concourseStepsPerTier),
+    walkwayMaterial,
+    2 * UPPER_BOWL_AISLE_COUNT * concourseStepsPerTier,
+  );
+  concourseStairs.name = 'wtsl-stadium-concourse-stair-treads';
+  concourseStairs.userData = {
+    sectionAisleCount: UPPER_BOWL_AISLE_COUNT,
+    stepsPerTransition: concourseStepsPerTier,
+    transitionCount: 2,
+    alignedWithSectionStairs: true,
+  };
+  const concourseStairTransform = new THREE.Object3D();
+  let concourseStairIndex = 0;
+  for (const boundary of [tierRows, tierRows * 2]) {
+    const innerRadius = boundary * rowWidth + (boundary / tierRows - 1) * concourseWidth;
+    const floorY = baseY + boundary * rowRise;
+    for (let aisle = 0; aisle < UPPER_BOWL_AISLE_COUNT; aisle += 1) {
+      const angle = ((aisle + 0.5) / UPPER_BOWL_AISLE_COUNT) * Math.PI * 2;
+      for (let step = 0; step < concourseStepsPerTier; step += 1) {
+        const radius = innerRadius + ((step + 0.5) / concourseStepsPerTier) * concourseWidth;
+        const point = pointOnEllipseAtBearing(angle, innerX + radius, innerZ + radius);
+        concourseStairTransform.position.set(
+          point.x,
+          floorY + (step + 0.5) * (rowRise / concourseStepsPerTier),
+          point.z,
+        );
+        concourseStairTransform.rotation.set(0, -angle - Math.PI / 2, 0);
+        concourseStairTransform.updateMatrix();
+        concourseStairs.setMatrixAt(concourseStairIndex++, concourseStairTransform.matrix);
+      }
+    }
+  }
+  concourseStairs.instanceMatrix.needsUpdate = true;
+  concourseStairs.castShadow = false;
+  concourseStairs.receiveShadow = true;
+  decks.add(concourseStairs);
 
   const boards = new THREE.Group();
   boards.name = 'wtsl-stadium-advertising-boards';
