@@ -251,7 +251,7 @@ const sampleSurfacePitch: Record<Te4CourtSurface, number> = {
 const sampleGain: Record<CourtEffectKind, number> = {
   racket: 0.82,
   bounce: 0.78,
-  footstep: 0.32,
+  footstep: 0.16,
 };
 
 /** Play short court cues. Slide events intentionally have no audio cue. */
@@ -284,7 +284,7 @@ export function playLiveCourtEffect(
     : 0.97 + Math.random() * 0.06;
   const targetGain = sample
     ? level * sampleGain[kind] * (0.96 + Math.random() * 0.08)
-    : level * (kind === 'footstep' ? 0.57 : 1) * (0.94 + Math.random() * 0.1);
+    : level * (kind === 'footstep' ? 0.28 : 1) * (0.94 + Math.random() * 0.1);
   output.gain.value = targetGain;
   source.connect(output).connect(effectsBus(context));
   source.start(startAt);

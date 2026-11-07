@@ -197,18 +197,20 @@ export default function Te4DmoReplayPlayer({
         </div>
       </header>
       {view === 'court' ? (
-        <DmoLiveCourt3D
-          snapshot={snapshot}
-          surface={viewer.surface}
-          playbackSpeed={initialSpeed}
-          isWta={isWta ?? false}
-          fullReplay
-          scoreboard={replayScoreboard}
-          replayOverlay={replayScore
-            ? <DmoReplayScoreBug players={viewer.names} score={replayScore} />
-            : null}
-          onReplayFrameChange={handleReplayFrameChange}
-        />
+        <>
+          <DmoLiveCourt3D
+            snapshot={snapshot}
+            surface={viewer.surface}
+            playbackSpeed={initialSpeed}
+            isWta={isWta ?? false}
+            fullReplay
+            scoreboard={replayScoreboard}
+            onReplayFrameChange={handleReplayFrameChange}
+          />
+          {replayScore && (
+            <DmoReplayScoreBug players={viewer.names} score={replayScore} />
+          )}
+        </>
       ) : classicError ? (
         <p className={styles.classicError} role="alert">{classicError}</p>
       ) : srcDoc ? (

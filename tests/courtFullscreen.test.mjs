@@ -14,6 +14,7 @@ const [
   replayLibrary,
   styles,
   fallbackStyles,
+  replayScoreBugStyles,
 ] =
   await Promise.all([
     source('../components/CourtFullscreenButton.tsx'),
@@ -25,6 +26,7 @@ const [
     source('../components/DmoReplayLibrary.tsx'),
     source('../components/DmoLiveCourt3D.module.css'),
     source('../components/DmoLiveCourt.module.css'),
+    source('../components/DmoReplayScoreBug.module.css'),
   ]);
 
 test('live and replay court renderers share an accessible fullscreen control', () => {
@@ -49,15 +51,29 @@ test('mobile fullscreen falls back to a scroll-locked in-page full-screen view',
   assert.match(fallbackCourt, /fallbackClassName=\{styles\.fullscreenFallback\}/);
 });
 
-test('court picture-in-picture prefers the browser API and has a canvas or scene fallback', () => {
+test('court picture-in-picture opens a native system window or reports unsupported browsers', () => {
   assert.match(pictureInPictureButton, /captureStream/);
   assert.match(pictureInPictureButton, /requestPictureInPicture/);
-  assert.match(pictureInPictureButton, /'inline'/);
-  assert.match(pictureInPictureButton, /'mini'/);
+  assert.match(pictureInPictureButton, /webkitSupportsPresentationMode/);
+  assert.match(pictureInPictureButton, /webkitSetPresentationMode/);
+  assert.match(pictureInPictureButton, /waitForVideoFrame/);
+  assert.match(pictureInPictureButton, /This browser cannot open a system Picture in Picture window/);
+  assert.doesNotMatch(pictureInPictureButton, /setPipMode\('(inline|mini)'\)/);
   assert.match(liveCourt, /CourtPictureInPictureButton/);
   assert.match(fallbackCourt, /CourtPictureInPictureButton/);
-  assert.match(styles, /\.pictureInPictureOverlayActive/);
-  assert.match(fallbackStyles, /\.pictureInPictureOverlayActive/);
+  assert.match(liveStream, /picture-in-picture/);
+  assert.doesNotMatch(styles, /pictureInPictureOverlayActive|pictureInPictureFallback/);
+  assert.doesNotMatch(fallbackStyles, /pictureInPictureOverlayActive|pictureInPictureFallback/);
+});
+
+test('full replay scoreboard renders below the 3D court instead of covering it', () => {
+  const courtStart = replayPlayer.indexOf('<DmoLiveCourt3D');
+  const courtEnd = replayPlayer.indexOf('/>', courtStart);
+  const scoreBug = replayPlayer.indexOf('<DmoReplayScoreBug');
+  assert.ok(courtStart >= 0 && courtEnd > courtStart && scoreBug > courtEnd);
+  assert.doesNotMatch(replayPlayer, /replayOverlay=/);
+  assert.doesNotMatch(replayScoreBugStyles, /position:\s*absolute/);
+  assert.match(replayScoreBugStyles, /margin:\s*12px auto/);
 });
 
 test('fullscreen expands the court while keeping playback controls available', () => {
