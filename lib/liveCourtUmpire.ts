@@ -18,6 +18,44 @@ export type UmpireCallEvent = {
   text: string;
 };
 
+export type LiveUmpireEventCursor = { pointEndFrame: number | null };
+
+export function createLiveUmpireEventCursor(): LiveUmpireEventCursor {
+  return { pointEndFrame: null };
+}
+
+export function resetLiveUmpireEventCursor(cursor: LiveUmpireEventCursor) {
+  cursor.pointEndFrame = null;
+}
+
+/**
+ * A live parser can report a point end after playback has passed its frame.
+ * Track consumed point ends independently of the playhead, without replaying
+ * history on join/unmute. Line calls still require an immediate frame crossing.
+ */
+export function consumeLiveUmpireCallEvents(
+  cursor: LiveUmpireEventCursor,
+  events: UmpireCallEvent[],
+  previousFrame: number | null,
+  currentFrame: number,
+  enabled: boolean,
+): UmpireCallEvent[] {
+  if (!enabled || previousFrame === null || currentFrame < previousFrame) {
+    cursor.pointEndFrame = currentFrame;
+    return [];
+  }
+  const floor = cursor.pointEndFrame ?? previousFrame;
+  const points = events.filter(event =>
+    event.kind !== 'out' && event.frame > floor && event.frame <= currentFrame,
+  ).sort((a, b) => a.frame - b.frame);
+  cursor.pointEndFrame = points.at(-1)?.frame ?? floor;
+  const outs = currentFrame - previousFrame < 120
+    ? umpireCallsBetween(events, previousFrame, currentFrame).filter(event => event.kind === 'out')
+    : [];
+  return [...points.slice(-MAX_PENDING_LIVE_UMPIRE_SCORE_CALLS), ...outs]
+    .sort((a, b) => a.frame - b.frame);
+}
+
 export type UmpireScore = {
   sets: [number, number][];
   games: [number, number];
@@ -397,6 +435,18 @@ export async function resumeUmpireAudioContext(
   }
   const resumedState = context.state as AudioContextState;
   return resumedState === 'running';
+}
+
+export function watchUmpireAudioContext(
+  context: BaseAudioContext,
+  onPaused: () => void,
+): () => void {
+  const stateChanged = () => {
+    if (context.state !== 'running') onPaused();
+  };
+  context.addEventListener('statechange', stateChanged);
+  stateChanged();
+  return () => context.removeEventListener('statechange', stateChanged);
 }
 
 export async function speakUmpireCall(

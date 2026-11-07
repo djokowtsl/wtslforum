@@ -106,7 +106,7 @@ import CourtPictureInPictureButton from './CourtPictureInPictureButton';
 import { attachHumanPlayer, disposeHumanModel, loadHumanModel } from './DmoHumanModels';
 import { attachHumanCourtStaff, attachHumanCrowd } from './DmoHumanCrowd';
 import { BROADCAST_PLAYER_KITS } from './DmoNativeKit';
-import { racketContactOrientation, racketGripElbow, racketGripWrist } from './DmoRacketOrientation';
+import { racketCarryOrientation, racketContactOrientation, racketGripElbow, racketGripWrist } from './DmoRacketOrientation';
 import type { StadiumScoreboardData } from './DmoStadiumArchitecture';
 import densityStyles from './DmoCrowdDensityControl.module.css';
 import {
@@ -118,11 +118,15 @@ import {
   cancelUmpireCall,
   createLiveUmpireScoreTether,
   deriveUmpireCallEvents,
+  createLiveUmpireEventCursor,
+  consumeLiveUmpireCallEvents,
+  resetLiveUmpireEventCursor,
   liveUmpireMatchKey,
   matchLiveUmpireScoreToDmoPointEnd,
   observeLiveUmpireScore,
   resetLiveUmpireScoreTether,
   resumeUmpireAudioContext,
+  watchUmpireAudioContext,
   speakUmpireCall,
   umpireCallsBetween,
   type UmpireCallEvent,
@@ -278,6 +282,7 @@ function ThreeCourt({
     live: false,
   };
   const liveUmpireScoreTetherRef = useRef(createLiveUmpireScoreTether());
+  const liveUmpireEventCursorRef = useRef(createLiveUmpireEventCursor());
   const liveScoreboardRef = useRef(scoreboardData.live);
   liveScoreboardRef.current = scoreboardData.live;
   const sceneDataRef = useRef({
@@ -347,6 +352,7 @@ function ThreeCourt({
       }
       lastSoundFrameRef.current = Math.max(0, snapshot.frameCount - 3);
       resetLiveUmpireScoreTether(liveUmpireScoreTetherRef.current);
+      resetLiveUmpireEventCursor(liveUmpireEventCursorRef.current);
       cancelUmpireCall(audioContextRef.current, liveUmpireMatchKey(snapshot.players, isWta));
       setHasCourtData(false);
     }
@@ -392,7 +398,11 @@ function ThreeCourt({
       snapshot.frameRate ?? TE4_DMO_FRAMES_PER_SECOND,
     );
     umpireCallEventsRef.current = deriveUmpireCallEvents(
-      trajectoryEventsRef.current,
+      [
+        ...trajectoryEventsRef.current,
+        ...(snapshot.trajectoryEvents ?? []).filter(event =>
+          event.kind === 'point-end' && event.frame < earliestFrame),
+      ].sort((a, b) => a.frame - b.frame),
       soundEventsRef.current,
       sampleBufferRef.current,
     );
@@ -450,6 +460,18 @@ function ThreeCourt({
       });
     }
   }, [scoreboardData, umpireCallsEnabled, umpireSpeechReady]);
+
+  useEffect(() => {
+    const context = audioContextRef.current;
+    if (!umpireSpeechReady || !context) return;
+    return watchUmpireAudioContext(context, () => {
+      umpireSpeechReadyRef.current = false;
+      setUmpireSpeechReady(false);
+      cancelUmpireCall(context, liveUmpireMatchKey(snapshot.players, isWta));
+      resetLiveUmpireEventCursor(liveUmpireEventCursorRef.current);
+      setSoundError('The browser paused umpire audio. Tap Enable calls to resume.');
+    });
+  }, [umpireSpeechReady, isWta, snapshot.players]);
 
   // Cues are consumed by the animation playhead, never snapshot arrival.
 
@@ -1206,11 +1228,9 @@ function ThreeCourt({
       const stroke = recordedStrokeForSide(baseStroke, strokeCue === 'close-net');
       type CapturedEvent = { frame: number; stroke: GroundstrokeName; handedness: 'left' | 'right' };
       let capturedEvent = rig.root.userData.capturedGroundstrokeEvent as CapturedEvent | undefined;
-      if (strokeEvent && strokeCue === 'soft-touch') {
-        delete rig.root.userData.capturedGroundstrokeEvent;
-        delete rig.root.userData.groundstrokePlayback;
-        capturedEvent = undefined;
-      } else if (strokeEvent) {
+      // Inferred soft-touch cues are not a reason to replace a recorded stroke
+      // with the procedural arm pose; retain capture for both playing hands.
+      if (strokeEvent) {
         if (capturedEvent?.frame !== strokeEvent.frame || capturedEvent.handedness !== handedness) {
           capturedEvent = {
             frame: strokeEvent.frame,
@@ -1466,6 +1486,9 @@ function ThreeCourt({
       const restingRacketAngle = -0.12 + Math.sin(phase * 0.55) * speed * 0.14;
       // Present the shaft forward of the forearm, not apparently through it.
       const resting = new THREE.Quaternion().setFromEuler(new THREE.Euler(0.42, 0, -restingRacketAngle));
+      if (handedness === 'left') {
+        resting.set(resting.x, -resting.y, -resting.z, resting.w);
+      }
       const backswingRotation = resting.clone().multiply(
         new THREE.Quaternion().setFromEuler(new THREE.Euler(0, 0, -strokeSide * 0.9)),
       );
@@ -1505,8 +1528,8 @@ function ThreeCourt({
       // (Angled across toward the backhand side it read as about to hit one.)
       const standingShaft = new THREE.Vector3(-Math.sign(dominantX) * 0.04, 0.32, 0.95).normalize();
       const movingShaft = new THREE.Vector3(-Math.sign(dominantX) * 0.1, -0.2 - 0.15 * (1 - runFactor), 0.97).normalize();
-      const carryRotation = racketContactOrientation(standingShaft, new THREE.Vector3(0, 1, 0).cross(standingShaft))
-        .slerp(racketContactOrientation(movingShaft, new THREE.Vector3(0, 1, 0).cross(movingShaft)), onTheMove);
+      const carryRotation = racketCarryOrientation(standingShaft, handedness)
+        .slerp(racketCarryOrientation(movingShaft, handedness), onTheMove);
       // Last frame's racket as the viewer saw it (the detailed player sets it).
       const visibleRacket = rig.racket.quaternion.clone();
       rig.racket.quaternion.copy(resting).slerp(carryRotation, carry);
@@ -1518,10 +1541,7 @@ function ThreeCourt({
       if (ready > 0) {
         // Head forward and up, straight at the server; face upright.
         const readyShaft = new THREE.Vector3(-Math.sign(dominantX) * 0.06, 0.42, 0.9).normalize();
-        const readyRotation = racketContactOrientation(
-          readyShaft,
-          new THREE.Vector3(0, 1, 0).cross(readyShaft),
-        );
+        const readyRotation = racketCarryOrientation(readyShaft, handedness);
         rig.racket.quaternion.slerp(readyRotation, ready);
       }
       // Preserve the original unarticulated hand surface; do not sculpt
@@ -1723,17 +1743,16 @@ function ThreeCourt({
             liveUmpireMatchKey(sceneDataRef.current.snapshot.players, sceneDataRef.current.isWta),
           );
         }
-        if (
-          currentFrame >= previousCallFrame
-          && currentFrame - previousCallFrame < 120
-          && umpireCallsEnabledRef.current
-          && umpireSpeechReadyRef.current
-        ) {
-          for (const call of umpireCallsBetween(
-            umpireCallEventsRef.current,
-            previousCallFrame,
-            currentFrame,
-          )) {
+        const callsEnabled = umpireCallsEnabledRef.current && umpireSpeechReadyRef.current;
+        const dueCalls = fullReplay
+          ? callsEnabled && currentFrame >= previousCallFrame && currentFrame - previousCallFrame < 120
+            ? umpireCallsBetween(umpireCallEventsRef.current, previousCallFrame, currentFrame) : []
+          : consumeLiveUmpireCallEvents(
+            liveUmpireEventCursorRef.current, umpireCallEventsRef.current,
+            previousCallFrame, currentFrame, callsEnabled,
+          );
+        {
+          for (const call of dueCalls) {
             if (!fullReplay && (call.kind === 'score' || call.kind === 'point-end')) {
               const liveScoreCall = matchLiveUmpireScoreToDmoPointEnd(
                 liveUmpireScoreTetherRef.current,
@@ -2167,6 +2186,7 @@ function ThreeCourt({
     }
     umpireSpeechReadyRef.current = true;
     setUmpireSpeechReady(true);
+    resetLiveUmpireEventCursor(liveUmpireEventCursorRef.current);
     setSoundError('');
     lastUmpireCallFrameRef.current = playheadRef.current
       ?? replayFrameRef.current

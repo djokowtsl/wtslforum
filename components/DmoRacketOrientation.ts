@@ -1,5 +1,12 @@
 import * as THREE from 'three';
 
+/** A cross-derived face normal must also reflect for the left-handed carry. */
+export function racketCarryOrientation(shaft: THREE.Vector3, handedness: 'left' | 'right') {
+  const face = new THREE.Vector3(0, 1, 0).cross(shaft);
+  if (handedness === 'left') face.negate();
+  return racketContactOrientation(shaft, face);
+}
+
 /** Wrist-to-knuckles is +Y; the handle crosses the palm from pinky to index. */
 export const HAND_GRIP_CENTER = new THREE.Vector3(0, 0.075, -0.035);
 export const HAND_GRIP_SHAFT = new THREE.Vector3(-0.94, 0.34, 0).normalize();

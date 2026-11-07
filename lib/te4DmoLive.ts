@@ -652,8 +652,13 @@ export class Te4DmoLiveParser {
     };
     for (const frame of parsed.serveFrames) addShotEvent(frame, 'serve');
     for (const frame of parsed.hitFrames) addShotEvent(frame, 'rally');
+    // A completed point can be recognized after its motion left the court
+    // window. Retain two completion markers for live audio, not old motion.
+    const recentPointEnds = new Set(parsed.endFrames.slice(-2));
     for (const frame of parsed.endFrames) {
-      if (frame >= firstFrame && frame <= lastFrame) trajectoryEvents.push({ frame, kind: 'point-end' });
+      if (frame <= lastFrame && (frame >= firstFrame || recentPointEnds.has(frame))) {
+        trajectoryEvents.push({ frame, kind: 'point-end' });
+      }
     }
     trajectoryEvents.sort((a, b) =>
       a.frame - b.frame

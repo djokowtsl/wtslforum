@@ -49,11 +49,15 @@ import {
   cancelUmpireCall,
   createLiveUmpireScoreTether,
   deriveUmpireCallEvents,
+  createLiveUmpireEventCursor,
+  consumeLiveUmpireCallEvents,
+  resetLiveUmpireEventCursor,
   liveUmpireMatchKey,
   matchLiveUmpireScoreToDmoPointEnd,
   observeLiveUmpireScore,
   resetLiveUmpireScoreTether,
   resumeUmpireAudioContext,
+  watchUmpireAudioContext,
   speakUmpireCall,
   umpireCallsBetween,
   type UmpireCallEvent,
@@ -536,6 +540,7 @@ function DmoLiveCourt({
   const playheadRef = useRef<number | null>(null);
   const lastUmpireCallFrameRef = useRef<number | null>(null);
   const liveUmpireScoreTetherRef = useRef(createLiveUmpireScoreTether());
+  const liveUmpireEventCursorRef = useRef(createLiveUmpireEventCursor());
   const liveScoreboardRef = useRef(scoreboardData.live);
   liveScoreboardRef.current = scoreboardData.live;
   const fullReplayRef = useRef(fullReplay);
@@ -639,6 +644,7 @@ function DmoLiveCourt({
       playheadRef.current = null;
       lastUmpireCallFrameRef.current = null;
       resetLiveUmpireScoreTether(liveUmpireScoreTetherRef.current);
+      resetLiveUmpireEventCursor(liveUmpireEventCursorRef.current);
       cancelUmpireCall(audioContextRef.current, liveUmpireMatchKey(snapshot.players, isWta));
     }
     previousSnapshotRef.current = {
@@ -684,7 +690,11 @@ function DmoLiveCourt({
       frameRate,
     );
     umpireCallEventsRef.current = deriveUmpireCallEvents(
-      trajectoryEventsRef.current,
+      [
+        ...trajectoryEventsRef.current,
+        ...(snapshot.trajectoryEvents ?? []).filter(event =>
+          event.kind === 'point-end' && event.frame < earliestFrame),
+      ].sort((a, b) => a.frame - b.frame),
       soundEventsRef.current,
       sampleBufferRef.current,
     );
@@ -727,6 +737,18 @@ function DmoLiveCourt({
   }, [scoreboardData, umpireCallsEnabled, umpireSpeechReady]);
 
   useEffect(() => {
+    const context = audioContextRef.current;
+    if (!umpireSpeechReady || !context) return;
+    return watchUmpireAudioContext(context, () => {
+      umpireSpeechReadyRef.current = false;
+      setUmpireSpeechReady(false);
+      cancelUmpireCall(context, liveUmpireMatchKey(snapshot.players, isWta));
+      resetLiveUmpireEventCursor(liveUmpireEventCursorRef.current);
+      setSoundError('The browser paused umpire audio. Tap Enable calls to resume.');
+    });
+  }, [umpireSpeechReady, isWta, snapshot.players]);
+
+  useEffect(() => {
     const canvas = canvasRef.current;
     const context = canvas?.getContext('2d');
     if (!canvas || !context) return;
@@ -756,20 +778,21 @@ function DmoLiveCourt({
         replayFrameCallbackRef.current?.(cursor);
       }
       const previousCallFrame = lastUmpireCallFrameRef.current;
-      if (motionPreference.matches) {
-        lastUmpireCallFrameRef.current = cursor;
-      } else if (previousCallFrame === null || cursor < previousCallFrame) {
+      if (previousCallFrame === null || cursor < previousCallFrame) {
         if (previousCallFrame !== null && cursor < previousCallFrame) {
           cancelUmpireCall(audioContextRef.current, liveUmpireMatchKey(snapshot.players, isWta));
         }
         lastUmpireCallFrameRef.current = cursor;
       } else {
-        if (umpireCallsEnabledRef.current && umpireSpeechReadyRef.current) {
-          for (const call of umpireCallsBetween(
-            umpireCallEventsRef.current,
-            previousCallFrame,
-            cursor,
-          )) {
+        const callsEnabled = umpireCallsEnabledRef.current && umpireSpeechReadyRef.current;
+        const dueCalls = fullReplayRef.current
+          ? callsEnabled ? umpireCallsBetween(umpireCallEventsRef.current, previousCallFrame, cursor) : []
+          : consumeLiveUmpireCallEvents(
+            liveUmpireEventCursorRef.current, umpireCallEventsRef.current,
+            previousCallFrame, cursor, callsEnabled,
+          );
+        {
+          for (const call of dueCalls) {
             if (!fullReplayRef.current && (call.kind === 'score' || call.kind === 'point-end')) {
               const liveScoreCall = matchLiveUmpireScoreToDmoPointEnd(
                 liveUmpireScoreTetherRef.current,
@@ -939,6 +962,7 @@ function DmoLiveCourt({
     }
     umpireSpeechReadyRef.current = true;
     setUmpireSpeechReady(true);
+    resetLiveUmpireEventCursor(liveUmpireEventCursorRef.current);
     setSoundError('');
     lastUmpireCallFrameRef.current = playheadRef.current
       ?? sampleBufferRef.current[0]?.frame
