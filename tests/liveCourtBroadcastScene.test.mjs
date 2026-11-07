@@ -167,6 +167,25 @@ test('captured smash motion is fetched and registered with the player retargeter
   assert.match(courtSource, /: recordedStrokeForSide\(baseStroke, strokeCue === 'close-net'\)/);
 });
 
+test('live scoreboard sits below the court and both win estimates remain distinct', async () => {
+  const [displaySource, viewerSource, styles] = await Promise.all([
+    readFile(new URL('../components/DmoLiveDisplay.tsx', import.meta.url), 'utf8'),
+    readFile(new URL('../components/DmoLiveViewer.tsx', import.meta.url), 'utf8'),
+    readFile(new URL('../components/DmoLiveDisplay.module.css', import.meta.url), 'utf8'),
+  ]);
+  const stageStart = displaySource.indexOf('<div className={styles.liveCourtStage}>');
+  const scoreboard = displaySource.indexOf('<aside className={styles.scoreBug}');
+  assert.ok(stageStart >= 0 && scoreboard > stageStart);
+  assert.ok(displaySource.slice(stageStart, scoreboard).trimEnd().endsWith('</div>'),
+    'the court stage closes before the scoreboard markup');
+  assert.match(displaySource, /LIVE WIN CHANCE/);
+  assert.match(displaySource, /<strong>PRE-MATCH<\/strong>/);
+  assert.match(displaySource, /preMatchStatus === 'loading'/);
+  assert.match(viewerSource, /setPreMatchStatuses/);
+  assert.match(viewerSource, /'unavailable'/);
+  assert.doesNotMatch(styles, /\.scoreBug\s*\{[^}]*position:\s*absolute/s);
+});
+
 test('umpire match keys normalize player order and keep tours distinct', () => {
   assert.equal(
     umpireApi.liveUmpireMatchKey(['Player Two', 'Player One'], false),
