@@ -28,6 +28,104 @@ function parsedGameScore(point: Te4ViewerPoint | undefined): [number, number] | 
     : null;
 }
 
+function parsePointScoreCounts(
+  scoreLabel: string,
+  tiebreak: boolean,
+): [number, number] | null {
+  const score = scoreLabel.trim();
+  if (tiebreak) {
+    const values = score.match(/^\s*(\d+)\s*[-–]\s*(\d+)\s*$/);
+    return values ? [Number(values[1]), Number(values[2])] : null;
+  }
+  const normalized = score.toUpperCase();
+  if (normalized === 'DEUCE') return [3, 3];
+  const advantage = normalized.match(/^AD\s*([12])$/);
+  if (advantage) return advantage[1] === '1' ? [4, 3] : [3, 4];
+  const pair = normalized.match(/^\s*(AD|ADV|A|\d+)\s*[-–]\s*(AD|ADV|A|\d+)\s*$/);
+  if (!pair) return null;
+  const value = (part: string) => {
+    if (part === 'AD' || part === 'ADV' || part === 'A') return 4;
+    if (part === '0') return 0;
+    if (part === '15') return 1;
+    if (part === '30') return 2;
+    if (part === '40') return 3;
+    return null;
+  };
+  const first = value(pair[1]);
+  const second = value(pair[2]);
+  return first === null || second === null ? null : [first, second];
+}
+
+function scoreCallAfterLastPoint(
+  point: Te4ViewerPoint,
+  names: [string, string],
+): string | null {
+  const winner = point.w - 1;
+  const winnerName = names[winner];
+  const scores = parsePointScoreCounts(point.pt, point.tb === 1);
+  if (!scores) return null;
+  const after: [number, number] = [...scores];
+  after[winner] += 1;
+
+  if (point.tb === 1) {
+    if (Math.max(...after) >= 7 && Math.abs(after[0] - after[1]) >= 2) {
+      return `Game and set, ${winnerName}`;
+    }
+    return formatTennisPointScoreCall(`${after[0]}-${after[1]}`, null, names, true);
+  }
+
+  if (Math.max(...after) >= 4 && Math.abs(after[0] - after[1]) >= 2) {
+    const games = parsedGameScore(point);
+    if (games) {
+      games[winner] += 1;
+      if (Math.max(...games) >= 6 && Math.abs(games[0] - games[1]) >= 2) {
+        return `Game and set, ${winnerName}`;
+      }
+    }
+    return `Game, ${winnerName}`;
+  }
+
+  let scoreLabel: string;
+  if (after[0] >= 3 && after[1] >= 3) {
+    scoreLabel = after[0] === after[1]
+      ? 'deuce'
+      : after[0] > after[1] ? 'ad 1' : 'ad 2';
+  } else {
+    const labels = ['0', '15', '30', '40'];
+    scoreLabel = `${labels[Math.min(after[0], 3)]}-${labels[Math.min(after[1], 3)]}`;
+  }
+  return formatTennisPointScoreCall(scoreLabel, point.s, names);
+}
+
+function replayPointScoreCall(
+  points: Te4ViewerPoint[],
+  pointIndex: number,
+  names: [string, string],
+): string | null {
+  const point = points[pointIndex];
+  const nextPoint = points[pointIndex + 1];
+  if (!point) return null;
+  if (!nextPoint) return scoreCallAfterLastPoint(point, names);
+
+  const winnerName = names[point.w - 1];
+  if (nextPoint.set !== point.set) return `Game and set, ${winnerName}`;
+  const currentGames = parsedGameScore(point);
+  const nextGames = parsedGameScore(nextPoint);
+  if (
+    currentGames
+    && nextGames
+    && (nextGames[0] > currentGames[0] || nextGames[1] > currentGames[1])
+  ) {
+    return `Game, ${winnerName}`;
+  }
+  return formatTennisPointScoreCall(
+    nextPoint.pt,
+    nextPoint.tb === 1 ? null : nextPoint.s,
+    names,
+    nextPoint.tb === 1,
+  );
+}
+
 type ScorePoint = { s?: number; set?: number; tb?: number; g?: string };
 
 /**
@@ -158,20 +256,9 @@ export function te4ViewerToLiveSnapshot(
     if (point.fc > 0) {
       const endFrame = Math.min(frameCount - 1, point.mf + point.fc - 1);
       if (endFrame >= 0) {
-        const previousPoint = viewer.pts[pointIndex - 1];
-        const previousGames = parsedGameScore(previousPoint);
-        const currentGames = parsedGameScore(point);
-        const gameWinner = previousGames && currentGames && (
-          currentGames[0] > previousGames[0] || currentGames[1] > previousGames[1]
-        );
-        const scoreCall = gameWinner
-          ? `Game, ${viewer.names[point.w - 1]}`
-          : formatTennisPointScoreCall(
-            point.pt,
-            viewer.pts[pointIndex + 1]?.s ?? point.s,
-            viewer.names,
-            point.tb === 1,
-          );
+        // DMO point and game labels are the score before that point. At its
+        // end, the next row carries the updated score and game/set transition.
+        const scoreCall = replayPointScoreCall(viewer.pts, pointIndex, viewer.names);
         trajectoryEvents.push({
           frame: endFrame,
           kind: 'point-end',
