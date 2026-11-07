@@ -2,7 +2,6 @@ import * as THREE from 'three';
 import { clone } from 'three/examples/jsm/utils/SkeletonUtils.js';
 import { disposeHumanModel, HumanPose, tintKit } from './DmoHumanModels';
 import {
-  CROWD_SKIN_TONES,
   getChairUmpireLegTargets,
   getCrowdAppearance,
   getSeatedCoachLegTargets,
@@ -11,6 +10,7 @@ import {
   type CrowdRig,
 } from './DmoLiveCourt3DScene';
 import { shouldUseHighDetailCrowdSeat } from '../lib/dmoCrowdLod';
+import { makeCrowdClothingOpaque } from '../lib/dmoCrowdClothing';
 
 function tintedHuman(template: THREE.Group, tint: number) {
   const model = clone(template) as THREE.Group;
@@ -20,6 +20,9 @@ function tintedHuman(template: THREE.Group, tint: number) {
     object.material = Array.isArray(object.material)
       ? object.material.map((item) => item.clone())
       : object.material.clone();
+    for (const material of Array.isArray(object.material) ? object.material : [object.material]) {
+      makeCrowdClothingOpaque(material);
+    }
     tintKit(object, tint);
   });
   return model;
@@ -241,11 +244,16 @@ export function attachHumanCrowd(scene: THREE.Scene, crowd: CrowdRig, templates:
     const variant = clothingTint === undefined ? template : tintedHuman(template, clothingTint);
     let sourceMaterial: THREE.Material | undefined;
     variant.traverse((object) => {
-      if (object instanceof THREE.SkinnedMesh) sourceMaterial = Array.isArray(object.material) ? object.material[0] : object.material;
+      if (object instanceof THREE.SkinnedMesh) {
+        const materials = Array.isArray(object.material) ? object.material : [object.material];
+        materials.forEach(makeCrowdClothingOpaque);
+        sourceMaterial = materials[0];
+      }
     });
     if (!sourceMaterial) throw new Error('Crowd material missing.');
     for (const applauding of [false, true]) for (const look of [-0.5, 0, 0.5]) {
-      const mesh = new THREE.InstancedMesh(seatedGeometry(variant, look, applauding), sourceMaterial.clone(), maxSeatCount);
+      const crowdMaterial = makeCrowdClothingOpaque(sourceMaterial.clone());
+      const mesh = new THREE.InstancedMesh(seatedGeometry(variant, look, applauding), crowdMaterial, maxSeatCount);
       mesh.name = `wtsl-${label}-spectators-${target.length}`;
       mesh.count = 0;
       mesh.frustumCulled = false;
@@ -298,9 +306,9 @@ export function attachHumanCrowd(scene: THREE.Scene, crowd: CrowdRig, templates:
       dummy.scale.set(0.9 + appearance.torsoWidth * 0.035, appearance.stature, 0.94 + appearance.torsoWidth * 0.04);
       dummy.updateMatrix();
       mesh.setMatrixAt(instance, dummy.matrix);
-      // Subtle warm-neutral tint variation gives the textured models a less repeated look.
-      const tone = CROWD_SKIN_TONES[appearance.skinToneIndex];
-      instanceColor.setRGB(tone[0], tone[1], tone[2]);
+      // Instance color multiplies the entire baked human mesh. Keep it neutral
+      // so rear torso and hip fabric cannot inherit the spectator's skin tone.
+      instanceColor.setRGB(1, 1, 1);
       mesh.setColorAt(instance, instanceColor);
     });
     batches.forEach((mesh, index) => {

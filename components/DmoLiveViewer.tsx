@@ -11,6 +11,7 @@ import {
 } from '@/lib/liveBroadcast';
 import type { LiveBroadcastScore } from '@/lib/liveBroadcastScore';
 import DmoLiveDisplay from './DmoLiveDisplay';
+import { resolveLiveDmoUmpireScoreSource } from '@/lib/liveDmoUmpireScoreSource';
 import LiveBroadcastChat from './LiveBroadcastComments';
 import LiveStreamEmbed from './LiveStreamEmbed';
 import Te4DmoReplayPlayer from './Te4DmoReplayPlayer';
@@ -377,6 +378,10 @@ export default function DmoLiveViewer({ canWatch, voiceServer = '' }: Props) {
         >
           {broadcasts.map((broadcast) => {
             const players = broadcast.snapshot?.players ?? broadcast.players;
+            const scoreSource = resolveLiveDmoUmpireScoreSource(
+              broadcast.broadcastMode,
+              broadcast.replay,
+            );
             const mediaMode = liveBroadcastMediaMode(broadcast.stream, Boolean(broadcast.snapshot));
             const voiceRoom = voiceRoomForBroadcast(broadcast.id);
             return (
@@ -517,6 +522,7 @@ export default function DmoLiveViewer({ canWatch, voiceServer = '' }: Props) {
                           preMatchPrediction={preMatchPredictions[broadcast.id]}
                           pointLog={pointLogs[broadcast.id]?.points}
                           pointLogLoaded={pointLogs[broadcast.id]?.loaded}
+                          scoreSource={scoreSource}
                         />
                       )}
                     />
@@ -535,6 +541,7 @@ export default function DmoLiveViewer({ canWatch, voiceServer = '' }: Props) {
                       preMatchPrediction={preMatchPredictions[broadcast.id]}
                       pointLog={pointLogs[broadcast.id]?.points}
                       pointLogLoaded={pointLogs[broadcast.id]?.loaded}
+                      scoreSource={scoreSource}
                     />
                   )}
                     </div>

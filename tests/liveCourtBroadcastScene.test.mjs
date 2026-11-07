@@ -49,6 +49,23 @@ const xktUmpireAudioApi = await loadTs('../lib/xktUmpireAudio.ts');
 const umpireApi = await loadTs('../lib/liveCourtUmpire.ts', {
   './xktUmpireAudio': xktUmpireAudioApi,
 });
+const liveDmoUmpireScoreSourceApi = await loadTs('../lib/liveDmoUmpireScoreSource.ts');
+
+test('an unsupported umpire call cannot cancel a supported score in progress', async () => {
+  const cancelled = [];
+  const api = await loadTs('../lib/liveCourtUmpire.ts', {
+    './xktUmpireAudio': {
+      playXktUmpireCall: async (_context, text) => text !== 'Out',
+      cancelXktUmpireCalls: context => cancelled.push(context),
+    },
+  });
+  const context = { state: 'running' };
+  assert.equal(await api.speakUmpireCall('fifteen-love', context, false), true);
+  assert.equal(await api.speakUmpireCall('Out', context, false), false);
+  assert.equal(cancelled.length, 0);
+  api.cancelUmpireCall(context);
+  assert.ok(cancelled.length > 0, 'explicit mute still cancels the active voice');
+});
 
 test('automatic crowd density follows the broadcaster-selected tournament round', () => {
   assert.equal(crowdDensityApi.resolveCrowdDensity('auto', 'round-of-64'), 0.58);
@@ -1442,6 +1459,70 @@ test('live score calls follow DMO point ends and stay within one score transitio
     'thirty-love',
     'only score updates after a new DMO event are announced when speech is re-enabled',
   );
+});
+
+test('live DMO-folder broadcasts use DMO scores while automatic streams use TE4', async () => {
+  const viewer = await readFile(new URL('../components/DmoLiveViewer.tsx', import.meta.url), 'utf8');
+  const display = await readFile(new URL('../components/DmoLiveDisplay.tsx', import.meta.url), 'utf8');
+
+  assert.equal(
+    liveDmoUmpireScoreSourceApi.resolveLiveDmoUmpireScoreSource('manual', false),
+    'dmo',
+  );
+  assert.equal(
+    liveDmoUmpireScoreSourceApi.resolveLiveDmoUmpireScoreSource('auto', false),
+    'te4',
+  );
+  assert.equal(
+    liveDmoUmpireScoreSourceApi.resolveLiveDmoUmpireScoreSource('manual', true),
+    'replay',
+  );
+  assert.equal(
+    liveDmoUmpireScoreSourceApi.shouldPairLiveDmoScoreWithPointEnd('dmo', 'live'),
+    true,
+  );
+  assert.equal(
+    liveDmoUmpireScoreSourceApi.shouldPairLiveDmoScoreWithPointEnd('te4', 'live'),
+    true,
+  );
+  assert.equal(
+    liveDmoUmpireScoreSourceApi.shouldPairLiveDmoScoreWithPointEnd('replay', 'live'),
+    false,
+  );
+  assert.equal(
+    liveDmoUmpireScoreSourceApi.shouldPairLiveDmoScoreWithPointEnd('dmo', 'ended'),
+    false,
+  );
+  assert.match(display, /scoreSource === 'te4' \? liveScore \?\? null : snapshot\.score/);
+  assert.match(
+    display,
+    /live: shouldPairLiveDmoScoreWithPointEnd\(scoreSource, state\)/,
+  );
+  assert.match(
+    viewer,
+    /resolveLiveDmoUmpireScoreSource\(\s*broadcast\.broadcastMode,\s*broadcast\.replay,/,
+  );
+  assert.equal((viewer.match(/scoreSource={scoreSource}/g) ?? []).length, 2);
+
+  const players = ['Player One', 'Player Two'];
+  const source = liveDmoUmpireScoreSourceApi.resolveLiveDmoUmpireScoreSource('manual', false);
+  const enabled = liveDmoUmpireScoreSourceApi.shouldPairLiveDmoScoreWithPointEnd(source, 'live');
+  const tether = umpireApi.createLiveUmpireScoreTether();
+  const initial = { sets: [], games: [0, 0], pointText: ['0', '0'], tiebreak: false, server: 1 };
+  assert.equal(umpireApi.observeLiveUmpireScore(tether, initial, players, enabled), null);
+  assert.equal(umpireApi.observeLiveUmpireScore(
+    tether, { ...initial, pointText: ['15', '0'] }, players, enabled,
+  ), null);
+  const events = umpireApi.deriveUmpireCallEvents([{ frame: 20, kind: 'point-end' }], [], []);
+  assert.equal(umpireApi.umpireCallsBetween(events, 19, 20).length, 1);
+  const call = umpireApi.matchLiveUmpireScoreToDmoPointEnd(tether, enabled);
+  assert.equal(call, 'fifteen-love', 'the first new DMO point announces without a TE4 feed');
+  const manifest = JSON.parse(await readFile(
+    new URL('../public/audio/xkt/umpire-index.json', import.meta.url), 'utf8',
+  ));
+  assert.ok(xktUmpireAudioApi.resolveXktUmpireCallPaths(
+    call, manifest, { atp: {}, wta: {} }, false,
+  )?.length, 'the local DMO call resolves to a curated recording');
 });
 
 test('replay score calls follow point-end frames and only clear rally-outs are called', () => {
