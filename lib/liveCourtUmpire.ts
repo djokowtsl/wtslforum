@@ -1,5 +1,7 @@
 import type { LiveCourtMotionEvent, LiveCourtSample } from './liveCourtMotion';
 
+let browserUmpireSpeechUnlocked = false;
+
 export type UmpireCallEvent = {
   frame: number;
   kind: 'score' | 'out';
@@ -229,6 +231,32 @@ export function speakBrowserUmpireCall(text: string): boolean {
   } catch {
     return false;
   }
+}
+
+export function unlockBrowserUmpireSpeech(): boolean {
+  if (
+    typeof window === 'undefined'
+    || typeof window.speechSynthesis?.speak !== 'function'
+    || typeof SpeechSynthesisUtterance === 'undefined'
+  ) {
+    return false;
+  }
+  try {
+    // iOS Safari requires speechSynthesis.speak() to run within a user gesture.
+    // A silent, whitespace utterance unlocks later DMO-timed calls without commentary.
+    const utterance = new SpeechSynthesisUtterance('\u00a0');
+    utterance.lang = 'en-GB';
+    utterance.volume = 0;
+    window.speechSynthesis.speak(utterance);
+    browserUmpireSpeechUnlocked = true;
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+export function isBrowserUmpireSpeechUnlocked(): boolean {
+  return browserUmpireSpeechUnlocked;
 }
 
 export function cancelBrowserUmpireCall(): void {
