@@ -20,10 +20,12 @@ async function loadTs(file, overrides = {}) {
 const stadiumArchitectureApi = await loadTs('../components/DmoStadiumArchitecture.ts');
 const venueApi = await loadTs('../lib/dmoVenue.ts');
 const surfaceApi = await loadTs('../lib/te4DmoSurface.ts');
+const crowdDensityApi = await loadTs('../lib/dmoCrowdDensity.ts');
 const sceneApi = await loadTs('../components/DmoLiveCourt3DScene.ts', {
   './DmoStadiumArchitecture': stadiumArchitectureApi,
   '../lib/dmoVenue': venueApi,
   '@/lib/te4DmoSurface': surfaceApi,
+  '@/lib/dmoCrowdDensity': crowdDensityApi,
 });
 const racketPose = await loadTs('../components/DmoRacketOrientation.ts');
 const articulated = await loadTs('../components/DmoArticulatedHands.ts', { './DmoRacketOrientation': racketPose });
