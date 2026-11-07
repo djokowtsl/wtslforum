@@ -437,12 +437,21 @@ export function createCourtAudioContext(): AudioContext {
 
 export async function resumeUmpireAudioContext(
   context: Pick<AudioContext, 'state' | 'resume'>,
+  timeoutMs = 3000,
 ): Promise<boolean> {
   if (context.state === 'running') return true;
+  let timeout: ReturnType<typeof setTimeout> | undefined;
   try {
-    await context.resume();
+    await Promise.race([
+      context.resume(),
+      new Promise<never>((_, reject) => {
+        timeout = setTimeout(() => reject(new Error('Audio activation timed out')), timeoutMs);
+      }),
+    ]);
   } catch {
     return false;
+  } finally {
+    if (timeout !== undefined) clearTimeout(timeout);
   }
   const resumedState = context.state as AudioContextState;
   return resumedState === 'running';
