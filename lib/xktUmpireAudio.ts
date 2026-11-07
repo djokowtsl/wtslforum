@@ -83,21 +83,21 @@ export function resolveXktUmpireCallPaths(
     const name = resolvePlayerNameAudio(gameAndSet[2], names, isWta);
     const game = pick(umpire.gameCalls, random);
     const set = umpire.setCalls[setIndex];
-    return name && game && set ? [game, set, name] : null;
+    return game && set ? (name ? [game, set, name] : [game, set]) : null;
   }
 
   const game = call.match(/^Game,\s*(.+)$/i);
   if (game) {
     const name = resolvePlayerNameAudio(game[1], names, isWta);
     const gameClip = pick(umpire.gameCalls, random);
-    return name && gameClip ? [gameClip, name] : null;
+    return gameClip ? (name ? [gameClip, name] : [gameClip]) : null;
   }
 
   const advantage = call.match(/^Advantage,\s*(.+)$/i);
   if (advantage) {
     const name = resolvePlayerNameAudio(advantage[1], names, isWta);
     const scoreClip = pick(umpire.pointScores.advantage, random);
-    return name && scoreClip ? [scoreClip, name] : null;
+    return scoreClip ? (name ? [scoreClip, name] : [scoreClip]) : null;
   }
 
   if (/^deuce$/i.test(call)) {
@@ -202,7 +202,7 @@ function playCallSequence(
   source.start();
 }
 
-/** Play recorded XKT score/name clips; callers retain browser speech as fallback. */
+/** Play recorded XKT umpire clips; do not substitute a different browser voice. */
 export async function playXktUmpireCall(
   context: BaseAudioContext,
   text: string,
