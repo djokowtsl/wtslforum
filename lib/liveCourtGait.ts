@@ -58,16 +58,21 @@ const closingTable = (() => {
 export function feetClosing(offset: number, directionX: number) {
   const normalized = ((offset % 1) + 1) % 1;
   const index = Math.round(normalized * 100);
-  return directionX >= 0 ? closingTable[0][index] : closingTable[1][index];
+  return Math.max(0.5, directionX >= 0 ? closingTable[0][index] : closingTable[1][index]);
 }
 
 export function newGaitState(): GaitState {
   return { phase: 0, direction: [0, 1], amount: 0 };
 }
 
-/** Half stride (metres) for a running speed in m/s. */
+/**
+ * Half stride (metres) for a running speed in m/s: half the distance a planted
+ * foot sweeps under the body. One step cycle covers 2 * halfStride / STANCE.
+ * At walking pace this gives a natural step cadence; sideways the feet's room
+ * limits it further (see effectiveHalfStride).
+ */
 export function halfStride(speedMs: number) {
-  return Math.min(0.42, Math.max(0.1, 0.1 + 0.11 * speedMs));
+  return Math.min(0.55, Math.max(0.1, 0.1 + 0.22 * speedMs));
 }
 
 /** Planted: sweeps +1 -> -1 at constant rate. Swing: lifts and returns -1 -> +1. */
@@ -86,6 +91,7 @@ export function footCycle(phase: number) {
  */
 export function advanceGait(state: GaitState, travel: [number, number], speedMs: number) {
   const distance = Math.hypot(travel[0], travel[1]);
+  let reversed = false;
   const moving = Math.min(1, Math.max(0, (speedMs - 0.2) / 0.6));
   state.amount += (moving - state.amount) * 0.25;
   if (distance > 1e-5) {
@@ -96,6 +102,7 @@ export function advanceGait(state: GaitState, travel: [number, number], speedMs:
     // stepping direction back and forth.)
     // Mirror the cycle too, so reversing does not throw either foot sideways.
     if (speedMs > 0.4 && dx * state.direction[0] + dz * state.direction[1] < -0.3) {
+      reversed = true;
       state.direction = [dx, dz];
       state.phase = (((STANCE - state.phase) % 1) + 1) % 1;
       state.offset = 1 - (state.offset ?? 0.5);
@@ -112,7 +119,7 @@ export function advanceGait(state: GaitState, travel: [number, number], speedMs:
   const targetOffset = 0.5 - SIDE_SHUFFLE_OFFSET * sideways * Math.sign(state.direction[0]);
   const offset = state.offset ?? 0.5;
   const secondFootPhase = (((state.phase + offset) % 1) + 1) % 1;
-  if (secondFootPhase >= STANCE || state.amount < 0.05) {
+  if (!reversed && (secondFootPhase >= STANCE || state.amount < 0.05)) {
     state.offset = offset + Math.max(-0.015, Math.min(0.015, targetOffset - offset));
   }
   const spread = state.spread ?? 0;
@@ -122,13 +129,24 @@ export function advanceGait(state: GaitState, travel: [number, number], speedMs:
   const stride = amplitude * state.amount;
   const previousStride = state.stride ?? stride;
   if (previousStride > 1e-3 && stride > 1e-3 && Math.abs(stride - previousStride) > 1e-5) {
+    const offset = state.offset ?? 0.5;
     const firstPhase = ((state.phase % 1) + 1) % 1;
-    const secondPhase = (((state.phase + (state.offset ?? 0.5)) % 1) + 1) % 1;
-    const planted = firstPhase < STANCE ? firstPhase : secondPhase < STANCE ? secondPhase : undefined;
-    if (planted !== undefined) {
-      const along = Math.max(-1, Math.min(1, footCycle(planted).along * previousStride / stride));
+    const secondPhase = (((state.phase + offset) % 1) + 1) % 1;
+    const retime = (phase: number) => {
+      const along = Math.max(-1, Math.min(1, footCycle(phase).along * previousStride / stride));
       const retimed = ((1 - along) * STANCE) / 2;
-      state.phase = (((state.phase + retimed - planted) % 1) + 1) % 1;
+      return retimed;
+    };
+    if (firstPhase < STANCE) {
+      state.phase = retime(firstPhase);
+      // Both feet down: keep the second one put too, through its cycle offset.
+      if (secondPhase < STANCE) {
+        const wanted = (((retime(secondPhase) - state.phase) % 1) + 1) % 1;
+        const next = offset + Math.max(-0.02, Math.min(0.02, wanted - offset));
+        state.offset = Math.max(0.25, Math.min(0.75, next));
+      }
+    } else if (secondPhase < STANCE) {
+      state.phase = (((state.phase + retime(secondPhase) - secondPhase) % 1) + 1) % 1;
     }
   }
   state.stride = stride;

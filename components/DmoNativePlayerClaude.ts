@@ -15,6 +15,7 @@ import {
   type GroundstrokeMotionSources,
   type GroundstrokePlayback,
 } from './DmoCapturedGroundstroke';
+import { DmoCapturedLocomotion } from './DmoCapturedLocomotion';
 
 const UP = new THREE.Vector3(0, 1, 0);
 const BODY_SCALE = 1.075;
@@ -30,7 +31,7 @@ const ELBOW_FLEX_RANGE = [0.06, 2.45] as const;
 export function serveTossTuckWeight(frameDelta: number, captureWeight: number) {
   return THREE.MathUtils.clamp(captureWeight, 0, 1)
     * THREE.MathUtils.smoothstep(frameDelta, -10, -1)
-    * (1 - THREE.MathUtils.smoothstep(frameDelta, 16, 34));
+    * (1 - THREE.MathUtils.smoothstep(frameDelta, 44, 62));
 }
 
 function ends(mesh: THREE.Mesh) {
@@ -212,6 +213,15 @@ export function attachNativePlayer(
   const localRacket = { l: racketContactOrientation(grips.l.shaft, grips.l.palm),
     r: racketContactOrientation(grips.r.shaft, grips.r.palm) };
   const capturedGroundstroke = new DmoCapturedGroundstroke(model, rig.root, pose.rest, motionSources);
+  let capturedLocomotion: DmoCapturedLocomotion | null = null;
+  try {
+    capturedLocomotion = new DmoCapturedLocomotion(pose.rest, {
+      ...(motionSources.locomotion ?? {}),
+      ready: motionSources.backhand,
+    });
+  } catch (error) {
+    console.warn('Captured between-shot motion could not be prepared; using the existing carry behavior.', error);
+  }
   const previousRoll: Partial<Record<Side, number>> = {};
   const previousSupportHand: Partial<Record<Side, THREE.Quaternion>> = {};
   const previousCradle: Partial<Record<Side, number>> = {};
@@ -424,6 +434,34 @@ export function attachNativePlayer(
       const relaxedElbow = pose.point(arms[support].root).lerp(relaxedWrist, 0.5)
         .add(new THREE.Vector3(outward * 0.02, 0, -0.14).applyQuaternion(chestTurn));
       reachArm(support, null, relaxedWrist, null, relaxedElbow);
+      const readyArms = THREE.MathUtils.clamp(Number(rig.root.userData.readyArms ?? 0), 0, 1);
+      if (capturedLocomotion && readyArms > 0) {
+        capturedLocomotion.applyReady(pose, {
+          time: Number(rig.root.userData.readyTime ?? 0),
+          weight: readyArms,
+          mirrored: dominant === 'l',
+        });
+        const crouch = THREE.MathUtils.clamp(Number(rig.root.userData.returnCrouch ?? 0), 0, 1) * readyArms;
+        if (crouch > 0) {
+          bendElbow(dominant, 1.1 * crouch);
+          bendElbow(support, 1.1 * crouch);
+          model.updateMatrixWorld(true);
+        }
+        const recordedHand = pose.rotation(`hand_${dominant}`);
+        pose.orient(`hand_${dominant}`, recordedHand.slerp(limitWrist(dominant, desired), readyArms));
+        model.updateMatrixWorld(true);
+      }
+      const locomotionArms = THREE.MathUtils.clamp(Number(rig.root.userData.locomotionArms ?? 0), 0, 1);
+      if (capturedLocomotion?.hasLocomotion && locomotionArms > 0) {
+        capturedLocomotion.apply(pose, {
+          phase: Number(rig.root.userData.locomotionPhase ?? 0),
+          speed: Number(rig.root.userData.locomotionArmsSpeed ?? rig.root.userData.locomotionSpeed ?? 0),
+          weight: locomotionArms,
+        });
+        const recordedHand = pose.rotation(`hand_${dominant}`);
+        pose.orient(`hand_${dominant}`, recordedHand.slerp(limitWrist(dominant, desired), locomotionArms));
+        model.updateMatrixWorld(true);
+      }
     }
 
     // 2. Captured stroke motion blends over the whole body, arms included:

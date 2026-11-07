@@ -13,8 +13,10 @@ test('captured groundstroke blends in before contact and fades after follow-thro
   assert.equal(groundstrokeCaptureWeight(0), 1);
   assert.ok(groundstrokeCaptureWeight(12) > 0.8);
   assert.ok(groundstrokeCaptureWeight(17) > 0);
-  assert.ok(groundstrokeCaptureWeight(28) > 0.3, 'recovery eases out over ~0.4 s');
-  assert.equal(groundstrokeCaptureWeight(40), 0);
+  assert.equal(groundstrokeCaptureWeight(28), 1, 'recorded recovery remains in control through 0.7 s');
+  assert.equal(groundstrokeCaptureWeight(42), 1);
+  assert.ok(groundstrokeCaptureWeight(51) > 0.3 && groundstrokeCaptureWeight(51) < 0.7);
+  assert.equal(groundstrokeCaptureWeight(60), 0);
 });
 
 test('serve capture covers preparation, contact, and recovery inside the event lookup window', () => {
@@ -24,8 +26,9 @@ test('serve capture covers preparation, contact, and recovery inside the event l
   assert.equal(serveCaptureWeight(0), 1);
   assert.ok(serveCaptureWeight(12) > 0.8);
   assert.ok(serveCaptureWeight(17) > 0);
-  assert.ok(serveCaptureWeight(28) > 0.3);
-  assert.equal(serveCaptureWeight(40), 0);
+  assert.equal(serveCaptureWeight(28), 1);
+  assert.ok(serveCaptureWeight(51) > 0.3 && serveCaptureWeight(51) < 0.7);
+  assert.equal(serveCaptureWeight(60), 0);
 });
 
 test('captured motion never dips between preparation and follow-through (no mid-swing wobble)', () => {

@@ -27,17 +27,20 @@ const racketPose = await loadTs('../components/DmoRacketOrientation.ts');
 const articulated = await loadTs('../components/DmoArticulatedHands.ts', { './DmoRacketOrientation': racketPose });
 const nativeGrip = await loadTs('../components/DmoNativeGrip.ts');
 const capturedGroundstroke = await import('../components/DmoCapturedGroundstroke.ts');
+const capturedLocomotion = await import('../components/DmoCapturedLocomotion.ts');
 const nativeKit = await loadTs('../components/DmoNativeKit.ts');
 const nativeTwist = await loadTs('../components/DmoNativeTwist.ts');
 const nativePlayer = await loadTs('../components/DmoNativePlayer.ts', {
   './DmoRacketOrientation': racketPose, './DmoNativeGrip': nativeGrip, './DmoNativeKit': nativeKit,
   './DmoNativeTwist': nativeTwist,
   './DmoCapturedGroundstroke': capturedGroundstroke,
+  './DmoCapturedLocomotion': capturedLocomotion,
 });
 const claudeNativePlayer = await loadTs('../components/DmoNativePlayerClaude.ts', {
   './DmoRacketOrientation': racketPose, './DmoNativeGrip': nativeGrip, './DmoNativeKit': nativeKit,
   './DmoNativeTwist': nativeTwist,
   './DmoCapturedGroundstroke': capturedGroundstroke,
+  './DmoCapturedLocomotion': capturedLocomotion,
 });
 const humans = await loadTs('../components/DmoHumanModels.ts', {
   './DmoRacketOrientation': racketPose, './DmoArticulatedHands': articulated,
@@ -290,6 +293,61 @@ test('the default live player uses the corrected free-arm plane instead of legac
     assert.ok(results[0].distanceTo(results[1]) < 1e-6,
       `${handedness}: the production default must ignore the old flared elbow hint`);
   }
+});
+
+test('the default live player applies recorded ready and locomotion arms', async () => {
+  assert.equal(claudeNativePlayer.serveTossTuckWeight(42, 1), 1);
+  assert.ok(claudeNativePlayer.serveTossTuckWeight(53, 1) > 0.2);
+  assert.equal(claudeNativePlayer.serveTossTuckWeight(62, 1), 0);
+  const template = await nativePlayerTemplate('male');
+  const rig = sceneApi.makePlayer(0x275c77, 0x203d48);
+  rig.root.userData.dominantHandedness = 'right';
+  rig.root.userData.twoHandedGrip = false;
+  rig.root.userData.supportHoldWeight = 0;
+  const attached = humans.attachHumanPlayer(template, rig, 0x275c77);
+  const armNames = ['clavicle_l', 'upperarm_l', 'lowerarm_l', 'hand_l',
+    'clavicle_r', 'upperarm_r', 'lowerarm_r', 'hand_r'];
+  const rotations = () => new Map(armNames.map(name => [
+    name, attached.pose.bones.get(name).quaternion.clone(),
+  ]));
+
+  rig.root.userData.readyArms = 1;
+  rig.root.userData.readyTime = 0.3;
+  attached.update();
+  const readyPose = rotations();
+
+  rig.root.userData.readyArms = 0;
+  rig.root.userData.locomotionArms = 1;
+  rig.root.userData.locomotionArmsSpeed = 1.3;
+  rig.root.userData.locomotionPhase = 0.1;
+  attached.update();
+  const walkPoseA = rotations();
+  rig.root.userData.locomotionPhase = 0.55;
+  attached.update();
+  const walkPoseB = rotations();
+
+  assert.ok(armNames.some(name => readyPose.get(name).angleTo(walkPoseA.get(name)) > 0.02),
+    'the default Claude player must use the recorded ready stance');
+  assert.ok(armNames.some(name => walkPoseA.get(name).angleTo(walkPoseB.get(name)) > 0.02),
+    'the default Claude player must follow the recorded step cycle');
+
+  rig.root.userData.dominantHandedness = 'left';
+  rig.root.userData.locomotionArms = 0;
+  rig.root.userData.readyArms = 1;
+  attached.update();
+  const leftReadyPose = rotations();
+  assert.ok(armNames.some(name => readyPose.get(name).angleTo(leftReadyPose.get(name)) > 0.02),
+    'left-handed players must use the mirrored ready recording');
+  rig.root.userData.readyArms = 0;
+  rig.root.userData.locomotionArms = 1;
+  rig.root.userData.locomotionPhase = 0.1;
+  attached.update();
+  const leftWalkPoseA = rotations();
+  rig.root.userData.locomotionPhase = 0.55;
+  attached.update();
+  const leftWalkPoseB = rotations();
+  assert.ok(armNames.some(name => leftWalkPoseA.get(name).angleTo(leftWalkPoseB.get(name)) > 0.02),
+    'left-handed players must follow the mirrored recorded step cycle');
 });
 
 test('native grip survives repeated full-body resets and shoes use bind-relative axes', async () => {

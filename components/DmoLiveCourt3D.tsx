@@ -13,6 +13,7 @@ import type { Te4CourtSurface } from '@/lib/te4DmoTypes';
 import { clampDmoCameraTarget, dmoCameraMaxDistanceInsideBowl } from '@/lib/dmoCameraConstraints';
 import {
   CAPTURE_RECOVERY_FRAMES,
+  RECOVERY_FADE_START,
   GROUNDSTROKE_LEAD_FRAMES,
   SERVE_LEAD_FRAMES,
   groundstrokeCaptureWeight,
@@ -139,7 +140,7 @@ async function loadGruntSample(context: AudioContext, isWta: boolean) {
 const MIN_CAMERA_HEIGHT = 0.8;
 
 /** Shown under the court so a deployed build can be identified at a glance. */
-const RENDERER_BUILD = 'stadium/audio + player repair r11';
+const RENDERER_BUILD = 'stadium/audio + player repair r12';
 
 function firstEventAfterFrame<T extends { frame: number }>(events: T[], frame: number) {
   let low = 0;
@@ -1425,7 +1426,7 @@ function ThreeCourt({
       );
       // Two-handed players keep both hands on through the recovery.
       const recovery = recordedStroke && frame > recordedStroke.frame
-        ? 1 - THREE.MathUtils.smoothstep(frame - recordedStroke.frame, 16, CAPTURE_RECOVERY_FRAMES)
+        ? 1 - THREE.MathUtils.smoothstep(frame - recordedStroke.frame, RECOVERY_FADE_START, CAPTURE_RECOVERY_FRAMES)
         : 0;
       rig.root.userData.twoHandedStyle = recordedTwoHanded;
       const twoHandedWeight = recordedTwoHanded
@@ -1433,6 +1434,16 @@ function ThreeCourt({
         : 0;
       rig.root.userData.supportHoldWeight = Math.max(twoHandedWeight, ready, carry * (1 - onTheMove));
       rig.root.userData.relaxedCarry = carry * onTheMove;
+      // Walking, jogging and running with the racket at the side: recorded
+      // arms follow the step phase (0 = the right foot landing in front).
+      rig.root.userData.locomotionArms = carry * onTheMove * THREE.MathUtils.clamp(gait.amount, 0, 1);
+      rig.root.userData.locomotionPhase = gait.phase;
+      rig.root.userData.locomotionArmsSpeed = smoothSpeed;
+      // Standing, waiting and return stance use the tennis player's recorded
+      // ready position; the ready clip is sampled slowly forwards and back.
+      rig.root.userData.readyArms = Math.max(carry * (1 - onTheMove), ready);
+      rig.root.userData.readyTime = frame / frameRate;
+      rig.root.userData.returnCrouch = ready;
       rig.root.userData.supportStrokeWeight = twoHandedWeight;
       rig.root.userData.supportGripOffset = THREE.MathUtils.lerp(0.2, 0.11, twoHandedWeight);
       // Server's feet must stay behind the baseline until contact; landing
