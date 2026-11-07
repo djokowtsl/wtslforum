@@ -19,6 +19,8 @@ export type GaitState = {
   spread?: number;
   /** Stride (half, metres, including `amount`) at the last update. */
   stride?: number;
+  /** 0 = rally footwork (short quick steps) .. 1 = walking between points. */
+  walking?: number;
 };
 
 export type GaitFoot = { x: number; z: number; lift: number };
@@ -68,11 +70,13 @@ export function newGaitState(): GaitState {
 /**
  * Half stride (metres) for a running speed in m/s: half the distance a planted
  * foot sweeps under the body. One step cycle covers 2 * halfStride / STANCE.
- * At walking pace this gives a natural step cadence; sideways the feet's room
- * limits it further (see effectiveHalfStride).
+ * `walking` (0..1) blends short, quick rally footwork with natural between-point
+ * strides. Sideways the feet's room limits it further (see effectiveHalfStride).
  */
-export function halfStride(speedMs: number) {
-  return Math.min(0.55, Math.max(0.1, 0.1 + 0.22 * speedMs));
+export function halfStride(speedMs: number, walking = 1) {
+  const footwork = Math.min(0.42, Math.max(0.1, 0.1 + 0.11 * speedMs));
+  const strides = Math.min(0.55, Math.max(0.1, 0.1 + 0.22 * speedMs));
+  return footwork + (strides - footwork) * Math.max(0, Math.min(1, walking));
 }
 
 /** Planted: sweeps +1 -> -1 at constant rate. Swing: lifts and returns -1 -> +1. */
@@ -124,7 +128,7 @@ export function advanceGait(state: GaitState, travel: [number, number], speedMs:
   }
   const spread = state.spread ?? 0;
   state.spread = spread + (SIDE_SHUFFLE_SPREAD * sideways * state.amount - spread) * 0.08;
-  const amplitude = effectiveHalfStride(speedMs, state.direction, state.offset, state.spread);
+  const amplitude = effectiveHalfStride(speedMs, state.direction, state.offset, state.spread, state.walking ?? 1);
   // Re-time as stride changes so a planted foot stays on the court.
   const stride = amplitude * state.amount;
   const previousStride = state.stride ?? stride;
@@ -160,9 +164,10 @@ export function effectiveHalfStride(
   direction: [number, number],
   offset = 0.5,
   spread = 0,
+  walking = 1,
 ) {
   const lateral = Math.abs(direction[0]);
-  const base = halfStride(speedMs);
+  const base = halfStride(speedMs, walking);
   if (lateral <= 1e-3) return base;
   const room = 2 * (STANCE_HALF_WIDTH + spread) - MIN_FOOT_GAP;
   return Math.min(base, room / (feetClosing(offset, direction[0]) * lateral));
@@ -172,7 +177,7 @@ export function effectiveHalfStride(
 export function gaitFeet(state: GaitState, speedMs: number): [GaitFoot, GaitFoot] {
   const offset = state.offset ?? 0.5;
   const spread = state.spread ?? 0;
-  const amplitude = effectiveHalfStride(speedMs, state.direction, offset, spread) * state.amount;
+  const amplitude = effectiveHalfStride(speedMs, state.direction, offset, spread, state.walking ?? 1) * state.amount;
   const height = (0.05 + 0.025 * Math.min(4, speedMs)) * state.amount;
   return [0, offset].map((cycleOffset, foot) => {
     const { along, lift } = footCycle(state.phase + cycleOffset);
