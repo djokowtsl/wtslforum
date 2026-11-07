@@ -49,8 +49,10 @@ import {
   cancelBrowserUmpireCall,
   deriveUmpireCallEvents,
   formatLiveUmpireScoreCall,
+  isBrowserUmpireSpeechUnlocked,
   sameUmpireScore,
   speakBrowserUmpireCall,
+  unlockBrowserUmpireSpeech,
   umpireCallsBetween,
   type UmpireCallEvent,
   type UmpireScore,
@@ -96,7 +98,7 @@ function drawScene(
 
   const rawProject = createCourtProjector(camera, zoom);
   const project = (x: number, y: number, z: number): ProjectedPoint => rawProject([x, y, z]);
-  drawLiveCourtBackdrop(context, surface, camera, zoom, stadiumAtmosphere);
+  drawLiveCourtBackdrop(context, surface, camera, zoom, stadiumAtmosphere, isWta);
   if (stadiumAtmosphere) drawLiveCourtCrowdMotion(context, project, timestampMs);
 
   if (!samples.length) {
@@ -540,8 +542,10 @@ function DmoLiveCourt({
   const playedSoundEventsRef = useRef(new Set<string>());
   const soundEnabledRef = useRef(false);
   const umpireCallsEnabledRef = useRef(true);
+  const umpireSpeechReadyRef = useRef(isBrowserUmpireSpeechUnlocked());
   const [soundEnabled, setSoundEnabled] = useState(false);
   const [umpireCallsEnabled, setUmpireCallsEnabled] = useState(true);
+  const [umpireSpeechReady, setUmpireSpeechReady] = useState(isBrowserUmpireSpeechUnlocked());
   const [crowdVolume, setCrowdVolume] = useState(0.38);
   const [soundError, setSoundError] = useState('');
   const [feedStalled, setFeedStalled] = useState(false);
@@ -549,6 +553,7 @@ function DmoLiveCourt({
   const renderErrorRef = useRef(false);
   soundEnabledRef.current = soundEnabled;
   umpireCallsEnabledRef.current = umpireCallsEnabled;
+  umpireSpeechReadyRef.current = umpireSpeechReady;
   const sceneRef = useRef({
     samples: sampleBufferRef.current,
     trajectoryEvents: trajectoryEventsRef.current,
@@ -685,14 +690,14 @@ function DmoLiveCourt({
       || !current
       || firstObservation
       || (previous && sameUmpireScore(current, previous))
-      || !soundEnabledRef.current
       || !umpireCallsEnabledRef.current
+      || !umpireSpeechReadyRef.current
     ) return;
     const call = formatLiveUmpireScoreCall(current, previous, scoreboardData.players);
     if (call && !speakBrowserUmpireCall(call)) {
       setSoundError('Spoken umpire calls are unavailable in this browser.');
     }
-  }, [scoreboardData, soundEnabled, umpireCallsEnabled]);
+  }, [scoreboardData, umpireCallsEnabled, umpireSpeechReady]);
 
   useEffect(() => {
     const canvas = canvasRef.current;
@@ -728,7 +733,7 @@ function DmoLiveCourt({
         }
         lastUmpireCallFrameRef.current = cursor;
       } else {
-        if (soundEnabledRef.current && umpireCallsEnabledRef.current) {
+        if (umpireCallsEnabledRef.current && umpireSpeechReadyRef.current) {
           for (const call of umpireCallsBetween(
             umpireCallEventsRef.current,
             previousCallFrame,
@@ -857,7 +862,22 @@ function DmoLiveCourt({
     if (!enabled) stopActiveGrunts();
     onGruntsEnabledChange(enabled);
   };
+  const activateUmpireSpeechFromGesture = () => {
+    if (umpireSpeechReadyRef.current) return true;
+    if (!unlockBrowserUmpireSpeech()) {
+      setSoundError('Spoken umpire calls are unavailable in this browser.');
+      return false;
+    }
+    umpireSpeechReadyRef.current = true;
+    setUmpireSpeechReady(true);
+    setSoundError('');
+    lastUmpireCallFrameRef.current = playheadRef.current
+      ?? sampleBufferRef.current[0]?.frame
+      ?? 0;
+    return true;
+  };
   const changeUmpireCallsEnabled = (enabled: boolean) => {
+    if (enabled && !activateUmpireSpeechFromGesture()) return;
     umpireCallsEnabledRef.current = enabled;
     setUmpireCallsEnabled(enabled);
     if (!enabled) {
@@ -865,6 +885,13 @@ function DmoLiveCourt({
       return;
     }
     lastUmpireCallFrameRef.current = playheadRef.current;
+  };
+  const handleUmpireCallsToggle = () => {
+    if (umpireCallsEnabledRef.current && !umpireSpeechReadyRef.current) {
+      activateUmpireSpeechFromGesture();
+      return;
+    }
+    changeUmpireCallsEnabled(!umpireCallsEnabledRef.current);
   };
 
   const changeCrowdVolume = (value: number) => {
@@ -880,7 +907,6 @@ function DmoLiveCourt({
   const toggleSound = async () => {
     if (soundEnabled) {
       soundEnabledRef.current = false;
-      cancelBrowserUmpireCall();
       stopActiveGrunts();
       const context = audioContextRef.current;
       const crowdBed = crowdBedRef.current;
@@ -909,7 +935,6 @@ function DmoLiveCourt({
       );
       lastSoundFrameRef.current = Math.max(0, snapshot.frameCount - 3);
       soundEnabledRef.current = true;
-      lastUmpireCallFrameRef.current = playheadRef.current;
       setSoundError('');
       setSoundEnabled(true);
       if (!courtEffectSamplesLoadRef.current) {
@@ -1031,12 +1056,18 @@ function DmoLiveCourt({
           <button
             className={styles.gruntControl}
             type="button"
-            aria-label={umpireCallsEnabled ? 'Turn umpire calls off' : 'Turn umpire calls on'}
-            aria-pressed={umpireCallsEnabled}
-            title={umpireCallsEnabled ? 'Turn umpire calls off' : 'Turn umpire calls on'}
-            onClick={() => changeUmpireCallsEnabled(!umpireCallsEnabled)}
+            aria-label={umpireCallsEnabled && !umpireSpeechReady
+              ? 'Enable spoken umpire calls on this device'
+              : umpireCallsEnabled ? 'Turn umpire calls off' : 'Turn umpire calls on'}
+            aria-pressed={umpireCallsEnabled && umpireSpeechReady}
+            title={umpireCallsEnabled && !umpireSpeechReady
+              ? 'Tap to enable spoken umpire calls'
+              : umpireCallsEnabled ? 'Turn umpire calls off' : 'Turn umpire calls on'}
+            onClick={handleUmpireCallsToggle}
           >
-            Calls {umpireCallsEnabled ? 'on' : 'off'}
+            {umpireCallsEnabled && !umpireSpeechReady
+              ? 'Enable calls'
+              : `Calls ${umpireCallsEnabled ? 'on' : 'off'}`}
           </button>
           <CourtFullscreenButton
             targetRef={sceneElementRef}
