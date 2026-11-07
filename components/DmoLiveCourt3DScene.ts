@@ -115,8 +115,8 @@ export function getCrowdAppearance(sourceIndex: number, row = 0) {
 /** Compact seated crowd joints in seat-local metres. */
 export function getSeatedCrowdLegTargets(sideSign: number) {
   return {
-    hip: [sideSign * 0.11, 0.63, 0] as const,
-    knee: [sideSign * 0.14, 0.45, 0.18] as const,
+    hip: [sideSign * 0.11, 0.48, 0] as const,
+    knee: [sideSign * 0.14, 0.38, 0.18] as const,
     ankle: [sideSign * 0.14, 0.16, 0.14] as const,
     toe: [sideSign * 0.14, 0.05, 0.20] as const,
   };
@@ -136,9 +136,9 @@ export function getSeatedCoachLegTargets(sideSign: number, hipsY = 0.4) {
 export function getChairUmpireLegTargets(sideSign: number, hipsY = 1.34) {
   return {
     hip: [sideSign * 0.11, hipsY, 0] as const,
-    knee: [sideSign * 0.14, hipsY - 0.20, 0.48] as const,
-    ankle: [sideSign * 0.14, 0.70, 0.30] as const,
-    toe: [sideSign * 0.14, 0.58, 0.55] as const,
+    knee: [sideSign * 0.14, hipsY - 0.14, 0.40] as const,
+    ankle: [sideSign * 0.14, 0.90, 0.22] as const,
+    toe: [sideSign * 0.14, 0.82, 0.52] as const,
   };
 }
 
@@ -1317,7 +1317,7 @@ export function buildCourtFixtures(scene: THREE.Scene): CourtFixtureRig {
   addBox(chair, [0.82, 0.11, 0.72], [0, 1.1, 0], frameMaterial);
   addBox(chair, [0.58, 0.08, 0.58], [0, 1.27, 0], seatMaterial);
   addBox(chair, [0.58, 0.5, 0.09], [0, 1.56, -0.25], backMaterial);
-  const footBar = addBox(chair, [0.7, 0.08, 0.45], [0, 0.54, 0.52], frameMaterial);
+  const footBar = addBox(chair, [0.7, 0.08, 0.45], [0, 0.78, 0.52], frameMaterial);
   footBar.name = 'wtsl-umpire-foot-bar';
   footBar.userData.supportsSeatedFeet = true;
   for (const y of [0.72, 0.91, 1.08]) {
