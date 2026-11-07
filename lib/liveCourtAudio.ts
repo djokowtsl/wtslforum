@@ -3,7 +3,9 @@ import type { LiveCourtFootworkEvent, LiveCourtMotionEvent, LiveCourtSample } fr
 import { courtSurfaceSoundProfile } from './te4DmoSurface';
 
 export type CourtEffectKind = 'racket' | 'bounce' | 'footstep';
-export type CourtEffectSamples = Partial<Record<CourtEffectKind, AudioBuffer>>;
+type CourtSoundSurface = Te4CourtSurface | 'indoor';
+type SurfaceAudioSamples = Partial<Record<CourtSoundSurface, AudioBuffer[]>>;
+export type CourtEffectSamples = Partial<Record<CourtEffectKind, SurfaceAudioSamples>>;
 export type CourtSoundEvent = { frame: number; kind: CourtEffectKind; player?: 1 | 2 };
 
 export type FootstepContactState = { frame: number; airborne: [boolean, boolean] };
@@ -88,32 +90,90 @@ const effectBuses = new WeakMap<BaseAudioContext, DynamicsCompressorNode>();
 // Merge coincident contacts, without imposing a cadence on the movement animation.
 const lastFootstepStarts = new WeakMap<BaseAudioContext, number>();
 const MIN_FOOTSTEP_INTERVAL_SECONDS = 0.08;
-const courtEffectAssets: Record<CourtEffectKind, string> = {
-  racket: '/audio/dmo-racket-impact.mp3',
-  bounce: '/audio/dmo-ball-bounce.mp3',
-  footstep: '/audio/dmo-court-footstep.mp3',
+const racketAssets: Record<'hard' | 'clay' | 'grass' | 'indoor', string[]> = {
+  hard: Array.from({ length: 6 }, (_, index) => `/audio/xkt/court/racket/hard-${String(index + 1).padStart(2, '0')}.mp3`),
+  clay: Array.from({ length: 6 }, (_, index) => `/audio/xkt/court/racket/clay-${String(index + 1).padStart(2, '0')}.mp3`),
+  grass: Array.from({ length: 6 }, (_, index) => `/audio/xkt/court/racket/grass-${String(index + 1).padStart(2, '0')}.mp3`),
+  indoor: Array.from({ length: 6 }, (_, index) => `/audio/xkt/court/racket/indoor-${String(index + 1).padStart(2, '0')}.mp3`),
 };
+
+const bounceAssets: Record<'hard' | 'clay' | 'grass' | 'indoor', string[]> = {
+  hard: Array.from({ length: 3 }, (_, index) => `/audio/xkt/court/bounce/hard-${String(index + 1).padStart(2, '0')}.mp3`),
+  clay: Array.from({ length: 3 }, (_, index) => `/audio/xkt/court/bounce/clay-${String(index + 1).padStart(2, '0')}.mp3`),
+  grass: Array.from({ length: 3 }, (_, index) => `/audio/xkt/court/bounce/grass-${String(index + 1).padStart(2, '0')}.mp3`),
+  indoor: Array.from({ length: 3 }, (_, index) => `/audio/xkt/court/bounce/indoor-${String(index + 1).padStart(2, '0')}.mp3`),
+};
+
+async function loadAudioBuffer(
+  context: BaseAudioContext,
+  url: string,
+  fetcher: (url: string) => Promise<Response>,
+): Promise<AudioBuffer> {
+  const response = await fetcher(url);
+  if (!response.ok) throw new Error(`Court sound unavailable: ${url}`);
+  return context.decodeAudioData(await response.arrayBuffer());
+}
 
 export async function loadCourtEffectSamples(
   context: BaseAudioContext,
   fetcher: (url: string) => Promise<Response> = url => fetch(url),
 ): Promise<{ samples: CourtEffectSamples; missing: CourtEffectKind[] }> {
-  const results = await Promise.all(
-    (Object.entries(courtEffectAssets) as Array<[CourtEffectKind, string]>).map(async ([kind, url]) => {
-      try {
-        const response = await fetcher(url);
-        if (!response.ok) throw new Error(`Court sound unavailable: ${kind}`);
-        return { kind, buffer: await context.decodeAudioData(await response.arrayBuffer()) };
-      } catch {
-        return { kind, buffer: null };
-      }
-    }),
-  );
   const samples: CourtEffectSamples = {};
   const missing: CourtEffectKind[] = [];
-  for (const { kind, buffer } of results) {
-    if (buffer) samples[kind] = buffer;
-    else missing.push(kind);
+  const loadSurfaceVariants = async (
+    assets: Record<'hard' | 'clay' | 'grass' | 'indoor', string[]>,
+  ): Promise<SurfaceAudioSamples> => {
+    const loaded = await Promise.all(
+      Object.entries(assets).map(async ([surface, urls]) => {
+        const results = await Promise.all(urls.map(async url => {
+          try {
+            return await loadAudioBuffer(context, url, fetcher);
+          } catch {
+            return null;
+          }
+        }));
+        return [surface, results.filter((buffer): buffer is AudioBuffer => buffer !== null)] as const;
+      }),
+    );
+    const bySurface: SurfaceAudioSamples = Object.fromEntries(loaded);
+    const hard = bySurface.hard ?? [];
+    const indoor = bySurface.indoor ?? [];
+    bySurface.unknown = [...hard, ...indoor];
+    return bySurface;
+  };
+
+  const [racket, bounce, footstep] = await Promise.all([
+    loadSurfaceVariants(racketAssets),
+    loadSurfaceVariants(bounceAssets),
+    loadAudioBuffer(context, '/audio/dmo-court-footstep.mp3', fetcher).catch(() => null),
+  ]);
+  const fallbackRacket = await loadAudioBuffer(context, '/audio/dmo-racket-impact.mp3', fetcher).catch(() => null);
+  const fallbackBounce = await loadAudioBuffer(context, '/audio/dmo-ball-bounce.mp3', fetcher).catch(() => null);
+  if (fallbackRacket) {
+    for (const surface of ['hard', 'clay', 'grass', 'indoor', 'unknown'] as const) {
+      if (!racket[surface]?.length) racket[surface] = [fallbackRacket];
+    }
+  }
+  if (fallbackBounce) {
+    for (const surface of ['hard', 'clay', 'grass', 'indoor', 'unknown'] as const) {
+      if (!bounce[surface]?.length) bounce[surface] = [fallbackBounce];
+    }
+  }
+  if (Object.values(racket).some(variants => variants?.length)) samples.racket = racket;
+  else missing.push('racket');
+  if (Object.values(bounce).some(variants => variants?.length)) samples.bounce = bounce;
+  else missing.push('bounce');
+  if (footstep) {
+    const variants = [footstep];
+    samples.footstep = {
+      hard: variants,
+      clay: variants,
+      grass: variants,
+      indoor: variants,
+      unknown: variants,
+    };
+  } else {
+    missing.push('footstep');
   }
   return { samples, missing };
 }
@@ -271,7 +331,14 @@ export function playLiveCourtEffect(
     const previous = lastFootstepStarts.get(context);
     if (previous !== undefined && startAt - previous < MIN_FOOTSTEP_INTERVAL_SECONDS) return;
   }
-  const sample = samples[kind];
+  const surfaceSamples = samples[kind];
+  const matchingSamples = surfaceSamples?.[surface]
+    ?? surfaceSamples?.unknown
+    ?? surfaceSamples?.hard
+    ?? Object.values(surfaceSamples ?? {}).find((variants): variants is AudioBuffer[] => Boolean(variants?.length));
+  const sample = matchingSamples?.length
+    ? matchingSamples[Math.floor(Math.random() * matchingSamples.length)]
+    : null;
   const variants = sample ? null : courtEffectVariants(context, kind, surface);
   const buffer = sample ?? variants?.[Math.floor(Math.random() * variants.length)];
   if (!buffer) return;

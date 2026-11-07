@@ -52,6 +52,7 @@ const humans = await loadTs('../components/DmoHumanModels.ts', {
 const crowdLodApi = await loadTs('../lib/dmoCrowdLod.ts');
 const crowds = await loadTs('../components/DmoHumanCrowd.ts', {
   './DmoHumanModels': humans,
+  './DmoLiveCourt3DScene': sceneApi,
   '../lib/dmoCrowdLod': crowdLodApi,
 });
 
@@ -746,7 +747,10 @@ test('coaches occupy reserved lower-stand seats and the seated umpire tracks the
   const knee = posedBones.get('LeftLeg').getWorldPosition(new THREE.Vector3());
   const hip = posedBones.get('Hips').getWorldPosition(new THREE.Vector3());
   assert.ok(foot.y >= 0.45 && foot.y <= 0.75, `umpire foot should rest near the chair footrest, got ${foot.y}`);
-  assert.ok(knee.y > foot.y + 0.5 && knee.y < hip.y - 0.15, 'umpire legs should bend down from a seated knee');
+  assert.ok(
+    knee.y > foot.y + 0.42 && knee.y < hip.y - 0.15,
+    `umpire legs should bend down from a seated knee (foot=${foot.y}, knee=${knee.y}, hip=${hip.y})`,
+  );
   const head = umpire.getObjectByName('Head');
   const before = head.quaternion.clone();
   fixtures.update(new THREE.Vector3(7, 2, -10));

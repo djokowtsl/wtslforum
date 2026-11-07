@@ -24,22 +24,49 @@ const { code } = transformSync(gruntAudioModuleSource, {
 });
 const gruntAudioModule = { exports: {} };
 new Function('module', 'exports', code)(gruntAudioModule, gruntAudioModule.exports);
-const { liveGruntAudioUrl } = gruntAudioModule.exports;
+const {
+  liveGruntAudioUrl,
+  liveGruntAudioUrls,
+  loadLiveGruntSamples,
+} = gruntAudioModule.exports;
 
-test('WTA live courts use a dedicated female effort-grunt sample', async () => {
+test('live courts use varied tour-matched XKT effort-grunt samples', async () => {
   const asset = await stat(new URL('../public/audio/te4-player-grunt-wta.mp3', import.meta.url));
 
   assert.ok(asset.size > 1_000);
   assert.equal(liveGruntAudioUrl(true), '/audio/te4-player-grunt-wta.mp3');
   assert.equal(liveGruntAudioUrl(false), '/audio/te4-player-grunt.mp3');
-  assert.match(threeCourt, /loadGruntSample\(context, isWta\)/);
+  assert.equal(liveGruntAudioUrls(true).length, 3);
+  assert.equal(liveGruntAudioUrls(false).length, 5);
+  for (const url of [...liveGruntAudioUrls(true), ...liveGruntAudioUrls(false)]) {
+    const sample = await stat(new URL(`../public${url}`, import.meta.url));
+    assert.ok(sample.size > 1_000);
+  }
+  assert.match(threeCourt, /loadLiveGruntSamples\(context, isWta\)/);
   assert.match(threeCourt, /gruntAudioRef\.current\?\.isWta === isWta/);
+});
+
+test('legacy grunt files remain available when every XKT grunt sample fails', async () => {
+  const requested = [];
+  const samples = await loadLiveGruntSamples({
+    decodeAudioData: async () => ({ duration: 0.3 }),
+  }, false, async (url) => {
+    requested.push(url);
+    return {
+      ok: url === liveGruntAudioUrl(false),
+      arrayBuffer: async () => new ArrayBuffer(8),
+    };
+  });
+
+  assert.equal(samples.length, 1);
+  assert.equal(requested.at(-1), liveGruntAudioUrl(false));
 });
 
 test('the 2D fallback uses the same WTA sample and recorded court effects', () => {
   assert.match(fallbackCourt, /isWta \? 260 : 150/);
   assert.match(fallbackCourt, /isWta \? 520 : 340/);
-  assert.match(fallbackCourt, /fetch\(liveGruntAudioUrl\(true\)\)/);
+  assert.match(fallbackCourt, /loadLiveGruntSamples\(context, isWta\)/);
+  assert.match(fallbackCourt, /isWta \? wtaGruntAudioRef\.current : atpGruntAudioRef\.current/);
   assert.match(fallbackCourt, /playLiveCourtCue\(context, cue, activeGruntVoicesRef\.current, isWta,[\s\S]*?courtEffectSamplesRef\.current\)/);
   assert.match(fallbackCourt, /deriveLiveCourtFootworkEvents\(/);
   assert.match(fallbackCourt, /playLiveCourtEffect\(context, kind, surface, 0\.9, courtEffectSamples\)/);
@@ -54,6 +81,10 @@ test('court effect samples stay compact and surface labels remain distinct', asy
     const asset = await stat(new URL(`../public/audio/${file}`, import.meta.url));
     assert.ok(asset.size > 1_000 && asset.size < 20_000, `${file} is a small, bundled court cue`);
   }
+  const xktBounce = await stat(new URL('../public/audio/xkt/court/bounce/clay-01.mp3', import.meta.url));
+  const xktRacket = await stat(new URL('../public/audio/xkt/court/racket/grass-01.mp3', import.meta.url));
+  assert.ok(xktBounce.size > 1_000 && xktBounce.size < 50_000);
+  assert.ok(xktRacket.size > 1_000 && xktRacket.size < 50_000);
   assert.match(threeCourt, /loadCourtEffectSamples\(context\)/);
   assert.match(threeCourt, /courtEffectSamplesRef\.current/);
 

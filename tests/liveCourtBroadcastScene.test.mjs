@@ -41,7 +41,10 @@ const {
 } = await loadTs('../lib/liveCourtAudio.ts', {
   './te4DmoSurface': { courtSurfaceSoundProfile },
 });
-const umpireApi = await loadTs('../lib/liveCourtUmpire.ts');
+const xktUmpireAudioApi = await loadTs('../lib/xktUmpireAudio.ts');
+const umpireApi = await loadTs('../lib/liveCourtUmpire.ts', {
+  './xktUmpireAudio': xktUmpireAudioApi,
+});
 
 test('stadium fills three open tiers with crowd, concourses, score displays and four tunnels', () => {
   for (const indoor of [false, true]) {
@@ -353,6 +356,12 @@ test('crowd implementation contains no legacy stand block and keeps textured peo
   assert.doesNotMatch(crowdSource, /historical reference|rowStep = 0\.66|platformMaterial/);
   const humanCrowdSource = await readFile(new URL('../components/DmoHumanCrowd.ts', import.meta.url), 'utf8');
   assert.match(humanCrowdSource, /new THREE\.InstancedMesh/);
+  assert.match(humanCrowdSource, /getCrowdAppearance\(sourceIndex, seat\.row\)/,
+    'the detailed crowd consumes the same deterministic variation as its fallback');
+  assert.match(humanCrowdSource, /getChairUmpireLegTargets\(sign, hipsY\)/,
+    'the seated umpire uses the regression-tested chair-local leg targets');
+  assert.match(humanCrowdSource, /'wtsl-detailed-umpire', 0x38536a, 1\.34, true/,
+    'the chair pose is anchored to the revised seat height');
   const seatedGeometrySource = humanCrowdSource.slice(
     humanCrowdSource.indexOf('function seatedGeometry('),
     humanCrowdSource.indexOf('/** Textured seated humans'),
@@ -459,7 +468,7 @@ test('crowd is human-scaled and separated from deep-baseline player space', () =
   const position = new THREE.Vector3().setFromMatrixPosition(before);
   assert.ok(position.y >= 1.2 && position.y <= 1.7, `front row head ${position.y}`);
   const headScale = new THREE.Vector3().setFromMatrixScale(before);
-  assert.ok(headScale.y >= 0.22 && headScale.y <= 0.29, 'heads retain adult human proportions');
+  assert.ok(headScale.y >= 0.21 && headScale.y <= 0.29, 'heads retain adult human proportions while stature varies');
   assert.ok(headScale.x < 0.20, 'heads remain narrower than their height');
   for (let index = 0; index < heads.count; index++) {
     heads.getMatrixAt(index, matrix);
@@ -469,6 +478,76 @@ test('crowd is human-scaled and separated from deep-baseline player space', () =
   crowd.update(1, false, new THREE.Vector3(-10, 1, 0));
   heads.getMatrixAt(0, matrix);
   assert.notDeepEqual(matrix.elements, before.elements, 'spectator gaze follows the rally');
+});
+
+test('spectators carry deterministic wardrobe, skin-tone, hair, and seated-silhouette variation', () => {
+  const scene = new THREE.Scene();
+  const crowd = sceneApi.buildCrowd(scene);
+  const sample = crowd.seats.filter((seat) => seat.occupied).slice(0, 240);
+  const appearances = sample.map((seat, index) =>
+    sceneApi.getCrowdAppearance(seat.sourceIndex ?? index, seat.row));
+  assert.ok(new Set(appearances.map((look) => look.skinToneIndex)).size >= 7,
+    'the audience uses a broad, naturally varied skin-tone palette without appearance labels');
+  assert.equal(new Set(appearances.map((look) => look.hairStyle)).size, 4,
+    'multiple hair silhouettes are distributed through the crowd');
+  assert.equal(new Set(appearances.map((look) => look.wardrobe)).size, 4,
+    'spectator clothing has more than a repeating two-look alternation');
+  assert.ok(new Set(appearances.map((look) => look.stature)).size >= 8,
+    'seated stature varies subtly from person to person');
+
+  const bodies = scene.getObjectByName('wtsl-unified-crowd-fallback-bodies');
+  const hair = scene.getObjectByName('wtsl-spectator-hair');
+  const ponytails = scene.getObjectByName('wtsl-spectator-ponytails');
+  assert.ok(bodies?.isInstancedMesh && hair?.isInstancedMesh && ponytails?.isInstancedMesh);
+  const matrix = new THREE.Matrix4();
+  const scale = new THREE.Vector3();
+  const bodyWidths = new Set();
+  let ponytailCount = 0;
+  for (let index = 0; index < sample.length; index += 1) {
+    bodies.getMatrixAt(index, matrix);
+    matrix.decompose(new THREE.Vector3(), new THREE.Quaternion(), scale);
+    bodyWidths.add(scale.x.toFixed(3));
+    ponytails.getMatrixAt(index, matrix);
+    matrix.decompose(new THREE.Vector3(), new THREE.Quaternion(), scale);
+    if (scale.length() > 0.1) ponytailCount += 1;
+  }
+  assert.ok(bodyWidths.size >= 6, 'instanced torso widths avoid a single repeated silhouette');
+  assert.ok(ponytailCount > 30, 'a subset of crowd hairstyles includes tied-back silhouettes');
+  assert.ok(hair.count >= sample.length, 'hair remains instanced at crowd scale');
+});
+
+test('chair umpire has a natural bent-leg pose with feet supported by the chair foot bar', () => {
+  const scene = new THREE.Scene();
+  sceneApi.buildCourtFixtures(scene);
+  const chair = scene.getObjectByName('wtsl-umpire-chair');
+  const footBar = scene.getObjectByName('wtsl-umpire-foot-bar');
+  assert.ok(chair && footBar?.isMesh);
+  assert.equal(footBar.userData.supportsSeatedFeet, true);
+  const seat = chair.children.find((object) => object.isMesh
+    && object.geometry.type === 'BoxGeometry'
+    && object.geometry.parameters.width === 0.58
+    && Math.abs(object.position.y - 1.27) < 1e-6);
+  assert.ok(seat, 'the chair seat and official remain at a compact, believable scale');
+
+  const barTop = footBar.position.y + footBar.geometry.parameters.height / 2;
+  for (const sign of [-1, 1]) {
+    const { hip, knee, ankle, toe } = sceneApi.getChairUmpireLegTargets(sign, 1.34);
+    const vector = (point) => new THREE.Vector3(...point);
+    const hipPoint = vector(hip), kneePoint = vector(knee);
+    const anklePoint = vector(ankle), toePoint = vector(toe);
+    const thigh = hipPoint.distanceTo(kneePoint);
+    const shin = kneePoint.distanceTo(anklePoint);
+    const kneeAngle = kneePoint.clone().sub(hipPoint).normalize()
+      .angleTo(anklePoint.clone().sub(kneePoint).normalize());
+    assert.ok(thigh > 0.48 && thigh < 0.62, `human-length seated thigh ${thigh}`);
+    assert.ok(shin > 0.42 && shin < 0.52, `human-length seated shin ${shin}`);
+    assert.ok(kneeAngle > 1.55 && kneeAngle < 2.35, `naturally flexed seated knee ${kneeAngle}`);
+    assert.ok(Math.abs(toePoint.y - barTop) < 0.01,
+      'the toe rests on the top surface of the chair foot bar');
+    assert.ok(toePoint.z > anklePoint.z, 'the foot points forward onto the support bar');
+  }
+  assert.ok(seat.position.y < 1.4 && footBar.position.y < 0.7,
+    'the official is not raised on an oversized chair');
 });
 
 test('venue modes retain the same enclosed bowl without adding roof or sky geometry', () => {
@@ -711,11 +790,12 @@ test('court effects load only playable samples and sound checks exclude slides',
   });
   assert.deepEqual(missing, []);
   assert.deepEqual(Object.keys(samples).sort(), ['bounce', 'footstep', 'racket']);
-  assert.deepEqual(requestedUrls.sort(), [
-    '/audio/dmo-ball-bounce.mp3',
-    '/audio/dmo-court-footstep.mp3',
-    '/audio/dmo-racket-impact.mp3',
-  ]);
+  assert.equal(requestedUrls.length, 39, 'surface-matched XKT clips load alongside compact legacy fallbacks');
+  assert.ok(requestedUrls.includes('/audio/xkt/court/racket/clay-01.mp3'));
+  assert.ok(requestedUrls.includes('/audio/xkt/court/bounce/grass-03.mp3'));
+  assert.deepEqual(samples.racket?.hard?.length, 6);
+  assert.deepEqual(samples.bounce?.hard?.length, 3);
+  assert.deepEqual(samples.footstep?.hard?.length, 1);
 
   const param = () => ({
     value: 0,
@@ -775,7 +855,9 @@ test('court effects load only playable samples and sound checks exclude slides',
   const clay = makeContext();
   const grass = makeContext();
   for (const [context, surface] of [[hard.context, 'hard'], [clay.context, 'clay'], [grass.context, 'grass']]) {
-    playLiveCourtEffect(context, 'footstep', surface, 1, { footstep: sample });
+    playLiveCourtEffect(context, 'footstep', surface, 1, {
+      footstep: { hard: [sample], clay: [sample], grass: [sample] },
+    });
   }
   assert.ok(hard.sources.every(source => source.buffer === sample));
   assert.ok(clay.sources.every(source => source.buffer === sample));
@@ -796,7 +878,7 @@ test('court effects load only playable samples and sound checks exclude slides',
   const partial = await loadCourtEffectSamples({
     decodeAudioData: async () => ({ duration: 0.25 }),
   }, async url => ({
-    ok: !url.endsWith('dmo-ball-bounce.mp3'),
+    ok: !url.includes('/court/bounce/') && !url.endsWith('dmo-ball-bounce.mp3'),
     arrayBuffer: async () => new ArrayBuffer(32),
   }));
   assert.deepEqual(partial.missing, ['bounce'], 'unavailable samples are reported for the visible fallback status');
@@ -804,6 +886,100 @@ test('court effects load only playable samples and sound checks exclude slides',
   assert.doesNotMatch(audioSource, /dmo-court-slide\.mp3/);
   assert.match(audioSource, /!Object\.hasOwn\(sampleGain, kind\)/,
     'legacy slide cues fail closed instead of producing any sound');
+});
+
+test('XKT umpire calls resolve score, tiebreak and recorded player-name clips', () => {
+  const umpire = {
+    pointScores: {
+      '0_15': ['/score/love-fifteen.mp3'],
+      '15_15': ['/score/fifteen-all.mp3'],
+      advantage: ['/score/advantage.mp3'],
+      deuce: ['/score/deuce.mp3'],
+    },
+    tiebreakScores: { '1_0': ['/tiebreak/1-0.mp3'] },
+    gameCalls: ['/game/game.mp3'],
+    setCalls: ['/set/set.mp3'],
+  };
+  const names = {
+    atp: { alcaraz: '/names/alcaraz.mp3' },
+    wta: { swiatek: '/names/swiatek.mp3' },
+  };
+  const resolve = (text, isWta = false) => (
+    xktUmpireAudioApi.resolveXktUmpireCallPaths(text, umpire, names, isWta, () => 0)
+  );
+
+  assert.deepEqual(resolve('love-fifteen'), ['/score/love-fifteen.mp3']);
+  assert.deepEqual(resolve('fifteen-all'), ['/score/fifteen-all.mp3']);
+  assert.deepEqual(resolve('Deuce'), ['/score/deuce.mp3']);
+  assert.deepEqual(resolve('1-0'), ['/tiebreak/1-0.mp3']);
+  assert.deepEqual(resolve('Advantage, Carlos Alcaraz'), [
+    '/score/advantage.mp3',
+    '/names/alcaraz.mp3',
+  ]);
+  assert.deepEqual(resolve('Game, Carlos Alcaraz'), [
+    '/game/game.mp3',
+    '/names/alcaraz.mp3',
+  ]);
+  assert.deepEqual(resolve('Game and set, Iga Świątek', true), [
+    '/game/game.mp3',
+    '/set/set.mp3',
+    '/names/swiatek.mp3',
+  ]);
+  assert.equal(resolve('Out'), null, 'out calls retain the existing browser-speech fallback');
+  assert.equal(resolve('Game, Unlisted Player'), null, 'missing recorded names fall back instead of being mislabelled');
+});
+
+test('recorded XKT calls decode, play through Web Audio, and stop on rewind', async () => {
+  const startedSources = [];
+  const requestedUrls = [];
+  const context = {
+    state: 'running',
+    destination: {},
+    decodeAudioData: async () => ({ duration: 0.4 }),
+    createBufferSource() {
+      const source = {
+        buffer: null,
+        onended: null,
+        connect(target) { return target; },
+        disconnect() {},
+        start() { startedSources.push(this); },
+        stop() { this.stopped = true; },
+      };
+      return source;
+    },
+    createGain() {
+      return {
+        gain: { value: 0 },
+        connect() { return this; },
+        disconnect() {},
+      };
+    },
+  };
+  const umpire = {
+    pointScores: { '15_15': ['/score/fifteen-all.mp3'] },
+    tiebreakScores: {},
+    gameCalls: [],
+    setCalls: [],
+  };
+  const names = { atp: {}, wta: {} };
+  const fetcher = async (url) => {
+    requestedUrls.push(url);
+    return {
+      ok: true,
+      json: async () => (url.includes('umpire-index') ? umpire : names),
+      arrayBuffer: async () => new ArrayBuffer(16),
+    };
+  };
+
+  assert.equal(
+    await xktUmpireAudioApi.playXktUmpireCall(context, 'fifteen-all', false, fetcher),
+    true,
+  );
+  assert.equal(startedSources.length, 1);
+  assert.ok(requestedUrls.includes('/audio/xkt/umpire-index.json'));
+  assert.ok(requestedUrls.includes('/score/fifteen-all.mp3'));
+  xktUmpireAudioApi.cancelXktUmpireCalls(context);
+  assert.equal(startedSources[0].stopped, true);
 });
 
 test('point and game boundaries do not clear accumulated clay marks', async () => {

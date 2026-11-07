@@ -83,6 +83,39 @@ const SINGLES_WIDTH = 8.23;
 const NET_CENTER_HEIGHT = 0.914;
 const NET_POST_HEIGHT = 1.07;
 
+export const CROWD_SKIN_TONES = [
+  [1.0, 0.91, 0.79],
+  [0.94, 0.82, 0.68],
+  [0.86, 0.72, 0.58],
+  [0.75, 0.60, 0.47],
+  [0.64, 0.49, 0.37],
+  [0.52, 0.38, 0.29],
+  [0.90, 0.76, 0.67],
+  [0.71, 0.56, 0.48],
+] as const;
+
+/** Deterministic, unlabelled appearance variation shared by fallback and detailed spectators. */
+export function getCrowdAppearance(sourceIndex: number, row = 0) {
+  const hash = Math.imul(sourceIndex ^ (row * 0x45d9f3b), 0x27d4eb2d) >>> 0;
+  return {
+    skinToneIndex: hash % CROWD_SKIN_TONES.length,
+    hairStyle: (hash >>> 4) % 4,
+    wardrobe: (hash >>> 8) % 4,
+    stature: 0.91 + ((hash >>> 12) % 10) * 0.018,
+    torsoWidth: 0.88 + ((hash >>> 20) % 7) * 0.035,
+  };
+}
+
+/** Joint targets in chair-local metres; knees flex and toes meet the foot bar. */
+export function getChairUmpireLegTargets(sideSign: number, hipsY = 1.34) {
+  return {
+    hip: [sideSign * 0.11, hipsY, 0] as const,
+    knee: [sideSign * 0.14, hipsY - 0.20, 0.56] as const,
+    ankle: [sideSign * 0.14, 0.68, 0.40] as const,
+    toe: [sideSign * 0.14, 0.58, 0.68] as const,
+  };
+}
+
 function material(color: number, roughness = 0.86) {
   return new THREE.MeshStandardMaterial({ color, roughness });
 }
@@ -869,6 +902,16 @@ function buildUnifiedCrowd(scene: THREE.Scene, venue: DmoVenueProfile): CrowdRig
     new THREE.MeshStandardMaterial({ color: 0xffffff, roughness: 0.74 }),
     occupiedSeats.length,
   );
+  const hairMesh = new THREE.InstancedMesh(
+    new THREE.SphereGeometry(0.5, 8, 5, 0, Math.PI * 2, 0, Math.PI / 2),
+    new THREE.MeshStandardMaterial({ color: 0xffffff, roughness: 0.9 }),
+    occupiedSeats.length,
+  );
+  const ponytailMesh = new THREE.InstancedMesh(
+    new THREE.SphereGeometry(0.5, 7, 5),
+    new THREE.MeshStandardMaterial({ color: 0xffffff, roughness: 0.9 }),
+    occupiedSeats.length,
+  );
   const armMesh = new THREE.InstancedMesh(
     new THREE.CylinderGeometry(0.045, 0.052, 1, 6),
     new THREE.MeshStandardMaterial({ color: 0xffffff, roughness: 0.9 }),
@@ -876,9 +919,14 @@ function buildUnifiedCrowd(scene: THREE.Scene, venue: DmoVenueProfile): CrowdRig
   );
   bodyMesh.name = 'wtsl-unified-crowd-fallback-bodies';
   headMesh.name = 'wtsl-spectator-heads';
+  hairMesh.name = 'wtsl-spectator-hair';
+  ponytailMesh.name = 'wtsl-spectator-ponytails';
   armMesh.name = 'wtsl-unified-crowd-fallback-arms';
-  const shirtColors = [0xc96b52, 0x397e75, 0xd7b253, 0x526b98, 0xefe0c8, 0x885e80, 0x465754];
-  const skinColors = [0xf1c2a0, 0xd8a17c, 0x9e684c, 0xe0b090];
+  const shirtColors = [
+    0xc96b52, 0x397e75, 0xd7b253, 0x526b98, 0xefe0c8, 0x885e80,
+    0x465754, 0x9b624b, 0x83a7a1, 0xa9a08d, 0x6e4960, 0x384d64,
+  ];
+  const hairColors = [0x332b29, 0x51443a, 0x70604f, 0x292c30, 0x8a725a];
   const dummy = new THREE.Object3D();
   const start = new THREE.Vector3();
   const end = new THREE.Vector3();
@@ -904,22 +952,57 @@ function buildUnifiedCrowd(scene: THREE.Scene, venue: DmoVenueProfile): CrowdRig
     armMesh.setMatrixAt(instance, dummy.matrix);
   };
   occupiedSeats.forEach((seat, index) => {
+    const sourceIndex = seat.sourceIndex ?? index;
+    const appearance = getCrowdAppearance(sourceIndex, seat.row);
     dummy.position.set(seat.x, seat.y + 0.83, seat.z);
     dummy.rotation.set(0, seat.facing, 0);
-    dummy.scale.set(0.42, 0.54, 0.28);
+    dummy.scale.set(
+      0.42 * appearance.torsoWidth,
+      0.54 * appearance.stature,
+      0.28 * (0.92 + appearance.torsoWidth * 0.08),
+    );
     dummy.updateMatrix();
     bodyMesh.setMatrixAt(index, dummy.matrix);
-    bodyMesh.setColorAt(index, new THREE.Color(shirtColors[(index * 5 + seat.row) % shirtColors.length]));
-    dummy.position.set(seat.x, seat.y + 1.23, seat.z);
-    dummy.scale.set(0.17, 0.24, 0.15);
+    bodyMesh.setColorAt(index, new THREE.Color(shirtColors[appearance.wardrobe * 3 + (sourceIndex % 3)]));
+    const headHeight = 1.23 + (appearance.stature - 1) * 0.28;
+    dummy.position.set(seat.x, seat.y + headHeight, seat.z);
+    dummy.scale.set(
+      0.17 * (0.94 + appearance.torsoWidth * 0.06),
+      0.24 * appearance.stature,
+      0.15 * (0.95 + appearance.torsoWidth * 0.05),
+    );
     dummy.updateMatrix();
     headMesh.setMatrixAt(index, dummy.matrix);
-    headMesh.setColorAt(index, new THREE.Color(skinColors[(index * 3 + seat.row) % skinColors.length]));
+    headMesh.setColorAt(index, new THREE.Color(...CROWD_SKIN_TONES[appearance.skinToneIndex]));
+    dummy.position.set(seat.x, seat.y + headHeight + 0.15, seat.z);
+    dummy.rotation.set(0, seat.facing, 0);
+    dummy.scale.set(
+      appearance.hairStyle === 1 ? 0.19 : 0.17,
+      appearance.hairStyle === 2 ? 0.095 : 0.075,
+      appearance.hairStyle === 0 ? 0.14 : 0.17,
+    );
+    dummy.updateMatrix();
+    hairMesh.setMatrixAt(index, dummy.matrix);
+    const hairColor = new THREE.Color(hairColors[(sourceIndex >>> 3) % hairColors.length]);
+    hairMesh.setColorAt(index, hairColor);
+    if (appearance.hairStyle === 3) {
+      const backX = seat.x - Math.sin(seat.facing) * 0.13;
+      const backZ = seat.z - Math.cos(seat.facing) * 0.13;
+      dummy.position.set(backX, seat.y + headHeight - 0.035, backZ);
+      dummy.rotation.set(0, seat.facing, 0);
+      dummy.scale.set(0.065, 0.095, 0.065);
+    } else {
+      dummy.position.set(seat.x, seat.y - 3, seat.z);
+      dummy.scale.set(0, 0, 0);
+    }
+    dummy.updateMatrix();
+    ponytailMesh.setMatrixAt(index, dummy.matrix);
+    ponytailMesh.setColorAt(index, hairColor);
     placeArm(index * 2, seat, -1, 0, false);
     placeArm(index * 2 + 1, seat, 1, 0, false);
   });
-  const fallbackMeshes = [bodyMesh, headMesh, armMesh];
-  headMesh.instanceMatrix.setUsage(THREE.DynamicDrawUsage);
+  const fallbackMeshes = [bodyMesh, headMesh, hairMesh, ponytailMesh, armMesh];
+  for (const mesh of [headMesh, hairMesh, ponytailMesh]) mesh.instanceMatrix.setUsage(THREE.DynamicDrawUsage);
   armMesh.instanceMatrix.setUsage(THREE.DynamicDrawUsage);
   fallbackMeshes.forEach((mesh) => {
     mesh.instanceMatrix.needsUpdate = true;
@@ -929,6 +1012,8 @@ function buildUnifiedCrowd(scene: THREE.Scene, venue: DmoVenueProfile): CrowdRig
   });
   bodyMesh.instanceColor!.needsUpdate = true;
   headMesh.instanceColor!.needsUpdate = true;
+  hairMesh.instanceColor!.needsUpdate = true;
+  ponytailMesh.instanceColor!.needsUpdate = true;
   let lastUpdate = -Infinity;
   let detailedUpdate: CrowdRig['update'] | undefined;
   const crowdRig: CrowdRig = {
@@ -949,6 +1034,8 @@ function buildUnifiedCrowd(scene: THREE.Scene, venue: DmoVenueProfile): CrowdRig
       if (time - lastUpdate < 0.12) return;
       lastUpdate = time;
       occupiedSeats.forEach((seat, index) => {
+        const sourceIndex = seat.sourceIndex ?? index;
+        const appearance = getCrowdAppearance(sourceIndex, seat.row);
         let gaze = 0;
         if (ballPosition) {
           const bearing = Math.atan2(ballPosition.x - seat.x, ballPosition.z - seat.z);
@@ -958,19 +1045,42 @@ function buildUnifiedCrowd(scene: THREE.Scene, venue: DmoVenueProfile): CrowdRig
             0.65,
           );
         }
-        dummy.position.set(
-          seat.x + Math.sin(seat.facing) * 0.018,
-          seat.y + 1.23,
-          seat.z + Math.cos(seat.facing) * 0.018,
-        );
-        dummy.rotation.set(0, seat.facing + gaze, 0);
-        dummy.scale.set(0.17, 0.24, 0.15);
+        const headHeight = 1.23 + (appearance.stature - 1) * 0.28;
+        const yaw = seat.facing + gaze;
+        dummy.position.set(seat.x + Math.sin(seat.facing) * 0.018, seat.y + headHeight, seat.z + Math.cos(seat.facing) * 0.018);
+        dummy.rotation.set(0, yaw, 0);
+        dummy.scale.set(0.17 * (0.94 + appearance.torsoWidth * 0.06), 0.24 * appearance.stature, 0.15);
         dummy.updateMatrix();
         headMesh.setMatrixAt(index, dummy.matrix);
+        dummy.position.set(seat.x, seat.y + headHeight + 0.15, seat.z);
+        dummy.rotation.set(0, yaw, 0);
+        dummy.scale.set(
+          appearance.hairStyle === 1 ? 0.19 : 0.17,
+          appearance.hairStyle === 2 ? 0.095 : 0.075,
+          appearance.hairStyle === 0 ? 0.14 : 0.17,
+        );
+        dummy.updateMatrix();
+        hairMesh.setMatrixAt(index, dummy.matrix);
+        if (appearance.hairStyle === 3) {
+          dummy.position.set(
+            seat.x - Math.sin(yaw) * 0.13,
+            seat.y + headHeight - 0.035,
+            seat.z - Math.cos(yaw) * 0.13,
+          );
+          dummy.rotation.set(0, yaw, 0);
+          dummy.scale.set(0.065, 0.095, 0.065);
+        } else {
+          dummy.position.set(seat.x, seat.y - 3, seat.z);
+          dummy.scale.set(0, 0, 0);
+        }
+        dummy.updateMatrix();
+        ponytailMesh.setMatrixAt(index, dummy.matrix);
         placeArm(index * 2, seat, -1, time, applauding);
         placeArm(index * 2 + 1, seat, 1, time, applauding);
       });
       headMesh.instanceMatrix.needsUpdate = true;
+      hairMesh.instanceMatrix.needsUpdate = true;
+      ponytailMesh.instanceMatrix.needsUpdate = true;
       armMesh.instanceMatrix.needsUpdate = true;
     },
   };
@@ -1053,13 +1163,15 @@ export function buildCourtFixtures(scene: THREE.Scene): CourtFixtureRig {
   placeholder.name = 'wtsl-umpire-placeholder';
   chair.add(placeholder);
   for (const x of [-0.34, 0.34]) {
-    addBox(chair, [0.08, 1.5, 0.08], [x, 0.75, 0], frameMaterial);
+    addBox(chair, [0.08, 1.28, 0.08], [x, 0.64, 0], frameMaterial);
   }
-  addBox(chair, [0.82, 0.11, 0.72], [0, 1.48, 0], frameMaterial);
-  addBox(chair, [0.58, 0.08, 0.58], [0, 1.65, 0], seatMaterial);
-  addBox(chair, [0.58, 0.62, 0.09], [0, 1.96, -0.25], backMaterial);
-  addBox(chair, [0.7, 0.08, 0.45], [0, 0.48, 0.52], frameMaterial);
-  for (const y of [0.48, 0.82, 1.16]) {
+  addBox(chair, [0.82, 0.11, 0.72], [0, 1.1, 0], frameMaterial);
+  addBox(chair, [0.58, 0.08, 0.58], [0, 1.27, 0], seatMaterial);
+  addBox(chair, [0.58, 0.5, 0.09], [0, 1.56, -0.25], backMaterial);
+  const footBar = addBox(chair, [0.7, 0.08, 0.45], [0, 0.54, 0.52], frameMaterial);
+  footBar.name = 'wtsl-umpire-foot-bar';
+  footBar.userData.supportsSeatedFeet = true;
+  for (const y of [0.72, 0.91, 1.08]) {
     addBox(chair, [0.6, 0.07, 0.08], [0, y, 0.38], seatMaterial);
   }
 
@@ -1067,12 +1179,12 @@ export function buildCourtFixtures(scene: THREE.Scene): CourtFixtureRig {
   const umpireSkin = new THREE.MeshStandardMaterial({ color: 0xb98a6d, roughness: 0.78 });
   const umpireHair = new THREE.MeshStandardMaterial({ color: 0x37312d, roughness: 0.6 });
   const torso = new THREE.Mesh(new THREE.CapsuleGeometry(0.16, 0.3, 4, 8), umpireShirt);
-  torso.position.set(0, 2.02, 0.02);
+  torso.position.set(0, 1.63, 0.02);
   torso.castShadow = true;
   placeholder.add(torso);
   const headRig = new THREE.Group();
   headRig.name = 'wtsl-umpire-gaze';
-  headRig.position.set(0, 2.35, 0.02);
+  headRig.position.set(0, 1.96, 0.02);
   placeholder.add(headRig);
   const head = new THREE.Mesh(new THREE.SphereGeometry(0.125, 20, 16), umpireSkin);
   head.scale.set(0.9, 1.08, 0.92);
@@ -1100,12 +1212,12 @@ export function buildCourtFixtures(scene: THREE.Scene): CourtFixtureRig {
   headRig.add(mouth);
   for (const side of [-1, 1]) {
     const arm = new THREE.Mesh(new THREE.CylinderGeometry(0.055, 0.07, 0.42, 8), umpireSkin);
-    arm.position.set(side * 0.2, 1.99, 0.14);
+    arm.position.set(side * 0.2, 1.62, 0.14);
     arm.rotation.x = Math.PI / 2.7;
     arm.rotation.z = side * -0.24;
     arm.castShadow = true;
     placeholder.add(arm);
-    addBox(chair, [0.13, 0.16, 0.47], [side * 0.15, 1.68, 0.36], frameMaterial);
+    addBox(chair, [0.13, 0.16, 0.47], [side * 0.15, 1.32, 0.36], frameMaterial);
   }
   let detailedUmpireUpdater: ((ballPosition?: THREE.Vector3) => void) | null = null;
   const fixtureRig: CourtFixtureRig = {
@@ -1128,7 +1240,7 @@ export function buildCourtFixtures(scene: THREE.Scene): CourtFixtureRig {
       );
       headRig.rotation.y = THREE.MathUtils.lerp(headRig.rotation.y,
         THREE.MathUtils.clamp(yawDelta, -0.8, 0.8), 0.18);
-      headRig.rotation.x = THREE.MathUtils.clamp(-(ballPosition.y - 2.25) * 0.12, -0.28, 0.28);
+      headRig.rotation.x = THREE.MathUtils.clamp(-(ballPosition.y - headRig.position.y) * 0.12, -0.28, 0.28);
     },
   };
   return fixtureRig;
