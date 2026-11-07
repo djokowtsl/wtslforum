@@ -19,9 +19,11 @@ async function loadTs(file, overrides = {}) {
 }
 const stadiumArchitectureApi = await loadTs('../components/DmoStadiumArchitecture.ts');
 const venueApi = await loadTs('../lib/dmoVenue.ts');
+const surfaceApi = await loadTs('../lib/te4DmoSurface.ts');
 const sceneApi = await loadTs('../components/DmoLiveCourt3DScene.ts', {
   './DmoStadiumArchitecture': stadiumArchitectureApi,
   '../lib/dmoVenue': venueApi,
+  '@/lib/te4DmoSurface': surfaceApi,
 });
 const racketPose = await loadTs('../components/DmoRacketOrientation.ts');
 const articulated = await loadTs('../components/DmoArticulatedHands.ts', { './DmoRacketOrientation': racketPose });
@@ -715,14 +717,13 @@ test('crowd uses seated textured instancing and retains gaze/applause updates', 
     'empty seats do not receive floating caps');
 });
 
-test('coaches occupy reserved lower-stand seats and the detailed umpire tracks the ball', async () => {
+test('coaches occupy reserved lower-stand seats and the seated umpire tracks the ball', async () => {
   const scene = new THREE.Scene();
   const fixtures = sceneApi.buildCourtFixtures(scene);
   const crowd = sceneApi.buildCrowd(scene);
   const male = await asset('male', 'crowd');
   const female = await asset('female', 'crowd');
-  const detailedUmpire = await asset('male', 'player');
-  crowds.attachHumanCourtStaff(scene, fixtures, [male, female], crowd, detailedUmpire);
+  crowds.attachHumanCourtStaff(scene, fixtures, [male, female], crowd);
   assert.ok(scene.getObjectByName('wtsl-court-coach-1'));
   assert.ok(scene.getObjectByName('wtsl-court-coach-2'));
   for (const index of [1, 2]) {
@@ -735,6 +736,17 @@ test('coaches occupy reserved lower-stand seats and the detailed umpire tracks t
   assert.equal(scene.getObjectByName('wtsl-player-bench-right').getObjectByName('wtsl-court-coach-2'), undefined);
   assert.equal(scene.getObjectByName('wtsl-umpire-placeholder').visible, false);
   const umpire = scene.getObjectByName('wtsl-detailed-umpire');
+  assert.equal(umpire.userData.role, 'chair-umpire');
+  assert.equal(scene.getObjectByName('wtsl-umpire-badge').userData.role, 'chair-umpire-identification');
+  const posedBones = new Map();
+  umpire.traverse((object) => {
+    if (object.isBone) posedBones.set(object.name, object);
+  });
+  const foot = posedBones.get('LeftFoot').getWorldPosition(new THREE.Vector3());
+  const knee = posedBones.get('LeftLeg').getWorldPosition(new THREE.Vector3());
+  const hip = posedBones.get('Hips').getWorldPosition(new THREE.Vector3());
+  assert.ok(foot.y >= 0.45 && foot.y <= 0.75, `umpire foot should rest near the chair footrest, got ${foot.y}`);
+  assert.ok(knee.y > foot.y + 0.5 && knee.y < hip.y - 0.15, 'umpire legs should bend down from a seated knee');
   const head = umpire.getObjectByName('Head');
   const before = head.quaternion.clone();
   fixtures.update(new THREE.Vector3(7, 2, -10));

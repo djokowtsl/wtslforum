@@ -617,7 +617,7 @@ function ThreeCourt({
             fixtureRig,
             crowdTemplates,
             crowdRig,
-            player.status === 'fulfilled' ? player.value : crowdTemplates[0],
+            crowdTemplates[0],
           );
         }
         const failed = results.find((result) => result.status === 'rejected');

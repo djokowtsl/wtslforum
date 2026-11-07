@@ -1058,7 +1058,7 @@ export function buildCourtFixtures(scene: THREE.Scene): CourtFixtureRig {
   addBox(chair, [0.82, 0.11, 0.72], [0, 1.48, 0], frameMaterial);
   addBox(chair, [0.58, 0.08, 0.58], [0, 1.65, 0], seatMaterial);
   addBox(chair, [0.58, 0.62, 0.09], [0, 1.96, -0.25], backMaterial);
-  addBox(chair, [0.7, 0.08, 0.45], [0, 0.48, 0.25], frameMaterial);
+  addBox(chair, [0.7, 0.08, 0.45], [0, 0.48, 0.52], frameMaterial);
   for (const y of [0.48, 0.82, 1.16]) {
     addBox(chair, [0.6, 0.07, 0.08], [0, y, 0.38], seatMaterial);
   }

@@ -134,9 +134,9 @@ function poseSeatedStaff(model: THREE.Group, space: THREE.Group, hipsY: number) 
     pose.place(`${side}ForeArm`, elbow, wrist);
     pose.place(`${side}Hand`, wrist, wrist.clone().add(v(-sign * 0.05, 0, 0.08)));
     const hip = v(sign * 0.11, hipsY);
-    const knee = v(sign * 0.14, hipsY - 0.2, 0.26);
-    const ankle = v(sign * 0.14, hipsY - 0.51, 0.19);
-    const toe = v(sign * 0.14, hipsY - 0.58, 0.29);
+    const knee = v(sign * 0.14, hipsY - 0.34, 0.48);
+    const ankle = v(sign * 0.14, hipsY - 1.02, 0.56);
+    const toe = v(sign * 0.14, hipsY - 1.12, 0.72);
     pose.place(`${side}UpLeg`, hip, knee);
     pose.place(`${side}Leg`, knee, ankle);
     pose.place(`${side}Foot`, ankle, toe);
@@ -364,6 +364,27 @@ export function attachHumanCourtStaff(
     throw new Error('Court fixtures are missing the umpire chair or placeholder.');
   }
   const umpire = attachStaffModel(chair, detailedUmpireTemplate, 'wtsl-detailed-umpire', 0x38536a, 1.72);
+  umpire.model.userData.role = 'chair-umpire';
+  const badge = new THREE.Group();
+  badge.name = 'wtsl-umpire-badge';
+  badge.userData.role = 'chair-umpire-identification';
+  badge.position.set(-0.115, 2.08, 0.2);
+  const badgeFrame = new THREE.Mesh(
+    new THREE.BoxGeometry(0.075, 0.09, 0.018),
+    new THREE.MeshStandardMaterial({ color: 0xb89b61, roughness: 0.68 }),
+  );
+  const badgeFace = new THREE.Mesh(
+    new THREE.BoxGeometry(0.055, 0.068, 0.012),
+    new THREE.MeshStandardMaterial({ color: 0xe0ddd2, roughness: 0.78 }),
+  );
+  badgeFace.position.z = 0.014;
+  const badgeStripe = new THREE.Mesh(
+    new THREE.BoxGeometry(0.037, 0.012, 0.004),
+    new THREE.MeshStandardMaterial({ color: 0x38536a, roughness: 0.72 }),
+  );
+  badgeStripe.position.set(0, 0.018, 0.022);
+  badge.add(badgeFrame, badgeFace, badgeStripe);
+  chair.add(badge);
   const headTurn = new THREE.Quaternion();
   placeholder.visible = false;
   fixtures.setDetailedUmpireUpdater((ballPosition) => {
