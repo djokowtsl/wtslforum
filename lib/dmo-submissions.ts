@@ -13,6 +13,8 @@ export type DmoSubmission = {
   round_name: string;
   player1: string;
   player2: string;
+  player1_character: string | null;
+  player2_character: string | null;
   file_name: string | null;
   public_share_consent: boolean;
   coach_group_share_consent: boolean;
@@ -40,6 +42,8 @@ export type NewDmoSubmission = {
   roundName: string;
   player1: string;
   player2: string;
+  player1Character?: string | null;
+  player2Character?: string | null;
   fileName?: string | null;
   publicShareConsent?: boolean;
   coachGroupShareConsent?: boolean;
@@ -94,6 +98,8 @@ export async function ensureDmoSubmissionSchema() {
           round_name TEXT NOT NULL,
           player1 TEXT NOT NULL,
           player2 TEXT NOT NULL,
+          player1_character TEXT,
+          player2_character TEXT,
           file_name TEXT,
           public_share_consent BOOLEAN NOT NULL DEFAULT FALSE,
           coach_group_share_consent BOOLEAN NOT NULL DEFAULT FALSE,
@@ -172,14 +178,15 @@ export async function createDmoSubmission(
   const rows = await sql`
     INSERT INTO dmo_submissions (
       submitted_by,submitter_discord_id,submitter_name,source,tournament,round_name,
-      player1,player2,file_name,public_share_consent,coach_group_share_consent,
+      player1,player2,player1_character,player2_character,file_name,public_share_consent,coach_group_share_consent,
       coach_share_url,private_blob_pathname,private_blob_content_type,external_url,
       source_discord_channel_id,source_discord_message_id,
       submission_thread_id,discord_message_id,discord_delivery_status,submission_date
     ) VALUES (
       ${input.submittedBy},${input.submitterDiscordId},${input.submitterName},
       ${input.source},${input.tournament},${input.roundName},${input.player1},
-      ${input.player2},${input.fileName ?? null},${input.publicShareConsent ?? false},
+      ${input.player2},${input.player1Character ?? null},${input.player2Character ?? null},
+      ${input.fileName ?? null},${input.publicShareConsent ?? false},
       ${input.coachGroupShareConsent ?? false},${input.coachShareUrl ?? null},
       ${input.privateBlobPathname ?? null},
       ${input.privateBlobContentType ?? null},${input.externalUrl ?? null},

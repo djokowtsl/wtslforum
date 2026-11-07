@@ -40,6 +40,12 @@ export default async function AdminDmoSubmissions() {
                 <p style={{ margin: '10px 0 6px' }}>
                   <strong>{submission.player1}</strong> vs <strong>{submission.player2}</strong>
                 </p>
+                {(submission.player1_character || submission.player2_character) && (
+                  <p className="notice" style={{ margin: '0 0 8px' }}>
+                    Character picks: {submission.player1} — {submission.player1_character || 'Not provided'};{' '}
+                    {submission.player2} — {submission.player2_character || 'Not provided'}
+                  </p>
+                )}
                 <p className="notice" style={{ marginBottom: 12 }}>
                   Submitted by {submission.account_name || submission.submitter_name}
                   {submission.submitter_discord_id ? ` · Discord ${submission.submitter_discord_id}` : ''}

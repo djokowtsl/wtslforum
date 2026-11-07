@@ -91,5 +91,15 @@
     "licenseUrl": "https://creativecommons.org/licenses/by-sa/3.0/",
     "notice": "NATIVE-RIG-AND-MOTION.md",
     "modifications": "Source frames 252–452 from a 100 Hz recording, resampled by retaining every fourth frame to 25 Hz; 51 frames. Inferred contact at source frame 344 from the right-wrist speed peak; the source has no ball or racket markers. Joint rotations unchanged."
+  },
+  {
+    "filename": "tennis-backhand-one.bvh",
+    "bytes": 566520,
+    "source": "https://github.com/jdpulgarin/Tennis-MoCap/blob/main/data/astrejos_Reves.bvh",
+    "sourceSha256": "388677cff087dfc535531c34aed745c9c8ab6f0b53ef4760cd2d8ad8774be544",
+    "origin": "Tennis-MoCap, Caldas-Colombia tennis players (Pulgarin-Giraldo et al.)",
+    "license": "CC-BY-SA-3.0",
+    "notice": "NATIVE-RIG-AND-MOTION.md",
+    "modifications": "Resampled 100 Hz to 25 Hz by retaining every fourth frame; rotations unchanged. Used for one-handed backhands."
   }
 ]

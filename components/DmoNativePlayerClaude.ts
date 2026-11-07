@@ -393,6 +393,9 @@ export function attachNativePlayer(
     const twoHanded = playback?.hands
       ? playback.hands === 'two'
       : Boolean(rig.root.userData.twoHandedGrip);
+    const oneHandedStroke = playback?.hands
+      ? playback.hands === 'one'
+      : !twoHanded;
 
     // 1. Procedural base pose (always), so captured motion blends from a
     //    plausible stance rather than from the bind A-pose.
@@ -489,7 +492,8 @@ export function attachNativePlayer(
     //    the captured shoulder/elbow/wrist chain is kept, not re-solved.
     const LEG_BONES = ['thigh_l', 'calf_l', 'foot_l', 'thigh_r', 'calf_r', 'foot_r'];
     const steppingLegs = LEG_BONES.map(name => pose.bones.get(name)!.quaternion.clone());
-    const capturedBody = playback ? capturedGroundstroke.apply(playback) : null;
+    const strokePlayback = playback ? { ...playback, oneHanded: oneHandedStroke } : undefined;
+    const capturedBody = strokePlayback ? capturedGroundstroke.apply(strokePlayback) : null;
     if (capturedBody) {
       // A stroke played on the run keeps the stepping legs: the captured legs
       // stand still and would glide across the court with the moving player.
@@ -512,8 +516,8 @@ export function attachNativePlayer(
           // same chest/shoulder/elbow offsets (fading out away from contact) so
           // the stroke path shifts coherently instead of kinking at impact.
           const saved = [...pose.bones.values()].map(b => [b, b.position.clone(), b.quaternion.clone()] as const);
-          capturedGroundstroke.apply({ ...playback, deltaSeconds: 0, weight: 1 });
-          const fullRoll = isRecordedBackhand(playback.stroke) && !twoHanded
+          capturedGroundstroke.apply({ ...strokePlayback!, deltaSeconds: 0, weight: 1 });
+          const fullRoll = isRecordedBackhand(playback.stroke) && oneHandedStroke
             ? new THREE.Quaternion().setFromAxisAngle(UP, (dominant === 'r' ? 1 : -1) * BACKHAND_FACE_ROLL)
             : new THREE.Quaternion();
           correction = { key: contact.key, ...solveCorrection(dominant, fullRoll, goal) };

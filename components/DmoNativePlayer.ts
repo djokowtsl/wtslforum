@@ -491,7 +491,9 @@ export function attachNativePlayer(
     //    the captured shoulder/elbow/wrist chain is kept, not re-solved.
     const LEG_BONES = ['thigh_l', 'calf_l', 'foot_l', 'thigh_r', 'calf_r', 'foot_r'];
     const steppingLegs = LEG_BONES.map(name => pose.bones.get(name)!.quaternion.clone());
-    const capturedBody = playback ? capturedGroundstroke.apply(playback) : null;
+    // The one-handed clip is selected only for a one-handed ground backhand.
+    const strokePlayback = playback ? { ...playback, oneHanded: oneHandedStroke } : undefined;
+    const capturedBody = strokePlayback ? capturedGroundstroke.apply(strokePlayback) : null;
     if (capturedBody) {
       // A stroke played on the run keeps the stepping legs: the captured legs
       // stand still and would glide across the court with the moving player.
@@ -515,7 +517,7 @@ export function attachNativePlayer(
           // same chest/shoulder/elbow offsets (fading out away from contact) so
           // the stroke path shifts coherently instead of kinking at impact.
           const saved = [...pose.bones.values()].map(b => [b, b.position.clone(), b.quaternion.clone()] as const);
-          capturedGroundstroke.apply({ ...playback, deltaSeconds: 0, weight: 1 });
+          capturedGroundstroke.apply({ ...strokePlayback!, deltaSeconds: 0, weight: 1 });
           const fullRoll = isRecordedBackhand(playback.stroke) && oneHandedStroke
             ? new THREE.Quaternion().setFromAxisAngle(UP, (dominant === 'r' ? 1 : -1) * BACKHAND_FACE_ROLL)
             : new THREE.Quaternion();

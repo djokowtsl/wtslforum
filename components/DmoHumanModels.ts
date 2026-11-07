@@ -40,7 +40,18 @@ async function loadGroundstrokeMotionSources(base: string, signal: AbortSignal):
       return undefined;
     }
   };
-  const [forehand, backhand, serve, smash, volleyForehand, volleyBackhand, locomotion] = await Promise.all([
+  const loadBackhandOne = async () => {
+    try {
+      const response = await fetch(`${base}/tennis-backhand-one.bvh`, { signal });
+      if (!response.ok) throw new Error(`Captured one-handed backhand request failed (${response.status}).`);
+      return await response.text();
+    } catch (error) {
+      if (signal.aborted) throw error;
+      console.warn('Captured one-handed backhand could not load; using the existing recording.', error);
+      return undefined;
+    }
+  };
+  const [forehand, backhand, serve, smash, volleyForehand, volleyBackhand, locomotion, backhandOne] = await Promise.all([
     load('forehand'),
     load('backhand'),
     load('serve'),
@@ -48,6 +59,7 @@ async function loadGroundstrokeMotionSources(base: string, signal: AbortSignal):
     load('volley-forehand'),
     load('volley-backhand'),
     loadLocomotion(),
+    loadBackhandOne(),
   ]);
   return {
     forehand,
@@ -57,6 +69,7 @@ async function loadGroundstrokeMotionSources(base: string, signal: AbortSignal):
     'volley-forehand': volleyForehand,
     'volley-backhand': volleyBackhand,
     locomotion,
+    backhandOne,
   };
 }
 

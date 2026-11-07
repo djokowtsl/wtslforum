@@ -34,6 +34,8 @@ export async function POST(req: NextRequest) {
   const roundName = String(form.get('round') ?? '').trim().slice(0, 60);
   const player1 = String(form.get('player1') ?? '').trim().slice(0, 100);
   const player2 = String(form.get('player2') ?? '').trim().slice(0, 100);
+  const player1Character = String(form.get('player1Character') ?? '').trim().slice(0, 100);
+  const player2Character = String(form.get('player2Character') ?? '').trim().slice(0, 100);
   const externalUrl = String(form.get('externalUrl') ?? '').trim().slice(0, 1000);
   const coachShare = parseTe4CoachShareUrl(String(form.get('coachShareUrl') ?? '').slice(0, 500));
   const entry = form.get('file');
@@ -120,6 +122,8 @@ export async function POST(req: NextRequest) {
       roundName,
       player1,
       player2,
+      player1Character: player1Character || null,
+      player2Character: player2Character || null,
       fileName: file?.name.slice(0, 120) ?? null,
       publicShareConsent,
       coachGroupShareConsent,
@@ -158,6 +162,8 @@ export async function POST(req: NextRequest) {
       roundName,
       player1,
       player2,
+      player1Character: player1Character || null,
+      player2Character: player2Character || null,
       externalUrl: externalUrl || null,
       coachShareUrl: coachShare.url,
       file,

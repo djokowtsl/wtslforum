@@ -22,6 +22,7 @@ import { consumePendingDmoReaderReset } from '@/lib/dmoReaderState';
 import { hasPlayerPositionData } from '@/lib/te4LiveSetup';
 import { isPresignedUrlRetrievalFailure } from '@/lib/dmoUploadErrors';
 import { attemptFullReplayPreparation } from '@/lib/liveReplayPreparation';
+import { inferredOneHandedBackhandPlayer } from '@/lib/liveCharacterBackhand.mjs';
 import {
   defaultPlayerStrokeStyles,
   type PlayerHandedness,
@@ -40,6 +41,7 @@ type FolderPickerWindow = Window & {
 };
 
 type Props = { displayName: string; canPrepareFullReplay: boolean };
+type CharacterBackhandType = 'one-handed' | 'two-handed';
 type LiveWtslMatch = {
   name: string;
   bestOf: Te4LiveBestOf;
@@ -54,6 +56,35 @@ type DmoReplay = {
   startedAt: number;
   lastFrame: number;
 };
+
+function resolveBroadcastStrokeStyles(
+  players: [string, string] | null | undefined,
+  selectedStyles: PlayerStrokeStylePair,
+  selectedCharacters: [string, string],
+  characterBackhandTypes: [CharacterBackhandType | null, CharacterBackhandType | null],
+  manualBackhandOverrides: [boolean, boolean],
+): PlayerStrokeStylePair {
+  const result = selectedStyles.map((style) => ({ ...style })) as PlayerStrokeStylePair;
+  if (!players) return result;
+
+  const matches = selectedCharacters.map((name, index) =>
+    inferredOneHandedBackhandPlayer(players, name, characterBackhandTypes[index]));
+  const matchCounts = new Map<number, number>();
+  for (const match of matches) {
+    if (match !== null) matchCounts.set(match, (matchCounts.get(match) ?? 0) + 1);
+  }
+  matches.forEach((match, selectionIndex) => {
+    if (
+      match !== null
+      && matchCounts.get(match) === 1
+      && characterBackhandTypes[selectionIndex] === 'one-handed'
+      && !manualBackhandOverrides[match]
+    ) {
+      result[match] = { ...result[match], backhand: 'one' };
+    }
+  });
+  return result;
+}
 
 const MAX_REPLAY_FILE_BYTES = 64 * 1024 * 1024;
 const DMO_READ_CHUNK_BYTES = 1 << 20;
@@ -149,6 +180,17 @@ export default function DmoLiveHost({ displayName, canPrepareFullReplay }: Props
   const [characterRosterStatus, setCharacterRosterStatus] = useState<'loading' | 'ready' | 'error'>('loading');
   const [characterRosterRetry, setCharacterRosterRetry] = useState(0);
   const [character, setCharacter] = useState('');
+  const [opponentCharacter, setOpponentCharacter] = useState('');
+  const [characterBackhandTypes, setCharacterBackhandTypes] = useState<
+    [CharacterBackhandType | null, CharacterBackhandType | null]
+  >([null, null]);
+  const [characterBackhandStatus, setCharacterBackhandStatus] = useState<
+    'idle' | 'loading' | 'ready' | 'partial' | 'unavailable'
+  >('idle');
+  const selectedCharactersRef = useRef<[string, string]>(['', '']);
+  selectedCharactersRef.current = [character, opponentCharacter];
+  const characterBackhandTypesRef = useRef(characterBackhandTypes);
+  characterBackhandTypesRef.current = characterBackhandTypes;
   const [savedBroadcastCharacter, setSavedBroadcastCharacter] = useState('');
   const [savingCharacter, setSavingCharacter] = useState(false);
   const [officialByBroadcaster, setOfficialByBroadcaster] = useState(false);
@@ -163,6 +205,7 @@ export default function DmoLiveHost({ displayName, canPrepareFullReplay }: Props
   );
   const playerStrokeStylesRef = useRef(playerStrokeStyles);
   playerStrokeStylesRef.current = playerStrokeStyles;
+  const manualBackhandOverrides = useRef<[boolean, boolean]>([false, false]);
   const [notice, setNotice] = useState('Choose the folder where TE4 is writing its DMO recording.');
   const [error, setError] = useState('');
   const [busy, setBusy] = useState(false);
@@ -215,6 +258,52 @@ export default function DmoLiveHost({ displayName, canPrepareFullReplay }: Props
       });
     return () => controller.abort();
   }, [characterRosterRetry]);
+
+  useEffect(() => {
+    const names = [character.trim(), opponentCharacter.trim()] as const;
+    if (!names.some(Boolean)) {
+      setCharacterBackhandTypes([null, null]);
+      setCharacterBackhandStatus('idle');
+      return;
+    }
+    const controller = new AbortController();
+    setCharacterBackhandTypes([null, null]);
+    setCharacterBackhandStatus('loading');
+    void Promise.all(names.map(async (name) => {
+      if (!name) return null;
+      try {
+        const params = new URLSearchParams({ tour: 'all', character: name });
+        const response = await fetch(`/api/character-stats?${params.toString()}`, {
+          cache: 'no-store',
+          signal: controller.signal,
+        });
+        const body = await response.json().catch(() => null);
+        if (!response.ok) return null;
+        const backhandType = body?.profile?.backhand_type;
+        return backhandType === 'one-handed' || backhandType === 'two-handed'
+          ? backhandType as CharacterBackhandType
+          : null;
+      } catch (cause) {
+        if (cause instanceof Error && cause.name === 'AbortError') throw cause;
+        return null;
+      }
+    })).then((types) => {
+      if (controller.signal.aborted) return;
+      setCharacterBackhandTypes(types as [CharacterBackhandType | null, CharacterBackhandType | null]);
+      const selectedCount = names.filter(Boolean).length;
+      const availableCount = types.filter(Boolean).length;
+      setCharacterBackhandStatus(
+        availableCount === selectedCount ? 'ready' : availableCount ? 'partial' : 'unavailable',
+      );
+    }).catch((cause: unknown) => {
+      if (cause instanceof Error && cause.name === 'AbortError') return;
+      if (!controller.signal.aborted) {
+        setCharacterBackhandTypes([null, null]);
+        setCharacterBackhandStatus('unavailable');
+      }
+    });
+    return () => controller.abort();
+  }, [character, opponentCharacter]);
 
   useEffect(() => {
     let active = true;
@@ -462,6 +551,7 @@ export default function DmoLiveHost({ displayName, canPrepareFullReplay }: Props
     setPlayerHands(['right', 'right']);
     playerStrokeStylesRef.current = defaultPlayerStrokeStyles();
     setPlayerStrokeStyles(playerStrokeStylesRef.current);
+    manualBackhandOverrides.current = [false, false];
     lastPresentationSignature.current = '';
     if (mode === 'manual') {
       liveDmoGrowthDetected.current = false;
@@ -603,14 +693,26 @@ export default function DmoLiveHost({ displayName, canPrepareFullReplay }: Props
               ...firstFrame,
               players: canonicalPlayers ?? firstFrame.players,
               handedness: playerHandsRef.current,
-              strokeStyles: playerStrokeStylesRef.current,
+              strokeStyles: resolveBroadcastStrokeStyles(
+                canonicalPlayers ?? firstFrame.players,
+                playerStrokeStylesRef.current,
+                selectedCharactersRef.current,
+                characterBackhandTypesRef.current,
+                manualBackhandOverrides.current,
+              ),
             },
           }),
         });
         if (!initialResponse.ok) throw new Error(await responseError(initialResponse));
         lastPresentationSignature.current = JSON.stringify({
           handedness: playerHandsRef.current,
-          strokeStyles: playerStrokeStylesRef.current,
+          strokeStyles: resolveBroadcastStrokeStyles(
+            canonicalPlayers ?? firstFrame.players,
+            playerStrokeStylesRef.current,
+            selectedCharactersRef.current,
+            characterBackhandTypesRef.current,
+            manualBackhandOverrides.current,
+          ),
         });
         sequence.current = 1;
         lastSentVersion.current = replaySource.parser.version;
@@ -708,9 +810,17 @@ export default function DmoLiveHost({ displayName, canPrepareFullReplay }: Props
     const sendUpdate = async (current?: Te4LiveSnapshot) => {
       if (!broadcastId) return;
       const nextSequence = sequence.current + 1;
+      const presentationPlayers = canonicalBroadcastPlayers.current ?? automaticPlayers.current;
+      const presentationStyles = resolveBroadcastStrokeStyles(
+        presentationPlayers,
+        playerStrokeStylesRef.current,
+        selectedCharactersRef.current,
+        characterBackhandTypesRef.current,
+        manualBackhandOverrides.current,
+      );
       const presentationSignature = JSON.stringify({
         handedness: playerHandsRef.current,
-        strokeStyles: playerStrokeStylesRef.current,
+        strokeStyles: presentationStyles,
       });
       const presentationChanged = presentationSignature !== lastPresentationSignature.current;
       const replayState = replay.current;
@@ -755,7 +865,13 @@ export default function DmoLiveHost({ displayName, canPrepareFullReplay }: Props
           pointHistory: undefined,
           players: canonicalBroadcastPlayers.current ?? snapshotSource.players,
           handedness: playerHandsRef.current,
-          strokeStyles: playerStrokeStylesRef.current,
+          strokeStyles: resolveBroadcastStrokeStyles(
+            canonicalBroadcastPlayers.current ?? snapshotSource.players,
+            playerStrokeStylesRef.current,
+            selectedCharactersRef.current,
+            characterBackhandTypesRef.current,
+            manualBackhandOverrides.current,
+          ),
         }
         : undefined;
       if (pointHistory?.length) {
@@ -1115,6 +1231,32 @@ export default function DmoLiveHost({ displayName, canPrepareFullReplay }: Props
               </span>
             )}
           </label>
+          <label className={styles.bestOf}>
+            <span>Opponent’s TE4 character (optional)</span>
+            <select
+              aria-label="Opponent’s TE4 character"
+              value={opponentCharacter}
+              onChange={(event) => setOpponentCharacter(event.currentTarget.value)}
+              disabled={characterRosterStatus === 'loading' || busy || Boolean(broadcastId)}
+            >
+              <option value="">No character</option>
+              {opponentCharacter && !characterChoices.includes(opponentCharacter) && (
+                <option value={opponentCharacter}>{opponentCharacter}</option>
+              )}
+              {characterChoices.map((name) => <option key={`opponent-${name}`} value={name}>{name}</option>)}
+            </select>
+          </label>
+          {characterBackhandStatus !== 'idle' && (
+            <small className={styles.characterRosterStatus} role="status">
+              {characterBackhandStatus === 'loading'
+                ? 'Checking selected character backhand styles…'
+                : characterBackhandStatus === 'ready'
+                  ? 'A one-handed backhand is inferred only when a selected character matches a DMO player name; per-player grip choices take precedence.'
+                  : characterBackhandStatus === 'partial'
+                    ? 'One character profile is unavailable. Use the per-player grip controls for that player.'
+                    : 'Character backhand data is unavailable. Use the per-player grip controls.'}
+            </small>
+          )}
           {broadcastId && (
             <button
               type="button"
@@ -1268,6 +1410,11 @@ export default function DmoLiveHost({ displayName, canPrepareFullReplay }: Props
                             : style,
                         ) as PlayerStrokeStylePair;
                         playerStrokeStylesRef.current = next;
+                        if (stroke === 'backhand') {
+                          const overrides = [...manualBackhandOverrides.current] as [boolean, boolean];
+                          overrides[index] = true;
+                          manualBackhandOverrides.current = overrides;
+                        }
                         setPlayerStrokeStyles(next);
                       }}
                     >

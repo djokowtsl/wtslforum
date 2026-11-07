@@ -9,6 +9,8 @@ export default function DmoSubmitForm() {
   const [roundName, setRoundName] = useState('');
   const [player1, setPlayer1] = useState('');
   const [player2, setPlayer2] = useState('');
+  const [player1Character, setPlayer1Character] = useState('');
+  const [player2Character, setPlayer2Character] = useState('');
   const [externalUrl, setExternalUrl] = useState('');
   const [coachShareUrl, setCoachShareUrl] = useState('');
   const [file, setFile] = useState<File | null>(null);
@@ -47,6 +49,8 @@ export default function DmoSubmitForm() {
       form.append('round', roundName);
       form.append('player1', player1);
       form.append('player2', player2);
+      form.append('player1Character', player1Character.trim());
+      form.append('player2Character', player2Character.trim());
       form.append('externalUrl', externalUrl.trim());
       form.append('coachShareUrl', coachShareUrl.trim());
       form.append('publicShareConsent', String(publicShareConsent && Boolean(file)));
@@ -64,6 +68,8 @@ export default function DmoSubmitForm() {
       setRoundName('');
       setPlayer1('');
       setPlayer2('');
+      setPlayer1Character('');
+      setPlayer2Character('');
       setExternalUrl('');
       setCoachShareUrl('');
       setFile(null);
@@ -92,7 +98,7 @@ export default function DmoSubmitForm() {
     <section className="admin-card">
       <h3>Submit a match recording</h3>
       <p className="notice" style={{ marginBottom: 14 }}>
-        Add the tournament, round, and players, then attach a .dmo file or provide a recording link.
+        Add the tournament, round, and players, and note the TE4 character each player used. Then attach a .dmo file or provide a recording link.
         For a match played across multiple sessions,{' '}
         <a href="https://replays.knowthew.net/join" target="_blank" rel="noopener noreferrer">
           join the replay parts first
@@ -138,6 +144,24 @@ export default function DmoSubmitForm() {
             placeholder="Player 2"
             value={player2}
             onChange={(event) => setPlayer2(event.target.value)}
+            style={inputStyle}
+          />
+        </div>
+        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(180px, 1fr))', gap: 10 }}>
+          <input
+            maxLength={100}
+            placeholder="Player 1 character pick (optional)"
+            aria-label="Player 1 character pick"
+            value={player1Character}
+            onChange={(event) => setPlayer1Character(event.target.value)}
+            style={inputStyle}
+          />
+          <input
+            maxLength={100}
+            placeholder="Player 2 character pick (optional)"
+            aria-label="Player 2 character pick"
+            value={player2Character}
+            onChange={(event) => setPlayer2Character(event.target.value)}
             style={inputStyle}
           />
         </div>

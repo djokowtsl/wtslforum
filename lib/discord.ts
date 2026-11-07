@@ -418,6 +418,8 @@ export async function sendDmoSubmission(input: {
   roundName: string;
   player1: string;
   player2: string;
+  player1Character?: string | null;
+  player2Character?: string | null;
   externalUrl?: string | null;
   coachShareUrl?: string | null;
   file?: Blob | null;
@@ -434,6 +436,9 @@ export async function sendDmoSubmission(input: {
     `**Tournament:** ${input.tournament}`,
     `**Round:** ${input.roundName}`,
     `**Players:** ${input.player1} vs ${input.player2}`,
+    input.player1Character || input.player2Character
+      ? `**Character picks:** ${input.player1} — ${input.player1Character || 'not provided'}; ${input.player2} — ${input.player2Character || 'not provided'}`
+      : null,
     input.fileName ? `**File:** ${input.fileName}` : null,
     input.externalUrl ? `**Link:** ${input.externalUrl}` : null,
     input.coachShareUrl ? `**TE4 Coach match:** ${input.coachShareUrl}` : null,
