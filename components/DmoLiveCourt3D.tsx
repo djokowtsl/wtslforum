@@ -1,6 +1,6 @@
 'use client';
 
-import { useCallback, useEffect, useRef, useState } from 'react';
+import { useCallback, useEffect, useRef, useState, type ReactNode } from 'react';
 import { ChevronLeft, ChevronRight, Minus, Pause, Play, Plus, RotateCcw, Volume2, VolumeX } from 'lucide-react';
 import * as THREE from 'three';
 import { OrbitControls } from 'three/examples/jsm/controls/OrbitControls.js';
@@ -129,6 +129,8 @@ type Props = {
   buffering?: boolean;
   fullReplay?: boolean;
   scoreboard?: StadiumScoreboardData;
+  replayOverlay?: ReactNode;
+  onReplayFrameChange?: (frame: number) => void;
 };
 
 type CameraView =
@@ -202,6 +204,8 @@ function ThreeCourt({
   isWta = false,
   buffering = false,
   scoreboard,
+  replayOverlay,
+  onReplayFrameChange,
   gruntsEnabled,
   onGruntsEnabledChange,
   onUnsupported,
@@ -250,6 +254,11 @@ function ThreeCourt({
   const replayUiUpdateAt = useRef(0);
   replayPlayingRef.current = replayPlaying;
   replaySpeedRef.current = replaySpeed;
+
+  useEffect(() => {
+    if (fullReplay) onReplayFrameChange?.(replayFrame);
+  }, [fullReplay, onReplayFrameChange, replayFrame]);
+
   const scoreboardData: StadiumScoreboardData = scoreboard ?? {
     players: snapshot.players,
     score: {
@@ -2314,6 +2323,7 @@ function ThreeCourt({
             <b>{shotCallout.speedKmh}<small>km/h</small></b>
           </div>
         )}
+        {fullReplay && replayOverlay}
         {!hasCourtData && (
           <p className={styles.waiting} role="status">Court positions will appear as the match feed updates.</p>
         )}
