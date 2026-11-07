@@ -1,9 +1,23 @@
 import * as THREE from 'three';
 import { BVHLoader } from 'three/examples/jsm/loaders/BVHLoader.js';
 
-export type GroundstrokeName = 'forehand' | 'backhand' | 'serve';
+export type GroundstrokeName =
+  | 'forehand'
+  | 'backhand'
+  | 'serve'
+  | 'volley-forehand'
+  | 'volley-backhand';
 export type DominantHandedness = 'left' | 'right';
 export type PlayerStrokeHands = 'one' | 'two';
+
+export function recordedStrokeForSide(side: 'forehand' | 'backhand', atNet: boolean): GroundstrokeName {
+  if (!atNet) return side;
+  return side === 'forehand' ? 'volley-forehand' : 'volley-backhand';
+}
+
+export function isRecordedBackhand(stroke: GroundstrokeName | undefined) {
+  return stroke === 'backhand' || stroke === 'volley-backhand';
+}
 
 export function recordedStrokeUsesTwoHands(
   stroke: GroundstrokeName | undefined,
@@ -11,17 +25,16 @@ export function recordedStrokeUsesTwoHands(
   fallback: boolean,
 ) {
   if (!stroke) return fallback;
-  if (stroke === 'serve') return false;
+  if (stroke === 'serve' || stroke === 'volley-forehand' || stroke === 'volley-backhand') return false;
   return (style?.[stroke] ?? (stroke === 'backhand' ? 'two' : 'one')) === 'two';
 }
 
-export interface GroundstrokeMotionSources {
-  forehand: string;
-  backhand: string;
-  serve: string;
+export type GroundstrokeMotionSources = {
+  [stroke in GroundstrokeName]: string;
+} & {
   /** Recorded walk / jog / run for the arms between points (optional). */
   locomotion?: { walk: string; jog: string; run: string };
-}
+};
 
 export interface GroundstrokePlayback {
   stroke: GroundstrokeName;
@@ -68,6 +81,10 @@ const CONTACT_SECONDS: Record<GroundstrokeName, number> = {
   forehand: 13.4,
   backhand: 9.28,
   serve: 2.56,
+  // Tennis-MoCap volley excerpts use a 25 Hz BVH and retain the selected
+  // right-wrist speed peak at frame 23. The dataset has no ball marker.
+  'volley-forehand': 0.92,
+  'volley-backhand': 0.92,
 };
 
 const READY_POSE_SECONDS = 0.5;
@@ -201,6 +218,8 @@ export class DmoCapturedGroundstroke {
       forehand: this.prepare('forehand', sources.forehand, rest),
       backhand: this.prepare('backhand', sources.backhand, rest),
       serve: this.prepare('serve', sources.serve, rest),
+      'volley-forehand': this.prepare('volley-forehand', sources['volley-forehand'], rest),
+      'volley-backhand': this.prepare('volley-backhand', sources['volley-backhand'], rest),
     };
   }
 

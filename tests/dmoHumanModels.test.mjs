@@ -106,6 +106,26 @@ const handCanonical = new THREE.Quaternion().setFromRotationMatrix(new THREE.Mat
   new THREE.Vector3(0, 0, 1), new THREE.Vector3(0, -1, 0), new THREE.Vector3(1, 0, 0),
 ));
 
+test('recorded volley clips are compact, parsed, and attributed share-alike derivatives', async () => {
+  const manifest = JSON.parse(await readFile(
+    new URL('../public/models/dmo-humans/provenance.json', import.meta.url),
+  ));
+  for (const filename of ['tennis-volley-forehand.bvh', 'tennis-volley-backhand.bvh']) {
+    const bytes = await readFile(new URL(`../public/models/dmo-humans/${filename}`, import.meta.url));
+    const parsed = new BVHLoader().parse(bytes.toString('utf8'));
+    const provenance = manifest.find(entry => entry.filename === filename);
+    assert.ok(provenance, `${filename} has no provenance entry`);
+    assert.equal(provenance.bytes, bytes.byteLength);
+    assert.equal(provenance.license, 'CC BY-SA 3.0');
+    assert.match(provenance.source, /jdpulgarin\/Tennis-MoCap/);
+    assert.equal(parsed.clip.tracks[0].times.length, 51);
+    assert.ok(Math.abs(parsed.clip.tracks[0].times[23] - 0.92) < 1e-6,
+      'the inferred contact sample remains at 0.92 seconds');
+    assert.equal(parsed.skeleton.bones.find(bone => bone.name === 'RightWrist')?.name, 'RightWrist');
+    assert.ok(bytes.byteLength < 50_000, 'only the selected motion excerpt is shipped');
+  }
+});
+
 for (const gender of ['male', 'female']) test(`${gender}: continuous native body retains wrists, clothes and segment lengths`, async () => {
     const template = await nativePlayerTemplate(gender);
     const bytes = await readFile(new URL('../public/models/dmo-humans/native-player.glb', import.meta.url));
@@ -234,11 +254,19 @@ test('retargeted limb directions match the capture rather than its first-frame d
   const template = await nativePlayerTemplate('male');
   const rig = sceneApi.makePlayer(0x275c77, 0x333333);
   const attached = humans.attachHumanPlayer(template, rig, 0x275c77);
-  const sources = Object.fromEntries(await Promise.all(['forehand', 'backhand', 'serve'].map(async stroke =>
+  const sources = Object.fromEntries(await Promise.all([
+    'forehand', 'backhand', 'serve', 'volley-forehand', 'volley-backhand',
+  ].map(async stroke =>
     [stroke, await readFile(new URL(`../public/models/dmo-humans/tennis-${stroke}.bvh`, import.meta.url), 'utf8')])));
   attached.pose.reset();
   const capture = new capturedGroundstroke.DmoCapturedGroundstroke(attached.model, rig.root, attached.pose.rest, sources);
-  const contact = { forehand: 13.4, backhand: 9.28, serve: 2.56 };
+  const contact = {
+    forehand: 13.4,
+    backhand: 9.28,
+    serve: 2.56,
+    'volley-forehand': 0.92,
+    'volley-backhand': 0.92,
+  };
   for (const stroke of Object.keys(sources)) {
     const source = new BVHLoader().parse(sources[stroke]);
     const mixer = new THREE.AnimationMixer(source.skeleton.bones[0]);
@@ -388,13 +416,15 @@ test('native grip survives repeated full-body resets and shoes use bind-relative
   }
 });
 
-test('captured forehands, backhands, and serves animate the full body for either handedness', async () => {
+test('captured strokes and volleys animate the full body for either handedness', async () => {
   const template = await nativePlayerTemplate('male');
   const rig = sceneApi.makePlayer(0x275c77, 0x333333);
   const attached = humans.attachHumanPlayer(template, rig, 0x275c77);
   const inspected = ['spine_03', 'neck_01', 'upperarm_l', 'upperarm_r', 'lowerarm_l', 'lowerarm_r',
     'thigh_l', 'thigh_r', 'calf_l', 'calf_r', 'foot_l', 'foot_r'];
-  for (const stroke of ['forehand', 'backhand', 'serve']) {
+  for (const stroke of [
+    'forehand', 'backhand', 'serve', 'volley-forehand', 'volley-backhand',
+  ]) {
     for (const handedness of ['right', 'left']) {
       rig.root.userData.dominantHandedness = handedness;
       rig.root.userData.groundstrokePlayback = {

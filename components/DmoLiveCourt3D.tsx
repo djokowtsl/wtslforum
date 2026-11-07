@@ -17,8 +17,10 @@ import {
   GROUNDSTROKE_LEAD_FRAMES,
   SERVE_LEAD_FRAMES,
   groundstrokeCaptureWeight,
+  recordedStrokeForSide,
   recordedStrokeUsesTwoHands,
   serveCaptureWeight,
+  type GroundstrokeName,
 } from './DmoCapturedGroundstroke';
 import { courtSurfaceDisplayName, isIndoorDmoVenue } from '@/lib/te4DmoSurface';
 import {
@@ -140,7 +142,7 @@ async function loadGruntSample(context: AudioContext, isWta: boolean) {
 const MIN_CAMERA_HEIGHT = 0.8;
 
 /** Shown under the court so a deployed build can be identified at a glance. */
-const RENDERER_BUILD = 'stadium/audio + player repair r12';
+const RENDERER_BUILD = 'stadium/audio + recorded volleys + player repair r13';
 
 function firstEventAfterFrame<T extends { frame: number }>(events: T[], frame: number) {
   let low = 0;
@@ -886,6 +888,10 @@ function ThreeCourt({
         travel[1] += gait.direction[1] * turnDistance;
       }
       const steppingSpeed = Math.max(walking ? WALK_SPEED : speedMs * (1 - slideWeight), Math.min(1.5, turnSpeed));
+      // Stride style: natural strides when walking or jogging somewhere between
+      // points (and on a sprint with the racket at the side); short quick
+      // footwork around the ball in a rally. Use the eased carry from last frame.
+      gait.walking = walking ? 1 : THREE.MathUtils.clamp(Number(rig.root.userData.carryMove ?? 0), 0, 1);
       advanceGait(gait, travel, steppingSpeed);
       const [stepA, stepB] = gaitFeet(gait, steppingSpeed);
       rig.root.userData.locomotionSpeed = steppingSpeed;
@@ -1094,10 +1100,11 @@ function ThreeCourt({
         ? ((contactSample[0] - contactSample[xIndex]) * localXAxis[0]
           + (contactSample[1] - contactSample[zIndex]) * localXAxis[1]) * SCALE / rig.root.scale.x
         : localX;
-      const stroke = groundstrokeForBallSide(contactSide, handedness);
-      type CapturedEvent = { frame: number; stroke: 'forehand' | 'backhand' | 'serve'; handedness: 'left' | 'right' };
+      const baseStroke = groundstrokeForBallSide(contactSide, handedness);
+      const stroke = recordedStrokeForSide(baseStroke, strokeCue === 'close-net');
+      type CapturedEvent = { frame: number; stroke: GroundstrokeName; handedness: 'left' | 'right' };
       let capturedEvent = rig.root.userData.capturedGroundstrokeEvent as CapturedEvent | undefined;
-      if (strokeEvent && (strokeCue === 'close-net' || strokeCue === 'soft-touch')) {
+      if (strokeEvent && strokeCue === 'soft-touch') {
         delete rig.root.userData.capturedGroundstrokeEvent;
         delete rig.root.userData.groundstrokePlayback;
         capturedEvent = undefined;
@@ -1151,6 +1158,7 @@ function ThreeCourt({
               weight,
               handedness: capturedEvent.handedness,
               rootOffset: false,
+              hands: recordedStrokeUsesTwoHands(capturedEvent.stroke, playerStrokeStyle, false) ? 'two' : 'one',
             };
           } else {
             delete rig.root.userData.groundstrokePlayback;
@@ -1160,7 +1168,7 @@ function ThreeCourt({
         delete rig.root.userData.groundstrokePlayback;
       }
       const twoHandedStroke = !serving
-        && (playerStrokeStyle?.[stroke] ?? (stroke === 'backhand' ? 'two' : 'one')) === 'two';
+        && recordedStrokeUsesTwoHands(stroke, playerStrokeStyle, stroke === 'backhand');
       const armPump = Math.sin(phase * 0.55) * gaitSpeed * 0.12;
       // Between shots the racket is carried, not held up by the head: in front
       // at the waist with the free hand on the throat when standing, in the
@@ -1370,7 +1378,9 @@ function ThreeCourt({
       const serveFollowRotation = contactRotation.clone().multiply(
         new THREE.Quaternion().setFromEuler(new THREE.Euler(strokeSide * 0.28, 0, -strokeSide * 0.88)),
       );
-      const standingShaft = new THREE.Vector3(-Math.sign(dominantX) * 0.18, 0.32, 0.93).normalize();
+      // Neutral: the racket points straight at the opponent, head a little up.
+      // (Angled across toward the backhand side it read as about to hit one.)
+      const standingShaft = new THREE.Vector3(-Math.sign(dominantX) * 0.04, 0.32, 0.95).normalize();
       const movingShaft = new THREE.Vector3(-Math.sign(dominantX) * 0.1, -0.2 - 0.15 * (1 - runFactor), 0.97).normalize();
       const carryRotation = racketContactOrientation(standingShaft, new THREE.Vector3(0, 1, 0).cross(standingShaft))
         .slerp(racketContactOrientation(movingShaft, new THREE.Vector3(0, 1, 0).cross(movingShaft)), onTheMove);
@@ -1383,8 +1393,8 @@ function ThreeCourt({
       if (shapedFollowThrough > 0) rig.racket.quaternion.slerp(followRotation, shapedFollowThrough);
       if (serveFollowThrough > 0) rig.racket.quaternion.slerp(serveFollowRotation, serveFollowThrough);
       if (ready > 0) {
-        // Head forward, up, and a little across toward the free side; face upright.
-        const readyShaft = new THREE.Vector3(-Math.sign(dominantX) * 0.28, 0.42, 0.86).normalize();
+        // Head forward and up, straight at the server; face upright.
+        const readyShaft = new THREE.Vector3(-Math.sign(dominantX) * 0.06, 0.42, 0.9).normalize();
         const readyRotation = racketContactOrientation(
           readyShaft,
           new THREE.Vector3(0, 1, 0).cross(readyShaft),
@@ -1418,7 +1428,7 @@ function ThreeCourt({
       // The stroke being played back (if any) decides the grip style through
       // its recovery, rather than the ball's current side after the event passes.
       const recordedStroke = rig.root.userData.capturedGroundstrokeEvent as
-        { frame: number; stroke: 'forehand' | 'backhand' | 'serve' } | undefined;
+        { frame: number; stroke: GroundstrokeName } | undefined;
       const recordedTwoHanded = recordedStrokeUsesTwoHands(
         recordedStroke?.stroke,
         playerStrokeStyle,

@@ -148,7 +148,7 @@ test('stadium and audience scale with recognized tournament capacities', async (
   const viewer = await readFile(new URL('../components/DmoLiveViewer.tsx', import.meta.url), 'utf8');
   assert.match(court, /sceneDataRef\.current\.snapshot\.stadium/);
   assert.match(court, /snapshot\.stadium\]\)/);
-  assert.match(court, /const RENDERER_BUILD = 'stadium\/audio \+ player repair r12';/);
+  assert.match(court, /const RENDERER_BUILD = 'stadium\/audio \+ recorded volleys \+ player repair r13';/);
   assert.ok(court.includes('· ${RENDERER_BUILD}'), 'the renderer build hint remains visible under the court');
   assert.match(court, /maxInteriorCameraDistance/);
   assert.match(court, /controls\.maxDistance = maxDistanceForTarget\(cameraTargetAnchor\)/);

@@ -12,6 +12,7 @@ import {
 import { addNativeTwistBones, distributeNativeTwist, twistAngle } from './DmoNativeTwist';
 import {
   DmoCapturedGroundstroke,
+  isRecordedBackhand,
   type GroundstrokeMotionSources,
   type GroundstrokePlayback,
 } from './DmoCapturedGroundstroke';
@@ -462,6 +463,26 @@ export function attachNativePlayer(
         pose.orient(`hand_${dominant}`, recordedHand.slerp(limitWrist(dominant, desired), locomotionArms));
         model.updateMatrixWorld(true);
       }
+      // The live renderer defaults to this player implementation. Preserve
+      // recorded elbow/hand positions, but resolve each arm through its natural
+      // elbow hinge instead of copying twist along the upper arm.
+      if (capturedLocomotion && Math.max(readyArms, locomotionArms) > 0) {
+        for (const side of [dominant, support]) {
+          const arm = arms[side];
+          const s = pose.point(arm.root), e = pose.point(arm.middle), w = pose.point(arm.end);
+          const hand = pose.rotation(`hand_${side}`);
+          const upper = e.clone().sub(s), lower = w.clone().sub(e);
+          let hinge = upper.clone().cross(lower);
+          if (hinge.lengthSq() < 1e-6) {
+            // Nearly straight: carry the rest hinge round with the upper arm.
+            hinge = arm.restHinge.clone().applyQuaternion(new THREE.Quaternion()
+              .setFromUnitVectors(pose.rest.get(arm.root)!.direction, upper.clone().normalize()));
+          }
+          setLimb(arm, e, w, hinge.normalize());
+          pose.orient(`hand_${side}`, limitWrist(side, hand));
+        }
+        model.updateMatrixWorld(true);
+      }
     }
 
     // 2. Captured stroke motion blends over the whole body, arms included:
@@ -480,7 +501,7 @@ export function attachNativePlayer(
     }
     const strokeRoll = new THREE.Quaternion();
     if (capturedBody && playback) {
-      if (playback.stroke === 'backhand' && !twoHanded) {
+      if (isRecordedBackhand(playback.stroke) && !twoHanded) {
         strokeRoll.setFromAxisAngle(UP, (dominant === 'r' ? 1 : -1) * BACKHAND_FACE_ROLL * captureWeight);
       }
       const contact = rig.root.userData.contactTarget as ContactTarget | undefined;
@@ -492,7 +513,7 @@ export function attachNativePlayer(
           // the stroke path shifts coherently instead of kinking at impact.
           const saved = [...pose.bones.values()].map(b => [b, b.position.clone(), b.quaternion.clone()] as const);
           capturedGroundstroke.apply({ ...playback, deltaSeconds: 0, weight: 1 });
-          const fullRoll = playback.stroke === 'backhand' && !twoHanded
+          const fullRoll = isRecordedBackhand(playback.stroke) && !twoHanded
             ? new THREE.Quaternion().setFromAxisAngle(UP, (dominant === 'r' ? 1 : -1) * BACKHAND_FACE_ROLL)
             : new THREE.Quaternion();
           correction = { key: contact.key, ...solveCorrection(dominant, fullRoll, goal) };

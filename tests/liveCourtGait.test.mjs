@@ -325,3 +325,10 @@ test('erratic speed and direction keep both feet finite and separated in the gai
     assert.ok(state.offset === undefined || (state.offset >= 0.25 && state.offset <= 0.75));
   }
 });
+
+test('rally footwork keeps short quick steps; walking between points takes natural strides', async () => {
+  const { halfStride } = await import('../lib/liveCourtGait.ts');
+  for (const speed of [1, 2, 3]) assert.ok(halfStride(speed, 0) < halfStride(speed, 1));
+  assert.ok(Math.abs(halfStride(2, 0) - Math.min(0.42, 0.1 + 0.11 * 2)) < 1e-9,
+    'rally footwork uses the short stride');
+});

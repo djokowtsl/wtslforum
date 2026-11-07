@@ -2,6 +2,7 @@ import * as THREE from 'three';
 import type { PlayerRig } from './DmoLiveCourt3DScene';
 import type { NativePlayerPose } from './DmoNativePlayer';
 import type { DmoCapturedGroundstroke, GroundstrokePlayback } from './DmoCapturedGroundstroke';
+import { isRecordedBackhand } from './DmoCapturedGroundstroke';
 import type { makeNativeGrip } from './DmoNativeGrip';
 import { racketContactOrientation } from './DmoRacketOrientation';
 
@@ -44,7 +45,7 @@ export class DmoGroundstrokeRig {
     const centre = this.pose.point(`hand_${side}`)
       .add(this.grips[side].centre.clone().multiplyScalar(this.bodyScale).applyQuaternion(hand));
     const rotation = hand.multiply(this.localRacket[side]).normalize();
-    if (stroke === 'backhand') rotation.multiply(new THREE.Quaternion()
+    if (isRecordedBackhand(stroke)) rotation.multiply(new THREE.Quaternion()
       .setFromAxisAngle(UP, BACKHAND_FACE_ROLL * (side === 'r' ? 1 : -1)));
     return { centre, rotation };
   }
@@ -130,7 +131,7 @@ export class DmoGroundstrokeRig {
       delete this.rig.root.userData.nativeGroundstrokeContact;
       return null;
     }
-    if (playback.stroke === 'backhand' && !two) {
+    if (isRecordedBackhand(playback.stroke) && !two) {
       // The source backhand is a generic capture. Keep the free arm's
       // anatomical local pose for one-handed selections; do not force a
       // second grasp or claim this is a professional player's authored style.

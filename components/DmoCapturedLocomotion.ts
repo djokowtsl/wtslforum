@@ -199,7 +199,9 @@ function applyArms(pose: PoseAccess, sampled: Map<string, THREE.Quaternion>, wei
   const turn = new THREE.Quaternion().setFromAxisAngle(new THREE.Vector3(0, 1, 0), Math.atan2(forward.x, forward.z));
   const rebase = turn.slerp(full, LEAN_FOLLOW);
   for (const target of TARGETS) {
-    if (target === 'spine_03') continue;
+    // (Clavicles stay at rest: the recorded clavicles, set onto this
+    // skeleton, raised the shoulders ~5 cm, a hunched look when walking.)
+    if (target === 'spine_03' || target.startsWith('clavicle_')) continue;
     const desired = rebase.clone().multiply(sampled.get(target)!);
     pose.orient(target, pose.rotation(target).slerp(desired, weight));
   }
@@ -247,11 +249,20 @@ export class DmoCapturedLocomotion {
     if (blended) applyArms(pose, blended, weight);
   }
 
-  /** The recorded ready position (standing, waiting, return stance). */
+  /**
+   * The recorded ready position (standing, waiting, return stance). The
+   * recording is a player waiting for a backhand, racket on that side; on its
+   * own it read as always about to hit one. Averaging it with its mirror image
+   * gives a neutral, centred ready position (the racket hand's own hold is then
+   * set by the wrist adjustment and the free hand is nudged onto the throat).
+   */
   applyReady(pose: PoseAccess, playback: ReadyPlayback) {
     const weight = THREE.MathUtils.clamp(playback.weight, 0, 1);
     if (!this.ready || weight <= 0) return;
-    const clip = playback.mirrored ? this.ready.left : this.ready.right;
-    applyArms(pose, sampleClip(clip, readyPoseTime(playback.time)), weight);
+    const time = readyPoseTime(playback.time);
+    const own = sampleClip(playback.mirrored ? this.ready.left : this.ready.right, time);
+    const mirror = sampleClip(playback.mirrored ? this.ready.right : this.ready.left, time);
+    own.forEach((q, bone) => q.slerp(mirror.get(bone)!, 0.5));
+    applyArms(pose, own, weight);
   }
 }
