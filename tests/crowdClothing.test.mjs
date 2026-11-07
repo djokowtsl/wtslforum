@@ -53,13 +53,15 @@ test('all occupied spectator seats keep instanced shoes and clothed hips through
   assert.ok(torsos.geometry.boundingBox.min.z < -0.15,
     'the instanced garment geometry wraps the torso rather than covering only its front');
   shoes.geometry.computeBoundingBox();
-  assert.ok(shoes.geometry.boundingBox.max.z - shoes.geometry.boundingBox.min.z > 0.27,
-    'shoe geometry is long enough to enclose the seated ankle-to-toe region');
+  assert.ok(shoes.geometry.boundingBox.max.z - shoes.geometry.boundingBox.min.z > 0.24
+    && shoes.geometry.boundingBox.max.z - shoes.geometry.boundingBox.min.z < 0.27,
+  'shoe length should be human-sized, not padded into a boot');
   const shoeMatrix = new THREE.Matrix4();
   const shoeScale = new THREE.Vector3();
   shoes.getMatrixAt(0, shoeMatrix);
   shoeMatrix.decompose(new THREE.Vector3(), new THREE.Quaternion(), shoeScale);
-  assert.ok(shoeScale.z >= 1.35, 'instanced shoes extend over the ankle-to-toe targets');
+  assert.ok(shoeScale.z <= 1.01, 'shoe length must not be enlarged after fitting the ankle-to-toe targets');
+  assert.ok(shoeScale.y <= 0.96, 'shoe sole height stays low-profile');
 
   crowd.setDensity(0);
   assert.equal(shoes.count, 0);
@@ -69,6 +71,22 @@ test('all occupied spectator seats keep instanced shoes and clothed hips through
   assert.equal(shoes.count, crowd.seats.length * 2);
   assert.equal(hips.count, crowd.seats.length);
   assert.equal(torsos.count, crowd.seats.length);
+});
+
+test('fitted spectators replace all capsule and duplicate-shoe fallback layers', () => {
+  const scene = new THREE.Scene();
+  const crowd = sceneApi.buildCrowd(scene);
+  const fallbackNames = [
+    'wtsl-unified-crowd-fallback-bodies',
+    'wtsl-unified-crowd-clothing-torsos',
+    'wtsl-unified-crowd-fallback-hips',
+    'wtsl-unified-crowd-footwear',
+  ];
+  for (const name of fallbackNames) assert.equal(scene.getObjectByName(name)?.visible, true);
+  crowd.replacePeople(() => {});
+  for (const name of fallbackNames) {
+    assert.equal(scene.getObjectByName(name)?.visible, false, `${name} must not cover fitted human models`);
+  }
 });
 
 test('detailed crowd clothing is forced opaque without losing its texture', async () => {

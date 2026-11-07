@@ -1477,6 +1477,22 @@ test('live DMO-folder broadcasts use DMO scores while automatic streams use TE4'
     liveDmoUmpireScoreSourceApi.resolveLiveDmoUmpireScoreSource('manual', true),
     'replay',
   );
+  const oldDmoReplayFallback = liveDmoUmpireScoreSourceApi.resolveLiveDmoUmpireScoreSource(
+    'manual', false,
+  );
+  assert.equal(oldDmoReplayFallback, 'dmo',
+    'legacy replay streams use the score path their live-window court actually renders');
+  assert.equal(
+    liveDmoUmpireScoreSourceApi.shouldPairLiveDmoScoreWithPointEnd(oldDmoReplayFallback, 'live'),
+    true,
+    'manual old-DMO playback pairs its DMO score changes with point-end events');
+  assert.equal(
+    liveDmoUmpireScoreSourceApi.shouldPairLiveDmoScoreWithPointEnd(
+      liveDmoUmpireScoreSourceApi.resolveLiveDmoUmpireScoreSource('manual', true), 'live',
+    ),
+    false,
+    'the full replay player remains event-scored instead',
+  );
   assert.equal(
     liveDmoUmpireScoreSourceApi.shouldPairLiveDmoScoreWithPointEnd('dmo', 'live'),
     true,
@@ -1500,9 +1516,10 @@ test('live DMO-folder broadcasts use DMO scores while automatic streams use TE4'
   );
   assert.match(
     viewer,
-    /resolveLiveDmoUmpireScoreSource\(\s*broadcast\.broadcastMode,\s*broadcast\.replay,/,
+    /const fullReplayPlayer = broadcast\.replay && broadcast\.replayDataReady/,
   );
-  assert.equal((viewer.match(/scoreSource={scoreSource}/g) ?? []).length, 2);
+  assert.match(viewer, /scoreSource={fallbackScoreSource}/);
+  assert.equal((viewer.match(/scoreSource={scoreSource}/g) ?? []).length, 1);
 
   const players = ['Player One', 'Player Two'];
   const source = liveDmoUmpireScoreSourceApi.resolveLiveDmoUmpireScoreSource('manual', false);

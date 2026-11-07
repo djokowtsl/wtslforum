@@ -21,11 +21,13 @@ const stadiumArchitectureApi = await loadTs('../components/DmoStadiumArchitectur
 const venueApi = await loadTs('../lib/dmoVenue.ts');
 const surfaceApi = await loadTs('../lib/te4DmoSurface.ts');
 const crowdDensityApi = await loadTs('../lib/dmoCrowdDensity.ts');
+const crowdClothingApi = await loadTs('../lib/dmoCrowdClothing.ts');
 const sceneApi = await loadTs('../components/DmoLiveCourt3DScene.ts', {
   './DmoStadiumArchitecture': stadiumArchitectureApi,
   '../lib/dmoVenue': venueApi,
   '@/lib/te4DmoSurface': surfaceApi,
   '@/lib/dmoCrowdDensity': crowdDensityApi,
+  '@/lib/dmoCrowdClothing': crowdClothingApi,
 });
 const racketPose = await loadTs('../components/DmoRacketOrientation.ts');
 const articulated = await loadTs('../components/DmoArticulatedHands.ts', { './DmoRacketOrientation': racketPose });
@@ -56,6 +58,7 @@ const crowds = await loadTs('../components/DmoHumanCrowd.ts', {
   './DmoHumanModels': humans,
   './DmoLiveCourt3DScene': sceneApi,
   '../lib/dmoCrowdLod': crowdLodApi,
+  '../lib/dmoCrowdClothing': crowdClothingApi,
 });
 
 // Parse the real rig and geometry in Node, omitting image decoding (verified in browser).
@@ -129,6 +132,40 @@ test('recorded volley clips are compact, parsed, and attributed share-alike deri
     assert.equal(parsed.skeleton.bones.find(bone => bone.name === 'RightWrist')?.name, 'RightWrist');
     assert.ok(bytes.byteLength < 50_000, 'only the selected motion excerpt is shipped');
   }
+});
+
+test('seated spectator leg bones scale to their seat targets instead of hanging below them', async () => {
+  const model = await asset('male', 'crowd');
+  const space = new THREE.Group();
+  space.add(model);
+  const pose = new humans.HumanPose(model, space);
+  const upperLeg = model.getObjectByName('LeftUpLeg');
+  const lowerLeg = model.getObjectByName('LeftLeg');
+  assert.ok(upperLeg && lowerLeg);
+  const upperBone = upperLeg.children.find((child) => child instanceof THREE.Bone);
+  const lowerBone = lowerLeg.children.find((child) => child instanceof THREE.Bone);
+  assert.ok(upperBone && lowerBone);
+  const hip = new THREE.Vector3(0.11, 0.63, 0);
+  const knee = new THREE.Vector3(0.14, 0.45, 0.22);
+  const ankle = new THREE.Vector3(0.14, 0.12, 0.16);
+  const placedSegmentLength = (parent, child) => {
+    const first = parent.getWorldPosition(new THREE.Vector3());
+    const second = child.getWorldPosition(new THREE.Vector3());
+    space.worldToLocal(first);
+    space.worldToLocal(second);
+    return first.distanceTo(second);
+  };
+  pose.begin();
+  pose.place('Hips', hip);
+  pose.place('LeftUpLeg', hip, knee);
+  pose.place('LeftLeg', knee, ankle);
+  pose.finish();
+  const fittedUpperLength = placedSegmentLength(upperLeg, upperBone);
+  const fittedLowerLength = placedSegmentLength(lowerLeg, lowerBone);
+  assert.ok(Math.abs(fittedUpperLength - hip.distanceTo(knee)) < 1e-4,
+    `upper leg ${fittedUpperLength} vs ${hip.distanceTo(knee)}; scale ${upperLeg.scale.toArray()}, source ${upperBone.position.toArray()}`);
+  assert.ok(Math.abs(fittedLowerLength - knee.distanceTo(ankle)) < 1e-4,
+    `lower leg ${fittedLowerLength} vs ${knee.distanceTo(ankle)}; scale ${lowerLeg.scale.toArray()}, source ${lowerBone.position.toArray()}`);
 });
 
 test('one-handed backhand clip is loadable and carries its share-alike attribution', async () => {
