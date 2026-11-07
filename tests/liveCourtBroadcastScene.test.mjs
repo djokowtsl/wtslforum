@@ -1100,8 +1100,14 @@ test('XKT umpire calls resolve score, tiebreak and recorded player-name clips', 
   ]);
   assert.equal(resolve('Game and set, Iga Świątek', true), null,
     'set calls without a known set number never choose a random ordinal');
-  assert.equal(resolve('Out'), null, 'out calls retain the existing browser-speech fallback');
-  assert.equal(resolve('Game, Unlisted Player'), null, 'missing recorded names fall back instead of being mislabelled');
+  assert.equal(resolve('Out'), null, 'unsupported out calls stay silent instead of using another voice');
+  assert.deepEqual(resolve('Game, Unlisted Player'), ['/game/game.mp3'],
+    'unlisted players still receive the recorded game call without a mismatched name');
+  assert.deepEqual(resolve('Advantage, Unlisted Player'), ['/score/advantage.mp3']);
+  assert.deepEqual(resolve('Game and second set, Unlisted Player'), [
+    '/game/game.mp3',
+    '/set/set-two.mp3',
+  ]);
 });
 
 test('recorded XKT calls decode, play through Web Audio, and stop on rewind', async () => {
@@ -1155,6 +1161,47 @@ test('recorded XKT calls decode, play through Web Audio, and stop on rewind', as
   assert.ok(requestedUrls.includes('/score/fifteen-all.mp3'));
   xktUmpireAudioApi.cancelXktUmpireCalls(context);
   assert.equal(startedSources[0].stopped, true);
+});
+
+test('missing recorded umpire clips never trigger a browser-system voice', async () => {
+  const utterances = [];
+  const hadWindow = Object.hasOwn(globalThis, 'window');
+  const previousWindow = globalThis.window;
+  const hadUtterance = Object.hasOwn(globalThis, 'SpeechSynthesisUtterance');
+  const PreviousUtterance = globalThis.SpeechSynthesisUtterance;
+  globalThis.window = {
+    speechSynthesis: {
+      speak: utterance => utterances.push(utterance),
+      cancel() {},
+    },
+  };
+  globalThis.SpeechSynthesisUtterance = class {
+    constructor(text) {
+      this.text = text;
+    }
+  };
+  try {
+    const playbackApi = await loadTs('../lib/liveCourtUmpire.ts', {
+      './xktUmpireAudio': {
+        cancelXktUmpireCalls() {},
+        playXktUmpireCall: async () => false,
+      },
+    });
+    const spoken = await playbackApi.speakUmpireCall(
+      'Game, Unlisted Player',
+      { state: 'running' },
+      false,
+      () => true,
+      'missing-clip-test',
+    );
+    assert.equal(spoken, false);
+    assert.equal(utterances.length, 0);
+  } finally {
+    if (hadWindow) globalThis.window = previousWindow;
+    else delete globalThis.window;
+    if (hadUtterance) globalThis.SpeechSynthesisUtterance = PreviousUtterance;
+    else delete globalThis.SpeechSynthesisUtterance;
+  }
 });
 
 test('point and game boundaries do not clear accumulated clay marks', async () => {
