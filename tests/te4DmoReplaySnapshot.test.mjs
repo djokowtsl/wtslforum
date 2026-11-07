@@ -16,7 +16,10 @@ async function loadTs(path, overrides = {}) {
     name => overrides[name] ?? require(name));
   return module.exports;
 }
-const umpireApi = await loadTs('../lib/liveCourtUmpire.ts');
+const umpireAudioApi = await loadTs('../lib/xktUmpireAudio.ts');
+const umpireApi = await loadTs('../lib/liveCourtUmpire.ts', {
+  './xktUmpireAudio': umpireAudioApi,
+});
 const { te4ViewerToLiveSnapshot } = await loadTs('../lib/te4DmoReplaySnapshot.ts', {
   './liveCourtUmpire': umpireApi,
 });

@@ -1,4 +1,5 @@
 import type { LiveCourtMotionEvent, LiveCourtSample } from './liveCourtMotion';
+import { cancelXktUmpireCalls, playXktUmpireCall } from './xktUmpireAudio';
 
 let browserUmpireSpeechUnlocked = false;
 
@@ -267,10 +268,29 @@ export function unlockBrowserUmpireSpeech(): boolean {
   }
 }
 
+export async function speakUmpireCall(
+  text: string,
+  context: BaseAudioContext | null | undefined,
+  isWta: boolean,
+  shouldSpeak: () => boolean = () => true,
+): Promise<boolean> {
+  if (context && await playXktUmpireCall(context, text, isWta)) {
+    if (typeof window !== 'undefined') window.speechSynthesis?.cancel();
+    return true;
+  }
+  if (!shouldSpeak()) return false;
+  return speakBrowserUmpireCall(text);
+}
+
 export function isBrowserUmpireSpeechUnlocked(): boolean {
   return browserUmpireSpeechUnlocked;
 }
 
 export function cancelBrowserUmpireCall(): void {
   if (typeof window !== 'undefined') window.speechSynthesis?.cancel();
+}
+
+export function cancelUmpireCall(context: BaseAudioContext | null | undefined): void {
+  cancelBrowserUmpireCall();
+  cancelXktUmpireCalls(context);
 }

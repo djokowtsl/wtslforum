@@ -42,9 +42,6 @@ export async function GET(_request: Request, context: RouteContext) {
   if (!user) {
     return NextResponse.json({ error: 'Sign in to view the point log.' }, { status: 401, headers: PRIVATE_HEADERS });
   }
-  if (!user.isAdmin) {
-    return NextResponse.json({ error: 'Live streams are temporarily unavailable. Access is limited to Forum admins.' }, { status: 403, headers: PRIVATE_HEADERS });
-  }
   const { id } = await context.params;
   if (!z.string().uuid().safeParse(id).success) {
     return NextResponse.json({ error: 'Broadcast not found.' }, { status: 404, headers: PRIVATE_HEADERS });

@@ -44,14 +44,14 @@ import {
 } from '@/lib/liveCourtStadium';
 import CourtFullscreenButton from './CourtFullscreenButton';
 import CourtPictureInPictureButton from './CourtPictureInPictureButton';
-import { liveGruntAudioUrl } from '@/lib/liveGruntAudio';
+import { loadLiveGruntSamples } from '@/lib/liveGruntAudio';
 import {
-  cancelBrowserUmpireCall,
+  cancelUmpireCall,
   deriveUmpireCallEvents,
   formatLiveUmpireScoreCall,
   isBrowserUmpireSpeechUnlocked,
   sameUmpireScore,
-  speakBrowserUmpireCall,
+  speakUmpireCall,
   unlockBrowserUmpireSpeech,
   umpireCallsBetween,
   type UmpireCallEvent,
@@ -77,6 +77,12 @@ type Props = {
   onGruntsEnabledChange: (enabled: boolean) => void;
 };
 export type GruntControlProps = Pick<Props, 'gruntsEnabled' | 'onGruntsEnabledChange'>;
+
+const LIVE_COURT_COLORS = {
+  playerOne: '#eaa134',
+  playerTwo: '#e05d64',
+  ball: '#e8f84a',
+} as const;
 
 function drawScene(
   context: CanvasRenderingContext2D,
@@ -154,8 +160,8 @@ function drawScene(
   context.fill();
 
   const playerActors = [
-    { x: value(3), y: value(4), color: '#eaa134', name: players[0], id: 1 as const, xIndex: 3, yIndex: 4 },
-    { x: value(5), y: value(6), color: '#e05d64', name: players[1], id: 2 as const, xIndex: 5, yIndex: 6 },
+    { x: value(3), y: value(4), color: LIVE_COURT_COLORS.playerOne, name: players[0], id: 1 as const, xIndex: 3, yIndex: 4 },
+    { x: value(5), y: value(6), color: LIVE_COURT_COLORS.playerTwo, name: players[1], id: 2 as const, xIndex: 5, yIndex: 6 },
   ];
   const movementBeforeFrame = Math.max(samples[0].frame, cursor - 3);
   const movementAfterFrame = Math.min(samples[samples.length - 1].frame, cursor + 3);
@@ -459,7 +465,9 @@ function playSynthesizedCue(
   oscillator.stop(now + duration);
 }
 
-function playWtaGrunt(context: AudioContext, buffer: AudioBuffer, activeGrunts: Set<ActiveGruntVoice>) {
+function playRecordedGrunt(context: AudioContext, samples: AudioBuffer[], activeGrunts: Set<ActiveGruntVoice>) {
+  const buffer = samples[Math.floor(Math.random() * samples.length)];
+  if (!buffer) return;
   const source = context.createBufferSource();
   const gain = context.createGain();
   source.buffer = buffer;
@@ -477,12 +485,12 @@ function playLiveCourtCue(
   kind: CourtCue,
   activeGrunts: Set<ActiveGruntVoice>,
   isWta: boolean,
-  wtaGrunt: AudioBuffer | null,
+  gruntSamples: AudioBuffer[] | null,
   surface: Te4CourtSurface,
   courtEffectSamples: CourtEffectSamples,
 ) {
-  if (kind === 'grunt' && isWta && wtaGrunt) {
-    playWtaGrunt(context, wtaGrunt, activeGrunts);
+  if (kind === 'grunt' && gruntSamples?.length) {
+    playRecordedGrunt(context, gruntSamples, activeGrunts);
     return;
   }
   if (kind === 'racket' || kind === 'bounce' || kind === 'footstep') {
@@ -542,15 +550,18 @@ function DmoLiveCourt({
   const audioContextRef = useRef<AudioContext | null>(null);
   const crowdBedRef = useRef<CrowdBed | null>(null);
   const activeGruntVoicesRef = useRef(new Set<ActiveGruntVoice>());
-  const wtaGruntAudioRef = useRef<AudioBuffer | null>(null);
+  const atpGruntAudioRef = useRef<AudioBuffer[] | null>(null);
+  const wtaGruntAudioRef = useRef<AudioBuffer[] | null>(null);
   const courtEffectSamplesRef = useRef<CourtEffectSamples>({});
   const courtEffectSamplesLoadRef = useRef<Promise<void> | null>(null);
   const lastSoundFrameRef = useRef(Math.max(0, snapshot.frameCount - 3));
   const playedSoundEventsRef = useRef(new Set<string>());
-  const soundEnabledRef = useRef(false);
+  const soundEnabledRef = useRef(true);
+  const soundRuntimeActiveRef = useRef(false);
+  const soundActivationPendingRef = useRef(false);
   const umpireCallsEnabledRef = useRef(true);
   const umpireSpeechReadyRef = useRef(isBrowserUmpireSpeechUnlocked());
-  const [soundEnabled, setSoundEnabled] = useState(false);
+  const [soundEnabled, setSoundEnabled] = useState(true);
   const [umpireCallsEnabled, setUmpireCallsEnabled] = useState(true);
   const [umpireSpeechReady, setUmpireSpeechReady] = useState(isBrowserUmpireSpeechUnlocked());
   const [crowdVolume, setCrowdVolume] = useState(0.38);
@@ -623,7 +634,7 @@ function DmoLiveCourt({
       lastUmpireCallFrameRef.current = null;
       previousLiveScoreRef.current = scoreboardData.live ? scoreboardData.score : null;
       hasObservedLiveScoreRef.current = false;
-      cancelBrowserUmpireCall();
+      cancelUmpireCall(audioContextRef.current);
     }
     previousSnapshotRef.current = {
       filename: snapshot.filename,
@@ -701,8 +712,17 @@ function DmoLiveCourt({
       || !umpireSpeechReadyRef.current
     ) return;
     const call = formatLiveUmpireScoreCall(current, previous, scoreboardData.players);
-    if (call && !speakBrowserUmpireCall(call)) {
-      setSoundError('Spoken umpire calls are unavailable in this browser.');
+    if (call) {
+      void speakUmpireCall(
+        call,
+        audioContextRef.current,
+        isWta,
+        () => umpireCallsEnabledRef.current && umpireSpeechReadyRef.current,
+      ).then((spoken) => {
+        if (!spoken && umpireCallsEnabledRef.current && umpireSpeechReadyRef.current) {
+          setSoundError('Spoken umpire calls are unavailable in this browser.');
+        }
+      });
     }
   }, [scoreboardData, umpireCallsEnabled, umpireSpeechReady]);
 
@@ -740,7 +760,7 @@ function DmoLiveCourt({
         lastUmpireCallFrameRef.current = cursor;
       } else if (previousCallFrame === null || cursor < previousCallFrame) {
         if (previousCallFrame !== null && cursor < previousCallFrame) {
-          cancelBrowserUmpireCall();
+          cancelUmpireCall(audioContextRef.current);
         }
         lastUmpireCallFrameRef.current = cursor;
       } else {
@@ -751,9 +771,16 @@ function DmoLiveCourt({
             cursor,
           )) {
             if (call.kind === 'score' && !fullReplayRef.current) continue;
-            if (!speakBrowserUmpireCall(call.text)) {
-              setSoundError('Spoken umpire calls are unavailable in this browser.');
-            }
+            void speakUmpireCall(
+              call.text,
+              audioContextRef.current,
+              isWta,
+              () => umpireCallsEnabledRef.current && umpireSpeechReadyRef.current,
+            ).then((spoken) => {
+              if (!spoken && umpireCallsEnabledRef.current && umpireSpeechReadyRef.current) {
+                setSoundError('Spoken umpire calls are unavailable in this browser.');
+              }
+            });
           }
         }
         lastUmpireCallFrameRef.current = cursor;
@@ -810,7 +837,7 @@ function DmoLiveCourt({
       const key = `${event.frame}:${event.kind}`;
       if (event.frame < lastSoundFrameRef.current || playedSoundEventsRef.current.has(key)) continue;
       playLiveCourtCue(context, event.kind, activeGruntVoicesRef.current, isWta,
-        wtaGruntAudioRef.current, surface, courtEffectSamplesRef.current);
+        isWta ? wtaGruntAudioRef.current : atpGruntAudioRef.current, surface, courtEffectSamplesRef.current);
       playedSoundEventsRef.current.add(key);
     }
     for (const event of deriveLiveCourtFootworkEvents(
@@ -822,7 +849,7 @@ function DmoLiveCourt({
       const key = `${event.frame}:${event.kind}:${event.player}`;
       if (event.frame < lastSoundFrameRef.current || playedSoundEventsRef.current.has(key)) continue;
       playLiveCourtCue(context, event.kind, activeGruntVoicesRef.current, isWta,
-        wtaGruntAudioRef.current, surface, courtEffectSamplesRef.current);
+        isWta ? wtaGruntAudioRef.current : atpGruntAudioRef.current, surface, courtEffectSamplesRef.current);
       playedSoundEventsRef.current.add(key);
     }
     for (const event of snapshot.trajectoryEvents ?? []) {
@@ -830,7 +857,7 @@ function DmoLiveCourt({
       const key = `${event.frame}:${event.kind}`;
       if (event.frame < lastSoundFrameRef.current || playedSoundEventsRef.current.has(key)) continue;
       if (cue) playLiveCourtCue(context, cue, activeGruntVoicesRef.current, isWta,
-        wtaGruntAudioRef.current, surface, courtEffectSamplesRef.current);
+        isWta ? wtaGruntAudioRef.current : atpGruntAudioRef.current, surface, courtEffectSamplesRef.current);
       playedSoundEventsRef.current.add(key);
     }
     lastSoundFrameRef.current = Math.max(lastSoundFrameRef.current, snapshot.frameCount - 3);
@@ -844,7 +871,7 @@ function DmoLiveCourt({
   }, [snapshot.frameCount, snapshot.soundEvents, snapshot.trajectoryEvents, soundEnabled, gruntsEnabled, isWta, surface]);
 
   useEffect(() => () => {
-    cancelBrowserUmpireCall();
+    cancelUmpireCall(audioContextRef.current);
     try {
       crowdBedRef.current?.source.stop();
       crowdBedRef.current?.source.disconnect();
@@ -854,6 +881,7 @@ function DmoLiveCourt({
     }
     crowdBedRef.current = null;
     wtaGruntAudioRef.current = null;
+    atpGruntAudioRef.current = null;
     void audioContextRef.current?.close();
     audioContextRef.current = null;
   }, []);
@@ -874,8 +902,16 @@ function DmoLiveCourt({
     onGruntsEnabledChange(enabled);
   };
   const activateUmpireSpeechFromGesture = () => {
-    if (umpireSpeechReadyRef.current) return true;
-    if (!unlockBrowserUmpireSpeech()) {
+    let audioReady = false;
+    try {
+      if (!audioContextRef.current) audioContextRef.current = new AudioContext();
+      void audioContextRef.current.resume().catch(() => {});
+      audioReady = true;
+    } catch {
+      audioReady = false;
+    }
+    const speechReady = unlockBrowserUmpireSpeech();
+    if (!audioReady && !speechReady) {
       setSoundError('Spoken umpire calls are unavailable in this browser.');
       return false;
     }
@@ -892,7 +928,7 @@ function DmoLiveCourt({
     umpireCallsEnabledRef.current = enabled;
     setUmpireCallsEnabled(enabled);
     if (!enabled) {
-      cancelBrowserUmpireCall();
+      cancelUmpireCall(audioContextRef.current);
       return;
     }
     lastUmpireCallFrameRef.current = playheadRef.current;
@@ -915,9 +951,56 @@ function DmoLiveCourt({
     }
   };
 
+  const activateSoundFromGesture = async () => {
+    if (!soundEnabledRef.current || soundRuntimeActiveRef.current || soundActivationPendingRef.current) return;
+    soundActivationPendingRef.current = true;
+    try {
+      if (!audioContextRef.current) audioContextRef.current = new AudioContext();
+      const context = audioContextRef.current;
+      await context.resume();
+      if (!soundEnabledRef.current) return;
+      if (context.state !== 'running') throw new Error('Audio context is not running');
+
+      const currentGruntSamples = isWta ? wtaGruntAudioRef.current : atpGruntAudioRef.current;
+      if (gruntsEnabled && !currentGruntSamples) {
+        const samples = await loadLiveGruntSamples(context, isWta);
+        if (!soundEnabledRef.current) return;
+        if (isWta) wtaGruntAudioRef.current = samples;
+        else atpGruntAudioRef.current = samples;
+      }
+      if (!crowdBedRef.current) crowdBedRef.current = createCrowdBed(context);
+      crowdBedRef.current.gain.gain.setTargetAtTime(
+        crowdVolume * 0.02368421,
+        context.currentTime,
+        0.45,
+      );
+      lastSoundFrameRef.current = Math.max(0, snapshot.frameCount - 3);
+      soundRuntimeActiveRef.current = true;
+      setSoundError('');
+      if (!courtEffectSamplesLoadRef.current) {
+        courtEffectSamplesLoadRef.current = loadCourtEffectSamples(context).then(({ samples, missing }) => {
+          courtEffectSamplesRef.current = samples;
+          if (missing.length && soundEnabledRef.current) {
+            setSoundError('Some tennis court samples could not be loaded; backup effects are active.');
+          }
+        }).catch(() => {
+          if (soundEnabledRef.current) {
+            setSoundError('Tennis court samples could not be loaded; backup effects are active.');
+          }
+        });
+      }
+    } catch {
+      soundRuntimeActiveRef.current = false;
+      if (soundEnabledRef.current) setSoundError('Sound could not be enabled in this browser.');
+    } finally {
+      soundActivationPendingRef.current = false;
+    }
+  };
+
   const toggleSound = async () => {
-    if (soundEnabled) {
+    if (soundEnabledRef.current) {
       soundEnabledRef.current = false;
+      soundRuntimeActiveRef.current = false;
       stopActiveGrunts();
       const context = audioContextRef.current;
       const crowdBed = crowdBedRef.current;
@@ -929,62 +1012,45 @@ function DmoLiveCourt({
       setSoundEnabled(false);
       return;
     }
-    try {
-      if (!audioContextRef.current) audioContextRef.current = new AudioContext();
-      const context = audioContextRef.current;
-      await context.resume();
-      if (isWta && gruntsEnabled && !wtaGruntAudioRef.current) {
-        const response = await fetch(liveGruntAudioUrl(true));
-        if (!response.ok) throw new Error('WTA grunt sample unavailable');
-        wtaGruntAudioRef.current = await context.decodeAudioData(await response.arrayBuffer());
-      }
-      if (!crowdBedRef.current) crowdBedRef.current = createCrowdBed(context);
-      crowdBedRef.current.gain.gain.setTargetAtTime(
-        crowdVolume * 0.02368421,
-        context.currentTime,
-        0.45,
-      );
-      lastSoundFrameRef.current = Math.max(0, snapshot.frameCount - 3);
-      soundEnabledRef.current = true;
-      setSoundError('');
-      setSoundEnabled(true);
-      if (!courtEffectSamplesLoadRef.current) {
-        courtEffectSamplesLoadRef.current = loadCourtEffectSamples(context).then(({ samples, missing }) => {
-          courtEffectSamplesRef.current = samples;
-          if (missing.length) {
-            setSoundError('Some tennis court samples could not be loaded; backup effects are active.');
-          }
-        }).catch(() => {
-          setSoundError('Tennis court samples could not be loaded; backup effects are active.');
-        });
-      }
-    } catch {
-      soundEnabledRef.current = false;
-      setSoundError('Sound could not be enabled in this browser.');
-    }
+    soundEnabledRef.current = true;
+    setSoundEnabled(true);
+    await activateSoundFromGesture();
+  };
+
+  const handleSoundActivationGesture = (target: EventTarget | null) => {
+    if (target instanceof Element && target.closest('[data-sound-toggle], [data-pip-toggle]')) return;
+    if (!soundEnabledRef.current) return;
+    if (umpireCallsEnabledRef.current && !umpireSpeechReadyRef.current) activateUmpireSpeechFromGesture();
+    void activateSoundFromGesture();
   };
 
   useEffect(() => {
-    if (!isWta || !soundEnabled || !gruntsEnabled || wtaGruntAudioRef.current) return;
+    const currentGruntSamples = isWta ? wtaGruntAudioRef.current : atpGruntAudioRef.current;
+    if (!soundEnabled || !gruntsEnabled || currentGruntSamples) return;
     const context = audioContextRef.current;
     if (!context) return;
     let cancelled = false;
-    void fetch(liveGruntAudioUrl(true))
-      .then(async (response) => {
-        if (!response.ok) throw new Error('WTA grunt sample unavailable');
-        return context.decodeAudioData(await response.arrayBuffer());
-      })
-      .then((buffer) => {
-        if (!cancelled) wtaGruntAudioRef.current = buffer;
+    void loadLiveGruntSamples(context, isWta)
+      .then((samples) => {
+        if (!cancelled) {
+          if (isWta) wtaGruntAudioRef.current = samples;
+          else atpGruntAudioRef.current = samples;
+        }
       })
       .catch(() => {
-        if (!cancelled) setSoundError('The WTA grunt sample could not be loaded.');
+        if (!cancelled) setSoundError('The player grunt samples could not be loaded.');
       });
     return () => { cancelled = true; };
   }, [isWta, soundEnabled, gruntsEnabled]);
 
   return (
-    <section ref={sceneElementRef} className={styles.scene} aria-label="Live court view">
+    <section
+      ref={sceneElementRef}
+      className={styles.scene}
+      aria-label="Live court view"
+      onPointerDownCapture={(event) => handleSoundActivationGesture(event.target)}
+      onKeyDownCapture={(event) => handleSoundActivationGesture(event.target)}
+    >
       <div className={styles.sceneToolbar}>
         <div className={styles.sceneTitle}>
           <strong>LIVE COURT</strong>
@@ -1017,6 +1083,7 @@ function DmoLiveCourt({
             <output>{cameraElevation}°</output>
           </label>
           <button
+            data-sound-toggle
             type="button"
             aria-label="Reset court camera"
             title="Reset court camera"
@@ -1154,12 +1221,9 @@ function DmoLiveCourt({
         <DmoLiveBufferingOverlay buffering={buffering || feedStalled} />
       </div>
       <div className={styles.legend}>
-        <span><i className={styles.playerOne} />{snapshot.players[0]}</span>
-        <span><i className={styles.playerTwo} />{snapshot.players[1]}</span>
-        <span><i className={styles.ball} />Ball</span>
-        <span className={styles.sceneNote}>
-          {stadiumAtmosphere ? 'Live court view · drag to orbit' : 'Drag to orbit · adjust angle and elevation'}
-        </span>
+        <span><i style={{ backgroundColor: LIVE_COURT_COLORS.playerOne }} />{snapshot.players[0]}</span>
+        <span><i style={{ backgroundColor: LIVE_COURT_COLORS.playerTwo }} />{snapshot.players[1]}</span>
+        <span><i className={styles.ball} style={{ backgroundColor: LIVE_COURT_COLORS.ball }} />Ball</span>
       </div>
       {renderError && <p className={styles.liveStatus} role="alert">{renderError}</p>}
       {soundError && <p className={styles.liveStatus} role="status">{soundError}</p>}

@@ -1,7 +1,13 @@
 import * as THREE from 'three';
 import { clone } from 'three/examples/jsm/utils/SkeletonUtils.js';
 import { disposeHumanModel, HumanPose, tintKit } from './DmoHumanModels';
-import type { CourtFixtureRig, CrowdRig } from './DmoLiveCourt3DScene';
+import {
+  CROWD_SKIN_TONES,
+  getChairUmpireLegTargets,
+  getCrowdAppearance,
+  type CourtFixtureRig,
+  type CrowdRig,
+} from './DmoLiveCourt3DScene';
 import { shouldUseHighDetailCrowdSeat } from '../lib/dmoCrowdLod';
 
 function tintedHuman(template: THREE.Group, tint: number) {
@@ -113,7 +119,7 @@ function addCrowdAccessories(scene: THREE.Scene, crowd: CrowdRig) {
   });
 }
 
-function poseSeatedStaff(model: THREE.Group, space: THREE.Group, hipsY: number) {
+function poseSeatedStaff(model: THREE.Group, space: THREE.Group, hipsY: number, chairUmpire = false) {
   const pose = new HumanPose(model, space);
   const v = (x: number, y: number, z = 0) => new THREE.Vector3(x, y, z);
   const neck = v(0, hipsY + 0.5);
@@ -133,10 +139,11 @@ function poseSeatedStaff(model: THREE.Group, space: THREE.Group, hipsY: number) 
     pose.place(`${side}Arm`, shoulder, elbow);
     pose.place(`${side}ForeArm`, elbow, wrist);
     pose.place(`${side}Hand`, wrist, wrist.clone().add(v(-sign * 0.05, 0, 0.08)));
-    const hip = v(sign * 0.11, hipsY);
-    const knee = v(sign * 0.14, hipsY - 0.34, 0.48);
-    const ankle = v(sign * 0.14, hipsY - 1.02, 0.56);
-    const toe = v(sign * 0.14, hipsY - 1.12, 0.72);
+    const chairTargets = chairUmpire ? getChairUmpireLegTargets(sign, hipsY) : undefined;
+    const hip = chairTargets ? v(...chairTargets.hip) : v(sign * 0.11, hipsY);
+    const knee = chairTargets ? v(...chairTargets.knee) : v(sign * 0.14, hipsY - 0.34, 0.48);
+    const ankle = chairTargets ? v(...chairTargets.ankle) : v(sign * 0.14, hipsY - 1.02, 0.56);
+    const toe = chairTargets ? v(...chairTargets.toe) : v(sign * 0.14, hipsY - 1.12, 0.72);
     pose.place(`${side}UpLeg`, hip, knee);
     pose.place(`${side}Leg`, knee, ankle);
     pose.place(`${side}Foot`, ankle, toe);
@@ -152,11 +159,12 @@ function attachStaffModel(
   name: string,
   tint: number,
   hipsY: number,
+  chairUmpire = false,
 ) {
   const model = tintedHuman(template, tint);
   model.name = name;
   space.add(model);
-  return { model, ...poseSeatedStaff(model, space, hipsY) };
+  return { model, ...poseSeatedStaff(model, space, hipsY, chairUmpire) };
 }
 
 function seatedGeometry(template: THREE.Group, look: number, applause: boolean) {
@@ -251,16 +259,6 @@ export function attachHumanCrowd(scene: THREE.Scene, crowd: CrowdRig, templates:
 
   const dummy = new THREE.Object3D();
   const instanceColor = new THREE.Color();
-  const tones = [
-    [1.0, 0.92, 0.83],
-    [0.91, 0.79, 0.66],
-    [0.81, 0.65, 0.51],
-    [0.69, 0.52, 0.4],
-    [0.97, 0.85, 0.71],
-    [0.86, 0.74, 0.62],
-    [0.75, 0.59, 0.46],
-    [0.62, 0.47, 0.36],
-  ] as const;
   let highDetailEnabled = crowd.highDetailEnabled;
   let highDetailCounts = new Uint16Array(0);
   let highDetailSeats = new Set<number>();
@@ -277,11 +275,12 @@ export function attachHumanCrowd(scene: THREE.Scene, crowd: CrowdRig, templates:
       delta = THREE.MathUtils.euclideanModulo(delta + Math.PI, Math.PI * 2) - Math.PI;
       const gaze = delta < -0.18 ? 0 : delta > 0.18 ? 2 : 1;
       const gender = sourceIndex % 2;
+      const appearance = getCrowdAppearance(sourceIndex, seat.row);
       // Alternate hands-apart and hands-together poses during applause.
       const clap = applauding && sourceIndex % 5 !== 0 && Math.sin(time * 9 + sourceIndex) > -0.15;
       const useHighDetail = highDetailEnabled && highDetailBatches.length > 0 && highDetailSeats.has(index);
       const bucket = (clap ? 3 : 0) + gaze;
-      const wardrobe = seat.row === 0 && sourceIndex % 4 === 0 ? 1 : 0;
+      const wardrobe = appearance.wardrobe % 2;
       const batchIndex = gender * 12 + wardrobe * 6 + bucket;
       const mesh = useHighDetail ? highDetailBatches[bucket] : batches[batchIndex];
       const instance = useHighDetail ? highDetailCounts[bucket]++ : counts[batchIndex]++;
@@ -289,13 +288,12 @@ export function attachHumanCrowd(scene: THREE.Scene, crowd: CrowdRig, templates:
       const turn = ((sourceIndex * 3 % 5) - 2) * 0.012;
       dummy.position.set(seat.x, seat.y, seat.z);
       dummy.rotation.set(lean, seat.facing + turn, 0);
-      const stature = 0.91 + (sourceIndex % 7) * 0.025;
-      dummy.scale.set(0.9 + (sourceIndex % 5) * 0.035, stature, 0.94 + (sourceIndex % 3) * 0.04);
+      dummy.scale.set(0.9 + appearance.torsoWidth * 0.035, appearance.stature, 0.94 + appearance.torsoWidth * 0.04);
       dummy.updateMatrix();
       mesh.setMatrixAt(instance, dummy.matrix);
       // Subtle warm-neutral tint variation gives the textured models a less repeated look.
-      const tone = sourceIndex % tones.length;
-      instanceColor.setRGB(tones[tone][0], tones[tone][1], tones[tone][2]);
+      const tone = CROWD_SKIN_TONES[appearance.skinToneIndex];
+      instanceColor.setRGB(tone[0], tone[1], tone[2]);
       mesh.setColorAt(instance, instanceColor);
     });
     batches.forEach((mesh, index) => {
@@ -363,12 +361,12 @@ export function attachHumanCourtStaff(
   if (!(chair instanceof THREE.Group) || !(placeholder instanceof THREE.Group)) {
     throw new Error('Court fixtures are missing the umpire chair or placeholder.');
   }
-  const umpire = attachStaffModel(chair, detailedUmpireTemplate, 'wtsl-detailed-umpire', 0x38536a, 1.72);
+  const umpire = attachStaffModel(chair, detailedUmpireTemplate, 'wtsl-detailed-umpire', 0x38536a, 1.34, true);
   umpire.model.userData.role = 'chair-umpire';
   const badge = new THREE.Group();
   badge.name = 'wtsl-umpire-badge';
   badge.userData.role = 'chair-umpire-identification';
-  badge.position.set(-0.115, 2.08, 0.2);
+  badge.position.set(-0.115, 1.7, 0.2);
   const badgeFrame = new THREE.Mesh(
     new THREE.BoxGeometry(0.075, 0.09, 0.018),
     new THREE.MeshStandardMaterial({ color: 0xb89b61, roughness: 0.68 }),

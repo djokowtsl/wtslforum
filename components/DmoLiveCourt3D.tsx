@@ -82,7 +82,7 @@ import {
   trailAllowed,
   type PlayerHandedness,
 } from '@/lib/liveCourtPerformance';
-import { liveGruntAudioUrl } from '@/lib/liveGruntAudio';
+import { loadLiveGruntSamples } from '@/lib/liveGruntAudio';
 import DmoLiveCourt, { type GruntControlProps } from './DmoLiveCourt';
 import DmoLiveBufferingOverlay from './DmoLiveBufferingOverlay';
 import {
@@ -107,12 +107,12 @@ import { BROADCAST_PLAYER_KITS } from './DmoNativeKit';
 import { racketContactOrientation, racketGripElbow, racketGripWrist } from './DmoRacketOrientation';
 import type { StadiumScoreboardData } from './DmoStadiumArchitecture';
 import {
-  cancelBrowserUmpireCall,
+  cancelUmpireCall,
   deriveUmpireCallEvents,
   formatLiveUmpireScoreCall,
   isBrowserUmpireSpeechUnlocked,
   sameUmpireScore,
-  speakBrowserUmpireCall,
+  speakUmpireCall,
   unlockBrowserUmpireSpeech,
   umpireCallsBetween,
   type UmpireCallEvent,
@@ -146,17 +146,10 @@ type CameraView =
 // player and court scale.
 const DEFAULT_CAMERA = new THREE.Vector3(-18, 8, 19);
 
-async function loadGruntSample(context: AudioContext, isWta: boolean) {
-  const response = await fetch(liveGruntAudioUrl(isWta));
-  if (!response.ok) throw new Error('Grunt sample unavailable');
-  return context.decodeAudioData(await response.arrayBuffer());
-}
-
 /** The camera never goes lower than this above the court surface (metres). */
 const MIN_CAMERA_HEIGHT = 0.8;
 
-/** Shown under the court so a deployed build can be identified at a glance. */
-const RENDERER_BUILD = 'stadium/audio + recorded volleys + player repair r14';
+const colorToCss = (color: number) => `#${color.toString(16).padStart(6, '0')}`;
 
 function firstEventAfterFrame<T extends { frame: number }>(events: T[], frame: number) {
   let low = 0;
@@ -217,7 +210,7 @@ function ThreeCourt({
   const crowdAudioRef = useRef<HTMLAudioElement | null>(null);
   const crowdGainRef = useRef<GainNode | null>(null);
   const crowdVolumeRef = useRef(0.24);
-  const gruntAudioRef = useRef<{ isWta: boolean; buffer: AudioBuffer } | null>(null);
+  const gruntAudioRef = useRef<{ isWta: boolean; samples: AudioBuffer[] } | null>(null);
   const applauseAudioRef = useRef<AudioBuffer | null>(null);
   const courtEffectSamplesRef = useRef<CourtEffectSamples>({});
   const courtEffectSamplesLoadRef = useRef<Promise<void> | null>(null);
@@ -289,12 +282,14 @@ function ThreeCourt({
     scoreboard: scoreboardData,
   };
   const soundOnRef = useRef(false);
+  const soundPreferenceRef = useRef(true);
+  const soundActivationPendingRef = useRef(false);
   const umpireCallsEnabledRef = useRef(true);
   const cameraViewRef = useRef<CameraView>('court');
   const playerCameraPanRef = useRef(0);
   const [cameraView, setCameraView] = useState<CameraView>('court');
   const [playerCameraPan, setPlayerCameraPan] = useState(0);
-  const [soundEnabled, setSoundEnabled] = useState(false);
+  const [soundEnabled, setSoundEnabled] = useState(true);
   const [umpireCallsEnabled, setUmpireCallsEnabled] = useState(true);
   const [umpireSpeechReady, setUmpireSpeechReady] = useState(isBrowserUmpireSpeechUnlocked());
   const [soundError, setSoundError] = useState('');
@@ -309,6 +304,7 @@ function ThreeCourt({
     speedKmh: number;
     frame: number;
   } | null>(null);
+  soundPreferenceRef.current = soundEnabled;
   umpireCallsEnabledRef.current = umpireCallsEnabled;
   const umpireSpeechReadyRef = useRef(umpireSpeechReady);
   umpireSpeechReadyRef.current = umpireSpeechReady;
@@ -337,7 +333,7 @@ function ThreeCourt({
       lastSoundFrameRef.current = Math.max(0, snapshot.frameCount - 3);
       previousLiveScoreRef.current = scoreboardData.live ? scoreboardData.score : null;
       hasObservedLiveScoreRef.current = false;
-      cancelBrowserUmpireCall();
+      cancelUmpireCall(audioContextRef.current);
       setHasCourtData(false);
     }
     previousSnapshotRef.current = {
@@ -432,15 +428,24 @@ function ThreeCourt({
       || !umpireSpeechReadyRef.current
     ) return;
     const call = formatLiveUmpireScoreCall(current, previous, scoreboardData.players);
-    if (call && !speakBrowserUmpireCall(call)) {
-      setSoundError('Spoken umpire calls are unavailable in this browser.');
+    if (call) {
+      void speakUmpireCall(
+        call,
+        audioContextRef.current,
+        isWta,
+        () => umpireCallsEnabledRef.current && umpireSpeechReadyRef.current,
+      ).then((spoken) => {
+        if (!spoken && umpireCallsEnabledRef.current && umpireSpeechReadyRef.current) {
+          setSoundError('Spoken umpire calls are unavailable in this browser.');
+        }
+      });
     }
   }, [scoreboardData, umpireCallsEnabled, umpireSpeechReady]);
 
   // Cues are consumed by the animation playhead, never snapshot arrival.
 
   useEffect(() => () => {
-    cancelBrowserUmpireCall();
+    cancelUmpireCall(audioContextRef.current);
     const crowdAudio = crowdAudioRef.current;
     crowdAudio?.pause();
     crowdAudio?.removeAttribute('src');
@@ -1676,7 +1681,9 @@ function ThreeCourt({
               }
               const audioCue = liveCourtTrajectoryCue(cue, gruntsEnabledRef.current);
               if (audioCue === 'grunt' && gruntAudioRef.current?.isWta === isWta) {
-                playSample(context, gruntAudioRef.current.buffer, 0.72, activeGruntsRef.current, 0.92 + Math.random() * 0.12);
+                const samples = gruntAudioRef.current.samples;
+                const sample = samples[Math.floor(Math.random() * samples.length)];
+                if (sample) playSample(context, sample, 0.72, activeGruntsRef.current, 0.92 + Math.random() * 0.12);
               } else if (audioCue === 'cheer' && cue.frame % 3 === 0 && applauseAudioRef.current) {
                 playSample(context, applauseAudioRef.current,
                   crowdGainRef.current ? 1 : crowdVolumeRef.current,
@@ -1687,7 +1694,7 @@ function ThreeCourt({
         }
         lastSoundFrameRef.current = currentFrame;
         const previousCallFrame = lastUmpireCallFrameRef.current;
-        if (currentFrame < previousCallFrame) cancelBrowserUmpireCall();
+        if (currentFrame < previousCallFrame) cancelUmpireCall(audioContextRef.current);
         if (
           currentFrame >= previousCallFrame
           && currentFrame - previousCallFrame < 120
@@ -1700,9 +1707,16 @@ function ThreeCourt({
             currentFrame,
           )) {
             if (call.kind === 'score' && !fullReplay) continue;
-            if (!speakBrowserUmpireCall(call.text)) {
-              setSoundError('Spoken umpire calls are unavailable in this browser.');
-            }
+            void speakUmpireCall(
+              call.text,
+              audioContextRef.current,
+              isWta,
+              () => umpireCallsEnabledRef.current && umpireSpeechReadyRef.current,
+            ).then((spoken) => {
+              if (!spoken && umpireCallsEnabledRef.current && umpireSpeechReadyRef.current) {
+                setSoundError('Spoken umpire calls are unavailable in this browser.');
+              }
+            });
           }
         }
         lastUmpireCallFrameRef.current = currentFrame;
@@ -1959,27 +1973,19 @@ function ThreeCourt({
     viewportRef.current?.dispatchEvent(new CustomEvent<number>('courtplayerpan', { detail: pan }));
   };
 
-  const toggleSound = async () => {
-    if (soundEnabled) {
-      crowdAudioRef.current?.pause();
-      for (const voice of activeGruntsRef.current) voice.stop();
-      activeGruntsRef.current.clear();
-      for (const voice of activeApplauseRef.current) voice.stop();
-      activeApplauseRef.current.clear();
-      soundOnRef.current = false;
-      setSoundEnabled(false);
-      return;
-    }
+  const activateSoundFromGesture = async () => {
+    if (!soundPreferenceRef.current || soundOnRef.current || soundActivationPendingRef.current) return;
+    soundActivationPendingRef.current = true;
     try {
       if (!audioContextRef.current) audioContextRef.current = new AudioContext();
       const context = audioContextRef.current;
       await context.resume();
+      if (!soundPreferenceRef.current) return;
       if (context.state !== 'running') throw new Error('Audio context is not running');
       // Core court effects must not wait for, or fail with, optional MP3 layers.
       lastSoundFrameRef.current = playheadRef.current ?? snapshot.frameCount;
       soundOnRef.current = true;
       setSoundError('');
-      setSoundEnabled(true);
       const layers: Array<Promise<unknown>> = [];
       let sampleLoad = courtEffectSamplesLoadRef.current;
       if (!sampleLoad) {
@@ -2014,8 +2020,8 @@ function ThreeCourt({
         }));
       }
       if (gruntAudioRef.current?.isWta !== isWta) {
-        layers.push(loadGruntSample(context, isWta).then(buffer => {
-          gruntAudioRef.current = { isWta, buffer };
+        layers.push(loadLiveGruntSamples(context, isWta).then(samples => {
+          if (soundOnRef.current) gruntAudioRef.current = { isWta, samples };
         }).catch(() => {
           if (soundOnRef.current) setSoundError('Court effects are on; player grunt audio could not be loaded.');
         }));
@@ -2024,7 +2030,8 @@ function ThreeCourt({
         layers.push((async () => {
           const response = await fetch('/audio/te4-point-applause.mp3');
           if (!response.ok) throw new Error('Applause sample unavailable');
-          applauseAudioRef.current = await context.decodeAudioData(await response.arrayBuffer());
+          const sample = await context.decodeAudioData(await response.arrayBuffer());
+          if (soundOnRef.current) applauseAudioRef.current = sample;
         })().catch(() => {
           if (soundOnRef.current) setSoundError('Court effects are on; applause audio could not be loaded.');
         }));
@@ -2033,9 +2040,27 @@ function ThreeCourt({
     } catch {
       crowdAudioRef.current?.pause();
       soundOnRef.current = false;
-      setSoundEnabled(false);
-      setSoundError('Sound could not be enabled in this browser.');
+      if (soundPreferenceRef.current) setSoundError('Sound could not be enabled in this browser.');
+    } finally {
+      soundActivationPendingRef.current = false;
     }
+  };
+
+  const toggleSound = async () => {
+    if (soundPreferenceRef.current) {
+      soundPreferenceRef.current = false;
+      crowdAudioRef.current?.pause();
+      for (const voice of activeGruntsRef.current) voice.stop();
+      activeGruntsRef.current.clear();
+      for (const voice of activeApplauseRef.current) voice.stop();
+      activeApplauseRef.current.clear();
+      soundOnRef.current = false;
+      setSoundEnabled(false);
+      return;
+    }
+    soundPreferenceRef.current = true;
+    setSoundEnabled(true);
+    await activateSoundFromGesture();
   };
 
   useEffect(() => {
@@ -2049,9 +2074,9 @@ function ThreeCourt({
     const context = audioContextRef.current;
     if (!soundEnabled || !gruntsEnabled || !context || gruntAudioRef.current?.isWta === isWta) return;
     let cancelled = false;
-    void loadGruntSample(context, isWta)
-      .then((buffer) => {
-        if (!cancelled) gruntAudioRef.current = { isWta, buffer };
+    void loadLiveGruntSamples(context, isWta)
+      .then((samples) => {
+        if (!cancelled) gruntAudioRef.current = { isWta, samples };
       })
       .catch(() => {
         if (!cancelled) setSoundError('Player grunt audio could not be loaded.');
@@ -2077,8 +2102,16 @@ function ThreeCourt({
     }
   };
   const activateUmpireSpeechFromGesture = () => {
-    if (umpireSpeechReadyRef.current) return true;
-    if (!unlockBrowserUmpireSpeech()) {
+    let audioReady = false;
+    try {
+      if (!audioContextRef.current) audioContextRef.current = new AudioContext();
+      void audioContextRef.current.resume().catch(() => {});
+      audioReady = true;
+    } catch {
+      audioReady = false;
+    }
+    const speechReady = unlockBrowserUmpireSpeech();
+    if (!audioReady && !speechReady) {
       setSoundError('Spoken umpire calls are unavailable in this browser.');
       return false;
     }
@@ -2096,7 +2129,7 @@ function ThreeCourt({
     umpireCallsEnabledRef.current = enabled;
     setUmpireCallsEnabled(enabled);
     if (!enabled) {
-      cancelBrowserUmpireCall();
+      cancelUmpireCall(audioContextRef.current);
       return;
     }
     lastUmpireCallFrameRef.current = playheadRef.current
@@ -2110,6 +2143,12 @@ function ThreeCourt({
       return;
     }
     changeUmpireCallsEnabled(!umpireCallsEnabledRef.current);
+  };
+  const handleSoundActivationGesture = (target: EventTarget | null) => {
+    if (target instanceof Element && target.closest('[data-sound-toggle], [data-pip-toggle]')) return;
+    if (!soundPreferenceRef.current || soundOnRef.current) return;
+    if (umpireCallsEnabledRef.current && !umpireSpeechReadyRef.current) activateUmpireSpeechFromGesture();
+    void activateSoundFromGesture();
   };
   const replayFrameRate = snapshot.frameRate ?? TE4_DMO_FRAMES_PER_SECOND;
   const replayStartFrame = sampleBufferRef.current[0]?.frame ?? snapshot.courtFrameIndices?.[0] ?? 0;
@@ -2145,6 +2184,8 @@ function ThreeCourt({
       ref={sceneElementRef}
       className={styles.scene}
       aria-label={fullReplay ? 'Three-dimensional full match replay' : 'Three-dimensional live court'}
+      onPointerDownCapture={(event) => handleSoundActivationGesture(event.target)}
+      onKeyDownCapture={(event) => handleSoundActivationGesture(event.target)}
     >
       <div className={styles.toolbar}>
         <div className={styles.title}>
@@ -2225,6 +2266,7 @@ function ThreeCourt({
           )}
           <button
             className={styles.soundButton}
+            data-sound-toggle
             type="button"
             aria-pressed={soundEnabled}
             onClick={() => void toggleSound()}
@@ -2330,13 +2372,9 @@ function ThreeCourt({
         </p>
       )}
       <div className={styles.legend}>
-        <span><i className={styles.playerOne} />{snapshot.players[0]}</span>
-        <span><i className={styles.playerTwo} />{snapshot.players[1]}</span>
-        <span><i className={styles.ball} />Ball</span>
-        <span className={styles.hint}>
-          {cameraView.startsWith('player-') ? 'Use Look across court to pan laterally · scroll to zoom' : 'Drag to orbit · scroll to zoom'}
-          {` · ${RENDERER_BUILD}`}
-        </span>
+        <span><i style={{ backgroundColor: colorToCss(PALETTE.shirtOne) }} />{snapshot.players[0]}</span>
+        <span><i style={{ backgroundColor: colorToCss(PALETTE.shirtTwo) }} />{snapshot.players[1]}</span>
+        <span><i className={styles.ball} style={{ backgroundColor: colorToCss(PALETTE.yellow) }} />Ball</span>
       </div>
       {fullReplay && hasCourtData && (
         <div className={styles.replayControls} role="group" aria-label="Full match replay controls">

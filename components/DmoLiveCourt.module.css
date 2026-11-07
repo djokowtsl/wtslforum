@@ -97,6 +97,11 @@
   font-weight: 700;
 }
 
+.pictureInPictureButton:disabled {
+  cursor: wait;
+  opacity: .62;
+}
+
 .pictureInPictureSource {
   position: fixed;
   top: 0;
@@ -168,10 +173,7 @@
 .legend { display: flex; align-items: center; flex-wrap: wrap; gap: 12px 20px; min-height: 38px; padding: 8px 13px; border-top: 1px solid rgba(150,180,230,.13); color: #c4d0e2; font-size: 9px; }
 .legend span { display: inline-flex; align-items: center; gap: 6px; }
 .legend i { width: 8px; height: 8px; border-radius: 50%; }
-.playerOne { background: #f59e0b; }
-.playerTwo { background: #ef4444; }
-.ball { background: #e8f84a; box-shadow: 0 0 7px rgba(232,248,74,.8); }
-.sceneNote { margin-left: auto; color: #8392a8; }
+.ball { box-shadow: 0 0 7px rgba(232,248,74,.8); }
 .liveStatus {
   margin: 0;
   padding: 8px 13px;
@@ -207,5 +209,4 @@
   .crowdVolumeControl input { width: 0; min-width: 60px; min-height: 44px; flex: 1; }
   .sceneControls .crowdVolumeControl button { width: 44px; height: 44px; }
   .crowdVolumeControl output { min-width: 38px; font-size: 11px; }
-  .sceneNote { width: 100%; margin-left: 0; }
 }

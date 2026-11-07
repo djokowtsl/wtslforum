@@ -11,10 +11,10 @@ const PUBLIC_HEADERS = {
 
 export async function GET(request: Request) {
   const user = await getSession();
-  if (!user?.isAdmin) {
+  if (!user) {
     return NextResponse.json(
-      { error: 'Match replays are temporarily unavailable. Access is limited to Forum admins.' },
-      { status: user ? 403 : 401, headers: PUBLIC_HEADERS },
+      { error: 'Sign in to browse match replays.' },
+      { status: 401, headers: PUBLIC_HEADERS },
     );
   }
   const url = new URL(request.url);
