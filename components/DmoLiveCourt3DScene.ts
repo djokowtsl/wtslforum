@@ -948,7 +948,9 @@ function buildUnifiedCrowd(scene: THREE.Scene, venue: DmoVenueProfile, density: 
     new THREE.MeshStandardMaterial({ color: 0xffffff, roughness: 0.88 }),
     spectatorSeats.length,
   );
-  const shoeGeometry = new THREE.CapsuleGeometry(0.06, 0.16, 4, 10);
+  // Keep the sole narrow and the shoe low-profile: the previous padded
+  // capsule was almost as tall as its width and looked like a boot.
+  const shoeGeometry = new THREE.CapsuleGeometry(0.036, 0.18, 4, 10);
   shoeGeometry.rotateX(Math.PI / 2);
   const shoeMesh = new THREE.InstancedMesh(
     shoeGeometry,
@@ -1080,14 +1082,14 @@ function buildUnifiedCrowd(scene: THREE.Scene, venue: DmoVenueProfile, density: 
         const [toeX, toeY, toeZ] = targets.toe;
         const localX = (ankleX + toeX) * 0.5;
         const localY = (ankleY + toeY) * 0.5;
-        const localZ = (ankleZ + toeZ) * 0.5 + 0.07;
+        const localZ = (ankleZ + toeZ) * 0.5;
         dummy.position.set(
           seat.x + cosFacing * localX + sinFacing * localZ,
           seat.y + localY,
           seat.z - sinFacing * localX + cosFacing * localZ,
         );
         dummy.rotation.set(0, seat.facing, 0);
-        dummy.scale.set(1.25, 1.2, 1.35);
+        dummy.scale.set(1.05, 0.95, 1);
         dummy.updateMatrix();
         shoeMesh.setMatrixAt(shoeIndex, dummy.matrix);
         shoeMesh.setColorAt(shoeIndex, new THREE.Color(shoeColors[(sourceIndex + (side > 0 ? 1 : 0)) % shoeColors.length]));
@@ -1105,6 +1107,7 @@ function buildUnifiedCrowd(scene: THREE.Scene, venue: DmoVenueProfile, density: 
   hipMesh.count = occupiedSeats.length;
   shoeMesh.count = occupiedSeats.length * 2;
   const fallbackMeshes = [bodyMesh, headMesh, hairMesh, ponytailMesh, armMesh];
+  const fallbackClothingMeshes = [torsoClothingMesh, hipMesh, shoeMesh];
   fallbackMeshes.forEach((mesh) => {
     mesh.count = mesh === armMesh ? occupiedSeats.length * 2 : occupiedSeats.length;
   });
@@ -1158,7 +1161,10 @@ function buildUnifiedCrowd(scene: THREE.Scene, venue: DmoVenueProfile, density: 
     setHighDetailEnabled(enabled) { crowdRig.highDetailEnabled = enabled; },
     setHighDetailModel: () => undefined,
     replacePeople(update) {
-      fallbackMeshes.forEach((mesh) => { mesh.visible = false; });
+      // The fitted, textured humans replace every fallback layer, including
+      // garment shells and shoes; leaving those visible creates colored tubes
+      // and oversized duplicate footwear over the real bodies.
+      for (const mesh of [...fallbackMeshes, ...fallbackClothingMeshes]) mesh.visible = false;
       detailedUpdate = update;
     },
     update(time, applauding, ballPosition) {

@@ -378,9 +378,14 @@ export default function DmoLiveViewer({ canWatch, voiceServer = '' }: Props) {
         >
           {broadcasts.map((broadcast) => {
             const players = broadcast.snapshot?.players ?? broadcast.players;
+            const fullReplayPlayer = broadcast.replay && broadcast.replayDataReady;
             const scoreSource = resolveLiveDmoUmpireScoreSource(
               broadcast.broadcastMode,
-              broadcast.replay,
+              fullReplayPlayer,
+            );
+            const fallbackScoreSource = resolveLiveDmoUmpireScoreSource(
+              broadcast.broadcastMode,
+              false,
             );
             const mediaMode = liveBroadcastMediaMode(broadcast.stream, Boolean(broadcast.snapshot));
             const voiceRoom = voiceRoomForBroadcast(broadcast.id);
@@ -522,7 +527,7 @@ export default function DmoLiveViewer({ canWatch, voiceServer = '' }: Props) {
                           preMatchPrediction={preMatchPredictions[broadcast.id]}
                           pointLog={pointLogs[broadcast.id]?.points}
                           pointLogLoaded={pointLogs[broadcast.id]?.loaded}
-                          scoreSource={scoreSource}
+                          scoreSource={fallbackScoreSource}
                         />
                       )}
                     />
