@@ -106,6 +106,16 @@ import { attachHumanCourtStaff, attachHumanCrowd } from './DmoHumanCrowd';
 import { BROADCAST_PLAYER_KITS } from './DmoNativeKit';
 import { racketContactOrientation, racketGripElbow, racketGripWrist } from './DmoRacketOrientation';
 import type { StadiumScoreboardData } from './DmoStadiumArchitecture';
+import {
+  cancelBrowserUmpireCall,
+  deriveUmpireCallEvents,
+  formatLiveUmpireScoreCall,
+  sameUmpireScore,
+  speakBrowserUmpireCall,
+  umpireCallsBetween,
+  type UmpireCallEvent,
+  type UmpireScore,
+} from '@/lib/liveCourtUmpire';
 
 type Props = {
   modelAssetBase?: string;
@@ -218,6 +228,7 @@ function ThreeCourt({
   const transitionRef = useRef<HTMLDivElement>(null);
   const sampleBufferRef = useRef<LiveCourtSample[]>([]);
   const trajectoryEventsRef = useRef<LiveCourtMotionEvent[]>([]);
+  const umpireCallEventsRef = useRef<UmpireCallEvent[]>([]);
   const playheadRef = useRef<number | null>(null);
   const lastSoundFrameRef = useRef(Math.max(0, snapshot.frameCount - 3));
   const lastCalloutFrameRef = useRef<number | null>(null);
@@ -247,6 +258,10 @@ function ThreeCourt({
     },
     live: false,
   };
+  const previousLiveScoreRef = useRef<UmpireScore>(
+    scoreboardData.live ? scoreboardData.score : null,
+  );
+  const hasObservedLiveScoreRef = useRef(false);
   const sceneDataRef = useRef({ snapshot, surface, playbackSpeed, stadiumAtmosphere, scoreboard: scoreboardData });
   sceneDataRef.current = {
     snapshot,
@@ -256,11 +271,13 @@ function ThreeCourt({
     scoreboard: scoreboardData,
   };
   const soundOnRef = useRef(false);
+  const umpireCallsEnabledRef = useRef(true);
   const cameraViewRef = useRef<CameraView>('court');
   const playerCameraPanRef = useRef(0);
   const [cameraView, setCameraView] = useState<CameraView>('court');
   const [playerCameraPan, setPlayerCameraPan] = useState(0);
   const [soundEnabled, setSoundEnabled] = useState(false);
+  const [umpireCallsEnabled, setUmpireCallsEnabled] = useState(true);
   const [soundError, setSoundError] = useState('');
   const [crowdVolume, setCrowdVolume] = useState(0.24);
   const [effectsVolume, setEffectsVolume] = useState(0.9);
@@ -273,6 +290,7 @@ function ThreeCourt({
     speedKmh: number;
     frame: number;
   } | null>(null);
+  umpireCallsEnabledRef.current = umpireCallsEnabled;
 
   useEffect(() => {
     const previous = previousSnapshotRef.current;
@@ -283,6 +301,7 @@ function ThreeCourt({
     if (identityChanged) {
       sampleBufferRef.current = [];
       trajectoryEventsRef.current = [];
+      umpireCallEventsRef.current = [];
       soundEventsRef.current = [];
       skidMarksRef.current = [];
       footworkEventsRef.current = [];
@@ -294,6 +313,9 @@ function ThreeCourt({
         shotCalloutTimerRef.current = null;
       }
       lastSoundFrameRef.current = Math.max(0, snapshot.frameCount - 3);
+      previousLiveScoreRef.current = scoreboardData.live ? scoreboardData.score : null;
+      hasObservedLiveScoreRef.current = false;
+      cancelBrowserUmpireCall();
       setHasCourtData(false);
     }
     previousSnapshotRef.current = {
@@ -337,6 +359,11 @@ function ThreeCourt({
       sampleBufferRef.current,
       snapshot.frameRate ?? TE4_DMO_FRAMES_PER_SECOND,
     );
+    umpireCallEventsRef.current = deriveUmpireCallEvents(
+      trajectoryEventsRef.current,
+      soundEventsRef.current,
+      sampleBufferRef.current,
+    );
     const skidHistory = new Map(skidMarksRef.current.map(mark => [`${mark.frame}:${mark.player}`, mark]));
     for (const mark of deriveLiveCourtSkidMarks(
       sampleBufferRef.current, footworkEvents, snapshot.frameRate ?? TE4_DMO_FRAMES_PER_SECOND,
@@ -366,9 +393,30 @@ function ThreeCourt({
     setHasCourtData(sampleBufferRef.current.length > 0);
   }, [snapshot, playbackSpeed, fullReplay, replaySpeed]);
 
+  useEffect(() => {
+    const current = scoreboardData.live ? scoreboardData.score : null;
+    const previous = previousLiveScoreRef.current;
+    const firstObservation = !hasObservedLiveScoreRef.current;
+    hasObservedLiveScoreRef.current = true;
+    previousLiveScoreRef.current = current;
+    if (
+      !scoreboardData.live
+      || !current
+      || firstObservation
+      || (previous && sameUmpireScore(current, previous))
+      || !soundOnRef.current
+      || !umpireCallsEnabledRef.current
+    ) return;
+    const call = formatLiveUmpireScoreCall(current, previous, scoreboardData.players);
+    if (call && !speakBrowserUmpireCall(call)) {
+      setSoundError('Spoken umpire calls are unavailable in this browser.');
+    }
+  }, [scoreboardData, soundEnabled, umpireCallsEnabled]);
+
   // Cues are consumed by the animation playhead, never snapshot arrival.
 
   useEffect(() => () => {
+    cancelBrowserUmpireCall();
     const crowdAudio = crowdAudioRef.current;
     crowdAudio?.pause();
     crowdAudio?.removeAttribute('src');
@@ -1578,6 +1626,7 @@ function ThreeCourt({
         const context = audioContextRef.current;
         if (soundOnRef.current && context?.state === 'running') {
           const previous = lastSoundFrameRef.current;
+          if (currentFrame < previous) cancelBrowserUmpireCall();
           if (currentFrame >= previous && currentFrame - previous < 120) {
             const soundCues = soundEventsRef.current;
             for (let index = firstEventAfterFrame(soundCues, previous);
@@ -1605,6 +1654,18 @@ function ThreeCourt({
                 playSample(context, applauseAudioRef.current,
                   crowdGainRef.current ? 1 : crowdVolumeRef.current,
                   activeApplauseRef.current, 1, crowdGainRef.current ?? undefined);
+              }
+            }
+            if (umpireCallsEnabledRef.current) {
+              for (const call of umpireCallsBetween(
+                umpireCallEventsRef.current,
+                previous,
+                currentFrame,
+              )) {
+                if (call.kind === 'score' && !fullReplay) continue;
+                if (!speakBrowserUmpireCall(call.text)) {
+                  setSoundError('Spoken umpire calls are unavailable in this browser.');
+                }
               }
             }
           }
@@ -1865,6 +1926,7 @@ function ThreeCourt({
 
   const toggleSound = async () => {
     if (soundEnabled) {
+      cancelBrowserUmpireCall();
       crowdAudioRef.current?.pause();
       for (const voice of activeGruntsRef.current) voice.stop();
       activeGruntsRef.current.clear();
@@ -1979,6 +2041,15 @@ function ThreeCourt({
       for (const voice of activeGruntsRef.current) voice.stop();
       activeGruntsRef.current.clear();
     }
+  };
+  const changeUmpireCallsEnabled = (enabled: boolean) => {
+    umpireCallsEnabledRef.current = enabled;
+    setUmpireCallsEnabled(enabled);
+    if (!enabled) {
+      cancelBrowserUmpireCall();
+      return;
+    }
+    lastSoundFrameRef.current = playheadRef.current ?? snapshot.frameCount;
   };
   const replayFrameRate = snapshot.frameRate ?? TE4_DMO_FRAMES_PER_SECOND;
   const replayStartFrame = sampleBufferRef.current[0]?.frame ?? snapshot.courtFrameIndices?.[0] ?? 0;
@@ -2104,6 +2175,16 @@ function ThreeCourt({
           >
             {soundEnabled ? <Volume2 size={15} /> : <VolumeX size={15} />}
             <span>{soundEnabled ? 'Sound on' : 'Sound off'}</span>
+          </button>
+          <button
+            className={styles.soundButton}
+            type="button"
+            aria-label={umpireCallsEnabled ? 'Turn umpire calls off' : 'Turn umpire calls on'}
+            aria-pressed={umpireCallsEnabled}
+            title={umpireCallsEnabled ? 'Turn umpire calls off' : 'Turn umpire calls on'}
+            onClick={() => changeUmpireCallsEnabled(!umpireCallsEnabled)}
+          >
+            <span>Calls {umpireCallsEnabled ? 'on' : 'off'}</span>
           </button>
           <button
             className={styles.soundButton}
@@ -2247,7 +2328,9 @@ export default function DmoLiveCourt3D(props: Props) {
   const [gruntsEnabled, setGruntsEnabled] = useState(true);
   const useFallback = useCallback(() => setUse2dFallback(true), []);
   const gruntControls = { gruntsEnabled, onGruntsEnabledChange: setGruntsEnabled };
-  const { fullReplay: _fullReplay, ...courtProps } = props;
-  if (use2dFallback) return <DmoLiveCourt {...courtProps} {...gruntControls} />;
+  const { fullReplay = false, ...courtProps } = props;
+  if (use2dFallback) {
+    return <DmoLiveCourt {...courtProps} fullReplay={fullReplay} {...gruntControls} />;
+  }
   return <ThreeCourt {...props} {...gruntControls} onUnsupported={useFallback} />;
 }

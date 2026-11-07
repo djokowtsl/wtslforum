@@ -8,6 +8,8 @@ export type LiveCourtMotionEvent = {
   speedKmh?: number;
   /** point-end only: the players change ends before the next point (from the score). */
   changeover?: boolean;
+  /** DMO replay only: exact umpire score call for this point. */
+  scoreCall?: string;
 };
 export type LiveCourtFootworkEvent = {
   frame: number;

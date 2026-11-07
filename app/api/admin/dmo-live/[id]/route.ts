@@ -61,6 +61,7 @@ const snapshotSchema = z.object({
     frame: z.number().int().min(0).max(1_000_000),
     kind: z.enum(['shot', 'point-end']),
     changeover: z.boolean().optional(),
+    scoreCall: z.string().min(1).max(120).optional(),
   }).strict()).max(256).optional(),
   court: z.array(z.tuple([
     z.number().int().min(-5000).max(5000),

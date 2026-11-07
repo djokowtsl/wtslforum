@@ -35,6 +35,7 @@ const {
 } = await loadTs('../lib/liveCourtAudio.ts', {
   './te4DmoSurface': { courtSurfaceSoundProfile },
 });
+const umpireApi = await loadTs('../lib/liveCourtUmpire.ts');
 
 test('stadium fills three open tiers with crowd, concourses, score displays and four tunnels', () => {
   for (const indoor of [false, true]) {
@@ -822,4 +823,101 @@ test('crowd volume is adjustable with touch-friendly controls in both court view
     'the fallback slider changes the crowd audio gain');
   assert.match(fallbackStyles, /\.crowdVolumeControl input\s*\{[^}]*min-height:\s*44px/);
   assert.match(fallbackStyles, /\.sceneControls \.crowdVolumeControl button\s*\{\s*width:\s*44px/);
+});
+
+test('umpire score calls use server order and tennis point language', () => {
+  const players = ['Player One', 'Player Two'];
+  assert.equal(umpireApi.formatTennisPointScoreCall('15-0', 1, players), 'fifteen-love');
+  assert.equal(umpireApi.formatTennisPointScoreCall('15-0', 2, players), 'love-fifteen');
+  assert.equal(umpireApi.formatTennisPointScoreCall('40-40', 1, players), 'Deuce');
+  assert.equal(umpireApi.formatTennisPointScoreCall('40-AD', 2, players), 'Advantage, Player Two');
+  assert.equal(umpireApi.formatTennisPointScoreCall('5-5', 1, players, true), 'five-all');
+  assert.equal(umpireApi.formatTennisPointScoreCall('3-4', 1, players), 'three-four',
+    'numeric tiebreak scores are recognized from the DMO timeline');
+});
+
+test('live TE4 score changes announce games and scores without replaying the initial score', () => {
+  const players = ['Player One', 'Player Two'];
+  const previous = {
+    sets: [],
+    games: [2, 2],
+    pointText: ['40', '30'],
+    tiebreak: false,
+    server: 1,
+  };
+  assert.equal(
+    umpireApi.formatLiveUmpireScoreCall(
+      { ...previous, pointText: ['40', '40'] },
+      previous,
+      players,
+    ),
+    'Deuce',
+  );
+  assert.equal(
+    umpireApi.formatLiveUmpireScoreCall(
+      { ...previous, games: [3, 2], pointText: ['0', '0'] },
+      previous,
+      players,
+    ),
+    'Game, Player One',
+  );
+  assert.equal(
+    umpireApi.formatLiveUmpireScoreCall(
+      { ...previous, sets: [[6, 4]], games: [0, 0] },
+      previous,
+      players,
+    ),
+    'Game and set, Player One',
+  );
+});
+
+test('replay score calls follow point-end frames and only clear rally-outs are called', () => {
+  const trajectory = [
+    { frame: 10, kind: 'shot', shotType: 'rally' },
+    { frame: 14, kind: 'point-end', scoreCall: 'fifteen-love' },
+    { frame: 20, kind: 'shot', shotType: 'rally' },
+    { frame: 25, kind: 'point-end', scoreCall: 'Game, Player One' },
+  ];
+  const sounds = [
+    { frame: 12, kind: 'bounce' },
+    { frame: 22, kind: 'bounce' },
+  ];
+  const samples = [
+    { frame: 12, values: [1_215, 0, 2, 0, 0, 0, 0] },
+    { frame: 22, values: [0, 420, 2, 0, 0, 0, 0] },
+  ];
+  const calls = umpireApi.deriveUmpireCallEvents(trajectory, sounds, samples);
+  assert.deepEqual(calls, [
+    { frame: 12, kind: 'out', text: 'Out' },
+    { frame: 14, kind: 'score', text: 'fifteen-love' },
+    { frame: 25, kind: 'score', text: 'Game, Player One' },
+  ]);
+  assert.deepEqual(umpireApi.umpireCallsBetween(calls, 12, 25), [
+    { frame: 14, kind: 'score', text: 'fifteen-love' },
+    { frame: 25, kind: 'score', text: 'Game, Player One' },
+  ]);
+  assert.deepEqual(
+    umpireApi.deriveUmpireCallEvents(
+      [
+        { frame: 10, kind: 'shot', shotType: 'serve' },
+        { frame: 14, kind: 'point-end', scoreCall: 'fifteen-love' },
+      ],
+      [{ frame: 12, kind: 'bounce' }],
+      [{ frame: 12, values: [1_215, 0, 2, 0, 0, 0, 0] }],
+    ),
+    [{ frame: 14, kind: 'score', text: 'fifteen-love' }],
+    'a serve bounce is not presented as an authoritative line call',
+  );
+});
+
+test('umpire calls have independent controls in both court renderers', async () => {
+  const primary = await readFile(new URL('../components/DmoLiveCourt3D.tsx', import.meta.url), 'utf8');
+  const fallback = await readFile(new URL('../components/DmoLiveCourt.tsx', import.meta.url), 'utf8');
+  for (const source of [primary, fallback]) {
+    assert.match(source, /aria-label=\{umpireCallsEnabled \? 'Turn umpire calls off'/);
+    assert.match(source, /aria-pressed=\{umpireCallsEnabled\}/);
+    assert.match(source, /formatLiveUmpireScoreCall\(current, previous, scoreboardData\.players\)/);
+  }
+  assert.match(primary, /call\.kind === 'score' && !fullReplay/);
+  assert.match(fallback, /call\.kind === 'score' && !fullReplayRef\.current/);
 });

@@ -1,6 +1,25 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
-import { te4ViewerToLiveSnapshot } from '../lib/te4DmoReplaySnapshot.ts';
+import { readFile } from 'node:fs/promises';
+import { createRequire } from 'node:module';
+
+const require = createRequire(import.meta.url);
+const { transformSync } = require('next/dist/build/swc');
+async function loadTs(path, overrides = {}) {
+  const source = await readFile(new URL(path, import.meta.url), 'utf8');
+  const { code } = transformSync(source, {
+    jsc: { parser: { syntax: 'typescript' }, target: 'es2022' },
+    module: { type: 'commonjs' },
+  });
+  const module = { exports: {} };
+  new Function('module', 'exports', 'require', code)(module, module.exports,
+    name => overrides[name] ?? require(name));
+  return module.exports;
+}
+const umpireApi = await loadTs('../lib/liveCourtUmpire.ts');
+const { te4ViewerToLiveSnapshot } = await loadTs('../lib/te4DmoReplaySnapshot.ts', {
+  './liveCourtUmpire': umpireApi,
+});
 
 function viewerData() {
   const frameCount = 4;
@@ -61,6 +80,10 @@ test('full TE4 replay court frames and sound events become a live court snapshot
       { frame: 3, kind: 'point-end', shotType: undefined },
     ],
   );
+  assert.equal(
+    snapshot.trajectoryEvents.find((event) => event.kind === 'point-end').scoreCall,
+    'fifteen-love',
+  );
   assert.deepEqual(snapshot.soundEvents, [
     { frame: 0, kind: 'racket' },
     { frame: 1, kind: 'bounce' },
@@ -80,7 +103,11 @@ test('full replay point ends carry the score-based changeover flag', () => {
   // Game 1 (server 1): points 1-2; game 2 (server 2): point 3.
   data.match.n = 4;
   data.pts = [point(1, 1, 0), point(2, 1, 1), point(3, 2, 2)];
+  data.pts[0].g = '0-0';
+  data.pts[1].g = '0-0';
+  data.pts[2].g = '1-0';
   const snapshot = te4ViewerToLiveSnapshot(data);
   const ends = snapshot.trajectoryEvents.filter((event) => event.kind === 'point-end');
   assert.deepEqual(ends.map((event) => event.changeover), [false, true, false]);
+  assert.equal(ends[2].scoreCall, 'Game, Replay Player One');
 });
