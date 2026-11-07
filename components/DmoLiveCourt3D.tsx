@@ -17,8 +17,10 @@ import {
   GROUNDSTROKE_LEAD_FRAMES,
   SERVE_LEAD_FRAMES,
   groundstrokeCaptureWeight,
+  recordedStrokeForSide,
   recordedStrokeUsesTwoHands,
   serveCaptureWeight,
+  type GroundstrokeName,
 } from './DmoCapturedGroundstroke';
 import { courtSurfaceDisplayName, isIndoorDmoVenue } from '@/lib/te4DmoSurface';
 import {
@@ -140,7 +142,7 @@ async function loadGruntSample(context: AudioContext, isWta: boolean) {
 const MIN_CAMERA_HEIGHT = 0.8;
 
 /** Shown under the court so a deployed build can be identified at a glance. */
-const RENDERER_BUILD = 'stadium/audio + player repair r12';
+const RENDERER_BUILD = 'stadium/audio + recorded volleys r13';
 
 function firstEventAfterFrame<T extends { frame: number }>(events: T[], frame: number) {
   let low = 0;
@@ -1094,10 +1096,11 @@ function ThreeCourt({
         ? ((contactSample[0] - contactSample[xIndex]) * localXAxis[0]
           + (contactSample[1] - contactSample[zIndex]) * localXAxis[1]) * SCALE / rig.root.scale.x
         : localX;
-      const stroke = groundstrokeForBallSide(contactSide, handedness);
-      type CapturedEvent = { frame: number; stroke: 'forehand' | 'backhand' | 'serve'; handedness: 'left' | 'right' };
+      const baseStroke = groundstrokeForBallSide(contactSide, handedness);
+      const stroke = recordedStrokeForSide(baseStroke, strokeCue === 'close-net');
+      type CapturedEvent = { frame: number; stroke: GroundstrokeName; handedness: 'left' | 'right' };
       let capturedEvent = rig.root.userData.capturedGroundstrokeEvent as CapturedEvent | undefined;
-      if (strokeEvent && (strokeCue === 'close-net' || strokeCue === 'soft-touch')) {
+      if (strokeEvent && strokeCue === 'soft-touch') {
         delete rig.root.userData.capturedGroundstrokeEvent;
         delete rig.root.userData.groundstrokePlayback;
         capturedEvent = undefined;
@@ -1151,6 +1154,7 @@ function ThreeCourt({
               weight,
               handedness: capturedEvent.handedness,
               rootOffset: false,
+              hands: recordedStrokeUsesTwoHands(capturedEvent.stroke, playerStrokeStyle, false) ? 'two' : 'one',
             };
           } else {
             delete rig.root.userData.groundstrokePlayback;
@@ -1160,7 +1164,7 @@ function ThreeCourt({
         delete rig.root.userData.groundstrokePlayback;
       }
       const twoHandedStroke = !serving
-        && (playerStrokeStyle?.[stroke] ?? (stroke === 'backhand' ? 'two' : 'one')) === 'two';
+        && recordedStrokeUsesTwoHands(stroke, playerStrokeStyle, stroke === 'backhand');
       const armPump = Math.sin(phase * 0.55) * gaitSpeed * 0.12;
       // Between shots the racket is carried, not held up by the head: in front
       // at the waist with the free hand on the throat when standing, in the
@@ -1418,7 +1422,7 @@ function ThreeCourt({
       // The stroke being played back (if any) decides the grip style through
       // its recovery, rather than the ball's current side after the event passes.
       const recordedStroke = rig.root.userData.capturedGroundstrokeEvent as
-        { frame: number; stroke: 'forehand' | 'backhand' | 'serve' } | undefined;
+        { frame: number; stroke: GroundstrokeName } | undefined;
       const recordedTwoHanded = recordedStrokeUsesTwoHands(
         recordedStroke?.stroke,
         playerStrokeStyle,

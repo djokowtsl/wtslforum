@@ -12,6 +12,7 @@ import {
 import { addNativeTwistBones, distributeNativeTwist, twistAngle } from './DmoNativeTwist';
 import {
   DmoCapturedGroundstroke,
+  isRecordedBackhand,
   type GroundstrokeMotionSources,
   type GroundstrokePlayback,
 } from './DmoCapturedGroundstroke';
@@ -482,7 +483,7 @@ export function attachNativePlayer(
     }
     const strokeRoll = new THREE.Quaternion();
     if (capturedBody && playback) {
-      if (playback.stroke === 'backhand' && oneHandedStroke) {
+      if (isRecordedBackhand(playback.stroke) && oneHandedStroke) {
         strokeRoll.setFromAxisAngle(UP, (dominant === 'r' ? 1 : -1) * BACKHAND_FACE_ROLL * captureWeight);
       }
       const contact = rig.root.userData.contactTarget as ContactTarget | undefined;
@@ -494,7 +495,7 @@ export function attachNativePlayer(
           // the stroke path shifts coherently instead of kinking at impact.
           const saved = [...pose.bones.values()].map(b => [b, b.position.clone(), b.quaternion.clone()] as const);
           capturedGroundstroke.apply({ ...playback, deltaSeconds: 0, weight: 1 });
-          const fullRoll = playback.stroke === 'backhand' && oneHandedStroke
+          const fullRoll = isRecordedBackhand(playback.stroke) && oneHandedStroke
             ? new THREE.Quaternion().setFromAxisAngle(UP, (dominant === 'r' ? 1 : -1) * BACKHAND_FACE_ROLL)
             : new THREE.Quaternion();
           correction = { key: contact.key, ...solveCorrection(dominant, fullRoll, goal) };

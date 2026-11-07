@@ -6,7 +6,7 @@ import { racketHandFrame } from './DmoRacketOrientation';
 import { attachArticulatedHands } from './DmoArticulatedHands';
 import { attachNativePlayer } from './DmoNativePlayer';
 import { attachNativePlayer as attachClaudeNativePlayer } from './DmoNativePlayerClaude';
-import type { GroundstrokeMotionSources } from './DmoCapturedGroundstroke';
+import type { GroundstrokeMotionSources, GroundstrokeName } from './DmoCapturedGroundstroke';
 import { BROADCAST_PLAYER_KITS, type NativePlayerKit } from './DmoNativeKit';
 
 type Gender = 'male' | 'female';
@@ -16,7 +16,7 @@ const UP = new THREE.Vector3(0, 1, 0);
 const nativeMotionSources = new WeakMap<THREE.Group, GroundstrokeMotionSources>();
 
 async function loadGroundstrokeMotionSources(base: string, signal: AbortSignal): Promise<GroundstrokeMotionSources> {
-  const load = async (stroke: 'forehand' | 'backhand' | 'serve') => {
+  const load = async (stroke: GroundstrokeName) => {
     const response = await fetch(`${base}/tennis-${stroke}.bvh`, { signal });
     if (!response.ok) throw new Error(`Captured ${stroke} motion request failed (${response.status}).`);
     return response.text();
@@ -40,10 +40,22 @@ async function loadGroundstrokeMotionSources(base: string, signal: AbortSignal):
       return undefined;
     }
   };
-  const [forehand, backhand, serve, locomotion] = await Promise.all([
-    load('forehand'), load('backhand'), load('serve'), loadLocomotion(),
+  const [forehand, backhand, serve, volleyForehand, volleyBackhand, locomotion] = await Promise.all([
+    load('forehand'),
+    load('backhand'),
+    load('serve'),
+    load('volley-forehand'),
+    load('volley-backhand'),
+    loadLocomotion(),
   ]);
-  return { forehand, backhand, serve, locomotion };
+  return {
+    forehand,
+    backhand,
+    serve,
+    'volley-forehand': volleyForehand,
+    'volley-backhand': volleyBackhand,
+    locomotion,
+  };
 }
 
 export function humanModelAssetFilename(gender: Gender, detail: HumanModelDetail) {

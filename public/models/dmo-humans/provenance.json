@@ -69,5 +69,27 @@
     "license": "CMU mocap terms: free for research and commercial use; do not resell the raw data",
     "notice": "NATIVE-RIG-AND-MOTION.md",
     "modifications": "One step cycle cut out, resampled 120 Hz -> 60 Hz (every second frame); rotations unchanged."
+  },
+  {
+    "filename": "tennis-volley-forehand.bvh",
+    "bytes": 42183,
+    "source": "https://github.com/jdpulgarin/Tennis-MoCap/blob/9af88bb4df4e78b22127719744fdca993ced2733/data/jarua_VDerecha.bvh",
+    "sourceBlobSha": "e44436baad02f7d53eceffd2ea4b3e0cfefd129a",
+    "origin": "Tennis-MoCap, Caldas-Colombia tennis players; high-performance male player `jarua`",
+    "license": "CC BY-SA 3.0",
+    "licenseUrl": "https://creativecommons.org/licenses/by-sa/3.0/",
+    "notice": "NATIVE-RIG-AND-MOTION.md",
+    "modifications": "Source frames 401–601 from a 100 Hz recording, resampled by retaining every fourth frame to 25 Hz; 51 frames. Inferred contact at source frame 493 from the right-wrist speed peak; the source has no ball or racket markers. Joint rotations unchanged."
+  },
+  {
+    "filename": "tennis-volley-backhand.bvh",
+    "bytes": 42181,
+    "source": "https://github.com/jdpulgarin/Tennis-MoCap/blob/9af88bb4df4e78b22127719744fdca993ced2733/data/jarua_VReves.bvh",
+    "sourceBlobSha": "e6ea604b631c85bbb2825e9228afa67a53e94e66",
+    "origin": "Tennis-MoCap, Caldas-Colombia tennis players; high-performance male player `jarua`",
+    "license": "CC BY-SA 3.0",
+    "licenseUrl": "https://creativecommons.org/licenses/by-sa/3.0/",
+    "notice": "NATIVE-RIG-AND-MOTION.md",
+    "modifications": "Source frames 252–452 from a 100 Hz recording, resampled by retaining every fourth frame to 25 Hz; 51 frames. Inferred contact at source frame 344 from the right-wrist speed peak; the source has no ball or racket markers. Joint rotations unchanged."
   }
 ]

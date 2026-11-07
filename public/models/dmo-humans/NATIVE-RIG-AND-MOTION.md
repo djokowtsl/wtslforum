@@ -28,6 +28,15 @@ Differentiating Kinematic Performance Between Qualified Tennis Players.”
 LNCS 10125, pp. 309–317 (2017).
 https://doi.org/10.1007/978-3-319-52277-7_38
 
+The captured forehand and backhand volleys use the same dataset, performer
+(`jarua`), and CC BY-SA 3.0 terms. Source files:
+`jarua_VDerecha.bvh` (forehand volley) and `jarua_VReves.bvh` (backhand volley).
+The selected right-wrist speed peaks are inferred contact timings because the
+BVH files contain no ball or racket markers. Each shipped clip preserves source
+frames 401–601 or 252–452, respectively, and keeps every fourth frame from the
+100 Hz recording (25 Hz output); joint rotations are not altered. The adapted
+clips remain CC BY-SA 3.0 and are identified in `provenance.json`.
+
 ## Walking, jogging and running (arms between points)
 Carnegie Mellon University Graphics Lab Motion Capture Database.
 http://mocap.cs.cmu.edu/ — BVH conversion by Bruce Hahne (cgspeed.com, 2010

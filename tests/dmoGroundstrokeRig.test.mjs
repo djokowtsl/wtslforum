@@ -17,23 +17,32 @@ async function load(name, overrides = {}) {
   return module.exports;
 }
 const stadiumArchitecture = await load('DmoStadiumArchitecture');
+const dmoVenue = await load('../lib/dmoVenue');
 const scene = await load('DmoLiveCourt3DScene', {
   './DmoStadiumArchitecture': stadiumArchitecture,
+  '../lib/dmoVenue': dmoVenue,
 });
 const racket = await load('DmoRacketOrientation');
 const capture = await load('DmoCapturedGroundstroke'), grip = await load('DmoNativeGrip'), kit = await load('DmoNativeKit');
+const locomotion = await load('DmoCapturedLocomotion');
 const twist = await load('DmoNativeTwist');
-const strokes = await load('DmoGroundstrokeRig', { './DmoRacketOrientation': racket });
+const strokes = await load('DmoGroundstrokeRig', {
+  './DmoRacketOrientation': racket,
+  './DmoCapturedGroundstroke': capture,
+});
 const native = await load('DmoNativePlayer', {
   './DmoRacketOrientation': racket, './DmoNativeGrip': grip, './DmoNativeKit': kit,
   './DmoNativeTwist': twist,
   './DmoCapturedGroundstroke': capture, './DmoGroundstrokeRig': strokes,
+  './DmoCapturedLocomotion': locomotion,
 });
 const bytes = await readFile(new URL('../public/models/dmo-humans/native-player.glb', import.meta.url));
 const template = (await new GLTFLoader().parseAsync(
   bytes.buffer.slice(bytes.byteOffset, bytes.byteOffset + bytes.byteLength), '',
 )).scene;
-const sources = Object.fromEntries(await Promise.all(['forehand', 'backhand', 'serve'].map(async name =>
+const sources = Object.fromEntries(await Promise.all([
+  'forehand', 'backhand', 'serve', 'volley-forehand', 'volley-backhand',
+].map(async name =>
   [name, await readFile(new URL(`../public/models/dmo-humans/tennis-${name}.bvh`, import.meta.url), 'utf8')])));
 function player(handedness = 'right') {
   const rig = scene.makePlayer(0x81b6b4, 0x202020);
