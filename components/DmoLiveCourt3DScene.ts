@@ -104,8 +104,28 @@ export function getCrowdAppearance(sourceIndex: number, row = 0) {
     skinToneIndex: hash % CROWD_SKIN_TONES.length,
     hairStyle: (hash >>> 4) % 4,
     wardrobe: (hash >>> 8) % 4,
-    stature: 0.91 + ((hash >>> 12) % 10) * 0.018,
+    stature: 0.94 + ((hash >>> 12) % 10) * 0.01,
     torsoWidth: 0.88 + ((hash >>> 20) % 7) * 0.035,
+  };
+}
+
+/** Compact seated crowd joints in seat-local metres. */
+export function getSeatedCrowdLegTargets(sideSign: number) {
+  return {
+    hip: [sideSign * 0.11, 0.63, 0] as const,
+    knee: [sideSign * 0.14, 0.45, 0.22] as const,
+    ankle: [sideSign * 0.14, 0.12, 0.16] as const,
+    toe: [sideSign * 0.14, 0.05, 0.24] as const,
+  };
+}
+
+/** Seated lower-stand staff fit the seat and step instead of dangling below it. */
+export function getSeatedCoachLegTargets(sideSign: number, hipsY = 0.4) {
+  return {
+    hip: [sideSign * 0.11, hipsY, 0] as const,
+    knee: [sideSign * 0.13, hipsY - 0.27, 0.34] as const,
+    ankle: [sideSign * 0.13, hipsY - 0.73, 0.34] as const,
+    toe: [sideSign * 0.13, hipsY - 0.88, 0.48] as const,
   };
 }
 
@@ -113,9 +133,9 @@ export function getCrowdAppearance(sourceIndex: number, row = 0) {
 export function getChairUmpireLegTargets(sideSign: number, hipsY = 1.34) {
   return {
     hip: [sideSign * 0.11, hipsY, 0] as const,
-    knee: [sideSign * 0.14, hipsY - 0.20, 0.56] as const,
-    ankle: [sideSign * 0.14, 0.68, 0.40] as const,
-    toe: [sideSign * 0.14, 0.58, 0.68] as const,
+    knee: [sideSign * 0.14, hipsY - 0.20, 0.48] as const,
+    ankle: [sideSign * 0.14, 0.70, 0.30] as const,
+    toe: [sideSign * 0.14, 0.58, 0.55] as const,
   };
 }
 
@@ -771,7 +791,7 @@ function buildUnifiedCrowd(scene: THREE.Scene, venue: DmoVenueProfile, density: 
         z,
         row: lowerRows + upperRow,
         facing: Math.atan2(-Math.cos(angle), -Math.sin(angle)),
-        y: baseY + upperRow * rowRise,
+        y: baseY + upperRow * rowRise + rowRise / 2,
         sourceIndex,
         occupied: isCrowdSeatOccupied(sourceIndex, density),
       });
