@@ -1088,15 +1088,9 @@ function DmoLiveCourt({
           />
           <CourtPictureInPictureButton
             canvasRef={canvasRef}
-            targetRef={sceneElementRef}
             className={styles.pictureInPictureButton}
-            statusClassName={styles.visuallyHidden}
-            fallbackClassName={styles.pictureInPictureFallback}
-            overlayClassName={styles.pictureInPictureOverlay}
-            activeOverlayClassName={styles.pictureInPictureOverlayActive}
-            videoClassName={styles.pictureInPictureVideo}
-            sourceClassName={styles.pictureInPictureSource}
-            closeClassName={styles.pictureInPictureClose}
+            statusClassName={styles.pictureInPictureStatus}
+            videoClassName={styles.pictureInPictureSource}
           />
           {stadiumAtmosphere && (
             <div className={styles.crowdVolumeControl} role="group" aria-label="Crowd volume controls">

@@ -785,7 +785,13 @@ test('court effects load only playable samples and sound checks exclude slides',
     clay.sources[0].playbackRate.value.toFixed(3),
     grass.sources[0].playbackRate.value.toFixed(3),
   ]).size, 3, 'surface profiles shape the same recording differently');
-  assert.ok(clay.gains[0].gain.value < 0.6, 'footsteps stay quieter than racket and ball contacts');
+  assert.ok(clay.gains[0].gain.value < 0.2, 'sampled footsteps are reduced beneath racket and ball contacts');
+  const synthesized = makeContext();
+  playLiveCourtEffect(synthesized.context, 'footstep', 'clay', 1);
+  assert.ok(
+    synthesized.gains[0].gain.value < 0.32,
+    'synthesized fallback footsteps also remain subdued',
+  );
 
   const partial = await loadCourtEffectSamples({
     decodeAudioData: async () => ({ duration: 0.25 }),

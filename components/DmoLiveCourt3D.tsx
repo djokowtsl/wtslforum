@@ -1,6 +1,6 @@
 'use client';
 
-import { useCallback, useEffect, useRef, useState, type ReactNode } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import { ChevronLeft, ChevronRight, Minus, Pause, Play, Plus, RotateCcw, Volume2, VolumeX } from 'lucide-react';
 import * as THREE from 'three';
 import { OrbitControls } from 'three/examples/jsm/controls/OrbitControls.js';
@@ -129,7 +129,6 @@ type Props = {
   buffering?: boolean;
   fullReplay?: boolean;
   scoreboard?: StadiumScoreboardData;
-  replayOverlay?: ReactNode;
   onReplayFrameChange?: (frame: number) => void;
 };
 
@@ -204,7 +203,6 @@ function ThreeCourt({
   isWta = false,
   buffering = false,
   scoreboard,
-  replayOverlay,
   onReplayFrameChange,
   gruntsEnabled,
   onGruntsEnabledChange,
@@ -2193,15 +2191,9 @@ function ThreeCourt({
           />
           <CourtPictureInPictureButton
             canvasRef={canvasElementRef}
-            targetRef={sceneElementRef}
             className={styles.pictureInPictureButton}
-            statusClassName={styles.visuallyHidden}
-            fallbackClassName={styles.pictureInPictureFallback}
-            overlayClassName={styles.pictureInPictureOverlay}
-            activeOverlayClassName={styles.pictureInPictureOverlayActive}
-            videoClassName={styles.pictureInPictureVideo}
-            sourceClassName={styles.pictureInPictureSource}
-            closeClassName={styles.pictureInPictureClose}
+            statusClassName={styles.pictureInPictureStatus}
+            videoClassName={styles.pictureInPictureSource}
           />
           {cameraView.startsWith('player-') && (
             <label className={styles.panControl}>
@@ -2323,7 +2315,6 @@ function ThreeCourt({
             <b>{shotCallout.speedKmh}<small>km/h</small></b>
           </div>
         )}
-        {fullReplay && replayOverlay}
         {!hasCourtData && (
           <p className={styles.waiting} role="status">Court positions will appear as the match feed updates.</p>
         )}
