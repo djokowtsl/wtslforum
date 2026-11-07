@@ -12,7 +12,7 @@ import {
 import { addNativeTwistBones, distributeNativeTwist, twistAngle } from './DmoNativeTwist';
 import {
   DmoCapturedGroundstroke,
-  isRecordedBackhand,
+  recordedBackhandFaceRoll,
   type GroundstrokeMotionSources,
   type GroundstrokePlayback,
 } from './DmoCapturedGroundstroke';
@@ -22,8 +22,6 @@ const UP = new THREE.Vector3(0, 1, 0);
 const BODY_SCALE = 1.075;
 /** String-bed centre along the racket's local +Y (see makePlayer's racket). */
 const RACKET_HEAD = new THREE.Vector3(0, 0.36, 0);
-/** One-handed backhand regrip about the handle (as in the native capture study). */
-const BACKHAND_FACE_ROLL = 72 * Math.PI / 180;
 /** Anatomical wrist limits relative to a neutral, in-line hand. */
 const WRIST_SWING_LIMIT = 1.05;
 const FOREARM_ROLL_LIMIT = 1.65;
@@ -505,9 +503,10 @@ export function attachNativePlayer(
       }
     }
     const strokeRoll = new THREE.Quaternion();
+    const backhandRoll = recordedBackhandFaceRoll(playback?.stroke, oneHandedStroke);
     if (capturedBody && playback) {
-      if (isRecordedBackhand(playback.stroke) && oneHandedStroke) {
-        strokeRoll.setFromAxisAngle(UP, (dominant === 'r' ? 1 : -1) * BACKHAND_FACE_ROLL * captureWeight);
+      if (backhandRoll) {
+        strokeRoll.setFromAxisAngle(UP, (dominant === 'r' ? 1 : -1) * backhandRoll * captureWeight);
       }
       const contact = rig.root.userData.contactTarget as ContactTarget | undefined;
       if (contact && playback.stroke !== 'serve') {
@@ -518,8 +517,8 @@ export function attachNativePlayer(
           // the stroke path shifts coherently instead of kinking at impact.
           const saved = [...pose.bones.values()].map(b => [b, b.position.clone(), b.quaternion.clone()] as const);
           capturedGroundstroke.apply({ ...strokePlayback!, deltaSeconds: 0, weight: 1 });
-          const fullRoll = isRecordedBackhand(playback.stroke) && oneHandedStroke
-            ? new THREE.Quaternion().setFromAxisAngle(UP, (dominant === 'r' ? 1 : -1) * BACKHAND_FACE_ROLL)
+          const fullRoll = backhandRoll
+            ? new THREE.Quaternion().setFromAxisAngle(UP, (dominant === 'r' ? 1 : -1) * backhandRoll)
             : new THREE.Quaternion();
           correction = { key: contact.key, ...solveCorrection(dominant, fullRoll, goal) };
           // A recorded contact the body cannot reach (bad sample, or a fixture

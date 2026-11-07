@@ -11,13 +11,24 @@ export type GroundstrokeName =
 export type DominantHandedness = 'left' | 'right';
 export type PlayerStrokeHands = 'one' | 'two';
 
-export function recordedStrokeForSide(side: 'forehand' | 'backhand', atNet: boolean): GroundstrokeName {
-  if (!atNet) return side;
+/** The caller must establish a volley flight; net proximity alone is insufficient. */
+export function recordedStrokeForSide(side: 'forehand' | 'backhand', isVolley: boolean): GroundstrokeName {
+  if (!isVolley) return side;
   return side === 'forehand' ? 'volley-forehand' : 'volley-backhand';
 }
 
 export function isRecordedBackhand(stroke: GroundstrokeName | undefined) {
   return stroke === 'backhand' || stroke === 'volley-backhand';
+}
+
+export function isRecordedVolley(stroke: GroundstrokeName | undefined) {
+  return stroke === 'volley-forehand' || stroke === 'volley-backhand';
+}
+
+/** The volley uses a continental grip, not the ground backhand regrip. */
+export function recordedBackhandFaceRoll(stroke: GroundstrokeName | undefined, oneHanded: boolean) {
+  if (stroke === 'volley-backhand') return 35 * Math.PI / 180;
+  return stroke === 'backhand' && oneHanded ? 72 * Math.PI / 180 : 0;
 }
 
 export function recordedStrokeUsesTwoHands(
@@ -98,9 +109,10 @@ const CONTACT_SECONDS: Record<MotionName, number> = {
   // near 7.85 s; the source recording has no ball-contact marker.
   smash: 7.85,
   // Tennis-MoCap volley excerpts use a 25 Hz BVH and retain the selected
-  // right-wrist speed peak at frame 23. The dataset has no ball marker.
+  // right-wrist speed peak near excerpt frame 23. The dataset has no ball marker.
   'volley-forehand': 0.92,
-  'volley-backhand': 0.92,
+  // Round 17's 3.42 s contact, minus this excerpt's 2.52 s start.
+  'volley-backhand': 0.90,
   // Inferred from the third recorded swing's right-wrist speed peak.
   backhandOne: 5.66,
 };
@@ -211,6 +223,17 @@ export function groundstrokeCaptureWeight(
  * at 64 frames, already mid take-back, swung the arms from the carry into it
  * in about a quarter of a second. */
 export const SERVE_LEAD_FRAMES = 110;
+
+/** Short volley preparation/recovery, in canonical 60 Hz frames. */
+export const VOLLEY_LEAD_FRAMES = 26;
+export const VOLLEY_RECOVERY_FRAMES = 44;
+
+export function volleyCaptureWeight(frameDelta: number) {
+  if (!Number.isFinite(frameDelta)) return 0;
+  const smooth = THREE.MathUtils.smoothstep;
+  return smooth(frameDelta, -VOLLEY_LEAD_FRAMES, -10)
+    * (1 - smooth(frameDelta, 24, VOLLEY_RECOVERY_FRAMES));
+}
 
 export function serveCaptureWeight(frameDelta: number) {
   if (!Number.isFinite(frameDelta)) return 0;

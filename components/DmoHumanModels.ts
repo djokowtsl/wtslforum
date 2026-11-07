@@ -8,6 +8,7 @@ import { attachNativePlayer } from './DmoNativePlayer';
 import { attachNativePlayer as attachClaudeNativePlayer } from './DmoNativePlayerClaude';
 import type { GroundstrokeMotionSources, GroundstrokeName } from './DmoCapturedGroundstroke';
 import { BROADCAST_PLAYER_KITS, type NativePlayerKit } from './DmoNativeKit';
+import { isCrowdSkinPixel } from '@/lib/dmoCrowdClothing';
 
 type Gender = 'male' | 'female';
 type HumanModelDetail = 'player' | 'crowd' | 'crowd-high';
@@ -221,7 +222,11 @@ function limbEnds(mesh: THREE.Mesh, from: THREE.Vector3, to: THREE.Vector3) {
 }
 
 /** Tint only the desaturated fabric, not skin, hair or facial features. */
-export function tintKit(mesh: THREE.SkinnedMesh, tint: number) {
+export function tintKit(
+  mesh: THREE.SkinnedMesh,
+  tint: number,
+  skinTone?: readonly [number, number, number],
+) {
   const material = (Array.isArray(mesh.material) ? mesh.material[0] : mesh.material) as THREE.MeshStandardMaterial;
   const image = material.map?.image as CanvasImageSource & { width: number; height: number };
   if (!image?.width || typeof document === 'undefined') return;
@@ -234,6 +239,13 @@ export function tintKit(mesh: THREE.SkinnedMesh, tint: number) {
   const uv = mesh.geometry.getAttribute('uv'), positions = mesh.geometry.getAttribute('position');
   const colors = new Float32Array(positions.count * 3);
   const shirt = new THREE.Color(tint);
+  const skin = skinTone ? new THREE.Color().setRGB(...skinTone) : undefined;
+  const referenceSkin = new THREE.Color(0xe5b59b);
+  const skinMultiplier = skin ? [
+    skin.r / referenceSkin.r,
+    skin.g / referenceSkin.g,
+    skin.b / referenceSkin.b,
+  ] : undefined;
   for (let i = 0; i < positions.count; i++) {
     const x = THREE.MathUtils.clamp(Math.floor(uv.getX(i) * canvas.width), 0, canvas.width - 1);
     // GLTF textures have flipY=false; UV zero addresses the image's top edge.
@@ -241,8 +253,9 @@ export function tintKit(mesh: THREE.SkinnedMesh, tint: number) {
     const offset = (y * canvas.width + x) * 4;
     const rgb = [pixels[offset], pixels[offset + 1], pixels[offset + 2]];
     const max = Math.max(...rgb), min = Math.min(...rgb);
+    const skinPixel = skinMultiplier && isCrowdSkinPixel(rgb[0], rgb[1], rgb[2]);
     const fabric = positions.getY(i) > 1.0 && positions.getY(i) < 1.48 && max > 60 && (max - min) / Math.max(1, max) < 0.18;
-    colors.set(fabric ? [shirt.r, shirt.g, shirt.b] : [1, 1, 1], i * 3);
+    colors.set(skinPixel ? skinMultiplier! : fabric ? [shirt.r, shirt.g, shirt.b] : [1, 1, 1], i * 3);
   }
   mesh.geometry.setAttribute('color', new THREE.BufferAttribute(colors, 3));
   material.vertexColors = true;

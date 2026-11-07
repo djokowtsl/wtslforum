@@ -52,6 +52,7 @@ const humans = await loadTs('../components/DmoHumanModels.ts', {
   './DmoRacketOrientation': racketPose, './DmoArticulatedHands': articulated,
   './DmoNativePlayer': nativePlayer, './DmoNativePlayerClaude': claudeNativePlayer,
   './DmoNativeKit': nativeKit,
+  '@/lib/dmoCrowdClothing': crowdClothingApi,
 });
 const crowdLodApi = await loadTs('../lib/dmoCrowdLod.ts');
 const crowds = await loadTs('../components/DmoHumanCrowd.ts', {
@@ -128,7 +129,7 @@ test('recorded volley clips are compact, parsed, and attributed share-alike deri
     assert.match(provenance.source, /jdpulgarin\/Tennis-MoCap/);
     assert.equal(parsed.clip.tracks[0].times.length, 51);
     assert.ok(Math.abs(parsed.clip.tracks[0].times[23] - 0.92) < 1e-6,
-      'the inferred contact sample remains at 0.92 seconds');
+      'the existing excerpt retains its 25 Hz sample spacing');
     assert.equal(parsed.skeleton.bones.find(bone => bone.name === 'RightWrist')?.name, 'RightWrist');
     assert.ok(bytes.byteLength < 50_000, 'only the selected motion excerpt is shipped');
   }
@@ -325,7 +326,7 @@ test('retargeted limb directions match the capture rather than its first-frame d
     backhand: 9.28,
     serve: 2.56,
     'volley-forehand': 0.92,
-    'volley-backhand': 0.92,
+    'volley-backhand': 0.90,
   };
   for (const stroke of ['forehand', 'backhand', 'serve', 'volley-forehand', 'volley-backhand']) {
     const source = new BVHLoader().parse(sources[stroke]);
@@ -846,9 +847,15 @@ test('crowd uses seated textured instancing and retains gaze/applause updates', 
   const oldCrowd = sceneApi.buildCrowd(scene);
   const batches = crowds.attachHumanCrowd(scene, oldCrowd, [await asset('male', 'crowd'), await asset('female', 'crowd')]);
   const occupiedSeats = oldCrowd.seats.filter((seat) => seat.occupied);
-  assert.equal(batches.length, 24);
+  assert.equal(batches.length, 96, 'eight appearance variants cover both body models and six poses');
   assert.ok(occupiedSeats.length < oldCrowd.seats.length, 'some seats remain empty');
+  assert.ok(batches.every((mesh) => mesh.instanceMatrix.count <= Math.max(
+    16, Math.ceil(oldCrowd.seats.length / 4),
+  )), 'appearance batches avoid allocating full-capacity crowd buffers each');
   assert.equal(batches.reduce((sum, mesh) => sum + mesh.count, 0), occupiedSeats.length);
+  const shoes = scene.getObjectByName('wtsl-detailed-crowd-shoes');
+  assert.ok(shoes?.isInstancedMesh);
+  assert.equal(shoes.count, occupiedSeats.length * 2);
   assert.equal(scene.getObjectByName('wtsl-spectator-heads').visible, false);
   oldCrowd.update(2, true, new THREE.Vector3(11, 0.5, 5));
   assert.ok(batches.some((mesh, index) => index % 6 >= 3 && mesh.count > 0));
@@ -863,6 +870,12 @@ test('crowd uses seated textured instancing and retains gaze/applause updates', 
   assert.equal(caps.count,
     oldCrowd.seats.filter((seat) => seat.occupied && seat.sourceIndex % 17 === 7).length,
     'empty seats do not receive floating caps');
+  oldCrowd.setDensity(0);
+  oldCrowd.update(2.2, false);
+  assert.equal(shoes.count, 0, 'detailed footwear follows an empty crowd');
+  oldCrowd.setDensity(1);
+  oldCrowd.update(2.4, false);
+  assert.equal(shoes.count, oldCrowd.seats.length * 2, 'every detailed spectator keeps both shoes');
 });
 
 test('coaches occupy reserved lower-stand seats and the seated umpire tracks the ball', async () => {

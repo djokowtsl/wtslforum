@@ -181,7 +181,8 @@ test('captured smash motion is fetched and registered with the player retargeter
   assert.match(modelSource, /load\('smash'\)/);
   assert.match(rigSource, /smash: this\.prepare\('smash', sources\.smash, rest\)/);
   assert.match(courtSource, /strokeCue === 'close-net'\s*&& isCapturedSmashShot\(\s*strokeEvent,\s*contactSample,\s*samples,\s*events,/);
-  assert.match(courtSource, /const stroke = recordedStrokeForSide\(baseStroke, strokeCue === 'close-net'\)/);
+  assert.match(courtSource, /const stroke = baseStroke/);
+  assert.match(courtSource, /else if \(isCapturedVolleyShot\(/);
   assert.match(courtSource, /capturedEvent\.stroke = 'smash'/);
 });
 
@@ -766,8 +767,14 @@ test('spectators carry deterministic wardrobe, skin-tone, hair, and seated-silho
     'the audience uses a broad, naturally varied skin-tone palette without appearance labels');
   assert.equal(new Set(appearances.map((look) => look.hairStyle)).size, 4,
     'multiple hair silhouettes are distributed through the crowd');
-  assert.equal(new Set(appearances.map((look) => look.wardrobe)).size, 4,
-    'spectator clothing has more than a repeating two-look alternation');
+  assert.equal(new Set(appearances.map((look) => look.wardrobe)).size, 8,
+    'detailed spectators use eight varied outfit and skin-tone looks');
+  const seatedLegs = sceneApi.getSeatedCrowdLegTargets(1);
+  assert.ok(Math.hypot(
+    seatedLegs.knee[0] - seatedLegs.ankle[0],
+    seatedLegs.knee[1] - seatedLegs.ankle[1],
+    seatedLegs.knee[2] - seatedLegs.ankle[2],
+  ) < 0.3, 'seated lower legs stay compact instead of hanging at standing length');
   assert.ok(new Set(appearances.map((look) => look.stature)).size >= 8,
     'seated stature varies subtly from person to person');
 

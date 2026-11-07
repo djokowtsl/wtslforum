@@ -106,8 +106,25 @@ test('detailed crowd clothing is forced opaque without losing its texture', asyn
   assert.equal(material.alphaTest, 0);
   assert.equal(material.depthWrite, true);
   assert.equal(material.side, THREE.DoubleSide);
+  assert.equal(clothingApi.isCrowdSkinPixel(228, 176, 145), true);
+  assert.equal(clothingApi.isCrowdSkinPixel(142, 137, 130), false,
+    'neutral fabric is not treated as skin');
+  assert.equal(clothingApi.isCrowdSkinPixel(63, 39, 28), false,
+    'dark hair is not treated as skin');
 
-  const source = await readFile(new URL('../components/DmoHumanCrowd.ts', import.meta.url), 'utf8');
+  const [source, models, scene] = await Promise.all([
+    readFile(new URL('../components/DmoHumanCrowd.ts', import.meta.url), 'utf8'),
+    readFile(new URL('../components/DmoHumanModels.ts', import.meta.url), 'utf8'),
+    readFile(new URL('../components/DmoLiveCourt3DScene.ts', import.meta.url), 'utf8'),
+  ]);
   assert.match(source, /makeCrowdClothingOpaque/);
+  assert.match(source, /wtsl-detailed-crowd-shoes/);
+  assert.match(source, /new THREE\.CapsuleGeometry\(0\.045,\s*0\.12/);
+  assert.match(source, /shoeMesh\.count = shoeInstance/);
+  assert.match(source, /appearance\.wardrobe \* 6 \+ bucket/);
+  assert.match(source, /tintKit\(object, tint, skinTone\)/);
+  assert.match(models, /isCrowdSkinPixel/);
+  assert.match(scene, /const appearance = \(hash >>> 12\) % 8/);
+  assert.match(scene, /ankle: \[sideSign \* 0\.14, 0\.16, 0\.14\]/);
   assert.match(source, /instanceColor\.setRGB\(1,\s*1,\s*1\)/);
 });

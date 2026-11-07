@@ -4,6 +4,7 @@ import { disposeHumanModel, HumanPose, tintKit } from './DmoHumanModels';
 import {
   getChairUmpireLegTargets,
   getCrowdAppearance,
+  CROWD_SKIN_TONES,
   getSeatedCoachLegTargets,
   getSeatedCrowdLegTargets,
   type CourtFixtureRig,
@@ -12,7 +13,11 @@ import {
 import { shouldUseHighDetailCrowdSeat } from '../lib/dmoCrowdLod';
 import { makeCrowdClothingOpaque } from '../lib/dmoCrowdClothing';
 
-function tintedHuman(template: THREE.Group, tint: number) {
+function tintedHuman(
+  template: THREE.Group,
+  tint: number,
+  skinTone?: readonly [number, number, number],
+) {
   const model = clone(template) as THREE.Group;
   model.traverse((object) => {
     if (!(object instanceof THREE.SkinnedMesh)) return;
@@ -23,7 +28,7 @@ function tintedHuman(template: THREE.Group, tint: number) {
     for (const material of Array.isArray(object.material) ? object.material : [object.material]) {
       makeCrowdClothingOpaque(material);
     }
-    tintKit(object, tint);
+    tintKit(object, tint, skinTone);
   });
   return model;
 }
@@ -235,13 +240,22 @@ export function attachHumanCrowd(scene: THREE.Scene, crowd: CrowdRig, templates:
   const batches: THREE.InstancedMesh[] = [];
   const highDetailBatches: THREE.InstancedMesh[] = [];
   const maxSeatCount = crowd.seats.length;
+  // Most seats are spread across 48 gender/look/pose batches; leave headroom
+  // without allocating a full crowd-sized matrix/color buffer for each one.
+  const batchCapacity = Math.max(16, Math.ceil(maxSeatCount / 4));
+  const wardrobeTints = [
+    [0x315a74, 0x9b4840, 0x40755e, 0x70638c, 0xb78b45, 0x3a6c78, 0x775145, 0x617257],
+    [0x4d6c8b, 0xb24e55, 0x448069, 0x826392, 0xb99052, 0x397287, 0x8c624c, 0x5c7658],
+  ];
   const makeBatches = (
     template: THREE.Group,
     target: THREE.InstancedMesh[],
     label: string,
-    clothingTint?: number,
+    clothingTint: number,
+    skinToneIndex: number,
   ) => {
-    const variant = clothingTint === undefined ? template : tintedHuman(template, clothingTint);
+    const skinTone = CROWD_SKIN_TONES[skinToneIndex];
+    const variant = tintedHuman(template, clothingTint, skinTone);
     let sourceMaterial: THREE.Material | undefined;
     variant.traverse((object) => {
       if (object instanceof THREE.SkinnedMesh) {
@@ -253,7 +267,7 @@ export function attachHumanCrowd(scene: THREE.Scene, crowd: CrowdRig, templates:
     if (!sourceMaterial) throw new Error('Crowd material missing.');
     for (const applauding of [false, true]) for (const look of [-0.5, 0, 0.5]) {
       const crowdMaterial = makeCrowdClothingOpaque(sourceMaterial.clone());
-      const mesh = new THREE.InstancedMesh(seatedGeometry(variant, look, applauding), crowdMaterial, maxSeatCount);
+      const mesh = new THREE.InstancedMesh(seatedGeometry(variant, look, applauding), crowdMaterial, batchCapacity);
       mesh.name = `wtsl-${label}-spectators-${target.length}`;
       mesh.count = 0;
       mesh.frustumCulled = false;
@@ -263,14 +277,26 @@ export function attachHumanCrowd(scene: THREE.Scene, crowd: CrowdRig, templates:
     }
     if (variant !== template) disposeHumanModel(variant, false);
   };
-  const wardrobeTints = [
-    [0x638296, 0x343f4b],
-    [0x8e664b, 0x526047],
-  ] as const;
   templates.forEach((template, gender) => {
-    makeBatches(template, batches, `textured-${gender}-sport`, wardrobeTints[gender % 2][0]);
-    makeBatches(template, batches, `textured-${gender}-formal`, wardrobeTints[gender % 2][1]);
+    wardrobeTints[gender % wardrobeTints.length].forEach((tint, wardrobe) => {
+      makeBatches(template, batches, `textured-${gender}-look-${wardrobe}`, tint, wardrobe);
+    });
   });
+
+  const shoeGeometry = new THREE.CapsuleGeometry(0.045, 0.12, 4, 8);
+  shoeGeometry.rotateX(Math.PI / 2);
+  const shoeMesh = new THREE.InstancedMesh(
+    shoeGeometry,
+    new THREE.MeshStandardMaterial({ color: 0xffffff, roughness: 0.78 }),
+    maxSeatCount * 2,
+  );
+  shoeMesh.name = 'wtsl-detailed-crowd-shoes';
+  shoeMesh.count = 0;
+  shoeMesh.frustumCulled = false;
+  shoeMesh.instanceMatrix.setUsage(THREE.DynamicDrawUsage);
+  shoeMesh.castShadow = false;
+  shoeMesh.receiveShadow = false;
+  scene.add(shoeMesh);
 
   const dummy = new THREE.Object3D();
   const instanceColor = new THREE.Color();
@@ -279,10 +305,12 @@ export function attachHumanCrowd(scene: THREE.Scene, crowd: CrowdRig, templates:
   let highDetailSeats = new Set<number>();
   let lastUpdate = -Infinity, previousApplause = false, forceUpdate = true;
   const counts = new Uint16Array(batches.length);
+  const shoeColors = [0xe7e4db, 0x344153, 0x675044, 0x1f2935, 0xc7c0ad];
   const update: CrowdRig['update'] = (time, applauding, ball) => {
     if (!forceUpdate && time - lastUpdate < 0.16 && applauding === previousApplause) return;
     counts.fill(0);
     highDetailCounts.fill(0);
+    let shoeInstance = 0;
     crowd.seats.forEach((seat, index) => {
       if (!seat.occupied) return;
       const sourceIndex = seat.sourceIndex ?? index;
@@ -295,10 +323,13 @@ export function attachHumanCrowd(scene: THREE.Scene, crowd: CrowdRig, templates:
       const clap = applauding && sourceIndex % 5 !== 0 && Math.sin(time * 9 + sourceIndex) > -0.15;
       const useHighDetail = highDetailEnabled && highDetailBatches.length > 0 && highDetailSeats.has(index);
       const bucket = (clap ? 3 : 0) + gaze;
-      const wardrobe = appearance.wardrobe % 2;
-      const batchIndex = gender * 12 + wardrobe * 6 + bucket;
-      const mesh = useHighDetail ? highDetailBatches[bucket] : batches[batchIndex];
-      const instance = useHighDetail ? highDetailCounts[bucket]++ : counts[batchIndex]++;
+      const batchIndex = gender * 48 + appearance.wardrobe * 6 + bucket;
+      const mesh = useHighDetail
+        ? highDetailBatches[appearance.wardrobe * 6 + bucket]
+        : batches[batchIndex];
+      const instance = useHighDetail
+        ? highDetailCounts[appearance.wardrobe * 6 + bucket]++
+        : counts[batchIndex]++;
       const lean = ((sourceIndex % 5) - 2) * 0.009;
       const turn = ((sourceIndex * 3 % 5) - 2) * 0.012;
       dummy.position.set(seat.x, seat.y, seat.z);
@@ -310,6 +341,28 @@ export function attachHumanCrowd(scene: THREE.Scene, crowd: CrowdRig, templates:
       // so rear torso and hip fabric cannot inherit the spectator's skin tone.
       instanceColor.setRGB(1, 1, 1);
       mesh.setColorAt(instance, instanceColor);
+      for (const [side, sideIndex] of [[-1, 0], [1, 1]] as const) {
+        const leg = getSeatedCrowdLegTargets(side);
+        const localX = leg.ankle[0];
+        const localY = (leg.ankle[1] + leg.toe[1]) / 2;
+        const localZ = (leg.ankle[2] + leg.toe[2]) / 2;
+        const sinFacing = Math.sin(seat.facing);
+        const cosFacing = Math.cos(seat.facing);
+        dummy.position.set(
+          seat.x + cosFacing * localX + sinFacing * localZ,
+          seat.y + localY,
+          seat.z - sinFacing * localX + cosFacing * localZ,
+        );
+        dummy.rotation.set(0, seat.facing, 0);
+        dummy.scale.set(0.82, 0.84, 1);
+        dummy.updateMatrix();
+        shoeMesh.setMatrixAt(shoeInstance, dummy.matrix);
+        shoeMesh.setColorAt(
+          shoeInstance,
+          new THREE.Color(shoeColors[(sourceIndex + sideIndex) % shoeColors.length]),
+        );
+        shoeInstance += 1;
+      }
     });
     batches.forEach((mesh, index) => {
       mesh.count = counts[index]; mesh.instanceMatrix.needsUpdate = true;
@@ -319,6 +372,9 @@ export function attachHumanCrowd(scene: THREE.Scene, crowd: CrowdRig, templates:
       mesh.count = highDetailCounts[index]; mesh.instanceMatrix.needsUpdate = true;
       if (mesh.instanceColor) mesh.instanceColor.needsUpdate = true;
     });
+    shoeMesh.count = shoeInstance;
+    shoeMesh.instanceMatrix.needsUpdate = true;
+    if (shoeMesh.instanceColor) shoeMesh.instanceColor.needsUpdate = true;
     previousApplause = applauding; lastUpdate = time;
     forceUpdate = false;
   };
@@ -330,7 +386,9 @@ export function attachHumanCrowd(scene: THREE.Scene, crowd: CrowdRig, templates:
   };
   crowd.setHighDetailModel = (template, genderIndex) => {
     if (highDetailBatches.length > 0) return;
-    makeBatches(template, highDetailBatches, 'high-detail');
+    wardrobeTints[genderIndex % wardrobeTints.length].forEach((tint, wardrobe) => {
+      makeBatches(template, highDetailBatches, `high-detail-${wardrobe}`, tint, wardrobe);
+    });
     highDetailSeats = new Set(
       crowd.seats.flatMap((seat, index) =>
         shouldUseHighDetailCrowdSeat(seat.row, seat.sourceIndex ?? index, genderIndex) ? [index] : []),

@@ -100,10 +100,13 @@ export const CROWD_SKIN_TONES = [
 /** Deterministic, unlabelled appearance variation shared by fallback and detailed spectators. */
 export function getCrowdAppearance(sourceIndex: number, row = 0) {
   const hash = Math.imul(sourceIndex ^ (row * 0x45d9f3b), 0x27d4eb2d) >>> 0;
+  // The detailed mesh renderer uses eight paired tone/wardrobe variants.
+  // Keep the fallback crowd on the same deterministic appearance key.
+  const appearance = (hash >>> 12) % 8;
   return {
-    skinToneIndex: hash % CROWD_SKIN_TONES.length,
+    skinToneIndex: appearance,
     hairStyle: (hash >>> 4) % 4,
-    wardrobe: (hash >>> 8) % 4,
+    wardrobe: appearance,
     stature: 0.94 + ((hash >>> 12) % 10) * 0.01,
     torsoWidth: 0.88 + ((hash >>> 20) % 7) * 0.035,
   };
@@ -113,9 +116,9 @@ export function getCrowdAppearance(sourceIndex: number, row = 0) {
 export function getSeatedCrowdLegTargets(sideSign: number) {
   return {
     hip: [sideSign * 0.11, 0.63, 0] as const,
-    knee: [sideSign * 0.14, 0.45, 0.22] as const,
-    ankle: [sideSign * 0.14, 0.12, 0.16] as const,
-    toe: [sideSign * 0.14, 0.05, 0.24] as const,
+    knee: [sideSign * 0.14, 0.45, 0.18] as const,
+    ankle: [sideSign * 0.14, 0.16, 0.14] as const,
+    toe: [sideSign * 0.14, 0.05, 0.20] as const,
   };
 }
 
@@ -1046,9 +1049,14 @@ function buildUnifiedCrowd(scene: THREE.Scene, venue: DmoVenueProfile, density: 
     placeArm(index * 2 + 1, seat, 1, 0, false);
   });
   const updateClothingInstances = () => {
-    const trouserColors = [0x38444b, 0x56534b, 0x34404a, 0x635348];
+    const trouserColors = [
+      0x38444b, 0x56534b, 0x34404a, 0x635348,
+      0x4a514d, 0x414852, 0x665a4d, 0x4c5b52,
+    ];
     const shoeColors = [0xd9d8d0, 0x41474b, 0x9d9b91];
     const shirtColors = [
+      0x31566a, 0x9a493e, 0x42715f, 0x66506e, 0xa78b54, 0x3b5262,
+      0x8f5947, 0x596f78, 0x65774f, 0x806456, 0x41534e, 0x68708b,
       0x31566a, 0x9a493e, 0x42715f, 0x66506e, 0xa78b54, 0x3b5262,
       0x8f5947, 0x596f78, 0x65774f, 0x806456, 0x41534e, 0x68708b,
     ];
