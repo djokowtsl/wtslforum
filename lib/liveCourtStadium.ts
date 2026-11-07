@@ -5,6 +5,7 @@ import {
   type LiveCourtWorldPoint,
 } from './liveCourtProjection';
 import type { Te4CourtSurface } from './te4DmoTypes';
+import { courtSurfaceVisualProfile } from './te4DmoSurface';
 
 type Project = (x: number, y: number, z: number) => LiveCourtProjectedPoint;
 
@@ -169,22 +170,16 @@ function renderStaticScene(
   camera: LiveCourtCamera,
   zoom: number,
   stadium: boolean,
+  isWta: boolean,
 ) {
   const width = context.canvas.width;
   const height = context.canvas.height;
-  const palette = stadium
-    ? {
-      hard: { court: '#4c6b99', apron: '#263752' },
-      clay: { court: '#9c5a4c', apron: '#353d4c' },
-      grass: { court: '#63795b', apron: '#2e3d4b' },
-      unknown: { court: '#566b89', apron: '#2a3a52' },
-    }[surface]
-    : {
-      hard: { court: '#6b83a7', apron: '#d4dce8' },
-      clay: { court: '#bd715d', apron: '#ebe1d7' },
-      grass: { court: '#728d6a', apron: '#e0e6dc' },
-      unknown: { court: '#7c91ad', apron: '#e0e6ec' },
-    }[surface];
+  const visualProfile = courtSurfaceVisualProfile(surface);
+  const palette = {
+    court: visualProfile.playing,
+    runoff: visualProfile.runoff,
+    apron: stadium ? visualProfile.stadiumApron : visualProfile.practiceApron,
+  };
 
   const rawProject = createCourtProjector(camera, zoom);
   const project: Project = (x, y, z) => rawProject([x, y, z]);
@@ -231,7 +226,8 @@ function renderStaticScene(
   }
 
   polygon([[-1450, -700, 0], [1450, -700, 0], [1450, 700, 0], [-1450, 700, 0]], palette.apron, null);
-  polygon([[-1275, -590, 0], [1275, -590, 0], [1275, 590, 0], [-1275, 590, 0]], palette.court, null);
+  polygon([[-1275, -590, 0], [1275, -590, 0], [1275, 590, 0], [-1275, 590, 0]], palette.runoff, null);
+  polygon([[-1189, -549, 0], [1189, -549, 0], [1189, 549, 0], [-1189, 549, 0]], palette.court, null);
   const fixtureColor = '#53647c';
   const fixtureHighlight = '#9da8b7';
   const drawPlayerBench = (centerX: number) => {
@@ -319,8 +315,8 @@ function renderStaticScene(
   context.lineWidth = 2;
   context.stroke();
   if (surface === 'grass') {
-    for (let y = -520; y < 560; y += 180) {
-      polygon([[-1270, y, 0], [1270, y, 0], [1270, y + 78, 0], [-1270, y + 78, 0]], 'rgba(255,255,255,.055)', null);
+    for (let y = -520; y < 510; y += 180) {
+      polygon([[-1185, y, 0], [1185, y, 0], [1185, Math.min(y + 78, 545), 0], [-1185, Math.min(y + 78, 545), 0]], 'rgba(255,255,255,.055)', null);
     }
   }
 
@@ -348,6 +344,18 @@ function renderStaticScene(
   for (let z = 16; z <= 96; z += 16) {
     line([[0, -549, z], [0, 549, z]], 'rgba(241,246,250,.3)', 0.8);
   }
+  polygon([[0, -549, 100], [0, 549, 100], [0, 549, 107], [0, -549, 107]], '#e9e6d9', lineColor);
+  const netAccent = isWta ? '#bd2f68' : '#2878aa';
+  const netLabel = isWta ? 'WTA' : 'ATP TOUR';
+  polygon([[0, -112, 100], [0, 112, 100], [0, 112, 107], [0, -112, 107]], netAccent, null);
+  const [netLabelX, netLabelY, netLabelScale] = project(0, 0, 106);
+  context.save();
+  context.font = `700 ${Math.max(5, Math.min(10, netLabelScale * 40))}px system-ui, sans-serif`;
+  context.textAlign = 'center';
+  context.textBaseline = 'middle';
+  context.fillStyle = '#fff';
+  context.fillText(netLabel, netLabelX, netLabelY);
+  context.restore();
   line([[0, -560, 0], [0, -560, 120]], '#edf3f7', 3);
   line([[0, 560, 0], [0, 560, 120]], '#edf3f7', 3);
 }
@@ -358,9 +366,10 @@ export function drawLiveCourtBackdrop(
   camera: LiveCourtCamera,
   zoom: number,
   stadium: boolean,
+  isWta = false,
 ) {
   const canvas = context.canvas;
-  const key = `${surface}:${camera.azimuth}:${camera.elevation}:${zoom}:${stadium}`;
+  const key = `${surface}:${camera.azimuth}:${camera.elevation}:${zoom}:${stadium}:${isWta}`;
   let cached = backdropCache.get(canvas);
   if (!cached || cached.key !== key || cached.canvas.width !== canvas.width || cached.canvas.height !== canvas.height) {
     const layer = document.createElement('canvas');
@@ -368,7 +377,7 @@ export function drawLiveCourtBackdrop(
     layer.height = canvas.height;
     const layerContext = layer.getContext('2d');
     if (!layerContext) return;
-    renderStaticScene(layerContext, surface, camera, zoom, stadium);
+    renderStaticScene(layerContext, surface, camera, zoom, stadium, isWta);
     cached = { key, canvas: layer };
     backdropCache.set(canvas, cached);
   }
