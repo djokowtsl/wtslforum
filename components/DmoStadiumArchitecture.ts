@@ -19,69 +19,6 @@ type ScoreboardTexture = {
   update: (data: StadiumScoreboardData) => void;
 };
 
-function addBox(
-  parent: THREE.Group,
-  name: string,
-  size: [number, number, number],
-  position: [number, number, number],
-  material: THREE.Material,
-) {
-  const mesh = new THREE.Mesh(new THREE.BoxGeometry(...size), material);
-  mesh.name = name;
-  mesh.position.set(...position);
-  mesh.castShadow = false;
-  mesh.receiveShadow = true;
-  parent.add(mesh);
-  return mesh;
-}
-
-function scoreSummary(data: StadiumScoreboardData) {
-  if (!data.score) return data.live ? 'LIVE SCORE UNAVAILABLE' : 'MATCH SCORE UNAVAILABLE';
-  const sets = data.score.sets.length
-    ? data.score.sets.map(([first, second]) => `${first}–${second}`).join(' ')
-    : '0–0';
-  if (data.final) return `FINAL · ${data.players[0]} vs ${data.players[1]} · SETS ${sets}`;
-  const pointLabel = data.score.tiebreak ? 'TB' : 'POINTS';
-  return `${data.live ? 'LIVE' : 'MATCH'} · ${data.players[0]} vs ${data.players[1]} · SETS ${sets} · GAMES ${data.score.games[0]}–${data.score.games[1]} · ${pointLabel} ${data.score.pointText[0]}–${data.score.pointText[1]}`;
-}
-
-function makeRibbonTexture(): ScoreboardTexture {
-  if (typeof document === 'undefined') return { update: () => undefined };
-  const canvas = document.createElement('canvas');
-  canvas.width = 1200;
-  canvas.height = 180;
-  const context = canvas.getContext('2d');
-  if (!context) return { update: () => undefined };
-  const texture = new THREE.CanvasTexture(canvas);
-  texture.colorSpace = THREE.SRGBColorSpace;
-  texture.generateMipmaps = true;
-
-  return {
-    texture,
-    update(data) {
-      const background = context.createLinearGradient(0, 0, 0, canvas.height);
-      background.addColorStop(0, '#122f3b');
-      background.addColorStop(1, '#071a24');
-      context.fillStyle = background;
-      context.fillRect(0, 0, canvas.width, canvas.height);
-      context.fillStyle = '#d9b954';
-      context.fillRect(0, 0, canvas.width, 8);
-      context.fillRect(0, canvas.height - 8, canvas.width, 8);
-      context.fillStyle = '#e8c85f';
-      context.font = '700 22px Arial, sans-serif';
-      context.fillText(data.live ? 'WTSL LIVE' : data.final ? 'WTSL FINAL' : 'WTSL REPLAY', 24, 42);
-      context.fillStyle = '#f3f1e7';
-      context.font = '700 37px Arial, sans-serif';
-      const label = scoreSummary(data);
-      context.fillText(label, 24, 112, canvas.width - 48);
-      context.fillStyle = '#91aaa8';
-      context.font = '600 17px Arial, sans-serif';
-      context.fillText(data.live ? 'OFFICIAL TE4 SCORE' : data.final ? 'MATCH FINAL' : 'MATCH REPLAY', 24, 146);
-      texture.needsUpdate = true;
-    },
-  };
-}
-
 function makeScreenTexture(): ScoreboardTexture {
   if (typeof document === 'undefined') return { update: () => undefined };
   const canvas = document.createElement('canvas');
@@ -162,6 +99,22 @@ function makeScreenTexture(): ScoreboardTexture {
   };
 }
 
+function addBox(
+  parent: THREE.Group,
+  name: string,
+  size: [number, number, number],
+  position: [number, number, number],
+  material: THREE.Material,
+) {
+  const mesh = new THREE.Mesh(new THREE.BoxGeometry(...size), material);
+  mesh.name = name;
+  mesh.position.set(...position);
+  mesh.castShadow = false;
+  mesh.receiveShadow = true;
+  parent.add(mesh);
+  return mesh;
+}
+
 function addPlane(
   parent: THREE.Group,
   name: string,
@@ -188,12 +141,11 @@ export function buildStadiumArchitecture(
   stadium.name = 'wtsl-stadium-superstructure';
 
   const steel = new THREE.MeshStandardMaterial({ color: 0x596a68, roughness: 0.58, metalness: 0.18 });
-  const ribbonDisplay = makeRibbonTexture();
-  const ribbonMaterial = new THREE.MeshBasicMaterial({
-    color: ribbonDisplay.texture ? 0xffffff : 0x123542,
-    ...(ribbonDisplay.texture ? { map: ribbonDisplay.texture } : {}),
+  const ribbonMaterial = new THREE.MeshStandardMaterial({
+    color: 0x123542,
+    roughness: 0.82,
+    metalness: 0.08,
     side: THREE.DoubleSide,
-    toneMapped: false,
   });
   const screenDisplay = makeScreenTexture();
   const screenMaterial = new THREE.MeshBasicMaterial({
@@ -212,7 +164,6 @@ export function buildStadiumArchitecture(
     const key = JSON.stringify(data);
     if (key === lastScoreboardKey) return;
     lastScoreboardKey = key;
-    ribbonDisplay.update(data);
     screenDisplay.update(data);
     stadium.userData.scoreboardData = data;
   };
@@ -421,7 +372,7 @@ export function buildStadiumArchitecture(
       const z = Math.sin(angle) * row.ellipseZ;
       const facing = Math.atan2(-Math.cos(angle), -Math.sin(angle));
 
-      seatTransform.position.set(x, y - 0.24, z);
+      seatTransform.position.set(x, y + 0.38, z);
       seatTransform.rotation.set(0, facing, 0);
       seatTransform.scale.set(1, 1, 1);
       seatTransform.updateMatrix();
@@ -429,7 +380,7 @@ export function buildStadiumArchitecture(
 
       seatTransform.position.set(
         x - Math.sin(facing) * 0.16,
-        y + 0.04,
+        y + 0.72,
         z - Math.cos(facing) * 0.16,
       );
       seatTransform.updateMatrix();
