@@ -838,6 +838,11 @@ test('umpire score calls use server order and tennis point language', () => {
   assert.equal(umpireApi.formatTennisPointScoreCall('40-40', 1, players), 'Deuce');
   assert.equal(umpireApi.formatTennisPointScoreCall('40-AD', 2, players), 'Advantage, Player Two');
   assert.equal(umpireApi.formatTennisPointScoreCall('5-5', 1, players, true), 'five-all');
+  assert.equal(umpireApi.formatTennisPointScoreCall('5-6', 2, players, true), 'five-six',
+    'tiebreak calls stay in player order regardless of the next server');
+  assert.equal(umpireApi.formatTennisPointScoreCall('deuce', 1, players), 'Deuce');
+  assert.equal(umpireApi.formatTennisPointScoreCall('ad 1', 2, players), 'Advantage, Player One');
+  assert.equal(umpireApi.formatTennisPointScoreCall('ad 2', 1, players), 'Advantage, Player Two');
   assert.equal(umpireApi.formatTennisPointScoreCall('3-4', 1, players), 'three-four',
     'numeric tiebreak scores are recognized from the DMO timeline');
 });

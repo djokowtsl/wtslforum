@@ -20,7 +20,11 @@ type UmpireSoundEvent = { frame: number; kind: string };
 
 function scorePair(scoreLabel: string): [string, string] | null {
   const pointScore = scoreLabel.match(/\(([^()]*)\)\s*$/)?.[1] ?? scoreLabel;
-  const match = pointScore.match(/^\s*(AD|ADV|A|\d+)\s*[-–]\s*(AD|ADV|A|\d+)\s*$/i);
+  const normalized = pointScore.trim().toUpperCase();
+  if (normalized === 'DEUCE') return ['40', '40'];
+  const advantage = normalized.match(/^AD\s*([12])$/);
+  if (advantage) return advantage[1] === '1' ? ['AD', '40'] : ['40', 'AD'];
+  const match = normalized.match(/^(AD|ADV|A|\d+)\s*[-–]\s*(AD|ADV|A|\d+)$/);
   return match ? [match[1].toUpperCase(), match[2].toUpperCase()] : null;
 }
 
@@ -67,7 +71,7 @@ export function formatTennisPointScoreCall(
     return `Advantage, ${players[1]}`;
   }
 
-  const ordered = server === 2 ? [pair[1], pair[0]] : pair;
+  const ordered = !isTiebreak && server === 2 ? [pair[1], pair[0]] : pair;
   const first = pointWord(ordered[0], isTiebreak);
   const second = pointWord(ordered[1], isTiebreak);
   if (!first || !second) return null;
