@@ -78,6 +78,12 @@ type Props = {
 };
 export type GruntControlProps = Pick<Props, 'gruntsEnabled' | 'onGruntsEnabledChange'>;
 
+const LIVE_COURT_COLORS = {
+  playerOne: '#eaa134',
+  playerTwo: '#e05d64',
+  ball: '#e8f84a',
+} as const;
+
 function drawScene(
   context: CanvasRenderingContext2D,
   samples: LiveCourtSample[],
@@ -154,8 +160,8 @@ function drawScene(
   context.fill();
 
   const playerActors = [
-    { x: value(3), y: value(4), color: '#eaa134', name: players[0], id: 1 as const, xIndex: 3, yIndex: 4 },
-    { x: value(5), y: value(6), color: '#e05d64', name: players[1], id: 2 as const, xIndex: 5, yIndex: 6 },
+    { x: value(3), y: value(4), color: LIVE_COURT_COLORS.playerOne, name: players[0], id: 1 as const, xIndex: 3, yIndex: 4 },
+    { x: value(5), y: value(6), color: LIVE_COURT_COLORS.playerTwo, name: players[1], id: 2 as const, xIndex: 5, yIndex: 6 },
   ];
   const movementBeforeFrame = Math.max(samples[0].frame, cursor - 3);
   const movementAfterFrame = Math.min(samples[samples.length - 1].frame, cursor + 3);
@@ -1215,12 +1221,9 @@ function DmoLiveCourt({
         <DmoLiveBufferingOverlay buffering={buffering || feedStalled} />
       </div>
       <div className={styles.legend}>
-        <span><i className={styles.playerOne} />{snapshot.players[0]}</span>
-        <span><i className={styles.playerTwo} />{snapshot.players[1]}</span>
-        <span><i className={styles.ball} />Ball</span>
-        <span className={styles.sceneNote}>
-          {stadiumAtmosphere ? 'Live court view · drag to orbit' : 'Drag to orbit · adjust angle and elevation'}
-        </span>
+        <span><i style={{ backgroundColor: LIVE_COURT_COLORS.playerOne }} />{snapshot.players[0]}</span>
+        <span><i style={{ backgroundColor: LIVE_COURT_COLORS.playerTwo }} />{snapshot.players[1]}</span>
+        <span><i className={styles.ball} style={{ backgroundColor: LIVE_COURT_COLORS.ball }} />Ball</span>
       </div>
       {renderError && <p className={styles.liveStatus} role="alert">{renderError}</p>}
       {soundError && <p className={styles.liveStatus} role="status">{soundError}</p>}

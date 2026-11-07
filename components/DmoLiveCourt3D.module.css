@@ -452,22 +452,8 @@
   border-radius: 50%;
 }
 
-.playerOne {
-  background: #d9a95e;
-}
-
-.playerTwo {
-  background: #d96d5b;
-}
-
 .ball {
-  background: #f0dc63;
   box-shadow: 0 0 7px rgba(240, 220, 99, .76);
-}
-
-.hint {
-  margin-left: auto;
-  color: #9aaac2;
 }
 
 .soundError {

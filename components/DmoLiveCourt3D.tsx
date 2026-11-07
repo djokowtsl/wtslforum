@@ -149,8 +149,7 @@ const DEFAULT_CAMERA = new THREE.Vector3(-18, 8, 19);
 /** The camera never goes lower than this above the court surface (metres). */
 const MIN_CAMERA_HEIGHT = 0.8;
 
-/** Shown under the court so a deployed build can be identified at a glance. */
-const RENDERER_BUILD = 'stadium/audio + recorded volleys + player repair r14';
+const colorToCss = (color: number) => `#${color.toString(16).padStart(6, '0')}`;
 
 function firstEventAfterFrame<T extends { frame: number }>(events: T[], frame: number) {
   let low = 0;
@@ -2373,13 +2372,9 @@ function ThreeCourt({
         </p>
       )}
       <div className={styles.legend}>
-        <span><i className={styles.playerOne} />{snapshot.players[0]}</span>
-        <span><i className={styles.playerTwo} />{snapshot.players[1]}</span>
-        <span><i className={styles.ball} />Ball</span>
-        <span className={styles.hint}>
-          {cameraView.startsWith('player-') ? 'Use Look across court to pan laterally · scroll to zoom' : 'Drag to orbit · scroll to zoom'}
-          {` · ${RENDERER_BUILD}`}
-        </span>
+        <span><i style={{ backgroundColor: colorToCss(PALETTE.shirtOne) }} />{snapshot.players[0]}</span>
+        <span><i style={{ backgroundColor: colorToCss(PALETTE.shirtTwo) }} />{snapshot.players[1]}</span>
+        <span><i className={styles.ball} style={{ backgroundColor: colorToCss(PALETTE.yellow) }} />Ball</span>
       </div>
       {fullReplay && hasCourtData && (
         <div className={styles.replayControls} role="group" aria-label="Full match replay controls">
