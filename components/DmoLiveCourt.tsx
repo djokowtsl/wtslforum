@@ -1044,11 +1044,13 @@ function DmoLiveCourt({
   };
 
   const handleSoundActivationGesture = (target: EventTarget | null) => {
-    if (target instanceof Element && target.closest('[data-sound-toggle], [data-pip-toggle]')) return;
-    if (!soundEnabledRef.current) return;
+    if (target instanceof Element && target.closest(
+      '[data-sound-toggle], [data-pip-toggle], [data-umpire-calls-toggle]',
+    )) return;
     if (umpireCallsEnabledRef.current && !umpireSpeechReadyRef.current) {
       void activateUmpireSpeechFromGesture();
     }
+    if (!soundEnabledRef.current) return;
     void activateSoundFromGesture();
   };
 
@@ -1151,6 +1153,7 @@ function DmoLiveCourt({
           </button>
           <button
             className={styles.gruntControl}
+            data-umpire-calls-toggle
             type="button"
             aria-label={gruntsEnabled ? 'Turn player grunts off' : 'Turn player grunts on'}
             aria-pressed={gruntsEnabled}

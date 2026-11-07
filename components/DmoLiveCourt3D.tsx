@@ -2199,11 +2199,13 @@ function ThreeCourt({
     changeUmpireCallsEnabled(!umpireCallsEnabledRef.current);
   };
   const handleSoundActivationGesture = (target: EventTarget | null) => {
-    if (target instanceof Element && target.closest('[data-sound-toggle], [data-pip-toggle]')) return;
-    if (!soundPreferenceRef.current || soundOnRef.current) return;
+    if (target instanceof Element && target.closest(
+      '[data-sound-toggle], [data-pip-toggle], [data-umpire-calls-toggle]',
+    )) return;
     if (umpireCallsEnabledRef.current && !umpireSpeechReadyRef.current) {
       void activateUmpireSpeechFromGesture();
     }
+    if (!soundPreferenceRef.current || soundOnRef.current) return;
     void activateSoundFromGesture();
   };
   const replayFrameRate = snapshot.frameRate ?? TE4_DMO_FRAMES_PER_SECOND;
@@ -2334,6 +2336,7 @@ function ThreeCourt({
           </button>
           <button
             className={styles.soundButton}
+            data-umpire-calls-toggle
             type="button"
             aria-label={umpireCallsEnabled && !umpireSpeechReady
               ? 'Enable spoken umpire calls on this device'
