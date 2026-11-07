@@ -717,6 +717,8 @@ test('Discord DMO sync preserves the original London submission date', async () 
           round: 'Final',
           player1: 'Player One',
           player2: 'Player Two',
+          player1Character: 'Federer',
+          player2Character: 'Nadal',
           submitterDiscordId: '123',
           submitterName: 'Player One',
           discordChannelId: '1055277431398866995',
@@ -731,6 +733,8 @@ test('Discord DMO sync preserves the original London submission date', async () 
     assert.equal(created.roundName, 'Final');
     assert.equal(created.player1, 'Player One');
     assert.equal(created.player2, 'Player Two');
+    assert.equal(created.player1Character, 'Federer');
+    assert.equal(created.player2Character, 'Nadal');
     assert.equal(created.coachShareUrl, 'https://replays.knowthew.net/m/3f9a1c07b2e4d5a6');
     assert.equal(created.coachGroupShareConsent, undefined);
   } finally {
@@ -756,6 +760,8 @@ test('Forum DMO intake keeps Coach publication behind its own explicit consent',
     form.set('round', 'Final');
     form.set('player1', 'Player One');
     form.set('player2', 'Player Two');
+    form.set('player1Character', 'Federer');
+    form.set('player2Character', 'Nadal');
     form.set('coachShareUrl', includeCoach ? coachUrl : '');
     form.set('publicShareConsent', String(publicConsent));
     form.set('coachGroupShareConsent', String(coachConsent));
@@ -799,6 +805,8 @@ test('Forum DMO intake keeps Coach publication behind its own explicit consent',
     assert.equal(replayOnly.status, 201);
     assert.equal(created[0].publicShareConsent, true);
     assert.equal(created[0].coachGroupShareConsent, false);
+    assert.equal(created[0].player1Character, 'Federer');
+    assert.equal(created[0].player2Character, 'Nadal');
     assert.deepEqual(groupSyncs, []);
 
     const replayAndCoach = await route.POST(new Request('https://forum.test/api/dmo-submissions', {

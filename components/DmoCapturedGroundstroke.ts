@@ -38,6 +38,8 @@ export function recordedStrokeUsesTwoHands(
 export type GroundstrokeMotionSources = {
   [stroke in GroundstrokeName]: string;
 } & {
+  /** Optional captured one-handed backhand; missing data keeps the prior clip. */
+  backhandOne?: string;
   /** Recorded walk / jog / run for the arms between points (optional). */
   locomotion?: { walk: string; jog: string; run: string };
 };
@@ -50,6 +52,8 @@ export interface GroundstrokePlayback {
   scope?: 'full' | 'upper';
   rootOffset?: boolean;
   hands?: 'one' | 'two';
+  /** Select the one-handed recording for a ground backhand only. */
+  oneHanded?: boolean;
   /** Recorded contact ball position in the player's local court space. */
   contactTarget?: [number, number, number];
 }
@@ -77,11 +81,14 @@ type MotionClip = {
   contactTime: number;
   contactRoot: THREE.Vector3;
   scale: number;
+  wristCalibration?: THREE.Quaternion;
   rightPairs: RetargetPair[];
   leftPairs: RetargetPair[];
 };
 
-const CONTACT_SECONDS: Record<GroundstrokeName, number> = {
+type MotionName = GroundstrokeName | 'backhandOne';
+
+const CONTACT_SECONDS: Record<MotionName, number> = {
   // The serve time is the repeated right-wrist speed/height peak in the source
   // clip; the source has no ball-contact marker, so this remains inferred.
   forehand: 13.4,
@@ -94,6 +101,16 @@ const CONTACT_SECONDS: Record<GroundstrokeName, number> = {
   // right-wrist speed peak at frame 23. The dataset has no ball marker.
   'volley-forehand': 0.92,
   'volley-backhand': 0.92,
+  // Inferred from the third recorded swing's right-wrist speed peak.
+  backhandOne: 5.66,
+};
+
+/**
+ * The source has no racket markers. This wrist-local correction compensates
+ * for the one-handed recording's forearm roll so the racket is level at contact.
+ */
+const WRIST_CALIBRATION: Partial<Record<MotionName, [number, number, number, number]>> = {
+  backhandOne: [0.2929, -0.6615, -0.0411, 0.6892],
 };
 
 const READY_POSE_SECONDS = 0.5;
@@ -231,7 +248,7 @@ function mirrorQuaternionX(quaternion: THREE.Quaternion) {
 
 export class DmoCapturedGroundstroke {
   private readonly targets = new Map<string, THREE.Bone>();
-  private readonly motions: Record<GroundstrokeName, MotionClip>;
+  private readonly motions: Record<GroundstrokeName, MotionClip> & { backhandOne?: MotionClip };
   private readonly model: THREE.Group;
   private readonly space: THREE.Group;
 
@@ -257,9 +274,20 @@ export class DmoCapturedGroundstroke {
       'volley-forehand': this.prepare('volley-forehand', sources['volley-forehand'], rest),
       'volley-backhand': this.prepare('volley-backhand', sources['volley-backhand'], rest),
     };
+    if (sources.backhandOne) {
+      try {
+        this.motions.backhandOne = this.prepare('backhandOne', sources.backhandOne, rest);
+      } catch (error) {
+        console.warn('Captured one-handed backhand could not be prepared; using the existing recording.', error);
+      }
+    }
   }
 
-  private prepare(stroke: GroundstrokeName, text: string, rest: Map<string, NativeRest>): MotionClip {
+  get hasOneHandedBackhand() {
+    return Boolean(this.motions.backhandOne);
+  }
+
+  private prepare(stroke: MotionName, text: string, rest: Map<string, NativeRest>): MotionClip {
     const data = new BVHLoader().parse(text);
     const root = data.skeleton.bones[0];
     const mixer = new THREE.AnimationMixer(root);
@@ -286,6 +314,9 @@ export class DmoCapturedGroundstroke {
       contactTime,
       contactRoot,
       scale,
+      wristCalibration: WRIST_CALIBRATION[stroke]
+        ? new THREE.Quaternion(...WRIST_CALIBRATION[stroke]!).normalize()
+        : undefined,
       rightPairs: this.buildPairs(sourceBones, rest, false),
       leftPairs: this.buildPairs(sourceBones, rest, true),
     };
@@ -317,7 +348,9 @@ export class DmoCapturedGroundstroke {
   apply(playback: GroundstrokePlayback): CapturedBodyHints | null {
     const weight = THREE.MathUtils.clamp(playback.weight, 0, 1);
     if (weight <= 0 || !Number.isFinite(playback.deltaSeconds)) return null;
-    const motion = this.motions[playback.stroke];
+    const motion = playback.stroke === 'backhand' && playback.oneHanded && this.motions.backhandOne
+      ? this.motions.backhandOne
+      : this.motions[playback.stroke];
     const mirrored = playback.handedness === 'left';
     const pairs = mirrored ? motion.leftPairs : motion.rightPairs;
     const time = THREE.MathUtils.clamp(
@@ -347,6 +380,9 @@ export class DmoCapturedGroundstroke {
     for (const { target, source, targetRest } of pairs) {
       target.parent!.updateWorldMatrix(true, false);
       const sourceRotation = source.getWorldQuaternion(new THREE.Quaternion());
+      if (motion.wristCalibration && source.name === 'RightWrist') {
+        sourceRotation.multiply(motion.wristCalibration);
+      }
       if (mirrored) {
         sourceRotation.copy(mirrorQuaternionX(sourceRotation));
       }

@@ -17,10 +17,11 @@ Creative Commons Attribution-ShareAlike 3.0 Unported:
 https://creativecommons.org/licenses/by-sa/3.0/
 
 Original files: jarua_Derecha_18seg.bvh, jarua_Reves.bvh, and jarua_Servicio.bvh.
-Motion files are sampled at 25 Hz by retaining every fourth 100 Hz source
-sample; joint rotations are unchanged. These motion derivatives remain CC BY-SA
-3.0. Runtime retargeting and finger grasp are authored adaptations, not the
-original participant's hand capture or Federer/Nadal motion.
+The one-handed backhand uses `astrejos_Reves.bvh` from the same dataset. Motion
+files are sampled at 25 Hz by retaining every fourth 100 Hz source sample;
+joint rotations are unchanged. These motion derivatives remain CC BY-SA 3.0.
+Runtime retargeting and grip calibration are authored adaptations, not the
+original participant's hand capture or a professional player's motion.
 
 Citation: Pulgarin-Giraldo J.D., Alvarez-Meza A.M., Melo-Betancourt L.G.,
 Ramos-Bermudez S., Castellanos-Dominguez G. “A Similarity Indicator for

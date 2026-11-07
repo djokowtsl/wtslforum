@@ -41,6 +41,8 @@ export async function POST(req: NextRequest) {
   const roundName = cleanText(body?.round, 60);
   const player1 = cleanText(body?.player1, 100);
   const player2 = cleanText(body?.player2, 100);
+  const player1Character = cleanText(body?.player1Character, 100);
+  const player2Character = cleanText(body?.player2Character, 100);
   const submitterDiscordId = cleanText(body?.submitterDiscordId, 32);
   const submitterName = cleanText(body?.submitterName, 100) || 'Discord member';
   const channelId = cleanText(body?.discordChannelId, 32);
@@ -149,6 +151,8 @@ export async function POST(req: NextRequest) {
       roundName,
       player1,
       player2,
+      player1Character: player1Character || null,
+      player2Character: player2Character || null,
       fileName,
       coachShareUrl: coachShare.url,
       privateBlobPathname: privatePathname,

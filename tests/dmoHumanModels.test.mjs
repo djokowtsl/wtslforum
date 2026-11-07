@@ -131,6 +131,24 @@ test('recorded volley clips are compact, parsed, and attributed share-alike deri
   }
 });
 
+test('one-handed backhand clip is loadable and carries its share-alike attribution', async () => {
+  const manifest = JSON.parse(await readFile(
+    new URL('../public/models/dmo-humans/provenance.json', import.meta.url),
+  ));
+  const bytes = await readFile(new URL(
+    '../public/models/dmo-humans/tennis-backhand-one.bvh',
+    import.meta.url,
+  ));
+  const parsed = new BVHLoader().parse(bytes.toString('utf8'));
+  const provenance = manifest.find(entry => entry.filename === 'tennis-backhand-one.bvh');
+  assert.ok(provenance);
+  assert.equal(provenance.bytes, bytes.byteLength);
+  assert.equal(provenance.license, 'CC-BY-SA-3.0');
+  assert.match(provenance.source, /astrejos_Reves\.bvh/);
+  assert.equal(parsed.skeleton.bones.find(bone => bone.name === 'RightWrist')?.name, 'RightWrist');
+  assert.ok(parsed.clip.duration > 5.66, 'the inferred contact time must be inside the recording');
+});
+
 for (const gender of ['male', 'female']) test(`${gender}: continuous native body retains wrists, clothes and segment lengths`, async () => {
     const template = await nativePlayerTemplate(gender);
     const bytes = await readFile(new URL('../public/models/dmo-humans/native-player.glb', import.meta.url));
@@ -260,7 +278,7 @@ test('retargeted limb directions match the capture rather than its first-frame d
   const rig = sceneApi.makePlayer(0x275c77, 0x333333);
   const attached = humans.attachHumanPlayer(template, rig, 0x275c77);
   const sources = Object.fromEntries(await Promise.all([
-    'forehand', 'backhand', 'serve', 'volley-forehand', 'volley-backhand',
+    'forehand', 'backhand', 'serve', 'smash', 'volley-forehand', 'volley-backhand',
   ].map(async stroke =>
     [stroke, await readFile(new URL(`../public/models/dmo-humans/tennis-${stroke}.bvh`, import.meta.url), 'utf8')])));
   attached.pose.reset();
@@ -272,7 +290,7 @@ test('retargeted limb directions match the capture rather than its first-frame d
     'volley-forehand': 0.92,
     'volley-backhand': 0.92,
   };
-  for (const stroke of Object.keys(sources)) {
+  for (const stroke of ['forehand', 'backhand', 'serve', 'volley-forehand', 'volley-backhand']) {
     const source = new BVHLoader().parse(sources[stroke]);
     const mixer = new THREE.AnimationMixer(source.skeleton.bones[0]);
     mixer.clipAction(source.clip).play();
@@ -463,6 +481,96 @@ test('captured strokes and volleys animate the full body for either handedness',
         assert.ok(attached.pose.bones.get(name).matrixWorld.elements.every(Number.isFinite));
       }
     }
+  }
+});
+
+test('the production native player selects the one-handed clip only for one-handed backhands', async () => {
+  const template = await nativePlayerTemplate('male');
+  const rig = sceneApi.makePlayer(0x275c77, 0x333333);
+  const attached = humans.attachHumanPlayer(template, rig, 0x275c77);
+  const sample = (stroke, hands) => {
+    rig.root.userData.groundstrokePlayback = {
+      stroke,
+      deltaSeconds: 0.15,
+      weight: 1,
+      handedness: 'right',
+      hands,
+      rootOffset: false,
+    };
+    attached.update();
+    return ['hand_l', 'hand_r'].map(name => attached.pose.point(name));
+  };
+  const oneHandedBackhand = sample('backhand', 'one');
+  const twoHandedBackhand = sample('backhand', 'two');
+  assert.ok(oneHandedBackhand[0].distanceTo(twoHandedBackhand[0]) > 0.05
+    || oneHandedBackhand[1].distanceTo(twoHandedBackhand[1]) > 0.05,
+  'the Claude production player must select the new backhand motion when requested');
+});
+
+test('the captured one-handed clip changes ground backhands, not forehands', async () => {
+  const template = await nativePlayerTemplate('male');
+  const rig = sceneApi.makePlayer(0x275c77, 0x333333);
+  const attached = humans.attachHumanPlayer(template, rig, 0x275c77);
+  const sources = Object.fromEntries(await Promise.all([
+    'forehand', 'backhand', 'serve', 'smash', 'volley-forehand', 'volley-backhand',
+  ].map(async stroke =>
+    [stroke, await readFile(new URL(`../public/models/dmo-humans/tennis-${stroke}.bvh`, import.meta.url), 'utf8')])));
+  sources.backhandOne = await readFile(
+    new URL('../public/models/dmo-humans/tennis-backhand-one.bvh', import.meta.url),
+    'utf8',
+  );
+  const capture = new capturedGroundstroke.DmoCapturedGroundstroke(
+    attached.model, rig.root, attached.pose.rest, sources,
+  );
+  const sample = (stroke, oneHanded, handedness = 'right') => {
+    attached.pose.reset();
+    capture.apply({
+      stroke,
+      deltaSeconds: 0.15,
+      weight: 1,
+      handedness,
+      rootOffset: false,
+      oneHanded,
+    });
+    return ['hand_l', 'hand_r'].map(name => attached.pose.point(name));
+  };
+  for (const handedness of ['right', 'left']) {
+    const oneHandedBackhand = sample('backhand', true, handedness);
+    const twoHandedBackhand = sample('backhand', false, handedness);
+    assert.ok(oneHandedBackhand[0].distanceTo(twoHandedBackhand[0]) > 0.05
+      || oneHandedBackhand[1].distanceTo(twoHandedBackhand[1]) > 0.05,
+    `${handedness}-handed player must use the one-handed backhand sample`);
+  }
+  const oneHandedForehand = sample('forehand', true);
+  const twoHandedForehand = sample('forehand', false);
+  assert.ok(oneHandedForehand[0].distanceTo(twoHandedForehand[0]) < 1e-6
+    && oneHandedForehand[1].distanceTo(twoHandedForehand[1]) < 1e-6,
+  'the one-handed backhand option must not alter forehand motion');
+});
+
+test('missing optional one-handed motion retains the existing backhand fallback', async () => {
+  const originalFetch = globalThis.fetch;
+  globalThis.fetch = async (input) => {
+    const filename = new URL(String(input), 'https://forum.test').pathname.split('/').pop();
+    if (filename === 'tennis-backhand-one.bvh') return new Response('missing', { status: 404 });
+    const bytes = await readFile(new URL(`../public/models/dmo-humans/${filename}`, import.meta.url));
+    return new Response(bytes);
+  };
+  try {
+    const template = await humans.loadHumanModel('male', 'player', new AbortController().signal);
+    const rig = sceneApi.makePlayer(0x275c77, 0x333333);
+    const attached = humans.attachHumanPlayer(template, rig, 0x275c77);
+    rig.root.userData.groundstrokePlayback = {
+      stroke: 'backhand',
+      deltaSeconds: 0,
+      weight: 1,
+      handedness: 'right',
+      hands: 'one',
+      rootOffset: false,
+    };
+    assert.doesNotThrow(() => attached.update());
+  } finally {
+    globalThis.fetch = originalFetch;
   }
 });
 
