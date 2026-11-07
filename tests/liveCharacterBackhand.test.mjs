@@ -4,7 +4,36 @@ import test from 'node:test';
 import {
   inferredOneHandedBackhandPlayer,
   resolveBroadcastStrokeStyles,
+  characterBroadcastSetup,
+  resolveBroadcastHandedness,
 } from '../lib/liveCharacterBackhand.mjs';
+
+test('Nadal metadata applies a left hand and retains the detected two-handed backhand', () => {
+  const setup = characterBroadcastSetup({
+    playing_hand: 'left', backhand_type: 'two-handed',
+  });
+  assert.deepEqual(setup, { playingHand: 'left', backhandType: 'two-handed' });
+  const hands = ['right', 'right'];
+  assert.deepEqual(resolveBroadcastHandedness(
+    ['DMO broadcaster', 'Opponent'], hands, [setup.playingHand, 'right'], [false, false],
+  ), ['left', 'right']);
+  assert.deepEqual(hands, ['right', 'right'], 'does not mutate manual settings');
+  assert.deepEqual(resolveBroadcastHandedness(
+    ['DMO broadcaster', 'Opponent'], hands, ['right', 'left'], [false, false],
+  ), ['right', 'left'], 'changing characters refreshes both slots');
+  assert.deepEqual(resolveBroadcastHandedness(
+    ['DMO broadcaster', 'Opponent'], hands, ['left', 'left'], [true, false],
+  ), ['right', 'left'], 'explicit manual overrides remain available');
+  assert.deepEqual(characterBroadcastSetup({}), { playingHand: null, backhandType: null });
+});
+
+test('host uses full-roster hand metadata and publishes setup changes without waiting for new frames', async () => {
+  const host = await readFile(new URL('../components/DmoLiveHost.tsx', import.meta.url), 'utf8');
+  assert.match(host, /body\.character_filter_metadata/);
+  assert.match(host, /characterBroadcastSetup\(body\?\.profile\)/);
+  assert.equal((host.match(/handedness: resolveBroadcastHandedness\(/g) ?? []).length, 5);
+  assert.match(host, /lastHeartbeat\.current = 0;\s*\}, \[characterHands, characterBackhandTypes, playerHands, playerStrokeStyles\]/);
+});
 
 test('applies a selected character backhand to its DMO player slot regardless of names', () => {
   const players = ['A. Player', 'Roger Federer'];

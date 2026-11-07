@@ -9,6 +9,10 @@ import {
 } from '@/lib/te4DmoLive';
 import type { LivePreMatchProbability } from '@/lib/liveBroadcast';
 import type { LiveBroadcastScore } from '@/lib/liveBroadcastScore';
+import {
+  shouldPairLiveDmoScoreWithPointEnd,
+  type LiveDmoUmpireScoreSource,
+} from '@/lib/liveDmoUmpireScoreSource';
 import { surfaceForDmoTournament } from '@/lib/te4DmoSurface';
 import type { StadiumScoreboardData } from './DmoStadiumArchitecture';
 import DmoLiveCourt from './DmoLiveCourt3D';
@@ -25,6 +29,7 @@ type Props = {
   pointLog?: Te4LivePoint[];
   pointLogLoaded?: boolean;
   liveScore?: LiveBroadcastScore | null;
+  scoreSource: LiveDmoUmpireScoreSource;
   tournamentRound?: string | null;
 };
 
@@ -123,6 +128,7 @@ export default function DmoLiveDisplay({
   pointLog,
   pointLogLoaded = false,
   liveScore,
+  scoreSource,
   tournamentRound = 'auto',
 }: Props) {
   const [frameStalled, setFrameStalled] = useState(false);
@@ -137,9 +143,9 @@ export default function DmoLiveDisplay({
   const surface = surfaceForDmoTournament(snapshot.stadium);
   const buffering = state === 'live' && (stale || frameStalled);
   const statusLabel = state === 'ended' ? 'Broadcast ended' : buffering ? 'Buffering' : 'Live';
-  // Undefined means DMO replay/manual scoring. Null means an automatic
-  // broadcast's authoritative score is unavailable; never fall back to DMO.
-  const score = liveScore === undefined ? snapshot.score : liveScore;
+  // Automatic streams use TE4 only; manual live streams use their DMO score.
+  // Replays keep DMO display data but are timed from their recorded events.
+  const score = scoreSource === 'te4' ? liveScore ?? null : snapshot.score;
   const stadiumScoreboard: StadiumScoreboardData = {
     players: snapshot.players,
     score: score ? {
@@ -149,7 +155,7 @@ export default function DmoLiveDisplay({
       tiebreak: score.tiebreak,
       server: score.server === 1 ? 1 : score.server === 2 ? 2 : null,
     } : null,
-    live: liveScore !== undefined,
+    live: shouldPairLiveDmoScoreWithPointEnd(scoreSource, state),
   };
   const pointScore = score?.pointText.join('–') ?? '—';
   const displayedPointLog = pointLog ?? snapshot.recentPoints;

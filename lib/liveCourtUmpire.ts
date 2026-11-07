@@ -415,12 +415,9 @@ export async function speakUmpireCall(
 
   if (!context || !shouldSpeak()) return false;
   activeXktUmpireContexts.set(matchKey, context);
-  const spoken = await playXktUmpireCall(context, text, isWta);
-  if (!spoken && activeXktUmpireContexts.get(matchKey) === context) {
-    cancelXktUmpireCalls(context);
-    activeXktUmpireContexts.delete(matchKey);
-  }
-  return spoken;
+  // A missing clip (for example an unsupported line call) must not cancel
+  // another supported score call that is already playing or still loading.
+  return playXktUmpireCall(context, text, isWta);
 }
 
 export function isBrowserUmpireSpeechUnlocked(): boolean {

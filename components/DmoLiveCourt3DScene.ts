@@ -899,6 +899,30 @@ function buildUnifiedCrowd(scene: THREE.Scene, venue: DmoVenueProfile, density: 
     new THREE.MeshStandardMaterial({ color: 0xffffff, roughness: 0.84 }),
     spectatorSeats.length,
   );
+  const torsoClothingMesh = new THREE.InstancedMesh(
+    ellipticalBodyGeometry([
+      [0.585, 0.17, 0.13],
+      [0.64, 0.205, 0.15],
+      [0.78, 0.22, 0.16],
+      [0.94, 0.255, 0.18],
+      [1.055, 0.235, 0.17],
+      [1.13, 0.17, 0.125],
+      [1.17, 0.115, 0.095],
+    ], 20),
+    new THREE.MeshStandardMaterial({
+      color: 0xffffff,
+      roughness: 0.9,
+      metalness: 0,
+      side: THREE.DoubleSide,
+      transparent: false,
+      opacity: 1,
+      depthWrite: true,
+      polygonOffset: true,
+      polygonOffsetFactor: -1,
+      polygonOffsetUnits: -1,
+    }),
+    spectatorSeats.length,
+  );
   const headMesh = new THREE.InstancedMesh(
     new THREE.SphereGeometry(0.5, 8, 6),
     new THREE.MeshStandardMaterial({ color: 0xffffff, roughness: 0.74 }),
@@ -919,11 +943,27 @@ function buildUnifiedCrowd(scene: THREE.Scene, venue: DmoVenueProfile, density: 
     new THREE.MeshStandardMaterial({ color: 0xffffff, roughness: 0.9 }),
     spectatorSeats.length * 2,
   );
+  const hipMesh = new THREE.InstancedMesh(
+    new THREE.SphereGeometry(0.5, 10, 7),
+    new THREE.MeshStandardMaterial({ color: 0xffffff, roughness: 0.88 }),
+    spectatorSeats.length,
+  );
+  const shoeGeometry = new THREE.CapsuleGeometry(0.06, 0.16, 4, 10);
+  shoeGeometry.rotateX(Math.PI / 2);
+  const shoeMesh = new THREE.InstancedMesh(
+    shoeGeometry,
+    new THREE.MeshStandardMaterial({ color: 0xffffff, roughness: 0.72 }),
+    spectatorSeats.length * 2,
+  );
   bodyMesh.name = 'wtsl-unified-crowd-fallback-bodies';
+  torsoClothingMesh.name = 'wtsl-unified-crowd-clothing-torsos';
+  torsoClothingMesh.userData = { opaqueGarmentCoverage: 'front-back-sides', allLods: true };
   headMesh.name = 'wtsl-spectator-heads';
   hairMesh.name = 'wtsl-spectator-hair';
   ponytailMesh.name = 'wtsl-spectator-ponytails';
   armMesh.name = 'wtsl-unified-crowd-fallback-arms';
+  hipMesh.name = 'wtsl-unified-crowd-fallback-hips';
+  shoeMesh.name = 'wtsl-unified-crowd-footwear';
   const shirtColors = [
     0xc96b52, 0x397e75, 0xd7b253, 0x526b98, 0xefe0c8, 0x885e80,
     0x465754, 0x9b624b, 0x83a7a1, 0xa9a08d, 0x6e4960, 0x384d64,
@@ -1003,6 +1043,67 @@ function buildUnifiedCrowd(scene: THREE.Scene, venue: DmoVenueProfile, density: 
     placeArm(index * 2, seat, -1, 0, false);
     placeArm(index * 2 + 1, seat, 1, 0, false);
   });
+  const updateClothingInstances = () => {
+    const trouserColors = [0x38444b, 0x56534b, 0x34404a, 0x635348];
+    const shoeColors = [0xd9d8d0, 0x41474b, 0x9d9b91];
+    const shirtColors = [
+      0x31566a, 0x9a493e, 0x42715f, 0x66506e, 0xa78b54, 0x3b5262,
+      0x8f5947, 0x596f78, 0x65774f, 0x806456, 0x41534e, 0x68708b,
+    ];
+    occupiedSeats.forEach((seat, index) => {
+      const sourceIndex = seat.sourceIndex ?? index;
+      const appearance = getCrowdAppearance(sourceIndex, seat.row);
+      dummy.position.set(seat.x, seat.y, seat.z);
+      dummy.rotation.set(0, seat.facing, 0);
+      dummy.scale.set(
+        0.9 + appearance.torsoWidth * 0.035,
+        appearance.stature,
+        0.94 + appearance.torsoWidth * 0.04,
+      );
+      dummy.updateMatrix();
+      torsoClothingMesh.setMatrixAt(index, dummy.matrix);
+      torsoClothingMesh.setColorAt(
+        index,
+        new THREE.Color(shirtColors[appearance.wardrobe * 3 + (sourceIndex % 3)]),
+      );
+      dummy.position.set(seat.x, seat.y + 0.57, seat.z);
+      dummy.rotation.set(0, seat.facing, 0);
+      dummy.scale.set(0.31 * appearance.torsoWidth, 0.2 * appearance.stature, 0.235);
+      dummy.updateMatrix();
+      hipMesh.setMatrixAt(index, dummy.matrix);
+      hipMesh.setColorAt(index, new THREE.Color(trouserColors[appearance.wardrobe]));
+      const sinFacing = Math.sin(seat.facing);
+      const cosFacing = Math.cos(seat.facing);
+      for (const [side, shoeIndex] of [[-1, index * 2], [1, index * 2 + 1]] as const) {
+        const targets = getSeatedCrowdLegTargets(side);
+        const [ankleX, ankleY, ankleZ] = targets.ankle;
+        const [toeX, toeY, toeZ] = targets.toe;
+        const localX = (ankleX + toeX) * 0.5;
+        const localY = (ankleY + toeY) * 0.5;
+        const localZ = (ankleZ + toeZ) * 0.5 + 0.07;
+        dummy.position.set(
+          seat.x + cosFacing * localX + sinFacing * localZ,
+          seat.y + localY,
+          seat.z - sinFacing * localX + cosFacing * localZ,
+        );
+        dummy.rotation.set(0, seat.facing, 0);
+        dummy.scale.set(1.25, 1.2, 1.35);
+        dummy.updateMatrix();
+        shoeMesh.setMatrixAt(shoeIndex, dummy.matrix);
+        shoeMesh.setColorAt(shoeIndex, new THREE.Color(shoeColors[(sourceIndex + (side > 0 ? 1 : 0)) % shoeColors.length]));
+      }
+    });
+    torsoClothingMesh.instanceMatrix.needsUpdate = true;
+    hipMesh.instanceMatrix.needsUpdate = true;
+    shoeMesh.instanceMatrix.needsUpdate = true;
+    if (torsoClothingMesh.instanceColor) torsoClothingMesh.instanceColor.needsUpdate = true;
+    if (hipMesh.instanceColor) hipMesh.instanceColor.needsUpdate = true;
+    if (shoeMesh.instanceColor) shoeMesh.instanceColor.needsUpdate = true;
+  };
+  updateClothingInstances();
+  torsoClothingMesh.count = occupiedSeats.length;
+  hipMesh.count = occupiedSeats.length;
+  shoeMesh.count = occupiedSeats.length * 2;
   const fallbackMeshes = [bodyMesh, headMesh, hairMesh, ponytailMesh, armMesh];
   fallbackMeshes.forEach((mesh) => {
     mesh.count = mesh === armMesh ? occupiedSeats.length * 2 : occupiedSeats.length;
@@ -1015,6 +1116,17 @@ function buildUnifiedCrowd(scene: THREE.Scene, venue: DmoVenueProfile, density: 
     mesh.receiveShadow = false;
     scene.add(mesh);
   });
+  hipMesh.instanceMatrix.needsUpdate = true;
+  shoeMesh.instanceMatrix.needsUpdate = true;
+  hipMesh.instanceColor!.needsUpdate = true;
+  shoeMesh.instanceColor!.needsUpdate = true;
+  hipMesh.castShadow = false;
+  hipMesh.receiveShadow = false;
+  shoeMesh.castShadow = false;
+  shoeMesh.receiveShadow = false;
+  torsoClothingMesh.castShadow = false;
+  torsoClothingMesh.receiveShadow = false;
+  scene.add(torsoClothingMesh, hipMesh, shoeMesh);
   bodyMesh.instanceColor!.needsUpdate = true;
   headMesh.instanceColor!.needsUpdate = true;
   hairMesh.instanceColor!.needsUpdate = true;
@@ -1033,6 +1145,10 @@ function buildUnifiedCrowd(scene: THREE.Scene, venue: DmoVenueProfile, density: 
       fallbackMeshes.forEach((mesh) => {
         mesh.count = mesh === armMesh ? occupiedSeats.length * 2 : occupiedSeats.length;
       });
+      hipMesh.count = occupiedSeats.length;
+      shoeMesh.count = occupiedSeats.length * 2;
+      torsoClothingMesh.count = occupiedSeats.length;
+      updateClothingInstances();
       crowdRig.invalidateUpdate();
     },
     invalidateUpdate() {
