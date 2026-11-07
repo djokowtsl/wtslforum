@@ -12,7 +12,7 @@ const MIN_INCOMING_LOB_APEX_METERS = 3.25;
  */
 export function isCapturedSmashShot(
   event: LiveCourtMotionEvent | undefined,
-  contact: LiveCourtCoordinates | undefined,
+  contact: LiveCourtCoordinates | null | undefined,
   samples: LiveCourtSample[],
   events: LiveCourtMotionEvent[],
   framesPerSecond = 60,

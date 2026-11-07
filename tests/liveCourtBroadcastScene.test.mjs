@@ -124,6 +124,8 @@ test('smash inference fails closed for serves, rising balls, sparse flights and 
   const { event, samples, events, contact } = smashFlight();
   assert.equal(smashApi.isCapturedSmashShot({ ...event, shotType: 'serve' }, contact, samples, events), false);
   assert.equal(smashApi.isCapturedSmashShot(undefined, contact, samples, events), false);
+  assert.equal(smashApi.isCapturedSmashShot(event, null, samples, events), false,
+    'a missing interpolated contact keeps the original rally animation');
   assert.equal(smashApi.isCapturedSmashShot(event, contact, samples, [event]), false);
   assert.equal(smashApi.isCapturedSmashShot(event, contact, samples, [
     events[0], { frame: 30, kind: 'point-end' }, event,
