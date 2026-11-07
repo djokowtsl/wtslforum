@@ -1,12 +1,20 @@
 'use client';
 
-import { useEffect, useMemo, useRef, useState, type ReactNode } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from 'react';
 import { embedTe4ViewerHtml } from '@/lib/te4ViewerEmbed';
 import { te4ViewerToLiveSnapshot } from '@/lib/te4DmoReplaySnapshot';
 import type { Te4LiveSnapshot } from '@/lib/te4DmoLive';
+import {
+  buildTe4DmoReplayScoreTimeline,
+  te4DmoReplayScoreAtFrame,
+  te4DmoReplayScoreKey,
+  type Te4DmoReplayScore,
+} from '@/lib/te4DmoReplayScoreboard';
 import type { Te4ViewerData } from '@/lib/te4DmoTypes';
 import { useTe4ViewerTheme } from '@/components/useTe4ViewerTheme';
 import DmoLiveCourt3D from './DmoLiveCourt3D';
+import DmoReplayScoreBug from './DmoReplayScoreBug';
+import type { StadiumScoreboardData } from './DmoStadiumArchitecture';
 import styles from './Te4DmoReplayPlayer.module.css';
 
 type Props = {
@@ -47,10 +55,31 @@ export default function Te4DmoReplayPlayer({
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
   const [classicError, setClassicError] = useState('');
+  const [replayScore, setReplayScore] = useState<Te4DmoReplayScore | null>(null);
+  const replayScoreKeyRef = useRef('');
   const syncViewerTheme = useTe4ViewerTheme(frameRef);
   const snapshot = useMemo(() => initialSnapshot
     ? { ...initialSnapshot, handedness }
     : null, [initialSnapshot, handedness[0], handedness[1]]);
+  const scoreTimeline = useMemo(
+    () => viewer ? buildTe4DmoReplayScoreTimeline(viewer) : [],
+    [viewer],
+  );
+
+  useEffect(() => {
+    const initialScore = te4DmoReplayScoreAtFrame(scoreTimeline, 0);
+    replayScoreKeyRef.current = initialScore ? te4DmoReplayScoreKey(initialScore) : '';
+    setReplayScore(initialScore);
+  }, [scoreTimeline]);
+
+  const handleReplayFrameChange = useCallback((frame: number) => {
+    const nextScore = te4DmoReplayScoreAtFrame(scoreTimeline, frame);
+    if (!nextScore) return;
+    const nextKey = te4DmoReplayScoreKey(nextScore);
+    if (nextKey === replayScoreKeyRef.current) return;
+    replayScoreKeyRef.current = nextKey;
+    setReplayScore(nextScore);
+  }, [scoreTimeline]);
 
   useEffect(() => {
     let active = true;
@@ -127,6 +156,19 @@ export default function Te4DmoReplayPlayer({
     );
   }
 
+  const replayScoreboard: StadiumScoreboardData = {
+    players: viewer.names,
+    score: replayScore ? {
+      sets: replayScore.sets,
+      games: replayScore.games,
+      pointText: replayScore.pointText,
+      tiebreak: replayScore.tiebreak,
+      server: replayScore.server,
+    } : null,
+    live: false,
+    final: replayScore?.final ?? false,
+  };
+
   return (
     <section className={styles.replay}>
       <header className={styles.replayHeader}>
@@ -161,6 +203,11 @@ export default function Te4DmoReplayPlayer({
           playbackSpeed={initialSpeed}
           isWta={isWta ?? false}
           fullReplay
+          scoreboard={replayScoreboard}
+          replayOverlay={replayScore
+            ? <DmoReplayScoreBug players={viewer.names} score={replayScore} />
+            : null}
+          onReplayFrameChange={handleReplayFrameChange}
         />
       ) : classicError ? (
         <p className={styles.classicError} role="alert">{classicError}</p>

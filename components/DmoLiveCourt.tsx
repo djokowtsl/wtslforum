@@ -1,6 +1,6 @@
 'use client';
 
-import { memo, useEffect, useRef, useState } from 'react';
+import { memo, useEffect, useRef, useState, type ReactNode } from 'react';
 import { Minus, Plus, RotateCcw, Volume2, VolumeX } from 'lucide-react';
 import {
   LIVE_DMO_FRAME_STALL_MS,
@@ -68,6 +68,8 @@ type Props = {
   playbackSpeed: Te4DmoReplaySpeed;
   fullReplay?: boolean;
   scoreboard?: StadiumScoreboardData;
+  replayOverlay?: ReactNode;
+  onReplayFrameChange?: (frame: number) => void;
   stadiumAtmosphere?: boolean;
   isWta?: boolean;
   buffering?: boolean;
@@ -496,6 +498,8 @@ function DmoLiveCourt({
   playbackSpeed,
   fullReplay = false,
   scoreboard,
+  replayOverlay,
+  onReplayFrameChange,
   stadiumAtmosphere = true,
   isWta = false,
   buffering = false,
@@ -522,6 +526,9 @@ function DmoLiveCourt({
   const hasObservedLiveScoreRef = useRef(false);
   const fullReplayRef = useRef(fullReplay);
   fullReplayRef.current = fullReplay;
+  const replayFrameCallbackRef = useRef(onReplayFrameChange);
+  replayFrameCallbackRef.current = onReplayFrameChange;
+  const replayFrameUpdateAtRef = useRef(0);
   const previousSnapshotRef = useRef({
     filename: snapshot.filename,
     players: snapshot.players,
@@ -724,6 +731,10 @@ function DmoLiveCourt({
       const cursor = motionPreference.matches
         ? samples[samples.length - 1]?.frame ?? 0
         : playheadRef.current ?? samples[0]?.frame ?? 0;
+      if (fullReplayRef.current && now - replayFrameUpdateAtRef.current >= 100) {
+        replayFrameUpdateAtRef.current = now;
+        replayFrameCallbackRef.current?.(cursor);
+      }
       const previousCallFrame = lastUmpireCallFrameRef.current;
       if (motionPreference.matches) {
         lastUmpireCallFrameRef.current = cursor;
@@ -1145,6 +1156,7 @@ function DmoLiveCourt({
           onPointerUp={() => { cameraDragRef.current = null; }}
           onPointerCancel={() => { cameraDragRef.current = null; }}
         />
+        {fullReplay && replayOverlay}
         <DmoLiveBufferingOverlay buffering={buffering || feedStalled} />
       </div>
       <div className={styles.legend}>

@@ -11,6 +11,7 @@ export type StadiumScoreboardData = {
     server: 1 | 2 | null;
   } | null;
   live: boolean;
+  final?: boolean;
 };
 
 type ScoreboardTexture = {
@@ -39,6 +40,7 @@ function scoreSummary(data: StadiumScoreboardData) {
   const sets = data.score.sets.length
     ? data.score.sets.map(([first, second]) => `${first}–${second}`).join(' ')
     : '0–0';
+  if (data.final) return `FINAL · ${data.players[0]} vs ${data.players[1]} · SETS ${sets}`;
   const pointLabel = data.score.tiebreak ? 'TB' : 'POINTS';
   return `${data.live ? 'LIVE' : 'MATCH'} · ${data.players[0]} vs ${data.players[1]} · SETS ${sets} · GAMES ${data.score.games[0]}–${data.score.games[1]} · ${pointLabel} ${data.score.pointText[0]}–${data.score.pointText[1]}`;
 }
@@ -67,14 +69,14 @@ function makeRibbonTexture(): ScoreboardTexture {
       context.fillRect(0, canvas.height - 8, canvas.width, 8);
       context.fillStyle = '#e8c85f';
       context.font = '700 22px Arial, sans-serif';
-      context.fillText(data.live ? 'WTSL LIVE' : 'WTSL REPLAY', 24, 42);
+      context.fillText(data.live ? 'WTSL LIVE' : data.final ? 'WTSL FINAL' : 'WTSL REPLAY', 24, 42);
       context.fillStyle = '#f3f1e7';
       context.font = '700 37px Arial, sans-serif';
       const label = scoreSummary(data);
       context.fillText(label, 24, 112, canvas.width - 48);
       context.fillStyle = '#91aaa8';
       context.font = '600 17px Arial, sans-serif';
-      context.fillText(data.live ? 'OFFICIAL TE4 SCORE' : 'MATCH REPLAY', 24, 146);
+      context.fillText(data.live ? 'OFFICIAL TE4 SCORE' : data.final ? 'MATCH FINAL' : 'MATCH REPLAY', 24, 146);
       texture.needsUpdate = true;
     },
   };
@@ -105,7 +107,11 @@ function makeScreenTexture(): ScoreboardTexture {
       context.textAlign = 'left';
       context.fillStyle = '#e8c85f';
       context.font = '700 34px Arial, sans-serif';
-      context.fillText(data.live ? 'WTSL · TE4 LIVE SCORE' : 'WTSL · MATCH SCORE', 58, 82);
+      context.fillText(
+        data.live ? 'WTSL · TE4 LIVE SCORE' : data.final ? 'WTSL · MATCH FINAL' : 'WTSL · MATCH SCORE',
+        58,
+        82,
+      );
 
       if (!data.score) {
         context.textAlign = 'center';
