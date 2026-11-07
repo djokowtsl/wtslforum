@@ -306,6 +306,10 @@ test('point-end markers reset the reconstructed court trajectory', () => {
     { frame: 20, kind: 'shot', player: 1, shotType: 'serve' },
     { frame: 25, kind: 'point-end' },
   ]);
+  const shortWindow = parser.snapshot('match.dmo', 3, parser.frameCount, 8, 8);
+  assert.ok(shortWindow.courtFrameIndices[0] > 25);
+  assert.deepEqual(shortWindow.trajectoryEvents, [{ frame: 25, kind: 'point-end' }],
+    'late audio completion survives after the point motion leaves the court window');
 });
 
 test('invalid DMO signatures are marked instead of yielding a scoreboard', () => {
