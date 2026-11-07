@@ -6,7 +6,7 @@ import {
   recordedStrokeForSide, recordedStrokeUsesTwoHands, serveCaptureWeight,
 } from '../components/DmoCapturedGroundstroke.ts';
 
-test('near-net contacts select the matching recorded volley clip', () => {
+test('qualified volleys select the matching side without replacing groundstrokes', () => {
   assert.equal(recordedStrokeForSide('forehand', true), 'volley-forehand');
   assert.equal(recordedStrokeForSide('backhand', true), 'volley-backhand');
   assert.equal(recordedStrokeForSide('forehand', false), 'forehand');

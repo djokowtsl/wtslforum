@@ -38,6 +38,15 @@ frames 401–601 or 252–452, respectively, and keeps every fourth frame from t
 100 Hz recording (25 Hz output); joint rotations are not altered. The adapted
 clips remain CC BY-SA 3.0 and are identified in `provenance.json`.
 
+The shipped backhand excerpt matches frames 63–113 of the supplied Round 17
+25 Hz recording exactly; the full duplicate is not shipped. Its refined
+inferred contact is 3.42 s in that recording, or 0.90 s in this excerpt.
+The backhand-volley grip uses a 35-degree runtime continental-grip adjustment
+instead of the one-handed ground backhand's 72-degree regrip. Both volley
+recordings use a short preparation/recovery envelope. They are selected only
+for conservatively inferred unbounced incoming rally flights near the net,
+not every near-net contact; uncertain cases retain their groundstroke.
+
 ## Walking, jogging and running (arms between points)
 Carnegie Mellon University Graphics Lab Motion Capture Database.
 http://mocap.cs.cmu.edu/ — BVH conversion by Bruce Hahne (cgspeed.com, 2010
