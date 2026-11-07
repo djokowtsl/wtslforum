@@ -77,11 +77,71 @@ test('crowd occupancy updates in place without changing the seating layout', () 
   assert.equal(heads.count, seatCount);
 });
 
-test('only high-contact rally shots select the captured overhead smash', () => {
-  assert.equal(smashApi.isCapturedSmashShot('rally', 2.25), true);
-  assert.equal(smashApi.isCapturedSmashShot('rally', 2.24), false);
-  assert.equal(smashApi.isCapturedSmashShot('serve', 2.8), false);
-  assert.equal(smashApi.isCapturedSmashShot(undefined, 2.8), false);
+function smashFlight(player = 1) {
+  const event = { frame: 60, kind: 'shot', shotType: 'rally', player };
+  const incoming = { frame: 0, kind: 'shot', shotType: 'rally', player: player === 1 ? 2 : 1 };
+  const heights = [100, 160, 250, 350, 450, 500, 470, 410, 350, 300, 250];
+  const samples = heights.map((height, index) => ({
+    frame: index * 6,
+    values: [
+      -900 + index * 120, 0, height,
+      player === 1 ? 300 : -900, 0,
+      player === 2 ? 300 : -900, 0,
+    ],
+  }));
+  return { event, samples, events: [incoming, event], contact: samples.at(-1).values };
+}
+
+test('captured smashes require near-net overhead contact after an incoming descending lob', () => {
+  for (const player of [1, 2]) {
+    const flight = smashFlight(player);
+    assert.equal(smashApi.isCapturedSmashShot(
+      flight.event, flight.contact, flight.samples, flight.events, 60,
+    ), true);
+  }
+});
+
+test('normal rallies and baseline shots keep their existing non-smash animations', () => {
+  const { event, samples, events, contact } = smashFlight();
+  const baseline = [...contact];
+  baseline[0] = baseline[3] = 1100;
+  assert.equal(smashApi.isCapturedSmashShot(event, baseline, samples, events), false,
+    'even a high lob contact at the baseline is not a near-net smash');
+  for (const centimetres of [40, 80, 120, 180, 224]) {
+    const normalContact = [...contact];
+    normalContact[2] = centimetres;
+    assert.equal(smashApi.isCapturedSmashShot(event, normalContact, samples, events), false,
+      `${centimetres} source centimetres must not be compared directly with a metre threshold`);
+  }
+  const flatFlight = samples.map(sample => ({ ...sample, values: sample.values.map(
+    (value, index) => index === 2 ? 260 : value,
+  ) }));
+  assert.equal(smashApi.isCapturedSmashShot(event, contact, flatFlight, events), false,
+    'high contact alone is not evidence of an incoming lob');
+});
+
+test('smash inference fails closed for serves, rising balls, sparse flights and missing opponents', () => {
+  const { event, samples, events, contact } = smashFlight();
+  assert.equal(smashApi.isCapturedSmashShot({ ...event, shotType: 'serve' }, contact, samples, events), false);
+  assert.equal(smashApi.isCapturedSmashShot(undefined, contact, samples, events), false);
+  assert.equal(smashApi.isCapturedSmashShot(event, null, samples, events), false,
+    'a missing interpolated contact keeps the original rally animation');
+  assert.equal(smashApi.isCapturedSmashShot(event, contact, samples, [event]), false);
+  assert.equal(smashApi.isCapturedSmashShot(event, contact, samples, [
+    events[0], { frame: 30, kind: 'point-end' }, event,
+  ]), false);
+  assert.equal(smashApi.isCapturedSmashShot(event, contact, samples.filter(
+    sample => sample.frame % 24 === 0,
+  ), events), false);
+  const risingFlight = samples.map((sample, index) => ({
+    ...sample, values: sample.values.map((value, axis) => axis === 2 && index === 9 ? 230 : value),
+  }));
+  assert.equal(smashApi.isCapturedSmashShot(event, contact, risingFlight, events), false,
+    'an earlier high apex is insufficient when the ball is rising again at contact');
+  const bouncedFlight = samples.map((sample, index) => ({
+    ...sample, values: sample.values.map((value, axis) => axis === 2 && index === 7 ? 5 : value),
+  }));
+  assert.equal(smashApi.isCapturedSmashShot(event, contact, bouncedFlight, events), false);
 });
 
 test('captured smash source parses, reaches its selected contact frame, and is credited', async () => {
@@ -103,7 +163,8 @@ test('captured smash motion is fetched and registered with the player retargeter
   ]);
   assert.match(modelSource, /load\('smash'\)/);
   assert.match(rigSource, /smash: this\.prepare\('smash', sources\.smash, rest\)/);
-  assert.match(courtSource, /isCapturedSmashShot\(strokeEvent\?\.shotType, contactSample\?\.\[2\]\)/);
+  assert.match(courtSource, /strokeCue === 'close-net'\s*&& isCapturedSmashShot\(\s*strokeEvent,\s*contactSample,\s*samples,\s*events,/);
+  assert.match(courtSource, /: recordedStrokeForSide\(baseStroke, strokeCue === 'close-net'\)/);
 });
 
 test('umpire match keys normalize player order and keep tours distinct', () => {
@@ -1186,7 +1247,7 @@ test('live TE4 score changes format games and scores without repeating the initi
   );
 });
 
-test('live score calls follow DMO point ends and stay within two score transitions', () => {
+test('live score calls follow DMO point ends and stay within one score transition', () => {
   const players = ['Player One', 'Player Two'];
   const scores = [
     { sets: [], games: [0, 0], pointText: ['0', '0'], tiebreak: false, server: 1 },
@@ -1212,12 +1273,13 @@ test('live score calls follow DMO point ends and stay within two score transitio
   for (const score of scores.slice(1)) {
     assert.equal(umpireApi.observeLiveUmpireScore(capped, score, players, true), null);
   }
-  assert.equal(capped.pendingScoreCalls.length, 3);
-  assert.equal(umpireApi.MAX_LIVE_UMPIRE_SCORE_LAG_POINTS, 2);
-  assert.equal(umpireApi.matchLiveUmpireScoreToDmoPointEnd(capped, true), 'thirty-love',
-    'stale calls are trimmed so the oldest queued call is at most two transitions behind');
-  assert.equal(umpireApi.matchLiveUmpireScoreToDmoPointEnd(capped, true), 'forty-love');
+  assert.equal(capped.pendingScoreCalls.length, 2);
+  assert.equal(umpireApi.MAX_LIVE_UMPIRE_SCORE_LAG_POINTS, 1);
+  assert.equal(umpireApi.matchLiveUmpireScoreToDmoPointEnd(capped, true), 'forty-love',
+    'stale calls are trimmed so the oldest queued call is at most one transition behind');
   assert.equal(umpireApi.matchLiveUmpireScoreToDmoPointEnd(capped, true), 'Game, Player One');
+  assert.equal(umpireApi.matchLiveUmpireScoreToDmoPointEnd(capped, true), null,
+    'a point end without a recent score waits for its corresponding TE4 update');
 
   const disabled = umpireApi.createLiveUmpireScoreTether();
   umpireApi.observeLiveUmpireScore(disabled, scores[0], players, true);

@@ -33,8 +33,8 @@ export type LiveUmpireScoreTether = {
   waitingForDmoPointEnd: boolean;
 };
 
-// Keep the current score change and at most the two immediately before it.
-export const MAX_LIVE_UMPIRE_SCORE_LAG_POINTS = 2;
+// Keep the current score change and at most the one immediately before it.
+export const MAX_LIVE_UMPIRE_SCORE_LAG_POINTS = 1;
 const MAX_PENDING_LIVE_UMPIRE_SCORE_CALLS = MAX_LIVE_UMPIRE_SCORE_LAG_POINTS + 1;
 
 type UmpireSoundEvent = { frame: number; kind: string };
