@@ -4,7 +4,6 @@ import PageHero from '@/components/PageHero';
 import DmoReplayLibrary from '@/components/DmoReplayLibrary';
 import { listPublicDmoReplays } from '@/lib/dmoReplayLibrary';
 import { getSession } from '@/lib/auth';
-import LivestreamMaintenance from '@/components/LivestreamMaintenance';
 
 export const dynamic = 'force-dynamic';
 export const metadata: Metadata = { title: 'Match Replays' };
@@ -15,7 +14,17 @@ export default async function ReplaysPage({
   searchParams: Promise<{ match?: string }>;
 }) {
   const user = await getSession();
-  if (!user?.isAdmin) return <LivestreamMaintenance />;
+  if (!user) {
+    return (
+      <PageHero
+        eyebrow="Official WTSL match replays"
+        title="Match Replays"
+        actions={<a className="btn btn-discord btn-sm" href="/api/auth/discord">Log in with Discord</a>}
+      >
+        Sign in to browse and watch official match replays.
+      </PageHero>
+    );
+  }
   const params = await searchParams;
   const initialMatchId = params.match && /^\d{1,19}$/.test(params.match) ? params.match : '';
   let initialPage: Awaited<ReturnType<typeof listPublicDmoReplays>> | null = null;

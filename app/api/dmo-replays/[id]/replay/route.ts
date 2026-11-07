@@ -83,10 +83,10 @@ async function getViewerData(input: {
 
 export async function GET(_request: Request, { params }: { params: Promise<{ id: string }> }) {
   const user = await getSession();
-  if (!user?.isAdmin) {
+  if (!user) {
     return NextResponse.json(
-      { error: 'Match replays are temporarily unavailable. Access is limited to Forum admins.' },
-      { status: user ? 403 : 401, headers: PRIVATE_HEADERS },
+      { error: 'Sign in to watch match replays.' },
+      { status: 401, headers: PRIVATE_HEADERS },
     );
   }
   const { id } = await params;

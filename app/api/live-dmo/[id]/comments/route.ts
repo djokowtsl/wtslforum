@@ -50,9 +50,6 @@ export async function GET(_request: Request, context: RouteContext) {
   if (!user) {
     return NextResponse.json({ error: 'Sign in to read live chat.' }, { status: 401, headers: PRIVATE_HEADERS });
   }
-  if (!user.isAdmin) {
-    return NextResponse.json({ error: 'Live streams are temporarily unavailable. Access is limited to Forum admins.' }, { status: 403, headers: PRIVATE_HEADERS });
-  }
   const id = await broadcastIdFromParams(context.params);
   if (!id) return NextResponse.json({ error: 'Broadcast not found.' }, { status: 404, headers: PRIVATE_HEADERS });
 
@@ -93,9 +90,6 @@ export async function POST(request: Request, context: RouteContext) {
   const user = await getSession();
   if (!user) {
     return NextResponse.json({ error: 'Sign in to send a live chat message.' }, { status: 401, headers: PRIVATE_HEADERS });
-  }
-  if (!user.isAdmin) {
-    return NextResponse.json({ error: 'Live streams are temporarily unavailable. Access is limited to Forum admins.' }, { status: 403, headers: PRIVATE_HEADERS });
   }
   const id = await broadcastIdFromParams(context.params);
   if (!id) return NextResponse.json({ error: 'Broadcast not found.' }, { status: 404, headers: PRIVATE_HEADERS });
