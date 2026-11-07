@@ -208,7 +208,7 @@ test('recorded umpire playback replaces the previous voice for the same match', 
   ]);
 });
 
-test('stadium fills three open tiers with crowd, concourses, score displays and four tunnels', () => {
+test('stadium keeps its structure and clear score screen without smeared ribbon graphics', () => {
   for (const indoor of [false, true]) {
     const scene = new THREE.Scene();
     sceneApi.buildStadiumEnvironment(scene, indoor);
@@ -246,6 +246,18 @@ test('stadium fills three open tiers with crowd, concourses, score displays and 
     assert.ok(seats.count > 4_000, 'empty upper rows still read as stands across the full bowl');
     assert.equal(seats.userData.rows, 18);
     assert.equal(seats.userData.inwardFacing, true);
+    const firstSeatMatrix = new THREE.Matrix4();
+    const firstSeatPosition = new THREE.Vector3();
+    seats.getMatrixAt(0, firstSeatMatrix);
+    firstSeatPosition.setFromMatrixPosition(firstSeatMatrix);
+    assert.ok(Math.abs(firstSeatPosition.y - 3.55) < 1e-5,
+      'upper seats sit at the same body-to-seat height as the lower seating');
+    const firstSeatBackMatrix = new THREE.Matrix4();
+    const firstSeatBackPosition = new THREE.Vector3();
+    seatBacks.getMatrixAt(0, firstSeatBackMatrix);
+    firstSeatBackPosition.setFromMatrixPosition(firstSeatBackMatrix);
+    assert.ok(Math.abs(firstSeatBackPosition.y - 3.89) < 1e-5,
+      'seat backs support the lower torso instead of sitting below the spectators');
     assert.equal(named(superstructure, 'wtsl-continuous-bowl-spectator-bodies').length, 0,
       'the upper bowl does not keep a separate static crowd treatment');
     assert.equal(named(superstructure, 'wtsl-continuous-bowl-spectator-heads').length, 0);
@@ -261,6 +273,7 @@ test('stadium fills three open tiers with crowd, concourses, score displays and 
     assert.equal(named(superstructure, 'wtsl-advertising-board-baseline').length, 4);
     assert.equal(named(superstructure, 'wtsl-advertising-board-sideline').length, 4);
     assert.equal(named(superstructure, 'wtsl-scoreboard-screen').length, 2);
+    assert.equal(named(superstructure, 'wtsl-scoreboard-frame').length, 2);
     const concourses = named(superstructure, 'wtsl-stadium-concourse');
     assert.equal(concourses.length, 2);
     assert.ok(concourses.every((walkway) => walkway.userData.amenities.includes('concessions')
@@ -284,6 +297,13 @@ test('stadium fills three open tiers with crowd, concourses, score displays and 
     assert.equal(Boolean(scene.getObjectByName('wtsl-indoor-ceiling')), false);
     assert.equal(stadium.children.some(child => /roof|shell|facade|exterior/i.test(child.name)), false);
   }
+});
+
+test('clear livescore screen remains while smeared stand ribbons are removed', async () => {
+  const source = await readFile(new URL('../components/DmoStadiumArchitecture.ts', import.meta.url), 'utf8');
+  assert.match(source, /screenDisplay\.update\(data\)/);
+  assert.match(source, /makeScreenTexture/);
+  assert.doesNotMatch(source, /makeRibbonTexture|ribbonDisplay\.update\(data\)/);
 });
 
 test('stadium and audience scale with recognized tournament capacities', async () => {
@@ -513,7 +533,8 @@ test('upper crowd anchors match the architecture seat coordinates and facing', (
       assert.ok(Math.abs(actual[index].z - expected[index].z) < 1e-5, `row ${row} z aligns`);
       assert.ok(Math.abs(actual[index].facing - expected[index].facing) < 1e-5,
         `row ${row} index ${index} at ${actual[index].x},${actual[index].z}: facing ${actual[index].facing} != architecture ${expected[index].facing}`);
-      assert.ok(Math.abs(actual[index].y - (baseY + row * rowRise)) < 1e-5, `row ${row} floor height aligns`);
+     assert.ok(Math.abs(actual[index].y - (baseY + row * rowRise + rowRise / 2)) < 1e-5,
+       `row ${row} seat height follows the sloped bowl row center`);
     }
     sourceOffset += count;
   }
@@ -659,6 +680,8 @@ test('spectators carry deterministic wardrobe, skin-tone, hair, and seated-silho
   const sample = crowd.seats.filter((seat) => seat.occupied).slice(0, 240);
   const appearances = sample.map((seat, index) =>
     sceneApi.getCrowdAppearance(seat.sourceIndex ?? index, seat.row));
+  assert.ok(appearances.every((look) => look.stature >= 0.94 && look.stature <= 1.03),
+    'seated people vary naturally without extreme height outliers');
   assert.ok(new Set(appearances.map((look) => look.skinToneIndex)).size >= 7,
     'the audience uses a broad, naturally varied skin-tone palette without appearance labels');
   assert.equal(new Set(appearances.map((look) => look.hairStyle)).size, 4,
@@ -712,8 +735,8 @@ test('chair umpire has a natural bent-leg pose with feet supported by the chair 
     const shin = kneePoint.distanceTo(anklePoint);
     const kneeAngle = kneePoint.clone().sub(hipPoint).normalize()
       .angleTo(anklePoint.clone().sub(kneePoint).normalize());
-    assert.ok(thigh > 0.48 && thigh < 0.62, `human-length seated thigh ${thigh}`);
-    assert.ok(shin > 0.42 && shin < 0.52, `human-length seated shin ${shin}`);
+    assert.ok(thigh > 0.48 && thigh < 0.55, `human-length seated thigh ${thigh}`);
+    assert.ok(shin > 0.43 && shin < 0.50, `human-length seated shin ${shin}`);
     assert.ok(kneeAngle > 1.55 && kneeAngle < 2.35, `naturally flexed seated knee ${kneeAngle}`);
     assert.ok(Math.abs(toePoint.y - barTop) < 0.01,
       'the toe rests on the top surface of the chair foot bar');
@@ -721,6 +744,21 @@ test('chair umpire has a natural bent-leg pose with feet supported by the chair 
   }
   assert.ok(seat.position.y < 1.4 && footBar.position.y < 0.7,
     'the official is not raised on an oversized chair');
+});
+
+test('seated crowd and coach legs stay compact and within the seat-to-step reach', () => {
+  const distance = (from, to) => new THREE.Vector3(...from).distanceTo(new THREE.Vector3(...to));
+  for (const side of [-1, 1]) {
+    const crowd = sceneApi.getSeatedCrowdLegTargets(side);
+    assert.ok(distance(crowd.hip, crowd.knee) < 0.34, 'crowd thighs stay naturally bent');
+    assert.ok(distance(crowd.knee, crowd.ankle) < 0.36, 'crowd shins do not stretch beyond their step');
+    assert.ok(crowd.toe[1] < crowd.ankle[1] && crowd.toe[2] > crowd.ankle[2]);
+
+    const coach = sceneApi.getSeatedCoachLegTargets(side, 0.4);
+    assert.ok(distance(coach.hip, coach.knee) > 0.40 && distance(coach.hip, coach.knee) < 0.49);
+    assert.ok(distance(coach.knee, coach.ankle) > 0.42 && distance(coach.knee, coach.ankle) < 0.49);
+    assert.ok(coach.toe[1] > -0.5, 'coach feet stay at the lower stand step, not below the stadium');
+  }
 });
 
 test('venue modes retain the same enclosed bowl without adding roof or sky geometry', () => {
@@ -1431,13 +1469,37 @@ test('umpire calls have independent controls in both court renderers', async () 
     assert.match(source, /observeLiveUmpireScore\(/);
     assert.match(source, /matchLiveUmpireScoreToDmoPointEnd\(/);
     assert.doesNotMatch(source, /formatLiveUmpireScoreCall\(current, previous, scoreboardData\.players\)/);
-    assert.match(source, /unlockBrowserUmpireSpeech\(\)/);
+    assert.match(source, /resumeUmpireAudioContext\(/);
+    assert.doesNotMatch(source, /unlockBrowserUmpireSpeech\(\)/);
     assert.match(source, /Enable calls/);
   }
   assert.match(primary, /call\.kind === 'score' \|\| call\.kind === 'point-end'/);
   assert.match(fallback, /call\.kind === 'score' \|\| call\.kind === 'point-end'/);
   assert.doesNotMatch(primary, /soundOnRef\.current && umpireCallsEnabledRef\.current/);
   assert.doesNotMatch(fallback, /soundEnabledRef\.current && umpireCallsEnabledRef\.current/);
+});
+
+test('recorded umpire playback waits for a running audio context', async () => {
+  const suspendedContext = {
+    state: 'suspended',
+    resume: async function () {
+      this.state = 'running';
+    },
+  };
+  assert.equal(await umpireApi.resumeUmpireAudioContext(suspendedContext), true);
+  assert.equal(suspendedContext.state, 'running');
+
+  const blockedContext = {
+    state: 'suspended',
+    resume: async () => undefined,
+  };
+  assert.equal(await umpireApi.resumeUmpireAudioContext(blockedContext), false);
+
+  const rejectedContext = {
+    state: 'suspended',
+    resume: async () => { throw new Error('browser blocked activation'); },
+  };
+  assert.equal(await umpireApi.resumeUmpireAudioContext(rejectedContext), false);
 });
 
 test('broadcast court audio defaults on and the Court camera remains the initial preset', async () => {
