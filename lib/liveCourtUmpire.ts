@@ -386,6 +386,19 @@ export function unlockBrowserUmpireSpeech(): boolean {
   }
 }
 
+export async function resumeUmpireAudioContext(
+  context: Pick<AudioContext, 'state' | 'resume'>,
+): Promise<boolean> {
+  if (context.state === 'running') return true;
+  try {
+    await context.resume();
+  } catch {
+    return false;
+  }
+  const resumedState = context.state as AudioContextState;
+  return resumedState === 'running';
+}
+
 export async function speakUmpireCall(
   text: string,
   context: BaseAudioContext | null | undefined,
