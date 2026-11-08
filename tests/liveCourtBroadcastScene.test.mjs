@@ -822,23 +822,24 @@ test('chair umpire has a natural bent-leg pose with feet supported by the chair 
     const shin = kneePoint.distanceTo(anklePoint);
     const kneeAngle = kneePoint.clone().sub(hipPoint).normalize()
       .angleTo(anklePoint.clone().sub(kneePoint).normalize());
-    assert.ok(thigh > 0.48 && thigh < 0.55, `human-length seated thigh ${thigh}`);
-    assert.ok(shin > 0.43 && shin < 0.50, `human-length seated shin ${shin}`);
+    assert.ok(thigh > 0.38 && thigh < 0.46, `compact seated thigh ${thigh}`);
+    assert.ok(shin > 0.30 && shin < 0.40, `compact seated shin ${shin}`);
     assert.ok(kneeAngle > 1.55 && kneeAngle < 2.35, `naturally flexed seated knee ${kneeAngle}`);
     assert.ok(Math.abs(toePoint.y - barTop) < 0.01,
       'the toe rests on the top surface of the chair foot bar');
     assert.ok(toePoint.z > anklePoint.z, 'the foot points forward onto the support bar');
   }
-  assert.ok(seat.position.y < 1.4 && footBar.position.y < 0.7,
-    'the official is not raised on an oversized chair');
+  assert.ok(seat.position.y < 1.4 && footBar.position.y > 0.72 && footBar.position.y < 0.84,
+    'the seated foot bar stays near the chair rungs instead of below the official');
 });
 
 test('seated crowd and coach legs stay compact and within the seat-to-step reach', () => {
   const distance = (from, to) => new THREE.Vector3(...from).distanceTo(new THREE.Vector3(...to));
   for (const side of [-1, 1]) {
     const crowd = sceneApi.getSeatedCrowdLegTargets(side);
-    assert.ok(distance(crowd.hip, crowd.knee) < 0.34, 'crowd thighs stay naturally bent');
-    assert.ok(distance(crowd.knee, crowd.ankle) < 0.36, 'crowd shins do not stretch beyond their step');
+    assert.ok(distance(crowd.hip, crowd.knee) < 0.24, 'crowd thighs stay tucked close to the seat');
+    assert.ok(distance(crowd.knee, crowd.ankle) < 0.25, 'crowd shins stay compact above the step');
+    assert.ok(crowd.hip[1] - crowd.toe[1] < 0.45, 'crowd feet do not hang far below the seated hips');
     assert.ok(crowd.toe[1] < crowd.ankle[1] && crowd.toe[2] > crowd.ankle[2]);
 
     const coach = sceneApi.getSeatedCoachLegTargets(side, 0.4);

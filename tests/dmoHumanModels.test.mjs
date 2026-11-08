@@ -146,9 +146,12 @@ test('seated spectator leg bones scale to their seat targets instead of hanging 
   const upperBone = upperLeg.children.find((child) => child instanceof THREE.Bone);
   const lowerBone = lowerLeg.children.find((child) => child instanceof THREE.Bone);
   assert.ok(upperBone && lowerBone);
-  const hip = new THREE.Vector3(0.11, 0.63, 0);
-  const knee = new THREE.Vector3(0.14, 0.45, 0.22);
-  const ankle = new THREE.Vector3(0.14, 0.12, 0.16);
+  const targets = sceneApi.getSeatedCrowdLegTargets(1);
+  const vector = (point) => new THREE.Vector3(...point);
+  const hip = vector(targets.hip);
+  const knee = vector(targets.knee);
+  const ankle = vector(targets.ankle);
+  const toe = vector(targets.toe);
   const placedSegmentLength = (parent, child) => {
     const first = parent.getWorldPosition(new THREE.Vector3());
     const second = child.getWorldPosition(new THREE.Vector3());
@@ -160,6 +163,7 @@ test('seated spectator leg bones scale to their seat targets instead of hanging 
   pose.place('Hips', hip);
   pose.place('LeftUpLeg', hip, knee);
   pose.place('LeftLeg', knee, ankle);
+  pose.place('LeftFoot', ankle, toe);
   pose.finish();
   const fittedUpperLength = placedSegmentLength(upperLeg, upperBone);
   const fittedLowerLength = placedSegmentLength(lowerLeg, lowerBone);
@@ -906,10 +910,10 @@ test('coaches occupy reserved lower-stand seats and the seated umpire tracks the
   const foot = posedBones.get('LeftFoot').getWorldPosition(new THREE.Vector3());
   const knee = posedBones.get('LeftLeg').getWorldPosition(new THREE.Vector3());
   const hip = posedBones.get('Hips').getWorldPosition(new THREE.Vector3());
-  assert.ok(foot.y >= 0.45 && foot.y <= 0.75, `umpire foot should rest near the chair footrest, got ${foot.y}`);
+  assert.ok(foot.y >= 0.85 && foot.y <= 0.95, `umpire foot should rest near the raised chair footrest, got ${foot.y}`);
   assert.ok(
-    knee.y > foot.y + 0.42 && knee.y < hip.y - 0.15,
-    `umpire legs should bend down from a seated knee (foot=${foot.y}, knee=${knee.y}, hip=${hip.y})`,
+    knee.y > foot.y + 0.25 && knee.y < foot.y + 0.35 && knee.y < hip.y - 0.1,
+    `umpire legs should stay tucked between the seated hip and raised footrest (foot=${foot.y}, knee=${knee.y}, hip=${hip.y})`,
   );
   const head = umpire.getObjectByName('Head');
   const before = head.quaternion.clone();

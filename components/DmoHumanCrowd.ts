@@ -188,7 +188,7 @@ function seatedGeometry(template: THREE.Group, look: number, applause: boolean) 
   const pose = new HumanPose(model, space);
   const v = (x: number, y: number, z = 0) => new THREE.Vector3(x, y, z);
   pose.begin();
-  const hips = v(0, 0.63), neck = v(0, 1.13), head = v(0, 1.2);
+  const hips = v(0, 0.48), neck = v(0, 1.13), head = v(0, 1.2);
   pose.place('Hips', hips);
   for (const [name, y] of [['Spine02', 0.76], ['Spine01', 0.89], ['Spine', 1.02]] as const) {
     pose.place(name, v(0, y), neck);
