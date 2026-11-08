@@ -73,3 +73,24 @@ test('recorded motion retargets relative to the player chest and respects zero w
   locomotion.apply(pose, { phase: 0.3, speed: 1.2, weight: 0 });
   assert.ok(orientations.get('hand_r').angleTo(before) < 1e-9);
 });
+
+test('recorded legs: the right foot lands in front at phase 0 and swings high mid-cycle', () => {
+  const names = ['spine_03', 'clavicle_l', 'upperarm_l', 'lowerarm_l', 'hand_l', 'clavicle_r', 'upperarm_r', 'lowerarm_r', 'hand_r'];
+  const rest = new Map(names.map(n => [n, { rotation: new THREE.Quaternion(), direction: new THREE.Vector3(0, -1, 0) }]));
+  const locomotion = new DmoCapturedLocomotion(rest, { walk: read('walk'), jog: read('jog'), run: read('run') });
+  for (const speed of [1.3, 2.6, 3.8]) {
+    const landing = locomotion.legs(0, speed);
+    assert.ok(landing.r.ankle.z > 0.1, `${speed} m/s: right foot lands in front of the hip`);
+    assert.ok(landing.r.ankle.y < landing.l.ankle.y + 0.05, `${speed} m/s: the landing foot is down (as low as the other)`);
+    // Right leg's swing (second half of the cycle): its ankle is higher than the left's.
+    const swing = locomotion.legs(0.65, speed);
+    assert.ok(swing.r.ankle.y > swing.l.ankle.y, `${speed} m/s: right leg swings mid-cycle`);
+    // Leg-length units: ankle within one leg length of the hip, knee in front of the hip-ankle line.
+    for (const side of ['l', 'r']) for (const p of [0, 0.25, 0.5, 0.75]) {
+      const leg = locomotion.legs(p, speed)[side];
+      assert.ok(leg.ankle.length() <= 1.001 && leg.ankle.length() > 0.4); // (a running heel kick folds it to ~half)
+      assert.ok(leg.knee.length() < 0.6 && leg.knee.y < 0);
+    }
+  }
+  assert.equal(new DmoCapturedLocomotion(rest, {}).legs(0.3, 4), null);
+});
