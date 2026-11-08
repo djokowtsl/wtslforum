@@ -19,6 +19,8 @@ import {
   LOW_REACH_MAX_DROP,
   lowReachDrop,
   liveCourtShotSpin,
+  liveCourtBallHeldSeconds,
+  serveBounceHeight,
   mergeLiveCourtEvents,
   mergeLiveCourtSamples,
 } from '../lib/liveCourtMotion.ts';
@@ -263,4 +265,23 @@ test('slices are inferred from ball flight through the first bounce', () => {
     30,
   ), null);
   assert.equal(liveCourtShotSpin([], 100, 30), null);
+});
+
+test('the server bounces the ball twice before the toss, only while the recording holds it', () => {
+  assert.equal(serveBounceHeight(3, 5), null);
+  assert.equal(serveBounceHeight(1.2, 5), null);
+  assert.ok(Math.abs(serveBounceHeight(2.55, 5) - 1) < 1e-9);
+  assert.ok(serveBounceHeight(2.55 - 0.275, 5) < 1e-9);
+  assert.ok(serveBounceHeight(2.0 - 0.275, 5) < 1e-9);
+  assert.equal(serveBounceHeight(2.4, 2.2), null);
+  assert.ok(serveBounceHeight(1.8, 2.2) !== null);
+  const samples = [];
+  for (let frame = 0; frame <= 90; frame += 2) {
+    samples.push({
+      frame,
+      values: [frame < 30 ? frame * 10 : 300, 20, frame < 30 ? 100 - frame : 60, 0, 0, 0, 0],
+    });
+  }
+  assert.ok(Math.abs(liveCourtBallHeldSeconds(samples, 90, 30) - 2) < 0.1);
+  assert.equal(liveCourtBallHeldSeconds([], 90, 30), 0);
 });
