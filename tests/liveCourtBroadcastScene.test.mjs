@@ -822,14 +822,17 @@ test('chair umpire has a natural bent-leg pose with feet supported by the chair 
     const shin = kneePoint.distanceTo(anklePoint);
     const kneeAngle = kneePoint.clone().sub(hipPoint).normalize()
       .angleTo(anklePoint.clone().sub(kneePoint).normalize());
-    assert.ok(thigh > 0.38 && thigh < 0.46, `compact seated thigh ${thigh}`);
-    assert.ok(shin > 0.30 && shin < 0.40, `compact seated shin ${shin}`);
-    assert.ok(kneeAngle > 1.55 && kneeAngle < 2.35, `naturally flexed seated knee ${kneeAngle}`);
-    assert.ok(Math.abs(toePoint.y - barTop) < 0.01,
-      'the toe rests on the top surface of the chair foot bar');
+    assert.ok(thigh > 0.28 && thigh < 0.33, `compact seated thigh ${thigh}`);
+    assert.ok(shin > 0.25 && shin < 0.30, `compact seated shin ${shin}`);
+    assert.ok(kneeAngle > 1.25 && kneeAngle < 1.75, `near-right-angle seated knee ${kneeAngle}`);
+    assert.ok(toePoint.y - barTop > 0.02 && toePoint.y - barTop < 0.04,
+      'the toe joint leaves room for the sole above the foot bar');
+    assert.ok(anklePoint.distanceTo(toePoint) < 0.15,
+      'the foot is not stretched into another long leg segment');
+    assert.ok(hipPoint.y - toePoint.y < 0.4, 'the legs stay tucked immediately below the seat');
     assert.ok(toePoint.z > anklePoint.z, 'the foot points forward onto the support bar');
   }
-  assert.ok(seat.position.y < 1.4 && footBar.position.y > 0.72 && footBar.position.y < 0.84,
+  assert.ok(seat.position.y < 1.4 && footBar.position.y > 0.86 && footBar.position.y < 0.92,
     'the seated foot bar stays near the chair rungs instead of below the official');
 });
 
@@ -843,9 +846,12 @@ test('seated crowd and coach legs stay compact and within the seat-to-step reach
     assert.ok(crowd.toe[1] < crowd.ankle[1] && crowd.toe[2] > crowd.ankle[2]);
 
     const coach = sceneApi.getSeatedCoachLegTargets(side, 0.4);
-    assert.ok(distance(coach.hip, coach.knee) > 0.40 && distance(coach.hip, coach.knee) < 0.49);
-    assert.ok(distance(coach.knee, coach.ankle) > 0.42 && distance(coach.knee, coach.ankle) < 0.49);
-    assert.ok(coach.toe[1] > -0.5, 'coach feet stay at the lower stand step, not below the stadium');
+    assert.ok(distance(coach.hip, coach.knee) > 0.24 && distance(coach.hip, coach.knee) < 0.29);
+    assert.ok(distance(coach.knee, coach.ankle) > 0.25 && distance(coach.knee, coach.ankle) < 0.29);
+    assert.ok(coach.hip[1] - coach.toe[1] < 0.4,
+      'front-row coaches cannot retain standing-length legs while the ordinary crowd is compact');
+    assert.ok(coach.toe[1] >= 0, 'coach toe joints stay above their own row floor');
+    assert.ok(distance(coach.ankle, coach.toe) < 0.15);
   }
 });
 

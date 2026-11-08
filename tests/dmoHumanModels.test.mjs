@@ -111,6 +111,29 @@ async function articulatedHandAsset() {
 
 const close = (actual, expected) => assert.ok(actual.distanceTo(expected) < 0.00001,
   `${actual.toArray()} differs from ${expected.toArray()}`);
+// Joint locations alone miss stretched skinned feet and toes beyond the targets.
+function skinnedRegionBounds(model, space, bonePattern) {
+  const bounds = new THREE.Box3();
+  let count = 0;
+  model.updateMatrixWorld(true);
+  model.traverse((object) => {
+    if (!object.isSkinnedMesh) return;
+    object.skeleton.update();
+    const { position, skinWeight, skinIndex } = object.geometry.attributes;
+    for (let i = 0; i < position.count; i++) {
+      let dominant = 0;
+      for (let j = 1; j < 4; j++) {
+        if (skinWeight.getComponent(i, j) > skinWeight.getComponent(i, dominant)) dominant = j;
+      }
+      if (!bonePattern.test(object.skeleton.bones[skinIndex.getComponent(i, dominant)].name)) continue;
+      const point = object.getVertexPosition(i, new THREE.Vector3()).applyMatrix4(object.matrixWorld);
+      bounds.expandByPoint(space.worldToLocal(point));
+      count++;
+    }
+  });
+  assert.ok(count > 20, 'check a real skinned surface, not an empty or mocked joint set');
+  return bounds;
+}
 const handCanonical = new THREE.Quaternion().setFromRotationMatrix(new THREE.Matrix4().makeBasis(
   new THREE.Vector3(0, 0, 1), new THREE.Vector3(0, -1, 0), new THREE.Vector3(1, 0, 0),
 ));
@@ -172,6 +195,36 @@ test('seated spectator leg bones scale to their seat targets instead of hanging 
   assert.ok(Math.abs(fittedLowerLength - knee.distanceTo(ankle)) < 1e-4,
     `lower leg ${fittedLowerLength} vs ${knee.distanceTo(ankle)}; scale ${lowerLeg.scale.toArray()}, source ${lowerBone.position.toArray()}`);
 });
+
+for (const gender of ['male', 'female']) for (const detail of ['crowd', 'player']) {
+  test(`${gender} ${detail}: seated staff skin stays compact and umpire soles fit the footrest`, async () => {
+    const scene = new THREE.Scene();
+    const fixtures = sceneApi.buildCourtFixtures(scene);
+    const crowd = sceneApi.buildCrowd(scene);
+    const template = await asset(gender, detail);
+    crowds.attachHumanCourtStaff(scene, fixtures, [template, template], crowd, template);
+    const chair = scene.getObjectByName('wtsl-umpire-chair');
+    const umpire = scene.getObjectByName('wtsl-detailed-umpire');
+    const bar = scene.getObjectByName('wtsl-umpire-foot-bar');
+    const barTop = bar.position.y + bar.geometry.parameters.height / 2;
+    const feet = skinnedRegionBounds(umpire, chair, /Foot|ToeBase/);
+    assert.ok(feet.min.y >= barTop - 0.025 && feet.min.y <= barTop + 0.025,
+      `actual soles (${feet.min.y}) must meet the bar (${barTop}), not just the toe bones`);
+    assert.ok(feet.max.z < 0.55 && feet.max.z - feet.min.z < 0.35,
+      `umpire feet/toes must not stretch forward like extra shins: ${feet.min.z}..${feet.max.z}`);
+    const umpireLegs = skinnedRegionBounds(umpire, chair, /Leg|Foot|ToeBase/);
+    assert.ok(1.34 - umpireLegs.min.y < 0.44, 'actual leg surfaces stay near the seat');
+    for (const index of [1, 2]) {
+      const coach = scene.getObjectByName(`wtsl-court-coach-${index}`);
+      const space = scene.getObjectByName(`wtsl-coach-space-${index}`);
+      const legs = skinnedRegionBounds(coach, space, /Leg|Foot|ToeBase/);
+      assert.ok(legs.min.y > -0.07 && 0.4 - legs.min.y < 0.47,
+        `front-row coach ${index} must not dangle below its row: lowest skin ${legs.min.y}`);
+      const coachFeet = skinnedRegionBounds(coach, space, /Foot|ToeBase/);
+      assert.ok(coachFeet.max.z - coachFeet.min.z < 0.35, 'coach feet retain normal proportions');
+    }
+  });
+}
 
 test('one-handed backhand clip is loadable and carries its share-alike attribution', async () => {
   const manifest = JSON.parse(await readFile(
@@ -910,9 +963,9 @@ test('coaches occupy reserved lower-stand seats and the seated umpire tracks the
   const foot = posedBones.get('LeftFoot').getWorldPosition(new THREE.Vector3());
   const knee = posedBones.get('LeftLeg').getWorldPosition(new THREE.Vector3());
   const hip = posedBones.get('Hips').getWorldPosition(new THREE.Vector3());
-  assert.ok(foot.y >= 0.85 && foot.y <= 0.95, `umpire foot should rest near the raised chair footrest, got ${foot.y}`);
+  assert.ok(foot.y >= 1.0 && foot.y <= 1.04, `umpire foot should rest near the raised chair footrest, got ${foot.y}`);
   assert.ok(
-    knee.y > foot.y + 0.25 && knee.y < foot.y + 0.35 && knee.y < hip.y - 0.1,
+    knee.y > foot.y + 0.25 && knee.y < foot.y + 0.30 && knee.y < hip.y - 0.04,
     `umpire legs should stay tucked between the seated hip and raised footrest (foot=${foot.y}, knee=${knee.y}, hip=${hip.y})`,
   );
   const head = umpire.getObjectByName('Head');
