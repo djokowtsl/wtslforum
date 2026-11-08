@@ -18,7 +18,7 @@ test('ordinary player update includes the calibrated Round 18 motion repairs', (
   assert.match(update, /liveCourtShotSpin\(samples, strokeEvent\.frame, frameRate\) === 'slice'/);
   assert.match(update, /lowReachDrop\(ballY, Math\.hypot\(localX, localZ\)\)/);
   assert.match(court, /const RALLY_RUN_CARRY_CUTOFF_FRAMES = 36/);
-  assert.match(update, /MathUtils\.smoothstep\(carrySpeed, 2\.2, 3\.2\)/);
+  assert.match(update, /nextLiveCourtCarryMode\(Boolean\(rig\.root\.userData\.carryMode\),/);
   assert.match(update, /const strolling = isBetweenPoints\(events, frame\)\s*\? 1 - Math\.max\(serveGate, returnGate\)/);
   assert.match(update, /sliceTakeBackHold/);
 });
@@ -33,9 +33,15 @@ test('unaffected gait modules retain their accepted baseline and new motion help
   }
   const motion = await readFile(new URL('../lib/liveCourtMotion.ts', import.meta.url), 'utf8');
   const nativePlayer = await readFile(new URL('../components/DmoNativePlayer.ts', import.meta.url), 'utf8');
+  const defaultNativePlayer = await readFile(new URL('../components/DmoNativePlayerClaude.ts', import.meta.url), 'utf8');
+  const humanModels = await readFile(new URL('../components/DmoHumanModels.ts', import.meta.url), 'utf8');
   assert.match(motion, /export function liveCourtShotSpin/);
   assert.match(motion, /export function lowReachDrop/);
+  assert.match(motion, /export function nextLiveCourtCarryMode/);
   assert.match(nativePlayer, /recordedBackhandFaceRoll\(playback\?\.stroke, oneHandedStroke, playback\?\.slice\)/);
+  assert.match(humanModels, /nativePlayerVariant: NativePlayerVariant = 'claude'/);
+  assert.match(defaultNativePlayer, /recordedBackhandFaceRoll\(playback\?\.stroke, oneHandedStroke, playback\?\.slice\)/);
+  assert.match(defaultNativePlayer, /supportStrokeWeight/);
 });
 
 test('actual stroke-selection block latches normal strokes and only overrides qualifying smashes', () => {
