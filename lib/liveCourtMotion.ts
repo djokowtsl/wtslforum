@@ -13,6 +13,24 @@ export function liveCourtReplayFrameScale(frameRate: number) {
   return Number.isFinite(frameRate) && frameRate > 0 ? 60 / frameRate : 1;
 }
 
+/** Enter the rally run carry at 2.2 m/s; release below 2.0 m/s to avoid flicker. */
+export function nextLiveCourtCarryMode(
+  previous: boolean,
+  options: { walking: boolean; shotDue: boolean; strolling: number; speed: number },
+) {
+  if (options.walking) return true;
+  if (options.shotDue) return false;
+  const strolling = Number.isFinite(options.strolling)
+    ? Math.max(0, Math.min(1, options.strolling))
+    : 0;
+  const speed = Number.isFinite(options.speed) ? options.speed : 0;
+  const running = speed >= (previous ? 2.0 : 2.2);
+  const carryIntent = Math.max(strolling, running ? 1 : 0);
+  if (carryIntent > 0.65) return true;
+  if (carryIntent < 0.35) return false;
+  return previous;
+}
+
 /** Calibrated low-ball knee bend and wide-ball lunge in metres. */
 export function lowReachDrop(heightMetres: number, reachMetres: number) {
   if (!Number.isFinite(heightMetres) || !Number.isFinite(reachMetres)) return 0;
