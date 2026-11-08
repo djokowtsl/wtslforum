@@ -64,9 +64,16 @@ function makeScreenTexture(): ScoreboardTexture {
       background.addColorStop(1, '#081b26');
       context.fillStyle = background;
       context.fillRect(0, 0, canvas.width, canvas.height);
+      context.strokeStyle = 'rgba(205, 224, 220, .18)';
+      context.lineWidth = 2;
+      context.strokeRect(24, 24, canvas.width - 48, canvas.height - 48);
+      context.fillStyle = 'rgba(255, 255, 255, .025)';
+      for (let x = 68; x < canvas.width; x += 64) {
+        context.fillRect(x, 108, 1, 310);
+      }
       context.fillStyle = '#d9b954';
-      context.fillRect(0, 0, canvas.width, 12);
-      context.fillRect(0, canvas.height - 12, canvas.width, 12);
+      context.fillRect(24, 24, canvas.width - 48, 8);
+      context.fillRect(24, canvas.height - 32, canvas.width - 48, 8);
       context.textAlign = 'left';
       context.fillStyle = '#e8c85f';
       context.font = '700 34px Arial, sans-serif';
