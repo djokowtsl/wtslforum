@@ -138,6 +138,7 @@ import {
   liveUmpireMatchKey,
   matchLiveUmpireScoreToDmoPointEnd,
   observeLiveUmpireScore,
+  preloadLineCallAudio,
   resetLiveUmpireScoreTether,
   resumeUmpireAudioContext,
   watchUmpireAudioContext,
@@ -331,7 +332,7 @@ function ThreeCourt({
   const [playerCameraPan, setPlayerCameraPan] = useState(0);
   const [soundEnabled, setSoundEnabled] = useState(true);
   const [soundReady, setSoundReady] = useState(false);
-  const [umpireCallsEnabled, setUmpireCallsEnabled] = useState(true);
+  const umpireCallsEnabled = soundEnabled;
   const [umpireSpeechReady, setUmpireSpeechReady] = useState(false);
   const [soundError, setSoundError] = useState('');
   const [crowdVolume, setCrowdVolume] = useState(0.24);
@@ -349,7 +350,7 @@ function ThreeCourt({
   umpireCallsEnabledRef.current = umpireCallsEnabled;
   const umpireSpeechReadyRef = useRef(umpireSpeechReady);
   umpireSpeechReadyRef.current = umpireSpeechReady;
-  const umpireSpeechPointerActivationRef = useRef(false);
+  const soundPointerActivationRef = useRef(false);
 
   useEffect(() => {
     const previous = previousSnapshotRef.current;
@@ -475,11 +476,7 @@ function ThreeCourt({
         isWta,
         () => umpireCallsEnabledRef.current && umpireSpeechReadyRef.current,
         liveUmpireMatchKey(snapshot.players, isWta),
-      ).then((spoken) => {
-        if (!spoken && umpireCallsEnabledRef.current && umpireSpeechReadyRef.current) {
-          setSoundError('Recorded umpire audio is unavailable for this call.');
-        }
-      });
+      );
     }
   }, [scoreboardData, umpireCallsEnabled, umpireSpeechReady]);
 
@@ -494,7 +491,7 @@ function ThreeCourt({
       setUmpireSpeechReady(false);
       cancelUmpireCall(context, liveUmpireMatchKey(snapshot.players, isWta));
       resetLiveUmpireEventCursor(liveUmpireEventCursorRef.current);
-      setSoundError('The browser paused audio. Tap Enable sound or Enable calls to resume.');
+      if (soundPreferenceRef.current) setSoundError('The browser paused audio. Tap Enable sound to resume.');
     });
   }, [umpireSpeechReady, soundReady, isWta, snapshot.players]);
 
@@ -1963,11 +1960,7 @@ function ThreeCourt({
                   isWta,
                   () => umpireCallsEnabledRef.current && umpireSpeechReadyRef.current,
                   liveUmpireMatchKey(snapshot.players, isWta),
-                ).then((spoken) => {
-                  if (!spoken && umpireCallsEnabledRef.current && umpireSpeechReadyRef.current) {
-                    setSoundError('Recorded umpire audio is unavailable for this call.');
-                  }
-                });
+                );
               }
               continue;
             }
@@ -1978,11 +1971,7 @@ function ThreeCourt({
               isWta,
               () => umpireCallsEnabledRef.current && umpireSpeechReadyRef.current,
               liveUmpireMatchKey(snapshot.players, isWta),
-            ).then((spoken) => {
-              if (!spoken && umpireCallsEnabledRef.current && umpireSpeechReadyRef.current) {
-                setSoundError('Recorded umpire audio is unavailable for this call.');
-              }
-            });
+            );
           }
         }
         lastUmpireCallFrameRef.current = currentFrame;
@@ -2289,10 +2278,15 @@ function ThreeCourt({
     viewportRef.current?.dispatchEvent(new CustomEvent<number>('courtplayerpan', { detail: pan }));
   };
 
-  const activateSoundFromGesture = async () => {
+  const activateSoundFromGesture = async (reportFailure = true) => {
     if (!soundPreferenceRef.current
-      || (soundOnRef.current && audioContextRef.current?.state === 'running')
-      || soundActivationPendingRef.current) return;
+      || (soundOnRef.current && audioContextRef.current?.state === 'running')) return;
+    if (soundActivationPendingRef.current) {
+      // An autoplay resume can be pending when the first trusted gesture arrives.
+      // Resume again inside that gesture rather than waiting for its timeout.
+      void audioContextRef.current?.resume().catch(() => {});
+      return;
+    }
     soundActivationPendingRef.current = true;
     try {
       if (!audioContextRef.current || audioContextRef.current.state === 'closed') {
@@ -2302,10 +2296,16 @@ function ThreeCourt({
       const resumed = await resumeUmpireAudioContext(context);
       if (!soundPreferenceRef.current) return;
       if (!resumed) throw new Error(`Audio context is ${context.state}`);
+      void preloadLineCallAudio(context).catch(() => {});
       // Core court effects must not wait for, or fail with, optional MP3 layers.
       lastSoundFrameRef.current = playheadRef.current ?? snapshot.frameCount;
       soundOnRef.current = true;
       setSoundReady(true);
+      umpireCallsEnabledRef.current = true;
+      umpireSpeechReadyRef.current = true;
+      setUmpireSpeechReady(true);
+      resetLiveUmpireEventCursor(liveUmpireEventCursorRef.current);
+      lastUmpireCallFrameRef.current = playheadRef.current ?? snapshot.frameCount;
       setSoundError('');
       const layers: Array<Promise<unknown>> = [];
       let sampleLoad = courtEffectSamplesLoadRef.current;
@@ -2362,7 +2362,7 @@ function ThreeCourt({
       crowdAudioRef.current?.pause();
       soundOnRef.current = false;
       setSoundReady(false);
-      if (soundPreferenceRef.current) {
+      if (soundPreferenceRef.current && reportFailure) {
         const reason = error instanceof Error ? error.message : 'Audio activation failed';
         setSoundError(`Sound could not start: ${reason}. Tap Enable sound to retry.`);
       }
@@ -2372,16 +2372,23 @@ function ThreeCourt({
   };
 
   const toggleSound = async () => {
+    if (soundPointerActivationRef.current) {
+      soundPointerActivationRef.current = false;
+      return;
+    }
     if (soundPreferenceRef.current
       && (!soundOnRef.current || audioContextRef.current?.state !== 'running')) {
-      if (umpireCallsEnabledRef.current && !umpireSpeechReadyRef.current) {
-        void activateUmpireSpeechFromGesture();
-      }
       await activateSoundFromGesture();
       return;
     }
     if (soundPreferenceRef.current) {
       soundPreferenceRef.current = false;
+      umpireCallsEnabledRef.current = false;
+      umpireSpeechReadyRef.current = false;
+      setUmpireSpeechReady(false);
+      cancelUmpireCall(audioContextRef.current, liveUmpireMatchKey(snapshot.players, isWta));
+      resetLiveUmpireEventCursor(liveUmpireEventCursorRef.current);
+      setSoundError('');
       crowdAudioRef.current?.pause();
       for (const voice of activeGruntsRef.current) voice.stop();
       activeGruntsRef.current.clear();
@@ -2394,9 +2401,6 @@ function ThreeCourt({
     }
     soundPreferenceRef.current = true;
     setSoundEnabled(true);
-    if (umpireCallsEnabledRef.current && !umpireSpeechReadyRef.current) {
-      void activateUmpireSpeechFromGesture();
-    }
     await activateSoundFromGesture();
   };
 
@@ -2438,77 +2442,27 @@ function ThreeCourt({
       activeGruntsRef.current.clear();
     }
   };
-  const activateUmpireSpeechFromGesture = async () => {
-    if (soundPreferenceRef.current) void activateSoundFromGesture();
-    try {
-      if (!audioContextRef.current || audioContextRef.current.state === 'closed') {
-        audioContextRef.current = createCourtAudioContext();
-      }
-      if (!await resumeUmpireAudioContext(audioContextRef.current)) {
-        throw new Error(`Audio context is ${audioContextRef.current.state}`);
-      }
-    } catch (error) {
-      const reason = error instanceof Error ? error.message : 'Audio activation failed';
-      setSoundError(`Recorded umpire audio could not start: ${reason}. Tap Enable calls to retry.`);
-      return false;
-    }
-    umpireSpeechReadyRef.current = true;
-    setUmpireSpeechReady(true);
-    resetLiveUmpireEventCursor(liveUmpireEventCursorRef.current);
-    setSoundError('');
-    lastUmpireCallFrameRef.current = playheadRef.current
-      ?? replayFrameRef.current
-      ?? snapshot.courtFrameIndices?.[0]
-      ?? 0;
-    return true;
-  };
-  const changeUmpireCallsEnabled = (enabled: boolean) => {
-    if (!enabled) {
-      umpireCallsEnabledRef.current = false;
-      setUmpireCallsEnabled(false);
-      cancelUmpireCall(audioContextRef.current, liveUmpireMatchKey(snapshot.players, isWta));
-      return;
-    }
-    void activateUmpireSpeechFromGesture().then((ready) => {
-      if (!ready) return;
-      umpireCallsEnabledRef.current = true;
-      setUmpireCallsEnabled(true);
-      lastUmpireCallFrameRef.current = playheadRef.current
-        ?? replayFrameRef.current
-        ?? snapshot.courtFrameIndices?.[0]
-        ?? 0;
-    });
-  };
-  const handleUmpireCallsToggle = () => {
-    if (umpireSpeechPointerActivationRef.current) {
-      umpireSpeechPointerActivationRef.current = false;
-      return;
-    }
-    if (umpireCallsEnabledRef.current && !umpireSpeechReadyRef.current) {
-      void activateUmpireSpeechFromGesture();
-      return;
-    }
-    changeUmpireCallsEnabled(!umpireCallsEnabledRef.current);
-  };
   const handleSoundActivationGesture = (target: EventTarget | null) => {
     if (target instanceof Element) {
-      if (target.closest('[data-umpire-calls-toggle]')) {
-        if (umpireCallsEnabledRef.current && !umpireSpeechReadyRef.current) {
-          // Resume synchronously on pointerdown; mobile browsers may discard
-          // user activation by the time the later click event runs.
-          umpireSpeechPointerActivationRef.current = true;
-          void activateUmpireSpeechFromGesture();
+      if (target.closest('[data-pip-toggle]')) return;
+      if (target.closest('[data-sound-toggle]')) {
+        if (!soundPreferenceRef.current) {
+          soundPreferenceRef.current = true;
+          setSoundEnabled(true);
+        } else if (soundOnRef.current && audioContextRef.current?.state === 'running') {
+          return;
         }
-        return;
+        soundPointerActivationRef.current = true;
       }
-      if (target.closest('[data-sound-toggle], [data-pip-toggle]')) return;
-    }
-    if (umpireCallsEnabledRef.current && !umpireSpeechReadyRef.current) {
-      void activateUmpireSpeechFromGesture();
     }
     if (!soundPreferenceRef.current) return;
     void activateSoundFromGesture();
   };
+  useEffect(() => {
+    // Default-on broadcasts start immediately when autoplay is permitted.
+    // Otherwise the first trusted viewer gesture resumes every audio layer.
+    if (!fullReplay) void activateSoundFromGesture(false);
+  }, [fullReplay]);
   const replayFrameRate = snapshot.frameRate ?? TE4_DMO_FRAMES_PER_SECOND;
   const replayStartFrame = sampleBufferRef.current[0]?.frame ?? snapshot.courtFrameIndices?.[0] ?? 0;
   const replayEndFrame = sampleBufferRef.current.at(-1)?.frame
@@ -2530,8 +2484,8 @@ function ThreeCourt({
       setReplayPlaying(false);
       return;
     }
-    if (umpireCallsEnabledRef.current && !umpireSpeechReadyRef.current) {
-      await activateUmpireSpeechFromGesture();
+    if (soundPreferenceRef.current && !soundOnRef.current) {
+      await activateSoundFromGesture();
     }
     if (replayFrameRef.current === null || replayFrameRef.current >= replayEndFrame) {
       seekReplay(replayStartFrame);
@@ -2546,9 +2500,9 @@ function ThreeCourt({
       className={styles.scene}
       aria-label={fullReplay ? 'Three-dimensional full match replay' : 'Three-dimensional live court'}
       onPointerDownCapture={(event) => handleSoundActivationGesture(event.target)}
-      onPointerCancelCapture={() => { umpireSpeechPointerActivationRef.current = false; }}
+      onPointerCancelCapture={() => { soundPointerActivationRef.current = false; }}
       onKeyDownCapture={(event) => {
-        if (event.target instanceof Element && event.target.closest('[data-umpire-calls-toggle]')) return;
+        if (event.target instanceof Element && event.target.closest('[data-sound-toggle]')) return;
         handleSoundActivationGesture(event.target);
       }}
     >
@@ -2636,28 +2590,12 @@ function ThreeCourt({
             data-sound-toggle
             type="button"
             aria-pressed={soundEnabled && soundReady}
-            aria-label={soundEnabled && !soundReady ? 'Enable court sound on this device' : undefined}
+            aria-label={soundEnabled && soundReady ? 'Mute all broadcast audio' : 'Enable all broadcast audio on this device'}
+            title={soundEnabled && soundReady ? 'Mute all broadcast audio' : 'Enable all broadcast audio on this device'}
             onClick={() => void toggleSound()}
           >
             {soundEnabled ? <Volume2 size={15} /> : <VolumeX size={15} />}
             <span>{soundEnabled ? soundReady ? 'Sound on' : 'Enable sound' : 'Sound off'}</span>
-          </button>
-          <button
-            className={styles.soundButton}
-            data-umpire-calls-toggle
-            type="button"
-            aria-label={umpireCallsEnabled && !umpireSpeechReady
-              ? 'Enable spoken umpire calls on this device'
-              : umpireCallsEnabled ? 'Turn umpire calls off' : 'Turn umpire calls on'}
-            aria-pressed={umpireCallsEnabled && umpireSpeechReady}
-            title={umpireCallsEnabled && !umpireSpeechReady
-              ? 'Tap to enable spoken umpire calls'
-              : umpireCallsEnabled ? 'Turn umpire calls off' : 'Turn umpire calls on'}
-            onClick={handleUmpireCallsToggle}
-          >
-            <span>{umpireCallsEnabled && !umpireSpeechReady
-              ? 'Enable calls'
-              : `Calls ${umpireCallsEnabled ? 'on' : 'off'}`}</span>
           </button>
           <button
             className={styles.soundButton}

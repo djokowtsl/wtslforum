@@ -85,23 +85,27 @@ test('a browser that leaves audio resume pending cannot hide the failure indefin
   assert.equal(await api.resumeUmpireAudioContext(ready, 5), true);
 });
 
-test('sound readiness, recovery, and control markers match the actual audio controls', async () => {
+test('sound readiness, recovery, and master control match the audio UI', async () => {
   for (const file of ['DmoLiveCourt.tsx', 'DmoLiveCourt3D.tsx']) {
     const renderer = await readFile(new URL(`../components/${file}`, import.meta.url), 'utf8');
     const buttons = [...renderer.matchAll(/<button\b[\s\S]*?<\/button>/g)].map(match => match[0]);
     const sound = buttons.find(button => button.includes('toggleSound()'));
-    const calls = buttons.find(button => button.includes('onClick={handleUmpireCallsToggle}'));
+    const calls = buttons.find(button => button.includes('data-umpire-calls-toggle'));
     const grunts = buttons.find(button => button.includes('changeGruntsEnabled(!gruntsEnabled)'));
     assert.match(sound, /data-sound-toggle/);
     assert.match(sound, /aria-pressed=\{soundEnabled && soundReady\}/);
     assert.match(sound, /Enable sound/);
-    assert.match(calls, /data-umpire-calls-toggle/);
+    assert.match(sound, /Mute all broadcast audio/);
+    assert.equal(calls, undefined, 'umpire and line calls use the master sound switch');
     assert.doesNotMatch(grunts, /data-umpire-calls-toggle|data-sound-toggle/);
     assert.match(renderer, /setSoundReady\(false\)/);
     assert.match(renderer, /setSoundReady\(true\)/);
-    assert.match(renderer, /const activateUmpireSpeechFromGesture = async \(\) => \{\s*if \([^)]*\) void activateSoundFromGesture\(\);/);
+    assert.match(renderer, /const umpireCallsEnabled = soundEnabled/);
+    assert.match(renderer, /if \(!fullReplay\) void activateSoundFromGesture\(false\)/);
+    assert.doesNotMatch(renderer, /activateUmpireSpeechFromGesture|Enable calls|Recorded umpire audio is unavailable/);
     assert.match(renderer, /audioContextRef\.current\?\.state === 'running'/);
     assert.match(renderer, /const resumed = await resumeUmpireAudioContext\(context\)/);
+    assert.match(renderer, /soundPointerActivationRef\.current = true/);
   }
 });
 

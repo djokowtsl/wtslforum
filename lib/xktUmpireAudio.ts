@@ -18,6 +18,10 @@ type VoiceQueue = {
 
 const UMPIRE_INDEX_URL = '/audio/xkt/umpire-index.json';
 const PLAYER_NAME_INDEX_URL = '/audio/xkt/name-index.json';
+const AUTOMATED_LINE_CALLS: Record<string, string> = {
+  fault: '/audio/xkt/line-calls/fault.mp3',
+  out: '/audio/xkt/line-calls/out.mp3',
+};
 const voiceQueues = new WeakMap<BaseAudioContext, VoiceQueue>();
 const audioBuffers = new WeakMap<BaseAudioContext, Map<string, Promise<AudioBuffer>>>();
 const manifestPromises = new Map<string, Promise<unknown>>();
@@ -166,6 +170,14 @@ async function loadAudioBuffer(
   return pending;
 }
 
+export async function preloadAutomatedLineCalls(
+  context: BaseAudioContext,
+  fetcher: (url: string) => Promise<Response> = url => fetch(url),
+): Promise<void> {
+  await Promise.all(Object.values(AUTOMATED_LINE_CALLS)
+    .map(url => loadAudioBuffer(context, url, fetcher)));
+}
+
 function playCallSequence(
   context: BaseAudioContext,
   state: VoiceQueue,
@@ -213,11 +225,19 @@ export async function playXktUmpireCall(
   const state = voiceQueue(context);
   const generation = state.generation;
   try {
-    const [umpire, names] = await Promise.all([
-      loadManifest<XktUmpireAudioIndex>(UMPIRE_INDEX_URL, fetcher),
-      loadManifest<XktPlayerNameAudioIndex>(PLAYER_NAME_INDEX_URL, fetcher),
-    ]);
-    const urls = resolveXktUmpireCallPaths(text, umpire, names, isWta);
+    // Electronic line calls are a separate voice, not an umpire or a
+    // browser-speech fallback. They share the queue and master mute control.
+    const lineCall = AUTOMATED_LINE_CALLS[text.trim().toLowerCase()];
+    let urls: string[] | null;
+    if (lineCall) {
+      urls = [lineCall];
+    } else {
+      const [umpire, names] = await Promise.all([
+        loadManifest<XktUmpireAudioIndex>(UMPIRE_INDEX_URL, fetcher),
+        loadManifest<XktPlayerNameAudioIndex>(PLAYER_NAME_INDEX_URL, fetcher),
+      ]);
+      urls = resolveXktUmpireCallPaths(text, umpire, names, isWta);
+    }
     if (!urls || generation !== state.generation || context.state !== 'running') return false;
     const buffers = await Promise.all(urls.map(url => loadAudioBuffer(context, url, fetcher)));
     if (generation !== state.generation || context.state !== 'running') return false;

@@ -56,6 +56,7 @@ import {
   liveUmpireMatchKey,
   matchLiveUmpireScoreToDmoPointEnd,
   observeLiveUmpireScore,
+  preloadLineCallAudio,
   resetLiveUmpireScoreTether,
   resumeUmpireAudioContext,
   watchUmpireAudioContext,
@@ -576,7 +577,7 @@ function DmoLiveCourt({
   const umpireSpeechReadyRef = useRef(false);
   const [soundEnabled, setSoundEnabled] = useState(true);
   const [soundReady, setSoundReady] = useState(false);
-  const [umpireCallsEnabled, setUmpireCallsEnabled] = useState(true);
+  const umpireCallsEnabled = soundEnabled;
   const [umpireSpeechReady, setUmpireSpeechReady] = useState(false);
   const [crowdVolume, setCrowdVolume] = useState(0.38);
   const [soundError, setSoundError] = useState('');
@@ -586,7 +587,7 @@ function DmoLiveCourt({
   soundEnabledRef.current = soundEnabled;
   umpireCallsEnabledRef.current = umpireCallsEnabled;
   umpireSpeechReadyRef.current = umpireSpeechReady;
-  const umpireSpeechPointerActivationRef = useRef(false);
+  const soundPointerActivationRef = useRef(false);
   const sceneRef = useRef({
     samples: sampleBufferRef.current,
     trajectoryEvents: trajectoryEventsRef.current,
@@ -732,11 +733,7 @@ function DmoLiveCourt({
         isWta,
         () => umpireCallsEnabledRef.current && umpireSpeechReadyRef.current,
         liveUmpireMatchKey(snapshot.players, isWta),
-      ).then((spoken) => {
-        if (!spoken && umpireCallsEnabledRef.current && umpireSpeechReadyRef.current) {
-          setSoundError('Recorded umpire audio is unavailable for this call.');
-        }
-      });
+      );
     }
   }, [scoreboardData, umpireCallsEnabled, umpireSpeechReady]);
 
@@ -750,7 +747,7 @@ function DmoLiveCourt({
       setUmpireSpeechReady(false);
       cancelUmpireCall(context, liveUmpireMatchKey(snapshot.players, isWta));
       resetLiveUmpireEventCursor(liveUmpireEventCursorRef.current);
-      setSoundError('The browser paused audio. Tap Enable sound or Enable calls to resume.');
+      if (soundEnabledRef.current) setSoundError('The browser paused audio. Tap Enable sound to resume.');
     });
   }, [umpireSpeechReady, soundReady, isWta, snapshot.players]);
 
@@ -813,11 +810,7 @@ function DmoLiveCourt({
                   isWta,
                   () => umpireCallsEnabledRef.current && umpireSpeechReadyRef.current,
                   liveUmpireMatchKey(snapshot.players, isWta),
-                ).then((spoken) => {
-                  if (!spoken && umpireCallsEnabledRef.current && umpireSpeechReadyRef.current) {
-                    setSoundError('Recorded umpire audio is unavailable for this call.');
-                  }
-                });
+                );
               }
               continue;
             }
@@ -828,11 +821,7 @@ function DmoLiveCourt({
               isWta,
               () => umpireCallsEnabledRef.current && umpireSpeechReadyRef.current,
               liveUmpireMatchKey(snapshot.players, isWta),
-            ).then((spoken) => {
-              if (!spoken && umpireCallsEnabledRef.current && umpireSpeechReadyRef.current) {
-                setSoundError('Recorded umpire audio is unavailable for this call.');
-              }
-            });
+            );
           }
         }
         lastUmpireCallFrameRef.current = cursor;
@@ -954,55 +943,6 @@ function DmoLiveCourt({
     if (!enabled) stopActiveGrunts();
     onGruntsEnabledChange(enabled);
   };
-  const activateUmpireSpeechFromGesture = async () => {
-    if (soundEnabledRef.current) void activateSoundFromGesture();
-    try {
-      if (!audioContextRef.current || audioContextRef.current.state === 'closed') {
-        audioContextRef.current = createCourtAudioContext();
-      }
-      if (!await resumeUmpireAudioContext(audioContextRef.current)) {
-        throw new Error(`Audio context is ${audioContextRef.current.state}`);
-      }
-    } catch (error) {
-      const reason = error instanceof Error ? error.message : 'Audio activation failed';
-      setSoundError(`Recorded umpire audio could not start: ${reason}. Tap Enable calls to retry.`);
-      return false;
-    }
-    umpireSpeechReadyRef.current = true;
-    setUmpireSpeechReady(true);
-    resetLiveUmpireEventCursor(liveUmpireEventCursorRef.current);
-    setSoundError('');
-    lastUmpireCallFrameRef.current = playheadRef.current
-      ?? sampleBufferRef.current[0]?.frame
-      ?? 0;
-    return true;
-  };
-  const changeUmpireCallsEnabled = (enabled: boolean) => {
-    if (!enabled) {
-      umpireCallsEnabledRef.current = false;
-      setUmpireCallsEnabled(false);
-      cancelUmpireCall(audioContextRef.current, liveUmpireMatchKey(snapshot.players, isWta));
-      return;
-    }
-    void activateUmpireSpeechFromGesture().then((ready) => {
-      if (!ready) return;
-      umpireCallsEnabledRef.current = true;
-      setUmpireCallsEnabled(true);
-      lastUmpireCallFrameRef.current = playheadRef.current;
-    });
-  };
-  const handleUmpireCallsToggle = () => {
-    if (umpireSpeechPointerActivationRef.current) {
-      umpireSpeechPointerActivationRef.current = false;
-      return;
-    }
-    if (umpireCallsEnabledRef.current && !umpireSpeechReadyRef.current) {
-      void activateUmpireSpeechFromGesture();
-      return;
-    }
-    changeUmpireCallsEnabled(!umpireCallsEnabledRef.current);
-  };
-
   const changeCrowdVolume = (value: number) => {
     const volume = Math.max(0, Math.min(1, Math.round(value * 100) / 100));
     setCrowdVolume(volume);
@@ -1013,10 +953,13 @@ function DmoLiveCourt({
     }
   };
 
-  const activateSoundFromGesture = async () => {
+  const activateSoundFromGesture = async (reportFailure = true) => {
     if (!soundEnabledRef.current
-      || (soundRuntimeActiveRef.current && audioContextRef.current?.state === 'running')
-      || soundActivationPendingRef.current) return;
+      || (soundRuntimeActiveRef.current && audioContextRef.current?.state === 'running')) return;
+    if (soundActivationPendingRef.current) {
+      void audioContextRef.current?.resume().catch(() => {});
+      return;
+    }
     soundActivationPendingRef.current = true;
     try {
       if (!audioContextRef.current || audioContextRef.current.state === 'closed') {
@@ -1026,6 +969,7 @@ function DmoLiveCourt({
       const resumed = await resumeUmpireAudioContext(context);
       if (!soundEnabledRef.current) return;
       if (!resumed) throw new Error(`Audio context is ${context.state}`);
+      void preloadLineCallAudio(context).catch(() => {});
 
       const currentGruntSamples = isWta ? wtaGruntAudioRef.current : atpGruntAudioRef.current;
       if (gruntsEnabled && !currentGruntSamples) {
@@ -1045,6 +989,11 @@ function DmoLiveCourt({
       lastSoundFrameRef.current = Math.max(0, snapshot.frameCount - 3);
       soundRuntimeActiveRef.current = true;
       setSoundReady(true);
+      umpireCallsEnabledRef.current = true;
+      umpireSpeechReadyRef.current = true;
+      setUmpireSpeechReady(true);
+      resetLiveUmpireEventCursor(liveUmpireEventCursorRef.current);
+      lastUmpireCallFrameRef.current = playheadRef.current ?? snapshot.frameCount;
       setSoundError('');
       if (!courtEffectSamplesLoadRef.current) {
         courtEffectSamplesLoadRef.current = loadCourtEffectSamples(context).then(({ samples, missing }) => {
@@ -1061,7 +1010,7 @@ function DmoLiveCourt({
     } catch (error) {
       soundRuntimeActiveRef.current = false;
       setSoundReady(false);
-      if (soundEnabledRef.current) {
+      if (soundEnabledRef.current && reportFailure) {
         const reason = error instanceof Error ? error.message : 'Audio activation failed';
         setSoundError(`Sound could not start: ${reason}. Tap Enable sound to retry.`);
       }
@@ -1071,16 +1020,23 @@ function DmoLiveCourt({
   };
 
   const toggleSound = async () => {
+    if (soundPointerActivationRef.current) {
+      soundPointerActivationRef.current = false;
+      return;
+    }
     if (soundEnabledRef.current
       && (!soundRuntimeActiveRef.current || audioContextRef.current?.state !== 'running')) {
-      if (umpireCallsEnabledRef.current && !umpireSpeechReadyRef.current) {
-        void activateUmpireSpeechFromGesture();
-      }
       await activateSoundFromGesture();
       return;
     }
     if (soundEnabledRef.current) {
       soundEnabledRef.current = false;
+      umpireCallsEnabledRef.current = false;
+      umpireSpeechReadyRef.current = false;
+      setUmpireSpeechReady(false);
+      cancelUmpireCall(audioContextRef.current, liveUmpireMatchKey(snapshot.players, isWta));
+      resetLiveUmpireEventCursor(liveUmpireEventCursorRef.current);
+      setSoundError('');
       soundRuntimeActiveRef.current = false;
       setSoundReady(false);
       stopActiveGrunts();
@@ -1096,29 +1052,28 @@ function DmoLiveCourt({
     }
     soundEnabledRef.current = true;
     setSoundEnabled(true);
-    if (umpireCallsEnabledRef.current && !umpireSpeechReadyRef.current) {
-      void activateUmpireSpeechFromGesture();
-    }
     await activateSoundFromGesture();
   };
 
   const handleSoundActivationGesture = (target: EventTarget | null) => {
     if (target instanceof Element) {
-      if (target.closest('[data-umpire-calls-toggle]')) {
-        if (umpireCallsEnabledRef.current && !umpireSpeechReadyRef.current) {
-          umpireSpeechPointerActivationRef.current = true;
-          void activateUmpireSpeechFromGesture();
+      if (target.closest('[data-pip-toggle]')) return;
+      if (target.closest('[data-sound-toggle]')) {
+        if (!soundEnabledRef.current) {
+          soundEnabledRef.current = true;
+          setSoundEnabled(true);
+        } else if (soundRuntimeActiveRef.current && audioContextRef.current?.state === 'running') {
+          return;
         }
-        return;
+        soundPointerActivationRef.current = true;
       }
-      if (target.closest('[data-sound-toggle], [data-pip-toggle]')) return;
-    }
-    if (umpireCallsEnabledRef.current && !umpireSpeechReadyRef.current) {
-      void activateUmpireSpeechFromGesture();
     }
     if (!soundEnabledRef.current) return;
     void activateSoundFromGesture();
   };
+  useEffect(() => {
+    if (!fullReplay) void activateSoundFromGesture(false);
+  }, [fullReplay]);
 
   useEffect(() => {
     const currentGruntSamples = isWta ? wtaGruntAudioRef.current : atpGruntAudioRef.current;
@@ -1145,9 +1100,9 @@ function DmoLiveCourt({
       className={styles.scene}
       aria-label="Live court view"
       onPointerDownCapture={(event) => handleSoundActivationGesture(event.target)}
-      onPointerCancelCapture={() => { umpireSpeechPointerActivationRef.current = false; }}
+      onPointerCancelCapture={() => { soundPointerActivationRef.current = false; }}
       onKeyDownCapture={(event) => {
-        if (event.target instanceof Element && event.target.closest('[data-umpire-calls-toggle]')) return;
+        if (event.target instanceof Element && event.target.closest('[data-sound-toggle]')) return;
         handleSoundActivationGesture(event.target);
       }}
     >
@@ -1214,9 +1169,9 @@ function DmoLiveCourt({
           <button
             data-sound-toggle
             type="button"
-            aria-label={soundEnabled && soundReady ? 'Mute crowd and court sounds' : 'Enable court sound on this device'}
+            aria-label={soundEnabled && soundReady ? 'Mute all broadcast audio' : 'Enable all broadcast audio on this device'}
             aria-pressed={soundEnabled && soundReady}
-            title={soundEnabled && soundReady ? 'Mute crowd and court sounds' : 'Enable court sound on this device'}
+            title={soundEnabled && soundReady ? 'Mute all broadcast audio' : 'Enable all broadcast audio on this device'}
             onClick={() => void toggleSound()}
           >
             {soundEnabled ? <Volume2 size={15} /> : <VolumeX size={15} />}
@@ -1231,23 +1186,6 @@ function DmoLiveCourt({
             onClick={() => changeGruntsEnabled(!gruntsEnabled)}
           >
             Grunts {gruntsEnabled ? 'on' : 'off'}
-          </button>
-          <button
-            className={styles.gruntControl}
-            data-umpire-calls-toggle
-            type="button"
-            aria-label={umpireCallsEnabled && !umpireSpeechReady
-              ? 'Enable spoken umpire calls on this device'
-              : umpireCallsEnabled ? 'Turn umpire calls off' : 'Turn umpire calls on'}
-            aria-pressed={umpireCallsEnabled && umpireSpeechReady}
-            title={umpireCallsEnabled && !umpireSpeechReady
-              ? 'Tap to enable spoken umpire calls'
-              : umpireCallsEnabled ? 'Turn umpire calls off' : 'Turn umpire calls on'}
-            onClick={handleUmpireCallsToggle}
-          >
-            {umpireCallsEnabled && !umpireSpeechReady
-              ? 'Enable calls'
-              : `Calls ${umpireCallsEnabled ? 'on' : 'off'}`}
           </button>
           <CourtFullscreenButton
             targetRef={sceneElementRef}

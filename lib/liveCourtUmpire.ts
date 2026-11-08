@@ -1,5 +1,9 @@
 import type { LiveCourtMotionEvent, LiveCourtSample } from './liveCourtMotion';
-import { cancelXktUmpireCalls, playXktUmpireCall } from './xktUmpireAudio';
+import {
+  cancelXktUmpireCalls,
+  playXktUmpireCall,
+  preloadAutomatedLineCalls,
+} from './xktUmpireAudio';
 
 let browserUmpireSpeechUnlocked = false;
 const activeXktUmpireContexts = new Map<string, BaseAudioContext>();
@@ -14,7 +18,7 @@ export function liveUmpireMatchKey(players: [string, string], isWta: boolean) {
 
 export type UmpireCallEvent = {
   frame: number;
-  kind: 'score' | 'point-end' | 'out';
+  kind: 'score' | 'point-end' | 'out' | 'fault';
   text: string;
 };
 
@@ -46,11 +50,12 @@ export function consumeLiveUmpireCallEvents(
   }
   const floor = cursor.pointEndFrame ?? previousFrame;
   const points = events.filter(event =>
-    event.kind !== 'out' && event.frame > floor && event.frame <= currentFrame,
+    event.kind !== 'out' && event.kind !== 'fault' && event.frame > floor && event.frame <= currentFrame,
   ).sort((a, b) => a.frame - b.frame);
   cursor.pointEndFrame = points.at(-1)?.frame ?? floor;
   const outs = currentFrame - previousFrame < 120
-    ? umpireCallsBetween(events, previousFrame, currentFrame).filter(event => event.kind === 'out')
+    ? umpireCallsBetween(events, previousFrame, currentFrame)
+      .filter(event => event.kind === 'out' || event.kind === 'fault')
     : [];
   return [...points.slice(-MAX_PENDING_LIVE_UMPIRE_SCORE_CALLS), ...outs]
     .sort((a, b) => a.frame - b.frame);
@@ -310,6 +315,7 @@ export function deriveUmpireCallEvents(
   }
 
   const checkedPointEnds = new Set<number>();
+  const checkedServes = new Set<number>();
   const bounces = soundEvents
     .filter((event) => event.kind === 'bounce')
     .sort((first, second) => first.frame - second.frame);
@@ -322,7 +328,27 @@ export function deriveUmpireCallEvents(
         break;
       }
     }
-    if (!previousShot || previousShot.shotType !== 'rally') continue;
+    if (!previousShot) continue;
+
+    if (previousShot.shotType === 'serve') {
+      // Only the first landing of a serve determines its line call. Require
+      // fresh samples and a clear margin outside the service area; unresolved
+      // net contacts, lets and close/uncertain landings remain silent.
+      if (checkedServes.has(previousShot.frame)) continue;
+      checkedServes.add(previousShot.frame);
+      if (bounce.frame - previousShot.frame > 180) continue;
+      const landing = nearestSample(samples, bounce.frame, 4);
+      const contact = nearestSample(samples, previousShot.frame, 4);
+      if (!landing || !contact || landing.values[2] > 30 || Math.abs(contact.values[0]) < 800) continue;
+      const [length, width] = landing.values;
+      const serverEnd = Math.sign(contact.values[0]);
+      const clearFault = serverEnd * length > -75
+        || serverEnd * length < -655
+        || Math.abs(width) > 427;
+      if (clearFault) calls.push({ frame: bounce.frame, kind: 'fault', text: 'Fault' });
+      continue;
+    }
+    if (previousShot.shotType !== 'rally') continue;
 
     let pointEnd: LiveCourtMotionEvent | undefined;
     let laterShot = false;
@@ -360,7 +386,7 @@ export function deriveUmpireCallEvents(
 
   const unique = new Map<string, UmpireCallEvent>();
   for (const call of calls) unique.set(`${call.frame}:${call.kind}`, call);
-  const priority = { out: 0, 'point-end': 1, score: 2 };
+  const priority = { out: 0, fault: 0, 'point-end': 1, score: 2 };
   return [...unique.values()].sort((first, second) =>
     first.frame - second.frame || priority[first.kind] - priority[second.kind],
   );
@@ -467,6 +493,10 @@ export function watchUmpireAudioContext(
   context.addEventListener('statechange', stateChanged);
   stateChanged();
   return () => context.removeEventListener('statechange', stateChanged);
+}
+
+export function preloadLineCallAudio(context: BaseAudioContext): Promise<void> {
+  return preloadAutomatedLineCalls(context);
 }
 
 export async function speakUmpireCall(
