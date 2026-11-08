@@ -15,6 +15,7 @@ import {
   latestLiveCourtMotionEvent,
   liveCourtSlideWeight,
   liveCourtReplayFrameScale,
+  nextLiveCourtCarryMode,
   LOW_REACH_MAX_DROP,
   lowReachDrop,
   liveCourtShotSpin,
@@ -29,6 +30,25 @@ function sample(frame, ballX) {
 function playerSample(frame, playerOneX = 0, playerOneZ = 0, playerTwoX = 0, playerTwoZ = 0) {
   return { frame, values: [0, 0, 0, playerOneX, playerOneZ, playerTwoX, playerTwoZ] };
 }
+
+test('rally carry starts at 2.2 m/s and releases below 2.0 m/s', () => {
+  const mode = (previous, speed, overrides = {}) => nextLiveCourtCarryMode(previous, {
+    walking: false,
+    shotDue: false,
+    strolling: 0,
+    speed,
+    ...overrides,
+  });
+  assert.equal(mode(false, 2.19), false);
+  assert.equal(mode(false, 2.2), true);
+  assert.equal(mode(true, 2.1), true, 'hysteresis keeps the racket at the side');
+  assert.equal(mode(true, 1.99), false);
+  assert.equal(mode(false, 4, { shotDue: true }), false, 'the take-back gets the racket back in front');
+  assert.equal(mode(false, 1, { walking: true }), true);
+  assert.equal(mode(false, 1, { strolling: 0.8 }), true);
+  assert.equal(mode(false, 0, { strolling: 0.5 }), false);
+  assert.equal(mode(true, 0, { strolling: 0.5 }), true, 'the strolling deadband retains the prior carry');
+});
 
 test('overlapping court updates merge into one ordered, bounded timeline', () => {
   const merged = mergeLiveCourtSamples(
