@@ -52,10 +52,15 @@ import {
   liveCourtTrajectoryCue,
   liveCourtFacingAngle,
   liveCourtShotSpin,
+  liveCourtBallHeldSeconds,
   mergeLiveCourtEvents,
   mergeLiveCourtSamples,
   liveCourtReplayFrameScale,
   nextLiveCourtCarryMode,
+  SERVE_BOUNCE_END_SECONDS,
+  SERVE_BOUNCES,
+  SERVE_BOUNCE_SECONDS,
+  serveBounceHeight,
   lowReachDrop,
   type LiveCourtCoordinates,
   type LiveCourtFootworkEvent,
@@ -175,9 +180,11 @@ const MIN_CAMERA_HEIGHT = 0.8;
 /** Frames (at 60 per second) before his own shot when a running player brings
  * the racket back in front for the recorded take-back. */
 const RALLY_RUN_CARRY_CUTOFF_FRAMES = 36;
+/** Furthest the hips turn toward a fast run across the court (radians). */
+const RUN_HIP_TURN = 1.05;
 
 /** Shown under the court so a deployed build can be identified at a glance. */
-const RENDERER_BUILD = 'player repair r18';
+const RENDERER_BUILD = 'player repair r19';
 
 const colorToCss = (color: number) => `#${color.toString(16).padStart(6, '0')}`;
 
@@ -698,6 +705,9 @@ function ThreeCourt({
     );
     ball.castShadow = true;
     scene.add(ball);
+    // Before a serve the ball is drawn in the server's free hand (bounces,
+    // then held until the toss); this eases it back onto the recorded toss.
+    const serveBall = { frame: -1, hand: null as THREE.Object3D | null };
     const ballShadow = new THREE.Mesh(
       new THREE.CircleGeometry(0.16, 20),
       new THREE.MeshBasicMaterial({ color: 0x061a18, transparent: true, opacity: 0.42 }),
@@ -1002,6 +1012,11 @@ function ThreeCourt({
         (ballX - rig.root.position.x) * Math.sin(facing)
         + (ballZ - rig.root.position.z) * Math.cos(facing)
       ) / rig.root.scale.x;
+      // Where the player looks: the ball (when the recording has it), in rig
+      // space. Between points, more loosely.
+      const ballRecorded = Math.abs(values[0]) > 1 || Math.abs(values[1]) > 1;
+      rig.root.userData.lookTarget = [localX, ballY / rig.root.scale.y, localZ];
+      rig.root.userData.lookWeight = ballRecorded ? (isBetweenPoints(events, frame) ? 0.6 : 1) : 0;
       const slideWeight = liveCourtSlideWeight(footworkEventsRef.current, eventPlayer, frame, frameRate);
       const lateralVelocity = velocityX * localXAxis[0] + velocityZ * localXAxis[1];
       const slideDirection = Math.sign(lateralVelocity);
@@ -1029,8 +1044,41 @@ function ThreeCourt({
       // points (and on a sprint with the racket at the side); short quick
       // footwork around the ball in a rally. Use the eased carry from last frame.
       gait.walking = walking ? 1 : THREE.MathUtils.clamp(Number(rig.root.userData.carryMove ?? 0), 0, 1);
-      advanceGait(gait, travel, steppingSpeed);
+      // On a fast run across the court the hips turn toward the run (up to
+      // ~60 degrees, chest half as much, eyes on the ball) and the steps go
+      // along it, alternating like a real run. A side-shuffle at that speed
+      // spread the legs wide and stiff. The gait works in the hips' frame.
+      const hipYaw = Number(rig.root.userData.runHipYaw ?? 0);
+      const toHips = (v: [number, number]): [number, number] => [
+        v[0] * Math.cos(hipYaw) - v[1] * Math.sin(hipYaw),
+        v[0] * Math.sin(hipYaw) + v[1] * Math.cos(hipYaw),
+      ];
+      const fromHips = (x: number, z: number): [number, number] => [
+        x * Math.cos(hipYaw) + z * Math.sin(hipYaw),
+        -x * Math.sin(hipYaw) + z * Math.cos(hipYaw),
+      ];
+      advanceGait(gait, toHips(travel), steppingSpeed);
       const [stepA, stepB] = gaitFeet(gait, steppingSpeed);
+      {
+        const travelDirection = fromHips(gait.direction[0], gait.direction[1]);
+        const across = Math.abs(travelDirection[0]);
+        const ownShotSoon = (() => {
+          const next = nextShotEvent(events, eventPlayer, frame);
+          return next !== undefined && (next.frame - frame) * frameScale < RALLY_RUN_CARRY_CUTOFF_FRAMES;
+        })();
+        const turnWanted = THREE.MathUtils.smoothstep(steppingSpeed, 2.6, 3.6)
+          * THREE.MathUtils.smoothstep(across, 0.5, 0.85) * gait.amount
+          * (ownShotSoon || walking ? 0 : 1);
+        const wantedYaw = THREE.MathUtils.clamp(
+          Math.atan2(travelDirection[0], Math.abs(travelDirection[1])),
+          -RUN_HIP_TURN,
+          RUN_HIP_TURN,
+        ) * turnWanted;
+        const maxTurn = 3 * Math.max(0, Math.min(0.1, replaySeconds));
+        rig.root.userData.runHipYaw = replaySeconds > 0.5
+          ? wantedYaw
+          : hipYaw + THREE.MathUtils.clamp(wantedYaw - hipYaw, -maxTurn, maxTurn);
+      }
       rig.root.userData.locomotionSpeed = steppingSpeed;
       const phase = gait.phase * Math.PI * 2 + index * Math.PI;
       const gaitSpeed = gait.amount * Math.min(1, speedMs / 4);
@@ -1098,6 +1146,27 @@ function ThreeCourt({
       servePreparation *= serveGate;
       serveToss *= serveGate;
       rig.root.userData.serveSetUp = serveGate;
+      // Pre-serve bounces (the recording only holds the ball still): the free
+      // hand meets the ball at the top of each bounce.
+      {
+        const ownServe = nextShotEvent(events, eventPlayer, frame);
+        const secondsToContact = ownServe?.shotType === 'serve' ? (ownServe.frame - frame) / frameRate : Number.NaN;
+        const held = Number.isFinite(secondsToContact) ? liveCourtBallHeldSeconds(samples, frame, frameRate) : 0;
+        const bounce = serveBounceHeight(secondsToContact, secondsToContact + held);
+        const start = SERVE_BOUNCE_END_SECONDS + SERVE_BOUNCES * SERVE_BOUNCE_SECONDS;
+        const handWeight = bounce === null ? 0
+          : THREE.MathUtils.smoothstep(start - secondsToContact, 0, 0.15)
+            * THREE.MathUtils.smoothstep(secondsToContact - SERVE_BOUNCE_END_SECONDS, 0, 0.15);
+        // TE4 holds the ball low (about hip height or below), out of reach of
+        // the hanging hand: the bounces start from a comfortable hand height
+        // (just above where the arm hangs), and the ball drawing uses the same top.
+        const top = Math.max(values[2] * SCALE, 0.9 * rig.root.scale.y);
+        rig.root.userData.serveBounceTop = top;
+        rig.root.userData.serveBounce = handWeight > 0 ? {
+          weight: handWeight,
+          hand: [localX, (top * Math.max(bounce!, 0.85) + BALL_RADIUS + 0.05) / rig.root.scale.y, localZ],
+        } : undefined;
+      }
       const returnGate = opponentServe
         ? easeGate('returnGate', stoppedAt(behindBaseline < 3.2), opponentServe.frame)
         : easeGate('returnGate', 0);
@@ -1164,10 +1233,19 @@ function ThreeCourt({
       );
       rig.body.rotation.x = crouch * 0.5 + shapedFollowThrough * 0.08 - serveFollowThrough * 0.05
         + ready * 0.36 + runLean;
-      rig.body.rotation.y = trunkTurn;
+      rig.body.rotation.y = trunkTurn + hipYaw * 0.5;
       rig.hip.position.y = 0.90 + bodyBounce - crouch * 0.75;
+      // Standing between points: a slow, small weight shift from foot to foot
+      // instead of standing frozen (not once set up at the line).
+      {
+        const idle = isBetweenPoints(events, frame) && !walking && steppingSpeed < 0.3
+          ? 1 - Math.max(serveGate, returnGate) : 0;
+        const sway = Math.sin((frame / frameRate) * Math.PI * 2 * 0.3 + index * 1.7);
+        rig.hip.position.x = sway * 0.018 * idle;
+        rig.hip.rotation.z = -sway * 0.025 * idle;
+      }
       rig.hip.rotation.x = ready * 0.3 + runLean * 0.5;
-      rig.hip.rotation.y = trunkTurn * 0.42;
+      rig.hip.rotation.y = trunkTurn * 0.42 + hipYaw;
       rig.head.position.set(0, 1.73 + bodyBounce * 0.8 - crouch * 0.3 - ready * 0.12, ready * 0.26);
       rig.head.rotation.y = THREE.MathUtils.clamp(localX * 0.72, -0.28, 0.28) * (1 - ready);
       rig.head.rotation.x = THREE.MathUtils.clamp(-(ballY - 1.45) * 0.08, -0.18, 0.18) - ready * 0.08;
@@ -1183,16 +1261,53 @@ function ThreeCourt({
       rig.face.rightBrow.rotation.z = -0.04 - effort * 0.07;
       const leftHip = new THREE.Vector3(-0.13, 0.90 + bodyBounce - crouch * 0.75, 0);
       const rightHip = new THREE.Vector3(0.13, 0.90 + bodyBounce - crouch * 0.75, 0);
-      const leftFoot = new THREE.Vector3(
-        -stanceHalfWidth + stepA.x - slideSpread * 0.35,
-        0.1 + leftLift,
-        stepA.z + ready * 0.05,
-      );
-      const rightFoot = new THREE.Vector3(
-        stanceHalfWidth + stepB.x + slideSpread * 0.35,
-        0.1 + rightLift,
-        stepB.z + ready * 0.05,
-      );
+      const [leftFootX, leftFootZ] = fromHips(-stanceHalfWidth + stepA.x - slideSpread * 0.35, stepA.z + ready * 0.05);
+      const [rightFootX, rightFootZ] = fromHips(stanceHalfWidth + stepB.x + slideSpread * 0.35, stepB.z + ready * 0.05);
+      const leftFoot = new THREE.Vector3(leftFootX, 0.1 + leftLift, leftFootZ);
+      const rightFoot = new THREE.Vector3(rightFootX, 0.1 + rightLift, rightFootZ);
+      {
+        // A planted foot doesn't turn with the hips: once the hips have turned
+        // (toward or back from a run across the court) since it landed, it
+        // stays where it is on the court, moving only against the body's
+        // travel, until it lifts; in the air it eases back onto the stride.
+        // (The steps are laid out in the hips' frame, so turning that frame
+        // swung a planted foot round.) Held per foot from landing to lift-off,
+        // so repeated updates within one replay frame keep the hold.
+        type FootPin = { x: number; z: number; lift: number; yaw: number; ox: number; oz: number; frame: number };
+        const pins = rig.root.userData.footPins as { left: FootPin; right: FootPin } | undefined;
+        const seeking = replaySeconds > 0.5 || (pins !== undefined && frame < pins.left.frame);
+        const next = {} as { left: FootPin; right: FootPin };
+        for (const [key, foot, lift] of [['left', leftFoot, leftLift], ['right', rightFoot, rightLift]] as const) {
+          const before = seeking ? undefined : pins?.[key];
+          let ox = 0, oz = 0, yaw = hipYaw;
+          if (before && lift <= 1e-4 && before.lift <= 1e-4) {
+            yaw = before.yaw; // the hips' turn when this foot landed
+            if (Math.abs(hipYaw - yaw) > 1e-4 || Math.hypot(before.ox, before.oz) > 1e-4) {
+              ox = before.x - travel[0] - foot.x;
+              oz = before.z - travel[1] - foot.z;
+            }
+          } else if (before) {
+            const fade = Math.exp(-replaySeconds / 0.06);
+            ox = before.ox * fade;
+            oz = before.oz * fade;
+          }
+          foot.x += ox;
+          foot.z += oz;
+          next[key] = { x: foot.x, z: foot.z, lift, yaw, ox, oz, frame };
+        }
+        rig.root.userData.footPins = next;
+      }
+      // Recorded legs (walk / jog / run) for the detailed player: on a run or
+      // walk the swinging leg follows the recording (knee drive, heel lift);
+      // a planted foot stays exactly where the gait put it. Not for side
+      // shuffles, which the recordings (straight-ahead runs) don't show.
+      {
+        const hipsDirection = gait.direction;
+        const shuffle = THREE.MathUtils.smoothstep(Math.abs(hipsDirection[0]), 0.45, 0.85);
+        rig.root.userData.recordedLegs = THREE.MathUtils.smoothstep(steppingSpeed, 0.9, 1.6)
+          * THREE.MathUtils.clamp(gait.amount, 0, 1) * (1 - shuffle);
+        rig.root.userData.gaitLift = { r: stepA.lift * landing, l: stepB.lift * landing };
+      }
       const leftKnee = new THREE.Vector3(
         leftHip.x + (leftFoot.x - leftHip.x) * 0.38,
         0.46 + bodyBounce - crouch * 0.35 + leftLift * 0.28,
@@ -1906,6 +2021,55 @@ function ThreeCourt({
         const maxGapFrames = frameRate * sceneDataRef.current.playbackSpeed / 2;
         const values = interpolateLiveCourtFrame(samples, currentFrame, maxGapFrames) ?? samples[samples.length - 1].values;
         const ballPosition = new THREE.Vector3(values[0] * SCALE, Math.max(0, values[2]) * SCALE, values[1] * SCALE);
+        // Pre-serve: the recording holds the ball still, low by the hip (TE4's
+        // hand), until the toss. From the first bounce it is drawn in the
+        // server's free hand instead: bounced from hand height, then held,
+        // easing back onto the recorded flight once the toss starts.
+        let serveBallShown = false;
+        {
+          let pinned = false;
+          const nextServe = trajectoryEventsRef.current.find(e => e.kind === 'shot' && e.shotType === 'serve' && e.frame >= currentFrame);
+          if (nextServe) {
+            const secondsToContact = (nextServe.frame - currentFrame) / frameRate;
+            const held = liveCourtBallHeldSeconds(samples, currentFrame, frameRate);
+            const bounce = serveBounceHeight(secondsToContact, secondsToContact + held);
+            const start = SERVE_BOUNCE_END_SECONDS + SERVE_BOUNCES * SERVE_BOUNCE_SECONDS;
+            const inHand = secondsToContact <= start && secondsToContact + held >= start - 1e-3;
+            const server = nextServe.player === 1
+              ? players[0]
+              : nextServe.player === 2 ? players[1] : undefined;
+            const serverHandedness = nextServe.player === 1
+              ? sceneDataRef.current.snapshot.handedness?.[0]
+              : nextServe.player === 2 ? sceneDataRef.current.snapshot.handedness?.[1] : undefined;
+            const freeSide = (serverHandedness ?? 'right') === 'left' ? 'r' : 'l';
+            const handBone = server?.root.getObjectByName(`hand_${freeSide}`);
+            if (server && handBone && (bounce !== null || inHand)) {
+              // (The free hand as drawn last frame; ball centre just under the palm.)
+              const hand = handBone.getWorldPosition(new THREE.Vector3());
+              const top = Number(server.root.userData.serveBounceTop ?? ballPosition.y);
+              const target = new THREE.Vector3(
+                hand.x,
+                bounce !== null ? Math.max(ballPosition.y, top) * bounce : hand.y - 0.05 - BALL_RADIUS,
+                hand.z,
+              );
+              serveBall.frame = currentFrame;
+              serveBall.hand = handBone;
+              ballPosition.copy(target);
+              pinned = true;
+              serveBallShown = true;
+            }
+          }
+          const easeFrames = 0.3 * frameRate;
+          if (!pinned && serveBall.hand && currentFrame >= serveBall.frame && currentFrame - serveBall.frame < easeFrames) {
+            // Released: from the tossing hand onto the recorded flight (TE4
+            // jumps the ball from its hip hold to the toss).
+            const k = 1 - THREE.MathUtils.smoothstep((currentFrame - serveBall.frame) / easeFrames, 0, 1);
+            const hand = serveBall.hand.getWorldPosition(new THREE.Vector3());
+            ballPosition.lerp(hand.setY(hand.y - 0.05 - BALL_RADIUS), k);
+            ballPosition.y = Math.max(0, ballPosition.y);
+            serveBallShown = true;
+          }
+        }
         ball.position.copy(ballPosition);
         ball.position.y += BALL_RADIUS;
         ballShadow.position.set(ballPosition.x, 0.025, ballPosition.z);
@@ -2000,7 +2164,7 @@ function ThreeCourt({
         ));
         const knownPhase = Boolean(trajectoryEventsRef.current[0]
           && trajectoryEventsRef.current[0].frame <= currentFrame);
-        ball.visible = (showTrail || tossing || !knownPhase) && performance.now() >= changeoverUntil;
+        ball.visible = (showTrail || tossing || serveBallShown || !knownPhase) && performance.now() >= changeoverUntil;
         ballShadow.visible = ball.visible;
         (trailGeometry.attributes.position as THREE.BufferAttribute).needsUpdate = true;
       }
