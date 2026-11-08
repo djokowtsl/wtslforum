@@ -1,5 +1,94 @@
 export type LiveCourtCoordinates = [number, number, number, number, number, number, number];
 export type LiveCourtSample = { frame: number; values: LiveCourtCoordinates };
+export const LOW_REACH_MAX_DROP = 0.27;
+export const SLICE_MAX_DROP_RATE = 950;
+
+function smoothstep(value: number, low: number, high: number) {
+  const amount = Math.max(0, Math.min(1, (value - low) / (high - low)));
+  return amount * amount * (3 - 2 * amount);
+}
+
+/** Convert frame deltas to the captured-motion clock (60 frames per second). */
+export function liveCourtReplayFrameScale(frameRate: number) {
+  return Number.isFinite(frameRate) && frameRate > 0 ? 60 / frameRate : 1;
+}
+
+/** Calibrated low-ball knee bend and wide-ball lunge in metres. */
+export function lowReachDrop(heightMetres: number, reachMetres: number) {
+  if (!Number.isFinite(heightMetres) || !Number.isFinite(reachMetres)) return 0;
+  const low = 1 - smoothstep(heightMetres, 0.25, 0.5);
+  const stretch = smoothstep(reachMetres, 1.5, 2.0)
+    * (1 - smoothstep(reachMetres, 2.4, 2.8));
+  return Math.min(LOW_REACH_MAX_DROP, 0.15 * low + 0.12 * stretch);
+}
+
+/**
+ * Infer spin from the ball's vertical flight between contact and its first
+ * bounce. The fit uses centimetre-valued DMO heights and frame-relative time.
+ */
+export function liveCourtShotSpin(
+  samples: LiveCourtSample[],
+  hitFrame: number,
+  frameRate: number,
+): 'slice' | 'topspin' | null {
+  if (!Number.isFinite(hitFrame) || !(frameRate > 0) || !samples.length) return null;
+  let first = 0, last = samples.length;
+  while (first < last) {
+    const middle = (first + last) >> 1;
+    if (samples[middle].frame <= hitFrame) first = middle + 1;
+    else last = middle;
+  }
+  const flight: Array<[number, number]> = [];
+  let bounced = false;
+  for (let index = first; index < samples.length; index += 1) {
+    const seconds = (samples[index].frame - hitFrame) / frameRate;
+    if (seconds > 2.5) break;
+    if (index > first && (samples[index].frame - samples[index - 1].frame) / frameRate > 0.1) return null;
+    const height = samples[index].values[2];
+    const next = samples[index + 1]?.values[2];
+    if (
+      height < 25 && next !== undefined && next >= height
+      && flight.length && height <= flight[flight.length - 1][1]
+    ) {
+      bounced = true;
+      break;
+    }
+    if (seconds >= 0.03) flight.push([seconds, height]);
+  }
+  flight.pop();
+  if (!bounced || flight.length < 8 || flight[flight.length - 1][0] - flight[0][0] < 0.35) return null;
+
+  const meanTime = flight.reduce((sum, [time]) => sum + time, 0) / flight.length;
+  const moments = [0, 0, 0, 0, 0];
+  const heights = [0, 0, 0];
+  for (const [timeValue, height] of flight) {
+    const time = timeValue - meanTime;
+    let power = 1;
+    for (let exponent = 0; exponent <= 4; exponent += 1) {
+      moments[exponent] += power;
+      power *= time;
+    }
+    heights[0] += height;
+    heights[1] += height * time;
+    heights[2] += height * time * time;
+  }
+  const determinant3 = (matrix: number[][]) =>
+    matrix[0][0] * (matrix[1][1] * matrix[2][2] - matrix[1][2] * matrix[2][1])
+    - matrix[0][1] * (matrix[1][0] * matrix[2][2] - matrix[1][2] * matrix[2][0])
+    + matrix[0][2] * (matrix[1][0] * matrix[2][1] - matrix[1][1] * matrix[2][0]);
+  const matrix = [
+    [moments[4], moments[3], moments[2]],
+    [moments[3], moments[2], moments[1]],
+    [moments[2], moments[1], moments[0]],
+  ];
+  const determinant = determinant3(matrix);
+  if (!Number.isFinite(determinant) || Math.abs(determinant) < 1e-12) return null;
+  const rightHand = [heights[2], heights[1], heights[0]];
+  const quadratic = determinant3(matrix.map((row, index) =>
+    [rightHand[index], row[1], row[2]])) / determinant;
+  return -2 * quadratic < SLICE_MAX_DROP_RATE ? 'slice' : 'topspin';
+}
+
 export type LiveCourtMotionEvent = {
   frame: number;
   kind: 'shot' | 'point-end';

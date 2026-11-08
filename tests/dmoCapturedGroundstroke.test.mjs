@@ -3,7 +3,8 @@ import assert from 'node:assert/strict';
 import {
   GROUNDSTROKE_LEAD_FRAMES, GROUNDSTROKE_MIN_LEAD_FRAMES, SERVE_LEAD_FRAMES,
   groundstrokeCaptureWeight, groundstrokeLeadFrames,
-  recordedStrokeForSide, recordedStrokeUsesTwoHands, serveCaptureWeight,
+  recordedBackhandFaceRoll, recordedStrokeForSide, recordedStrokeUsesTwoHands,
+  serveCaptureWeight, SLICE_TIME_SCALE,
 } from '../components/DmoCapturedGroundstroke.ts';
 
 test('qualified volleys select the matching side without replacing groundstrokes', () => {
@@ -11,6 +12,12 @@ test('qualified volleys select the matching side without replacing groundstrokes
   assert.equal(recordedStrokeForSide('backhand', true), 'volley-backhand');
   assert.equal(recordedStrokeForSide('forehand', false), 'forehand');
   assert.equal(recordedStrokeForSide('backhand', false), 'backhand');
+});
+
+test('slice playback uses the open volley-face roll and three-quarter speed', () => {
+  assert.equal(SLICE_TIME_SCALE, 0.75);
+  assert.equal(recordedBackhandFaceRoll('backhand', false, true), 35 * Math.PI / 180);
+  assert.equal(recordedBackhandFaceRoll('backhand', false), 0);
 });
 
 test('captured groundstroke blends in before contact and fades after follow-through', () => {

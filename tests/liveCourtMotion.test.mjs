@@ -14,6 +14,10 @@ import {
   latestLiveCourtShotEvent,
   latestLiveCourtMotionEvent,
   liveCourtSlideWeight,
+  liveCourtReplayFrameScale,
+  LOW_REACH_MAX_DROP,
+  lowReachDrop,
+  liveCourtShotSpin,
   mergeLiveCourtEvents,
   mergeLiveCourtSamples,
 } from '../lib/liveCourtMotion.ts';
@@ -186,4 +190,57 @@ test('stroke variation cues use only nearby ball/player samples, never invented 
     inferLiveCourtContactCue(event, [{ ...lowContact, frame: 20, values: [0, 0, 145, 920, 0, -900, 0] }]),
     'standard',
   );
+});
+
+test('replay stroke timing uses 60 Hz frames while live 60 Hz timing is unchanged', () => {
+  assert.equal(liveCourtReplayFrameScale(30), 2);
+  assert.equal(liveCourtReplayFrameScale(60), 1);
+  assert.equal(liveCourtReplayFrameScale(0), 1);
+  const events = [
+    { frame: 100, kind: 'shot', player: 1, shotType: 'rally' },
+    { frame: 200, kind: 'shot', player: 1, shotType: 'rally' },
+  ];
+  assert.equal(findPlayerShotEvent(events, 1, 85, 24 / liveCourtReplayFrameScale(30)), undefined,
+    '30 Hz replays narrow the event lookup window in source frames');
+  assert.equal(findPlayerShotEvent(events, 1, 85, 24 / liveCourtReplayFrameScale(60))?.frame, 100,
+    '60 Hz live timing retains the existing event window');
+});
+
+test('low and wide contacts use the calibrated conservative crouch', () => {
+  assert.equal(lowReachDrop(0.7, 1.2), 0);
+  assert.equal(lowReachDrop(0.5, 1.4), 0);
+  assert.ok(lowReachDrop(0.4, 1.2) > 0.03 && lowReachDrop(0.4, 1.2) < lowReachDrop(0.3, 1.2));
+  assert.ok(Math.abs(lowReachDrop(0.25, 1.2) - 0.15) < 1e-9);
+  assert.ok(Math.abs(lowReachDrop(1.0, 2.0) - 0.12) < 1e-9);
+  assert.equal(lowReachDrop(0.2, 2.0), LOW_REACH_MAX_DROP);
+  assert.equal(lowReachDrop(1.0, 4.3), 0);
+  assert.equal(lowReachDrop(Number.NaN, 1), 0);
+});
+
+test('slices are inferred from ball flight through the first bounce', () => {
+  const flightSamples = (dropRate, { hitFrame = 100, vz = 380, h0 = 70, gapAt = -1 } = {}) => {
+    const samples = [];
+    for (let frame = hitFrame - 10; frame <= hitFrame + 70; frame += 1) {
+      if (frame === gapAt) continue;
+      const seconds = Math.max(0, (frame - hitFrame) / 30);
+      let height = h0 + vz * seconds - 0.5 * dropRate * seconds * seconds;
+      if (height < 0) height = -height * 0.5;
+      samples.push({
+        frame,
+        values: [-1100 + 30 * (frame - hitFrame), 0, Math.round(Math.max(0, height)), -1150, 0, 1150, 0],
+      });
+    }
+    return samples;
+  };
+  assert.equal(liveCourtShotSpin(flightSamples(700, { vz: 300 }), 100, 30), 'slice');
+  assert.equal(liveCourtShotSpin(flightSamples(850, { vz: 300 }), 100, 30), 'slice');
+  assert.equal(liveCourtShotSpin(flightSamples(1100), 100, 30), 'topspin');
+  assert.equal(liveCourtShotSpin(flightSamples(1400, { vz: 450 }), 100, 30), 'topspin');
+  assert.equal(liveCourtShotSpin(flightSamples(700).filter(sample => sample.frame <= 110), 100, 30), null);
+  assert.equal(liveCourtShotSpin(
+    flightSamples(700, { vz: 300 }).filter(sample => sample.frame < 110 || sample.frame > 114),
+    100,
+    30,
+  ), null);
+  assert.equal(liveCourtShotSpin([], 100, 30), null);
 });

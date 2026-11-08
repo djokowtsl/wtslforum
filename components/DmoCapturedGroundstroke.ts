@@ -26,8 +26,12 @@ export function isRecordedVolley(stroke: GroundstrokeName | undefined) {
 }
 
 /** The volley uses a continental grip, not the ground backhand regrip. */
-export function recordedBackhandFaceRoll(stroke: GroundstrokeName | undefined, oneHanded: boolean) {
-  if (stroke === 'volley-backhand') return 35 * Math.PI / 180;
+export function recordedBackhandFaceRoll(
+  stroke: GroundstrokeName | undefined,
+  oneHanded: boolean,
+  slice = false,
+) {
+  if (slice || stroke === 'volley-backhand') return 35 * Math.PI / 180;
   return stroke === 'backhand' && oneHanded ? 72 * Math.PI / 180 : 0;
 }
 
@@ -65,6 +69,8 @@ export interface GroundstrokePlayback {
   hands?: 'one' | 'two';
   /** Select the one-handed recording for a ground backhand only. */
   oneHanded?: boolean;
+  /** A detected slice uses the volley recording as a high-to-low stand-in. */
+  slice?: boolean;
   /** Recorded contact ball position in the player's local court space. */
   contactTarget?: [number, number, number];
 }
@@ -226,6 +232,8 @@ export const SERVE_LEAD_FRAMES = 110;
 
 /** Short volley preparation/recovery, in canonical 60 Hz frames. */
 export const VOLLEY_LEAD_FRAMES = 26;
+/** Playback speed of the volley recording when it stands in for a slice. */
+export const SLICE_TIME_SCALE = 0.75;
 export const VOLLEY_RECOVERY_FRAMES = 44;
 
 export function volleyCaptureWeight(frameDelta: number) {
@@ -371,13 +379,21 @@ export class DmoCapturedGroundstroke {
   apply(playback: GroundstrokePlayback): CapturedBodyHints | null {
     const weight = THREE.MathUtils.clamp(playback.weight, 0, 1);
     if (weight <= 0 || !Number.isFinite(playback.deltaSeconds)) return null;
-    const motion = playback.stroke === 'backhand' && playback.oneHanded && this.motions.backhandOne
+    const isVolley = playback.stroke === 'volley-forehand' || playback.stroke === 'volley-backhand';
+    const volley = playback.stroke !== 'serve' && (isVolley || playback.slice)
+      ? this.motions[playback.stroke === 'forehand' || playback.stroke === 'volley-forehand'
+        ? 'volley-forehand'
+        : 'volley-backhand']
+      : undefined;
+    const timeScale = playback.slice && !isVolley ? SLICE_TIME_SCALE : 1;
+    const motion = volley
+      || (playback.stroke === 'backhand' && playback.oneHanded && this.motions.backhandOne
       ? this.motions.backhandOne
-      : this.motions[playback.stroke];
+      : this.motions[playback.stroke]);
     const mirrored = playback.handedness === 'left';
     const pairs = mirrored ? motion.leftPairs : motion.rightPairs;
     const time = THREE.MathUtils.clamp(
-      motion.contactTime + playback.deltaSeconds,
+      motion.contactTime + playback.deltaSeconds * timeScale,
       0,
       motion.duration,
     );

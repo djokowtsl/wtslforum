@@ -503,7 +503,7 @@ export function attachNativePlayer(
       }
     }
     const strokeRoll = new THREE.Quaternion();
-    const backhandRoll = recordedBackhandFaceRoll(playback?.stroke, oneHandedStroke);
+    const backhandRoll = recordedBackhandFaceRoll(playback?.stroke, oneHandedStroke, playback?.slice);
     if (capturedBody && playback) {
       if (backhandRoll) {
         strokeRoll.setFromAxisAngle(UP, (dominant === 'r' ? 1 : -1) * backhandRoll * captureWeight);

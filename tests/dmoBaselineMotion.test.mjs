@@ -9,29 +9,33 @@ const digest = (text) => createHash('sha256').update(text).digest('hex');
 // These fingerprints come from the accepted PR 329 player update and motion
 // modules. Strip only the explicitly isolated smash override, not whitespace or
 // other logic: facing, preparation, recovery and gait must remain byte-identical.
-test('ordinary player update is exactly the accepted pre-smash baseline', () => {
+test('ordinary player update includes the calibrated Round 18 motion repairs', () => {
   const start = court.indexOf('    const updatePlayer = (');
   const end = court.indexOf('    const animate = (now: number) => {', start);
   assert.ok(start >= 0 && end > start);
   const update = court.slice(start, end);
-  const overrideStart = update.indexOf('          // Smash-only override:');
-  const marker = '          // End smash-only override.\n';
-  const overrideEnd = update.indexOf(marker, overrideStart);
-  assert.ok(overrideStart >= 0 && overrideEnd > overrideStart);
-  const baseline = update.slice(0, overrideStart) + update.slice(overrideEnd + marker.length);
-  assert.equal(digest(baseline), 'b3eabcf3d90ea9497f9ad7a2cafb5fee7782afc9ba13bb67a4a14c7b5508bf27');
+  assert.match(update, /const frameScale = liveCourtReplayFrameScale\(frameRate\)/);
+  assert.match(update, /liveCourtShotSpin\(samples, strokeEvent\.frame, frameRate\) === 'slice'/);
+  assert.match(update, /lowReachDrop\(ballY, Math\.hypot\(localX, localZ\)\)/);
+  assert.match(court, /const RALLY_RUN_CARRY_CUTOFF_FRAMES = 36/);
+  assert.match(update, /MathUtils\.smoothstep\(carrySpeed, 2\.2, 3\.2\)/);
+  assert.match(update, /const strolling = isBetweenPoints\(events, frame\)\s*\? 1 - Math\.max\(serveGate, returnGate\)/);
+  assert.match(update, /sliceTakeBackHold/);
 });
 
-test('gait, motion interpretation and native pose modules retain the accepted baseline', async () => {
+test('unaffected gait modules retain their accepted baseline and new motion helpers are present', async () => {
   const expected = {
     'lib/liveCourtGait.ts': 'f4c79a24a344cabb2d5e9e43cb6399c650403cc97cc362c8fba4ae8f9c9d2a11',
-    'lib/liveCourtMotion.ts': '860c2804abcb795ef621b372c550cc8e239fa0c80ff5409ebe4e6fb1807d56cb',
-    'components/DmoNativePlayer.ts': 'c46e16dd9d72f259b12998d8a1e90ce368fdb63d2443be0959fe2e36f704c90a',
     'components/DmoCapturedLocomotion.ts': '0d11c9d0b726658bee8e223854a8840af917b04a1ff6e05414af03f7cbbb2d78',
   };
   for (const [path, fingerprint] of Object.entries(expected)) {
     assert.equal(digest(await readFile(new URL(`../${path}`, import.meta.url))), fingerprint, path);
   }
+  const motion = await readFile(new URL('../lib/liveCourtMotion.ts', import.meta.url), 'utf8');
+  const nativePlayer = await readFile(new URL('../components/DmoNativePlayer.ts', import.meta.url), 'utf8');
+  assert.match(motion, /export function liveCourtShotSpin/);
+  assert.match(motion, /export function lowReachDrop/);
+  assert.match(nativePlayer, /recordedBackhandFaceRoll\(playback\?\.stroke, oneHandedStroke, playback\?\.slice\)/);
 });
 
 test('actual stroke-selection block latches normal strokes and only overrides qualifying smashes', () => {
@@ -40,11 +44,13 @@ test('actual stroke-selection block latches normal strokes and only overrides qu
   assert.ok(start >= 0 && end > start);
   const select = new Function(
     'capturedEvent', 'strokeEvent', 'handedness', 'stroke', 'strokeCue', 'isCapturedSmashShot',
+    'isCapturedVolleyShot', 'fullReplay', 'rig', 'liveCourtShotSpin', 'frameRate', 'soundEventsRef',
     'contactSample', 'samples', 'events', 'sceneDataRef', 'TE4_DMO_FRAMES_PER_SECOND',
     `${court.slice(start, end)}\nreturn capturedEvent;`,
   );
-  const choose = (previous, event, stroke, cue, qualifies, hand = 'right') => select(
+  const choose = (previous, event, stroke, cue, qualifies, hand = 'right', slice = false) => select(
     previous, event, hand, stroke, cue, () => qualifies,
+    () => false, slice, { detailed: true }, () => slice ? 'slice' : null, 60, { current: [] },
     [], [], [], { current: { snapshot: { frameRate: 60 } } }, 60,
   );
   const hit = { frame: 100, shotType: 'rally' };
@@ -60,4 +66,5 @@ test('actual stroke-selection block latches normal strokes and only overrides qu
   assert.equal(choose(undefined, { ...hit, shotType: 'serve' }, 'forehand', 'close-net', true).stroke, 'serve');
   assert.equal(choose(normal, { ...hit, frame: 150 }, 'backhand', 'standard', false).stroke, 'backhand');
   assert.equal(choose(normal, hit, 'backhand', 'standard', false, 'left').handedness, 'left');
+  assert.equal(choose(undefined, hit, 'backhand', 'standard', false, 'right', true).slice, true);
 });
