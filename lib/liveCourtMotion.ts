@@ -107,6 +107,49 @@ export function liveCourtShotSpin(
   return -2 * quadratic < SLICE_MAX_DROP_RATE ? 'slice' : 'topspin';
 }
 
+/** Pre-serve ball bounces: two, each 0.55 s, ending 1.45 s before contact. */
+export const SERVE_BOUNCES = 2;
+export const SERVE_BOUNCE_SECONDS = 0.55;
+export const SERVE_BOUNCE_END_SECONDS = 1.45;
+
+/**
+ * TE4 records the ball held still in the server's hand for ~2 s before the
+ * toss; in the game itself he bounces it. Height factor at the given time, or
+ * null outside the bounce interval. `heldSince` is seconds before contact.
+ */
+export function serveBounceHeight(secondsToContact: number, heldSince: number) {
+  if (!Number.isFinite(secondsToContact) || !Number.isFinite(heldSince)) return null;
+  const start = SERVE_BOUNCE_END_SECONDS + SERVE_BOUNCES * SERVE_BOUNCE_SECONDS;
+  if (secondsToContact > start || secondsToContact < SERVE_BOUNCE_END_SECONDS) return null;
+  const into = start - secondsToContact;
+  const bounce = Math.floor(into / SERVE_BOUNCE_SECONDS);
+  const bounceStart = start - bounce * SERVE_BOUNCE_SECONDS;
+  if (bounceStart > heldSince) return null;
+  const t = (into - bounce * SERVE_BOUNCE_SECONDS) / SERVE_BOUNCE_SECONDS;
+  return Math.abs(Math.cos(Math.PI * t));
+}
+
+/** How long the recorded ball has been held still before `frame`. */
+export function liveCourtBallHeldSeconds(
+  samples: LiveCourtSample[],
+  frame: number,
+  frameRate: number,
+  lookBack = 3,
+) {
+  if (!samples.length || !(frameRate > 0)) return 0;
+  let index = samples.length - 1;
+  while (index > 0 && samples[index].frame > frame) index--;
+  const anchor = samples[index].values;
+  let held = 0;
+  for (let k = index; k >= 0; k--) {
+    const v = samples[k].values;
+    if (Math.abs(v[0] - anchor[0]) > 3 || Math.abs(v[1] - anchor[1]) > 3 || Math.abs(v[2] - anchor[2]) > 3) break;
+    held = (frame - samples[k].frame) / frameRate;
+    if (held >= lookBack) break;
+  }
+  return held;
+}
+
 export type LiveCourtMotionEvent = {
   frame: number;
   kind: 'shot' | 'point-end';

@@ -91,7 +91,53 @@ type Clip = {
   duration: number;
   pairs: Pair[];
   mirrored: boolean;
+  /** Recorded knee and ankle per step-cycle sample (see legTable). */
+  legs?: LegSample[];
 };
+
+/** Knee and ankle relative to that side's hip joint, in the runner's own frame
+ * (x his left, y up, z the way he runs), in leg lengths (hip to ankle). */
+export type LegPoint = { knee: THREE.Vector3; ankle: THREE.Vector3 };
+type LegSample = { l: LegPoint; r: LegPoint };
+const LEG_SAMPLES = 40;
+
+/** Sample the recorded legs over one step cycle. */
+function legTable(clip: Clip, bones: Map<string, THREE.Bone>): LegSample[] | undefined {
+  const names = { l: ['LeftUpLeg', 'LeftLeg', 'LeftFoot'], r: ['RightUpLeg', 'RightLeg', 'RightFoot'] } as const;
+  if (![...names.l, ...names.r, 'Hips'].every(name => bones.has(name))) return undefined;
+  const position = (name: string) => bones.get(name)!.getWorldPosition(new THREE.Vector3());
+  const at = (time: number) => { clip.mixer.setTime(time); clip.root.updateMatrixWorld(true); };
+  // The runner's heading: the way the hips travel over the cycle (or, on a
+  // treadmill, the way the pelvis faces).
+  at(0); const start = position('Hips');
+  at(clip.duration - 1e-4); const end = position('Hips');
+  const forward = end.clone().sub(start).setY(0);
+  if (forward.lengthSq() < 1e-6) {
+    const across = position('LeftUpLeg').sub(position('RightUpLeg')).setY(0);
+    forward.set(-across.z, 0, across.x);
+  }
+  forward.normalize();
+  const up = new THREE.Vector3(0, 1, 0);
+  const left = new THREE.Vector3().crossVectors(up, forward);
+  at(0);
+  const legLength = (side: 'l' | 'r') => position(names[side][0]).distanceTo(position(names[side][1]))
+    + position(names[side][1]).distanceTo(position(names[side][2]));
+  const lengths = { l: legLength('l'), r: legLength('r') };
+  const local = (v: THREE.Vector3, length: number) => new THREE.Vector3(v.dot(left), v.dot(up), v.dot(forward)).divideScalar(length);
+  const table: LegSample[] = [];
+  for (let k = 0; k < LEG_SAMPLES; k++) {
+    at((k / LEG_SAMPLES) * clip.duration);
+    const leg = (side: 'l' | 'r'): LegPoint => {
+      const hip = position(names[side][0]);
+      return {
+        knee: local(position(names[side][1]).sub(hip), lengths[side]),
+        ankle: local(position(names[side][2]).sub(hip), lengths[side]),
+      };
+    };
+    table.push({ l: leg('l'), r: leg('r') });
+  }
+  return table;
+}
 
 function mirrorSide(name: string) {
   return name.replace(/Left|Right/g, side => side === 'Left' ? 'Right' : 'Left');
@@ -156,6 +202,7 @@ function prepareClip(
   });
   if (!(data.clip.duration > 0)) throw new Error(`Captured ${name} motion is empty.`);
   const clip: Clip = { root, mixer, duration: data.clip.duration, pairs, mirrored };
+  if (loop) clip.legs = legTable(clip, bones);
   if (loop) {
     // A recorded cycle never ends exactly where it began (up to ~8 degrees in
     // an arm). Spread that difference over the cycle so the loop has no pop.
@@ -227,6 +274,35 @@ export class DmoCapturedLocomotion {
   }
 
   get hasLocomotion() { return this.clips !== null; }
+
+  /**
+   * The recorded legs at a step-cycle phase (0 = right foot landing in front),
+   * blended across walk / jog / run by speed, as in `apply`.
+   */
+  legs(phase: number, speed: number): { l: LegPoint; r: LegPoint } | null {
+    if (!this.clips || !Number.isFinite(phase)) return null;
+    const p = ((phase % 1) + 1) % 1;
+    const weights = locomotionClipWeights(speed);
+    const out = {
+      l: { knee: new THREE.Vector3(), ankle: new THREE.Vector3() },
+      r: { knee: new THREE.Vector3(), ankle: new THREE.Vector3() },
+    };
+    let total = 0;
+    for (const name of ['walk', 'jog', 'run'] as const) {
+      const w = weights[name];
+      const table = this.clips[name].legs;
+      if (w <= 0 || !table) continue;
+      const x = p * LEG_SAMPLES, i = Math.floor(x) % LEG_SAMPLES, j = (i + 1) % LEG_SAMPLES, f = x - Math.floor(x);
+      for (const side of ['l', 'r'] as const) {
+        out[side].knee.addScaledVector(table[i][side].knee.clone().lerp(table[j][side].knee, f), w);
+        out[side].ankle.addScaledVector(table[i][side].ankle.clone().lerp(table[j][side].ankle, f), w);
+      }
+      total += w;
+    }
+    if (total <= 0) return null;
+    for (const side of ['l', 'r'] as const) { out[side].knee.divideScalar(total); out[side].ankle.divideScalar(total); }
+    return out;
+  }
   get hasReady() { return this.ready !== null; }
 
   /** Walking / jogging / running arms. */
