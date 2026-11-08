@@ -301,6 +301,7 @@ test('signed-in admins can read broadcasts while guests cannot', async () => {
     stream: null,
     sourceMessageUrl: null,
     broadcastMode: 'manual',
+    tournamentRound: 'auto',
     isWta: false,
     replay: false,
     replayDataReady: false,
