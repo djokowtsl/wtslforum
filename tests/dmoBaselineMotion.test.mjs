@@ -23,10 +23,10 @@ test('ordinary player update includes the calibrated Round 18 motion repairs', (
   assert.match(update, /sliceTakeBackHold/);
 });
 
-test('unaffected gait modules retain their accepted baseline and new motion helpers are present', async () => {
+test('the gait core stays unchanged while captured locomotion adds recorded legs', async () => {
   const expected = {
     'lib/liveCourtGait.ts': 'f4c79a24a344cabb2d5e9e43cb6399c650403cc97cc362c8fba4ae8f9c9d2a11',
-    'components/DmoCapturedLocomotion.ts': '0d11c9d0b726658bee8e223854a8840af917b04a1ff6e05414af03f7cbbb2d78',
+    'components/DmoCapturedLocomotion.ts': '879a58861c98c635b16f4e2d5252a669d1c190e0638ae12a3b6e73550ef667b2',
   };
   for (const [path, fingerprint] of Object.entries(expected)) {
     assert.equal(digest(await readFile(new URL(`../${path}`, import.meta.url))), fingerprint, path);
@@ -42,6 +42,9 @@ test('unaffected gait modules retain their accepted baseline and new motion help
   assert.match(humanModels, /nativePlayerVariant: NativePlayerVariant = 'claude'/);
   assert.match(defaultNativePlayer, /recordedBackhandFaceRoll\(playback\?\.stroke, oneHandedStroke, playback\?\.slice\)/);
   assert.match(defaultNativePlayer, /supportStrokeWeight/);
+  assert.match(defaultNativePlayer, /userData\.recordedLegs/);
+  assert.match(defaultNativePlayer, /userData\.lookTarget/);
+  assert.match(defaultNativePlayer, /userData\.serveBounce/);
 });
 
 test('actual stroke-selection block latches normal strokes and only overrides qualifying smashes', () => {
