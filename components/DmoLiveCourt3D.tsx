@@ -55,6 +55,7 @@ import {
   mergeLiveCourtEvents,
   mergeLiveCourtSamples,
   liveCourtReplayFrameScale,
+  nextLiveCourtCarryMode,
   lowReachDrop,
   type LiveCourtCoordinates,
   type LiveCourtFootworkEvent,
@@ -1401,15 +1402,13 @@ function ThreeCourt({
         ? 1 - Math.max(serveGate, returnGate)
         : 0;
       // Running in a rally puts the racket at the side with the arms working.
-      // Recovery shuffles keep the racket in front.
-      const carryIntent = walking ? 1 : shotDue ? 0 : Math.max(strolling, THREE.MathUtils.smoothstep(carrySpeed, 2.2, 3.2));
-      // Commit to one carry or the other (with hysteresis) and change over in
-      // a quick, eased 0.3 s. Following the intent directly could leave the
-      // arms hovering between the two carries for seconds at in-between
-      // speeds: free hand half-way to the throat, elbows folded out.
-      let carryMode = Boolean(rig.root.userData.carryMode);
-      if (carryIntent > 0.65) carryMode = true;
-      else if (carryIntent < 0.35) carryMode = false;
+      // Recovery shuffles keep the racket in front. The 2.2/2.0 m/s hysteresis
+      // prevents the carry from staying in front until the run is nearly over.
+      const carryMode = nextLiveCourtCarryMode(Boolean(rig.root.userData.carryMode), {
+        walking, shotDue, strolling, speed: carrySpeed,
+      });
+      // Change carries in a quick, eased 0.3 s so speed noise cannot flick the
+      // racket or leave the arms hovering between poses.
       rig.root.userData.carryMode = carryMode;
       const previousRamp = Number(rig.root.userData.carryRamp ?? (carryMode ? 1 : 0));
       const carryRamp = replaySeconds > 0.5 ? (carryMode ? 1 : 0)
