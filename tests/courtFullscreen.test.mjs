@@ -48,25 +48,35 @@ test('live and replay court renderers share an accessible fullscreen control', (
   assert.match(fullscreenButton, /aria-label=\{isFullscreen \? 'Exit full screen' : 'Watch full screen'\}/);
 });
 
-test('mobile fullscreen falls back to a scroll-locked in-page full-screen view', () => {
+test('mobile fullscreen uses native video or an unclipped viewport fallback', () => {
   assert.match(fullscreenButton, /webkitRequestFullscreen/);
+  assert.match(fullscreenButton, /webkitEnterFullscreen/);
+  assert.match(fullscreenButton, /webkitbeginfullscreen/);
   assert.match(fullscreenButton, /fallbackClassName/);
   assert.match(fullscreenButton, /enterFallbackFullscreen/);
   assert.match(fullscreenButton, /document\.body\.style\.position = 'fixed'/);
+  assert.match(fullscreenButton, /relaxClippingAncestors/);
   assert.match(styles, /\.scene\.fullscreenFallback/);
   assert.match(fallbackStyles, /\.scene\.fullscreenFallback/);
+  assert.doesNotMatch(styles, /\.scene\.fullscreenFallback\s*\{[^}]*min-height:\s*100vh/s);
+  assert.doesNotMatch(fallbackStyles, /\.scene\.fullscreenFallback\s*\{[^}]*min-height:\s*100vh/s);
   assert.match(liveCourt, /fallbackClassName=\{styles\.fullscreenFallback\}/);
   assert.match(fallbackCourt, /fallbackClassName=\{styles\.fullscreenFallback\}/);
+  assert.match(liveCourt, /CourtFullscreenButton[\s\S]*?videoRef=\{mediaVideoRef\}/);
+  assert.match(fallbackCourt, /CourtFullscreenButton[\s\S]*?videoRef=\{mediaVideoRef\}/);
 });
 
 test('court picture-in-picture opens a native system window or reports unsupported browsers', () => {
   assert.match(pictureInPictureButton, /captureStream/);
   assert.match(pictureInPictureButton, /requestPictureInPicture/);
+  assert.match(pictureInPictureButton, /isIOSHomeScreenApp/);
   assert.match(pictureInPictureButton, /webkitSupportsPresentationMode/);
   assert.match(pictureInPictureButton, /webkitSetPresentationMode/);
   assert.match(pictureInPictureButton, /waitForVideoFrame/);
+  assert.match(pictureInPictureButton, /video\.controls = true/);
   assert.match(pictureInPictureButton, /setVideoReady\(true\)/);
   assert.match(pictureInPictureButton, /disabled=\{!videoReady\}/);
+  assert.match(pictureInPictureButton, /mediaVideoRef/);
   assert.match(pictureInPictureButton, /data-pip-toggle/);
   assert.match(pictureInPictureButton, /This browser cannot open a system Picture in Picture window/);
   const toggleStart = pictureInPictureButton.indexOf('const togglePictureInPicture = () =>');
@@ -81,6 +91,8 @@ test('court picture-in-picture opens a native system window or reports unsupport
   assert.match(liveStream, /picture-in-picture/);
   assert.doesNotMatch(styles, /pictureInPictureOverlayActive|pictureInPictureFallback/);
   assert.doesNotMatch(fallbackStyles, /pictureInPictureOverlayActive|pictureInPictureFallback/);
+  assert.doesNotMatch(styles, /pictureInPictureSource[\s\S]{0,180}z-index:\s*-1/);
+  assert.doesNotMatch(fallbackStyles, /pictureInPictureSource[\s\S]{0,180}z-index:\s*-1/);
 });
 
 test('full replay scoreboard renders below the 3D court instead of covering it', () => {
