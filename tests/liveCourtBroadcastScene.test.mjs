@@ -55,13 +55,14 @@ test('an unsupported umpire call cannot cancel a supported score in progress', a
   const cancelled = [];
   const api = await loadTs('../lib/liveCourtUmpire.ts', {
     './xktUmpireAudio': {
-      playXktUmpireCall: async (_context, text) => text !== 'Out',
+      playXktUmpireCall: async (_context, text) => text !== 'Missing clip',
       cancelXktUmpireCalls: context => cancelled.push(context),
     },
   });
   const context = { state: 'running' };
   assert.equal(await api.speakUmpireCall('fifteen-love', context, false), true);
-  assert.equal(await api.speakUmpireCall('Out', context, false), false);
+  assert.equal(await api.speakUmpireCall('Out', context, false), true);
+  assert.equal(await api.speakUmpireCall('Missing clip', context, false), false);
   assert.equal(cancelled.length, 0);
   api.cancelUmpireCall(context);
   assert.ok(cancelled.length > 0, 'explicit mute still cancels the active voice');
@@ -1296,6 +1297,49 @@ test('recorded XKT calls decode, play through Web Audio, and stop on rewind', as
   assert.equal(startedSources[0].stopped, true);
 });
 
+test('automated Fault and Out calls use dedicated audio clips without loading umpire manifests', async () => {
+  const requestedUrls = [];
+  const startedSources = [];
+  const context = {
+    state: 'running',
+    destination: {},
+    decodeAudioData: async () => ({ duration: 0.4 }),
+    createBufferSource() {
+      const source = {
+        buffer: null,
+        onended: null,
+        connect(target) { return target; },
+        disconnect() {},
+        start() { startedSources.push(this); },
+        stop() { this.stopped = true; },
+      };
+      return source;
+    },
+    createGain() {
+      return { gain: { value: 0 }, connect() { return this; }, disconnect() {} };
+    },
+  };
+  const fetcher = async (url) => {
+    requestedUrls.push(url);
+    return { ok: true, arrayBuffer: async () => new ArrayBuffer(16) };
+  };
+
+  for (const text of ['Fault', 'Out']) {
+    assert.equal(await xktUmpireAudioApi.playXktUmpireCall(context, text, false, fetcher), true);
+  }
+  assert.deepEqual(requestedUrls.sort(), [
+    '/audio/xkt/line-calls/fault.mp3',
+    '/audio/xkt/line-calls/out.mp3',
+  ]);
+  for (const file of ['fault.mp3', 'out.mp3']) {
+    const asset = await readFile(new URL(`../public/audio/xkt/line-calls/${file}`, import.meta.url));
+    assert.ok(asset.byteLength > 5_000, `${file} is bundled as a real audio clip`);
+  }
+  assert.equal(startedSources.length, 1, 'the second call queues behind the first');
+  startedSources[0].onended();
+  assert.equal(startedSources.length, 2);
+});
+
 test('missing recorded umpire clips never trigger a browser-system voice', async () => {
   const utterances = [];
   const hadWindow = Object.hasOwn(globalThis, 'window');
@@ -1589,7 +1633,10 @@ test('replay score calls follow point-end frames and only clear rally-outs are c
         { frame: 14, kind: 'point-end', scoreCall: 'fifteen-love' },
       ],
       [{ frame: 12, kind: 'bounce' }],
-      [{ frame: 12, values: [1_215, 0, 2, 0, 0, 0, 0] }],
+      [
+        { frame: 10, values: [-1_100, 0, 200, 0, 0, 0, 0] },
+        { frame: 12, values: [400, 0, 20, 0, 0, 0, 0] },
+      ],
     ),
     [{ frame: 14, kind: 'score', text: 'fifteen-love' }],
     'a serve bounce is not presented as an authoritative line call',
@@ -1636,41 +1683,82 @@ test('only the first bounce associated with a point can trigger an out call', ()
   );
 });
 
-test('umpire calls have independent controls in both court renderers', async () => {
+test('serve faults use first-bounce evidence and valid serves remain silent', () => {
+  const trajectory = [
+    { frame: 10, kind: 'shot', shotType: 'serve' },
+    { frame: 30, kind: 'shot', shotType: 'serve' },
+    { frame: 60, kind: 'point-end', scoreCall: 'fifteen-love' },
+  ];
+  const sounds = [
+    { frame: 15, kind: 'bounce' },
+    { frame: 35, kind: 'bounce' },
+  ];
+  const samples = [
+    { frame: 10, values: [-1_100, 0, 200, 0, 0, 0, 0] },
+    { frame: 15, values: [-300, 0, 20, 0, 0, 0, 0] },
+    { frame: 30, values: [-1_100, 0, 200, 0, 0, 0, 0] },
+    { frame: 35, values: [400, 0, 20, 0, 0, 0, 0] },
+  ];
+  assert.deepEqual(
+    umpireApi.deriveUmpireCallEvents(trajectory, sounds, samples),
+    [
+      { frame: 15, kind: 'fault', text: 'Fault' },
+      { frame: 60, kind: 'score', text: 'fifteen-love' },
+    ],
+  );
+});
+
+test('live line calls play only on an immediate frame crossing', () => {
+  const cursor = umpireApi.createLiveUmpireEventCursor();
+  const events = [
+    { frame: 105, kind: 'fault', text: 'Fault' },
+    { frame: 118, kind: 'out', text: 'Out' },
+    { frame: 130, kind: 'score', text: 'fifteen-love' },
+  ];
+  assert.deepEqual(
+    umpireApi.consumeLiveUmpireCallEvents(cursor, events, 100, 120, true),
+    [events[0], events[1]],
+  );
+  assert.deepEqual(
+    umpireApi.consumeLiveUmpireCallEvents(cursor, events, 120, 131, true),
+    [events[2]],
+  );
+  assert.deepEqual(
+    umpireApi.consumeLiveUmpireCallEvents(cursor, events, 131, 300, true),
+    [],
+    'a delayed line-call backlog is dropped',
+  );
+});
+
+test('all broadcast audio follows one master control in both court renderers', async () => {
   const primary = await readFile(new URL('../components/DmoLiveCourt3D.tsx', import.meta.url), 'utf8');
   const fallback = await readFile(new URL('../components/DmoLiveCourt.tsx', import.meta.url), 'utf8');
   for (const source of [primary, fallback]) {
-    assert.match(source, /aria-label=\{umpireCallsEnabled && !umpireSpeechReady/);
-    assert.match(source, /aria-pressed=\{umpireCallsEnabled && umpireSpeechReady\}/);
+    assert.match(source, /const umpireCallsEnabled = soundEnabled/);
+    assert.match(source, /const activateSoundFromGesture = async \(reportFailure = true\)/);
     assert.match(source, /observeLiveUmpireScore\(/);
     assert.match(source, /matchLiveUmpireScoreToDmoPointEnd\(/);
     assert.doesNotMatch(source, /formatLiveUmpireScoreCall\(current, previous, scoreboardData\.players\)/);
     assert.match(source, /resumeUmpireAudioContext\(/);
     assert.doesNotMatch(source, /unlockBrowserUmpireSpeech\(\)/);
-    assert.match(source, /Enable calls/);
-    assert.match(source, /data-umpire-calls-toggle/);
+    assert.match(source, /if \(!fullReplay\) void activateSoundFromGesture\(false\)/);
+    assert.match(source, /Mute all broadcast audio/);
+    assert.doesNotMatch(source, /Enable calls|data-umpire-calls-toggle|handleUmpireCallsToggle/);
+    assert.doesNotMatch(source, /Recorded umpire audio is unavailable for this call/);
     const activationStart = source.indexOf('const handleSoundActivationGesture');
     const activationEnd = source.indexOf('\n  };', activationStart);
     const activationHandler = source.slice(activationStart, activationEnd);
-    assert.match(activationHandler, /data-umpire-calls-toggle/);
-    assert.match(activationHandler, /umpireSpeechPointerActivationRef\.current = true/);
-    assert.match(activationHandler, /activateUmpireSpeechFromGesture\(\)/);
-    assert.match(
-      source,
-      /if \(umpireSpeechPointerActivationRef\.current\) \{\s*umpireSpeechPointerActivationRef\.current = false;\s*return;/,
-    );
-    assert.ok(
-      activationHandler.indexOf('activateUmpireSpeechFromGesture()')
-        < activationHandler.indexOf('soundEnabledRef.current')
-        || activationHandler.indexOf('activateUmpireSpeechFromGesture()')
-          < activationHandler.indexOf('soundPreferenceRef.current'),
-      'umpire activation is attempted before checking whether court effects are active',
-    );
+    assert.match(activationHandler, /data-sound-toggle/);
+    assert.match(activationHandler, /soundPointerActivationRef\.current = true/);
+    assert.match(activationHandler, /activateSoundFromGesture\(\)/);
+    assert.match(source, /setUmpireSpeechReady\(true\)/);
   }
   assert.match(primary, /call\.kind === 'score' \|\| call\.kind === 'point-end'/);
   assert.match(fallback, /call\.kind === 'score' \|\| call\.kind === 'point-end'/);
-  assert.doesNotMatch(primary, /soundOnRef\.current && umpireCallsEnabledRef\.current/);
-  assert.doesNotMatch(fallback, /soundEnabledRef\.current && umpireCallsEnabledRef\.current/);
+  assert.match(primary, /if \(!soundPreferenceRef\.current\) return;\s*void activateSoundFromGesture\(\)/);
+  assert.match(fallback, /if \(!soundEnabledRef\.current\) return;\s*void activateSoundFromGesture\(\)/);
+  assert.doesNotMatch(primary, /line.?judge/i);
+  assert.doesNotMatch(fallback, /line.?judge/i);
 });
 
 test('recorded umpire playback waits for a running audio context', async () => {
@@ -1701,8 +1789,10 @@ test('broadcast court audio defaults on and the Court camera remains the initial
   const fallback = await readFile(new URL('../components/DmoLiveCourt.tsx', import.meta.url), 'utf8');
   assert.match(primary, /const \[soundEnabled, setSoundEnabled\] = useState\(true\)/);
   assert.match(fallback, /const \[soundEnabled, setSoundEnabled\] = useState\(true\)/);
-  assert.match(primary, /const \[umpireCallsEnabled, setUmpireCallsEnabled\] = useState\(true\)/);
-  assert.match(fallback, /const \[umpireCallsEnabled, setUmpireCallsEnabled\] = useState\(true\)/);
+  assert.match(primary, /const umpireCallsEnabled = soundEnabled/);
+  assert.match(fallback, /const umpireCallsEnabled = soundEnabled/);
+  assert.match(primary, /if \(!fullReplay\) void activateSoundFromGesture\(false\)/);
+  assert.match(fallback, /if \(!fullReplay\) void activateSoundFromGesture\(false\)/);
   assert.match(primary, /const \[gruntsEnabled, setGruntsEnabled\] = useState\(true\)/);
   assert.match(primary, /const \[cameraView, setCameraView\] = useState<CameraView>\('court'\)/);
   assert.match(primary, /onPointerDownCapture=\{\(event\) => handleSoundActivationGesture\(event\.target\)\}/);
