@@ -22,6 +22,10 @@ const UP = new THREE.Vector3(0, 1, 0);
 const BODY_SCALE = 1.075;
 /** String-bed centre along the racket's local +Y (see makePlayer's racket). */
 const RACKET_HEAD = new THREE.Vector3(0, 0.36, 0);
+/** How far the head turns from the chest's facing to watch the ball, and how
+ * fast (per update, ~60 a second: about 9 rad/s). */
+const HEAD_YAW_LIMIT = 1.25;
+const HEAD_TURN_STEP = 0.15;
 /** Anatomical wrist limits relative to a neutral, in-line hand. */
 const WRIST_SWING_LIMIT = 1.05;
 const FOREARM_ROLL_LIMIT = 1.65;
@@ -404,6 +408,45 @@ export function attachNativePlayer(
       setLimb(legs[side], solved.elbow, solved.wrist, solved.hinge);
       pose.orient(`foot_${side}`, pose.rest.get(`foot_${side}`)!.rotation);
     }
+    // Recorded legs on a walk or run: the swinging leg follows the recording
+    // (knee drive, heel lift) and lands where the gait puts it; a planted foot
+    // is never moved. Feet and knees point along the hips' run direction.
+    {
+      const hipYaw = Number(rig.root.userData.runHipYaw ?? 0);
+      const yaw = new THREE.Quaternion().setFromAxisAngle(UP, hipYaw);
+      const legWeight = THREE.MathUtils.clamp(Number(rig.root.userData.recordedLegs ?? 0), 0, 1);
+      const lifts = rig.root.userData.gaitLift as { l: number; r: number } | undefined;
+      const recorded = legWeight > 0.001 && lifts
+        ? capturedLocomotion?.legs(
+          Number(rig.root.userData.locomotionPhase ?? 0),
+          Number(rig.root.userData.locomotionSpeed ?? 0),
+        ) ?? null
+        : null;
+      if (Math.abs(hipYaw) > 1e-3 || recorded) {
+        for (const side of ['l', 'r'] as const) {
+          const hip = pose.point(`thigh_${side}`);
+          const ankle = pose.point(`foot_${side}`);
+          const length = legs[side].lengths[0] + legs[side].lengths[1];
+          const mid = hip.clone().lerp(ankle, 0.5);
+          let preference = mid.clone().add(
+            new THREE.Vector3((side === 'l' ? 1 : -1) * 0.05, 0, 0.35).applyQuaternion(yaw),
+          );
+          let target = ankle;
+          if (recorded) {
+            const swing = legWeight * THREE.MathUtils.smoothstep(lifts![side], 0.005, 0.05);
+            const fromHip = (v: THREE.Vector3) => hip.clone().add(v.clone().multiplyScalar(length).applyQuaternion(yaw));
+            preference = preference.lerp(fromHip(recorded[side].knee).add(
+              new THREE.Vector3(0, 0, 0.15).applyQuaternion(yaw)), legWeight);
+            target = ankle.clone().lerp(fromHip(recorded[side].ankle), swing);
+            target.y = Math.max(target.y, ankle.y);
+          }
+          const solved = nativeTwoBone(hip, target, legs[side].lengths[0], legs[side].lengths[1], preference);
+          setLimb(legs[side], solved.elbow, solved.wrist, solved.hinge);
+          pose.orient(`foot_${side}`, yaw.clone().multiply(pose.rest.get(`foot_${side}`)!.rotation));
+        }
+        model.updateMatrixWorld(true);
+      }
+    }
     const proceduralRacket = rig.racket.quaternion.clone();
     const proceduralGrip = rig.racket.position.clone();
     {
@@ -565,6 +608,40 @@ export function attachNativePlayer(
       }
     }
 
+    // 2c. Eyes on the ball: the neck and head turn toward it (the neck takes
+    //     ~40%), within what a neck can do relative to the chest, and follow
+    //     it at a natural speed rather than snapping.
+    const lookWeight = THREE.MathUtils.clamp(Number(rig.root.userData.lookWeight ?? 0), 0, 1);
+    const lookTarget = rig.root.userData.lookTarget as [number, number, number] | undefined;
+    if (lookTarget && lookWeight > 0.001) {
+      const relative = (name: string) => pose.rotation(name).multiply(pose.rest.get(name)!.rotation.clone().invert());
+      const chest = relative('spine_03');
+      const toBall = new THREE.Vector3(...lookTarget).sub(pose.point('head'));
+      if (toBall.lengthSq() > 1e-4) {
+        const local = toBall.normalize().applyQuaternion(chest.clone().invert());
+        const yawTarget = THREE.MathUtils.clamp(Math.atan2(local.x, local.z), -HEAD_YAW_LIMIT, HEAD_YAW_LIMIT);
+        const pitchTarget = THREE.MathUtils.clamp(Math.asin(THREE.MathUtils.clamp(local.y, -1, 1)), -0.8, 1.0);
+        const previous = rig.root.userData.headLook as { yaw: number; pitch: number } | undefined;
+        const step = (from: number, to: number) => from + THREE.MathUtils.clamp(to - from, -HEAD_TURN_STEP, HEAD_TURN_STEP);
+        const look = previous
+          ? { yaw: step(previous.yaw, yawTarget), pitch: step(previous.pitch, pitchTarget) }
+          : { yaw: yawTarget, pitch: pitchTarget };
+        rig.root.userData.headLook = look;
+        const current = new THREE.Vector3(0, 0, 1).applyQuaternion(relative('head'));
+        const wanted = new THREE.Vector3(
+          Math.sin(look.yaw) * Math.cos(look.pitch), Math.sin(look.pitch), Math.cos(look.yaw) * Math.cos(look.pitch),
+        ).applyQuaternion(chest);
+        const turn = new THREE.Quaternion().setFromUnitVectors(current, current.clone().lerp(wanted, lookWeight).normalize());
+        const neckTurn = new THREE.Quaternion().slerp(turn, 0.4);
+        pose.orient('neck_01', neckTurn.multiply(pose.rotation('neck_01')));
+        const headNow = new THREE.Vector3(0, 0, 1).applyQuaternion(relative('head'));
+        const rest = new THREE.Quaternion().setFromUnitVectors(headNow, current.clone().lerp(wanted, lookWeight).normalize());
+        pose.orient('head', rest.multiply(pose.rotation('head')));
+        model.updateMatrixWorld(true);
+      }
+    } else {
+      delete rig.root.userData.headLook;
+    }
     // 3. The racket is carried by the dominant hand; the hand never chases a
     //    separately animated racket.
     const handOrientation = pose.rotation(`hand_${dominant}`);
@@ -651,6 +728,18 @@ export function attachNativePlayer(
         elbowPreference.lerp(hanging, 1 - supportHold);
       }
       reachArm(support, grip, null, desired, elbowPreference);
+    }
+    // 3b. Pre-serve bounces: the free hand meets the ball at the top of each
+    //     bounce (palm down), its elbow out to the side.
+    const serveBounce = rig.root.userData.serveBounce as { weight: number; hand: [number, number, number] } | undefined;
+    if (serveBounce && serveBounce.weight > 0.001) {
+      const handNow = pose.rotation(`hand_${support}`);
+      const gripNow = handGripPoint(support, handNow);
+      const target = gripNow.clone().lerp(new THREE.Vector3(...serveBounce.hand), THREE.MathUtils.clamp(serveBounce.weight, 0, 1));
+      const shoulder = pose.point(arms[support].root);
+      const elbowPreference = shoulder.clone().lerp(target, 0.5)
+        .add(new THREE.Vector3((support === 'l' ? 1 : -1) * 0.18, -0.08, -0.05));
+      reachArm(support, target, null, handNow, elbowPreference);
     }
     distributeNativeTwist(pose.bones, pose.rest);
     pose.finish();
