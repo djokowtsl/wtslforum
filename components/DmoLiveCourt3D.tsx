@@ -51,8 +51,11 @@ import {
   liveCourtEventsBetween,
   liveCourtTrajectoryCue,
   liveCourtFacingAngle,
+  liveCourtShotSpin,
   mergeLiveCourtEvents,
   mergeLiveCourtSamples,
+  liveCourtReplayFrameScale,
+  lowReachDrop,
   type LiveCourtCoordinates,
   type LiveCourtFootworkEvent,
   type LiveCourtMotionEvent,
@@ -168,6 +171,12 @@ const DEFAULT_CAMERA = new THREE.Vector3(-18, 8, 19);
 
 /** The camera never goes lower than this above the court surface (metres). */
 const MIN_CAMERA_HEIGHT = 0.8;
+/** Frames (at 60 per second) before his own shot when a running player brings
+ * the racket back in front for the recorded take-back. */
+const RALLY_RUN_CARRY_CUTOFF_FRAMES = 36;
+
+/** Shown under the court so a deployed build can be identified at a glance. */
+const RENDERER_BUILD = 'player repair r18';
 
 const colorToCss = (color: number) => `#${color.toString(16).padStart(6, '0')}`;
 
@@ -874,6 +883,9 @@ function ThreeCourt({
         if (replaySeconds > 0 || !lastPlaced) rig.root.userData.lastPlacedPosition = rig.root.position.clone();
       }
       const frameRate = sceneDataRef.current.snapshot.frameRate ?? TE4_DMO_FRAMES_PER_SECOND;
+      // Stroke timings below use 60-per-second frames. Full replays at 30 fps
+      // need their frame deltas converted or recorded motions run too slowly.
+      const frameScale = liveCourtReplayFrameScale(frameRate);
       const maxGapFrames = frameRate * sceneDataRef.current.playbackSpeed / 2;
       const prior = interpolateLiveCourtFrame(samples, Math.max(firstFrame, frame - 2), maxGapFrames) ?? values;
       const later = interpolateLiveCourtFrame(samples, Math.min(lastFrame, frame + 2), maxGapFrames) ?? values;
@@ -930,10 +942,10 @@ function ThreeCourt({
       const turned = rig.root.userData.facingInitialized ? Math.abs(facing - rig.root.rotation.y) : 0;
       rig.root.userData.facingInitialized = true;
       const eventPlayer = index === 0 ? 1 : 2;
-      const nearbyEvent = findPlayerShotEvent(events, eventPlayer, frame, 24);
+      const nearbyEvent = findPlayerShotEvent(events, eventPlayer, frame, 24 / frameScale);
       const upcomingServe = nearbyEvent
         ? undefined
-        : findPlayerShotEvent(events, eventPlayer, frame, SERVE_LEAD_FRAMES, 'serve');
+        : findPlayerShotEvent(events, eventPlayer, frame, SERVE_LEAD_FRAMES / frameScale, 'serve');
       const event = nearbyEvent ?? (upcomingServe && upcomingServe.frame > frame ? upcomingServe : undefined);
       const serving = event?.shotType === 'serve';
       const contactCue = event
@@ -943,8 +955,8 @@ function ThreeCourt({
           sceneDataRef.current.snapshot.frameRate ?? TE4_DMO_FRAMES_PER_SECOND,
         )
         : 'standard';
-      const jump = serving ? serveLift(frame - event.frame) : 0;
-      const strokeDelta = event ? frame - event.frame : Number.POSITIVE_INFINITY;
+      const jump = serving ? serveLift((frame - event.frame) * frameScale) : 0;
+      const strokeDelta = event ? (frame - event.frame) * frameScale : Number.POSITIVE_INFINITY;
       const strikeWeight = event
         ? THREE.MathUtils.smoothstep(strokeDelta, -5, 0)
           * (1 - THREE.MathUtils.smoothstep(strokeDelta, 0, 5))
@@ -1023,14 +1035,14 @@ function ThreeCourt({
       const gaitSpeed = gait.amount * Math.min(1, speedMs / 4);
       // Return of serve: wide, low, hips hinged, racket in front, with a
       // split-step timed to the server's contact.
-      const opponentServe = findPlayerShotEvent(events, eventPlayer === 1 ? 2 : 1, frame, 90, 'serve');
-      const framesToServe = opponentServe ? opponentServe.frame - frame : Number.POSITIVE_INFINITY;
+      const opponentServe = findPlayerShotEvent(events, eventPlayer === 1 ? 2 : 1, frame, 90 / frameScale, 'serve');
+      const framesToServe = opponentServe ? (opponentServe.frame - frame) * frameScale : Number.POSITIVE_INFINITY;
       // Sets up once this player's own last shot is over, easing in rather than
       // switching on the frame the shot window ends.
       const ownLastShot = lastShotFrame(events, eventPlayer, frame);
       const upcomingOwn = event && event.frame > frame;
       const freeOfOwnShot = upcomingOwn ? 0
-        : ownLastShot === undefined ? 1 : THREE.MathUtils.smoothstep(frame - ownLastShot, 14, 34);
+        : ownLastShot === undefined ? 1 : THREE.MathUtils.smoothstep((frame - ownLastShot) * frameScale, 14, 34);
       // Only once he has arrived: walking back to the line (or any real
       // movement) is done upright, and the stance settles in after he stops.
       // Covers the walk back that TE4 records at the start of a point as well as
@@ -1105,9 +1117,9 @@ function ThreeCourt({
       // A small split-step as the opponent hits in a rally too (players are
       // neutral then, before turning to the ball), when not running hard.
       const opponentRallyShot = opponentServe ? undefined
-        : findPlayerShotEvent(events, eventPlayer === 1 ? 2 : 1, frame, 12, 'rally');
+        : findPlayerShotEvent(events, eventPlayer === 1 ? 2 : 1, frame, 12 / frameScale, 'rally');
       const rallySplit = opponentRallyShot && !walking
-        ? splitStepLift(opponentRallyShot.frame - frame) * 0.6 * freeOfOwnShot
+        ? splitStepLift((opponentRallyShot.frame - frame) * frameScale) * 0.6 * freeOfOwnShot
           * (1 - THREE.MathUtils.smoothstep(travelSpeed, 1.5, 3))
         : 0;
       const splitStep = opponentServe
@@ -1135,7 +1147,7 @@ function ThreeCourt({
         frameRate,
       );
       const bodyBounce = (stepA.lift + stepB.lift) * 0.3 + jump + splitStep;
-      const crouch = impactWeight * THREE.MathUtils.clamp((1.05 - ballY) / 0.95, 0, 1) * 0.18
+      const crouch = impactWeight * lowReachDrop(ballY, Math.hypot(localX, localZ))
         + slideWeight * 0.13 + ready * 0.24;
       rig.root.rotation.y = facing;
       const bodyY = 1.22 + bodyBounce - crouch * 0.45;
@@ -1214,17 +1226,17 @@ function ThreeCourt({
         frame: number; stroke: GroundstrokeName;
       } | undefined;
       const heldRecoveryFrames = isRecordedVolley(heldStroke?.stroke)
-        ? VOLLEY_RECOVERY_FRAMES * frameRate / 60
+        ? VOLLEY_RECOVERY_FRAMES * frameRate / 60 * frameScale
         : CAPTURE_RECOVERY_FRAMES;
       const recovering = heldStroke !== undefined && frame >= heldStroke.frame
-        && frame - heldStroke.frame <= heldRecoveryFrames;
+        && (frame - heldStroke.frame) * frameScale <= heldRecoveryFrames;
       const comingShot = event || recovering ? undefined : nextShotEvent(events, eventPlayer, frame);
       const leadEvent = comingShot && comingShot.shotType === 'rally'
-        && comingShot.frame - frame <= GROUNDSTROKE_LEAD_FRAMES ? comingShot : undefined;
+        && (comingShot.frame - frame) * frameScale <= GROUNDSTROKE_LEAD_FRAMES ? comingShot : undefined;
       // A serve coming up does not cut short the previous stroke's recovery
       // either (its recorded set-up starts ~1.8 s ahead); only a shot about to
       // be played (within the 24-frame shot window) takes over.
-      const waitForRecovery = recovering && event && event.frame - frame > 24
+      const waitForRecovery = recovering && event && (event.frame - frame) * frameScale > 24
         && event.frame !== heldStroke!.frame;
       const strokeEvent = waitForRecovery ? undefined : event ?? leadEvent;
       const strokeCue = !strokeEvent ? 'standard' : strokeEvent === event ? contactCue : inferLiveCourtContactCue(
@@ -1241,7 +1253,12 @@ function ThreeCourt({
         : localX;
       const baseStroke = groundstrokeForBallSide(contactSide, handedness);
       const stroke = baseStroke;
-      type CapturedEvent = { frame: number; stroke: GroundstrokeName; handedness: 'left' | 'right' };
+      type CapturedEvent = {
+        frame: number;
+        stroke: GroundstrokeName;
+        handedness: 'left' | 'right';
+        slice?: boolean;
+      };
       let capturedEvent = rig.root.userData.capturedGroundstrokeEvent as CapturedEvent | undefined;
       // Inferred soft-touch cues are not a reason to replace a recorded stroke
       // with the procedural arm pose; retain capture for both playing hands.
@@ -1270,6 +1287,13 @@ function ThreeCourt({
             sceneDataRef.current.snapshot.frameRate ?? TE4_DMO_FRAMES_PER_SECOND,
           )) {
             capturedEvent.stroke = recordedStrokeForSide(baseStroke, true);
+          } else if (
+            fullReplay
+            && rig.detailed
+            && strokeEvent.shotType === 'rally'
+            && liveCourtShotSpin(samples, strokeEvent.frame, frameRate) === 'slice'
+          ) {
+            capturedEvent.slice = true;
           }
         }
         rig.root.userData.capturedGroundstrokeEvent = capturedEvent;
@@ -1291,9 +1315,11 @@ function ThreeCourt({
       }
       if (!capturedEvent) delete rig.root.userData.contactTarget;
       if (capturedEvent) {
-        const captureDelta = frame - capturedEvent.frame;
+        const captureDelta = (frame - capturedEvent.frame) * frameScale;
         const volley = isRecordedVolley(capturedEvent.stroke);
-        const recoveryFrames = volley ? VOLLEY_RECOVERY_FRAMES * frameRate / 60 : CAPTURE_RECOVERY_FRAMES;
+        const recoveryFrames = volley
+          ? VOLLEY_RECOVERY_FRAMES * frameRate / 60 * frameScale
+          : CAPTURE_RECOVERY_FRAMES;
         if (captureDelta < -SERVE_LEAD_FRAMES || captureDelta > recoveryFrames) {
           delete rig.root.userData.capturedGroundstrokeEvent;
           delete rig.root.userData.groundstrokePlayback;
@@ -1309,23 +1335,29 @@ function ThreeCourt({
           );
           const opponentContactGap = opponentContact === undefined
             ? undefined
-            : capturedEvent.frame - opponentContact;
+            : (capturedEvent.frame - opponentContact) * frameScale;
           const handOver = previousOwnShot === undefined ? 1 : Math.max(
-            THREE.MathUtils.smoothstep(frame - previousOwnShot, CAPTURE_RECOVERY_FRAMES, CAPTURE_RECOVERY_FRAMES + 24),
+            THREE.MathUtils.smoothstep(
+              (frame - previousOwnShot) * frameScale,
+              CAPTURE_RECOVERY_FRAMES,
+              CAPTURE_RECOVERY_FRAMES + 24,
+            ),
             THREE.MathUtils.smoothstep(captureDelta, -24, -8),
           );
           const weight = handOver * (capturedEvent.stroke === 'serve'
             ? serveCaptureWeight(captureDelta) * (captureDelta >= 0 ? 1 : Number(rig.root.userData.serveSetUp ?? 1))
-            : volley ? volleyCaptureWeight(captureDelta * 60 / frameRate)
+            : volley ? volleyCaptureWeight(captureDelta)
               : groundstrokeCaptureWeight(captureDelta, groundstrokeLeadFrames(opponentContactGap)));
           if (weight > 0) {
             rig.root.userData.groundstrokePlayback = {
               stroke: capturedEvent.stroke,
-              deltaSeconds: captureDelta / frameRate,
+              deltaSeconds: captureDelta / 60,
               weight,
               handedness: capturedEvent.handedness,
               rootOffset: false,
-              hands: recordedStrokeUsesTwoHands(capturedEvent.stroke, playerStrokeStyle, false) ? 'two' : 'one',
+              hands: !capturedEvent.slice
+                && recordedStrokeUsesTwoHands(capturedEvent.stroke, playerStrokeStyle, false) ? 'two' : 'one',
+              ...(capturedEvent.slice ? { slice: true } : {}),
             };
           } else {
             delete rig.root.userData.groundstrokePlayback;
@@ -1355,15 +1387,22 @@ function ThreeCourt({
       const ownNextShot = nextShotEvent(events, eventPlayer, frame);
       // (A serve coming up is handled by the serve set-up, which waits until he
       // is at the line; it must not take the relaxed walking carry away early.)
+      // (The last ~0.6 s before his own shot: the recorded take-back takes the
+      // racket from here, so it stays in front.)
       const shotDue = ownNextShot !== undefined && ownNextShot.shotType !== 'serve'
-        && ownNextShot.frame - frame < frameRate;
+        && (ownNextShot.frame - frame) * frameScale < RALLY_RUN_CARRY_CUTOFF_FRAMES;
       // TE4 records the walk back to the line at the start of the next point;
       // that is walking too, so it gets the same relaxed carry as our own walks.
       // (Not once he has set up to serve or return: shuffling there is not a walk.)
+      // Between points a player standing still is relaxed too: upright, racket
+      // down in the hand, as in TE4. The ready stance waits until he sets up at
+      // the line to serve or return.
       const strolling = isBetweenPoints(events, frame)
-        ? THREE.MathUtils.smoothstep(travelSpeed, 0.5, 1.0) * (1 - Math.max(serveGate, returnGate))
+        ? 1 - Math.max(serveGate, returnGate)
         : 0;
-      const carryIntent = walking ? 1 : shotDue ? 0 : Math.max(strolling, THREE.MathUtils.smoothstep(carrySpeed, 3.2, 4.6));
+      // Running in a rally puts the racket at the side with the arms working.
+      // Recovery shuffles keep the racket in front.
+      const carryIntent = walking ? 1 : shotDue ? 0 : Math.max(strolling, THREE.MathUtils.smoothstep(carrySpeed, 2.2, 3.2));
       // Commit to one carry or the other (with hysteresis) and change over in
       // a quick, eased 0.3 s. Following the intent directly could leave the
       // arms hovering between the two carries for seconds at in-between
@@ -1595,21 +1634,41 @@ function ThreeCourt({
       // The stroke being played back (if any) decides the grip style through
       // its recovery, rather than the ball's current side after the event passes.
       const recordedStroke = rig.root.userData.capturedGroundstrokeEvent as
-        { frame: number; stroke: GroundstrokeName } | undefined;
-      const recordedTwoHanded = recordedStrokeUsesTwoHands(
-        recordedStroke?.stroke,
-        playerStrokeStyle,
-        twoHandedStroke,
-      );
+        { frame: number; stroke: GroundstrokeName; slice?: boolean } | undefined;
+      const twoHandedSide = Boolean(recordedStroke)
+        && recordedStroke!.stroke !== 'serve'
+        && recordedStroke!.stroke !== 'smash'
+        && !isRecordedVolley(recordedStroke!.stroke)
+        && recordedStrokeUsesTwoHands(recordedStroke!.stroke, playerStrokeStyle, false);
+      const recordedTwoHanded = recordedStroke
+        ? twoHandedSide && !recordedStroke.slice
+        : twoHandedStroke;
+      const sliceTakeBackHold = recordedStroke?.slice && twoHandedSide && frame <= recordedStroke.frame
+        ? 1 - THREE.MathUtils.smoothstep(
+          (frame - recordedStroke.frame) * frameScale,
+          -14,
+          -6,
+        )
+        : 0;
       // Two-handed players keep both hands on through the recovery.
       const recovery = recordedStroke && frame > recordedStroke.frame
-        ? 1 - THREE.MathUtils.smoothstep(frame - recordedStroke.frame, RECOVERY_FADE_START, CAPTURE_RECOVERY_FRAMES)
+        ? 1 - THREE.MathUtils.smoothstep(
+          (frame - recordedStroke.frame) * frameScale,
+          RECOVERY_FADE_START,
+          CAPTURE_RECOVERY_FRAMES,
+        )
         : 0;
       rig.root.userData.twoHandedStyle = recordedTwoHanded;
       const twoHandedWeight = recordedTwoHanded
         ? THREE.MathUtils.clamp(Math.max(strikeWeight, shapedBackswing, shapedFollowThrough, recovery) * 1.6, 0, 1)
         : 0;
-      rig.root.userData.supportHoldWeight = Math.max(twoHandedWeight, ready, carry * (1 - onTheMove));
+      rig.root.userData.supportHoldWeight = Math.max(
+        twoHandedWeight,
+        sliceTakeBackHold,
+        ready,
+        carry * (1 - onTheMove),
+      );
+      rig.root.userData.sliceTakeBackHold = sliceTakeBackHold;
       rig.root.userData.relaxedCarry = carry * onTheMove;
       // Walking, jogging and running with the racket at the side: recorded
       // arms follow the step phase (0 = the right foot landing in front).
@@ -1621,8 +1680,9 @@ function ThreeCourt({
       rig.root.userData.readyArms = Math.max(carry * (1 - onTheMove), ready);
       rig.root.userData.readyTime = frame / frameRate;
       rig.root.userData.returnCrouch = ready;
-      rig.root.userData.supportStrokeWeight = twoHandedWeight;
-      rig.root.userData.supportGripOffset = THREE.MathUtils.lerp(0.2, 0.11, twoHandedWeight);
+      const supportGrip = Math.max(twoHandedWeight, sliceTakeBackHold);
+      rig.root.userData.supportStrokeWeight = supportGrip;
+      rig.root.userData.supportGripOffset = THREE.MathUtils.lerp(0.2, 0.11, supportGrip);
       // Server's feet must stay behind the baseline until contact; landing
       // inside the court afterwards is legal and eases in. The guard also
       // eases in as the serve comes up: switched on at full strength it moved
@@ -2522,6 +2582,7 @@ function ThreeCourt({
         <span><i style={{ backgroundColor: colorToCss(PALETTE.shirtTwo) }} />{snapshot.players[1]}</span>
         <span><i className={styles.ball} style={{ backgroundColor: colorToCss(PALETTE.yellow) }} />Ball</span>
       </div>
+      <p className={styles.buildTag} aria-label="Renderer build">{RENDERER_BUILD}</p>
       {fullReplay && hasCourtData && (
         <div className={styles.replayControls} role="group" aria-label="Full match replay controls">
           <button
