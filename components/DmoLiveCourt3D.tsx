@@ -183,9 +183,6 @@ const RALLY_RUN_CARRY_CUTOFF_FRAMES = 36;
 /** Furthest the hips turn toward a fast run across the court (radians). */
 const RUN_HIP_TURN = 1.05;
 
-/** Shown under the court so a deployed build can be identified at a glance. */
-const RENDERER_BUILD = 'player repair r19';
-
 const colorToCss = (color: number) => `#${color.toString(16).padStart(6, '0')}`;
 
 function firstEventAfterFrame<T extends { frame: number }>(events: T[], frame: number) {
@@ -2745,7 +2742,6 @@ function ThreeCourt({
         <span><i style={{ backgroundColor: colorToCss(PALETTE.shirtTwo) }} />{snapshot.players[1]}</span>
         <span><i className={styles.ball} style={{ backgroundColor: colorToCss(PALETTE.yellow) }} />Ball</span>
       </div>
-      <p className={styles.buildTag} aria-label="Renderer build">{RENDERER_BUILD}</p>
       {fullReplay && hasCourtData && (
         <div className={styles.replayControls} role="group" aria-label="Full match replay controls">
           <button
