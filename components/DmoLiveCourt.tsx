@@ -531,6 +531,7 @@ function DmoLiveCourt({
   };
   const sceneElementRef = useRef<HTMLElement>(null);
   const canvasRef = useRef<HTMLCanvasElement>(null);
+  const mediaVideoRef = useRef<HTMLVideoElement>(null);
   const crowdDensityRef = useRef(crowdDensity);
   crowdDensityRef.current = crowdDensity;
   const cameraDragRef = useRef<{ x: number; y: number } | null>(null);
@@ -1250,12 +1251,14 @@ function DmoLiveCourt({
           </button>
           <CourtFullscreenButton
             targetRef={sceneElementRef}
+            videoRef={mediaVideoRef}
             className={styles.fullscreenButton}
             statusClassName={styles.visuallyHidden}
             fallbackClassName={styles.fullscreenFallback}
           />
           <CourtPictureInPictureButton
             canvasRef={canvasRef}
+            mediaVideoRef={mediaVideoRef}
             className={styles.pictureInPictureButton}
             statusClassName={styles.pictureInPictureStatus}
             videoClassName={styles.pictureInPictureSource}

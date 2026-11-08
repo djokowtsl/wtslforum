@@ -240,6 +240,7 @@ function ThreeCourt({
   const viewportRef = useRef<HTMLDivElement>(null);
   const canvasHostRef = useRef<HTMLDivElement>(null);
   const canvasElementRef = useRef<HTMLCanvasElement>(null);
+  const mediaVideoRef = useRef<HTMLVideoElement>(null);
   const sceneRef = useRef<THREE.Scene | null>(null);
   const crowdRigRef = useRef<CrowdRig | null>(null);
   const audioContextRef = useRef<AudioContext | null>(null);
@@ -2590,12 +2591,14 @@ function ThreeCourt({
           </div>
           <CourtFullscreenButton
             targetRef={sceneElementRef}
+            videoRef={mediaVideoRef}
             className={styles.soundButton}
             statusClassName={styles.visuallyHidden}
             fallbackClassName={styles.fullscreenFallback}
           />
           <CourtPictureInPictureButton
             canvasRef={canvasElementRef}
+            mediaVideoRef={mediaVideoRef}
             className={styles.pictureInPictureButton}
             statusClassName={styles.pictureInPictureStatus}
             videoClassName={styles.pictureInPictureSource}

@@ -1,6 +1,6 @@
 'use client';
 
-import { useEffect, useRef, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import { Minimize2, PictureInPicture2 } from 'lucide-react';
 
 type ElementRef<T extends HTMLElement> = { current: T | null };
@@ -19,10 +19,21 @@ type PipDocument = Document & {
 
 type Props = {
   canvasRef: ElementRef<HTMLCanvasElement>;
+  mediaVideoRef?: ElementRef<HTMLVideoElement>;
   className: string;
   statusClassName: string;
   videoClassName: string;
 };
+
+function isIOSHomeScreenApp() {
+  if (typeof navigator === 'undefined') return false;
+  const nav = navigator as Navigator & { standalone?: boolean };
+  const isIOS = /iPhone|iPad|iPod/i.test(navigator.userAgent)
+    || (navigator.platform === 'MacIntel' && navigator.maxTouchPoints > 1);
+  const isStandalone = nav.standalone === true
+    || (typeof window.matchMedia === 'function' && window.matchMedia('(display-mode: standalone)').matches);
+  return isIOS && isStandalone;
+}
 
 function waitForVideoFrame(video: PipVideo) {
   if (video.readyState >= 2 && video.videoWidth > 0 && video.videoHeight > 0) {
@@ -78,6 +89,7 @@ function requestWebkitPictureInPicture(video: PipVideo) {
 
 export default function CourtPictureInPictureButton({
   canvasRef,
+  mediaVideoRef,
   className,
   statusClassName,
   videoClassName,
@@ -85,14 +97,62 @@ export default function CourtPictureInPictureButton({
   const videoRef = useRef<PipVideo | null>(null);
   const streamRef = useRef<MediaStream | null>(null);
   const modeRef = useRef<PipMode>('off');
+  const videoReadyRef = useRef(false);
+  const preparationPromiseRef = useRef<Promise<void> | null>(null);
   const [mode, setMode] = useState<PipMode>('off');
   const [videoReady, setVideoReady] = useState(false);
+  const [isPreparingVideo, setIsPreparingVideo] = useState(false);
   const [error, setError] = useState('');
+
+  const setVideoElement = useCallback((video: PipVideo | null) => {
+    videoRef.current = video;
+    if (mediaVideoRef) mediaVideoRef.current = video;
+  }, [mediaVideoRef]);
 
   const setPipMode = (next: PipMode) => {
     modeRef.current = next;
     setMode(next);
   };
+
+  const startVideoPreparation = useCallback(() => {
+    const video = videoRef.current;
+    if (!video || videoReadyRef.current || preparationPromiseRef.current) return;
+
+    setIsPreparingVideo(true);
+    let playResult: Promise<void> | void;
+    try {
+      playResult = video.play();
+    } catch (reason) {
+      setIsPreparingVideo(false);
+      setError(reason instanceof Error
+        ? `Picture in Picture preview could not start: ${reason.message}`
+        : 'Picture in Picture preview could not start.');
+      return;
+    }
+
+    let preparation: Promise<void>;
+    preparation = Promise.resolve(playResult)
+      .then(() => waitForVideoFrame(video))
+      .then(() => {
+        if (videoRef.current !== video) return;
+        videoReadyRef.current = true;
+        setVideoReady(true);
+        setError('');
+      })
+      .catch((reason: unknown) => {
+        if (videoRef.current !== video) return;
+        setError(reason instanceof Error
+          ? `Picture in Picture preview could not start: ${reason.message}`
+          : 'Picture in Picture preview could not start.');
+      })
+      .finally(() => {
+        if (preparationPromiseRef.current === preparation) {
+          preparationPromiseRef.current = null;
+        }
+        setIsPreparingVideo(false);
+      });
+    preparationPromiseRef.current = preparation;
+  }, []);
 
   const stopStream = () => {
     const video = videoRef.current;
@@ -151,21 +211,13 @@ export default function CourtPictureInPictureButton({
         streamRef.current = stream;
         video.muted = true;
         video.playsInline = true;
+        // WebKit may fail to promote a MediaStream-backed video to native PiP
+        // unless controls are enabled while its source is attached.
+        video.controls = true;
         video.srcObject = stream;
-        void video.play()
-          .then(() => waitForVideoFrame(video))
-          .then(() => {
-            if (disposed) return;
-            setError('');
-            setVideoReady(true);
-          })
-          .catch((reason: unknown) => {
-            if (disposed) return;
-            stopStream();
-            setError(reason instanceof Error
-              ? `Picture in Picture preview could not start: ${reason.message}`
-              : 'Picture in Picture preview could not start.');
-          });
+        video.controls = false;
+        video.disablePictureInPicture = false;
+        startVideoPreparation();
       } catch (reason) {
         setError(reason instanceof Error
           ? reason.message
@@ -194,11 +246,13 @@ export default function CourtPictureInPictureButton({
       if (video?.webkitPresentationMode === 'picture-in-picture') {
         video.webkitSetPresentationMode?.('inline');
       }
+      videoReadyRef.current = false;
+      preparationPromiseRef.current = null;
       stopStream();
     };
     // This effect owns the captured canvas preview and its video element.
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [canvasRef]);
+  }, [canvasRef, startVideoPreparation]);
 
   const togglePictureInPicture = () => {
     if (modeRef.current !== 'off') {
@@ -207,8 +261,16 @@ export default function CourtPictureInPictureButton({
     }
     setError('');
     const video = videoRef.current;
-    if (!video || !streamRef.current || !videoReady) {
-      setError('Picture in Picture is still preparing. Try again in a moment.');
+    if (isIOSHomeScreenApp()) {
+      setError('Picture in Picture is unavailable from an iPhone Home Screen app. Open this page in Safari to use it.');
+      return;
+    }
+    if (!video || !streamRef.current) {
+      setError('The court video is still preparing. Try again in a moment.');
+      return;
+    }
+    if (!videoReadyRef.current) {
+      setError('The court video is still preparing. Picture in Picture will be available when it has a frame.');
       return;
     }
 
@@ -254,21 +316,23 @@ export default function CourtPictureInPictureButton({
         type="button"
         aria-label={isActive
           ? 'Close system picture in picture'
-          : videoReady ? 'Open system picture in picture' : 'Preparing picture in picture'}
+          : videoReady ? 'Open system picture in picture' : 'Prepare court video for Picture in Picture'}
         aria-pressed={isActive}
         title={isActive
           ? 'Close system picture in picture'
-          : videoReady ? 'Open system picture in picture' : 'Preparing court video for Picture in Picture'}
+          : videoReady
+            ? 'Open system picture in picture'
+            : isPreparingVideo ? 'Preparing court video for Picture in Picture' : 'Picture in Picture is unavailable until the court video is ready'}
         disabled={!videoReady}
         onClick={togglePictureInPicture}
       >
         {isActive
           ? <Minimize2 size={15} aria-hidden="true" />
           : <PictureInPicture2 size={15} aria-hidden="true" />}
-        <span>{isActive ? 'PiP on' : videoReady ? 'PiP' : 'Preparing PiP'}</span>
+        <span>{isActive ? 'PiP on' : videoReady ? 'PiP' : isPreparingVideo ? 'Preparing PiP' : 'PiP unavailable'}</span>
       </button>
       <video
-        ref={videoRef}
+        ref={setVideoElement}
         className={videoClassName}
         muted
         playsInline
