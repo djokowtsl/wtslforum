@@ -147,3 +147,195 @@
     gap: 3px;
   }
 }
+
+/* Match graphics: a shared visual language for live play and recaps. */
+.panel {
+  border-color: rgba(145, 177, 196, .2);
+  border-radius: 20px;
+  background:
+    radial-gradient(ellipse at 4% 0%, rgba(176, 244, 59, .06), transparent 30rem),
+    radial-gradient(ellipse at 100% 12%, rgba(56, 199, 230, .055), transparent 28rem),
+    linear-gradient(145deg, rgba(9, 23, 39, .99), rgba(5, 13, 27, .99));
+  box-shadow: inset 0 1px rgba(255, 255, 255, .05), 0 24px 70px rgba(0, 0, 0, .24);
+}
+
+.header {
+  position: relative;
+  padding: clamp(20px, 3vw, 34px);
+  border-bottom-color: rgba(150, 180, 230, .14);
+  background: linear-gradient(100deg, rgba(8, 21, 36, .38), transparent 72%);
+}
+
+.header::after {
+  position: absolute;
+  right: 24px;
+  bottom: -1px;
+  left: 24px;
+  height: 1px;
+  background: linear-gradient(90deg, rgba(176, 244, 59, .48), rgba(56, 199, 230, .2), transparent 76%);
+  content: '';
+}
+
+.statusRow {
+  gap: 10px;
+  color: #d9f4a7;
+  letter-spacing: .17em;
+}
+
+.statusDot {
+  box-shadow: 0 0 0 4px rgba(176, 244, 59, .1), 0 0 14px rgba(176, 244, 59, .35);
+}
+
+.header h2 {
+  margin-top: 13px;
+  font-size: clamp(30px, 4.4vw, 48px);
+  letter-spacing: -.015em;
+  text-shadow: 0 8px 28px rgba(0, 0, 0, .24);
+}
+
+.header h2 i {
+  color: #d7e4ee;
+  font-size: .48em;
+  font-weight: 600;
+}
+
+.header p {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-top: 8px;
+  letter-spacing: .025em;
+}
+
+.header p::before {
+  width: 13px;
+  height: 1px;
+  background: var(--live-lime);
+  content: '';
+}
+
+.liveCourtStage {
+  padding: 20px 20px 0;
+}
+
+.scoreBug {
+  width: min(680px, calc(100% - 40px));
+  margin-top: 15px;
+  padding: 10px 12px 9px;
+  border-color: rgba(168, 194, 211, .26);
+  border-radius: 13px;
+  background:
+    linear-gradient(110deg, rgba(7, 17, 31, .98), rgba(10, 27, 42, .96)),
+    rgba(6, 13, 29, .94);
+  box-shadow: inset 0 1px rgba(255, 255, 255, .055), 0 12px 32px rgba(0, 0, 0, .25);
+}
+
+.scoreBugHeader {
+  padding: 0 3px 7px;
+}
+
+.scoreBugStatus {
+  letter-spacing: .14em;
+}
+
+.scoreBugTable {
+  border-top-color: rgba(196, 208, 226, .2);
+}
+
+.scoreBugHeading {
+  letter-spacing: .08em;
+}
+
+.scoreBugRow {
+  min-height: 25px;
+}
+
+.scoreBugPoints {
+  text-shadow: 0 0 13px rgba(176, 244, 59, .16);
+}
+
+.mainGrid {
+  gap: 20px;
+  padding: clamp(14px, 2vw, 22px);
+}
+
+.metrics,
+.chanceChart {
+  border-color: rgba(150, 180, 230, .16);
+  border-radius: 12px;
+  box-shadow: inset 0 1px rgba(255, 255, 255, .025);
+}
+
+.metrics {
+  background: linear-gradient(140deg, rgba(13, 31, 49, .92), rgba(7, 18, 34, .92));
+}
+
+.metricsHeading {
+  padding-top: 11px;
+  padding-bottom: 10px;
+  letter-spacing: .11em;
+}
+
+.metricRow {
+  min-height: 43px;
+}
+
+.metricRow strong {
+  font-size: 16px;
+}
+
+.chanceChart {
+  padding: 14px 15px 11px;
+  background:
+    radial-gradient(ellipse at 50% 100%, rgba(176, 244, 59, .055), transparent 65%),
+    rgba(2, 9, 22, .32);
+}
+
+.chanceHead strong {
+  letter-spacing: .14em;
+}
+
+.chartLine {
+  filter: drop-shadow(0 0 3px rgba(176, 244, 59, .35));
+}
+
+.preMatchChance {
+  border-radius: 9px;
+  background: linear-gradient(110deg, rgba(150, 180, 230, .055), rgba(3, 10, 22, .3));
+}
+
+.pointList li {
+  min-height: 48px;
+  border-color: rgba(150, 180, 230, .12);
+}
+
+.pointScore {
+  color: #d5edaa;
+}
+
+.footer {
+  border-top-color: rgba(150, 180, 230, .14);
+  background: rgba(3, 10, 22, .28);
+}
+
+@media (max-width: 560px) {
+  .panel {
+    border-radius: 15px;
+  }
+
+  .header {
+    padding: 19px 16px;
+  }
+
+  .liveCourtStage {
+    padding: 12px 12px 0;
+  }
+
+  .scoreBug {
+    width: calc(100% - 24px);
+  }
+
+  .mainGrid {
+    gap: 13px;
+  }
+}
