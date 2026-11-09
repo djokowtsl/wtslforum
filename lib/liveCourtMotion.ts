@@ -160,6 +160,37 @@ export function liveCourtBallHeldSeconds(
   return held;
 }
 
+/** How far beyond the receiver (cm) the ball must travel to count as past. */
+export const BALL_PASSED_MARGIN_CM = 100;
+
+/**
+ * Find when the ball has gone more than 1 m past the player who would reply.
+ * Only samples through `uptoFrame` are considered, so the same check works live.
+ */
+export function ballPassedReceiverFrame(
+  samples: LiveCourtSample[],
+  shotFrame: number,
+  uptoFrame: number,
+  receiverXIndex: 3 | 5,
+) {
+  if (!Number.isFinite(shotFrame) || !Number.isFinite(uptoFrame) || uptoFrame < shotFrame) return undefined;
+  let low = 0, high = samples.length;
+  while (low < high) {
+    const middle = (low + high) >> 1;
+    if (samples[middle].frame <= shotFrame) low = middle + 1;
+    else high = middle;
+  }
+  for (let index = low; index < samples.length && samples[index].frame <= uptoFrame; index += 1) {
+    const ball = samples[index].values[0];
+    const receiver = samples[index].values[receiverXIndex];
+    if (!Number.isFinite(ball) || !Number.isFinite(receiver) || receiver === 0) continue;
+    if (Math.sign(ball) === Math.sign(receiver) && Math.abs(ball) > Math.abs(receiver) + BALL_PASSED_MARGIN_CM) {
+      return samples[index].frame;
+    }
+  }
+  return undefined;
+}
+
 export type LiveCourtMotionEvent = {
   frame: number;
   kind: 'shot' | 'point-end';
@@ -223,6 +254,49 @@ export function deriveLiveCourtSkidMarks(
 
 export type LiveCourtContactCue = 'standard' | 'low-contact' | 'close-net' | 'soft-touch';
 
+/** The furthest distance from the net (m) for a pre-bounce volley cue. */
+export const VOLLEY_MAX_DISTANCE = 8;
+/** Higher contacts are overheads, not volleys. */
+export const VOLLEY_MAX_HEIGHT = 2.2;
+
+/**
+ * Whether the ball reached the contact on the player's side without bouncing.
+ * Reads only samples at or before the contact, so this also works for live feeds.
+ */
+export function takenBeforeBounce(
+  samples: LiveCourtSample[],
+  contactIndex: number,
+  playerX: number,
+  framesPerSecond: number,
+) {
+  const contact = samples[contactIndex];
+  const side = Math.sign(playerX);
+  if (!contact || side === 0 || Math.sign(contact.values[0]) !== side) return false;
+  const fps = Number.isFinite(framesPerSecond) && framesPerSecond > 0
+    ? framesPerSecond
+    : 60;
+  for (let index = contactIndex - 1; index >= 0; index -= 1) {
+    const sample = samples[index];
+    if ((contact.frame - sample.frame) / fps > 2.5) return false;
+    if (Math.sign(sample.values[0]) !== side) return true;
+    const height = sample.values[2];
+    const beforeHeight = samples[index - 1]?.values[2];
+    const afterHeight = samples[index + 1]?.values[2];
+    if (
+      height < 15
+      || (
+        height < 40
+        && beforeHeight !== undefined
+        && afterHeight !== undefined
+        && beforeHeight > height
+        && afterHeight > height
+        && index + 1 < contactIndex
+      )
+    ) return false;
+  }
+  return false;
+}
+
 /**
  * DMO only identifies serves/rallies, not groundstroke technique. These are
  * conservative animation cues from the recorded ball/player positions, not
@@ -249,11 +323,29 @@ export function inferLiveCourtContactCue(
   const nearestDistance = nearest ? Math.abs(nearest.frame - event.frame) : Number.POSITIVE_INFINITY;
   // Do not infer technique across sparse gaps or from unrelated samples.
   if (!nearest || nearestDistance > 3) return 'standard';
-  const playerX = nearest.values[event.player === 1 ? 3 : 5] * 0.01;
+  const playerXIndex = event.player === 1 ? 3 : 5;
+  const playerX = nearest.values[playerXIndex] * 0.01;
   const ballY = Math.max(0, nearest.values[2] * 0.01);
+  // `low` is the first sample at/after the hit. For a non-exact hit frame,
+  // use the preceding sample so volley classification never reads ahead.
+  const contactIndex = samples[low]?.frame === event.frame ? low : low - 1;
+  const contactSample = samples[contactIndex];
+  const contactPlayerX = contactSample
+    ? contactSample.values[playerXIndex] * 0.01
+    : Number.NaN;
+  const contactBallY = contactSample
+    ? Math.max(0, contactSample.values[2] * 0.01)
+    : Number.NaN;
   if (Math.abs(playerX) <= 4.2) return 'close-net';
+  // Service-line volleys count only when the ball has reached this side without
+  // bouncing; baseline samples can miss a bounce, and high contacts are overheads.
+  if (
+    Number.isFinite(contactPlayerX)
+    && Math.abs(contactPlayerX) <= VOLLEY_MAX_DISTANCE
+    && contactBallY <= VOLLEY_MAX_HEIGHT
+    && takenBeforeBounce(samples, contactIndex, contactPlayerX, framesPerSecond)
+  ) return 'close-net';
   if (ballY <= 0.72) return 'low-contact';
-  const contactIndex = samples[low]?.frame === nearest.frame ? low : low - 1;
   const following = samples[contactIndex + 1];
   const frameRate = Number.isFinite(framesPerSecond) && framesPerSecond > 0
     ? framesPerSecond

@@ -349,3 +349,20 @@ test('the rally relaxes after its last unanswered shot, before a delayed point-e
   assert.equal(rallyOverWeight(live, 60 + fps * (RALLY_OVER_UNANSWERED_SECONDS + 0.4), fps), 1);
   assert.equal(rallyOverWeight([], 10, fps), 0);
 });
+
+test('a ball passing the receiver ends the rally even if TE4 logs an unreachable swing', () => {
+  const fps = 30;
+  const events = [
+    { frame: 0, kind: 'shot', player: 1 },
+    { frame: 60, kind: 'shot', player: 2 },
+  ];
+  const passed = shot => shot.frame === 0 ? 40 : undefined;
+
+  assert.equal(rallyOverWeight(events, 30, fps, passed), 0);
+  assert.equal(rallyOverWeight(events, 40 + fps * 0.3, fps, passed), 1,
+    'relaxation completes 0.3 seconds after the ball passes');
+  assert.equal(rallyOverWeight(events, 70, fps, passed), 1,
+    'the logged unreachable swing does not restart the rally');
+  assert.equal(rallyOverWeight(events, 45, fps), 0,
+    'without ball evidence, a logged reply still keeps the rally active');
+});

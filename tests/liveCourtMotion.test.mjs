@@ -20,6 +20,8 @@ import {
   lowReachDrop,
   lungeWeight,
   LUNGE_DROP,
+  BALL_PASSED_MARGIN_CM,
+  ballPassedReceiverFrame,
   liveCourtShotSpin,
   liveCourtBallHeldSeconds,
   serveBounceHeight,
@@ -226,6 +228,65 @@ test('stroke variation cues use only nearby ball/player samples, never invented 
   );
 });
 
+test('service-line volleys require an unbounced, non-overhead ball on the player side', () => {
+  const fps = 30;
+  const flight = (height = 90) => [0, 2, 4, 6, 8, 10, 12].map((frame, index) => ({
+    frame,
+    values: [400 - index * 160, 0, height, -600, 0, 1200, 0],
+  }));
+  const event = { frame: 12, player: 1, shotType: 'rally' };
+
+  assert.equal(inferLiveCourtContactCue(event, flight(), fps), 'close-net',
+    'a pre-bounce contact around 6 m from the net is a volley');
+
+  const bounced = flight();
+  bounced[4].values[2] = 5;
+  assert.notEqual(inferLiveCourtContactCue(event, bounced, fps), 'close-net',
+    'a ball that bounced on the player side is not a volley');
+
+  assert.notEqual(inferLiveCourtContactCue(event, flight(230), fps), 'close-net',
+    'a ball above 2.2 m remains an overhead/standard shot');
+
+  const baseline = flight().map(sample => ({
+    frame: sample.frame,
+    values: [...sample.values.slice(0, 3), -1200, 0, 1200, 0],
+  }));
+  assert.notEqual(inferLiveCourtContactCue(event, baseline, fps), 'close-net',
+    'baseline shots remain groundstrokes even if a bounce was not sampled');
+
+  const otherSide = flight().map(sample => ({
+    frame: sample.frame,
+    values: [
+      -sample.values[0], sample.values[1], sample.values[2],
+      -1200, 0, 600, 0,
+    ],
+  }));
+  assert.equal(inferLiveCourtContactCue({ ...event, player: 2 }, otherSide, fps), 'close-net',
+    'the same detection works on the other side of the court');
+
+  const beforeNetCrossing = [
+    { frame: 0, values: [400, 0, 100, -600, 0, 1200, 0] },
+    { frame: 4, values: [80, 0, 100, -600, 0, 1200, 0] },
+    { frame: 8, values: [-80, 0, 100, -600, 0, 1200, 0] },
+  ];
+  assert.notEqual(
+    inferLiveCourtContactCue({ ...event, frame: 7 }, beforeNetCrossing, fps),
+    'close-net',
+    'a net crossing visible only after the hit is not used for a live volley cue',
+  );
+
+  const futureOverhead = [
+    { frame: 0, values: [400, 0, 100, -600, 0, 1200, 0] },
+    { frame: 4, values: [-80, 0, 90, -600, 0, 1200, 0] },
+    { frame: 8, values: [-240, 0, 230, -600, 0, 1200, 0] },
+  ];
+  assert.equal(
+    inferLiveCourtContactCue({ ...event, frame: 7 }, futureOverhead, fps),
+    'close-net',
+    'a high ball sample after the hit does not turn a volley into an overhead',
+  );
+});
+
 test('replay stroke timing uses 60 Hz frames while live 60 Hz timing is unchanged', () => {
   assert.equal(liveCourtReplayFrameScale(30), 2);
   assert.equal(liveCourtReplayFrameScale(60), 1);
@@ -254,6 +315,29 @@ test('low and wide contacts use the calibrated conservative crouch', () => {
   assert.equal(lowReachDrop(0.2, 2.0), LOW_REACH_MAX_DROP);
   assert.equal(lowReachDrop(1.0, 4.3), 0);
   assert.equal(lowReachDrop(Number.NaN, 1), 0);
+});
+
+test('ballPassedReceiverFrame uses only samples after the shot and through the current frame', () => {
+  assert.equal(BALL_PASSED_MARGIN_CM, 100);
+  const negativeSide = [0, 10, 20, 30, 40].map((frame, index) => ({
+    frame,
+    values: [-600 - index * 200, 0, 50, 1200, 0, -1200, 0],
+  }));
+  assert.equal(ballPassedReceiverFrame(negativeSide, 0, 30, 5), undefined,
+    'the ball at -1200 cm is not past the player at -1200 cm');
+  assert.equal(ballPassedReceiverFrame(negativeSide, 0, 35, 5), undefined,
+    'future samples are not read on a live feed');
+  assert.equal(ballPassedReceiverFrame(negativeSide, 0, 40, 5), 40,
+    'the ball at -1400 cm is more than 1 m past the player');
+  assert.equal(ballPassedReceiverFrame(negativeSide, 40, 35, 5), undefined,
+    'invalid time windows fail closed');
+
+  const positiveSide = [0, 10, 20, 30, 40].map((frame, index) => ({
+    frame,
+    values: [600 + index * 200, 0, 50, 1200, 0, -1200, 0],
+  }));
+  assert.equal(ballPassedReceiverFrame(positiveSide, 0, 40, 3), 40,
+    'the same check works for a receiver on the positive side');
 });
 
 test('slices are inferred from ball flight through the first bounce', () => {
