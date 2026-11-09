@@ -199,96 +199,75 @@ test('crowd occupancy updates in place without changing the seating layout', () 
   assert.equal(heads.count, seatCount);
 });
 
-function smashFlight(player = 1) {
-  const event = { frame: 60, kind: 'shot', shotType: 'rally', player };
-  const incoming = { frame: 0, kind: 'shot', shotType: 'rally', player: player === 1 ? 2 : 1 };
-  const heights = [100, 160, 250, 350, 450, 500, 470, 410, 350, 300, 250];
-  const samples = heights.map((height, index) => ({
-    frame: index * 6,
-    values: [
-      -900 + index * 120, 0, height,
-      player === 1 ? 300 : -900, 0,
-      player === 2 ? 300 : -900, 0,
-    ],
-  }));
-  return { event, samples, events: [incoming, event], contact: samples.at(-1).values };
-}
-
-test('captured smashes require near-net overhead contact after an incoming descending lob', () => {
-  for (const player of [1, 2]) {
-    const flight = smashFlight(player);
-    assert.equal(smashApi.isCapturedSmashShot(
-      flight.event, flight.contact, flight.samples, flight.events, 60,
-    ), true);
-  }
+test('rally contacts at or above 2.2 m select a smash anywhere on court', () => {
+  const event = { frame: 60, kind: 'shot', shotType: 'rally', player: 1 };
+  const contact = [1100, 0, 220, 1100, 0, -900, 0];
+  assert.equal(smashApi.isCapturedSmashShot(event, contact), true,
+    'the exact height threshold qualifies at the baseline');
+  assert.equal(smashApi.isCapturedSmashShot({ ...event, player: 2 }, contact), true,
+    'either player may use the overhead');
+  assert.equal(smashApi.isCapturedSmashShot(event, [...contact.slice(0, 2), 500, ...contact.slice(3)]), true,
+    'higher contacts also qualify without inspecting the incoming flight or bounce');
+  assert.equal(smashApi.isCapturedSmashShot(event, [...contact.slice(0, 2), 219, ...contact.slice(3)]), false);
 });
 
-test('normal rallies and baseline shots keep their existing non-smash animations', () => {
-  const { event, samples, events, contact } = smashFlight();
-  const baseline = [...contact];
-  baseline[0] = baseline[3] = 1100;
-  assert.equal(smashApi.isCapturedSmashShot(event, baseline, samples, events), false,
-    'even a high lob contact at the baseline is not a near-net smash');
-  for (const centimetres of [40, 80, 120, 180, 224]) {
-    const normalContact = [...contact];
-    normalContact[2] = centimetres;
-    assert.equal(smashApi.isCapturedSmashShot(event, normalContact, samples, events), false,
-      `${centimetres} source centimetres must not be compared directly with a metre threshold`);
-  }
-  const flatFlight = samples.map(sample => ({ ...sample, values: sample.values.map(
-    (value, index) => index === 2 ? 260 : value,
-  ) }));
-  assert.equal(smashApi.isCapturedSmashShot(event, contact, flatFlight, events), false,
-    'high contact alone is not evidence of an incoming lob');
+test('smash selection excludes serves and invalid contacts', () => {
+  const event = { frame: 60, kind: 'shot', shotType: 'rally', player: 1 };
+  const contact = [0, 0, 250, 300, 0, -900, 0];
+  assert.equal(smashApi.isCapturedSmashShot({ ...event, shotType: 'serve' }, contact), false);
+  assert.equal(smashApi.isCapturedSmashShot({ ...event, kind: 'point-end' }, contact), false);
+  assert.equal(smashApi.isCapturedSmashShot(undefined, contact), false);
+  assert.equal(smashApi.isCapturedSmashShot({ ...event, player: undefined }, contact), false);
+  assert.equal(smashApi.isCapturedSmashShot(event, null), false);
+  assert.equal(smashApi.isCapturedSmashShot(event, [0, 0, Number.NaN, 0, 0, 0, 0]), false);
 });
 
-test('smash inference fails closed for serves, rising balls, sparse flights and missing opponents', () => {
-  const { event, samples, events, contact } = smashFlight();
-  assert.equal(smashApi.isCapturedSmashShot({ ...event, shotType: 'serve' }, contact, samples, events), false);
-  assert.equal(smashApi.isCapturedSmashShot(undefined, contact, samples, events), false);
-  assert.equal(smashApi.isCapturedSmashShot(event, null, samples, events), false,
-    'a missing interpolated contact keeps the original rally animation');
-  assert.equal(smashApi.isCapturedSmashShot(event, contact, samples, [event]), false);
-  assert.equal(smashApi.isCapturedSmashShot(event, contact, samples, [
-    events[0], { frame: 30, kind: 'point-end' }, event,
-  ]), false);
-  assert.equal(smashApi.isCapturedSmashShot(event, contact, samples.filter(
-    sample => sample.frame % 24 === 0,
-  ), events), false);
-  const risingFlight = samples.map((sample, index) => ({
-    ...sample, values: sample.values.map((value, axis) => axis === 2 && index === 9 ? 230 : value),
-  }));
-  assert.equal(smashApi.isCapturedSmashShot(event, contact, risingFlight, events), false,
-    'an earlier high apex is insufficient when the ball is rising again at contact');
-  const bouncedFlight = samples.map((sample, index) => ({
-    ...sample, values: sample.values.map((value, axis) => axis === 2 && index === 7 ? 5 : value),
-  }));
-  assert.equal(smashApi.isCapturedSmashShot(event, contact, bouncedFlight, events), false);
-});
-
-test('captured smash source parses, reaches its selected contact frame, and is credited', async () => {
-  const motion = await readFile(new URL('../public/models/dmo-humans/tennis-smash.bvh', import.meta.url), 'utf8');
+test('the Jarua smash is loadable and the existing Adorozco capture remains', async () => {
+  const motion = await readFile(new URL('../public/models/dmo-humans/tennis-smash-jarua.bvh', import.meta.url), 'utf8');
   const parsed = new BVHLoader().parse(motion);
-  assert.ok(parsed.clip.duration > 7.85, 'the selected contact frame is in the recording');
+  assert.ok(parsed.clip.duration > 7.6, 'the selected contact frame is in the recording');
   assert.ok(parsed.skeleton.bones.some((bone) => bone.name === 'RightWrist'));
-  assert.match(
-    await readFile(new URL('../public/models/dmo-humans/SMASH-MOCAP-CREDIT.md', import.meta.url), 'utf8'),
-    /CC BY-SA 3\.0/,
+  const manifest = JSON.parse(await readFile(
+    new URL('../public/models/dmo-humans/provenance.json', import.meta.url), 'utf8',
+  ));
+  const provenance = manifest.find((entry) => entry.filename === 'tennis-smash-jarua.bvh');
+  assert.equal(provenance.bytes, Buffer.byteLength(motion));
+  assert.equal(provenance.license, 'CC-BY-SA-3.0');
+  assert.match(provenance.source, /jarua_Remate\.bvh/);
+  assert.equal((await readFile(
+    new URL('../public/models/dmo-humans/tennis-smash.bvh', import.meta.url),
+  )).byteLength, 854760, 'the older Adorozco recording stays untouched');
+  const credit = await readFile(
+    new URL('../public/models/dmo-humans/SMASH-MOCAP-CREDIT.md', import.meta.url), 'utf8',
   );
+  assert.match(credit, /tennis-smash\.bvh/);
+  assert.match(credit, /tennis-smash-jarua\.bvh/);
+  assert.match(credit, /CC BY-SA 3\.0/);
 });
 
-test('captured smash motion is fetched and registered with the player retargeter', async () => {
-  const [modelSource, rigSource, courtSource] = await Promise.all([
+test('the optional Jarua smash is loaded by both player variants and selected for high rallies', async () => {
+  const [modelSource, rigSource, currentPlayerSource, claudePlayerSource, courtSource] = await Promise.all([
     readFile(new URL('../components/DmoHumanModels.ts', import.meta.url), 'utf8'),
     readFile(new URL('../components/DmoCapturedGroundstroke.ts', import.meta.url), 'utf8'),
+    readFile(new URL('../components/DmoNativePlayer.ts', import.meta.url), 'utf8'),
+    readFile(new URL('../components/DmoNativePlayerClaude.ts', import.meta.url), 'utf8'),
     readFile(new URL('../components/DmoLiveCourt3D.tsx', import.meta.url), 'utf8'),
   ]);
-  assert.match(modelSource, /load\('smash'\)/);
-  assert.match(rigSource, /smash: this\.prepare\('smash', sources\.smash, rest\)/);
-  assert.match(courtSource, /strokeCue === 'close-net'\s*&& isCapturedSmashShot\(\s*strokeEvent,\s*contactSample,\s*samples,\s*events,/);
-  assert.match(courtSource, /const stroke = baseStroke/);
-  assert.match(courtSource, /else if \(isCapturedVolleyShot\(/);
-  assert.match(courtSource, /capturedEvent\.stroke = 'smash'/);
+  assert.match(modelSource, /tennis-smash-jarua\.bvh/);
+  assert.match(modelSource, /loadSmash/);
+  assert.match(rigSource, /if \(sources\.smash\)/);
+  assert.match(rigSource, /get hasSmash\(\)/);
+  assert.match(currentPlayerSource, /capturedSmash = capturedGroundstroke\.hasSmash/);
+  assert.match(claudePlayerSource, /capturedSmash = capturedGroundstroke\.hasSmash/);
+  assert.match(courtSource, /isCapturedSmashShot\(strokeEvent, contactSample\)/);
+  assert.match(courtSource, /recordedSmash \? 'forehand' : stroke/);
+  assert.match(courtSource, /\.\.\.\(recordedSmash \? \{ smash: true \} : \{\}\)/);
+  assert.match(courtSource, /!capturedEvent\.smash && contactSample/);
+  assert.match(courtSource, /hands: !capturedEvent\.smash/);
+  assert.ok(courtSource.indexOf('const strokeEvent =') < courtSource.indexOf('const crouch ='),
+    'the selected lead/contact event determines whether crouch is suppressed');
+  assert.match(courtSource, /const crouch = suppressSmashCrouch \? 0/);
+  assert.match(courtSource, /lowReachFull = capturedEvent\.smash\s*\?\s*0/);
 });
 
 test('umpire match keys normalize player order and keep tours distinct', () => {

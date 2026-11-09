@@ -376,8 +376,10 @@ test('retargeted limb directions match the capture rather than its first-frame d
   const attached = humans.attachHumanPlayer(template, rig, 0x275c77);
   const sources = Object.fromEntries(await Promise.all([
     'forehand', 'backhand', 'serve', 'smash', 'volley-forehand', 'volley-backhand',
-  ].map(async stroke =>
-    [stroke, await readFile(new URL(`../public/models/dmo-humans/tennis-${stroke}.bvh`, import.meta.url), 'utf8')])));
+  ].map(async stroke => {
+    const filename = stroke === 'smash' ? 'tennis-smash-jarua.bvh' : `tennis-${stroke}.bvh`;
+    return [stroke, await readFile(new URL(`../public/models/dmo-humans/${filename}`, import.meta.url), 'utf8')];
+  })));
   attached.pose.reset();
   const capture = new capturedGroundstroke.DmoCapturedGroundstroke(attached.model, rig.root, attached.pose.rest, sources);
   const contact = {
@@ -646,8 +648,10 @@ test('the captured one-handed clip changes ground backhands, not forehands', asy
   const attached = humans.attachHumanPlayer(template, rig, 0x275c77);
   const sources = Object.fromEntries(await Promise.all([
     'forehand', 'backhand', 'serve', 'smash', 'volley-forehand', 'volley-backhand',
-  ].map(async stroke =>
-    [stroke, await readFile(new URL(`../public/models/dmo-humans/tennis-${stroke}.bvh`, import.meta.url), 'utf8')])));
+  ].map(async stroke => {
+    const filename = stroke === 'smash' ? 'tennis-smash-jarua.bvh' : `tennis-${stroke}.bvh`;
+    return [stroke, await readFile(new URL(`../public/models/dmo-humans/${filename}`, import.meta.url), 'utf8')];
+  })));
   sources.backhandOne = await readFile(
     new URL('../public/models/dmo-humans/tennis-backhand-one.bvh', import.meta.url),
     'utf8',
@@ -681,11 +685,57 @@ test('the captured one-handed clip changes ground backhands, not forehands', asy
   'the one-handed backhand option must not alter forehand motion');
 });
 
-test('missing optional one-handed motion retains the existing backhand fallback', async () => {
+test('the Jarua smash is a one-handed overhead and mirrors to left-handed players', async () => {
+  const template = await nativePlayerTemplate('male');
+  const rig = sceneApi.makePlayer(0x275c77, 0x333333);
+  const attached = humans.attachHumanPlayer(template, rig, 0x275c77);
+  const read = (filename) => readFile(
+    new URL(`../public/models/dmo-humans/${filename}`, import.meta.url), 'utf8',
+  );
+  const sources = {
+    forehand: await read('tennis-forehand.bvh'),
+    backhand: await read('tennis-backhand.bvh'),
+    serve: await read('tennis-serve.bvh'),
+    smash: await read('tennis-smash-jarua.bvh'),
+    'volley-forehand': await read('tennis-volley-forehand.bvh'),
+    'volley-backhand': await read('tennis-volley-backhand.bvh'),
+  };
+  const capture = new capturedGroundstroke.DmoCapturedGroundstroke(
+    attached.model, rig.root, attached.pose.rest, sources,
+  );
+  assert.equal(capture.hasSmash, true);
+  for (const [handedness, side] of [['right', 'r'], ['left', 'l']]) {
+    attached.pose.reset();
+    capture.apply({
+      stroke: 'forehand',
+      deltaSeconds: 0,
+      weight: 1,
+      handedness,
+      rootOffset: false,
+      smash: true,
+    });
+    assert.ok(attached.pose.point(`hand_${side}`).y > attached.pose.point('head').y,
+      `${handedness}: racket hand should be above the head at smash contact`);
+    attached.pose.reset();
+    capture.apply({
+      stroke: 'forehand',
+      deltaSeconds: 0,
+      weight: 1,
+      handedness,
+      rootOffset: false,
+    });
+    assert.ok(attached.pose.point(`hand_${side}`).y < attached.pose.point('head').y,
+      `${handedness}: ordinary forehand contact should remain below the head`);
+  }
+});
+
+test('missing optional clips retain normal stroke behavior and keep the player loading', async () => {
   const originalFetch = globalThis.fetch;
   globalThis.fetch = async (input) => {
     const filename = new URL(String(input), 'https://forum.test').pathname.split('/').pop();
-    if (filename === 'tennis-backhand-one.bvh') return new Response('missing', { status: 404 });
+    if (filename === 'tennis-backhand-one.bvh' || filename === 'tennis-smash-jarua.bvh') {
+      return new Response('missing', { status: 404 });
+    }
     const bytes = await readFile(new URL(`../public/models/dmo-humans/${filename}`, import.meta.url));
     return new Response(bytes);
   };
@@ -693,6 +743,29 @@ test('missing optional one-handed motion retains the existing backhand fallback'
     const template = await humans.loadHumanModel('male', 'player', new AbortController().signal);
     const rig = sceneApi.makePlayer(0x275c77, 0x333333);
     const attached = humans.attachHumanPlayer(template, rig, 0x275c77);
+    assert.equal(rig.root.userData.capturedSmash, false);
+    rig.root.userData.groundstrokePlayback = {
+      stroke: 'forehand',
+      deltaSeconds: 0,
+      weight: 1,
+      handedness: 'right',
+      smash: true,
+      rootOffset: false,
+    };
+    assert.doesNotThrow(() => attached.update(), 'missing Jarua motion must leave the player usable');
+    const smashFallback = ['hand_l', 'hand_r'].map(name => attached.pose.point(name).clone());
+    rig.root.userData.groundstrokePlayback = {
+      stroke: 'forehand',
+      deltaSeconds: 0,
+      weight: 1,
+      handedness: 'right',
+      rootOffset: false,
+    };
+    attached.update();
+    for (const [index, name] of ['hand_l', 'hand_r'].entries()) {
+      assert.ok(smashFallback[index].distanceTo(attached.pose.point(name)) < 1e-6,
+        `missing smash asset falls back to the existing ${name} forehand pose`);
+    }
     rig.root.userData.groundstrokePlayback = {
       stroke: 'backhand',
       deltaSeconds: 0,

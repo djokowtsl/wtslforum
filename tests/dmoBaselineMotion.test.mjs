@@ -59,18 +59,21 @@ test('actual stroke-selection block latches normal strokes and only overrides qu
   assert.ok(start >= 0 && end > start);
   const select = new Function(
     'capturedEvent', 'strokeEvent', 'handedness', 'stroke', 'strokeCue', 'recordedVolley', 'recordedTouch',
-    'isCapturedSmashShot',
-    'isCapturedVolleyShot', 'fullReplay', 'rig', 'liveCourtShotSpin', 'frameRate', 'soundEventsRef',
+    'recordedSmash', 'isCapturedVolleyShot', 'fullReplay', 'rig', 'liveCourtShotSpin', 'frameRate', 'soundEventsRef',
     'contactSample', 'samples', 'events', 'sceneDataRef', 'TE4_DMO_FRAMES_PER_SECOND',
     `${court.slice(start, end)}\nreturn capturedEvent;`,
   );
-  const choose = (previous, event, stroke, cue, qualifies, hand = 'right', spinSlice = false, fullReplay = spinSlice) => select(
-    previous, event, hand, stroke, cue, cue === 'close-net', cue === 'soft-touch', () => qualifies,
+  const choose = (previous, event, stroke, cue, qualifies, hand = 'right', spinSlice = false, fullReplay = spinSlice) => {
+    const recordedSmash = qualifies && event.shotType === 'rally';
+    return select(
+    previous, event, hand, stroke, cue, !recordedSmash && cue === 'close-net',
+    !recordedSmash && cue === 'soft-touch', recordedSmash,
     () => false, fullReplay, { detailed: true, root: { userData: { capturedVolleys: true } } },
     () => spinSlice ? 'slice' : null, 60, { current: [] },
     [], [], [], { current: { snapshot: { frameRate: 60 } } }, 60,
-  );
-  const hit = { frame: 100, shotType: 'rally' };
+    );
+  };
+  const hit = { frame: 100, kind: 'shot', shotType: 'rally' };
   const normal = choose(undefined, hit, 'forehand', 'standard', false);
   assert.equal(normal.stroke, 'forehand');
   assert.equal(choose(normal, hit, 'backhand', 'standard', false), normal,
@@ -78,7 +81,9 @@ test('actual stroke-selection block latches normal strokes and only overrides qu
   assert.equal(choose(normal, hit, 'volley-backhand', 'close-net', true), normal,
     'late overhead evidence cannot interrupt the original stroke');
   assert.equal(choose(undefined, hit, 'volley-forehand', 'close-net', false).stroke, 'volley-forehand');
-  assert.equal(choose(undefined, hit, 'volley-backhand', 'close-net', true).stroke, 'smash');
+  const smash = choose(undefined, hit, 'volley-backhand', 'close-net', true);
+  assert.equal(smash.stroke, 'forehand');
+  assert.equal(smash.smash, true, 'high overheads use the distinct one-handed smash motion');
   assert.equal(choose(undefined, hit, 'forehand', 'standard', true).stroke, 'forehand');
   assert.equal(choose(undefined, { ...hit, shotType: 'serve' }, 'forehand', 'close-net', true).stroke, 'serve');
   assert.equal(choose(normal, { ...hit, frame: 150 }, 'backhand', 'standard', false).stroke, 'backhand');

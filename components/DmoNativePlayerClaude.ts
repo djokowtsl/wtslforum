@@ -219,6 +219,7 @@ export function attachNativePlayer(
   const localRacket = { l: racketContactOrientation(grips.l.shaft, grips.l.palm),
     r: racketContactOrientation(grips.r.shaft, grips.r.palm) };
   const capturedGroundstroke = new DmoCapturedGroundstroke(model, rig.root, pose.rest, motionSources);
+  rig.root.userData.capturedSmash = capturedGroundstroke.hasSmash;
   let capturedLocomotion: DmoCapturedLocomotion | null = null;
   try {
     capturedLocomotion = new DmoCapturedLocomotion(pose.rest, {
