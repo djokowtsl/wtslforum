@@ -249,20 +249,9 @@ export default function DmoReplayLibrary({
         activeCharacterStyleResult?.setups ?? new Map(),
       )
     : null;
-  const characterStyleSummary = selected && characterPresentation
-    ? characterNames.map((name, index) => {
-        if (!name?.trim()) return '';
-        const hand = characterPresentation.handedness[index] === 'left' ? 'left-handed' : 'right-handed';
-        const backhand = characterPresentation.strokeStyles[index].backhand === 'one'
-          ? 'one-handed backhand'
-          : 'two-handed backhand';
-        return `${name}: ${hand}, ${backhand}`;
-      }).filter(Boolean).join(' · ')
-    : '';
-
   return (
-    <section className={styles.library} aria-label="Submitted match replays">
-      <div className={styles.listPanel}>
+    <section className={`${styles.library} replay-library`} aria-label="Submitted match replays">
+      <div className={`${styles.listPanel} replay-library-panel`}>
         <div className={styles.listHeading}>
           <div>
             <span className={styles.eyebrow}>All current submissions</span>
@@ -296,10 +285,10 @@ export default function DmoReplayLibrary({
                 <span className={styles.matchMeta}>{match.tournament} · {match.roundName}</span>
                 <span className={styles.matchDate}>{formatDate(match.submissionDate)}</span>
                 <span className={styles.matchBadges}>
-                  {match.hasDmoFile && <span className={styles.matchBadge}>DMO replay</span>}
-                  {match.externalUrl && <span className={styles.matchBadge}>Recording link</span>}
+                  {match.hasDmoFile && <span className={`${styles.matchBadge} replay-library-badge`}>DMO replay</span>}
+                  {match.externalUrl && <span className={`${styles.matchBadge} replay-library-badge`}>Recording link</span>}
                   {!match.hasDmoFile && !match.externalUrl && (
-                    <span className={styles.matchBadge}>Submission details</span>
+                    <span className={`${styles.matchBadge} replay-library-badge`}>Submission details</span>
                   )}
                 </span>
               </button>
@@ -322,15 +311,6 @@ export default function DmoReplayLibrary({
               <span className={styles.eyebrow}>{selected.tournament} · {selected.roundName}</span>
               <h1>{selected.player1} <i>vs</i> {selected.player2}</h1>
               <p>{formatDate(selected.submissionDate)} <span aria-hidden="true">·</span> Match submission</p>
-              {hasSelectedCharacters && (
-                <p className={styles.characterStyleNote} role="status">
-                  {characterStyleLoading
-                    ? 'Checking the saved character styles…'
-                    : activeCharacterStyleResult?.status === 'unavailable'
-                      ? 'One or more character backhand styles could not be confirmed; the replay is using its standard fallback.'
-                      : characterStyleSummary}
-                </p>
-              )}
             </div>
             {selected.externalUrl && (
               <p className={styles.recordingLinkRow}>
@@ -406,7 +386,7 @@ export default function DmoReplayLibrary({
                 />
               ) : selected.hasDmoFile ? (
                 characterStyleLoading ? (
-                  <div className={styles.characterStyleLoading} role="status">Loading the saved character styles before playback…</div>
+                  <div className={styles.characterStyleLoading} role="status">Preparing replay…</div>
                 ) : (
                   <Te4DmoReplayPlayer
                     replayUrl={replayUrl}
@@ -416,7 +396,7 @@ export default function DmoReplayLibrary({
                   />
                 )
               ) : (
-                <div className={styles.viewerEmpty}>
+                <div className={`${styles.viewerEmpty} replay-library-empty`}>
                   <span className={styles.playIcon} aria-hidden="true">{selected.externalUrl ? '↗' : '•'}</span>
                   <h2>{selected.externalUrl ? 'External recording' : 'No playable recording'}</h2>
                   <p>
@@ -429,7 +409,7 @@ export default function DmoReplayLibrary({
             </div>
           </>
         ) : (
-          <div className={styles.viewerEmpty}>
+          <div className={`${styles.viewerEmpty} replay-library-empty`}>
             <span className={styles.playIcon} aria-hidden="true">▶</span>
             <h2>Choose a match to rewatch</h2>
             <p>Browse recordings submitted to the Forum and Discord, then replay the full match with the same court and playback controls.</p>
