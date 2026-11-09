@@ -1324,20 +1324,47 @@ test('automated Fault and Out calls use dedicated audio clips without loading um
     return { ok: true, arrayBuffer: async () => new ArrayBuffer(16) };
   };
 
+  assert.equal(
+    xktUmpireAudioApi.resolveAutomatedLineCallPath('Out', false, () => 0),
+    '/audio/xkt/line-calls/atp-out-01.mp3',
+  );
+  assert.equal(
+    xktUmpireAudioApi.resolveAutomatedLineCallPath('Out', false, () => 0.999),
+    '/audio/xkt/line-calls/atp-out-09.mp3',
+  );
+  assert.equal(
+    xktUmpireAudioApi.resolveAutomatedLineCallPath('Out', true, () => 0),
+    '/audio/xkt/line-calls/out.mp3',
+    'the ATP-only clips do not change WTA out calls',
+  );
+
   for (const text of ['Fault', 'Out']) {
     assert.equal(await xktUmpireAudioApi.playXktUmpireCall(context, text, false, fetcher), true);
   }
-  assert.deepEqual(requestedUrls.sort(), [
-    '/audio/xkt/line-calls/fault.mp3',
-    '/audio/xkt/line-calls/out.mp3',
-  ]);
-  for (const file of ['fault.mp3', 'out.mp3']) {
+  assert.equal(await xktUmpireAudioApi.playXktUmpireCall(context, 'Out', true, fetcher), true);
+  const atpOutFiles = Array.from({ length: 9 }, (_, index) =>
+    xktUmpireAudioApi.resolveAutomatedLineCallPath(
+      'Out',
+      false,
+      () => (index + 0.5) / 9,
+    ));
+  assert.equal(new Set(atpOutFiles).size, 9, 'all distinct ATP clips are selectable');
+  assert.ok(requestedUrls.includes('/audio/xkt/line-calls/fault.mp3'));
+  assert.ok(requestedUrls.includes('/audio/xkt/line-calls/out.mp3'));
+  assert.ok(requestedUrls.some(url => url.startsWith('/audio/xkt/line-calls/atp-out-')));
+  assert.ok(
+    requestedUrls.every(url => url.startsWith('/audio/xkt/line-calls/')),
+    'dedicated line calls do not fetch umpire manifests',
+  );
+  for (const file of ['fault.mp3', 'out.mp3', ...atpOutFiles.map(url => url.split('/').at(-1))]) {
     const asset = await readFile(new URL(`../public/audio/xkt/line-calls/${file}`, import.meta.url));
     assert.ok(asset.byteLength > 5_000, `${file} is bundled as a real audio clip`);
   }
-  assert.equal(startedSources.length, 1, 'the second call queues behind the first');
+  assert.equal(startedSources.length, 1, 'later calls queue behind the first');
   startedSources[0].onended();
   assert.equal(startedSources.length, 2);
+  startedSources[1].onended();
+  assert.equal(startedSources.length, 3);
 });
 
 test('missing recorded umpire clips never trigger a browser-system voice', async () => {
@@ -1520,7 +1547,15 @@ test('live score calls follow DMO point ends and stay within one score transitio
   );
 });
 
-test('live DMO-folder broadcasts use DMO scores while automatic streams use TE4', async () => {
+test('raw DMO end markers cannot release a TE4 score unless the point scored', () => {
+  const events = umpireApi.deriveUmpireCallEvents([
+    { frame: 20, kind: 'point-end', scoreEligible: false },
+    { frame: 40, kind: 'point-end' },
+  ], [], []);
+  assert.deepEqual(events, [{ frame: 40, kind: 'point-end', text: '' }]);
+});
+
+test('only ongoing automatic streams use TE4 scores in the live-window fallback', async () => {
   const viewer = await readFile(new URL('../components/DmoLiveViewer.tsx', import.meta.url), 'utf8');
   const display = await readFile(new URL('../components/DmoLiveDisplay.tsx', import.meta.url), 'utf8');
 
@@ -1531,6 +1566,20 @@ test('live DMO-folder broadcasts use DMO scores while automatic streams use TE4'
   assert.equal(
     liveDmoUmpireScoreSourceApi.resolveLiveDmoUmpireScoreSource('auto', false),
     'te4',
+  );
+  assert.equal(
+    liveDmoUmpireScoreSourceApi.resolveLiveDmoUmpireFallbackScoreSource('auto', false),
+    'te4',
+    'an ongoing automatic stream uses the TE4 live score',
+  );
+  assert.equal(
+    liveDmoUmpireScoreSourceApi.resolveLiveDmoUmpireFallbackScoreSource('auto', true),
+    'dmo',
+    'an automatic stream played as a historical DMO uses its recorded DMO score',
+  );
+  assert.equal(
+    liveDmoUmpireScoreSourceApi.resolveLiveDmoUmpireFallbackScoreSource('manual', true),
+    'dmo',
   );
   assert.equal(
     liveDmoUmpireScoreSourceApi.resolveLiveDmoUmpireScoreSource('manual', true),
@@ -1576,6 +1625,14 @@ test('live DMO-folder broadcasts use DMO scores while automatic streams use TE4'
   assert.match(
     viewer,
     /const fullReplayPlayer = broadcast\.replay && broadcast\.replayDataReady/,
+  );
+  assert.match(
+    viewer,
+    /resolveLiveDmoUmpireFallbackScoreSource\(\s*broadcast\.broadcastMode,\s*broadcast\.replay,?\s*\)/,
+  );
+  assert.match(
+    viewer,
+    /const scoreSource = fullReplayPlayer\s*\?\s*resolveLiveDmoUmpireScoreSource\(broadcast\.broadcastMode,\s*true\)\s*:\s*fallbackScoreSource/,
   );
   assert.match(viewer, /scoreSource={fallbackScoreSource}/);
   assert.equal((viewer.match(/scoreSource={scoreSource}/g) ?? []).length, 1);

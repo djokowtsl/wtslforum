@@ -158,6 +158,8 @@ export type LiveCourtMotionEvent = {
   speedKmh?: number;
   /** point-end only: the players change ends before the next point (from the score). */
   changeover?: boolean;
+  /** Live DMO only: false for a raw end marker that is not a completed scored point. */
+  scoreEligible?: boolean;
   /** DMO replay only: exact umpire score call for this point. */
   scoreCall?: string;
 };

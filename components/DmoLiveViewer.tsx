@@ -11,7 +11,10 @@ import {
 } from '@/lib/liveBroadcast';
 import type { LiveBroadcastScore } from '@/lib/liveBroadcastScore';
 import DmoLiveDisplay from './DmoLiveDisplay';
-import { resolveLiveDmoUmpireScoreSource } from '@/lib/liveDmoUmpireScoreSource';
+import {
+  resolveLiveDmoUmpireFallbackScoreSource,
+  resolveLiveDmoUmpireScoreSource,
+} from '@/lib/liveDmoUmpireScoreSource';
 import LiveBroadcastChat from './LiveBroadcastComments';
 import LiveStreamEmbed from './LiveStreamEmbed';
 import Te4DmoReplayPlayer from './Te4DmoReplayPlayer';
@@ -440,14 +443,13 @@ export default function DmoLiveViewer({ canWatch, voiceServer = '' }: Props) {
           {broadcasts.map((broadcast, broadcastIndex) => {
             const players = broadcast.snapshot?.players ?? broadcast.players;
             const fullReplayPlayer = broadcast.replay && broadcast.replayDataReady;
-            const scoreSource = resolveLiveDmoUmpireScoreSource(
+            const fallbackScoreSource = resolveLiveDmoUmpireFallbackScoreSource(
               broadcast.broadcastMode,
-              fullReplayPlayer,
+              broadcast.replay,
             );
-            const fallbackScoreSource = resolveLiveDmoUmpireScoreSource(
-              broadcast.broadcastMode,
-              false,
-            );
+            const scoreSource = fullReplayPlayer
+              ? resolveLiveDmoUmpireScoreSource(broadcast.broadcastMode, true)
+              : fallbackScoreSource;
             const mediaMode = liveBroadcastMediaMode(broadcast.stream, Boolean(broadcast.snapshot));
             const voiceRoom = voiceRoomForBroadcast(broadcast.id);
             return (

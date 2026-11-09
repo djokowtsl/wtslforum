@@ -304,7 +304,7 @@ export function deriveUmpireCallEvents(
 ): UmpireCallEvent[] {
   const calls: UmpireCallEvent[] = [];
   for (const event of trajectoryEvents) {
-    if (event.kind === 'point-end') {
+    if (event.kind === 'point-end' && event.scoreEligible !== false) {
       const scoreCall = event.scoreCall?.trim();
       calls.push({
         frame: event.frame,

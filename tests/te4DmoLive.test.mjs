@@ -6,6 +6,7 @@ import {
   hasCompletedDmoPoints,
   replayFrameAtElapsedTime,
   formatLivePointScore,
+  deriveLiveDmoPointEndEvents,
   Te4DmoLiveParser,
 } from '../lib/te4DmoLive.ts';
 import {
@@ -304,12 +305,38 @@ test('point-end markers reset the reconstructed court trajectory', () => {
 
   assert.deepEqual(snapshot?.trajectoryEvents, [
     { frame: 20, kind: 'shot', player: 1, shotType: 'serve' },
-    { frame: 25, kind: 'point-end' },
+    { frame: 25, kind: 'point-end', scoreEligible: false },
   ]);
   const shortWindow = parser.snapshot('match.dmo', 3, parser.frameCount, 8, 8);
   assert.ok(shortWindow.courtFrameIndices[0] > 25);
-  assert.deepEqual(shortWindow.trajectoryEvents, [{ frame: 25, kind: 'point-end' }],
-    'late audio completion survives after the point motion leaves the court window');
+  assert.deepEqual(shortWindow.trajectoryEvents, [],
+    'an unscored raw end marker cannot be retained as a completed-point event');
+});
+
+test('live DMO score events use scored point ends, not intermediate raw end markers', () => {
+  assert.deepEqual(
+    deriveLiveDmoPointEndEvents([25, 40, 75], [40, 75], 30, 75),
+    [
+      { frame: 40, kind: 'point-end' },
+      { frame: 75, kind: 'point-end' },
+    ],
+    'the first raw end marker is not a completed scored point',
+  );
+  assert.deepEqual(
+    deriveLiveDmoPointEndEvents([25, 40, 75], [40, 75], 60, 75),
+    [
+      { frame: 40, kind: 'point-end' },
+      { frame: 75, kind: 'point-end' },
+    ],
+    'the latest two scored point ends survive outside the motion window',
+  );
+  assert.deepEqual(
+    deriveLiveDmoPointEndEvents([25, 40], [40], 20, 40),
+    [
+      { frame: 25, kind: 'point-end', scoreEligible: false },
+      { frame: 40, kind: 'point-end' },
+    ],
+  );
 });
 
 test('invalid DMO signatures are marked instead of yielding a scoreboard', () => {
