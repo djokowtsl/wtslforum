@@ -25,7 +25,7 @@ Put your Discord user ID in `ADMIN_DISCORD_IDS`. Multiple IDs are comma-separate
 Add webhook/API credentials to let the bot announce new articles/discussions and allow WTSL match/event feeds to create links back to forum threads.
 
 ## Moderation and community notes
-Create a private Vercel Blob store and connect it to the website project. Set `MODERATION_BLOB_STORE_ID` to that store's ID. Uploaded videos, external clips, and uncertain text/image results wait for moderator approval; pending uploads remain private until approved.
+Create a private Vercel Blob store and connect it to the website project. Set `MODERATION_BLOB_STORE_ID` to that store's ID. Forum DMO submissions use authenticated presigned uploads directly from the browser, avoiding Vercel Function's 4.5 MB request-body limit while retaining the 20 MB file cap. Keep the store connected so Vercel supplies OIDC credentials and `BLOB_WEBHOOK_PUBLIC_KEY`. Uploaded videos, external clips, and uncertain text/image results wait for moderator approval; pending uploads remain private until approved.
 
 ## WTSL tournament bridge
 

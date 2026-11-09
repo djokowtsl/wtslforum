@@ -3,6 +3,12 @@
 import { useCallback, useEffect, useState } from 'react';
 import Te4DmoReplayPlayer from './Te4DmoReplayPlayer';
 import type { DmoReplayCatalogEntry } from '@/lib/dmoReplayLibrary';
+import { characterBroadcastSetup } from '@/lib/liveCharacterBackhand.mjs';
+import {
+  buildDmoReplayCharacterSetupIndex,
+  normalizeDmoReplayCharacterName,
+  resolveDmoReplayCharacterPresentation,
+} from '@/lib/dmoReplayCharacterStyles';
 import {
   buildTe4CoachAnalysisUrl,
   buildTe4CoachEmbedUrl,
@@ -13,6 +19,12 @@ import styles from './DmoReplayLibrary.module.css';
 type ReplayPage = {
   matches: DmoReplayCatalogEntry[];
   nextCursor: string | null;
+};
+
+type CharacterStyleResult = {
+  key: string;
+  setups: ReturnType<typeof buildDmoReplayCharacterSetupIndex>;
+  status: 'loading' | 'ready' | 'unavailable';
 };
 
 function formatDate(value: string) {
@@ -38,6 +50,17 @@ export default function DmoReplayLibrary({
   const [loading, setLoading] = useState(!initialPage);
   const [loadingMore, setLoadingMore] = useState(false);
   const [error, setError] = useState('');
+  const characterNames: [string | null, string | null] = [
+    selected?.player1Character ?? null,
+    selected?.player2Character ?? null,
+  ];
+  const hasSelectedCharacters = Boolean(
+    selected?.hasDmoFile && characterNames.some((name) => Boolean(name?.trim())),
+  );
+  const characterKey = characterNames
+    .map((name) => name ? normalizeDmoReplayCharacterName(name) : '')
+    .join('|');
+  const [characterStyleResult, setCharacterStyleResult] = useState<CharacterStyleResult | null>(null);
 
   const loadPage = useCallback(async (search: string, nextCursor?: string | null) => {
     const params = new URLSearchParams();
@@ -79,6 +102,86 @@ export default function DmoReplayLibrary({
       window.clearTimeout(timer);
     };
   }, [query, loadPage, initialPage]);
+
+  useEffect(() => {
+    if (!hasSelectedCharacters) {
+      setCharacterStyleResult(null);
+      return;
+    }
+    const controller = new AbortController();
+    let active = true;
+    const names = [...new Set(characterNames
+      .filter((name): name is string => Boolean(name?.trim()))
+      .map((name) => name.trim()))];
+    setCharacterStyleResult({
+      key: characterKey,
+      setups: new Map(),
+      status: 'loading',
+    });
+
+    void (async () => {
+      let setups = new Map<string, ReturnType<typeof characterBroadcastSetup>>();
+      try {
+        const response = await fetch('/api/character-stats?tour=all&include_profile=false', {
+          cache: 'no-store',
+          signal: controller.signal,
+        });
+        const body = await response.json().catch(() => null);
+        if (response.ok) setups = buildDmoReplayCharacterSetupIndex(body?.character_filter_metadata);
+      } catch {
+        if (controller.signal.aborted) return;
+      }
+
+      const missingProfiles = names.filter((name) => {
+        const setup = setups.get(normalizeDmoReplayCharacterName(name));
+        return !setup?.playingHand || !setup.backhandType;
+      });
+      const fetchedProfiles = await Promise.all(missingProfiles.map(async (name) => {
+        const params = new URLSearchParams({ tour: 'all', character: name });
+        try {
+          const response = await fetch(`/api/character-stats?${params.toString()}`, {
+            cache: 'no-store',
+            signal: controller.signal,
+          });
+          const body = await response.json().catch(() => null);
+          return response.ok
+            ? [normalizeDmoReplayCharacterName(name), characterBroadcastSetup(body?.profile)] as const
+            : null;
+        } catch {
+          return null;
+        }
+      }));
+      for (const entry of fetchedProfiles) {
+        if (entry && (entry[1].playingHand || entry[1].backhandType)) setups.set(entry[0], entry[1]);
+      }
+      if (!active) return;
+      const resolved = names.every((name) => Boolean(
+        setups.get(normalizeDmoReplayCharacterName(name))?.backhandType,
+      ));
+      setCharacterStyleResult({
+        key: characterKey,
+        setups,
+        status: resolved ? 'ready' : 'unavailable',
+      });
+    })().catch(() => {
+      if (!active) return;
+      setCharacterStyleResult({
+        key: characterKey,
+        setups: new Map(),
+        status: 'unavailable',
+      });
+    });
+
+    return () => {
+      active = false;
+      controller.abort();
+    };
+  }, [
+    characterKey,
+    hasSelectedCharacters,
+    selected?.player1Character,
+    selected?.player2Character,
+  ]);
 
   useEffect(() => {
     if (!initialMatchId) return;
@@ -133,6 +236,28 @@ export default function DmoReplayLibrary({
   const coachScorecardEmbedUrl = selected?.coachShareUrl
     ? buildTe4CoachScorecardEmbedUrl(selected.coachShareUrl)
     : null;
+  const activeCharacterStyleResult = characterStyleResult?.key === characterKey
+    ? characterStyleResult
+    : null;
+  const characterStyleLoading = hasSelectedCharacters
+    && (!activeCharacterStyleResult || activeCharacterStyleResult.status === 'loading');
+  const characterPresentation = selected
+    ? resolveDmoReplayCharacterPresentation(
+        [selected.player1, selected.player2],
+        characterNames,
+        activeCharacterStyleResult?.setups ?? new Map(),
+      )
+    : null;
+  const characterStyleSummary = selected && characterPresentation
+    ? characterNames.map((name, index) => {
+        if (!name?.trim()) return '';
+        const hand = characterPresentation.handedness[index] === 'left' ? 'left-handed' : 'right-handed';
+        const backhand = characterPresentation.strokeStyles[index].backhand === 'one'
+          ? 'one-handed backhand'
+          : 'two-handed backhand';
+        return `${name}: ${hand}, ${backhand}`;
+      }).filter(Boolean).join(' · ')
+    : '';
 
   return (
     <section className={styles.library} aria-label="Submitted match replays">
@@ -196,6 +321,15 @@ export default function DmoReplayLibrary({
               <span className={styles.eyebrow}>{selected.tournament} · {selected.roundName}</span>
               <h1>{selected.player1} <i>vs</i> {selected.player2}</h1>
               <p>{formatDate(selected.submissionDate)} <span aria-hidden="true">·</span> Match submission</p>
+              {hasSelectedCharacters && (
+                <p className={styles.characterStyleNote} role="status">
+                  {characterStyleLoading
+                    ? 'Checking the saved character styles…'
+                    : activeCharacterStyleResult?.status === 'unavailable'
+                      ? 'One or more character backhand styles could not be confirmed; the replay is using its standard fallback.'
+                      : characterStyleSummary}
+                </p>
+              )}
             </div>
             {selected.externalUrl && (
               <p className={styles.recordingLinkRow}>
@@ -270,11 +404,16 @@ export default function DmoReplayLibrary({
                   referrerPolicy="strict-origin-when-cross-origin"
                 />
               ) : selected.hasDmoFile ? (
-                <Te4DmoReplayPlayer
-                  replayUrl={replayUrl}
-                  initialSpeed={1}
-                  handedness={['right', 'right']}
-                />
+                characterStyleLoading ? (
+                  <div className={styles.characterStyleLoading} role="status">Loading the saved character styles before playback…</div>
+                ) : (
+                  <Te4DmoReplayPlayer
+                    replayUrl={replayUrl}
+                    initialSpeed={1}
+                    handedness={characterPresentation?.handedness ?? ['right', 'right']}
+                    strokeStyles={characterPresentation?.strokeStyles}
+                  />
+                )
               ) : (
                 <div className={styles.viewerEmpty}>
                   <span className={styles.playIcon} aria-hidden="true">{selected.externalUrl ? '↗' : '•'}</span>

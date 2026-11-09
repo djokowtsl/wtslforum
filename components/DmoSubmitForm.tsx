@@ -1,10 +1,15 @@
 'use client';
 
+import { uploadPresigned } from '@vercel/blob/client';
 import { useRouter } from 'next/navigation';
 import { useState, type FormEvent, type CSSProperties } from 'react';
+import {
+  buildDmoSubmissionUploadPath,
+  MAX_DMO_SUBMISSION_BYTES,
+} from '@/lib/dmoSubmissionUpload';
 import FileDropSurface from './FileDropSurface';
 
-export default function DmoSubmitForm() {
+export default function DmoSubmitForm({ userId }: { userId: string }) {
   const router = useRouter();
   const [tournament, setTournament] = useState('');
   const [roundName, setRoundName] = useState('');
@@ -19,6 +24,8 @@ export default function DmoSubmitForm() {
   const [coachGroupShareConsent, setCoachGroupShareConsent] = useState(false);
   const [fileInputKey, setFileInputKey] = useState(0);
   const [busy, setBusy] = useState(false);
+  const [uploading, setUploading] = useState(false);
+  const [uploadProgress, setUploadProgress] = useState(0);
   const [error, setError] = useState('');
   const [notice, setNotice] = useState('');
 
@@ -36,7 +43,7 @@ export default function DmoSubmitForm() {
       setError('Choose a .dmo match recording.');
       return;
     }
-    if (nextFile.size > 20 * 1024 * 1024) {
+    if (nextFile.size > MAX_DMO_SUBMISSION_BYTES) {
       setFile(null);
       setFileInputKey((value) => value + 1);
       setError('The file is too large (20MB max).');
@@ -62,13 +69,36 @@ export default function DmoSubmitForm() {
       setError('Choose a .dmo match recording.');
       return;
     }
-    if (file && file.size > 20 * 1024 * 1024) {
+    if (file && file.size > MAX_DMO_SUBMISSION_BYTES) {
       setError('The file is too large (20MB max).');
       return;
     }
 
     setBusy(true);
+    let temporaryUploadPath: string | null = null;
     try {
+      if (file) {
+        const uploadId = globalThis.crypto?.randomUUID?.();
+        if (!uploadId) throw new Error('Your browser cannot securely prepare this upload. Update the browser and try again.');
+        temporaryUploadPath = buildDmoSubmissionUploadPath(userId, uploadId, file.name);
+        setUploading(true);
+        setUploadProgress(0);
+        const uploaded = await uploadPresigned(
+          temporaryUploadPath,
+          file,
+          {
+            access: 'private',
+            handleUploadUrl: '/api/dmo-submissions/upload',
+            contentType: 'application/octet-stream',
+            onUploadProgress: ({ percentage }) => setUploadProgress(percentage),
+          },
+        );
+        if (uploaded.pathname !== temporaryUploadPath) {
+          throw new Error('The uploaded recording could not be verified. Please try again.');
+        }
+        setUploading(false);
+      }
+
       const form = new FormData();
       form.append('tournament', tournament);
       form.append('round', roundName);
@@ -83,12 +113,16 @@ export default function DmoSubmitForm() {
         'coachGroupShareConsent',
         String(coachGroupShareConsent && Boolean(file) && publicShareConsent && Boolean(coachShareUrl.trim())),
       );
-      if (file) form.append('file', file);
+      form.append('privateBlobPathname', temporaryUploadPath || '');
+      form.append('fileName', file?.name ?? '');
 
       const response = await fetch('/api/dmo-submissions', { method: 'POST', body: form });
       const data = await response.json().catch(() => null);
-      if (!response.ok) throw new Error(data?.error || 'The DMO submission failed.');
+      if (!response.ok) {
+        throw new Error(data?.error || `The DMO submission failed (HTTP ${response.status}).`);
+      }
 
+      temporaryUploadPath = null;
       setTournament('');
       setRoundName('');
       setPlayer1('');
@@ -113,8 +147,17 @@ export default function DmoSubmitForm() {
       );
       router.refresh();
     } catch (cause) {
+      if (temporaryUploadPath) {
+        await fetch('/api/dmo-submissions/upload', {
+          method: 'DELETE',
+          headers: { 'content-type': 'application/json' },
+          body: JSON.stringify({ pathname: temporaryUploadPath }),
+        }).catch(() => {});
+      }
       setError(cause instanceof Error ? cause.message : 'The DMO submission failed.');
     } finally {
+      setUploading(false);
+      setUploadProgress(0);
       setBusy(false);
     }
   }
@@ -222,6 +265,7 @@ export default function DmoSubmitForm() {
               key={fileInputKey}
               type="file"
               accept=".dmo,application/octet-stream"
+              disabled={busy}
               onChange={(event) => selectFile(event.target.files?.[0] ?? null)}
             />
           </label>
@@ -254,8 +298,17 @@ export default function DmoSubmitForm() {
             stats on the public replay page and in the public WTSL Coach group.
           </span>
         </label>
+        <p className="notice" style={{ margin: 0, fontSize: 12 }}>
+          To enable Coach sharing, attach a .dmo file, check the first consent, and add a TE4 Coach
+          match link. Both sharing consents are optional; you can submit the recording privately
+          without either.
+        </p>
         <button className="btn btn-sm" type="submit" disabled={busy}>
-          {busy ? 'Submitting…' : 'Submit recording'}
+          {busy
+            ? uploading
+              ? `Uploading recording… ${Math.round(uploadProgress)}%`
+              : 'Saving submission…'
+            : 'Submit recording'}
         </button>
       </form>
     </section>

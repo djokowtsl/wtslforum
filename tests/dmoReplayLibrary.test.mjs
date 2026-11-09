@@ -109,6 +109,33 @@ test('stored DMO paths must be private-store paths with a DMO filename', () => {
   }
 });
 
+test('replay character picks map to their saved player slots and preserve one-handed backhands', () => {
+  const backhandModule = loadModule('lib/liveCharacterBackhand.mjs', {});
+  const {
+    buildDmoReplayCharacterSetupIndex,
+    resolveDmoReplayCharacterPresentation,
+  } = loadModule('lib/dmoReplayCharacterStyles.ts', {
+    './liveCharacterBackhand.mjs': backhandModule,
+  });
+  const setups = buildDmoReplayCharacterSetupIndex([{
+    character: 'Roger Federer',
+    playing_hand: 'right',
+    backhand_type: 'one-handed',
+  }]);
+  const presentation = resolveDmoReplayCharacterPresentation(
+    ['Squeaky', 'maastodontee'],
+    ['roger   federer', 'Roger Federer'],
+    setups,
+  );
+
+  assert.deepEqual(presentation.handedness, ['right', 'right']);
+  assert.deepEqual(presentation.strokeStyles, [
+    { forehand: 'one', backhand: 'one' },
+    { forehand: 'one', backhand: 'one' },
+  ]);
+  assert.deepEqual(presentation.missingBackhandStyle, [false, false]);
+});
+
 test('Match Replay Center catalog includes every submission and only safe recording links', async () => {
   const queries = [];
   const { listDmoReplaySubmissions } = loadModule('lib/dmoReplayLibrary.ts', {
@@ -122,6 +149,8 @@ test('Match Replay Center catalog includes every submission and only safe record
             round_name: 'Final',
             player1: 'One',
             player2: 'Two',
+            player1_character: 'Roger Federer',
+            player2_character: 'Roger Federer',
             submission_date: '2026-10-30',
             source: 'discord',
             private_blob_pathname: 'dmo/discord-123-final.dmo',
@@ -174,6 +203,8 @@ test('Match Replay Center catalog includes every submission and only safe record
         roundName: 'Final',
         player1: 'One',
         player2: 'Two',
+        player1Character: 'Roger Federer',
+        player2Character: 'Roger Federer',
         submissionDate: '2026-10-30',
         source: 'discord',
         hasDmoFile: true,
@@ -200,6 +231,7 @@ test('Match Replay Center catalog includes every submission and only safe record
   );
   assert.doesNotMatch(listingWhere, /public_share_consent|dmo_replay_publication_overrides/);
   assert.match(queries[0].text, /external_url/);
+  assert.match(queries[0].text, /player1_character,player2_character/);
   assert.match(queries[0].text, /coach_group_share_consent/);
   assert.match(queries[0].text, /ORDER BY id DESC/);
   assert.ok(queries[0].values.includes('%Open%'));
@@ -219,6 +251,8 @@ test('replay listing returns only safe metadata and paginates uploaded DMO files
             round_name: 'Final',
             player1: 'One',
             player2: 'Two',
+            player1_character: 'Private character one',
+            player2_character: 'Private character two',
             submission_date: '2026-10-30',
             source: 'discord',
             coach_share_url: 'https://replays.knowthew.net/m/3f9a1c07b2e4d5a6',
@@ -262,6 +296,7 @@ test('replay listing returns only safe metadata and paginates uploaded DMO files
   assert.match(queries[0].text, /file_name, private_blob_pathname/);
   assert.match(queries[0].text, /coach_share_url/);
   assert.match(queries[0].text, /CASE WHEN coach_group_share_consent IS TRUE THEN coach_share_url ELSE NULL END/);
+  assert.doesNotMatch(queries[0].text, /player1_character|player2_character/);
   assert.match(queries[0].text, /ORDER BY id DESC/);
   assert.ok(queries[0].values.includes('%Open%'));
   assert.ok(!JSON.stringify(page).includes('private_blob_pathname'));
@@ -368,7 +403,7 @@ test('legacy public replay lookup still requires consent or an active owner over
 
 test('Match Replay Center detail lookup includes unconsented submissions', async () => {
   const queries = [];
-  const { getDmoReplaySubmission } = loadModule('lib/dmoReplayLibrary.ts', {
+  const { getDmoReplaySubmission, dmoReplayCatalogMetadata } = loadModule('lib/dmoReplayLibrary.ts', {
     '@/lib/db': {
       sql: async (strings, ...values) => {
         queries.push({ text: strings.join('?'), values });
@@ -378,6 +413,8 @@ test('Match Replay Center detail lookup includes unconsented submissions', async
           round_name: 'Final',
           player1: 'One',
           player2: 'Two',
+          player1_character: 'Roger Federer',
+          player2_character: 'Roger Federer',
           submission_date: '2026-10-30',
           source: 'discord',
           public_share_consent: false,
@@ -394,7 +431,13 @@ test('Match Replay Center detail lookup includes unconsented submissions', async
   const replay = await getDmoReplaySubmission('21');
   assert.equal(replay.id, '21');
   assert.equal(replay.hasDmoFile, true);
+  assert.equal(replay.player1Character, 'Roger Federer');
+  assert.equal(replay.player2Character, 'Roger Federer');
+  const metadata = dmoReplayCatalogMetadata(replay);
+  assert.equal(metadata.player1Character, 'Roger Federer');
+  assert.equal(metadata.player2Character, 'Roger Federer');
   assert.equal(replay.privateBlobPathname, 'dmo/discord-123-secret.dmo');
+  assert.match(queries[0].text, /player1_character,player2_character/);
   assert.match(queries[0].text, /CASE WHEN coach_group_share_consent IS TRUE[\s\S]*public_share_consent IS TRUE[\s\S]*dmo_replay_publication_overrides[\s\S]*revoked_at IS NULL/);
   const detailWhere = queries[0].text.slice(queries[0].text.lastIndexOf('WHERE'));
   assert.doesNotMatch(detailWhere, /public_share_consent|dmo_replay_publication_overrides/);
@@ -512,6 +555,8 @@ test('replay metadata endpoint exposes catalog fields without the private upload
         roundName: 'Final',
         player1: 'One',
         player2: 'Two',
+        player1Character: 'Roger Federer',
+        player2Character: 'Roger Federer',
         submissionDate: '2026-10-30',
         source: 'discord',
         hasDmoFile: true,
@@ -530,6 +575,8 @@ test('replay metadata endpoint exposes catalog fields without the private upload
         source: replay.source,
         hasDmoFile: replay.hasDmoFile,
         externalUrl: replay.externalUrl,
+        player1Character: replay.player1Character,
+        player2Character: replay.player2Character,
       }),
     },
   });
@@ -542,6 +589,8 @@ test('replay metadata endpoint exposes catalog fields without the private upload
   assert.equal(body.id, '21');
   assert.equal(body.hasDmoFile, true);
   assert.equal(body.externalUrl, 'https://example.test/replay');
+  assert.equal(body.player1Character, 'Roger Federer');
+  assert.equal(body.player2Character, 'Roger Federer');
   assert.equal('privateBlobPathname' in body, false);
   assert.equal('fileName' in body, false);
 });
@@ -730,6 +779,172 @@ test('link-only submissions do not attempt to load a private DMO file', async ()
     });
     assert.equal(response.status, 404);
     assert.equal(blobReads, 0);
+  } finally {
+    if (originalStoreId === undefined) delete process.env.MODERATION_BLOB_STORE_ID;
+    else process.env.MODERATION_BLOB_STORE_ID = originalStoreId;
+  }
+});
+
+test('direct DMO upload paths are scoped to the signed-in submitter', () => {
+  const {
+    buildDmoSubmissionUploadPath,
+    isOwnedDmoSubmissionUploadPath,
+  } = loadModule('lib/dmoSubmissionUpload.ts', {});
+  const pathname = buildDmoSubmissionUploadPath(
+    '42',
+    'd7c0201d-0c78-4b59-a876-82bba0d1f3ef',
+    'Roger Federer final.dmo',
+  );
+
+  assert.equal(pathname, 'dmo/42/d7c0201d-0c78-4b59-a876-82bba0d1f3ef-Roger_Federer_final.dmo');
+  assert.equal(isOwnedDmoSubmissionUploadPath(pathname, '42'), true);
+  assert.equal(isOwnedDmoSubmissionUploadPath(pathname, '43'), false);
+  assert.equal(isOwnedDmoSubmissionUploadPath(pathname.replace('.dmo', '.txt'), '42'), false);
+});
+
+test('private DMO client upload authorization is authenticated and size-limited', async () => {
+  const originalStoreId = process.env.MODERATION_BLOB_STORE_ID;
+  process.env.MODERATION_BLOB_STORE_ID = 'private-store-test';
+  let currentUser = { id: '42' };
+  let requestedPath = 'dmo/42/d7c0201d-0c78-4b59-a876-82bba0d1f3ef-match.dmo';
+  const signedRequests = [];
+  const deleted = [];
+  try {
+    const route = loadModule('app/api/dmo-submissions/upload/route.ts', {
+      '@vercel/blob': {
+        issueSignedToken: async (options) => {
+          signedRequests.push(options);
+          return { delegationToken: 'test-token' };
+        },
+        del: async (pathname, options) => deleted.push({ pathname, options }),
+      },
+      '@vercel/blob/client': {
+        handleUploadPresigned: async ({ getSignedToken }) => {
+          const result = await getSignedToken(requestedPath, null, false);
+          return { type: 'blob.generate-presigned-url', presignedUrlPayload: result };
+        },
+      },
+      'next/server': nextServer,
+      '@/lib/auth': { getSession: async () => currentUser },
+      '@/lib/dmoSubmissionUpload': loadModule('lib/dmoSubmissionUpload.ts', {}),
+    });
+    const response = await route.POST(new Request('https://forum.test/api/dmo-submissions/upload', {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ type: 'upload' }),
+    }));
+    assert.equal(response.status, 200);
+    assert.equal(signedRequests.length, 1);
+    assert.equal(signedRequests[0].pathname, requestedPath);
+    assert.deepEqual(signedRequests[0].operations, ['put']);
+    assert.equal(signedRequests[0].maximumSizeInBytes, 20 * 1024 * 1024);
+    assert.deepEqual(signedRequests[0].allowedContentTypes, ['application/octet-stream']);
+    assert.equal(signedRequests[0].storeId, 'private-store-test');
+
+    requestedPath = requestedPath.replace('dmo/42/', 'dmo/43/');
+    const invalidPathResponse = await route.POST(new Request('https://forum.test/api/dmo-submissions/upload', {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ type: 'upload' }),
+    }));
+    assert.equal(invalidPathResponse.status, 400);
+    assert.equal(signedRequests.length, 1);
+
+    const deleteResponse = await route.DELETE(new Request('https://forum.test/api/dmo-submissions/upload', {
+      method: 'DELETE',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({
+        pathname: 'dmo/42/d7c0201d-0c78-4b59-a876-82bba0d1f3ef-match.dmo',
+      }),
+    }));
+    assert.equal(deleteResponse.status, 200);
+    assert.equal(deleted.length, 1);
+
+    currentUser = null;
+    const unauthorizedResponse = await route.POST(new Request('https://forum.test/api/dmo-submissions/upload', {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ type: 'upload' }),
+    }));
+    assert.equal(unauthorizedResponse.status, 401);
+  } finally {
+    if (originalStoreId === undefined) delete process.env.MODERATION_BLOB_STORE_ID;
+    else process.env.MODERATION_BLOB_STORE_ID = originalStoreId;
+  }
+});
+
+test('Forum DMO submission accepts only an owned, verified private upload', async () => {
+  const originalStoreId = process.env.MODERATION_BLOB_STORE_ID;
+  process.env.MODERATION_BLOB_STORE_ID = 'private-store-test';
+  const created = [];
+  const discordDeliveries = [];
+  let blobReads = 0;
+  try {
+    const route = loadModule('app/api/dmo-submissions/route.ts', {
+      '@vercel/blob': {
+        head: async (pathname, options) => {
+          blobReads += 1;
+          assert.equal(pathname, 'dmo/42/d7c0201d-0c78-4b59-a876-82bba0d1f3ef-match.dmo');
+          assert.deepEqual(options, { storeId: 'private-store-test' });
+          return { size: 2048, contentType: 'application/octet-stream' };
+        },
+        get: async () => ({
+          statusCode: 200,
+          stream: new Blob([new Uint8Array([1])]).stream(),
+          blob: { contentType: 'application/octet-stream' },
+        }),
+        del: async () => {},
+        put: async () => { throw new Error('Should use the direct private upload.'); },
+      },
+      'next/server': nextServer,
+      '@/lib/auth': { getSession: async () => ({ id: '42', discordId: '123', username: 'Tester' }) },
+      '@/lib/discord': {
+        sendDmoSubmission: async (input) => {
+          discordDeliveries.push(input);
+          return { messageId: 'discord-message' };
+        },
+      },
+      '@/lib/dmo-submissions': {
+        createDmoSubmission: async (input) => {
+          created.push(input);
+          return { id: '99' };
+        },
+        submissionDateInLondon: () => '2026-11-09',
+        updateDmoDiscordDelivery: async () => {},
+      },
+      '@/lib/te4CoachGroupServer': {
+        syncPublicDmoSubmissionToTe4CoachGroup: async () => ({ status: 'skipped' }),
+      },
+      '@/lib/dmoSubmissionUpload': loadModule('lib/dmoSubmissionUpload.ts', {}),
+    });
+    const form = new FormData();
+    form.set('tournament', 'Basel Open');
+    form.set('round', 'Round of 16');
+    form.set('player1', 'Squeaky');
+    form.set('player2', 'maastodontee');
+    form.set('player1Character', 'Roger Federer');
+    form.set('player2Character', 'Roger Federer');
+    form.set('coachShareUrl', 'https://replays.knowthew.net/m/3f9a1c07b2e4d5a6');
+    form.set('publicShareConsent', 'true');
+    form.set('coachGroupShareConsent', 'true');
+    form.set('privateBlobPathname', 'dmo/42/d7c0201d-0c78-4b59-a876-82bba0d1f3ef-match.dmo');
+    form.set('fileName', 'match.dmo');
+
+    const response = await route.POST(new Request('https://forum.test/api/dmo-submissions', {
+      method: 'POST',
+      body: form,
+    }));
+    assert.equal(response.status, 201);
+    assert.equal(blobReads, 1);
+    assert.equal(created.length, 1);
+    assert.equal(created[0].privateBlobPathname, 'dmo/42/d7c0201d-0c78-4b59-a876-82bba0d1f3ef-match.dmo');
+    assert.equal(created[0].privateBlobContentType, 'application/octet-stream');
+    assert.equal(created[0].fileName, 'match.dmo');
+    assert.equal(created[0].player1Character, 'Roger Federer');
+    assert.equal(created[0].player2Character, 'Roger Federer');
+    assert.equal(created[0].publicShareConsent, true);
+    assert.equal(created[0].coachGroupShareConsent, true);
+    assert.equal(discordDeliveries[0].fileName, 'match.dmo');
   } finally {
     if (originalStoreId === undefined) delete process.env.MODERATION_BLOB_STORE_ID;
     else process.env.MODERATION_BLOB_STORE_ID = originalStoreId;
