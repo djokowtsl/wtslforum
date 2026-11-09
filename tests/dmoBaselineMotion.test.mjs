@@ -61,7 +61,7 @@ test('actual stroke-selection block latches normal strokes and only overrides qu
     'capturedEvent', 'strokeEvent', 'handedness', 'stroke', 'strokeCue', 'recordedVolley', 'recordedTouch',
     'recordedSmash', 'isCapturedVolleyShot', 'fullReplay', 'rig', 'liveCourtShotSpin', 'frameRate', 'soundEventsRef',
     'contactSample', 'samples', 'events', 'sceneDataRef', 'TE4_DMO_FRAMES_PER_SECOND',
-    `${court.slice(start, end)}\nreturn capturedEvent;`,
+    `${court.slice(start, end).replace(/\(strokeEvent as \{ attempt\?: boolean \}\)/g, 'strokeEvent')}\nreturn capturedEvent;`,
   );
   const choose = (previous, event, stroke, cue, qualifies, hand = 'right', spinSlice = false, fullReplay = spinSlice) => {
     const recordedSmash = qualifies && event.shotType === 'rally';

@@ -651,11 +651,16 @@ const COURT_HALF_WIDTH_CM = 411.5;
 const SERVICE_LINE_CM = 640;
 const OUT_MARGIN_CM = 15;
 /** A ball passing this far (m) to the side of a player is one he stretches for
- *  (closer, TE4 would have had him play it; further, he lets it go). */
+ *  (closer, TE4 would have had him play it). Further than the max, a stretch
+ *  couldn't get the racket near it (arm and racket ~1.3 m from the body
+ *  centre, plus one long step), so he lets it go. */
 export const REACH_ATTEMPT_MIN_METRES = 0.8;
-export const REACH_ATTEMPT_MAX_METRES = 4;
+export const REACH_ATTEMPT_MAX_METRES = 2;
 /** Above this (m) as it passes him, he doesn't swing at it. */
-export const REACH_ATTEMPT_MAX_HEIGHT = 2.6;
+export const REACH_ATTEMPT_MAX_HEIGHT = 1.9;
+/** Moving away from the ball faster than this (m/s) just before it passes:
+ *  he'd given up on it, no stretch. */
+const REACH_ATTEMPT_MAX_AWAY_SPEED = 0.5;
 
 export type ReachAttemptEvent = LiveCourtMotionEvent & { attempt: true };
 
@@ -693,7 +698,7 @@ export function withReachAttempts(
       const middle = (low + high) >> 1;
       if (samples[middle].frame <= shot.frame) low = middle + 1; else high = middle;
     }
-    let crossing: { frame: number; side: number; height: number } | undefined;
+    let crossing: { frame: number; side: number; height: number; toward: number } | undefined;
     let out = false;
     let bounced = false;
     for (let k = low; k < samples.length; k++) {
@@ -713,7 +718,14 @@ export function withReachAttempts(
         out = Math.abs(ball) > length + OUT_MARGIN_CM || Math.abs(v[1]) > COURT_HALF_WIDTH_CM + OUT_MARGIN_CM;
       }
       if (!crossing && Math.sign(ball) === Math.sign(player) && Math.abs(ball) >= Math.abs(player)) {
-        crossing = { frame: samples[k].frame, side: (v[1] - v[yIndex]) / 100, height: v[2] / 100 };
+        // His sideways speed toward the ball over the last 0.3 s (m/s).
+        let earlier = k;
+        while (earlier > low && (samples[k].frame - samples[earlier - 1].frame) / frameRate <= 0.3) earlier--;
+        const seconds = (samples[k].frame - samples[earlier].frame) / frameRate;
+        const side = (v[1] - v[yIndex]) / 100;
+        const toward = seconds > 0
+          ? (v[yIndex] - samples[earlier].values[yIndex]) / 100 / seconds * Math.sign(side) : 0;
+        crossing = { frame: samples[k].frame, side, height: v[2] / 100, toward };
       }
       if (out || (crossing && bounced) || (crossing && (samples[k].frame - crossing.frame) / frameRate > 1.5)) break;
     }
@@ -726,7 +738,7 @@ export function withReachAttempts(
     }
     const distance = Math.abs(crossing.side);
     if (distance < REACH_ATTEMPT_MIN_METRES || distance > REACH_ATTEMPT_MAX_METRES
-      || crossing.height > REACH_ATTEMPT_MAX_HEIGHT) {
+      || crossing.height > REACH_ATTEMPT_MAX_HEIGHT || crossing.toward < -REACH_ATTEMPT_MAX_AWAY_SPEED) {
       dropped.delete(next!);
       continue;
     }
