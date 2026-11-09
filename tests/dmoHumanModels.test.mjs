@@ -22,6 +22,7 @@ const venueApi = await loadTs('../lib/dmoVenue.ts');
 const surfaceApi = await loadTs('../lib/te4DmoSurface.ts');
 const crowdDensityApi = await loadTs('../lib/dmoCrowdDensity.ts');
 const crowdClothingApi = await loadTs('../lib/dmoCrowdClothing.ts');
+const crowdBrandingApi = await loadTs('../lib/dmoCrowdBranding.ts');
 const sceneApi = await loadTs('../components/DmoLiveCourt3DScene.ts', {
   './DmoStadiumArchitecture': stadiumArchitectureApi,
   '../lib/dmoVenue': venueApi,
@@ -60,6 +61,7 @@ const crowds = await loadTs('../components/DmoHumanCrowd.ts', {
   './DmoLiveCourt3DScene': sceneApi,
   '../lib/dmoCrowdLod': crowdLodApi,
   '../lib/dmoCrowdClothing': crowdClothingApi,
+  '../lib/dmoCrowdBranding': crowdBrandingApi,
 });
 
 // Parse the real rig and geometry in Node, omitting image decoding (verified in browser).
@@ -577,6 +579,42 @@ test('captured strokes and volleys animate the full body for either handedness',
       }
     }
   }
+});
+
+test('captured recovery compresses quick take-backs, limits trunk lean, and drives a wide lunge', async () => {
+  const template = await nativePlayerTemplate('male');
+  const rig = sceneApi.makePlayer(0x275c77, 0x333333);
+  // Omit the variant argument: this is the player used by live broadcasts.
+  const attached = humans.attachHumanPlayer(template, rig, 0x275c77);
+
+  const playback = {
+    stroke: 'forehand', handedness: 'right', deltaSeconds: -0.2, weight: 1,
+    rootOffset: false, hands: 'one',
+  };
+  rig.root.userData.groundstrokePlayback = { ...playback, leadScale: 1 };
+  attached.update();
+  const ordinaryTakeBack = attached.pose.bones.get('hand_r').quaternion.clone();
+  rig.root.userData.groundstrokePlayback = { ...playback, leadScale: 1.7 };
+  attached.update();
+  const quickTakeBack = attached.pose.bones.get('hand_r').quaternion.clone();
+  assert.ok(ordinaryTakeBack.angleTo(quickTakeBack) > 0.02,
+    'a compressed lead should sample a later recorded preparation pose');
+
+  rig.root.userData.groundstrokePlayback = { ...playback, deltaSeconds: 0, leadScale: undefined };
+  attached.update();
+  const trunk = attached.pose.point('neck_01').sub(attached.pose.point('pelvis'));
+  const lean = trunk.angleTo(new THREE.Vector3(0, 1, 0));
+  assert.ok(lean <= THREE.MathUtils.degToRad(24.5),
+    `captured trunk lean ${THREE.MathUtils.radToDeg(lean)}°`);
+
+  rig.root.userData.groundstrokePlayback = undefined;
+  delete rig.root.userData.lunge;
+  attached.update();
+  const neutralLeadingKnee = attached.pose.point('calf_l').x;
+  rig.root.userData.lunge = { weight: 1, side: 1 };
+  attached.update();
+  assert.ok(attached.pose.point('calf_l').x > neutralLeadingKnee + 0.05,
+    'the leading knee should move out over the foot on the ball side');
 });
 
 test('the production native player selects the one-handed clip only for one-handed backhands', async () => {

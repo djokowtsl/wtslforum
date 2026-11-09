@@ -71,6 +71,8 @@ export interface GroundstrokePlayback {
   oneHanded?: boolean;
   /** A detected slice uses the volley recording as a high-to-low stand-in. */
   slice?: boolean;
+  /** Speed up the take-back when a fast reply leaves too little preparation time. */
+  leadScale?: number;
   /** Recorded contact ball position in the player's local court space. */
   contactTarget?: [number, number, number];
 }
@@ -392,8 +394,11 @@ export class DmoCapturedGroundstroke {
       : this.motions[playback.stroke]);
     const mirrored = playback.handedness === 'left';
     const pairs = mirrored ? motion.leftPairs : motion.rightPairs;
+    const leadScale = playback.deltaSeconds < 0
+      ? THREE.MathUtils.clamp(playback.leadScale ?? 1, 1, 2)
+      : 1;
     const time = THREE.MathUtils.clamp(
-      motion.contactTime + playback.deltaSeconds * timeScale,
+      motion.contactTime + playback.deltaSeconds * timeScale * leadScale,
       0,
       motion.duration,
     );

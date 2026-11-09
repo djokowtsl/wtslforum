@@ -242,6 +242,36 @@ export function planReposition(options: {
   return 'walk';
 }
 
+/** Seconds after an unanswered last shot at which the rally counts as over. */
+export const RALLY_OVER_KNOWN_SECONDS = 1.0;
+export const RALLY_OVER_UNANSWERED_SECONDS = 1.8;
+
+/**
+ * How far the rally is over (0..1). TE4 can mark a point several seconds after
+ * the last shot, so relax once a known point-end exists or no live reply arrives.
+ */
+export function rallyOverWeight(events: { frame: number; kind: string }[], frame: number, frameRate: number) {
+  let low = 0, high = events.length;
+  while (low < high) {
+    const middle = (low + high) >> 1;
+    if (events[middle].frame <= frame) low = middle + 1; else high = middle;
+  }
+  let index = low - 1;
+  while (index >= 0 && events[index].kind !== 'shot') {
+    if (events[index].kind === 'point-end') return 1;
+    index -= 1;
+  }
+  if (index < 0) return 0;
+  const next = events[index + 1];
+  if (next?.kind === 'shot') return 0;
+  const delay = next?.kind === 'point-end'
+    ? RALLY_OVER_KNOWN_SECONDS
+    : RALLY_OVER_UNANSWERED_SECONDS;
+  const since = (frame - events[index].frame) / Math.max(1, frameRate);
+  const amount = Math.min(1, Math.max(0, (since - delay) / 0.4));
+  return amount * amount * (3 - 2 * amount);
+}
+
 /** True when the latest event at or before `frame` ended a point. */
 export function isBetweenPoints(events: { frame: number; kind: string }[], frame: number) {
   let low = 0, high = events.length;

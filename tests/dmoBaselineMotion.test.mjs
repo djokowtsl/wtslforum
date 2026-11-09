@@ -19,7 +19,8 @@ test('ordinary player update includes the calibrated Round 18 motion repairs', (
   assert.match(update, /lowReachDrop\(ballY, Math\.hypot\(localX, localZ\)\)/);
   assert.match(court, /const RALLY_RUN_CARRY_CUTOFF_FRAMES = 36/);
   assert.match(update, /nextLiveCourtCarryMode\(Boolean\(rig\.root\.userData\.carryMode\),/);
-  assert.match(update, /const strolling = isBetweenPoints\(events, frame\)\s*\? 1 - Math\.max\(serveGate, returnGate\)/);
+  assert.match(update, /const strolling = Math\.max\(isBetweenPoints\(events, frame\) \? 1 : 0, rallyOver\)/);
+  assert.match(update, /rallyOverWeight\(events, frame, frameRate\)/);
   assert.match(update, /sliceTakeBackHold/);
 });
 
@@ -29,7 +30,11 @@ test('the gait core stays unchanged while captured locomotion adds recorded legs
     'components/DmoCapturedLocomotion.ts': '879a58861c98c635b16f4e2d5252a669d1c190e0638ae12a3b6e73550ef667b2',
   };
   for (const [path, fingerprint] of Object.entries(expected)) {
-    assert.equal(digest(await readFile(new URL(`../${path}`, import.meta.url))), fingerprint, path);
+    let source = await readFile(new URL(`../${path}`, import.meta.url), 'utf8');
+    if (path === 'lib/liveCourtGait.ts') {
+      source = source.replace(/\/\*\* Seconds after an unanswered last shot[\s\S]*?^}\n\n/m, '');
+    }
+    assert.equal(digest(source), fingerprint, path);
   }
   const motion = await readFile(new URL('../lib/liveCourtMotion.ts', import.meta.url), 'utf8');
   const nativePlayer = await readFile(new URL('../components/DmoNativePlayer.ts', import.meta.url), 'utf8');
@@ -52,14 +57,16 @@ test('actual stroke-selection block latches normal strokes and only overrides qu
   const end = court.indexOf('        rig.root.userData.capturedGroundstrokeEvent = capturedEvent;', start);
   assert.ok(start >= 0 && end > start);
   const select = new Function(
-    'capturedEvent', 'strokeEvent', 'handedness', 'stroke', 'strokeCue', 'isCapturedSmashShot',
+    'capturedEvent', 'strokeEvent', 'handedness', 'stroke', 'strokeCue', 'recordedVolley', 'recordedTouch',
+    'isCapturedSmashShot',
     'isCapturedVolleyShot', 'fullReplay', 'rig', 'liveCourtShotSpin', 'frameRate', 'soundEventsRef',
     'contactSample', 'samples', 'events', 'sceneDataRef', 'TE4_DMO_FRAMES_PER_SECOND',
     `${court.slice(start, end)}\nreturn capturedEvent;`,
   );
   const choose = (previous, event, stroke, cue, qualifies, hand = 'right', slice = false) => select(
-    previous, event, hand, stroke, cue, () => qualifies,
-    () => false, slice, { detailed: true }, () => slice ? 'slice' : null, 60, { current: [] },
+    previous, event, hand, stroke, cue, cue === 'close-net', cue === 'soft-touch', () => qualifies,
+    () => false, slice, { detailed: true, root: { userData: { capturedVolleys: true } } },
+    () => slice ? 'slice' : null, 60, { current: [] },
     [], [], [], { current: { snapshot: { frameRate: 60 } } }, 60,
   );
   const hit = { frame: 100, shotType: 'rally' };

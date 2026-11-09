@@ -54,6 +54,10 @@ function slerpPath(a: THREE.Quaternion, b: THREE.Quaternion, t: number, long: bo
   return a.clone().multiply(new THREE.Quaternion().setFromAxisAngle(axis, angle * t));
 }
 
+/** Keep only a quarter of the contact correction's trunk bend. */
+const SPINE_BEND_SHARE = 0.25;
+const TRUNK_LEAN_LIMIT = THREE.MathUtils.degToRad(24);
+
 function clampRotation(q: THREE.Quaternion, limit: number) {
   const angle = 2 * Math.acos(THREE.MathUtils.clamp(Math.abs(q.w), -1, 1));
   if (angle <= limit) return q;
@@ -321,6 +325,22 @@ export function attachNativePlayer(
     const part = new THREE.Quaternion().slerp(q, 1 / 3);
     for (const name of ['spine_01', 'spine_02', 'spine_03']) pose.turn(name, part);
   };
+  const limitTrunkLean = (weight: number) => {
+    if (weight <= 0) return;
+    // Spine joints are hierarchical, so applying the measured excess once
+    // does not rotate the neck by quite that same world-space angle. Recheck
+    // after each small correction to enforce the limit without overshooting.
+    for (let pass = 0; pass < 3; pass++) {
+      const trunk = pose.point('neck_01').sub(pose.point('pelvis'));
+      const lean = Math.acos(THREE.MathUtils.clamp(trunk.y / Math.max(1e-6, trunk.length()), -1, 1));
+      const excess = (lean - TRUNK_LEAN_LIMIT) * weight;
+      if (excess <= 1e-4) return;
+      const axis = trunk.clone().cross(UP);
+      if (axis.lengthSq() < 1e-10) return;
+      turnSpine(new THREE.Quaternion().setFromAxisAngle(axis.normalize(), excess));
+      model.updateMatrixWorld(true);
+    }
+  };
   /** One CCD step about `joint`, limited so the accumulated turn stays within `total`. */
   const swingToward = (joint: string, side: Side, roll: THREE.Quaternion, goal: THREE.Vector3,
     step: number, accumulated: THREE.Quaternion, total: number) => {
@@ -328,6 +348,12 @@ export function attachNativePlayer(
     const from = racketHead(side, roll).sub(pivot), to = goal.clone().sub(pivot);
     if (from.lengthSq() < 1e-8 || to.lengthSq() < 1e-8) return new THREE.Quaternion();
     let q = clampRotation(new THREE.Quaternion().setFromUnitVectors(from.normalize(), to.normalize()), step);
+    if (joint === 'spine_01') {
+      const axis = pose.point('neck_01').sub(pivot).normalize();
+      const twist = new THREE.Quaternion().setFromAxisAngle(axis, twistAngle(q, axis));
+      const bend = q.clone().multiply(twist.clone().invert());
+      q = new THREE.Quaternion().slerp(bend, SPINE_BEND_SHARE).multiply(twist);
+    }
     const room = total - angleOf(accumulated);
     if (room <= 0) return new THREE.Quaternion();
     q = clampRotation(q, room);
@@ -416,13 +442,14 @@ export function attachNativePlayer(
       const yaw = new THREE.Quaternion().setFromAxisAngle(UP, hipYaw);
       const legWeight = THREE.MathUtils.clamp(Number(rig.root.userData.recordedLegs ?? 0), 0, 1);
       const lifts = rig.root.userData.gaitLift as { l: number; r: number } | undefined;
+      const lunge = rig.root.userData.lunge as { weight: number; side: number } | undefined;
       const recorded = legWeight > 0.001 && lifts
         ? capturedLocomotion?.legs(
           Number(rig.root.userData.locomotionPhase ?? 0),
           Number(rig.root.userData.locomotionSpeed ?? 0),
         ) ?? null
         : null;
-      if (Math.abs(hipYaw) > 1e-3 || recorded) {
+      if (Math.abs(hipYaw) > 1e-3 || recorded || (lunge?.weight ?? 0) > 0.001) {
         for (const side of ['l', 'r'] as const) {
           const hip = pose.point(`thigh_${side}`);
           const ankle = pose.point(`foot_${side}`);
@@ -431,13 +458,22 @@ export function attachNativePlayer(
           let preference = mid.clone().add(
             new THREE.Vector3((side === 'l' ? 1 : -1) * 0.05, 0, 0.35).applyQuaternion(yaw),
           );
+          if (lunge && (lunge.side > 0 ? 'l' : 'r') === side) {
+            preference.x += lunge.side * 0.3 * lunge.weight;
+          }
           let target = ankle;
           if (recorded) {
             const swing = legWeight * THREE.MathUtils.smoothstep(lifts![side], 0.005, 0.05);
-            const fromHip = (v: THREE.Vector3) => hip.clone().add(v.clone().multiplyScalar(length).applyQuaternion(yaw));
-            preference = preference.lerp(fromHip(recorded[side].knee).add(
+            const unyaw = yaw.clone().invert();
+            const ownLateral = (point: THREE.Vector3) => point.clone().sub(hip).applyQuaternion(unyaw).x;
+            const fromHip = (point: THREE.Vector3, lateral: number) => {
+              const local = point.clone().multiplyScalar(length);
+              local.x = lateral;
+              return hip.clone().add(local.applyQuaternion(yaw));
+            };
+            preference = preference.lerp(fromHip(recorded[side].knee, ownLateral(preference)).add(
               new THREE.Vector3(0, 0, 0.15).applyQuaternion(yaw)), legWeight);
-            target = ankle.clone().lerp(fromHip(recorded[side].ankle), swing);
+            target = ankle.clone().lerp(fromHip(recorded[side].ankle, ownLateral(ankle)), swing);
             target.y = Math.max(target.y, ankle.y);
           }
           const solved = nativeTwoBone(hip, target, legs[side].lengths[0], legs[side].lengths[1], preference);
@@ -545,6 +581,7 @@ export function attachNativePlayer(
         model.updateMatrixWorld(true);
       }
     }
+    if (capturedBody && playback && playback.stroke !== 'serve') limitTrunkLean(captureWeight);
     const strokeRoll = new THREE.Quaternion();
     const backhandRoll = recordedBackhandFaceRoll(playback?.stroke, oneHandedStroke, playback?.slice);
     if (capturedBody && playback) {
@@ -560,6 +597,7 @@ export function attachNativePlayer(
           // the stroke path shifts coherently instead of kinking at impact.
           const saved = [...pose.bones.values()].map(b => [b, b.position.clone(), b.quaternion.clone()] as const);
           capturedGroundstroke.apply({ ...strokePlayback!, deltaSeconds: 0, weight: 1 });
+          limitTrunkLean(1);
           const fullRoll = backhandRoll
             ? new THREE.Quaternion().setFromAxisAngle(UP, (dominant === 'r' ? 1 : -1) * backhandRoll)
             : new THREE.Quaternion();

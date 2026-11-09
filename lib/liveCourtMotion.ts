@@ -1,7 +1,9 @@
 export type LiveCourtCoordinates = [number, number, number, number, number, number, number];
 export type LiveCourtSample = { frame: number; values: LiveCourtCoordinates };
-export const LOW_REACH_MAX_DROP = 0.27;
+export const LOW_REACH_MAX_DROP = 0.3;
 export const SLICE_MAX_DROP_RATE = 950;
+export const LUNGE_FEET_APART = 1.1;
+export const LUNGE_DROP = 0.24;
 
 function smoothstep(value: number, low: number, high: number) {
   const amount = Math.max(0, Math.min(1, (value - low) / (high - low)));
@@ -16,7 +18,7 @@ export function liveCourtReplayFrameScale(frameRate: number) {
 /** Enter the rally run carry at 2.2 m/s; release below 2.0 m/s to avoid flicker. */
 export function nextLiveCourtCarryMode(
   previous: boolean,
-  options: { walking: boolean; shotDue: boolean; strolling: number; speed: number },
+  options: { walking: boolean; shotDue: boolean; strolling: number; speed: number; carryIntent?: number },
 ) {
   if (options.walking) return true;
   if (options.shotDue) return false;
@@ -25,9 +27,11 @@ export function nextLiveCourtCarryMode(
     : 0;
   const speed = Number.isFinite(options.speed) ? options.speed : 0;
   const running = speed >= (previous ? 2.0 : 2.2);
-  const carryIntent = Math.max(strolling, running ? 1 : 0);
-  if (carryIntent > 0.65) return true;
-  if (carryIntent < 0.35) return false;
+  const intent = Number.isFinite(options.carryIntent)
+    ? Math.max(0, Math.min(1, options.carryIntent!))
+    : Math.max(strolling, running ? 1 : 0);
+  if (intent > 0.65) return true;
+  if (intent < 0.35) return false;
   return previous;
 }
 
@@ -35,9 +39,13 @@ export function nextLiveCourtCarryMode(
 export function lowReachDrop(heightMetres: number, reachMetres: number) {
   if (!Number.isFinite(heightMetres) || !Number.isFinite(reachMetres)) return 0;
   const low = 1 - smoothstep(heightMetres, 0.25, 0.5);
-  const stretch = smoothstep(reachMetres, 1.5, 2.0)
-    * (1 - smoothstep(reachMetres, 2.4, 2.8));
-  return Math.min(LOW_REACH_MAX_DROP, 0.15 * low + 0.12 * stretch);
+  return Math.min(LOW_REACH_MAX_DROP, 0.15 * low + LUNGE_DROP * lungeWeight(reachMetres));
+}
+
+/** How far into a full lunge a ball this far from the body centre takes him. */
+export function lungeWeight(reachMetres: number) {
+  if (!Number.isFinite(reachMetres)) return 0;
+  return smoothstep(reachMetres, 1.45, 1.95) * (1 - smoothstep(reachMetres, 2.6, 3.0));
 }
 
 /**
