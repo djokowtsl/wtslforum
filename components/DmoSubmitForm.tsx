@@ -2,11 +2,17 @@
 
 import { uploadPresigned } from '@vercel/blob/client';
 import { useRouter } from 'next/navigation';
-import { useState, type FormEvent, type CSSProperties } from 'react';
+import { useEffect, useState, type FormEvent, type CSSProperties } from 'react';
 import {
   buildDmoSubmissionUploadPath,
   MAX_DMO_SUBMISSION_BYTES,
 } from '@/lib/dmoSubmissionUpload';
+import {
+  isDmoBackhandType,
+  isDmoPlayingHand,
+  parseDmoSubmissionCharacterRoster,
+  type DmoSubmissionCharacterOption,
+} from '@/lib/dmoSubmissionPlayerStyle';
 import FileDropSurface from './FileDropSurface';
 
 export default function DmoSubmitForm({ userId }: { userId: string }) {
@@ -17,6 +23,13 @@ export default function DmoSubmitForm({ userId }: { userId: string }) {
   const [player2, setPlayer2] = useState('');
   const [player1Character, setPlayer1Character] = useState('');
   const [player2Character, setPlayer2Character] = useState('');
+  const [player1Handedness, setPlayer1Handedness] = useState('');
+  const [player2Handedness, setPlayer2Handedness] = useState('');
+  const [player1BackhandType, setPlayer1BackhandType] = useState('');
+  const [player2BackhandType, setPlayer2BackhandType] = useState('');
+  const [characterOptions, setCharacterOptions] = useState<DmoSubmissionCharacterOption[]>([]);
+  const [characterRosterStatus, setCharacterRosterStatus] = useState<'loading' | 'ready' | 'error'>('loading');
+  const [characterRosterRetry, setCharacterRosterRetry] = useState(0);
   const [externalUrl, setExternalUrl] = useState('');
   const [coachShareUrl, setCoachShareUrl] = useState('');
   const [file, setFile] = useState<File | null>(null);
@@ -28,6 +41,45 @@ export default function DmoSubmitForm({ userId }: { userId: string }) {
   const [uploadProgress, setUploadProgress] = useState(0);
   const [error, setError] = useState('');
   const [notice, setNotice] = useState('');
+
+  useEffect(() => {
+    const controller = new AbortController();
+    let active = true;
+    setCharacterRosterStatus('loading');
+    void fetch('/api/character-stats?tour=all&include_profile=false', {
+      cache: 'no-store',
+      signal: controller.signal,
+    }).then(async (response) => {
+      const body = await response.json().catch(() => null);
+      if (!response.ok) throw new Error('The character list is unavailable.');
+      return parseDmoSubmissionCharacterRoster(body?.character_filter_metadata);
+    }).then((options) => {
+      if (!active) return;
+      setCharacterOptions(options);
+      setCharacterRosterStatus(options.length ? 'ready' : 'error');
+    }).catch(() => {
+      if (!active) return;
+      setCharacterOptions([]);
+      setCharacterRosterStatus('error');
+    });
+    return () => {
+      active = false;
+      controller.abort();
+    };
+  }, [characterRosterRetry]);
+
+  function updatePlayerCharacter(player: 1 | 2, character: string) {
+    const option = characterOptions.find((item) => item.character === character);
+    if (player === 1) {
+      setPlayer1Character(character);
+      setPlayer1Handedness(option?.playingHand ?? '');
+      setPlayer1BackhandType(option?.backhandType ?? '');
+    } else {
+      setPlayer2Character(character);
+      setPlayer2Handedness(option?.playingHand ?? '');
+      setPlayer2BackhandType(option?.backhandType ?? '');
+    }
+  }
 
   function selectFile(nextFile: File | null) {
     setPublicShareConsent(false);
@@ -59,6 +111,15 @@ export default function DmoSubmitForm({ userId }: { userId: string }) {
     setNotice('');
     if (!tournament.trim() || !roundName.trim() || !player1.trim() || !player2.trim()) {
       setError('Enter the tournament, round, and both players.');
+      return;
+    }
+    if (
+      !isDmoPlayingHand(player1Handedness)
+      || !isDmoPlayingHand(player2Handedness)
+      || !isDmoBackhandType(player1BackhandType)
+      || !isDmoBackhandType(player2BackhandType)
+    ) {
+      setError('Choose a playing hand and backhand grip for both players.');
       return;
     }
     if (!file && !externalUrl.trim()) {
@@ -106,6 +167,10 @@ export default function DmoSubmitForm({ userId }: { userId: string }) {
       form.append('player2', player2);
       form.append('player1Character', player1Character.trim());
       form.append('player2Character', player2Character.trim());
+      form.append('player1Handedness', player1Handedness);
+      form.append('player2Handedness', player2Handedness);
+      form.append('player1BackhandType', player1BackhandType);
+      form.append('player2BackhandType', player2BackhandType);
       form.append('externalUrl', externalUrl.trim());
       form.append('coachShareUrl', coachShareUrl.trim());
       form.append('publicShareConsent', String(publicShareConsent && Boolean(file)));
@@ -129,6 +194,10 @@ export default function DmoSubmitForm({ userId }: { userId: string }) {
       setPlayer2('');
       setPlayer1Character('');
       setPlayer2Character('');
+      setPlayer1Handedness('');
+      setPlayer2Handedness('');
+      setPlayer1BackhandType('');
+      setPlayer2BackhandType('');
       setExternalUrl('');
       setCoachShareUrl('');
       setFile(null);
@@ -166,7 +235,7 @@ export default function DmoSubmitForm({ userId }: { userId: string }) {
     <section className="admin-card">
       <h3>Submit a match recording</h3>
       <p className="notice" style={{ marginBottom: 14 }}>
-        Add the tournament, round, and players, and note the TE4 character each player used. Then attach a .dmo file or provide a recording link.
+        Add the tournament, round, and players. Choose each player’s TE4 character to fill in their playing hand and backhand grip, or select no character and enter those details for a created character. Then attach a .dmo file or provide a recording link.
         For a match played across multiple sessions,{' '}
         <a href="https://replays.knowthew.net/join" target="_blank" rel="noopener noreferrer">
           join the replay parts first
@@ -217,24 +286,115 @@ export default function DmoSubmitForm({ userId }: { userId: string }) {
             style={inputStyle}
           />
         </div>
-        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(180px, 1fr))', gap: 10 }}>
-          <input
-            maxLength={100}
-            placeholder="Player 1 character pick (optional)"
-            aria-label="Player 1 character pick"
-            value={player1Character}
-            onChange={(event) => setPlayer1Character(event.target.value)}
-            style={inputStyle}
-          />
-          <input
-            maxLength={100}
-            placeholder="Player 2 character pick (optional)"
-            aria-label="Player 2 character pick"
-            value={player2Character}
-            onChange={(event) => setPlayer2Character(event.target.value)}
-            style={inputStyle}
-          />
+        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(260px, 1fr))', gap: 10 }}>
+          <fieldset style={playerStyleGroup}>
+            <legend>Player 1 style</legend>
+            <label style={fieldStyle}>
+              TE4 character
+              <select
+                aria-label="Player 1 character"
+                value={player1Character}
+                disabled={characterRosterStatus === 'loading'}
+                onChange={(event) => updatePlayerCharacter(1, event.target.value)}
+                style={inputStyle}
+              >
+                <option value="">No character / created character</option>
+                {characterOptions.map((option) => (
+                  <option key={option.character} value={option.character}>{option.character}</option>
+                ))}
+              </select>
+            </label>
+            <div style={fieldPairStyle}>
+              <label style={fieldStyle}>
+                Playing hand
+                <select
+                  required
+                  aria-label="Player 1 playing hand"
+                  value={player1Handedness}
+                  onChange={(event) => setPlayer1Handedness(event.target.value)}
+                  style={inputStyle}
+                >
+                  <option value="">Choose hand</option>
+                  <option value="right">Right-handed</option>
+                  <option value="left">Left-handed</option>
+                </select>
+              </label>
+              <label style={fieldStyle}>
+                Backhand grip
+                <select
+                  required
+                  aria-label="Player 1 backhand grip"
+                  value={player1BackhandType}
+                  onChange={(event) => setPlayer1BackhandType(event.target.value)}
+                  style={inputStyle}
+                >
+                  <option value="">Choose grip</option>
+                  <option value="one-handed">One-handed</option>
+                  <option value="two-handed">Two-handed</option>
+                </select>
+              </label>
+            </div>
+          </fieldset>
+          <fieldset style={playerStyleGroup}>
+            <legend>Player 2 style</legend>
+            <label style={fieldStyle}>
+              TE4 character
+              <select
+                aria-label="Player 2 character"
+                value={player2Character}
+                disabled={characterRosterStatus === 'loading'}
+                onChange={(event) => updatePlayerCharacter(2, event.target.value)}
+                style={inputStyle}
+              >
+                <option value="">No character / created character</option>
+                {characterOptions.map((option) => (
+                  <option key={option.character} value={option.character}>{option.character}</option>
+                ))}
+              </select>
+            </label>
+            <div style={fieldPairStyle}>
+              <label style={fieldStyle}>
+                Playing hand
+                <select
+                  required
+                  aria-label="Player 2 playing hand"
+                  value={player2Handedness}
+                  onChange={(event) => setPlayer2Handedness(event.target.value)}
+                  style={inputStyle}
+                >
+                  <option value="">Choose hand</option>
+                  <option value="right">Right-handed</option>
+                  <option value="left">Left-handed</option>
+                </select>
+              </label>
+              <label style={fieldStyle}>
+                Backhand grip
+                <select
+                  required
+                  aria-label="Player 2 backhand grip"
+                  value={player2BackhandType}
+                  onChange={(event) => setPlayer2BackhandType(event.target.value)}
+                  style={inputStyle}
+                >
+                  <option value="">Choose grip</option>
+                  <option value="one-handed">One-handed</option>
+                  <option value="two-handed">Two-handed</option>
+                </select>
+              </label>
+            </div>
+          </fieldset>
         </div>
+        <p className="notice" role="status" style={{ margin: 0, fontSize: 12 }}>
+          {characterRosterStatus === 'loading'
+            ? 'Loading the character list…'
+            : characterRosterStatus === 'error'
+              ? <>The character list is unavailable. You can still submit created characters using the required manual style fields.{' '}
+                <button type="button" className="btn btn-sm btn-ghost" onClick={() => setCharacterRosterRetry((value) => value + 1)}>
+                  Retry
+                </button>
+              </>
+              : 'Character selections fill in both style fields. You can adjust them if needed; created characters require manual choices.'}
+        </p>
         <input
           type="url"
           maxLength={1000}
@@ -321,4 +481,21 @@ const inputStyle: CSSProperties = {
   border: '1px solid var(--line-2)',
   background: 'var(--bg-2)',
   color: 'var(--text)',
+};
+
+const playerStyleGroup: CSSProperties = {
+  display: 'grid',
+  gap: 9,
+  minWidth: 0,
+  margin: 0,
+  padding: 12,
+  border: '1px solid var(--line-2)',
+  borderRadius: 8,
+};
+
+const fieldStyle: CSSProperties = { display: 'grid', gap: 5 };
+const fieldPairStyle: CSSProperties = {
+  display: 'grid',
+  gridTemplateColumns: 'repeat(auto-fit, minmax(120px, 1fr))',
+  gap: 8,
 };

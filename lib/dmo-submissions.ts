@@ -1,4 +1,5 @@
 import { sql } from '@/lib/db';
+import type { DmoBackhandType, DmoPlayingHand } from '@/lib/dmoSubmissionPlayerStyle';
 
 export type DmoSubmissionSource = 'discord' | 'forum';
 export type DmoDiscordDeliveryStatus = 'pending' | 'sent' | 'failed';
@@ -15,6 +16,12 @@ export type DmoSubmission = {
   player2: string;
   player1_character: string | null;
   player2_character: string | null;
+  player1_handedness: DmoPlayingHand | null;
+  player2_handedness: DmoPlayingHand | null;
+  player1_backhand_type: DmoBackhandType | null;
+  player2_backhand_type: DmoBackhandType | null;
+  hidden_at: string | Date | null;
+  hidden_by: string | null;
   file_name: string | null;
   public_share_consent: boolean;
   coach_group_share_consent: boolean;
@@ -45,6 +52,10 @@ export type NewDmoSubmission = {
   player2: string;
   player1Character?: string | null;
   player2Character?: string | null;
+  player1Handedness?: DmoPlayingHand | null;
+  player2Handedness?: DmoPlayingHand | null;
+  player1BackhandType?: DmoBackhandType | null;
+  player2BackhandType?: DmoBackhandType | null;
   fileName?: string | null;
   publicShareConsent?: boolean;
   coachGroupShareConsent?: boolean;
@@ -101,6 +112,12 @@ export async function ensureDmoSubmissionSchema() {
           player2 TEXT NOT NULL,
           player1_character TEXT,
           player2_character TEXT,
+          player1_handedness TEXT CHECK (player1_handedness IS NULL OR player1_handedness IN ('left','right')),
+          player2_handedness TEXT CHECK (player2_handedness IS NULL OR player2_handedness IN ('left','right')),
+          player1_backhand_type TEXT CHECK (player1_backhand_type IS NULL OR player1_backhand_type IN ('one-handed','two-handed')),
+          player2_backhand_type TEXT CHECK (player2_backhand_type IS NULL OR player2_backhand_type IN ('one-handed','two-handed')),
+          hidden_at TIMESTAMPTZ,
+          hidden_by TEXT,
           file_name TEXT,
           public_share_consent BOOLEAN NOT NULL DEFAULT FALSE,
           coach_group_share_consent BOOLEAN NOT NULL DEFAULT FALSE,
@@ -179,7 +196,9 @@ export async function createDmoSubmission(
   const rows = await sql`
     INSERT INTO dmo_submissions (
       submitted_by,submitter_discord_id,submitter_name,source,tournament,round_name,
-      player1,player2,player1_character,player2_character,file_name,public_share_consent,coach_group_share_consent,
+      player1,player2,player1_character,player2_character,
+      player1_handedness,player2_handedness,player1_backhand_type,player2_backhand_type,
+      file_name,public_share_consent,coach_group_share_consent,
       coach_share_url,private_blob_pathname,private_blob_content_type,external_url,
       source_discord_channel_id,source_discord_message_id,
       submission_thread_id,discord_message_id,discord_delivery_status,submission_date
@@ -187,6 +206,8 @@ export async function createDmoSubmission(
       ${input.submittedBy},${input.submitterDiscordId},${input.submitterName},
       ${input.source},${input.tournament},${input.roundName},${input.player1},
       ${input.player2},${input.player1Character ?? null},${input.player2Character ?? null},
+      ${input.player1Handedness ?? null},${input.player2Handedness ?? null},
+      ${input.player1BackhandType ?? null},${input.player2BackhandType ?? null},
       ${input.fileName ?? null},${input.publicShareConsent ?? false},
       ${input.coachGroupShareConsent ?? false},${input.coachShareUrl ?? null},
       ${input.privateBlobPathname ?? null},
@@ -256,6 +277,30 @@ export async function listDmoSubmissions(limit = 100): Promise<DmoSubmission[]> 
     ORDER BY s.created_at DESC
     LIMIT ${safeLimit}
   ` as DmoSubmission[];
+}
+
+export async function setDmoSubmissionHidden(input: {
+  id: string;
+  hidden: boolean;
+  hiddenBy: string;
+}): Promise<boolean> {
+  await ensureDmoSubmissionSchema();
+  const hiddenBy = input.hiddenBy.trim().slice(0, 100);
+  if (input.hidden && !hiddenBy) return false;
+  const rows = await sql`
+    UPDATE dmo_submissions
+    SET hidden_at=CASE
+          WHEN ${input.hidden} THEN COALESCE(hidden_at,NOW())
+          ELSE NULL
+        END,
+        hidden_by=CASE
+          WHEN ${input.hidden} THEN COALESCE(hidden_by,${hiddenBy})
+          ELSE NULL
+        END
+    WHERE id=${input.id}::bigint
+    RETURNING id
+  `;
+  return rows.length > 0;
 }
 
 export async function updateDmoSubmissionTags(

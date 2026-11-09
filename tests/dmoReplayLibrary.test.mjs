@@ -18,6 +18,11 @@ function loadModule(path, mocks) {
     if (name in mocks) return mocks[name];
     if (name === '@/lib/auth') return { getSession: async () => ({ isAdmin: true }) };
     if (name === '@/lib/te4CoachEmbed') return te4CoachEmbedModule;
+    if (name === '@/lib/dmoSubmissionPlayerStyle' || name === './dmoSubmissionPlayerStyle') {
+      return loadModule('lib/dmoSubmissionPlayerStyle.ts', {
+        './liveCharacterBackhand.mjs': loadModule('lib/liveCharacterBackhand.mjs', {}),
+      });
+    }
     if (name.startsWith('node:')) return require(name);
     throw new Error(`Unexpected dependency: ${name}`);
   }, module, module.exports);
@@ -136,6 +141,59 @@ test('replay character picks map to their saved player slots and preserve one-ha
   assert.deepEqual(presentation.missingBackhandStyle, [false, false]);
 });
 
+test('saved created-player styles override missing character picks for both replay slots', () => {
+  const backhandModule = loadModule('lib/liveCharacterBackhand.mjs', {});
+  const { resolveDmoReplayCharacterPresentation } = loadModule('lib/dmoReplayCharacterStyles.ts', {
+    './liveCharacterBackhand.mjs': backhandModule,
+  });
+  const presentation = resolveDmoReplayCharacterPresentation(
+    ['Squeaky', 'javilupsi'],
+    [null, null],
+    new Map(),
+    {
+      handedness: ['right', 'left'],
+      backhandTypes: ['one-handed', 'one-handed'],
+    },
+  );
+
+  assert.deepEqual(presentation.handedness, ['right', 'left']);
+  assert.deepEqual(presentation.strokeStyles.map((style) => style.backhand), ['one', 'one']);
+  assert.deepEqual(presentation.missingBackhandStyle, [false, false]);
+});
+
+test('submission character roster is a sorted dropdown source with both style values', () => {
+  const { parseDmoSubmissionCharacterRoster } = loadModule('lib/dmoSubmissionPlayerStyle.ts', {
+    './liveCharacterBackhand.mjs': loadModule('lib/liveCharacterBackhand.mjs', {}),
+  });
+  const options = parseDmoSubmissionCharacterRoster([
+    { character: 'Roger Federer', playing_hand: 'right', backhand_type: 'one-handed' },
+    { character: ' Rafael Nadal ', playing_hand: 'left', backhand_type: 'two-handed' },
+    { character: 'roger federer', playing_hand: 'left', backhand_type: 'two-handed' },
+    { character: 'Unknown', playing_hand: 'sideways', backhand_type: 'three-handed' },
+  ]);
+
+  assert.deepEqual(options, [
+    { character: 'Rafael Nadal', playingHand: 'left', backhandType: 'two-handed' },
+    { character: 'Roger Federer', playingHand: 'right', backhandType: 'one-handed' },
+    { character: 'Unknown', playingHand: null, backhandType: null },
+  ]);
+});
+
+test('DMO submission form uses character dropdowns and requires both players styles', () => {
+  const form = readFileSync(new URL('../components/DmoSubmitForm.tsx', import.meta.url), 'utf8');
+  assert.match(form, /<select\s+aria-label="Player 1 character"/);
+  assert.match(form, /<select\s+aria-label="Player 2 character"/);
+  for (const label of [
+    'Player 1 playing hand',
+    'Player 2 playing hand',
+    'Player 1 backhand grip',
+    'Player 2 backhand grip',
+  ]) {
+    assert.match(form, new RegExp(`required[\\s\\S]{0,80}aria-label="${label}"`));
+  }
+  assert.doesNotMatch(form, /Player 1 character pick \(optional\)/);
+});
+
 test('legacy Discord character annotations resolve both Federer slots without guessing member names', () => {
   const backhandModule = loadModule('lib/liveCharacterBackhand.mjs', {});
   const { dmoReplayCharacterNames, buildDmoReplayCharacterSetupIndex, resolveDmoReplayCharacterPresentation } =
@@ -206,6 +264,10 @@ test('Match Replay Center catalog includes every submission and only safe record
             player2: 'Two',
             player1_character: 'Roger Federer',
             player2_character: 'Roger Federer',
+            player1_handedness: 'right',
+            player2_handedness: 'left',
+            player1_backhand_type: 'one-handed',
+            player2_backhand_type: 'two-handed',
             submission_date: '2026-10-30',
             source: 'discord',
             private_blob_pathname: 'dmo/discord-123-final.dmo',
@@ -260,6 +322,10 @@ test('Match Replay Center catalog includes every submission and only safe record
         player2: 'Two',
         player1Character: 'Roger Federer',
         player2Character: 'Roger Federer',
+        player1Handedness: 'right',
+        player2Handedness: 'left',
+        player1BackhandType: 'one-handed',
+        player2BackhandType: 'two-handed',
         submissionDate: '2026-10-30',
         source: 'discord',
         hasDmoFile: true,
@@ -287,6 +353,8 @@ test('Match Replay Center catalog includes every submission and only safe record
   assert.doesNotMatch(listingWhere, /public_share_consent|dmo_replay_publication_overrides/);
   assert.match(queries[0].text, /external_url/);
   assert.match(queries[0].text, /player1_character,player2_character/);
+  assert.match(queries[0].text, /player1_handedness,player2_handedness,player1_backhand_type,player2_backhand_type/);
+  assert.match(queries[0].text, /WHERE hidden_at IS NULL/);
   assert.match(queries[0].text, /coach_group_share_consent/);
   assert.match(queries[0].text, /ORDER BY id DESC/);
   assert.ok(queries[0].values.includes('%Open%'));
@@ -308,6 +376,10 @@ test('replay listing returns only safe metadata and paginates uploaded DMO files
             player2: 'Two',
             player1_character: 'Private character one',
             player2_character: 'Private character two',
+            player1_handedness: 'right',
+            player2_handedness: 'left',
+            player1_backhand_type: 'one-handed',
+            player2_backhand_type: 'two-handed',
             submission_date: '2026-10-30',
             source: 'discord',
             coach_share_url: 'https://replays.knowthew.net/m/3f9a1c07b2e4d5a6',
@@ -328,6 +400,10 @@ test('replay listing returns only safe metadata and paginates uploaded DMO files
         roundName: 'Final',
         player1: 'One',
         player2: 'Two',
+        player1Handedness: 'right',
+        player2Handedness: 'left',
+        player1BackhandType: 'one-handed',
+        player2BackhandType: 'two-handed',
         submissionDate: '2026-10-30',
         source: 'discord',
         hasDmoFile: true,
@@ -348,11 +424,13 @@ test('replay listing returns only safe metadata and paginates uploaded DMO files
   });
   assert.match(queries[0].text, /private_blob_pathname LIKE 'dmo\/%'/);
   assert.match(queries[0].text, /public_share_consent IS TRUE/);
+  assert.match(queries[0].text, /WHERE hidden_at IS NULL/);
   assert.match(queries[0].text, /dmo_replay_publication_overrides/);
   assert.match(queries[0].text, /publication_override\.revoked_at IS NULL/);
   assert.match(queries[0].text, /file_name, private_blob_pathname/);
   assert.match(queries[0].text, /coach_share_url/);
   assert.match(queries[0].text, /CASE WHEN coach_group_share_consent IS TRUE THEN coach_share_url ELSE NULL END/);
+  assert.match(queries[0].text, /player1_handedness,player2_handedness,player1_backhand_type,player2_backhand_type/);
   assert.doesNotMatch(queries[0].text, /player1_character|player2_character/);
   assert.match(queries[0].text, /ORDER BY id DESC/);
   assert.ok(queries[0].values.includes('%Open%'));
@@ -551,6 +629,7 @@ test('legacy public replay lookup still requires consent or an active owner over
 
   assert.equal(await getPublicDmoReplay('21'), null);
   assert.match(queries[0].text, /public_share_consent IS TRUE/);
+  assert.match(queries[0].text, /AND hidden_at IS NULL/);
   assert.match(queries[0].text, /dmo_replay_publication_overrides/);
   assert.match(queries[0].text, /publication_override\.revoked_at IS NULL/);
   assert.match(queries[0].text, /coach_share_url/);
@@ -634,6 +713,7 @@ test('Match Replay Center detail lookup includes unconsented submissions', async
   assert.equal(metadata.player2Character, 'Roger Federer');
   assert.equal(replay.privateBlobPathname, 'dmo/discord-123-secret.dmo');
   assert.match(queries[0].text, /player1_character,player2_character/);
+  assert.match(queries[0].text, /AND hidden_at IS NULL/);
   assert.match(queries[0].text, /CASE WHEN coach_group_share_consent IS TRUE[\s\S]*public_share_consent IS TRUE[\s\S]*dmo_replay_publication_overrides[\s\S]*revoked_at IS NULL/);
   const detailWhere = queries[0].text.slice(queries[0].text.lastIndexOf('WHERE'));
   assert.doesNotMatch(detailWhere, /public_share_consent|dmo_replay_publication_overrides/);
@@ -664,6 +744,7 @@ test('public Coach group lookup requires its separate consent flag', async () =>
   assert.equal(replay.coachShareUrl, 'https://replays.knowthew.net/m/3f9a1c07b2e4d5a6');
   assert.equal('privateBlobPathname' in replay, false);
   assert.match(queries[0].text, /coach_group_share_consent IS TRUE/);
+  assert.match(queries[0].text, /AND hidden_at IS NULL/);
   assert.match(queries[0].text, /public_share_consent IS TRUE/);
   assert.match(queries[0].text, /dmo_replay_publication_overrides/);
 });
@@ -1151,7 +1232,23 @@ test('Forum DMO submission accepts only an owned, verified private upload', asyn
         syncPublicDmoSubmissionToTe4CoachGroup: async () => ({ status: 'skipped' }),
       },
       '@/lib/dmoSubmissionUpload': loadModule('lib/dmoSubmissionUpload.ts', {}),
+      '@/lib/dmoSubmissionPlayerStyle': loadModule('lib/dmoSubmissionPlayerStyle.ts', {
+        './liveCharacterBackhand.mjs': loadModule('lib/liveCharacterBackhand.mjs', {}),
+      }),
     });
+    const missingStyles = new FormData();
+    missingStyles.set('tournament', 'Basel Open');
+    missingStyles.set('round', 'Round of 16');
+    missingStyles.set('player1', 'Squeaky');
+    missingStyles.set('player2', 'maastodontee');
+    const rejected = await route.POST(new Request('https://forum.test/api/dmo-submissions', {
+      method: 'POST',
+      body: missingStyles,
+    }));
+    assert.equal(rejected.status, 400);
+    assert.equal(blobReads, 0);
+    assert.equal(created.length, 0);
+
     const form = new FormData();
     form.set('tournament', 'Basel Open');
     form.set('round', 'Round of 16');
@@ -1159,6 +1256,10 @@ test('Forum DMO submission accepts only an owned, verified private upload', asyn
     form.set('player2', 'maastodontee');
     form.set('player1Character', 'Roger Federer');
     form.set('player2Character', 'Roger Federer');
+    form.set('player1Handedness', 'right');
+    form.set('player2Handedness', 'left');
+    form.set('player1BackhandType', 'one-handed');
+    form.set('player2BackhandType', 'two-handed');
     form.set('coachShareUrl', 'https://replays.knowthew.net/m/3f9a1c07b2e4d5a6');
     form.set('publicShareConsent', 'true');
     form.set('coachGroupShareConsent', 'true');
@@ -1177,6 +1278,10 @@ test('Forum DMO submission accepts only an owned, verified private upload', asyn
     assert.equal(created[0].fileName, 'match.dmo');
     assert.equal(created[0].player1Character, 'Roger Federer');
     assert.equal(created[0].player2Character, 'Roger Federer');
+    assert.equal(created[0].player1Handedness, 'right');
+    assert.equal(created[0].player2Handedness, 'left');
+    assert.equal(created[0].player1BackhandType, 'one-handed');
+    assert.equal(created[0].player2BackhandType, 'two-handed');
     assert.equal(created[0].publicShareConsent, true);
     assert.equal(created[0].coachGroupShareConsent, true);
     assert.equal(discordDeliveries[0].fileName, 'match.dmo');

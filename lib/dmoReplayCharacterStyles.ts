@@ -5,11 +5,22 @@ import {
   type CharacterBroadcastSetup,
 } from './liveCharacterBackhand.mjs';
 import type { PlayerStrokeStylePair } from './liveCourtPerformance';
+import {
+  isDmoBackhandType,
+  isDmoPlayingHand,
+  type DmoBackhandType,
+  type DmoPlayingHand,
+} from './dmoSubmissionPlayerStyle';
 
 export type DmoReplayCharacterNames = readonly [
   string | null | undefined,
   string | null | undefined,
 ];
+
+export type DmoReplayPlayerStyleValues = {
+  handedness?: readonly [DmoPlayingHand | null | undefined, DmoPlayingHand | null | undefined];
+  backhandTypes?: readonly [DmoBackhandType | null | undefined, DmoBackhandType | null | undefined];
+};
 
 /** Legacy Discord submissions stored explicit picks in trailing parentheses. */
 export function dmoReplayCharacterNames(
@@ -53,12 +64,18 @@ export function resolveDmoReplayCharacterPresentation(
   players: readonly [string, string],
   characterNames: DmoReplayCharacterNames,
   setupsByName: ReadonlyMap<string, CharacterBroadcastSetup>,
+  savedStyles: DmoReplayPlayerStyleValues = {},
 ) {
   const setups = characterNames.map((name) => (
     name?.trim()
       ? setupsByName.get(normalizeDmoReplayCharacterName(name)) ?? null
       : null
   )) as [CharacterBroadcastSetup | null, CharacterBroadcastSetup | null];
+  const savedHands = savedStyles.handedness ?? [null, null];
+  const savedBackhands = savedStyles.backhandTypes ?? [null, null];
+  const selectedHands = savedHands.map((hand, index) => (
+    isDmoPlayingHand(hand) ? hand : DEFAULT_HANDS[index]
+  )) as ['right' | 'left', 'right' | 'left'];
   const characterHands = setups.map((setup) => setup?.playingHand ?? null) as [
     'left' | 'right' | null,
     'left' | 'right' | null,
@@ -67,23 +84,33 @@ export function resolveDmoReplayCharacterPresentation(
     'one-handed' | 'two-handed' | null,
     'one-handed' | 'two-handed' | null,
   ];
+  const selectedStyles = savedBackhands.map((backhand, index) => {
+    const style = DEFAULT_STROKE_STYLES[index];
+    return isDmoBackhandType(backhand)
+      ? { ...style, backhand: backhand === 'one-handed' ? 'one' : 'two' }
+      : { ...style };
+  }) as PlayerStrokeStylePair;
+  const handOverrides = savedHands.map(isDmoPlayingHand) as [boolean, boolean];
+  const backhandOverrides = savedBackhands.map(isDmoBackhandType) as [boolean, boolean];
 
   return {
     setups,
     handedness: resolveBroadcastHandedness(
       players,
-      DEFAULT_HANDS,
+      selectedHands,
       characterHands,
-      [false, false],
+      handOverrides,
     ),
     strokeStyles: resolveBroadcastStrokeStyles(
       players,
-      DEFAULT_STROKE_STYLES,
+      selectedStyles,
       backhandTypes,
-      [false, false],
+      backhandOverrides,
     ),
     missingBackhandStyle: characterNames.map((name, index) => (
-      Boolean(name?.trim()) && !setups[index]?.backhandType
+      Boolean(name?.trim())
+      && !isDmoBackhandType(savedBackhands[index])
+      && !backhandTypes[index]
     )) as [boolean, boolean],
   };
 }

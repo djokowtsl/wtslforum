@@ -61,7 +61,13 @@ export default function DmoReplayLibrary({
   const hasSelectedCharacters = Boolean(
     !publicOnly
     && selected?.hasDmoFile
-    && characterNames.some((name) => Boolean(name?.trim())),
+    && characterNames.some((name) => Boolean(name?.trim()))
+    && (
+      !selected?.player1Handedness
+      || !selected?.player2Handedness
+      || !selected?.player1BackhandType
+      || !selected?.player2BackhandType
+    ),
   );
   const characterKey = characterNames
     .map((name) => name ? normalizeDmoReplayCharacterName(name) : '')
@@ -252,6 +258,10 @@ export default function DmoReplayLibrary({
         [selected.player1, selected.player2],
         characterNames,
         activeCharacterStyleResult?.setups ?? new Map(),
+        {
+          handedness: [selected.player1Handedness, selected.player2Handedness],
+          backhandTypes: [selected.player1BackhandType, selected.player2BackhandType],
+        },
       )
     : null;
   return (
