@@ -2,7 +2,7 @@
 
 import { useCallback, useEffect, useState } from 'react';
 import Te4DmoReplayPlayer from './Te4DmoReplayPlayer';
-import type { PublicDmoReplay } from '@/lib/dmoReplayLibrary';
+import type { DmoReplayCatalogEntry } from '@/lib/dmoReplayLibrary';
 import {
   buildTe4CoachAnalysisUrl,
   buildTe4CoachEmbedUrl,
@@ -11,7 +11,7 @@ import {
 import styles from './DmoReplayLibrary.module.css';
 
 type ReplayPage = {
-  matches: PublicDmoReplay[];
+  matches: DmoReplayCatalogEntry[];
   nextCursor: string | null;
 };
 
@@ -29,8 +29,8 @@ export default function DmoReplayLibrary({
   initialMatchId?: string;
   initialPage?: ReplayPage | null;
 }) {
-  const [matches, setMatches] = useState<PublicDmoReplay[]>(initialPage?.matches ?? []);
-  const [selected, setSelected] = useState<PublicDmoReplay | null>(null);
+  const [matches, setMatches] = useState<DmoReplayCatalogEntry[]>(initialPage?.matches ?? []);
+  const [selected, setSelected] = useState<DmoReplayCatalogEntry | null>(null);
   const [viewerMode, setViewerMode] = useState<'forum' | 'coach' | 'scorecard'>('forum');
   const [query, setQuery] = useState('');
   const [cursor, setCursor] = useState<string | null>(initialPage?.nextCursor ?? null);
@@ -87,7 +87,7 @@ export default function DmoReplayLibrary({
       .then(async (response) => {
         const body = await response.json().catch(() => null);
         if (!response.ok) throw new Error('');
-        return body as PublicDmoReplay;
+        return body as DmoReplayCatalogEntry;
       })
       .then((match) => {
         if (active) setSelected(match);
@@ -100,7 +100,7 @@ export default function DmoReplayLibrary({
     };
   }, [initialMatchId]);
 
-  const selectMatch = (match: PublicDmoReplay) => {
+  const selectMatch = (match: DmoReplayCatalogEntry) => {
     setSelected(match);
     setViewerMode('forum');
     const url = new URL(window.location.href);
@@ -139,7 +139,7 @@ export default function DmoReplayLibrary({
       <div className={styles.listPanel}>
         <div className={styles.listHeading}>
           <div>
-            <span className={styles.eyebrow}>Available match recordings</span>
+            <span className={styles.eyebrow}>All current submissions</span>
             <h2>Match replays</h2>
           </div>
           <span className={styles.count}>{error ? '!' : `${matches.length}${hasMore ? '+' : ''}`}</span>
@@ -169,10 +169,17 @@ export default function DmoReplayLibrary({
                 <span className={styles.matchPlayers}>{match.player1} <i>vs</i> {match.player2}</span>
                 <span className={styles.matchMeta}>{match.tournament} · {match.roundName}</span>
                 <span className={styles.matchDate}>{formatDate(match.submissionDate)}</span>
+                <span className={styles.matchBadges}>
+                  {match.hasDmoFile && <span className={styles.matchBadge}>DMO replay</span>}
+                  {match.externalUrl && <span className={styles.matchBadge}>Recording link</span>}
+                  {!match.hasDmoFile && !match.externalUrl && (
+                    <span className={styles.matchBadge}>Submission details</span>
+                  )}
+                </span>
               </button>
             ))
           ) : error ? null : (
-            <p className={styles.empty}>{query ? 'No replays match that search.' : 'No submitted match replays are available yet.'}</p>
+            <p className={styles.empty}>{query ? 'No submissions match that search.' : 'No current DMO submissions are available yet.'}</p>
           )}
         </div>
         {hasMore && (
@@ -188,8 +195,15 @@ export default function DmoReplayLibrary({
             <div className={styles.viewerHeading}>
               <span className={styles.eyebrow}>{selected.tournament} · {selected.roundName}</span>
               <h1>{selected.player1} <i>vs</i> {selected.player2}</h1>
-              <p>{formatDate(selected.submissionDate)} <span aria-hidden="true">·</span> Submitted match replay</p>
+              <p>{formatDate(selected.submissionDate)} <span aria-hidden="true">·</span> Match submission</p>
             </div>
+            {selected.externalUrl && (
+              <p className={styles.recordingLinkRow}>
+                <a href={selected.externalUrl} target="_blank" rel="noopener noreferrer">
+                  Open submitted recording
+                </a>
+              </p>
+            )}
             {coachEmbedUrl && (
               <div className={styles.playerOptions} role="tablist" aria-label="Replay player">
                 <button
@@ -255,12 +269,22 @@ export default function DmoReplayLibrary({
                   loading="lazy"
                   referrerPolicy="strict-origin-when-cross-origin"
                 />
-              ) : (
+              ) : selected.hasDmoFile ? (
                 <Te4DmoReplayPlayer
                   replayUrl={replayUrl}
                   initialSpeed={1}
                   handedness={['right', 'right']}
                 />
+              ) : (
+                <div className={styles.viewerEmpty}>
+                  <span className={styles.playIcon} aria-hidden="true">{selected.externalUrl ? '↗' : '•'}</span>
+                  <h2>{selected.externalUrl ? 'External recording' : 'No playable recording'}</h2>
+                  <p>
+                    {selected.externalUrl
+                      ? 'This submission uses a recording link rather than an uploaded DMO file.'
+                      : 'This submission is listed, but no playable DMO file or recording link is available.'}
+                  </p>
+                </div>
               )}
             </div>
           </>

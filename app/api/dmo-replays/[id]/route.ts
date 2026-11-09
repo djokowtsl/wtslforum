@@ -1,6 +1,10 @@
 import { NextResponse } from 'next/server';
 import { getSession } from '@/lib/auth';
-import { getPublicDmoReplay, isDmoReplayId, publicDmoReplayMetadata } from '@/lib/dmoReplayLibrary';
+import {
+  dmoReplayCatalogMetadata,
+  getDmoReplaySubmission,
+  isDmoReplayId,
+} from '@/lib/dmoReplayLibrary';
 
 export const dynamic = 'force-dynamic';
 
@@ -23,11 +27,11 @@ export async function GET(_request: Request, { params }: { params: Promise<{ id:
   }
 
   try {
-    const replay = await getPublicDmoReplay(id);
+    const replay = await getDmoReplaySubmission(id);
     if (!replay) {
       return NextResponse.json({ error: 'Match replay not found.' }, { status: 404, headers: PUBLIC_HEADERS });
     }
-    return NextResponse.json(publicDmoReplayMetadata(replay), { headers: PUBLIC_HEADERS });
+    return NextResponse.json(dmoReplayCatalogMetadata(replay), { headers: PUBLIC_HEADERS });
   } catch {
     return NextResponse.json(
       { error: 'Match replay is temporarily unavailable.' },

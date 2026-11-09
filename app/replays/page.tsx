@@ -2,7 +2,7 @@ import type { Metadata } from 'next';
 import Link from 'next/link';
 import PageHero from '@/components/PageHero';
 import DmoReplayLibrary from '@/components/DmoReplayLibrary';
-import { listPublicDmoReplays } from '@/lib/dmoReplayLibrary';
+import { listDmoReplaySubmissions } from '@/lib/dmoReplayLibrary';
 import { getSession } from '@/lib/auth';
 
 export const dynamic = 'force-dynamic';
@@ -27,9 +27,9 @@ export default async function ReplaysPage({
   }
   const params = await searchParams;
   const initialMatchId = params.match && /^\d{1,19}$/.test(params.match) ? params.match : '';
-  let initialPage: Awaited<ReturnType<typeof listPublicDmoReplays>> | null = null;
+  let initialPage: Awaited<ReturnType<typeof listDmoReplaySubmissions>> | null = null;
   try {
-    initialPage = await listPublicDmoReplays({ limit: 24 });
+    initialPage = await listDmoReplaySubmissions({ limit: 24 });
   } catch {
     // Let the client retry through the API so database outages show the existing error state.
   }
@@ -40,7 +40,7 @@ export default async function ReplaysPage({
         title="Match Replays"
         actions={<Link className="btn btn-sm" href="/livestreams">Live streams</Link>}
       >
-        Rewatch match recordings submitted to the WTSL DMO store.
+        Browse current DMO submissions from the Forum and Discord. Signed-in members can watch stored match files or open submitted recording links.
       </PageHero>
       <main className="container">
         <DmoReplayLibrary initialMatchId={initialMatchId} initialPage={initialPage} />
