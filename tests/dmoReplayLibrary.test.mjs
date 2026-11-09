@@ -194,6 +194,16 @@ test('DMO submission form uses character dropdowns and requires both players sty
   assert.doesNotMatch(form, /Player 1 character pick \(optional\)/);
 });
 
+test('DMO submission form keeps advanced replay instructions collapsed and sharing clear', () => {
+  const form = readFileSync(new URL('../components/DmoSubmitForm.tsx', import.meta.url), 'utf8');
+  assert.match(form, /<details className="notice"/);
+  assert.match(form, /<summary>For matches recorded in multiple sessions<\/summary>/);
+  assert.match(form, /RecordDebugInfo = 1/);
+  assert.match(form, /All submissions are visible to signed-in Forum members/);
+  assert.match(form, /Public replay and TE4 Coach\s+sharing are separate choices/);
+  assert.doesNotMatch(form, /Match Replay Center is available to signed-in members|private storage/);
+});
+
 test('legacy Discord character annotations resolve both Federer slots without guessing member names', () => {
   const backhandModule = loadModule('lib/liveCharacterBackhand.mjs', {});
   const { dmoReplayCharacterNames, buildDmoReplayCharacterSetupIndex, resolveDmoReplayCharacterPresentation } =
