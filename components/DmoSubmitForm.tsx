@@ -235,20 +235,21 @@ export default function DmoSubmitForm({ userId }: { userId: string }) {
     <section className="admin-card">
       <h3>Submit a match recording</h3>
       <p className="notice" style={{ marginBottom: 14 }}>
-        Add the tournament, round, and players. Choose each player’s TE4 character to fill in their playing hand and backhand grip, or select no character and enter those details for a created character. Then attach a .dmo file or provide a recording link.
-        For a match played across multiple sessions,{' '}
-        <a href="https://replays.knowthew.net/join" target="_blank" rel="noopener noreferrer">
-          join the replay parts first
-        </a>
-        . Use the same two players, keep the sessions in order, and ensure each replay has
-        <code> RecordDebugInfo = 1</code>. Check the joined file for repeated or returned points,
-        then attach the full-match .dmo.
-        The Match Replay Center is available to signed-in members and lists all current DMO
-        submissions regardless of these share options. Uploaded .dmo files stay in private storage
-        and play through the signed-in Forum viewer; recording links are shown to signed-in members.
-        Public-share consent remains required for linked TE4 Coach content, and the separate Coach
-        consent controls its appearance on public WTSL pages and in the WTSL Coach group.
+        Enter the tournament, round, and players. Choose each player’s TE4 character, or enter the
+        hand and backhand grip for a created character. Attach a .dmo file or add a recording link.
       </p>
+      <details className="notice" style={{ marginBottom: 14 }}>
+        <summary>For matches recorded in multiple sessions</summary>
+        <p style={{ marginBottom: 0 }}>
+          Use the same two players and keep sessions in order. Set each replay to
+          <code> RecordDebugInfo = 1</code>, join the parts, then check the combined file for
+          repeated or returned points before attaching it.{' '}
+          <a href="https://replays.knowthew.net/join" target="_blank" rel="noopener noreferrer">
+            Join the replay parts
+          </a>
+          .
+        </p>
+      </details>
       {error && <div className="notice" role="alert" style={{ borderColor: '#ffb3bb', marginBottom: 14 }}>{error}</div>}
       {notice && <div className="notice" role="status" style={{ marginBottom: 14 }}>{notice}</div>}
       <form onSubmit={submit} style={{ display: 'grid', gap: 10 }}>
@@ -430,6 +431,10 @@ export default function DmoSubmitForm({ userId }: { userId: string }) {
             />
           </label>
         </FileDropSurface>
+        <p className="notice" style={{ margin: 0, fontSize: 12 }}>
+          All submissions are visible to signed-in Forum members. Public replay and TE4 Coach
+          sharing are separate choices.
+        </p>
         <label style={{ display: 'flex', alignItems: 'flex-start', gap: 9 }}>
           <input
             type="checkbox"
@@ -459,9 +464,8 @@ export default function DmoSubmitForm({ userId }: { userId: string }) {
           </span>
         </label>
         <p className="notice" style={{ margin: 0, fontSize: 12 }}>
-          To enable Coach sharing, attach a .dmo file, check the first consent, and add a TE4 Coach
-          match link. Both sharing consents are optional; you can submit the recording privately
-          without either.
+          Coach sharing needs a .dmo file, the first consent, and a TE4 Coach link. Both sharing
+          choices are optional.
         </p>
         <button className="btn btn-sm" type="submit" disabled={busy}>
           {busy
