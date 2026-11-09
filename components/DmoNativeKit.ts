@@ -211,23 +211,6 @@ function addGrooming(model: THREE.Group, kit: NativePlayerKit, index: number, fe
     ponytail.name = `native-player-ponytail-${index + 1}`;
     ponytail.castShadow = true;
     head.add(ponytail);
-    for (const side of [-1, 1] as const) {
-      const lockPath = new THREE.CatmullRomCurve3([
-        new THREE.Vector3(side * 0.052, 0.035, 0.032),
-        new THREE.Vector3(side * 0.071, -0.02, 0.054),
-        new THREE.Vector3(side * 0.082, -0.105, 0.056),
-        new THREE.Vector3(side * 0.066, -0.19, 0.045),
-        new THREE.Vector3(side * 0.087, -0.27, 0.022),
-        new THREE.Vector3(side * 0.09, -0.31, 0.012),
-      ]);
-      const lock = new THREE.Mesh(
-        taperedHairGeometry(lockPath, 0.013),
-        new THREE.MeshStandardMaterial({ color: kit.hairColor, roughness: 0.78 }),
-      );
-      lock.name = `native-player-front-lock-${side < 0 ? 'left' : 'right'}-${index + 1}`;
-      lock.castShadow = true;
-      head.add(lock);
-    }
   } else if (style === 'headband-swept') {
     const band = new THREE.Mesh(
       new THREE.TorusGeometry(0.084, 0.008, 6, 28),

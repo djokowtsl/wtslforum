@@ -146,13 +146,16 @@ export async function PATCH(request: Request, context: RouteContext) {
   try {
     const rows = update.data.snapshot
       ? await sql`
-        UPDATE dmo_live_broadcasts
-        SET payload=COALESCE(payload, '{}'::jsonb)
+        WITH request_data AS (
+          SELECT ${JSON.stringify(update.data.snapshot)}::jsonb AS snapshot
+        )
+        UPDATE dmo_live_broadcasts AS live
+        SET payload=COALESCE(live.payload, '{}'::jsonb)
               || jsonb_build_object(
-                'snapshot', ${JSON.stringify(update.data.snapshot)}::jsonb,
+                'snapshot', request_data.snapshot,
                 'players', COALESCE(
-                  NULLIF(payload->'players', 'null'::jsonb),
-                  ${JSON.stringify(update.data.snapshot.players)}::jsonb
+                  NULLIF(live.payload->'players', 'null'::jsonb),
+                  request_data.snapshot->'players'
                 ),
                 'pointLog', COALESCE((
                   SELECT jsonb_agg(point ORDER BY point_number)
@@ -162,18 +165,16 @@ export async function PATCH(request: Request, context: RouteContext) {
                       SELECT (incoming.point->>'number')::int AS point_number,
                              incoming.point AS point,
                              0 AS source_order
-                      FROM jsonb_array_elements(
-                        ${JSON.stringify(update.data.snapshot.recentPoints)}::jsonb
-                      ) AS incoming(point)
+                      FROM jsonb_array_elements(request_data.snapshot->'recentPoints') AS incoming(point)
                       UNION ALL
                       SELECT (stored.point->>'number')::int AS point_number,
                              stored.point AS point,
                              1 AS source_order
                       FROM jsonb_array_elements(
                         CASE
-                          WHEN jsonb_typeof(payload->'pointLog')='array' THEN payload->'pointLog'
-                          WHEN jsonb_typeof(payload->'snapshot'->'recentPoints')='array' THEN payload->'snapshot'->'recentPoints'
-                          WHEN jsonb_typeof(payload->'recentPoints')='array' THEN payload->'recentPoints'
+                          WHEN jsonb_typeof(live.payload->'pointLog')='array' THEN live.payload->'pointLog'
+                          WHEN jsonb_typeof(live.payload->'snapshot'->'recentPoints')='array' THEN live.payload->'snapshot'->'recentPoints'
+                          WHEN jsonb_typeof(live.payload->'recentPoints')='array' THEN live.payload->'recentPoints'
                           ELSE '[]'::jsonb
                         END
                       ) AS stored(point)
@@ -185,11 +186,18 @@ export async function PATCH(request: Request, context: RouteContext) {
             sequence=${update.data.sequence},
             updated_at=NOW(),
             expires_at=NOW() + INTERVAL '45 seconds'
-        WHERE id=${id}::uuid
-          AND owner_discord_id=${user.discordId}
-          AND status='live'
-          AND sequence < ${update.data.sequence}
-        RETURNING id
+        FROM request_data
+        WHERE live.id=${id}::uuid
+          AND live.owner_discord_id=${user.discordId}
+          AND live.status='live'
+          AND (
+            live.sequence < ${update.data.sequence}
+            OR (
+              live.sequence = ${update.data.sequence}
+              AND live.payload->'snapshot' = request_data.snapshot
+            )
+          )
+        RETURNING live.id, live.sequence
       `
       : await sql`
         UPDATE dmo_live_broadcasts
@@ -199,11 +207,23 @@ export async function PATCH(request: Request, context: RouteContext) {
         WHERE id=${id}::uuid
           AND owner_discord_id=${user.discordId}
           AND status='live'
-          AND sequence < ${update.data.sequence}
-        RETURNING id
+          AND sequence <= ${update.data.sequence}
+        RETURNING id, sequence
       `;
     if (!rows.length) {
-      return NextResponse.json({ error: 'Broadcast ended or this update is out of date.' }, { status: 409, headers: PRIVATE_HEADERS });
+      const currentRows = await sql`
+        SELECT sequence
+        FROM dmo_live_broadcasts
+        WHERE id=${id}::uuid
+          AND owner_discord_id=${user.discordId}
+          AND status='live'
+        LIMIT 1
+      `;
+      const currentSequence = Number(currentRows[0]?.sequence);
+      return NextResponse.json({
+        error: 'Broadcast ended or this update is out of date.',
+        ...(Number.isSafeInteger(currentSequence) ? { currentSequence } : {}),
+      }, { status: 409, headers: PRIVATE_HEADERS });
     }
     const durationMs = Math.round(performance.now() - startedAt);
     if (durationMs > 1_200) {
@@ -213,7 +233,11 @@ export async function PATCH(request: Request, context: RouteContext) {
         frameCount: update.data.snapshot?.frameCount ?? null,
       });
     }
-    return NextResponse.json({ ok: true }, {
+    const acknowledgedSequence = Number(rows[0]?.sequence);
+    return NextResponse.json({
+      ok: true,
+      ...(Number.isSafeInteger(acknowledgedSequence) ? { sequence: acknowledgedSequence } : {}),
+    }, {
       headers: { ...PRIVATE_HEADERS, 'Server-Timing': `upload;dur=${durationMs}` },
     });
   } catch (error) {

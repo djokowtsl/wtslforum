@@ -243,7 +243,7 @@ test('live snapshot updates merge their recent points into the retained point lo
   assert.equal(response.status, 200);
   assert.match(queries[0].text, /'pointLog'/);
   assert.match(queries[0].text, /jsonb_array_elements/);
-  assert.ok(queries[0].values.includes(JSON.stringify(recentPoints)));
+  assert.deepEqual(JSON.parse(queries[0].values[0]).recentPoints, recentPoints);
 });
 
 test('signed-in admins can read broadcasts while guests cannot', async () => {

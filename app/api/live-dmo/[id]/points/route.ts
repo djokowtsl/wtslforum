@@ -107,10 +107,23 @@ export async function PATCH(request: Request, context: RouteContext) {
     );
   }
 
+  const pointsByNumber = new Map<number, string>();
+  for (const point of batch.data.points) {
+    const serialized = JSON.stringify(point);
+    const previous = pointsByNumber.get(point.number);
+    if (previous !== undefined && previous !== serialized) {
+      return NextResponse.json(
+        { error: 'Point log contains conflicting data for the same point.', code: 'point_log_conflict' },
+        { status: 409, headers: PRIVATE_HEADERS },
+      );
+    }
+    pointsByNumber.set(point.number, serialized);
+  }
+
   try {
     const rows = await sql`
-      UPDATE dmo_live_broadcasts
-      SET payload=COALESCE(payload, '{}'::jsonb)
+      UPDATE dmo_live_broadcasts AS live
+      SET payload=COALESCE(live.payload, '{}'::jsonb)
             || jsonb_build_object(
               'pointLog', COALESCE((
                 SELECT jsonb_agg(point ORDER BY point_number)
@@ -127,9 +140,9 @@ export async function PATCH(request: Request, context: RouteContext) {
                            1 AS source_order
                     FROM jsonb_array_elements(
                       CASE
-                        WHEN jsonb_typeof(payload->'pointLog')='array' THEN payload->'pointLog'
-                        WHEN jsonb_typeof(payload->'snapshot'->'recentPoints')='array' THEN payload->'snapshot'->'recentPoints'
-                        WHEN jsonb_typeof(payload->'recentPoints')='array' THEN payload->'recentPoints'
+                        WHEN jsonb_typeof(live.payload->'pointLog')='array' THEN live.payload->'pointLog'
+                        WHEN jsonb_typeof(live.payload->'snapshot'->'recentPoints')='array' THEN live.payload->'snapshot'->'recentPoints'
+                        WHEN jsonb_typeof(live.payload->'recentPoints')='array' THEN live.payload->'recentPoints'
                         ELSE '[]'::jsonb
                       END
                     ) AS stored(point)
@@ -138,11 +151,25 @@ export async function PATCH(request: Request, context: RouteContext) {
                 ) AS deduplicated
               ), '[]'::jsonb)
             )
-      WHERE id=${id}::uuid
-        AND owner_discord_id=${user.discordId}
-        AND status='live'
-        AND expires_at > NOW()
-      RETURNING id
+      WHERE live.id=${id}::uuid
+        AND live.owner_discord_id=${user.discordId}
+        AND live.status='live'
+        AND live.expires_at > NOW()
+        AND NOT EXISTS (
+          SELECT 1
+          FROM jsonb_array_elements(${JSON.stringify(batch.data.points)}::jsonb) AS incoming(point)
+          JOIN jsonb_array_elements(
+            CASE
+              WHEN jsonb_typeof(live.payload->'pointLog')='array' THEN live.payload->'pointLog'
+              WHEN jsonb_typeof(live.payload->'snapshot'->'recentPoints')='array' THEN live.payload->'snapshot'->'recentPoints'
+              WHEN jsonb_typeof(live.payload->'recentPoints')='array' THEN live.payload->'recentPoints'
+              ELSE '[]'::jsonb
+            END
+          ) AS stored(point)
+            ON (incoming.point->>'number')::int = (stored.point->>'number')::int
+          WHERE incoming.point IS DISTINCT FROM stored.point
+        )
+      RETURNING live.id
     `;
     if (!rows.length) {
       return NextResponse.json({ error: 'Broadcast ended or not found.' }, { status: 409, headers: PRIVATE_HEADERS });

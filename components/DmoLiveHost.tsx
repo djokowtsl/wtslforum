@@ -24,6 +24,11 @@ import { hasPlayerPositionData } from '@/lib/te4LiveSetup';
 import { isPresignedUrlRetrievalFailure } from '@/lib/dmoUploadErrors';
 import { attemptFullReplayPreparation } from '@/lib/liveReplayPreparation';
 import {
+  fetchLiveDmoResponse,
+  reconcileLiveDmoSequence,
+  uploadLiveDmoPointHistory,
+} from '@/lib/liveDmoRefresh';
+import {
   characterBroadcastSetup,
   resolveBroadcastHandedness,
   resolveBroadcastStrokeStyles,
@@ -218,6 +223,8 @@ export default function DmoLiveHost({ displayName, canPrepareFullReplay }: Props
   const lastPresentationSignature = useRef('');
   const sequence = useRef(0);
   const pointLogSeeded = useRef(new Set<string>());
+  const pointLogSeeding = useRef(new Set<string>());
+  const pointLogRetryAt = useRef(new Map<string, number>());
   const polling = useRef(false);
   const liveDmoGrowthDetected = useRef(false);
   const resetDmoReaderOnNextPoll = useRef(false);
@@ -838,6 +845,65 @@ export default function DmoLiveHost({ displayName, canPrepareFullReplay }: Props
   useEffect(() => {
     if (!broadcastId && (!directory || !autoWatching)) return;
     let cancelled = false;
+    const requestController = new AbortController();
+
+    const seedPointLog = (sourceParser: Te4DmoLiveParser, current: Te4LiveSnapshot) => {
+      if (
+        !broadcastId
+        || current.pointCount < 1
+        || pointLogSeeded.current.has(broadcastId)
+        || pointLogSeeding.current.has(broadcastId)
+        || Date.now() < (pointLogRetryAt.current.get(broadcastId) ?? 0)
+      ) return;
+      const targetId = broadcastId;
+      pointLogSeeding.current.add(targetId);
+      void (async () => {
+        try {
+          // Let the current snapshot reach the server before doing full-history
+          // work. Point-log retries do not hold the live snapshot poller open.
+          await new Promise<void>((resolve) => { window.setTimeout(resolve, 0); });
+          if (cancelled || requestController.signal.aborted) return;
+          const pointHistory = sourceParser.snapshot(
+            current.filename,
+            current.bestOf,
+            current.frameCount,
+            undefined,
+            undefined,
+            false,
+            true,
+          )?.pointHistory;
+          if (!pointHistory?.length) return;
+          await uploadLiveDmoPointHistory(
+            `/api/live-dmo/${targetId}/points`,
+            pointHistory,
+            requestController.signal,
+          );
+          pointLogSeeded.current.add(targetId);
+          pointLogRetryAt.current.delete(targetId);
+        } catch (cause) {
+          if (!cancelled && !requestController.signal.aborted) {
+            const status = cause && typeof cause === 'object' && 'status' in cause
+              ? Number(cause.status)
+              : null;
+            const permanentClientError = status !== null
+              && status >= 400
+              && status < 500
+              && status !== 408
+              && status !== 429;
+            pointLogRetryAt.current.set(
+              targetId,
+              permanentClientError ? Number.POSITIVE_INFINITY : Date.now() + 5_000,
+            );
+            console.warn(
+              'The live point log could not be seeded; it will be retried.',
+              cause instanceof Error ? cause.message : 'Unknown error',
+            );
+          }
+        } finally {
+          pointLogSeeding.current.delete(targetId);
+        }
+      })();
+    };
 
     const sendUpdate = async (current?: Te4LiveSnapshot) => {
       if (!broadcastId) return;
@@ -882,17 +948,6 @@ export default function DmoLiveHost({ displayName, canPrepareFullReplay }: Props
           )
         : undefined;
       const snapshotSource = current ?? settingsSnapshot;
-      const pointHistory = current && !pointLogSeeded.current.has(broadcastId)
-        ? parser.current?.snapshot(
-          current.filename,
-          current.bestOf,
-          current.frameCount,
-          undefined,
-          undefined,
-          false,
-          true,
-        )?.pointHistory
-        : undefined;
       const snapshot = snapshotSource
         ? {
           ...snapshotSource,
@@ -910,33 +965,38 @@ export default function DmoLiveHost({ displayName, canPrepareFullReplay }: Props
           ),
         }
         : undefined;
-      if (pointHistory?.length) {
-        for (let offset = 0; offset < pointHistory.length; offset += 100) {
-          const response = await fetch(`/api/live-dmo/${broadcastId}/points`, {
-            method: 'PATCH',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ points: pointHistory.slice(offset, offset + 100) }),
-          });
-          if (!response.ok) throw new Error(await responseError(response));
-        }
-        pointLogSeeded.current.add(broadcastId);
+      const { response, body } = await fetchLiveDmoResponse(
+        `/api/live-dmo/${broadcastId}`,
+        requestController.signal,
+        {
+          method: 'PATCH',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            sequence: nextSequence,
+            ...(snapshot ? { snapshot } : {}),
+          }),
+        },
+      );
+      const sequenceResult = reconcileLiveDmoSequence(
+        sequence.current,
+        nextSequence,
+        response.status,
+        body,
+      );
+      if (!sequenceResult) {
+        throw new Error(typeof body?.error === 'string'
+          ? body.error
+          : `Live broadcast update failed (${response.status}).`);
       }
-      const response = await fetch(`/api/live-dmo/${broadcastId}`, {
-        method: 'PATCH',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          sequence: nextSequence,
-          ...(snapshot ? { snapshot } : {}),
-        }),
-      });
-      if (!response.ok) throw new Error(await responseError(response));
-      sequence.current = nextSequence;
+      sequence.current = sequenceResult.sequence;
+      if (!sequenceResult.acknowledged) return;
       if (current && parser.current) lastSentVersion.current = parser.current.version;
       if (snapshot) lastPresentationSignature.current = presentationSignature;
       lastHeartbeat.current = Date.now();
       setError('');
       if (snapshotSource) setNotice(`Sharing ${snapshotSource.filename} with signed-in viewers.`);
       else if (!directory) setNotice('Stream broadcast is live for signed-in viewers.');
+      if (current && parser.current) seedPointLog(parser.current, current);
     };
 
     const endActiveBroadcast = async (message: string) => {
@@ -1144,6 +1204,7 @@ export default function DmoLiveHost({ displayName, canPrepareFullReplay }: Props
     return () => {
       cancelled = true;
       window.clearInterval(interval);
+      requestController.abort();
       // Keep the shared lock until an in-flight poll reaches its `finally`.
     };
   }, [directory, broadcastId, bestOf, autoWatching]);

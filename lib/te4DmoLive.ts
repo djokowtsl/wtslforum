@@ -66,6 +66,16 @@ type LivePoint = {
   let: boolean;
 };
 
+type ParsedLivePoints = {
+  points: LivePoint[];
+  lastEnd: number;
+  serveFrames: number[];
+  hitFrames: number[];
+  endFrames: number[];
+  openServe: number | null;
+  openHits: number[];
+};
+
 type ScoreState = {
   sets: [number, number][];
   games: [number, number];
@@ -189,6 +199,16 @@ export class Te4DmoLiveParser {
   private readonly player1Y: number[] = [];
   private readonly player2X: number[] = [];
   private readonly player2Y: number[] = [];
+  private readonly pointEndFrames: number[] = [];
+  private readonly pointServeFrames: number[] = [];
+  private readonly pointHitFrames: number[] = [];
+  private pointEventFramesScannedThrough = 0;
+  private pointEventsCache: {
+    revision: number;
+    frameLimit: number;
+    parsed: ParsedLivePoints;
+  } | null = null;
+  private contentRevision = 0;
 
   header: Header | null = null;
   version = 0;
@@ -213,6 +233,7 @@ export class Te4DmoLiveParser {
       this.buffer = next;
       this.view = new DataView(next.buffer);
     }
+    if (bytes.length) this.contentRevision += 1;
     this.buffer.set(bytes, this.length);
     this.length += bytes.length;
     this.advance();
@@ -454,28 +475,47 @@ export class Te4DmoLiveParser {
       && this.ballZ[frame] < 350;
   }
 
-  private truePoints(frameLimit = this.frameCount): {
-    points: LivePoint[];
-    lastEnd: number;
-    serveFrames: number[];
-    hitFrames: number[];
-    endFrames: number[];
-    openServe: number | null;
-    openHits: number[];
-  } {
-    const ends: number[] = [];
-    const serves: number[] = [];
-    const hits: number[] = [];
+  private framesBefore(frames: number[], frameLimit: number): number[] {
+    let low = 0;
+    let high = frames.length;
+    while (low < high) {
+      const middle = Math.floor((low + high) / 2);
+      if (frames[middle] < frameLimit) low = middle + 1;
+      else high = middle;
+    }
+    return frames.slice(0, low);
+  }
+
+  private truePoints(frameLimit = this.frameCount): ParsedLivePoints {
     const visibleFrameCount = Math.min(this.frameCount, Math.max(0, Math.floor(frameLimit)));
-    for (let frame = 0; frame < visibleFrameCount; frame += 1) {
-      if (this.type110[frame] === 5) ends.push(frame);
-      else if (this.type110[frame] === 2) serves.push(frame);
+    if (
+      this.pointEventsCache?.revision === this.contentRevision
+      && this.pointEventsCache.frameLimit === visibleFrameCount
+    ) return this.pointEventsCache.parsed;
+
+    // DMO files grow by appending frames. Scan only newly available frames;
+    // keep the marker lists so snapshots and the first full-history seed can
+    // share the same parsed evidence.
+    for (
+      let frame = this.pointEventFramesScannedThrough;
+      frame < visibleFrameCount;
+      frame += 1
+    ) {
+      if (this.type110[frame] === 5) this.pointEndFrames.push(frame);
+      else if (this.type110[frame] === 2) this.pointServeFrames.push(frame);
       if (
         this.type110[frame] === 0
         && [4, 5, 6, 8].includes(this.type111[frame])
         && this.isValidHit(frame)
-      ) hits.push(frame);
+      ) this.pointHitFrames.push(frame);
     }
+    this.pointEventFramesScannedThrough = Math.max(
+      this.pointEventFramesScannedThrough,
+      visibleFrameCount,
+    );
+    const ends = this.framesBefore(this.pointEndFrames, visibleFrameCount);
+    const serves = this.framesBefore(this.pointServeFrames, visibleFrameCount);
+    const hits = this.framesBefore(this.pointHitFrames, visibleFrameCount);
 
     const segments: Array<{
       start: number;
@@ -541,7 +581,7 @@ export class Te4DmoLiveParser {
     });
     const lastEnd = ends.length ? ends[ends.length - 1] : -1;
     const openServes = serves.filter((frame) => frame > lastEnd);
-    return {
+    const parsed = {
       points: points.filter((point) => !point.let && point.winner !== null),
       lastEnd,
       serveFrames: serves,
@@ -550,6 +590,12 @@ export class Te4DmoLiveParser {
       openServe: openServes.length ? openServes[openServes.length - 1] : null,
       openHits: hits.filter((frame) => frame > lastEnd),
     };
+    this.pointEventsCache = {
+      revision: this.contentRevision,
+      frameLimit: visibleFrameCount,
+      parsed,
+    };
+    return parsed;
   }
 
   snapshot(
