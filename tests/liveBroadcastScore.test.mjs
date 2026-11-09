@@ -162,6 +162,17 @@ test('the court buffering overlay clearly announces delays and stays absent when
   assert.equal(renderToStaticMarkup(React.createElement(Overlay, { buffering: false })), '');
 });
 
+test('broadcast court headings use Live and do not display court surface badges', () => {
+  const fallback = readFileSync(new URL('../components/DmoLiveCourt.tsx', import.meta.url), 'utf8');
+  const threeDimensional = readFileSync(new URL('../components/DmoLiveCourt3D.tsx', import.meta.url), 'utf8');
+  const threeDimensionalStyles = readFileSync(new URL('../components/DmoLiveCourt3D.module.css', import.meta.url), 'utf8');
+  assert.match(fallback, /<strong>LIVE<\/strong>/);
+  assert.match(threeDimensional, /fullReplay \? 'FULL MATCH REPLAY' : 'LIVE'/);
+  assert.doesNotMatch(fallback, /LIVE COURT/);
+  assert.doesNotMatch(threeDimensional, /LIVE COURT|surfaceBadge|Court surface:/);
+  assert.doesNotMatch(threeDimensionalStyles, /surfaceBadge/);
+});
+
 const nextServer = { NextResponse: { json: (body, init) => Response.json(body, init) } };
 function currentRoute(payload, { feedValue = feed(), signedIn = true } = {}) {
   let feedCalls = 0;

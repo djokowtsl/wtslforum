@@ -1,8 +1,8 @@
 import React from 'react';
 
-export default function PageHero({ eyebrow, title, children, actions }: { eyebrow: string; title: string; children?: React.ReactNode; actions?: React.ReactNode }) {
+export default function PageHero({ eyebrow, title, children, actions, className }: { eyebrow: string; title: string; children?: React.ReactNode; actions?: React.ReactNode; className?: string }) {
   return (
-    <section className="page-hero">
+    <section className={['page-hero', className].filter(Boolean).join(' ')}>
       <div className="page-hero-inner">
         <div>
           <div className="eyebrow">{eyebrow}</div>
