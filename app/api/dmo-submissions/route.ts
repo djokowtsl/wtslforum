@@ -8,6 +8,7 @@ import {
   updateDmoDiscordDelivery,
 } from '@/lib/dmo-submissions';
 import { parseTe4CoachShareUrl } from '@/lib/te4CoachEmbed';
+import { isDmoBackhandType, isDmoPlayingHand } from '@/lib/dmoSubmissionPlayerStyle';
 import { syncPublicDmoSubmissionToTe4CoachGroup } from '@/lib/te4CoachGroupServer';
 import {
   isOwnedDmoSubmissionUploadPath,
@@ -35,6 +36,10 @@ export async function POST(req: NextRequest) {
   const player2 = String(form.get('player2') ?? '').trim().slice(0, 100);
   const player1Character = String(form.get('player1Character') ?? '').trim().slice(0, 100);
   const player2Character = String(form.get('player2Character') ?? '').trim().slice(0, 100);
+  const player1Handedness = form.get('player1Handedness');
+  const player2Handedness = form.get('player2Handedness');
+  const player1BackhandType = form.get('player1BackhandType');
+  const player2BackhandType = form.get('player2BackhandType');
   const externalUrl = String(form.get('externalUrl') ?? '').trim().slice(0, 1000);
   const coachShare = parseTe4CoachShareUrl(String(form.get('coachShareUrl') ?? '').slice(0, 500));
   const entry = form.get('file');
@@ -51,6 +56,17 @@ export async function POST(req: NextRequest) {
   if (!tournament || !roundName || !player1 || !player2) {
     return NextResponse.json(
       { error: 'Tournament, round, and both player names are required.' },
+      { status: 400 },
+    );
+  }
+  if (
+    !isDmoPlayingHand(player1Handedness)
+    || !isDmoPlayingHand(player2Handedness)
+    || !isDmoBackhandType(player1BackhandType)
+    || !isDmoBackhandType(player2BackhandType)
+  ) {
+    return NextResponse.json(
+      { error: 'Choose a playing hand and backhand grip for both players.' },
       { status: 400 },
     );
   }
@@ -173,6 +189,10 @@ export async function POST(req: NextRequest) {
       player2,
       player1Character: player1Character || null,
       player2Character: player2Character || null,
+      player1Handedness,
+      player2Handedness,
+      player1BackhandType,
+      player2BackhandType,
       fileName: file?.name.slice(0, 120) ?? (privatePathname ? submittedFileName : null),
       publicShareConsent,
       coachGroupShareConsent,

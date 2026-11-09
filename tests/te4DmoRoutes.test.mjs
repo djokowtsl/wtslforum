@@ -30,6 +30,11 @@ function loadRoute(path, mocks) {
     if (name in mocks) return mocks[name];
     if (name.startsWith('node:')) return require(name);
     if (name === '@/lib/db') return { sql: async () => [] };
+    if (name === '@/lib/dmoSubmissionPlayerStyle') {
+      return loadRoute('lib/dmoSubmissionPlayerStyle.ts', {
+        './liveCharacterBackhand.mjs': loadRoute('lib/liveCharacterBackhand.mjs', {}),
+      });
+    }
     throw new Error(`Unexpected route dependency: ${name}`);
   }, module, module.exports);
   return module.exports;
@@ -725,6 +730,59 @@ test('DMO public publishing is admin-only, audited, and reversible', async () =>
   assert.deepEqual(revocations, ['41']);
 });
 
+test('DMO replay visibility is admin-only and hides or restores without deleting the submission', async () => {
+  let user = { ...admin, discordId: 'admin-discord-id' };
+  const changes = [];
+  const handlers = loadRoute('app/api/admin/dmo-submissions/[id]/visibility/route.ts', {
+    'next/server': { NextResponse: { json: (body, init) => Response.json(body, init) } },
+    '@/lib/auth': { getSession: async () => user },
+    '@/lib/dmoReplayLibrary': {
+      isDmoReplayId: (value) => /^\d{1,19}$/.test(value) && value !== '0',
+    },
+    '@/lib/dmo-submissions': {
+      setDmoSubmissionHidden: async (input) => {
+        changes.push(input);
+        return true;
+      },
+    },
+  });
+  const params = { params: Promise.resolve({ id: '22' }) };
+
+  const hidden = await handlers.PATCH(
+    new Request('https://forum.test/api/admin/dmo-submissions/22/visibility', {
+      method: 'PATCH',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ hidden: true }),
+    }),
+    params,
+  );
+  assert.equal(hidden.status, 200);
+  assert.deepEqual(changes[0], { id: '22', hidden: true, hiddenBy: 'admin-discord-id' });
+
+  const restored = await handlers.PATCH(
+    new Request('https://forum.test/api/admin/dmo-submissions/22/visibility', {
+      method: 'PATCH',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ hidden: false }),
+    }),
+    params,
+  );
+  assert.equal(restored.status, 200);
+  assert.deepEqual(changes[1], { id: '22', hidden: false, hiddenBy: 'admin-discord-id' });
+
+  user = { ...user, isAdmin: false };
+  const forbidden = await handlers.PATCH(
+    new Request('https://forum.test/api/admin/dmo-submissions/22/visibility', {
+      method: 'PATCH',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ hidden: true }),
+    }),
+    params,
+  );
+  assert.equal(forbidden.status, 403);
+  assert.equal(changes.length, 2);
+});
+
 test('Discord DMO sync preserves the original London submission date', async () => {
   const originalFetch = globalThis.fetch;
   const originalToken = process.env.DISCORD_BOT_TOKEN;
@@ -825,6 +883,10 @@ test('Forum DMO intake keeps Coach publication behind its own explicit consent',
     form.set('player2', 'Player Two');
     form.set('player1Character', 'Federer');
     form.set('player2Character', 'Nadal');
+    form.set('player1Handedness', 'right');
+    form.set('player2Handedness', 'left');
+    form.set('player1BackhandType', 'one-handed');
+    form.set('player2BackhandType', 'two-handed');
     form.set('coachShareUrl', includeCoach ? coachUrl : '');
     form.set('publicShareConsent', String(publicConsent));
     form.set('coachGroupShareConsent', String(coachConsent));
