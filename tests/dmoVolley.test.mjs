@@ -113,10 +113,13 @@ test('production selection keeps smash priority and only uses the volley gate at
   assert.match(court, /else if \(isCapturedVolleyShot\(/);
   assert.match(court, /strokeEvent, contactSample, samples, events, soundEventsRef\.current/);
   assert.match(court, /capturedEvent\.stroke = recordedStrokeForSide\(baseStroke, true\)/);
-  assert.match(court, /volley \? volleyCaptureWeight\(captureDelta \* 60 \/ frameRate\)/);
+  assert.match(court, /volley \? volleyCaptureWeight\(captureDelta\)/);
   assert.doesNotMatch(court, /recordedStrokeForSide\(baseStroke, strokeCue === 'close-net'\)/);
-  assert.doesNotMatch(court, /lowReachDrop|lowReachFull/);
+  const selectionStart = court.indexOf('const recordedVolley =');
+  const selectionEnd = court.indexOf('rig.root.userData.capturedGroundstrokeEvent = capturedEvent;', selectionStart);
+  assert.ok(selectionStart >= 0 && selectionEnd > selectionStart);
+  assert.doesNotMatch(court.slice(selectionStart, selectionEnd), /lowReachDrop|lowReachFull/);
   const native = readFileSync(new URL('../components/DmoNativePlayer.ts', import.meta.url), 'utf8');
-  assert.match(native, /recordedBackhandFaceRoll\(playback\?\.stroke, oneHandedStroke\)/);
+  assert.match(native, /recordedBackhandFaceRoll\(playback\?\.stroke, oneHandedStroke, playback\?\.slice\)/);
   assert.match(native, /dominant === 'r' \? 1 : -1/);
 });

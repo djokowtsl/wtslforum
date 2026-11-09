@@ -18,6 +18,8 @@ import {
   nextLiveCourtCarryMode,
   LOW_REACH_MAX_DROP,
   lowReachDrop,
+  lungeWeight,
+  LUNGE_DROP,
   liveCourtShotSpin,
   liveCourtBallHeldSeconds,
   serveBounceHeight,
@@ -50,6 +52,16 @@ test('rally carry starts at 2.2 m/s and releases below 2.0 m/s', () => {
   assert.equal(mode(false, 1, { strolling: 0.8 }), true);
   assert.equal(mode(false, 0, { strolling: 0.5 }), false);
   assert.equal(mode(true, 0, { strolling: 0.5 }), true, 'the strolling deadband retains the prior carry');
+});
+
+test('carry intent switches between recovery, split-step, and shot-ready poses', () => {
+  const state = { walking: false, shotDue: false, strolling: 0, speed: 0 };
+  assert.equal(nextLiveCourtCarryMode(false, { ...state, carryIntent: 0.8 }), true);
+  assert.equal(nextLiveCourtCarryMode(true, { ...state, carryIntent: 0.2 }), false);
+  assert.equal(nextLiveCourtCarryMode(true, { ...state, carryIntent: 0.5 }), true);
+  assert.equal(nextLiveCourtCarryMode(false, { ...state, carryIntent: 0.5 }), false);
+  assert.equal(nextLiveCourtCarryMode(true, { ...state, shotDue: true, carryIntent: 1 }), false);
+  assert.equal(nextLiveCourtCarryMode(false, { ...state, walking: true, carryIntent: 0 }), true);
 });
 
 test('overlapping court updates merge into one ordered, bounded timeline', () => {
@@ -233,7 +245,10 @@ test('low and wide contacts use the calibrated conservative crouch', () => {
   assert.equal(lowReachDrop(0.5, 1.4), 0);
   assert.ok(lowReachDrop(0.4, 1.2) > 0.03 && lowReachDrop(0.4, 1.2) < lowReachDrop(0.3, 1.2));
   assert.ok(Math.abs(lowReachDrop(0.25, 1.2) - 0.15) < 1e-9);
-  assert.ok(Math.abs(lowReachDrop(1.0, 2.0) - 0.12) < 1e-9);
+  assert.ok(Math.abs(lowReachDrop(1.0, 2.0) - LUNGE_DROP) < 1e-9);
+  assert.equal(lungeWeight(2.0), 1);
+  assert.equal(lungeWeight(1.4), 0);
+  assert.equal(lungeWeight(3.2), 0);
   assert.equal(lowReachDrop(0.2, 2.0), LOW_REACH_MAX_DROP);
   assert.equal(lowReachDrop(1.0, 4.3), 0);
   assert.equal(lowReachDrop(Number.NaN, 1), 0);
