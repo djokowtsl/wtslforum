@@ -110,7 +110,7 @@ test('volley timing and grip are short, mirrored, one-handed, and isolated from 
 
 test('production selection keeps smash priority and only uses the volley gate at a new contact', () => {
   const court = readFileSync(new URL('../components/DmoLiveCourt3D.tsx', import.meta.url), 'utf8');
-  assert.match(court, /else if \(isCapturedVolleyShot\(/);
+  assert.match(court, /if \(!recordedSmash && isCapturedVolleyShot\(/);
   assert.match(court, /strokeEvent, contactSample, samples, events, soundEventsRef\.current/);
   assert.match(court, /capturedEvent\.stroke = recordedStrokeForSide\(baseStroke, true\)/);
   assert.match(court, /volley \? volleyCaptureWeight\(captureDelta\)/);

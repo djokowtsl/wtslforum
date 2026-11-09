@@ -91,6 +91,9 @@ test('actual stroke-selection block latches normal strokes and only overrides qu
   const actualSlice = choose(undefined, hit, 'backhand', 'standard', false, 'right', true);
   assert.equal(actualSlice.slice, true);
   assert.equal(actualSlice.spinSlice, true, 'ball-flight slices are tracked separately from swing stand-ins');
+  const liveSlice = choose(undefined, hit, 'backhand', 'standard', false, 'right', true, false);
+  assert.equal(liveSlice.slice, true, 'live mode can use a slice cue when its buffered flight supports it');
+  assert.equal(liveSlice.spinSlice, true);
   const dropShot = choose(undefined, hit, 'forehand', 'soft-touch', false, 'right', false, true);
   assert.equal(dropShot.slice, true, 'soft touches still use the recorded slice-style swing');
   assert.equal(dropShot.spinSlice, undefined, 'soft touch alone does not halve the lunge');
