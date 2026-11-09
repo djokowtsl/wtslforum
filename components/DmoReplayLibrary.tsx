@@ -39,9 +39,11 @@ function formatDate(value: string) {
 export default function DmoReplayLibrary({
   initialMatchId = '',
   initialPage = null,
+  publicOnly = false,
 }: {
   initialMatchId?: string;
   initialPage?: ReplayPage | null;
+  publicOnly?: boolean;
 }) {
   const [matches, setMatches] = useState<DmoReplayCatalogEntry[]>(initialPage?.matches ?? []);
   const [selected, setSelected] = useState<DmoReplayCatalogEntry | null>(null);
@@ -57,7 +59,9 @@ export default function DmoReplayLibrary({
     [selected?.player1Character, selected?.player2Character],
   );
   const hasSelectedCharacters = Boolean(
-    selected?.hasDmoFile && characterNames.some((name) => Boolean(name?.trim())),
+    !publicOnly
+    && selected?.hasDmoFile
+    && characterNames.some((name) => Boolean(name?.trim())),
   );
   const characterKey = characterNames
     .map((name) => name ? normalizeDmoReplayCharacterName(name) : '')
@@ -255,7 +259,9 @@ export default function DmoReplayLibrary({
       <div className={`${styles.listPanel} replay-library-panel`}>
         <div className={styles.listHeading}>
           <div>
-            <span className={styles.eyebrow}>All current submissions</span>
+            <span className={styles.eyebrow}>
+              {publicOnly ? 'Publicly approved replays' : 'All current submissions'}
+            </span>
             <h2>Match replays</h2>
           </div>
           <span className={styles.count}>{error ? '!' : `${matches.length}${hasMore ? '+' : ''}`}</span>
@@ -295,7 +301,13 @@ export default function DmoReplayLibrary({
               </button>
             ))
           ) : error ? null : (
-            <p className={styles.empty}>{query ? 'No submissions match that search.' : 'No current DMO submissions are available yet.'}</p>
+            <p className={styles.empty}>
+              {query
+                ? 'No submissions match that search.'
+                : publicOnly
+                  ? 'No DMO replays have been published publicly yet.'
+                  : 'No current DMO submissions are available yet.'}
+            </p>
           )}
         </div>
         {hasMore && (
@@ -413,8 +425,12 @@ export default function DmoReplayLibrary({
         ) : (
           <div className={`${styles.viewerEmpty} replay-library-empty`}>
             <span className={styles.playIcon} aria-hidden="true">▶</span>
-            <h2>Choose a match to rewatch</h2>
-            <p>Browse recordings submitted to the Forum and Discord, then replay the full match with the same court and playback controls.</p>
+            <h2>{publicOnly ? 'Choose a public match to rewatch' : 'Choose a match to rewatch'}</h2>
+            <p>
+              {publicOnly
+                ? 'Browse approved public replays from the Forum and Discord, then watch the full match with the same court and playback controls.'
+                : 'Browse recordings submitted to the Forum and Discord, then replay the full match with the same court and playback controls.'}
+            </p>
           </div>
         )}
       </div>

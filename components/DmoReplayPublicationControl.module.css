@@ -1,0 +1,78 @@
+.control {
+  display: grid;
+  justify-items: start;
+  gap: 8px;
+  min-width: min(100%, 320px);
+}
+
+.status,
+.note,
+.warning,
+.confirm p,
+.error,
+.notice {
+  margin: 0;
+  font-size: 12px;
+  line-height: 1.5;
+}
+
+.status {
+  color: var(--soft);
+  font-weight: 750;
+}
+
+.note {
+  color: var(--muted);
+}
+
+.warning {
+  color: var(--soft);
+}
+
+.form,
+.confirm {
+  display: grid;
+  width: min(100%, 440px);
+  gap: 8px;
+  padding: 12px;
+  border: 1px solid var(--line-2);
+  border-radius: 10px;
+  background: var(--panel-2);
+}
+
+.form label {
+  color: var(--text-strong);
+  font-size: 12px;
+  font-weight: 750;
+}
+
+.form textarea {
+  width: 100%;
+  padding: 9px 10px;
+  border: 1px solid var(--line-2);
+  border-radius: 8px;
+  background: var(--bg-2);
+  color: var(--text);
+  font: inherit;
+  font-size: 12px;
+  resize: vertical;
+}
+
+.form textarea:focus-visible {
+  outline: 2px solid var(--lime);
+  outline-offset: 2px;
+}
+
+.actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.error {
+  color: var(--red);
+}
+
+.notice {
+  color: var(--lime);
+}

@@ -31,6 +31,7 @@ export type DmoSubmission = {
   submission_date: string | Date;
   created_at: string | Date;
   account_name?: string | null;
+  public_replay_override_active?: boolean;
 };
 
 export type NewDmoSubmission = {
@@ -243,7 +244,13 @@ export async function listDmoSubmissions(limit = 100): Promise<DmoSubmission[]> 
   await ensureDmoSubmissionSchema();
   const safeLimit = Math.max(1, Math.min(250, Math.floor(limit)));
   return await sql`
-    SELECT s.*,COALESCE(u.display_name,s.submitter_name) AS account_name
+    SELECT s.*,COALESCE(u.display_name,s.submitter_name) AS account_name,
+      EXISTS (
+        SELECT 1
+        FROM dmo_replay_publication_overrides AS publication_override
+        WHERE publication_override.submission_id=s.id
+          AND publication_override.revoked_at IS NULL
+      ) AS public_replay_override_active
     FROM dmo_submissions s
     LEFT JOIN users u ON u.id=s.submitted_by
     ORDER BY s.created_at DESC

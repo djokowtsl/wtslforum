@@ -105,6 +105,10 @@ function toDmoReplayCatalogEntry(row: Record<string, unknown>): DmoReplayCatalog
   };
 }
 
+function toPublicReplayCatalogEntry(replay: PublicDmoReplay): DmoReplayCatalogEntry {
+  return { ...replay, hasDmoFile: true };
+}
+
 export function isDmoReplayId(value: string): boolean {
   if (!/^\d{1,19}$/.test(value)) return false;
   const normalized = value.replace(/^0+/, '');
@@ -154,7 +158,7 @@ export async function listPublicDmoReplays(input: {
   const hasMore = rows.length > limit;
   const pageRows = rows.slice(0, limit);
   return {
-    matches: pageRows.map(toPublicReplay),
+    matches: pageRows.map(toPublicReplay).map(toPublicReplayCatalogEntry),
     nextCursor: hasMore ? String(pageRows[pageRows.length - 1].id) : null,
   };
 }
@@ -233,6 +237,62 @@ export async function getPublicDmoReplay(id: string): Promise<StoredDmoReplay | 
   };
 }
 
+export async function publishDmoReplaySubmission(input: {
+  id: string;
+  authorizedBy: string;
+  reason: string;
+}): Promise<boolean> {
+  if (!isDmoReplayId(input.id)) return false;
+  const authorizedBy = input.authorizedBy.trim().slice(0, 100);
+  const reason = input.reason.trim().slice(0, 500);
+  if (!authorizedBy || reason.length < 5) return false;
+
+  const rows = await sql`
+    SELECT private_blob_pathname,file_name
+    FROM dmo_submissions
+    WHERE id=${input.id}::bigint
+    LIMIT 1
+  ` as Array<Record<string, unknown>>;
+  const row = rows[0];
+  if (
+    !row
+    || !isDmoSubmissionPath(row.private_blob_pathname)
+    || !/\.dmo$/i.test(String(row.file_name || row.private_blob_pathname))
+  ) {
+    return false;
+  }
+
+  const published = await sql`
+    INSERT INTO dmo_replay_publication_overrides (
+      submission_id,authorized_by,reason,authorized_at,revoked_at
+    )
+    SELECT id,${authorizedBy},${reason},NOW(),NULL
+    FROM dmo_submissions
+    WHERE id=${input.id}::bigint
+      AND private_blob_pathname=${row.private_blob_pathname}
+      AND LOWER(COALESCE(file_name, private_blob_pathname)) LIKE '%.dmo'
+    ON CONFLICT (submission_id) DO UPDATE SET
+      authorized_by=EXCLUDED.authorized_by,
+      reason=EXCLUDED.reason,
+      authorized_at=NOW(),
+      revoked_at=NULL
+    RETURNING submission_id
+  ` as Array<Record<string, unknown>>;
+  return published.length > 0;
+}
+
+export async function revokeDmoReplayPublicationOverride(id: string): Promise<boolean> {
+  if (!isDmoReplayId(id)) return false;
+  const rows = await sql`
+    UPDATE dmo_replay_publication_overrides
+    SET revoked_at=NOW()
+    WHERE submission_id=${id}::bigint
+      AND revoked_at IS NULL
+    RETURNING submission_id
+  ` as Array<Record<string, unknown>>;
+  return rows.length > 0;
+}
+
 export async function getDmoReplaySubmission(id: string): Promise<DmoSubmissionReplay | null> {
   const rows = await sql`
     SELECT id::text AS id,tournament,round_name,player1,player2,
@@ -304,6 +364,13 @@ export function publicDmoReplayMetadata(replay: StoredDmoReplay): PublicDmoRepla
     submissionDate,
     source,
     ...(coachShareUrl ? { coachShareUrl } : {}),
+  };
+}
+
+export function publicDmoReplayCatalogMetadata(replay: StoredDmoReplay): DmoReplayCatalogEntry {
+  return {
+    ...publicDmoReplayMetadata(replay),
+    hasDmoFile: true,
   };
 }
 

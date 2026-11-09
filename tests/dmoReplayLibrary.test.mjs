@@ -330,6 +330,7 @@ test('replay listing returns only safe metadata and paginates uploaded DMO files
         player2: 'Two',
         submissionDate: '2026-10-30',
         source: 'discord',
+        hasDmoFile: true,
         coachShareUrl: 'https://replays.knowthew.net/m/3f9a1c07b2e4d5a6',
       },
       {
@@ -340,6 +341,7 @@ test('replay listing returns only safe metadata and paginates uploaded DMO files
         player2: 'Four',
         submissionDate: '2026-10-29',
         source: 'forum',
+        hasDmoFile: true,
       },
     ],
     nextCursor: '40',
@@ -384,6 +386,10 @@ test('replay page server-renders the current submissions on first load', async (
         requestedPage = input;
         return initialPage;
       },
+      listPublicDmoReplays: async (input) => {
+        requestedPage = input;
+        return initialPage;
+      },
     },
   });
 
@@ -396,45 +402,140 @@ test('replay page server-renders the current submissions on first load', async (
   assert.deepEqual(requestedPage, { limit: 24 });
 });
 
-test('Match Replay Center catalog stays sign-in-only', async () => {
-  let listed = false;
-  const route = loadModule('app/api/dmo-replays/route.ts', {
-    'next/server': nextServer,
+test('public visitors see only the public replay catalog on the Match Replays page', async () => {
+  const initialPage = { matches: [], nextCursor: null };
+  let requestedPage;
+  function PageHero() {}
+  function DmoReplayLibrary() {}
+  function Link() {}
+  const pageModule = loadTsxModule('app/replays/page.tsx', {
+    'next/link': { __esModule: true, default: Link },
+    '@/components/PageHero': { __esModule: true, default: PageHero },
+    '@/components/DmoReplayLibrary': { __esModule: true, default: DmoReplayLibrary },
     '@/lib/auth': { getSession: async () => null },
     '@/lib/dmoReplayLibrary': {
-      isDmoReplayId: (value) => /^\d{1,19}$/.test(value) && value !== '0',
       listDmoReplaySubmissions: async () => {
-        listed = true;
-        return { matches: [], nextCursor: null };
+        throw new Error('Guests must not receive the full catalog.');
+      },
+      listPublicDmoReplays: async (input) => {
+        requestedPage = input;
+        return initialPage;
+      },
+    },
+  });
+
+  const page = await pageModule.default({ searchParams: Promise.resolve({}) });
+  const [hero, main] = page.props.children;
+  assert.equal(hero.type, PageHero);
+  assert.equal(main.props.children.type, DmoReplayLibrary);
+  assert.equal(main.props.children.props.publicOnly, true);
+  assert.deepEqual(main.props.children.props.initialPage, initialPage);
+  assert.deepEqual(requestedPage, { limit: 24 });
+});
+
+test('Match Replay Center API serves the right catalog for guests and members', async () => {
+  const publicPage = { matches: [{ id: '21', hasDmoFile: true }], nextCursor: null };
+  const memberPage = { matches: [{ id: '22', hasDmoFile: false }], nextCursor: null };
+  let user = null;
+  let publicCalls = 0;
+  let memberCalls = 0;
+  const route = loadModule('app/api/dmo-replays/route.ts', {
+    'next/server': nextServer,
+    '@/lib/auth': { getSession: async () => user },
+    '@/lib/dmoReplayLibrary': {
+      isDmoReplayId: (value) => /^\d{1,19}$/.test(value) && value !== '0',
+      listPublicDmoReplays: async () => {
+        publicCalls += 1;
+        return publicPage;
+      },
+      listDmoReplaySubmissions: async () => {
+        memberCalls += 1;
+        return memberPage;
       },
     },
   });
 
   const response = await route.GET(new Request('https://forum.test/api/dmo-replays'));
-  assert.equal(response.status, 401);
-  assert.equal(listed, false);
+  assert.equal(response.status, 200);
+  assert.deepEqual(await response.json(), publicPage);
+  assert.equal(publicCalls, 1);
+  assert.equal(memberCalls, 0);
+
+  user = { id: '7', isAdmin: false };
+  const memberResponse = await route.GET(new Request('https://forum.test/api/dmo-replays'));
+  assert.deepEqual(await memberResponse.json(), memberPage);
+  assert.equal(publicCalls, 1);
+  assert.equal(memberCalls, 1);
 });
 
-test('Match Replay Center details stay sign-in-only', async () => {
-  let lookedUp = false;
+test('public replay details require a public consent or publication lookup', async () => {
+  const publicMetadata = { id: '21', tournament: 'WTSL Open', hasDmoFile: true };
+  let publicLookups = 0;
+  let memberLookups = 0;
+  let user = null;
   const route = loadModule('app/api/dmo-replays/[id]/route.ts', {
     'next/server': nextServer,
-    '@/lib/auth': { getSession: async () => null },
+    '@/lib/auth': { getSession: async () => user },
     '@/lib/dmoReplayLibrary': {
       isDmoReplayId: (value) => /^\d{1,19}$/.test(value) && value !== '0',
       getDmoReplaySubmission: async () => {
-        lookedUp = true;
-        return null;
+        memberLookups += 1;
+        return { id: '22' };
       },
-      dmoReplayCatalogMetadata: () => null,
+      getPublicDmoReplay: async () => {
+        publicLookups += 1;
+        return { id: '21' };
+      },
+      dmoReplayCatalogMetadata: () => ({ id: '22', hasDmoFile: false }),
+      publicDmoReplayCatalogMetadata: () => publicMetadata,
     },
   });
 
   const response = await route.GET(new Request('https://forum.test/api/dmo-replays/21'), {
     params: Promise.resolve({ id: '21' }),
   });
-  assert.equal(response.status, 401);
-  assert.equal(lookedUp, false);
+  assert.equal(response.status, 200);
+  assert.deepEqual(await response.json(), publicMetadata);
+  assert.equal(publicLookups, 1);
+  assert.equal(memberLookups, 0);
+
+  user = { id: '7', isAdmin: false };
+  const memberResponse = await route.GET(new Request('https://forum.test/api/dmo-replays/22'), {
+    params: Promise.resolve({ id: '22' }),
+  });
+  assert.equal(memberResponse.status, 200);
+  assert.equal(memberLookups, 1);
+});
+
+test('anonymous replay playback cannot fetch an unpublished private DMO file', async () => {
+  let fileRead = false;
+  const route = loadModule('app/api/dmo-replays/[id]/replay/route.ts', {
+    'node:crypto': require('node:crypto'),
+    '@vercel/blob': {
+      get: async () => {
+        fileRead = true;
+        throw new Error('A private file should not be read.');
+      },
+      put: async () => {
+        fileRead = true;
+        throw new Error('A private file should not be written.');
+      },
+    },
+    'next/server': nextServer,
+    '@/lib/auth': { getSession: async () => null },
+    '@/lib/te4DmoAnalysis': { analyzeDmoBuffer: () => ({ viewer: {} }) },
+    '@/lib/te4DmoParser': { MAX_DMO_BYTES: 1024, Te4DmoAnalysisError: class extends Error {} },
+    '@/lib/dmoReplayLibrary': {
+      getPublicDmoReplay: async () => null,
+      isDmoReplayId: (value) => /^\d{1,19}$/.test(value) && value !== '0',
+      publicDmoReplayCatalogMetadata: () => null,
+    },
+  });
+  const response = await route.GET(new Request('https://forum.test/api/dmo-replays/21/replay'), {
+    params: Promise.resolve({ id: '21' }),
+  });
+  assert.equal(response.status, 404);
+  assert.equal(fileRead, false);
 });
 
 test('legacy public replay lookup still requires consent or an active owner override', async () => {
@@ -454,6 +555,46 @@ test('legacy public replay lookup still requires consent or an active owner over
   assert.match(queries[0].text, /publication_override\.revoked_at IS NULL/);
   assert.match(queries[0].text, /coach_share_url/);
   assert.match(queries[0].text, /CASE WHEN coach_group_share_consent IS TRUE THEN coach_share_url ELSE NULL END/);
+});
+
+test('admin publication records an audit reason and only accepts stored DMO files', async () => {
+  const calls = [];
+  let fileRows = [{ private_blob_pathname: 'dmo/recording.dmo', file_name: 'recording.dmo' }];
+  const { publishDmoReplaySubmission, revokeDmoReplayPublicationOverride } = loadModule('lib/dmoReplayLibrary.ts', {
+    '@/lib/db': {
+      sql: async (strings, ...values) => {
+        const text = strings.join('?');
+        calls.push({ text, values });
+        if (text.includes('SELECT private_blob_pathname,file_name')) return fileRows;
+        if (text.includes('INSERT INTO dmo_replay_publication_overrides')) return [{ submission_id: '21' }];
+        if (text.includes('UPDATE dmo_replay_publication_overrides')) return [{ submission_id: '21' }];
+        return [];
+      },
+    },
+  });
+
+  assert.equal(await publishDmoReplaySubmission({
+    id: '21',
+    authorizedBy: 'admin-discord-id',
+    reason: 'Permission confirmed with both players',
+  }), true);
+  assert.equal(calls.length, 2);
+  assert.match(calls[1].text, /INSERT INTO dmo_replay_publication_overrides/);
+  assert.match(calls[1].text, /ON CONFLICT \(submission_id\) DO UPDATE/);
+  assert.ok(calls[1].values.includes('admin-discord-id'));
+  assert.ok(calls[1].values.includes('Permission confirmed with both players'));
+
+  fileRows = [{ private_blob_pathname: 'dmo/recording.mp4', file_name: 'recording.mp4' }];
+  assert.equal(await publishDmoReplaySubmission({
+    id: '22',
+    authorizedBy: 'admin-discord-id',
+    reason: 'Permission confirmed with both players',
+  }), false);
+  assert.equal(calls.length, 3);
+
+  assert.equal(await revokeDmoReplayPublicationOverride('21'), true);
+  assert.match(calls[3].text, /SET revoked_at=NOW\(\)/);
+  assert.match(calls[3].text, /revoked_at IS NULL/);
 });
 
 test('Match Replay Center detail lookup includes unconsented submissions', async () => {
@@ -667,6 +808,7 @@ test('signed-in replay API serves unconsented DMO data and caches it privately',
   const blobReads = [];
   const blobWrites = [];
   let analyzed = 0;
+  let user = { id: '7', isAdmin: false };
   try {
     const route = loadModule('app/api/dmo-replays/[id]/replay/route.ts', {
       'node:crypto': require('node:crypto'),
@@ -686,6 +828,7 @@ test('signed-in replay API serves unconsented DMO data and caches it privately',
         },
       },
       'next/server': nextServer,
+      '@/lib/auth': { getSession: async () => user },
       '@/lib/te4DmoAnalysis': {
         analyzeDmoBuffer: () => {
           analyzed += 1;
@@ -710,6 +853,17 @@ test('signed-in replay API serves unconsented DMO data and caches it privately',
           fileName: 'match.dmo',
           privateBlobPathname: 'dmo/discord-123-match.dmo',
         }),
+        getPublicDmoReplay: async () => ({
+          id: '21',
+          tournament: 'WTSL Open',
+          roundName: 'Final',
+          player1: 'One',
+          player2: 'Two',
+          submissionDate: '2026-10-30',
+          source: 'discord',
+          fileName: 'match.dmo',
+          privateBlobPathname: 'dmo/discord-123-match.dmo',
+        }),
         dmoReplayCatalogMetadata: (replay) => ({
           id: replay.id,
           tournament: replay.tournament,
@@ -719,6 +873,16 @@ test('signed-in replay API serves unconsented DMO data and caches it privately',
           submissionDate: replay.submissionDate,
           source: replay.source,
           hasDmoFile: replay.hasDmoFile,
+        }),
+        publicDmoReplayCatalogMetadata: (replay) => ({
+          id: replay.id,
+          tournament: replay.tournament,
+          roundName: replay.roundName,
+          player1: replay.player1,
+          player2: replay.player2,
+          submissionDate: replay.submissionDate,
+          source: replay.source,
+          hasDmoFile: true,
         }),
       },
     });
@@ -738,13 +902,27 @@ test('signed-in replay API serves unconsented DMO data and caches it privately',
     assert.equal(blobWrites.length, 1);
     assert.equal(blobWrites[0].options.access, 'private');
     assert.deepEqual(JSON.parse(blobWrites[0].body), { viewer });
+
+    user = null;
+    const publicResponse = await route.GET(new Request('https://forum.test/api/dmo-replays/21/replay'), {
+      params: Promise.resolve({ id: '21' }),
+    });
+    assert.equal(publicResponse.status, 200);
+    const publicBody = await publicResponse.json();
+    assert.deepEqual(publicBody.viewer, viewer);
+    assert.equal(publicBody.match.id, '21');
+    assert.equal('privateBlobPathname' in publicBody.match, false);
+    assert.equal('fileName' in publicBody.match, false);
+    assert.equal(analyzed, 2);
+    assert.equal(blobReads.length, 4);
+    assert.equal(blobWrites.length, 2);
   } finally {
     if (originalStoreId === undefined) delete process.env.MODERATION_BLOB_STORE_ID;
     else process.env.MODERATION_BLOB_STORE_ID = originalStoreId;
   }
 });
 
-test('replay file API stays sign-in-only', async () => {
+test('replay file API never reads storage for an unpublished guest request', async () => {
   let blobReads = 0;
   const route = loadModule('app/api/dmo-replays/[id]/replay/route.ts', {
     'node:crypto': require('node:crypto'),
@@ -758,17 +936,19 @@ test('replay file API stays sign-in-only', async () => {
     },
     '@/lib/dmoReplayLibrary': {
       isDmoReplayId: (value) => /^\d{1,19}$/.test(value) && value !== '0',
+      getPublicDmoReplay: async () => null,
       getDmoReplaySubmission: async () => {
         throw new Error('guest reached private submission lookup');
       },
       dmoReplayCatalogMetadata: () => null,
+      publicDmoReplayCatalogMetadata: () => null,
     },
   });
 
   const response = await route.GET(new Request('https://forum.test/api/dmo-replays/21/replay'), {
     params: Promise.resolve({ id: '21' }),
   });
-  assert.equal(response.status, 401);
+  assert.equal(response.status, 404);
   assert.equal(blobReads, 0);
 });
 
