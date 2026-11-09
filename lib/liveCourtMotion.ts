@@ -42,10 +42,12 @@ export function lowReachDrop(heightMetres: number, reachMetres: number) {
   return Math.min(LOW_REACH_MAX_DROP, 0.15 * low + LUNGE_DROP * lungeWeight(reachMetres));
 }
 
-/** How far into a full lunge a ball this far from the body centre takes him. */
-export function lungeWeight(reachMetres: number) {
+/** How far into a full lunge a ball this far from the body centre takes him.
+ * A true slice keeps half the lunge so its swing remains visible. */
+export function lungeWeight(reachMetres: number, slice = false) {
   if (!Number.isFinite(reachMetres)) return 0;
-  return smoothstep(reachMetres, 1.45, 1.95) * (1 - smoothstep(reachMetres, 2.6, 3.0));
+  const weight = smoothstep(reachMetres, 1.45, 1.95) * (1 - smoothstep(reachMetres, 2.6, 3.0));
+  return weight * (slice ? 0.5 : 1);
 }
 
 /**

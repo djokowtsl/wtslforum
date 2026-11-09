@@ -24,6 +24,7 @@ import {
   recordedStrokeForSide,
   isRecordedVolley,
   recordedStrokeUsesTwoHands,
+  shouldCompressGroundstrokeTakeBack,
   volleyCaptureWeight,
   serveCaptureWeight,
   type GroundstrokeName,
@@ -1414,6 +1415,7 @@ function ThreeCourt({
         stroke: GroundstrokeName;
         handedness: 'left' | 'right';
         slice?: boolean;
+        spinSlice?: boolean;
       };
       let capturedEvent = rig.root.userData.capturedGroundstrokeEvent as CapturedEvent | undefined;
       // Inferred soft-touch cues are not a reason to replace a recorded stroke
@@ -1459,9 +1461,10 @@ function ThreeCourt({
             && !recordedVolley
             && Boolean(rig.root.userData.capturedVolleys)
             && strokeEvent.shotType === 'rally'
-            && (recordedTouch || liveCourtShotSpin(samples, strokeEvent.frame, frameRate) === 'slice')
           ) {
-            capturedEvent.slice = true;
+            const spinSlice = liveCourtShotSpin(samples, strokeEvent.frame, frameRate) === 'slice';
+            if (recordedTouch || spinSlice) capturedEvent.slice = true;
+            if (spinSlice) capturedEvent.spinSlice = true;
           }
         }
         rig.root.userData.capturedGroundstrokeEvent = capturedEvent;
@@ -1522,7 +1525,7 @@ function ThreeCourt({
             ? lungeWeight(Math.hypot(
               (contactSample[0] - contactSample[xIndex]) * SCALE,
               (contactSample[1] - contactSample[zIndex]) * SCALE,
-            ))
+            ), Boolean(capturedEvent.spinSlice))
             : 0;
           const lungeTiming = THREE.MathUtils.smoothstep(captureDelta, -16, -2)
             * (1 - THREE.MathUtils.smoothstep(captureDelta, 24, 44));
@@ -1548,7 +1551,7 @@ function ThreeCourt({
               hands: !capturedEvent.slice
                 && recordedStrokeUsesTwoHands(capturedEvent.stroke, playerStrokeStyle, false) ? 'two' : 'one',
               ...(capturedEvent.slice ? { slice: true } : {}),
-              ...(capturedEvent.stroke !== 'serve' && !volley
+              ...(shouldCompressGroundstrokeTakeBack(capturedEvent.stroke, capturedEvent.slice)
                 ? { leadScale: GROUNDSTROKE_LEAD_FRAMES / groundstrokeLeadFrames(opponentContactGap) }
                 : {}),
             };

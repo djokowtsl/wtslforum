@@ -25,6 +25,14 @@ export function isRecordedVolley(stroke: GroundstrokeName | undefined) {
   return stroke === 'volley-forehand' || stroke === 'volley-backhand';
 }
 
+/** Only a topspin groundstroke drive uses the compact, faster take-back. */
+export function shouldCompressGroundstrokeTakeBack(
+  stroke: GroundstrokeName,
+  sliceOrTouch = false,
+) {
+  return (stroke === 'forehand' || stroke === 'backhand') && !sliceOrTouch;
+}
+
 /** The volley uses a continental grip, not the ground backhand regrip. */
 export function recordedBackhandFaceRoll(
   stroke: GroundstrokeName | undefined,

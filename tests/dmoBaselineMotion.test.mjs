@@ -63,10 +63,10 @@ test('actual stroke-selection block latches normal strokes and only overrides qu
     'contactSample', 'samples', 'events', 'sceneDataRef', 'TE4_DMO_FRAMES_PER_SECOND',
     `${court.slice(start, end)}\nreturn capturedEvent;`,
   );
-  const choose = (previous, event, stroke, cue, qualifies, hand = 'right', slice = false) => select(
+  const choose = (previous, event, stroke, cue, qualifies, hand = 'right', spinSlice = false, fullReplay = spinSlice) => select(
     previous, event, hand, stroke, cue, cue === 'close-net', cue === 'soft-touch', () => qualifies,
-    () => false, slice, { detailed: true, root: { userData: { capturedVolleys: true } } },
-    () => slice ? 'slice' : null, 60, { current: [] },
+    () => false, fullReplay, { detailed: true, root: { userData: { capturedVolleys: true } } },
+    () => spinSlice ? 'slice' : null, 60, { current: [] },
     [], [], [], { current: { snapshot: { frameRate: 60 } } }, 60,
   );
   const hit = { frame: 100, shotType: 'rally' };
@@ -82,5 +82,10 @@ test('actual stroke-selection block latches normal strokes and only overrides qu
   assert.equal(choose(undefined, { ...hit, shotType: 'serve' }, 'forehand', 'close-net', true).stroke, 'serve');
   assert.equal(choose(normal, { ...hit, frame: 150 }, 'backhand', 'standard', false).stroke, 'backhand');
   assert.equal(choose(normal, hit, 'backhand', 'standard', false, 'left').handedness, 'left');
-  assert.equal(choose(undefined, hit, 'backhand', 'standard', false, 'right', true).slice, true);
+  const actualSlice = choose(undefined, hit, 'backhand', 'standard', false, 'right', true);
+  assert.equal(actualSlice.slice, true);
+  assert.equal(actualSlice.spinSlice, true, 'ball-flight slices are tracked separately from swing stand-ins');
+  const dropShot = choose(undefined, hit, 'forehand', 'soft-touch', false, 'right', false, true);
+  assert.equal(dropShot.slice, true, 'soft touches still use the recorded slice-style swing');
+  assert.equal(dropShot.spinSlice, undefined, 'soft touch alone does not halve the lunge');
 });
