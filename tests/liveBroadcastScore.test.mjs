@@ -173,10 +173,10 @@ test('broadcast court headings use Live and do not display court surface badges'
   assert.doesNotMatch(threeDimensionalStyles, /surfaceBadge/);
 });
 
-const nextServer = { NextResponse: { json: (body, init) => Response.json(body, init) } };
-function currentRoute(payload, { feedValue = feed(), signedIn = true } = {}) {
+const nextServer = { after: () => {}, NextResponse: { json: (body, init) => Response.json(body, init) } };
+function currentRoute(payload, { feedValue = feed(), signedIn = true, path = 'current' } = {}) {
   let feedCalls = 0;
-  const route = load('app/api/live-dmo/current/route.ts', {
+  const route = load(`app/api/live-dmo/${path}/route.ts`, {
     'next/server': nextServer,
     '@/lib/auth': { getSession: async () => signedIn ? { discordId: 'viewer', isAdmin: true } : null },
     '@/lib/db': { sql: async () => [{
@@ -187,30 +187,145 @@ function currentRoute(payload, { feedValue = feed(), signedIn = true } = {}) {
     '@/lib/liveDmoStorage': { cleanupExpiredLiveDmoBroadcasts: async () => {}, isLiveDmoReplayPath: () => false },
     '@/lib/liveRequestSecurity': { isSameSiteMutation: (request) => request.headers.get('origin') === 'https://forum.test' },
     '@/lib/te4DmoLive': { hasCompletedDmoPoints: (value) => Boolean(value?.pointCount) },
-    '@/lib/liveScores': { getLiveBroadcastScoreFeed: async () => { feedCalls++; return feedValue; } },
+    '@/lib/liveScores': { getLiveBroadcastScoreFeed: async () => {
+      feedCalls++;
+      return typeof feedValue === 'function' ? feedValue() : feedValue;
+    } },
     '@/lib/liveBroadcastScore': helpers,
   });
   return { route, feedCalls: () => feedCalls };
 }
 
-test('signed-in automatic broadcasts expose a separately refreshed official score without replacing stored DMO data', async () => {
+test('snapshot delivery never waits for the official score service', async () => {
   const payload = { snapshot, mode: 'auto', replay: false, players: snapshot.players };
-  const { route, feedCalls } = currentRoute(payload);
-  const body = await (await route.GET()).json();
-  assert.deepEqual(body.broadcast.liveScore.games, [0, 1]);
+  const { route, feedCalls } = currentRoute(payload, {
+    feedValue: () => { throw new Error('Snapshot reads must not invoke the score service'); },
+  });
+  const response = await route.GET();
+  const body = await response.json();
+  assert.equal(body.broadcast.liveScore, undefined);
   assert.deepEqual(body.broadcast.snapshot.score, dmoScore);
-  assert.equal(body.broadcast.liveScore.checkedAt, checkedAt);
-  assert.equal(feedCalls(), 1);
+  assert.equal(feedCalls(), 0);
+  assert.ok(body.transport.servedAt);
+  assert.ok(body.transport.readDurationMs >= 0);
+  assert.match(response.headers.get('server-timing'), /snapshot;dur=/);
   assert.deepEqual(payload.snapshot.score, dmoScore);
 });
 
 test('missing live feeds return unavailable, not DMO score; guests cannot fetch live scores', async () => {
   const payload = { snapshot, mode: 'auto', replay: false };
-  const unavailable = currentRoute(payload, { feedValue: null });
-  assert.equal((await (await unavailable.route.GET()).json()).broadcast.liveScore, null);
-  const guest = currentRoute(payload, { signedIn: false });
+  const unavailable = currentRoute(payload, { feedValue: null, path: 'scores' });
+  assert.equal((await (await unavailable.route.GET()).json()).scores['live-match'], null);
+  const guest = currentRoute(payload, { signedIn: false, path: 'scores' });
   assert.equal((await guest.route.GET()).status, 401);
   assert.equal(guest.feedCalls(), 0);
+});
+
+test('official scores load independently while court snapshots continue during a slow score request', async () => {
+  const payload = { snapshot, mode: 'auto', replay: false, players: snapshot.players };
+  let release;
+  const pendingFeed = new Promise(resolve => { release = resolve; });
+  const scores = currentRoute(payload, { path: 'scores', feedValue: () => pendingFeed });
+  const scoreResponse = scores.route.GET();
+  const snapshots = currentRoute(payload);
+  try {
+    const response = await snapshots.route.GET();
+    assert.equal(response.status, 200);
+    assert.deepEqual((await response.json()).broadcast.snapshot.score, dmoScore);
+    assert.equal(snapshots.feedCalls(), 0);
+  } finally {
+    release(feed());
+  }
+  const response = await scoreResponse;
+  const body = await response.json();
+  assert.deepEqual(body.scores['live-match'].games, [0, 1]);
+  assert.equal(body.scores['live-match'].checkedAt, checkedAt);
+  assert.match(response.headers.get('server-timing'), /scores;dur=/);
+  assert.match(response.headers.get('cache-control'), /no-store/);
+});
+
+test('the score endpoint selects only current automatic non-replay broadcasts', async () => {
+  let feedCalls = 0;
+  const route = load('app/api/live-dmo/scores/route.ts', {
+    'next/server': nextServer,
+    '@/lib/auth': { getSession: async () => ({ discordId: 'viewer' }) },
+    '@/lib/db': { sql: async (strings) => {
+      const query = strings.join('');
+      assert.match(query, /status='live'/);
+      assert.match(query, /expires_at > NOW\(\)/);
+      assert.match(query, /payload->>'mode'='auto'/);
+      assert.match(query, /COALESCE\(payload->>'replay', 'false'\)<>'true'/);
+      return [];
+    } },
+    '@/lib/liveScores': { getLiveBroadcastScoreFeed: async () => { feedCalls++; return feed(); } },
+    '@/lib/liveBroadcastScore': helpers,
+  });
+  assert.deepEqual((await (await route.GET()).json()).scores, {});
+  assert.equal(feedCalls, 0);
+});
+
+test('score endpoint failures are explicit and do not affect the snapshot endpoint', async () => {
+  const payload = { snapshot, mode: 'auto', replay: false };
+  const scores = currentRoute(payload, { path: 'scores', feedValue: () => { throw new Error('Database offline'); } });
+  assert.equal((await scores.route.GET()).status, 503);
+  const snapshots = currentRoute(payload);
+  assert.equal((await snapshots.route.GET()).status, 200);
+});
+
+test('snapshot reads defer external cleanup until after the response and coalesce scheduling', async () => {
+  const scheduled = [];
+  let cleanupCalls = 0;
+  const route = load('app/api/live-dmo/current/route.ts', {
+    'next/server': { ...nextServer, after: callback => scheduled.push(callback) },
+    '@/lib/auth': { getSession: async () => ({ discordId: 'viewer' }) },
+    '@/lib/db': { sql: async () => [] },
+    '@/lib/liveDmoStorage': {
+      cleanupExpiredLiveDmoBroadcasts: async () => { cleanupCalls++; },
+      isLiveDmoReplayPath: () => false,
+    },
+    '@/lib/te4DmoLive': { hasCompletedDmoPoints: () => true },
+    '@/lib/liveRequestSecurity': { isSameSiteMutation: () => true },
+  });
+  const response = await route.GET();
+  assert.equal(response.status, 200);
+  assert.equal(cleanupCalls, 0);
+  assert.equal(scheduled.length, 1);
+  assert.equal((await route.GET()).status, 200);
+  assert.equal(scheduled.length, 1);
+  await scheduled[0]();
+  assert.equal(cleanupCalls, 1);
+});
+
+test('received official scores expire rather than remain silently stale', () => {
+  const { freshLiveDmoScore } = load('lib/liveDmoRefresh.ts');
+  const score = helpers.scoreForLiveBroadcast(feed(), snapshot.players, 3);
+  const entry = { score, receivedAt: 10_000 };
+  assert.equal(freshLiveDmoScore(entry, 14_999), score);
+  assert.equal(freshLiveDmoScore(entry, 15_000), null);
+  assert.equal(freshLiveDmoScore(undefined), null);
+});
+
+test('a stalled response body is aborted and releases the refresh deadline', async (t) => {
+  const originalFetch = globalThis.fetch;
+  t.mock.timers.enable({ apis: ['setTimeout'] });
+  globalThis.fetch = async (_url, { signal, cache }) => ({
+    ok: true,
+    json: () => new Promise((_resolve, reject) => {
+      assert.equal(cache, 'no-store');
+      signal.addEventListener('abort', () => reject(new Error('Aborted body')), { once: true });
+    }),
+  });
+  try {
+    const { fetchLiveDmoJson } = load('lib/liveDmoRefresh.ts');
+    const request = fetchLiveDmoJson('/api/live-dmo/current', new AbortController().signal);
+    await Promise.resolve();
+    const rejected = assert.rejects(request, /Aborted body/);
+    t.mock.timers.tick(5_000);
+    await rejected;
+  } finally {
+    globalThis.fetch = originalFetch;
+    t.mock.timers.reset();
+  }
 });
 
 test('manual broadcasts and historical replays neither request nor override live scores', async () => {

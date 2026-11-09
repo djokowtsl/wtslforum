@@ -17,7 +17,7 @@ const untouched = new Proxy({}, {
 });
 
 const mocks = {
-  'next/server': { NextResponse: { json: (body, init) => Response.json(body, init) } },
+  'next/server': { after: () => {}, NextResponse: { json: (body, init) => Response.json(body, init) } },
   '@/lib/db': { sql: async () => [] },
   '@/lib/liveDmoStorage': {
     cleanupExpiredLiveDmoBroadcasts: async () => {},
@@ -77,6 +77,7 @@ const pages = [
 ];
 const viewerReads = [
   'app/api/live-dmo/current/route.ts',
+  'app/api/live-dmo/scores/route.ts',
   'app/api/live-dmo/[id]/replay/route.ts',
   'app/api/live-dmo/[id]/points/route.ts',
   'app/api/live-dmo/[id]/pre-match/route.ts',

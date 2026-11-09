@@ -124,6 +124,7 @@ function request(body, path = '/api/live-dmo', method = 'POST') {
 
 const backgroundCallbacks = [];
 const nextServer = {
+  after: () => {},
   after: (callback) => backgroundCallbacks.push(callback),
   NextResponse: { json: (body, init) => Response.json(body, init) },
 };

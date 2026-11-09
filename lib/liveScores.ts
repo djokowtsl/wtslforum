@@ -304,6 +304,7 @@ export async function getLiveBroadcastScoreFeed(): Promise<LiveBroadcastScoreFee
     return broadcastScoreCache.feed;
   }
   if (broadcastScoreRequest) return broadcastScoreRequest;
+  const startedAt = performance.now();
   const request = (async () => {
     try {
       const response = await fetch(SERVER_LIST_URL, {
@@ -323,7 +324,11 @@ export async function getLiveBroadcastScoreFeed(): Promise<LiveBroadcastScoreFee
       };
       broadcastScoreCache = { at: Date.now(), feed };
       return feed;
-    } catch {
+    } catch (error) {
+      console.warn('[live-broadcast] official score feed unavailable', {
+        durationMs: Math.round(performance.now() - startedAt),
+        error: error instanceof Error ? error.name : 'UnknownError',
+      });
       broadcastScoreCache = { at: Date.now(), feed: null };
       return null;
     }
