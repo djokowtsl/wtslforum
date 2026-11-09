@@ -79,6 +79,7 @@ export default function DmoLiveViewer({ canWatch, voiceServer = '' }: Props) {
   const broadcastListRef = useRef<HTMLDivElement>(null);
   const [pointLogs, setPointLogs] = useState<Record<string, PointLogState>>({});
   const [preMatchPredictions, setPreMatchPredictions] = useState<Record<string, LivePreMatchProbability | null>>({});
+  const [preMatchStatuses, setPreMatchStatuses] = useState<Record<string, 'loading' | 'unavailable'>>({});
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
   const [tourSaveError, setTourSaveError] = useState('');
@@ -273,6 +274,7 @@ export default function DmoLiveViewer({ canWatch, voiceServer = '' }: Props) {
           const lastAttempt = preMatchAttempts.current.get(broadcast.id) ?? 0;
           if (Date.now() - lastAttempt < 60_000) continue;
           preMatchAttempts.current.set(broadcast.id, Date.now());
+          setPreMatchStatuses((current) => ({ ...current, [broadcast.id]: 'loading' }));
           void fetch(`/api/live-dmo/${encodeURIComponent(broadcast.id)}/pre-match`, { cache: 'no-store' })
             .then(async (predictionResponse) => {
               const predictionBody = await predictionResponse.json().catch(() => null);
@@ -287,8 +289,17 @@ export default function DmoLiveViewer({ canWatch, voiceServer = '' }: Props) {
               if (!active) return;
               if (prediction) preMatchResolved.current.add(broadcast.id);
               setPreMatchPredictions((current) => ({ ...current, [broadcast.id]: prediction }));
+              setPreMatchStatuses((current) => {
+                const next = { ...current };
+                if (prediction) delete next[broadcast.id];
+                else next[broadcast.id] = 'unavailable';
+                return next;
+              });
             })
-            .catch(() => undefined);
+            .catch(() => {
+              if (!active) return;
+              setPreMatchStatuses((current) => ({ ...current, [broadcast.id]: 'unavailable' }));
+            });
         }
         setError('');
       } catch (cause) {
@@ -590,6 +601,7 @@ export default function DmoLiveViewer({ canWatch, voiceServer = '' }: Props) {
                           stale={broadcast.stale}
                           updatedAt={broadcast.updatedAt}
                           preMatchPrediction={preMatchPredictions[broadcast.id]}
+                          preMatchStatus={preMatchStatuses[broadcast.id]}
                           pointLog={pointLogs[broadcast.id]?.points}
                           pointLogLoaded={pointLogs[broadcast.id]?.loaded}
                           scoreSource={fallbackScoreSource}
@@ -609,6 +621,7 @@ export default function DmoLiveViewer({ canWatch, voiceServer = '' }: Props) {
                       stale={broadcast.stale}
                       updatedAt={broadcast.updatedAt}
                       preMatchPrediction={preMatchPredictions[broadcast.id]}
+                      preMatchStatus={preMatchStatuses[broadcast.id]}
                       pointLog={pointLogs[broadcast.id]?.points}
                       pointLogLoaded={pointLogs[broadcast.id]?.loaded}
                       scoreSource={scoreSource}

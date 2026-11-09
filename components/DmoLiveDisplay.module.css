@@ -41,14 +41,14 @@
 .scoreBugDot, .scoreBugServeDot { flex: none; width: 5px; height: 5px; border-radius: 50%; background: var(--live-lime); box-shadow: 0 0 0 3px rgba(176, 244, 59, .1); }
 .scoreBugSets { overflow: hidden; color: var(--live-muted); font-size: 7px; font-weight: 700; text-align: right; text-overflow: ellipsis; white-space: nowrap; }
 .scoreBugTable { border-top: 1px solid rgba(196, 208, 226, .18); }
-.scoreBugHeading, .scoreBugRow { display: grid; grid-template-columns: minmax(62px, 1fr) 31px 35px 31px; align-items: center; gap: 3px; }
-.scoreBugHeading { padding: 4px 2px 3px; color: var(--live-muted); font-size: 6px; font-weight: 800; letter-spacing: .04em; text-align: center; text-transform: uppercase; }
+.scoreBugHeading, .scoreBugRow { display: grid; grid-template-columns: minmax(0, 1fr) 58px 68px 76px; align-items: center; gap: 8px; }
+.scoreBugHeading { padding: 7px 4px 5px; color: var(--live-muted); font-size: 8px; font-weight: 800; letter-spacing: .06em; text-align: center; text-transform: uppercase; }
 .scoreBugHeading > :first-child { text-align: left; }
-.scoreBugRow { min-height: 21px; border-top: 1px solid rgba(196, 208, 226, .11); font-size: 9px; font-variant-numeric: tabular-nums; text-align: center; }
+.scoreBugRow { min-height: 31px; border-top: 1px solid rgba(196, 208, 226, .11); font-size: 12px; font-variant-numeric: tabular-nums; text-align: center; }
 .scoreBugPlayer { display: flex; align-items: center; gap: 5px; min-width: 0; color: var(--live-soft); text-align: left; }
 .scoreBugPlayer span { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.scoreBugPoints { color: var(--live-lime); font-size: 11px; }
-.scoreBugServe { color: var(--live-muted); font-size: 8px; }
+.scoreBugPoints { color: var(--live-lime); font-size: 14px; }
+.scoreBugServe { color: var(--live-muted); font-size: 10px; }
 .pointNote { min-height: 17px; margin: 9px 2px 0; color: var(--live-muted); font-size: 10px; }
 
 .metrics { overflow: hidden; margin-top: 13px; border: 1px solid rgba(150, 180, 230, .14); border-radius: 9px; background: var(--live-panel-2); }
