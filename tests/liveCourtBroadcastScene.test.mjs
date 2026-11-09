@@ -1474,6 +1474,9 @@ test('automated Fault and Out calls use dedicated audio clips without loading um
     requestedUrls.every(url => url.startsWith('/audio/xkt/line-calls/')),
     'dedicated line calls do not fetch umpire manifests',
   );
+  await xktUmpireAudioApi.preloadAutomatedLineCalls(context, fetcher);
+  assert.ok(atpOutFiles.every(url => requestedUrls.includes(url)),
+    'activation preloads every ATP variation, not only the generic out clip');
   for (const file of ['fault.mp3', 'out.mp3', ...atpOutFiles.map(url => url.split('/').at(-1))]) {
     const asset = await readFile(new URL(`../public/audio/xkt/line-calls/${file}`, import.meta.url));
     assert.ok(asset.byteLength > 5_000, `${file} is bundled as a real audio clip`);
@@ -1856,6 +1859,73 @@ test('only the first bounce associated with a point can trigger an out call', ()
     ],
     'later dead-ball bounces cannot repeat or overturn the first-bounce decision',
   );
+});
+
+test('a delayed replay point-end cannot turn a later dead-ball bounce into Out', () => {
+  const calls = umpireApi.deriveUmpireCallEvents(
+    [{ frame: 10, kind: 'shot', shotType: 'rally' }, { frame: 160, kind: 'point-end' }],
+    [{ frame: 30, kind: 'bounce' }, { frame: 50, kind: 'bounce' }],
+    [
+      { frame: 30, values: [800, 0, 3, 0, 0, 0, 0] },
+      { frame: 50, values: [1_350, 0, 3, 0, 0, 0, 0] },
+    ],
+  );
+  assert.deepEqual(calls.filter(call => call.kind === 'out'), []);
+});
+
+test('full replay out detection reaches the recorded audio dispatcher', async () => {
+  const spoken = [];
+  const api = await loadTs('../lib/liveCourtUmpire.ts', {
+    './xktUmpireAudio': {
+      playXktUmpireCall: async (_context, text, isWta) => { spoken.push({ text, isWta }); return true; },
+      cancelXktUmpireCalls() {},
+    },
+  });
+  const calls = api.deriveUmpireCallEvents(
+    [{ frame: 10, kind: 'shot', shotType: 'rally' }, { frame: 100, kind: 'point-end' }],
+    [{ frame: 30, kind: 'bounce' }],
+    [{ frame: 30, values: [1_250, 0, 3, 0, 0, 0, 0] }],
+  );
+  for (const call of api.umpireCallsBetween(calls, 29, 31)) {
+    assert.equal(await api.speakUmpireCall(call.text, { state: 'running' }, false), true);
+  }
+  assert.deepEqual(spoken, [{ text: 'Out', isWta: false }]);
+});
+
+test('live out calls reach the playhead before the delayed point-end marker', () => {
+  const shot = { frame: 10, kind: 'shot', shotType: 'rally' };
+  const sounds = [{ frame: 30, kind: 'bounce' }];
+  const samples = [{ frame: 30, values: [1_250, 0, 4, 0, 0, 0, 0] }];
+  const pending = umpireApi.deriveUmpireCallEvents([shot], sounds, samples, { allowPendingPointEnd: true });
+  assert.deepEqual(pending, [{ frame: 30, kind: 'out', text: 'Out' }]);
+  const cursor = umpireApi.createLiveUmpireEventCursor();
+  assert.deepEqual(umpireApi.consumeLiveUmpireCallEvents(cursor, pending, 29, 31, true), pending);
+  const completed = umpireApi.deriveUmpireCallEvents(
+    [shot, { frame: 240, kind: 'point-end', scoreCall: 'fifteen-love' }],
+    sounds, samples, { allowPendingPointEnd: true },
+  );
+  assert.equal(umpireApi.consumeLiveUmpireCallEvents(cursor, completed, 239, 241, true)
+    .filter(call => call.kind === 'out').length, 0, 'late point-end never repeats the earlier line call');
+  assert.deepEqual(umpireApi.deriveUmpireCallEvents([shot], sounds, samples), [],
+    'full replays retain their point-end corroboration');
+});
+
+test('live line calls ignore later dead-ball bounces and uncertain first landings', () => {
+  const shot = { frame: 10, kind: 'shot', shotType: 'rally' };
+  const sounds = [{ frame: 30, kind: 'bounce' }, { frame: 50, kind: 'bounce' }];
+  for (const first of [[0, 0, 3], [1_250, 0, 45], [1_200, 0, 3]]) {
+    const samples = [
+      { frame: 30, values: [...first, 0, 0, 0, 0] },
+      { frame: 50, values: [1_350, 600, 3, 0, 0, 0, 0] },
+    ];
+    assert.deepEqual(umpireApi.deriveUmpireCallEvents([shot], sounds, samples,
+      { allowPendingPointEnd: true }), []);
+  }
+  assert.deepEqual(umpireApi.deriveUmpireCallEvents(
+    [shot, { frame: 20, kind: 'point-end' }], sounds,
+    [{ frame: 30, values: [1_350, 0, 3, 0, 0, 0, 0] }],
+    { allowPendingPointEnd: true },
+  ).filter(call => call.kind === 'out'), [], 'bounces after a completed point remain silent');
 });
 
 test('serve faults use first-bounce evidence and valid serves remain silent', () => {

@@ -186,14 +186,17 @@ const MIN_CAMERA_HEIGHT = 0.8;
 /** Frames (at 60 per second) before his own shot when a running player brings
  * the racket back in front for the recorded take-back. */
 const RALLY_RUN_CARRY_CUTOFF_FRAMES = 36;
-/** Keep a returner within side-on of the net when a serve is due soon. */
-const NEAR_SERVE_MAX_TURN = THREE.MathUtils.degToRad(75);
-const SERVE_SOON_SECONDS = 5;
+/** Real walks face travel; short adjustments and imminent serves face the net. */
+const SHORT_WALK_METRES = 2;
+const SHORT_WALK_MAX_TURN = THREE.MathUtils.degToRad(60);
+const SERVE_IMMINENT_SECONDS = 1.5;
+const SERVE_IMMINENT_MAX_TURN = THREE.MathUtils.degToRad(30);
 
-function limitHeadingToNet(heading: number, netFacing: number, secondsToServe: number) {
-  if (!(secondsToServe < SERVE_SOON_SECONDS)) return heading;
+function limitHeadingToNet(heading: number, netFacing: number, secondsToServe: number, metresToGo: number) {
+  const limit = secondsToServe < SERVE_IMMINENT_SECONDS ? SERVE_IMMINENT_MAX_TURN
+    : metresToGo < SHORT_WALK_METRES ? SHORT_WALK_MAX_TURN : Math.PI;
   const delta = Math.atan2(Math.sin(heading - netFacing), Math.cos(heading - netFacing));
-  return netFacing + THREE.MathUtils.clamp(delta, -NEAR_SERVE_MAX_TURN, NEAR_SERVE_MAX_TURN);
+  return netFacing + THREE.MathUtils.clamp(delta, -limit, limit);
 }
 /** Furthest the hips turn toward a fast run across the court (radians). */
 const RUN_HIP_TURN = 1.05;
@@ -442,6 +445,7 @@ function ThreeCourt({
       ].sort((a, b) => a.frame - b.frame),
       soundEventsRef.current,
       sampleBufferRef.current,
+      { allowPendingPointEnd: !fullReplay },
     );
     const skidHistory = new Map(skidMarksRef.current.map(mark => [`${mark.frame}:${mark.player}`, mark]));
     for (const mark of deriveLiveCourtSkidMarks(
@@ -854,11 +858,11 @@ function ThreeCourt({
           rig.root.position.addScaledVector(movement, Math.min(1, step / distance));
           rig.root.userData.walking = true;
           // Face the way he walks; square up to the net over the last half metre.
-          // With a serve due soon, keep the turn no more than side-on.
+          // Short adjustments and imminent serves stay facing the net.
           const netFacing = liveCourtFacingAngle(position.x < 0 ? -1 : 1);
           rig.root.userData.walkHeading = distance > 0.5
             ? limitHeadingToNet(Math.atan2(movement.x, movement.z), netFacing,
-              nextServe ? (nextServe.frame - frame) / replayRate : Number.POSITIVE_INFINITY)
+              nextServe ? (nextServe.frame - frame) / replayRate : Number.POSITIVE_INFINITY, distance)
             : netFacing;
         } else {
           // Follow the recording through a jitter filter (whole-cm samples every
@@ -945,9 +949,13 @@ function ThreeCourt({
           const strolling = covering > (rig.root.userData.strollFacing ? 0.3 : 0.5);
           rig.root.userData.strollFacing = strolling;
           if (strolling) {
+            const further = interpolateLiveCourtFrame(samples, Math.min(lastFrame, frame + frameRate * 2), maxGapFrames);
+            const metresToGo = further
+              ? Math.hypot((further[xIndex] - values[xIndex]) * SCALE, (further[zIndex] - values[zIndex]) * SCALE)
+              : covering;
             const serveDue = findLiveCourtShotInRange(events, frame, frame + frameRate * 90, 'serve');
             strollHeading = limitHeadingToNet(Math.atan2(aheadX, aheadZ), liveCourtFacingAngle(courtSide),
-              serveDue ? (serveDue.frame - frame) / frameRate : Number.POSITIVE_INFINITY);
+              serveDue ? (serveDue.frame - frame) / frameRate : Number.POSITIVE_INFINITY, metresToGo);
           }
         }
       } else {
