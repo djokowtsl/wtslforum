@@ -81,16 +81,37 @@ test('automatic crowd density follows the broadcaster-selected tournament round'
   assert.equal(crowdDensityApi.isCrowdSeatOccupied(17, 0.5), crowdDensityApi.isCrowdSeatOccupied(17, 0.5));
 });
 
-test('recognized venue metadata supplies only verified court lettering', async () => {
-  assert.equal(venueApi.resolveDmoVenueProfile('Roland Garros').courtLabel, 'PARIS');
-  assert.equal(venueApi.resolveDmoVenueProfile('Wimbledon Centre Court').courtLabel, 'LONDON');
-  assert.equal(venueApi.resolveDmoVenueProfile('Arthur Ashe Stadium').courtLabel, 'NEW YORK');
-  assert.equal(venueApi.resolveDmoVenueProfile('A made-up tennis venue').courtLabel, undefined,
+test('tournament and venue metadata resolve city lettering across the tour calendar', async () => {
+  const cityCases = [
+    ['Vienna', 'VIENNA'],
+    ['Erste Bank Open', 'VIENNA'],
+    ['Wiener Stadthalle', 'VIENNA'],
+    ['Miami Open', 'MIAMI'],
+    ['Roland Garros', 'PARIS'],
+    ['Wimbledon Centre Court', 'LONDON'],
+    ['Arthur Ashe Stadium', 'NEW YORK'],
+    ['ATP Doha', 'DOHA'],
+    ['Mutua Madrid Open', 'MADRID'],
+    ['Internazionali d’Italia', 'ROME'],
+    ['Barcelona Open', 'BARCELONA'],
+    ['BMW Open Munich', 'MUNICH'],
+    ['Mallorca Championships', 'SANTA PONSA'],
+    ['Surbiton Trophy', 'SURBITON'],
+    ['Libema Open', 'DEN BOSCH'],
+    ['China Open Beijing', 'BEIJING'],
+    ['WTA Finals Riyadh', 'RIYADH'],
+    ['A made-up tennis venue', undefined],
+    [null, undefined],
+  ];
+  for (const [venue, expectedCity] of cityCases) {
+    assert.equal(venueApi.resolveDmoVenueProfile(venue).cityLabel, expectedCity, String(venue));
+  }
+  assert.equal(venueApi.resolveDmoVenueProfile('A made-up tennis venue').cityLabel, undefined,
     'unknown venue metadata must not invent a city label');
-  assert.equal(venueApi.resolveDmoVenueProfile(null).courtLabel, undefined);
   const sceneSource = await readFile(new URL('../components/DmoLiveCourt3DScene.ts', import.meta.url), 'utf8');
-  assert.match(sceneSource, /venue\.courtLabel && typeof document !== 'undefined'/);
-  assert.match(sceneSource, /wtsl-court-venue-label/);
+  assert.match(sceneSource, /venue\.cityLabel && typeof document !== 'undefined'/);
+  assert.match(sceneSource, /wtsl-court-city-label/);
+  assert.match(sceneSource, /context\.fillText\(venue\.cityLabel/);
   const liveCourtSource = await readFile(new URL('../components/DmoLiveCourt3D.tsx', import.meta.url), 'utf8');
   assert.match(liveCourtSource, /sceneDataRef\.current\.snapshot\.stadium,\s*\n\s*\);/);
 });
@@ -126,14 +147,21 @@ test('court lettering spans both baselines, faces play, and stays outside the li
     createElement: () => ({ width: 0, height: 0, getContext: () => context }),
   };
   try {
-    for (const [surface, venue] of [['hard', 'Paris Masters'], ['clay', 'Roland Garros'], ['grass', 'Wimbledon']]) {
+    for (const [surface, venue, city] of [
+      ['hard', 'Paris Masters', 'PARIS'],
+      ['clay', 'Roland Garros', 'PARIS'],
+      ['grass', 'Wimbledon', 'LONDON'],
+      ['hard', 'Vienna', 'VIENNA'],
+      ['hard', 'Doha', 'DOHA'],
+    ]) {
       const scene = new THREE.Scene();
       sceneApi.buildCourt(scene, surface, false, venue);
       scene.updateMatrixWorld(true);
-      const labels = scene.children.filter(object => object.name === 'wtsl-court-venue-label');
+      const labels = scene.children.filter(object => object.name === 'wtsl-court-city-label');
       assert.equal(labels.length, 2);
       assert.deepEqual(labels.map(label => Math.sign(label.position.x)), [-1, 1]);
       for (const label of labels) {
+        assert.equal(label.userData.cityLabel, city);
         const bounds = new THREE.Box3().setFromObject(label);
         assert.ok(bounds.max.x < -sceneApi.COURT_LENGTH / 2 || bounds.min.x > sceneApi.COURT_LENGTH / 2);
         assert.ok(bounds.min.x >= -21 && bounds.max.x <= 21 && bounds.min.z >= -11 && bounds.max.z <= 11);
@@ -145,9 +173,11 @@ test('court lettering spans both baselines, faces play, and stays outside the li
     }
     const unknown = new THREE.Scene();
     sceneApi.buildCourt(unknown, 'hard', true, 'Unmapped venue');
-    assert.equal(unknown.children.filter(object => object.name === 'wtsl-court-venue-label').length, 0);
+    assert.equal(unknown.children.filter(object => object.name === 'wtsl-court-city-label').length, 0);
     assert.ok(printed.includes('PARIS'));
     assert.ok(printed.includes('LONDON'));
+    assert.ok(printed.includes('VIENNA'));
+    assert.ok(printed.includes('DOHA'));
   } finally {
     if (originalDocument === undefined) delete globalThis.document;
     else globalThis.document = originalDocument;
@@ -502,6 +532,20 @@ test('stadium and audience scale with recognized tournament capacities', async (
   assert.match(court, /clampDmoCameraTarget\(controls\.target, cameraTargetAnchor, cameraPanLimit\)/);
   assert.match(court, /camera\.fov = view === 'aerial' \? 50/);
   assert.match(viewer, /previousSnapshot\.stadium === nextSnapshot\.stadium/);
+});
+
+test('stadium metadata refreshes when generic venue lettering resolves to another city', () => {
+  const scene = new THREE.Scene();
+  sceneApi.buildStadiumEnvironment(scene, false, undefined, 'Vienna');
+  const viennaStadium = scene.getObjectByName('wtsl-stadium-architecture');
+  assert.equal(viennaStadium.userData.cityLabel, 'VIENNA');
+  assert.equal(scene.userData.wtslStadiumVenue, 'Unspecified tennis venue:VIENNA');
+
+  sceneApi.buildStadiumEnvironment(scene, false, undefined, 'Doha');
+  const dohaStadium = scene.getObjectByName('wtsl-stadium-architecture');
+  assert.notEqual(dohaStadium, viennaStadium);
+  assert.equal(dohaStadium.userData.cityLabel, 'DOHA');
+  assert.equal(scene.userData.wtslStadiumVenue, 'Unspecified tennis venue:DOHA');
 });
 
 test('full-detail crowd seats remain sparse, near-court and gender-balanced across the unified bowl', () => {

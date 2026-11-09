@@ -245,11 +245,12 @@ export function buildStadiumEnvironment(
   venueName?: string | null,
 ) {
   const venue = resolveDmoVenueProfile(venueName);
+  const venueKey = `${venue.label}:${venue.cityLabel ?? ''}`;
   const existing = scene.getObjectByName('wtsl-stadium-architecture');
   if (
     existing
     && scene.userData.wtslStadiumIndoor === indoor
-    && scene.userData.wtslStadiumVenue === venue.label
+    && scene.userData.wtslStadiumVenue === venueKey
   ) return;
   existing?.removeFromParent();
   scene.getObjectByName('wtsl-open-sky')?.removeFromParent();
@@ -258,10 +259,11 @@ export function buildStadiumEnvironment(
   scene.background = new THREE.Color(0x26383b);
   scene.fog = new THREE.Fog(0x26383b, 82, 205);
   scene.userData.wtslStadiumIndoor = indoor;
-  scene.userData.wtslStadiumVenue = venue.label;
+  scene.userData.wtslStadiumVenue = venueKey;
   const stadium = new THREE.Group();
   stadium.name = 'wtsl-stadium-architecture';
   stadium.userData.venueName = venue.label;
+  stadium.userData.cityLabel = venue.cityLabel;
   stadium.userData.capacity = venue.capacity;
   // Keep the lighting masts and crossbars out of the court sightlines. The
   // stadium retains its lighting through the non-blocking spotlights below.
@@ -542,7 +544,7 @@ export function buildCourt(
   runoff.receiveShadow = true;
   scene.add(runoff);
   const venue = resolveDmoVenueProfile(venueName);
-  if (venue.courtLabel && typeof document !== 'undefined') {
+  if (venue.cityLabel && typeof document !== 'undefined') {
     const canvas = document.createElement('canvas');
     canvas.width = 768;
     canvas.height = 160;
@@ -553,7 +555,7 @@ export function buildCourt(
       context.font = '800 82px Arial, sans-serif';
       context.textAlign = 'center';
       context.textBaseline = 'middle';
-      context.fillText(venue.courtLabel, canvas.width / 2, canvas.height / 2, 700);
+      context.fillText(venue.cityLabel, canvas.width / 2, canvas.height / 2, 700);
       const texture = new THREE.CanvasTexture(canvas);
       texture.colorSpace = THREE.SRGBColorSpace;
       texture.minFilter = THREE.LinearFilter;
@@ -566,10 +568,10 @@ export function buildCourt(
       });
       for (const sign of [-1, 1]) {
         const label = new THREE.Mesh(new THREE.PlaneGeometry(4.8, 1), labelMaterial);
-        label.name = 'wtsl-court-venue-label';
+        label.name = 'wtsl-court-city-label';
         label.userData = {
           venue: venue.label,
-          cityLabel: venue.courtLabel,
+          cityLabel: venue.cityLabel,
           onRunoff: true,
           outsidePlayingSurface: true,
         };
