@@ -638,6 +638,7 @@ function ThreeCourt({
       scene,
       sceneDataRef.current.surface,
       sceneDataRef.current.isWta,
+      sceneDataRef.current.snapshot.stadium,
     );
     const fixtureRig = buildCourtFixtures(scene);
     const crowdRig = buildCrowd(scene, sceneDataRef.current.snapshot.stadium, crowdDensity);
