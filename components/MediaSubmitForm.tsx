@@ -3,6 +3,7 @@
 import { useState, type CSSProperties } from 'react';
 import { useRouter } from 'next/navigation';
 import { TOURS } from '@/lib/wtsl';
+import FileDropSurface from './FileDropSurface';
 
 export default function MediaSubmitForm() {
   const router = useRouter();
@@ -15,6 +16,16 @@ export default function MediaSubmitForm() {
   const [err, setErr] = useState('');
   const [ok, setOk] = useState(false);
   const [message, setMessage] = useState('');
+
+  function selectFile(nextFile: File | null) {
+    if (nextFile && !nextFile.type.startsWith('video/') && !nextFile.type.startsWith('image/')) {
+      setFile(null);
+      setErr('Choose a video or image file.');
+      return;
+    }
+    setFile(nextFile);
+    setErr('');
+  }
 
   async function submit() {
     if (!title.trim() || (!url.trim() && !file)) {
@@ -69,7 +80,20 @@ export default function MediaSubmitForm() {
           {TOURS.map((t) => <option key={t.code} value={t.code}>{t.label}</option>)}
         </select>
         <input placeholder="https://youtube.com/..." value={url} onChange={(e) => setUrl(e.target.value)} style={inputStyle} disabled={!!file} />
-        <input type="file" accept="video/*,image/*" onChange={(e) => setFile(e.target.files?.[0] ?? null)} disabled={!!url.trim()} />
+        <FileDropSurface
+          onFiles={(files) => selectFile(files[0] ?? null)}
+          disabled={!!url.trim()}
+          prompt="Drop a video or image file to attach"
+        >
+          <input
+            type="file"
+            accept="video/*,image/*"
+            aria-label="Choose a video or image file"
+            onChange={(e) => selectFile(e.target.files?.[0] ?? null)}
+            disabled={!!url.trim()}
+          />
+          <small>Or drop a video or image file here.</small>
+        </FileDropSurface>
         <button className="btn btn-sm" disabled={busy} onClick={submit}>{busy ? 'Submitting…' : 'Submit clip'}</button>
       </div>
     </div>

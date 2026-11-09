@@ -1,6 +1,7 @@
 'use client';
 import { useState } from 'react';
 import MentionTextarea from './MentionTextarea';
+import FileDropSurface from './FileDropSurface';
 
 type Props = {
   categories: any[];
@@ -20,6 +21,18 @@ export default function NewDiscussionForm({ categories, initialTitle, initialBod
   const [submittedVideo, setSubmittedVideo] = useState<{ id: number; pending: boolean } | null>(null);
   const [successMessage, setSuccessMessage] = useState('');
   const [createdTopicId, setCreatedTopicId] = useState<number | null>(null);
+
+  function selectVideoFile(file: File | null) {
+    setSubmittedVideo(null);
+    if (file && !file.type.startsWith('video/')) {
+      setVideoFile(null);
+      setError('Choose a video file to attach.');
+      return;
+    }
+    setError('');
+    setVideoFile(file);
+    if (file) setVideoUrl('');
+  }
 
   async function submit(e: React.FormEvent<HTMLFormElement>) {
     e.preventDefault();
@@ -118,17 +131,24 @@ export default function NewDiscussionForm({ categories, initialTitle, initialBod
           placeholder="https://youtube.com/…"
           disabled={busy || !!videoFile}
         />
-        <span>Or upload a video (20 MB max). Video links and uploads stay private until moderator approval.</span>
+        <span>Video links or a local upload (20 MB max). Both stay private until moderator approval.</span>
       </label>
-      <label className="topic-video-attachment">
-        Upload a video
-        <input
-          type="file"
-          accept="video/*"
-          onChange={(event) => { setVideoFile(event.target.files?.[0] ?? null); setSubmittedVideo(null); if (event.target.files?.length) setVideoUrl(''); }}
-          disabled={busy || !!videoUrl.trim()}
-        />
-      </label>
+      <FileDropSurface
+        onFiles={(files) => selectVideoFile(files[0] ?? null)}
+        disabled={busy || !!videoUrl.trim()}
+        prompt="Drop a video file to attach"
+      >
+        <label className="topic-video-attachment">
+          Upload a video
+          <input
+            type="file"
+            accept="video/*"
+            onChange={(event) => selectVideoFile(event.target.files?.[0] ?? null)}
+            disabled={busy || !!videoUrl.trim()}
+          />
+          <span>Choose a video file or drop it here.</span>
+        </label>
+      </FileDropSurface>
       <div><button className="btn btn-primary" type="submit" disabled={busy || !!pendingMessage || !!successMessage}>{busy ? 'Publishing…' : pendingMessage ? 'Awaiting review' : 'Publish discussion'}</button></div>
     </form>
   );
