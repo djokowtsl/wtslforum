@@ -1974,7 +1974,7 @@ test('all broadcast audio follows one master control in both court renderers', a
     assert.doesNotMatch(source, /formatLiveUmpireScoreCall\(current, previous, scoreboardData\.players\)/);
     assert.match(source, /resumeUmpireAudioContext\(/);
     assert.doesNotMatch(source, /unlockBrowserUmpireSpeech\(\)/);
-    assert.match(source, /if \(!fullReplay\) void activateSoundFromGesture\(false\)/);
+    assert.match(source, /void activateSoundFromGesture\(false\)/);
     assert.match(source, /Mute all broadcast audio/);
     assert.doesNotMatch(source, /Enable calls|data-umpire-calls-toggle|handleUmpireCallsToggle/);
     assert.doesNotMatch(source, /Recorded umpire audio is unavailable for this call/);
@@ -2024,8 +2024,8 @@ test('broadcast court audio defaults on and the Court camera remains the initial
   assert.match(fallback, /const \[soundEnabled, setSoundEnabled\] = useState\(true\)/);
   assert.match(primary, /const umpireCallsEnabled = soundEnabled/);
   assert.match(fallback, /const umpireCallsEnabled = soundEnabled/);
-  assert.match(primary, /if \(!fullReplay\) void activateSoundFromGesture\(false\)/);
-  assert.match(fallback, /if \(!fullReplay\) void activateSoundFromGesture\(false\)/);
+  assert.match(primary, /void activateSoundFromGesture\(false\)/);
+  assert.match(fallback, /void activateSoundFromGesture\(false\)/);
   assert.match(primary, /const \[gruntsEnabled, setGruntsEnabled\] = useState\(true\)/);
   assert.match(primary, /const \[cameraView, setCameraView\] = useState<CameraView>\('court'\)/);
   assert.match(primary, /onPointerDownCapture=\{\(event\) => handleSoundActivationGesture\(event\.target\)\}/);

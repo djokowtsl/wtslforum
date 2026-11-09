@@ -1094,7 +1094,7 @@ function DmoLiveCourt({
     void activateSoundFromGesture();
   };
   useEffect(() => {
-    if (!fullReplay) void activateSoundFromGesture(false);
+    void activateSoundFromGesture(false);
   }, [fullReplay]);
 
   useEffect(() => {

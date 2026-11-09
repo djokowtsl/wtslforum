@@ -2661,9 +2661,9 @@ function ThreeCourt({
     void activateSoundFromGesture();
   };
   useEffect(() => {
-    // Default-on broadcasts start immediately when autoplay is permitted.
+    // Default-on broadcasts and replays start immediately when autoplay is permitted.
     // Otherwise the first trusted viewer gesture resumes every audio layer.
-    if (!fullReplay) void activateSoundFromGesture(false);
+    void activateSoundFromGesture(false);
   }, [fullReplay]);
   const replayFrameRate = snapshot.frameRate ?? TE4_DMO_FRAMES_PER_SECOND;
   const replayStartFrame = sampleBufferRef.current[0]?.frame ?? snapshot.courtFrameIndices?.[0] ?? 0;
