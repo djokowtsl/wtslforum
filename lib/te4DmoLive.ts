@@ -22,6 +22,21 @@ export function replayCourtWindowDurationMs(frameCount: number, speed: Te4DmoRep
   );
 }
 
+export function deriveLiveDmoPointEndEvents(
+  endFrames: number[],
+  completedPointEndFrames: number[],
+  firstFrame: number,
+  lastFrame: number,
+) {
+  const completedEnds = new Set(completedPointEndFrames);
+  const recentCompletedEnds = new Set(completedPointEndFrames.slice(-2));
+  return endFrames
+    .filter((frame) => frame <= lastFrame && (frame >= firstFrame || recentCompletedEnds.has(frame)))
+    .map((frame) => completedEnds.has(frame)
+      ? { frame, kind: 'point-end' as const }
+      : { frame, kind: 'point-end' as const, scoreEligible: false });
+}
+
 type Header = {
   bad?: boolean;
   stadium?: string | null;
@@ -652,14 +667,14 @@ export class Te4DmoLiveParser {
     };
     for (const frame of parsed.serveFrames) addShotEvent(frame, 'serve');
     for (const frame of parsed.hitFrames) addShotEvent(frame, 'rally');
-    // A completed point can be recognized after its motion left the court
-    // window. Retain two completion markers for live audio, not old motion.
-    const recentPointEnds = new Set(parsed.endFrames.slice(-2));
-    for (const frame of parsed.endFrames) {
-      if (frame <= lastFrame && (frame >= firstFrame || recentPointEnds.has(frame))) {
-        trajectoryEvents.push({ frame, kind: 'point-end' });
-      }
-    }
+    // Raw end markers include faults and lets. Only the final end of a scored
+    // point can release its score call; keep recent scored ends for late audio.
+    trajectoryEvents.push(...deriveLiveDmoPointEndEvents(
+      parsed.endFrames,
+      points.map((point) => point.end),
+      firstFrame,
+      lastFrame,
+    ));
     trajectoryEvents.sort((a, b) =>
       a.frame - b.frame
       || (a.kind === b.kind ? 0 : a.kind === 'shot' ? -1 : 1),

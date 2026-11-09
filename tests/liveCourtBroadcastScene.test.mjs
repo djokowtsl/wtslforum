@@ -1520,7 +1520,15 @@ test('live score calls follow DMO point ends and stay within one score transitio
   );
 });
 
-test('live DMO-folder broadcasts use DMO scores while automatic streams use TE4', async () => {
+test('raw DMO end markers cannot release a TE4 score unless the point scored', () => {
+  const events = umpireApi.deriveUmpireCallEvents([
+    { frame: 20, kind: 'point-end', scoreEligible: false },
+    { frame: 40, kind: 'point-end' },
+  ], [], []);
+  assert.deepEqual(events, [{ frame: 40, kind: 'point-end', text: '' }]);
+});
+
+test('only ongoing automatic streams use TE4 scores in the live-window fallback', async () => {
   const viewer = await readFile(new URL('../components/DmoLiveViewer.tsx', import.meta.url), 'utf8');
   const display = await readFile(new URL('../components/DmoLiveDisplay.tsx', import.meta.url), 'utf8');
 
@@ -1531,6 +1539,20 @@ test('live DMO-folder broadcasts use DMO scores while automatic streams use TE4'
   assert.equal(
     liveDmoUmpireScoreSourceApi.resolveLiveDmoUmpireScoreSource('auto', false),
     'te4',
+  );
+  assert.equal(
+    liveDmoUmpireScoreSourceApi.resolveLiveDmoUmpireFallbackScoreSource('auto', false),
+    'te4',
+    'an ongoing automatic stream uses the TE4 live score',
+  );
+  assert.equal(
+    liveDmoUmpireScoreSourceApi.resolveLiveDmoUmpireFallbackScoreSource('auto', true),
+    'dmo',
+    'an automatic stream played as a historical DMO uses its recorded DMO score',
+  );
+  assert.equal(
+    liveDmoUmpireScoreSourceApi.resolveLiveDmoUmpireFallbackScoreSource('manual', true),
+    'dmo',
   );
   assert.equal(
     liveDmoUmpireScoreSourceApi.resolveLiveDmoUmpireScoreSource('manual', true),
@@ -1576,6 +1598,14 @@ test('live DMO-folder broadcasts use DMO scores while automatic streams use TE4'
   assert.match(
     viewer,
     /const fullReplayPlayer = broadcast\.replay && broadcast\.replayDataReady/,
+  );
+  assert.match(
+    viewer,
+    /resolveLiveDmoUmpireFallbackScoreSource\(\s*broadcast\.broadcastMode,\s*broadcast\.replay,?\s*\)/,
+  );
+  assert.match(
+    viewer,
+    /const scoreSource = fullReplayPlayer\s*\?\s*resolveLiveDmoUmpireScoreSource\(broadcast\.broadcastMode,\s*true\)\s*:\s*fallbackScoreSource/,
   );
   assert.match(viewer, /scoreSource={fallbackScoreSource}/);
   assert.equal((viewer.match(/scoreSource={scoreSource}/g) ?? []).length, 1);
