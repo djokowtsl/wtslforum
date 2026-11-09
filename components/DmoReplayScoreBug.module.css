@@ -161,3 +161,26 @@
 .points {
   text-shadow: 0 0 13px rgba(176, 244, 59, .16);
 }
+
+:global(:root[data-theme='light']) .scoreboard {
+  --score-text: #172338;
+  --score-soft: #34445c;
+  --score-muted: #63728a;
+  --score-lime: #4b721d;
+  border-color: #ccd7e4;
+  background: linear-gradient(110deg, rgba(255, 255, 255, .98), rgba(244, 248, 252, .97));
+  box-shadow: 0 10px 28px rgba(28, 47, 78, .13);
+  color-scheme: light;
+}
+
+:global(:root[data-theme='light']) .table {
+  border-top-color: #dce4ee;
+}
+
+:global(:root[data-theme='light']) .row {
+  border-top-color: #e5eaf1;
+}
+
+:global(:root[data-theme='light']) .points {
+  text-shadow: none;
+}
