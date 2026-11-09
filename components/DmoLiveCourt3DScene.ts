@@ -508,7 +508,12 @@ function addCourtsideSafetyBarrier(scene: THREE.Scene) {
   scene.add(barrier);
 }
 
-export function buildCourt(scene: THREE.Scene, surface: Te4CourtSurface, isWta = false) {
+export function buildCourt(
+  scene: THREE.Scene,
+  surface: Te4CourtSurface,
+  isWta = false,
+  venueName?: string | null,
+) {
   const halfLength = COURT_LENGTH / 2;
   const halfWidth = COURT_WIDTH / 2;
   const singlesHalfWidth = SINGLES_WIDTH / 2;
@@ -536,6 +541,47 @@ export function buildCourt(scene: THREE.Scene, surface: Te4CourtSurface, isWta =
   runoff.rotation.x = -Math.PI / 2;
   runoff.receiveShadow = true;
   scene.add(runoff);
+  const venue = resolveDmoVenueProfile(venueName);
+  if (venue.courtLabel && typeof document !== 'undefined') {
+    const canvas = document.createElement('canvas');
+    canvas.width = 768;
+    canvas.height = 160;
+    const context = canvas.getContext('2d');
+    if (context) {
+      context.clearRect(0, 0, canvas.width, canvas.height);
+      context.fillStyle = 'rgba(245, 243, 233, 0.92)';
+      context.font = '800 82px Arial, sans-serif';
+      context.textAlign = 'center';
+      context.textBaseline = 'middle';
+      context.fillText(venue.courtLabel, canvas.width / 2, canvas.height / 2, 700);
+      const texture = new THREE.CanvasTexture(canvas);
+      texture.colorSpace = THREE.SRGBColorSpace;
+      texture.minFilter = THREE.LinearFilter;
+      texture.magFilter = THREE.LinearFilter;
+      const labelMaterial = new THREE.MeshBasicMaterial({
+        map: texture,
+        transparent: true,
+        depthWrite: false,
+        toneMapped: false,
+      });
+      for (const sign of [-1, 1]) {
+        const label = new THREE.Mesh(new THREE.PlaneGeometry(4.8, 1), labelMaterial);
+        label.name = 'wtsl-court-venue-label';
+        label.userData = {
+          venue: venue.label,
+          cityLabel: venue.courtLabel,
+          onRunoff: true,
+          outsidePlayingSurface: true,
+        };
+        // Court length follows X, so baseline lettering spans Z. Face each
+        // end toward the playing area rather than printing one end upside down.
+        label.rotation.set(-Math.PI / 2, 0, sign * Math.PI / 2);
+        label.position.set(sign * 16.4, 0.009, 0);
+        label.renderOrder = 2;
+        scene.add(label);
+      }
+    }
+  }
 
   const playingTexture = courtSurfaceTexture(surface, 'playing');
   const playingSurface = new THREE.Mesh(

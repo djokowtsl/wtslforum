@@ -27,6 +27,7 @@ async function loadTs(path, overrides = {}) {
 }
 const stadiumArchitectureApi = await loadTs('../components/DmoStadiumArchitecture.ts');
 const venueApi = await loadTs('../lib/dmoVenue.ts');
+const crowdBrandingApi = await loadTs('../lib/dmoCrowdBranding.ts');
 const courtSurfaceApi = await loadTs('../lib/te4DmoSurface.ts');
 const crowdDensityApi = await loadTs('../lib/dmoCrowdDensity.ts');
 const sceneApi = await loadTs('../components/DmoLiveCourt3DScene.ts', {
@@ -78,6 +79,79 @@ test('automatic crowd density follows the broadcaster-selected tournament round'
   assert.equal(crowdDensityApi.isCrowdSeatOccupied(17, 0), false);
   assert.equal(crowdDensityApi.isCrowdSeatOccupied(17, 1), true);
   assert.equal(crowdDensityApi.isCrowdSeatOccupied(17, 0.5), crowdDensityApi.isCrowdSeatOccupied(17, 0.5));
+});
+
+test('recognized venue metadata supplies only verified court lettering', async () => {
+  assert.equal(venueApi.resolveDmoVenueProfile('Roland Garros').courtLabel, 'PARIS');
+  assert.equal(venueApi.resolveDmoVenueProfile('Wimbledon Centre Court').courtLabel, 'LONDON');
+  assert.equal(venueApi.resolveDmoVenueProfile('Arthur Ashe Stadium').courtLabel, 'NEW YORK');
+  assert.equal(venueApi.resolveDmoVenueProfile('A made-up tennis venue').courtLabel, undefined,
+    'unknown venue metadata must not invent a city label');
+  assert.equal(venueApi.resolveDmoVenueProfile(null).courtLabel, undefined);
+  const sceneSource = await readFile(new URL('../components/DmoLiveCourt3DScene.ts', import.meta.url), 'utf8');
+  assert.match(sceneSource, /venue\.courtLabel && typeof document !== 'undefined'/);
+  assert.match(sceneSource, /wtsl-court-venue-label/);
+  const liveCourtSource = await readFile(new URL('../components/DmoLiveCourt3D.tsx', import.meta.url), 'utf8');
+  assert.match(liveCourtSource, /sceneDataRef\.current\.snapshot\.stadium,\s*\n\s*\);/);
+});
+
+test('selected fan banners use the WTSL/ACE identity and a sparse original mascot mark', async () => {
+  assert.deepEqual(
+    Array.from({ length: 6 }, (_, index) => crowdBrandingApi.getCrowdBannerBranding(index)),
+    [
+      { label: 'ACE', mascot: 'rally-fox' },
+      { label: 'WTSL', mascot: null },
+      { label: 'ACE', mascot: null },
+      { label: 'WTSL', mascot: 'rally-fox' },
+      { label: 'ACE', mascot: null },
+      { label: 'WTSL', mascot: null },
+    ],
+  );
+  const crowdSource = await readFile(new URL('../components/DmoHumanCrowd.ts', import.meta.url), 'utf8');
+  assert.match(crowdSource, /getCrowdBannerBranding\(index\)/);
+  assert.match(crowdSource, /wtsl-fan-banner-panel/);
+  assert.match(crowdSource, /banner\.userData\.mascot = branding\.mascot/);
+  assert.match(crowdSource, /context\.translate\(canvas\.width \/ 2, 74\)/);
+});
+
+test('court lettering spans both baselines, faces play, and stays outside the lines', () => {
+  const originalDocument = globalThis.document;
+  const printed = [];
+  const noop = () => {};
+  const context = new Proxy({
+    fillText: text => printed.push(text),
+    createLinearGradient: () => ({ addColorStop: noop }),
+  }, { get: (target, key) => target[key] ?? noop });
+  globalThis.document = {
+    createElement: () => ({ width: 0, height: 0, getContext: () => context }),
+  };
+  try {
+    for (const [surface, venue] of [['hard', 'Paris Masters'], ['clay', 'Roland Garros'], ['grass', 'Wimbledon']]) {
+      const scene = new THREE.Scene();
+      sceneApi.buildCourt(scene, surface, false, venue);
+      scene.updateMatrixWorld(true);
+      const labels = scene.children.filter(object => object.name === 'wtsl-court-venue-label');
+      assert.equal(labels.length, 2);
+      assert.deepEqual(labels.map(label => Math.sign(label.position.x)), [-1, 1]);
+      for (const label of labels) {
+        const bounds = new THREE.Box3().setFromObject(label);
+        assert.ok(bounds.max.x < -sceneApi.COURT_LENGTH / 2 || bounds.min.x > sceneApi.COURT_LENGTH / 2);
+        assert.ok(bounds.min.x >= -21 && bounds.max.x <= 21 && bounds.min.z >= -11 && bounds.max.z <= 11);
+        const widthDirection = new THREE.Vector3(1, 0, 0).applyQuaternion(label.quaternion);
+        assert.ok(Math.abs(widthDirection.z) > 0.99, 'the word spans the baseline width');
+        const letterTop = new THREE.Vector3(0, 1, 0).applyQuaternion(label.quaternion);
+        assert.ok(letterTop.x * label.position.x < 0, 'letter tops point toward the court');
+      }
+    }
+    const unknown = new THREE.Scene();
+    sceneApi.buildCourt(unknown, 'hard', true, 'Unmapped venue');
+    assert.equal(unknown.children.filter(object => object.name === 'wtsl-court-venue-label').length, 0);
+    assert.ok(printed.includes('PARIS'));
+    assert.ok(printed.includes('LONDON'));
+  } finally {
+    if (originalDocument === undefined) delete globalThis.document;
+    else globalThis.document = originalDocument;
+  }
 });
 
 test('crowd occupancy updates in place without changing the seating layout', () => {

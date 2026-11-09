@@ -12,6 +12,7 @@ import {
 } from './DmoLiveCourt3DScene';
 import { shouldUseHighDetailCrowdSeat } from '../lib/dmoCrowdLod';
 import { makeCrowdClothingOpaque } from '../lib/dmoCrowdClothing';
+import { getCrowdBannerBranding } from '../lib/dmoCrowdBranding';
 
 function tintedHuman(
   template: THREE.Group,
@@ -80,6 +81,7 @@ function addCrowdAccessories(scene: THREE.Scene, crowd: CrowdRig) {
   const bannerSeats = crowd.seats.filter((seat, index) =>
     seat.occupied && seat.row >= 6 && ((seat.sourceIndex ?? index) % 283) === 37);
   bannerSeats.slice(0, 36).forEach((seat, index) => {
+    const branding = getCrowdBannerBranding(index);
     const banner = new THREE.Group();
     banner.name = `wtsl-fan-banner-${index + 1}`;
     banner.position.set(seat.x, seat.y, seat.z);
@@ -116,7 +118,41 @@ function addCrowdAccessories(scene: THREE.Scene, crowd: CrowdRig) {
         context.font = '800 104px Arial, sans-serif';
         context.textAlign = 'center';
         context.textBaseline = 'middle';
-        context.fillText(index % 2 ? 'WTSL' : 'ACE', canvas.width / 2, canvas.height / 2 + 4);
+        if (branding.mascot === 'rally-fox') {
+          // A small, custom line-art fox with a tennis-ball pennant: a fan-made
+          // motif rather than a sponsor mark or a second character model.
+          context.save();
+          context.translate(canvas.width / 2, 74);
+          context.fillStyle = '#f5f1e5';
+          context.beginPath();
+          context.moveTo(-52, -32);
+          context.lineTo(-43, -70);
+          context.lineTo(-12, -52);
+          context.quadraticCurveTo(0, -58, 12, -52);
+          context.lineTo(43, -70);
+          context.lineTo(52, -32);
+          context.quadraticCurveTo(48, 3, 0, 18);
+          context.quadraticCurveTo(-48, 3, -52, -32);
+          context.fill();
+          context.fillStyle = '#26343a';
+          context.beginPath();
+          context.arc(-18, -26, 4.5, 0, Math.PI * 2);
+          context.arc(18, -26, 4.5, 0, Math.PI * 2);
+          context.fill();
+          context.beginPath();
+          context.moveTo(-5, -12);
+          context.lineTo(0, -7);
+          context.lineTo(5, -12);
+          context.closePath();
+          context.fill();
+          context.strokeStyle = '#d9bd62';
+          context.lineWidth = 5;
+          context.beginPath();
+          context.arc(59, -50, 13, -1.1, 1.1);
+          context.stroke();
+          context.restore();
+        }
+        context.fillText(branding.label, canvas.width / 2, branding.mascot ? 204 : canvas.height / 2 + 4);
         const texture = new THREE.CanvasTexture(canvas);
         texture.colorSpace = THREE.SRGBColorSpace;
         const material = panel.material as THREE.MeshStandardMaterial;
@@ -125,6 +161,7 @@ function addCrowdAccessories(scene: THREE.Scene, crowd: CrowdRig) {
         material.needsUpdate = true;
       }
     }
+    if (branding.mascot) banner.userData.mascot = branding.mascot;
     scene.add(banner);
   });
 }
