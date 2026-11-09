@@ -247,6 +247,8 @@ test('low and wide contacts use the calibrated conservative crouch', () => {
   assert.ok(Math.abs(lowReachDrop(0.25, 1.2) - 0.15) < 1e-9);
   assert.ok(Math.abs(lowReachDrop(1.0, 2.0) - LUNGE_DROP) < 1e-9);
   assert.equal(lungeWeight(2.0), 1);
+  assert.equal(lungeWeight(2.0, true), 0.5, 'a true slice keeps half the wide-ball lunge');
+  assert.equal(lungeWeight(2.0, false), 1, 'a topspin drive keeps the full lunge');
   assert.equal(lungeWeight(1.4), 0);
   assert.equal(lungeWeight(3.2), 0);
   assert.equal(lowReachDrop(0.2, 2.0), LOW_REACH_MAX_DROP);
