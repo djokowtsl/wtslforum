@@ -4,7 +4,11 @@ import { NextResponse } from 'next/server';
 import { getSession } from '@/lib/auth';
 import { analyzeDmoBuffer } from '@/lib/te4DmoAnalysis';
 import { MAX_DMO_BYTES, Te4DmoAnalysisError } from '@/lib/te4DmoParser';
-import { getPublicDmoReplay, isDmoReplayId, publicDmoReplayMetadata } from '@/lib/dmoReplayLibrary';
+import {
+  dmoReplayCatalogMetadata,
+  getDmoReplaySubmission,
+  isDmoReplayId,
+} from '@/lib/dmoReplayLibrary';
 
 export const dynamic = 'force-dynamic';
 export const maxDuration = 60;
@@ -94,15 +98,14 @@ export async function GET(_request: Request, { params }: { params: Promise<{ id:
     return NextResponse.json({ error: 'Match replay not found.' }, { status: 404, headers: PRIVATE_HEADERS });
   }
 
-  const storeId = process.env.MODERATION_BLOB_STORE_ID;
-  if (!storeId) {
-    return NextResponse.json({ error: 'Private replay storage is not configured.' }, { status: 503, headers: PRIVATE_HEADERS });
-  }
-
   try {
-    const replay = await getPublicDmoReplay(id);
-    if (!replay) {
+    const replay = await getDmoReplaySubmission(id);
+    if (!replay || !replay.hasDmoFile || !replay.privateBlobPathname || !replay.fileName) {
       return NextResponse.json({ error: 'Match replay not found.' }, { status: 404, headers: PRIVATE_HEADERS });
+    }
+    const storeId = process.env.MODERATION_BLOB_STORE_ID;
+    if (!storeId) {
+      return NextResponse.json({ error: 'Private replay storage is not configured.' }, { status: 503, headers: PRIVATE_HEADERS });
     }
     const key = replayCachePath(id, replay.privateBlobPathname);
     let pending = inFlight.get(key);
@@ -120,7 +123,7 @@ export async function GET(_request: Request, { params }: { params: Promise<{ id:
     }
     const viewer = await pending;
     return NextResponse.json({
-      match: publicDmoReplayMetadata(replay),
+      match: dmoReplayCatalogMetadata(replay),
       viewer,
     }, { headers: PRIVATE_HEADERS });
   } catch (error) {

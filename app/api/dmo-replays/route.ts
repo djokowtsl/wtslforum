@@ -1,6 +1,6 @@
 import { NextResponse } from 'next/server';
 import { getSession } from '@/lib/auth';
-import { isDmoReplayId, listPublicDmoReplays } from '@/lib/dmoReplayLibrary';
+import { isDmoReplayId, listDmoReplaySubmissions } from '@/lib/dmoReplayLibrary';
 
 export const dynamic = 'force-dynamic';
 
@@ -26,7 +26,7 @@ export async function GET(request: Request) {
   }
 
   try {
-    const page = await listPublicDmoReplays({ cursor, query });
+    const page = await listDmoReplaySubmissions({ cursor, query });
     return NextResponse.json(page, { headers: PUBLIC_HEADERS });
   } catch {
     return NextResponse.json(

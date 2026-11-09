@@ -106,9 +106,11 @@ export default function DmoSubmitForm() {
         . Use the same two players, keep the sessions in order, and ensure each replay has
         <code> RecordDebugInfo = 1</code>. Check the joined file for repeated or returned points,
         then attach the full-match .dmo.
-        The uploaded .dmo file stays private for admins. The first opt-in controls the public Forum
-        replay; a separate opt-in controls whether the linked TE4 Coach match and its stats appear
-        publicly on the replay and in the WTSL Coach group. Recording links are not published.
+        The Match Replay Center is available to signed-in members and lists all current DMO
+        submissions regardless of these share options. Uploaded .dmo files stay in private storage
+        and play through the signed-in Forum viewer; recording links are shown to signed-in members.
+        Public-share consent remains required for linked TE4 Coach content, and the separate Coach
+        consent controls its appearance on public WTSL pages and in the WTSL Coach group.
       </p>
       {error && <div className="notice" role="alert" style={{ borderColor: '#ffb3bb', marginBottom: 14 }}>{error}</div>}
       {notice && <div className="notice" role="status" style={{ marginBottom: 14 }}>{notice}</div>}
@@ -209,7 +211,7 @@ export default function DmoSubmitForm() {
             style={{ marginTop: 3 }}
           />
           <span>
-            I confirm this is an official WTSL match and both players agree to share its replay publicly.
+            I confirm this is an official WTSL match and both players agree to show its linked TE4 Coach match publicly.
           </span>
         </label>
         <label style={{ display: 'flex', alignItems: 'flex-start', gap: 9 }}>
