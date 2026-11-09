@@ -1522,8 +1522,6 @@ function ThreeCourt({
             capturedEvent.stroke = recordedStrokeForSide(baseStroke, true);
           } else if (
             !recordedSmash
-            &&
-            fullReplay
             && rig.detailed
             && !recordedVolley
             && Boolean(rig.root.userData.capturedVolleys)

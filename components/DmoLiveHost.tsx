@@ -11,6 +11,7 @@ import {
   LIVE_DMO_UPDATE_INTERVAL_MS,
   replayFrameAtElapsedTime,
   replayCourtWindowFrames,
+  replayCourtSampleLimit,
   Te4DmoLiveParser,
   type Te4DmoReplaySpeed,
   type Te4LiveBestOf,
@@ -707,7 +708,7 @@ export default function DmoLiveHost({ displayName, canPrepareFullReplay }: Props
           broadcastBestOf,
           10,
           replayCourtWindowFrames(replaySpeed),
-          LIVE_DMO_COURT_SAMPLES,
+          replayCourtSampleLimit(replaySpeed),
           true,
         );
         if (!firstFrame) throw new Error('The selected DMO could not produce its opening replay snapshot.');
@@ -868,7 +869,7 @@ export default function DmoLiveHost({ displayName, canPrepareFullReplay }: Props
               replayState.speed,
             ),
             replayCourtWindowFrames(replayState.speed),
-            LIVE_DMO_COURT_SAMPLES,
+            replayCourtSampleLimit(replayState.speed),
             true,
           )
           : parser.current.snapshot(
@@ -979,7 +980,7 @@ export default function DmoLiveHost({ displayName, canPrepareFullReplay }: Props
               playback.bestOf,
               frame,
               replayCourtWindowFrames(playback.speed),
-              LIVE_DMO_COURT_SAMPLES,
+              replayCourtSampleLimit(playback.speed),
               true,
             );
             if (!current) throw new Error('The selected DMO could not produce the next replay snapshot.');

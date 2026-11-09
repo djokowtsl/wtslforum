@@ -12,9 +12,16 @@ export const LIVE_DMO_EVENT_SYNC_BUFFER_FRAMES = Math.ceil(
 export const LIVE_DMO_HEARTBEAT_INTERVAL_MS = LIVE_DMO_UPDATE_INTERVAL_MS;
 export const LIVE_DMO_FRAME_STALL_MS = 5_000;
 export const LIVE_DMO_COURT_SAMPLES = 96;
+export const MAX_LIVE_DMO_COURT_SAMPLES = 400;
 
 export function replayCourtWindowFrames(speed: Te4DmoReplaySpeed): number {
   return Math.round(TE4_DMO_FRAMES_PER_SECOND * 3 * speed);
+}
+
+export function replayCourtSampleLimit(speed: Te4DmoReplaySpeed): number {
+  const windowFrames = replayCourtWindowFrames(speed);
+  // Match full replays, which retain one court sample every two source frames.
+  return Math.ceil(Math.max(0, windowFrames - 1) / 2) + 1;
 }
 
 export function replayCourtWindowDurationMs(frameCount: number, speed: Te4DmoReplaySpeed): number {
@@ -619,7 +626,10 @@ export class Te4DmoLiveParser {
       : this.shotSpeedKmh(parsed.openServe, true);
     const lastFrame = visibleFrameCount - 1;
     const firstFrame = Math.max(0, visibleFrameCount - Math.max(1, Math.floor(courtWindowFrames)));
-    const maxSamples = Math.max(2, Math.min(100, Math.floor(courtSampleLimit)));
+    const maxSamples = Math.max(2, Math.min(
+      MAX_LIVE_DMO_COURT_SAMPLES,
+      Math.floor(courtSampleLimit),
+    ));
     const court: number[][] = [];
     const courtFrameIndices: number[] = [];
     const sampleCount = Math.min(maxSamples, lastFrame - firstFrame + 1);
