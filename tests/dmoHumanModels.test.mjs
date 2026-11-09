@@ -296,10 +296,76 @@ for (const gender of ['male', 'female']) test(`${gender}: continuous native body
     'upper spine must aim through the neck, not its first clavicle child');
   assert.equal(rig.root.getObjectByName('articulated-right-hand'), undefined);
   const nativeBody = attached.model.getObjectByName('Avery_|_anatomical_body');
-  assert.deepEqual(nativeBody.geometry.getAttribute('position').array, source, 'body and hand surface must not be cut, grafted or curled');
+  const nativePositions = nativeBody.geometry.getAttribute('position').array;
+  const templateBody = template.getObjectByName('Avery_|_anatomical_body');
+  assert.deepEqual(templateBody.geometry.getAttribute('position').array, source,
+    'female shaping must not mutate the shared source asset');
+  assert.equal(nativePositions.length, source.length, 'body shaping must preserve the source topology');
+  if (gender === 'female') {
+    const skinIndex = templateBody.geometry.getAttribute('skinIndex');
+    const skinWeight = templateBody.geometry.getAttribute('skinWeight');
+    const torsoBones = new Set(templateBody.skeleton.bones
+      .map((bone, index) => /^(pelvis|spine_0[123])$/.test(bone.name) ? index : -1)
+      .filter(index => index >= 0));
+    const torsoInfluence = vertex => {
+      let weight = 0;
+      for (let k = 0; k < 4; k++) {
+        if (torsoBones.has(skinIndex.getComponent(vertex, k))) weight += skinWeight.getComponent(vertex, k);
+      }
+      return weight;
+    };
+    const meanAbsX = (values, minY, maxY) => {
+      let total = 0, count = 0;
+      for (let i = 0; i < values.length; i += 3) {
+        if (values[i + 1] >= minY && values[i + 1] <= maxY
+          && torsoInfluence(i / 3) >= 0.2) {
+          total += Math.abs(values[i]);
+          count++;
+        }
+      }
+      return total / Math.max(1, count);
+    };
+    const hipWidthBefore = meanAbsX(source, 0.82, 1.0);
+    const hipWidthAfter = meanAbsX(nativePositions, 0.82, 1.0);
+    const waistWidthBefore = meanAbsX(source, 1.04, 1.16);
+    const waistWidthAfter = meanAbsX(nativePositions, 1.04, 1.16);
+    assert.ok(hipWidthAfter > hipWidthBefore * 1.06,
+      `WTA hips should have a fuller athletic silhouette (${hipWidthBefore} -> ${hipWidthAfter})`);
+    assert.ok(waistWidthAfter < waistWidthBefore * 0.98,
+      `WTA waist should taper more than the male rig (${waistWidthBefore} -> ${waistWidthAfter})`);
+    let greatestChestProjection = 0;
+    for (let i = 0; i < source.length; i += 3) {
+      if (source[i + 1] > 1.17 && source[i + 1] < 1.32
+        && source[i + 2] > 0.04 && Math.abs(source[i]) < 0.12) {
+        greatestChestProjection = Math.max(greatestChestProjection, nativePositions[i + 2] - source[i + 2]);
+      }
+    }
+    assert.ok(greatestChestProjection > 0.03, 'WTA chest shaping should add a modest bust contour under the shirt');
+  } else {
+    assert.deepEqual(nativePositions, source, 'the standard body remains unchanged');
+  }
   assert.ok(attached.model.getObjectByName('native-tennis-shirt').geometry.index.count > 100);
   assert.ok(attached.model.getObjectByName('native-tennis-shorts').geometry.index.count > 100);
-  if (gender === 'female') assert.ok(attached.model.getObjectByName('native-tennis-skirt'));
+  const shirtGarment = attached.model.getObjectByName('native-tennis-shirt');
+  if (gender === 'female') {
+    const skirt = attached.model.getObjectByName('native-tennis-skirt');
+    const ponytail = attached.model.getObjectByName('native-player-ponytail-1');
+    assert.ok(skirt);
+    assert.equal(skirt.geometry.parameters.height, 0.16, 'WTA skirts should end higher on the thigh');
+    assert.equal(skirt.geometry.parameters.radiusBottom, 0.27, 'WTA skirts should follow the fuller hip silhouette');
+    assert.equal(shirtGarment.userData.sleeveEndFraction, 0.3, 'WTA shirts should use cap sleeves');
+    assert.ok(ponytail, 'both WTA players should have long tied-back hair');
+    ponytail.geometry.computeBoundingBox();
+    assert.ok(ponytail.geometry.boundingBox.max.y - ponytail.geometry.boundingBox.min.y > 0.29);
+    assert.ok(attached.model.getObjectByName('native-player-front-lock-left-1'));
+    assert.ok(attached.model.getObjectByName('native-wta-blush-left-1'));
+    assert.ok(attached.model.getObjectByName('native-wta-earring-left-1'));
+    assert.ok(attached.model.getObjectByName('native-wta-lip-tint-1'));
+  } else {
+    assert.equal(shirtGarment.userData.sleeveEndFraction, 0.46, 'standard kit sleeves should remain unchanged');
+    assert.equal(attached.model.getObjectByName('native-wta-blush-left-1'), undefined);
+    assert.equal(attached.model.getObjectByName('native-wta-earring-left-1'), undefined);
+  }
   {
     // Regression: the shirt must cover the shoulder tops (bind y 1.38-1.43 m)
     // and must stop at the neck base (never the face).

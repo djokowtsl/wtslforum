@@ -91,7 +91,7 @@ test('fallback WTA rigs retain a skirt and ponytail while standard rigs keep sho
 
   assert.ok(standard.hip.getObjectByName('single-piece-athletic-shorts')?.isMesh);
   assert.ok(wta.hip.getObjectByName('tennis-skirt')?.isMesh);
-  assert.ok(wta.head.children.some((part) => part.geometry?.type === 'CapsuleGeometry'));
+  assert.ok(wta.head.getObjectByName('wta-long-ponytail')?.isMesh);
 
   for (const rig of [standard, wta]) {
     rig.root.traverse((object) => {
