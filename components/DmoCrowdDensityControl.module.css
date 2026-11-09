@@ -39,3 +39,17 @@
     padding: 6px;
   }
 }
+
+:global(:root[data-theme='light']) .crowdDensityControl {
+  border-color: #d4deea;
+  background: rgba(255, 255, 255, .96);
+  color: #34445c;
+  box-shadow: 0 4px 14px rgba(28, 47, 78, .08);
+}
+
+:global(:root[data-theme='light']) .crowdDensityControl select {
+  border-color: #ccd7e4;
+  background: #f7f9fc;
+  color: #24344c;
+  color-scheme: light;
+}

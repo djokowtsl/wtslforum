@@ -162,11 +162,22 @@ test('replay viewers hide character grip details and use a light palette in ligh
   const component = readFileSync(new URL('../components/DmoReplayLibrary.tsx', import.meta.url), 'utf8');
   const styles = readFileSync(new URL('../components/DmoReplayLibrary.module.css', import.meta.url), 'utf8');
   const globalStyles = readFileSync(new URL('../app/globals.css', import.meta.url), 'utf8');
+  const replayStyles = readFileSync(new URL('../components/Te4DmoReplayPlayer.module.css', import.meta.url), 'utf8');
+  const courtStyles = readFileSync(new URL('../components/DmoLiveCourt3D.module.css', import.meta.url), 'utf8');
+  const crowdStyles = readFileSync(new URL('../components/DmoCrowdDensityControl.module.css', import.meta.url), 'utf8');
+  const scoreStyles = readFileSync(new URL('../components/DmoReplayScoreBug.module.css', import.meta.url), 'utf8');
   assert.doesNotMatch(component, /characterStyleSummary|right-handed|left-handed|one-handed backhand|two-handed backhand/);
   assert.match(component, /className=\{`\$\{styles\.library\} replay-library`\}/);
   assert.match(globalStyles, /:root\[data-theme='light'\] \.replay-library\s*\{[\s\S]*?--panel:\s*#fff;/);
   assert.match(globalStyles, /:root\[data-theme='light'\] \.replay-library \.replay-library-panel/);
   assert.doesNotMatch(styles, /characterStyleNote/);
+  assert.match(replayStyles, /:global\(:root\[data-theme='light'\]\) \.replay\s*\{/);
+  assert.match(replayStyles, /:global\(:root\[data-theme='light'\]\) \.viewTabs button\[aria-pressed='true'\]/);
+  assert.match(courtStyles, /:global\(:root\[data-theme='light'\]\) \.toolbar\s*\{/);
+  assert.match(courtStyles, /:global\(:root\[data-theme='light'\]\) \.replayControls\s*\{/);
+  assert.match(courtStyles, /\.viewport\s*\{[^}]*background:\s*#4c5665;/);
+  assert.match(crowdStyles, /:global\(:root\[data-theme='light'\]\) \.crowdDensityControl\s*\{/);
+  assert.match(scoreStyles, /:global\(:root\[data-theme='light'\]\) \.scoreboard\s*\{/);
 });
 
 test('replay tour detection uses explicit WTA and ATP labels without guessing unmarked events', () => {
