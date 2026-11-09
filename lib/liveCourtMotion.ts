@@ -644,6 +644,100 @@ export function advanceLiveCourtPlayerPosition(
   return [current[0] + dx * fraction, current[1] + dz * fraction];
 }
 
+/** Singles court half-length and half-width (cm), and the margin for calling
+ *  a bounce out. */
+const COURT_HALF_LENGTH_CM = 1188.5;
+const COURT_HALF_WIDTH_CM = 411.5;
+const SERVICE_LINE_CM = 640;
+const OUT_MARGIN_CM = 15;
+/** A ball passing this far (m) to the side of a player is one he stretches for
+ *  (closer, TE4 would have had him play it; further, he lets it go). */
+export const REACH_ATTEMPT_MIN_METRES = 0.8;
+export const REACH_ATTEMPT_MAX_METRES = 4;
+/** Above this (m) as it passes him, he doesn't swing at it. */
+export const REACH_ATTEMPT_MAX_HEIGHT = 2.6;
+
+export type ReachAttemptEvent = LiveCourtMotionEvent & { attempt: true };
+
+/**
+ * Adds the player's attempt at a ball that goes past him. TE4
+ * logs no shot for a winner, so the beaten player just watched it go by; now
+ * he stretches and swings at it as it passes, a "shot" with `attempt: true` at
+ * the frame the ball goes past him. A ball he could have reached (closer than
+ * REACH_ATTEMPT_MIN_METRES), one far out of reach, an overhead, a ball that
+ * bounced out, and a serve fault (followed by another serve) get none. A swing
+ * TE4 logs after the ball has already gone past him is replaced by the attempt.
+ * Only for the players' motion: sounds, callouts and the score use the
+ * recorded events.
+ */
+export function withReachAttempts(
+  events: LiveCourtMotionEvent[], samples: LiveCourtSample[], frameRate: number,
+  /** Live: the newest frame received. A ball has to have gone past him at
+   *  least 0.3 s before it, so his reply (if he played it) or where it lands
+   *  has arrived too. */
+  dataEndFrame = Number.POSITIVE_INFINITY,
+): LiveCourtMotionEvent[] {
+  if (!samples.length || !(frameRate > 0)) return events;
+  const out: LiveCourtMotionEvent[] = [];
+  const dropped = new Set<LiveCourtMotionEvent>();
+  const added: ReachAttemptEvent[] = [];
+  for (let i = 0; i < events.length; i++) {
+    const shot = events[i];
+    if (shot.kind !== 'shot' || !shot.player) continue;
+    const receiver: 1 | 2 = shot.player === 1 ? 2 : 1;
+    const xIndex = receiver === 1 ? 3 : 5, yIndex = receiver === 1 ? 4 : 6;
+    const next = events[i + 1];
+    if (shot.shotType === 'serve' && next?.kind === 'shot' && next.shotType === 'serve' && next.player === shot.player) continue; // a fault
+    let low = 0, high = samples.length;
+    while (low < high) {
+      const middle = (low + high) >> 1;
+      if (samples[middle].frame <= shot.frame) low = middle + 1; else high = middle;
+    }
+    let crossing: { frame: number; side: number; height: number } | undefined;
+    let out = false;
+    let bounced = false;
+    for (let k = low; k < samples.length; k++) {
+      const v = samples[k].values;
+      if ((samples[k].frame - shot.frame) / frameRate > 2.5) break;
+      if (k > low && (samples[k].frame - samples[k - 1].frame) / frameRate > 0.15) break;
+      const ball = v[0], player = v[xIndex];
+      if (!Number.isFinite(player) || player === 0) break;
+      const previous = samples[k - 1]?.values[2], following = samples[k + 1]?.values[2];
+      // Its first bounce on his side (before or after it passes him) says in
+      // or out; he lets a ball going out go.
+      if (!bounced && Math.sign(ball) === Math.sign(player) && v[2] < 25 && previous !== undefined
+        && following !== undefined && previous > v[2] && following >= v[2]) {
+        bounced = true;
+        // (A serve has to land in the service box: a double fault isn't an ace.)
+        const length = shot.shotType === 'serve' ? SERVICE_LINE_CM : COURT_HALF_LENGTH_CM;
+        out = Math.abs(ball) > length + OUT_MARGIN_CM || Math.abs(v[1]) > COURT_HALF_WIDTH_CM + OUT_MARGIN_CM;
+      }
+      if (!crossing && Math.sign(ball) === Math.sign(player) && Math.abs(ball) >= Math.abs(player)) {
+        crossing = { frame: samples[k].frame, side: (v[1] - v[yIndex]) / 100, height: v[2] / 100 };
+      }
+      if (out || (crossing && bounced) || (crossing && (samples[k].frame - crossing.frame) / frameRate > 1.5)) break;
+    }
+    if (out || !crossing) continue;
+    if (crossing.frame > dataEndFrame - frameRate * 0.3) continue;
+    // His reply (or TE4's late swing at a ball already gone).
+    if (next?.kind === 'shot' && next.player === receiver) {
+      if (next.frame <= crossing.frame + 3) continue; // he played it
+      dropped.add(next);
+    }
+    const distance = Math.abs(crossing.side);
+    if (distance < REACH_ATTEMPT_MIN_METRES || distance > REACH_ATTEMPT_MAX_METRES
+      || crossing.height > REACH_ATTEMPT_MAX_HEIGHT) {
+      dropped.delete(next!);
+      continue;
+    }
+    added.push({ frame: crossing.frame, kind: 'shot', player: receiver, shotType: 'rally', attempt: true });
+  }
+  if (!added.length) return events;
+  for (const event of events) if (!dropped.has(event)) out.push(event);
+  out.push(...added);
+  return out.sort((a, b) => a.frame - b.frame);
+}
+
 export function clampLiveCourtPlayheadToTail(
   currentFrame: number | null,
   samples: LiveCourtSample[],
@@ -657,16 +751,31 @@ export function clampLiveCourtPlayheadToTail(
   return Math.max(firstFrame, Math.min(playbackEnd, currentFrame));
 }
 
+/** Live: how far (s) playback aims to stay behind the newest frame received,
+ *  so a ball going past a player is known in time for him to stretch for it.
+ *  Soft: after a late upload eats into it, playback slows to
+ *  LIVE_CUSHION_REBUILD_SPEED until the gap is back. (The hard floor is the
+ *  tail buffer, one DMO update interval, which bounce/Out calls need.) */
+export const LIVE_CUSHION_SECONDS = 2;
+/** Playback speed while the cushion rebuilds after a late upload. */
+export const LIVE_CUSHION_REBUILD_SPEED = 0.8;
+
 export function advanceLiveCourtPlayhead(
   currentFrame: number | null,
   elapsedMs: number,
   speed: number,
   samples: LiveCourtSample[],
   framesPerSecond = 60,
+  /** Hard floor: never closer than this to the newest frame. */
   tailBufferFrames = 0,
+  /** Soft target (frames behind the newest one, measured from the newest
+   *  frame, not from the tail buffer, so the two don't add up): while closer
+   *  than this, playback runs at LIVE_CUSHION_REBUILD_SPEED. 0 = off. */
+  cushionFrames = 0,
 ): number | null {
   if (!samples.length) return null;
   const firstFrame = samples[0].frame;
+  const lastFrame = samples[samples.length - 1].frame;
   const current = clampLiveCourtPlayheadToTail(
     currentFrame === null || !Number.isFinite(currentFrame) ? firstFrame : currentFrame,
     samples,
@@ -675,7 +784,9 @@ export function advanceLiveCourtPlayhead(
   const elapsed = Math.max(0, Math.min(80, Number.isFinite(elapsedMs) ? elapsedMs : 0));
   const safeSpeed = Math.max(0, Number.isFinite(speed) ? speed : 0);
   const safeFrameRate = Math.max(0, Number.isFinite(framesPerSecond) ? framesPerSecond : 0);
-  const next = current + elapsed * safeFrameRate * safeSpeed / 1000;
+  const cushion = Number.isFinite(cushionFrames) ? Math.max(0, cushionFrames) : 0;
+  const rebuilding = cushion > 0 && lastFrame - current < cushion;
+  const next = current + elapsed * safeFrameRate * safeSpeed * (rebuilding ? LIVE_CUSHION_REBUILD_SPEED : 1) / 1000;
   return clampLiveCourtPlayheadToTail(next, samples, tailBufferFrames);
 }
 
