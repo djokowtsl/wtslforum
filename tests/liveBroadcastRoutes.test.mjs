@@ -918,7 +918,7 @@ test('broadcast owners can heartbeat and end only their own active broadcast', a
   const heartbeat = await route.PATCH(request({ sequence: 1 }, `/api/live-dmo/${id}`, 'PATCH'), context);
   assert.equal(heartbeat.status, 200);
   assert.match(queries[0].text, /owner_discord_id=\?/);
-  assert.match(queries[0].text, /sequence < \?/);
+  assert.match(queries[0].text, /sequence <= \?/);
 
   const zeroStats = {
     servicePoints: 0,
@@ -990,6 +990,42 @@ test('broadcast owners can heartbeat and end only their own active broadcast', a
   assert.equal(savedSnapshot.trajectoryEvents[1].changeover, true);
   assert.equal(savedSnapshot.trajectoryEvents[1].scoreCall, 'fifteen-love');
 
+  const duplicateSnapshot = await route.PATCH(
+    request({ sequence: 2, snapshot }, `/api/live-dmo/${id}`, 'PATCH'),
+    context,
+  );
+  assert.equal(duplicateSnapshot.status, 200);
+  assert.match(queries[2].text, /live\.sequence = \?[\s\S]*live\.payload->'snapshot' = request_data\.snapshot/);
+  assert.deepEqual(JSON.parse(queries[2].values[0]), snapshot);
+
+  const conflictQueries = [];
+  const conflictRoute = loadRoute('app/api/live-dmo/[id]/route.ts', {
+    'next/server': nextServer,
+    'zod': require('zod'),
+    '@/lib/auth': { getSession: async () => ({ discordId: 'broadcast-owner', isAdmin: false }) },
+    '@/lib/liveRequestSecurity': { isSameSiteMutation: () => true },
+    '@/lib/db': {
+      sql: async (strings, ...values) => {
+        const text = strings.join('?');
+        conflictQueries.push({ text, values });
+        return text.trimStart().startsWith('SELECT sequence') ? [{ sequence: 2 }] : [];
+      },
+    },
+  });
+  const conflictingDuplicate = await conflictRoute.PATCH(
+    request({
+      sequence: 2,
+      snapshot: { ...snapshot, filename: 'different-payload.dmo' },
+    }, `/api/live-dmo/${id}`, 'PATCH'),
+    context,
+  );
+  assert.equal(conflictingDuplicate.status, 409);
+  assert.deepEqual(await conflictingDuplicate.json(), {
+    error: 'Broadcast ended or this update is out of date.',
+    currentSequence: 2,
+  });
+  assert.equal(conflictQueries.length, 2);
+
   const invalidStrokeStyle = await route.PATCH(
     request({
       sequence: 3,
@@ -1004,12 +1040,57 @@ test('broadcast owners can heartbeat and end only their own active broadcast', a
     context,
   );
   assert.equal(invalidStrokeStyle.status, 400);
-  assert.equal(queries.length, 2);
+  assert.equal(queries.length, 3);
 
   const ended = await route.DELETE(request(undefined, `/api/live-dmo/${id}`, 'DELETE'), context);
   assert.equal(ended.status, 200);
-  assert.match(queries[2].text, /owner_discord_id=\?.*OR \?/s);
-  assert.match(queries[2].text, /status='live'/);
+  assert.match(queries[3].text, /owner_discord_id=\?.*OR \?/s);
+  assert.match(queries[3].text, /status='live'/);
+});
+
+test('point-history batches accept identical retries and reject conflicting records', async () => {
+  const id = '7e09e922-44c3-49d7-8211-48f13b8b865a';
+  const queries = [];
+  const route = loadRoute('app/api/live-dmo/[id]/points/route.ts', {
+    'next/server': nextServer,
+    'zod': require('zod'),
+    '@/lib/auth': { getSession: async () => ({ discordId: 'broadcast-owner', isAdmin: false }) },
+    '@/lib/liveRequestSecurity': { isSameSiteMutation: () => true },
+    '@/lib/db': {
+      sql: async (strings, ...values) => {
+        queries.push({ text: strings.join('?'), values });
+        return [{ id }];
+      },
+    },
+  });
+  const context = { params: Promise.resolve({ id }) };
+  const point = { number: 1, scoreLabel: '0-0(15-0)', server: 1, winner: 1, rallyHits: 2, faults: 0 };
+  for (let attempt = 0; attempt < 2; attempt += 1) {
+    const response = await route.PATCH(
+      request({ points: [point] }, `/api/live-dmo/${id}/points`, 'PATCH'),
+      context,
+    );
+    assert.equal(response.status, 200);
+  }
+  assert.equal(queries.length, 2);
+  assert.match(queries[0].text, /NOT EXISTS/);
+  assert.match(queries[0].text, /incoming\.point IS DISTINCT FROM stored\.point/);
+
+  let conflictingBatchQueries = 0;
+  const conflictingBatchRoute = loadRoute('app/api/live-dmo/[id]/points/route.ts', {
+    'next/server': nextServer,
+    'zod': require('zod'),
+    '@/lib/auth': { getSession: async () => ({ discordId: 'broadcast-owner', isAdmin: false }) },
+    '@/lib/liveRequestSecurity': { isSameSiteMutation: () => true },
+    '@/lib/db': { sql: async () => { conflictingBatchQueries += 1; return [{ id }]; } },
+  });
+  const conflict = await conflictingBatchRoute.PATCH(
+    request({ points: [point, { ...point, winner: 2 }] }, `/api/live-dmo/${id}/points`, 'PATCH'),
+    context,
+  );
+  assert.equal(conflict.status, 409);
+  assert.equal((await conflict.json()).code, 'point_log_conflict');
+  assert.equal(conflictingBatchQueries, 0);
 });
 
 test('ending a broadcast edits its Discord post immediately and deletes it one minute later', async () => {

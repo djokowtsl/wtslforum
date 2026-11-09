@@ -1689,23 +1689,6 @@ export function makePlayer(shirtColor: number, shortsColor: number, isWta = fals
     ponytail.name = 'wta-long-ponytail';
     ponytail.castShadow = true;
     head.add(ponytail);
-    for (const side of [-1, 1] as const) {
-      const lockPath = new THREE.CatmullRomCurve3([
-        new THREE.Vector3(side * 0.052, 0.035, 0.032),
-        new THREE.Vector3(side * 0.071, -0.02, 0.054),
-        new THREE.Vector3(side * 0.082, -0.105, 0.056),
-        new THREE.Vector3(side * 0.066, -0.19, 0.045),
-        new THREE.Vector3(side * 0.087, -0.27, 0.022),
-        new THREE.Vector3(side * 0.09, -0.31, 0.012),
-      ]);
-      const lock = new THREE.Mesh(
-        taperedHairGeometry(lockPath, 0.013),
-        hairMaterial,
-      );
-      lock.name = `wta-front-lock-${side < 0 ? 'left' : 'right'}`;
-      lock.castShadow = true;
-      head.add(lock);
-    }
     const blushMaterial = new THREE.MeshBasicMaterial({
       color: 0xb87578, transparent: true, opacity: 0.2, depthWrite: false,
     });

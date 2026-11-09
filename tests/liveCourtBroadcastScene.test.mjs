@@ -833,8 +833,14 @@ test('players use realistic materials and natural human proportions', () => {
       skirt.geometry.computeBoundingBox();
       assert.ok(skirt.geometry.boundingBox.min.y > -0.11, 'WTA skirt hem sits higher on the thigh');
       assert.equal(rig.hip.scale.x, 1.14, 'WTA hips should be fuller than the standard rig');
-      assert.ok(rig.root.getObjectByName('wta-long-ponytail'));
-      assert.ok(rig.root.getObjectByName('wta-front-lock-left'));
+      const ponytail = rig.root.getObjectByName('wta-long-ponytail');
+      assert.ok(ponytail);
+      ponytail.geometry.computeBoundingBox();
+      assert.ok(
+        ponytail.geometry.boundingBox.max.z < -0.06,
+        'long hair stays behind the head instead of draping beside the face',
+      );
+      assert.equal(rig.head.children.some(child => child.name.startsWith('wta-front-lock-')), false);
       assert.ok(rig.root.getObjectByName('wta-blush-left'));
       assert.ok(rig.root.getObjectByName('wta-earring-left'));
       assert.ok(rig.root.getObjectByName('wta-lip-tint'));

@@ -328,6 +328,66 @@ test('a stalled response body is aborted and releases the refresh deadline', asy
   }
 });
 
+test('snapshot upload conflicts resync the sequence without treating stale data as acknowledged', () => {
+  const { reconcileLiveDmoSequence } = load('lib/liveDmoRefresh.ts');
+  assert.deepEqual(
+    reconcileLiveDmoSequence(6, 7, 200, { ok: true, sequence: 7 }),
+    { sequence: 7, acknowledged: true },
+  );
+  assert.deepEqual(
+    reconcileLiveDmoSequence(6, 7, 409, { error: 'out of date', currentSequence: 9 }),
+    { sequence: 9, acknowledged: false },
+  );
+  assert.deepEqual(
+    reconcileLiveDmoSequence(6, 7, 409, { error: 'conflicting duplicate', currentSequence: 7 }),
+    { sequence: 7, acknowledged: false },
+  );
+  assert.equal(reconcileLiveDmoSequence(6, 7, 409, { error: 'broadcast ended' }), null);
+  assert.equal(reconcileLiveDmoSequence(6, 7, 200, { ok: true, sequence: 6 }), null);
+});
+
+test('point-history uploads retry deterministic batches after a lost acknowledgement', async (t) => {
+  const originalFetch = globalThis.fetch;
+  const points = Array.from({ length: 205 }, (_, index) => ({ number: index + 1 }));
+  const receivedBatches = [];
+  let calls = 0;
+  let failAt = 2;
+  globalThis.fetch = async (_url, options) => {
+    calls += 1;
+    assert.equal(options.method, 'PATCH');
+    assert.equal(options.cache, 'no-store');
+    assert.ok(options.signal);
+    const body = JSON.parse(options.body);
+    receivedBatches.push(body.points);
+    if (calls === failAt) return new Response(JSON.stringify({ error: 'write committed; response lost' }), {
+      status: 503,
+      headers: { 'Content-Type': 'application/json' },
+    });
+    return new Response(JSON.stringify({ ok: true }), {
+      status: 200,
+      headers: { 'Content-Type': 'application/json' },
+    });
+  };
+  try {
+    const { uploadLiveDmoPointHistory } = load('lib/liveDmoRefresh.ts');
+    const signal = new AbortController().signal;
+    await assert.rejects(
+      uploadLiveDmoPointHistory('/api/live-dmo/test/points', points, signal),
+      /write committed; response lost/,
+    );
+    failAt = -1;
+    await uploadLiveDmoPointHistory('/api/live-dmo/test/points', points, signal);
+    assert.equal(receivedBatches.length, 5);
+    assert.deepEqual(receivedBatches[0], points.slice(0, 100));
+    assert.deepEqual(receivedBatches[1], points.slice(100, 200));
+    assert.deepEqual(receivedBatches[2], points.slice(0, 100));
+    assert.deepEqual(receivedBatches[3], points.slice(100, 200));
+    assert.deepEqual(receivedBatches[4], points.slice(200));
+  } finally {
+    globalThis.fetch = originalFetch;
+  }
+});
+
 test('manual broadcasts and historical replays neither request nor override live scores', async () => {
   for (const payload of [{ snapshot, mode: 'manual' }, { snapshot, mode: 'auto', replay: true }]) {
     const { route, feedCalls } = currentRoute(payload);

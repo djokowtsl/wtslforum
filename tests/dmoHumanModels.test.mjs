@@ -357,7 +357,10 @@ for (const gender of ['male', 'female']) test(`${gender}: continuous native body
     assert.ok(ponytail, 'both WTA players should have long tied-back hair');
     ponytail.geometry.computeBoundingBox();
     assert.ok(ponytail.geometry.boundingBox.max.y - ponytail.geometry.boundingBox.min.y > 0.29);
-    assert.ok(attached.model.getObjectByName('native-player-front-lock-left-1'));
+    assert.ok(ponytail.geometry.boundingBox.max.z < 0,
+      'the long ponytail stays behind the head');
+    assert.equal(attached.model.getObjectByName('native-player-front-lock-left-1'), undefined);
+    assert.equal(attached.model.getObjectByName('native-player-front-lock-right-1'), undefined);
     assert.ok(attached.model.getObjectByName('native-wta-blush-left-1'));
     assert.ok(attached.model.getObjectByName('native-wta-earring-left-1'));
     assert.ok(attached.model.getObjectByName('native-wta-lip-tint-1'));

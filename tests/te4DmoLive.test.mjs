@@ -101,6 +101,35 @@ test('incremental DMO parsing waits for frames, then emits a compact live snapsh
   assert.ok(shortMotionWindow?.court.length <= 96);
 });
 
+test('long DMO recordings scan only new point-event frames and reuse unchanged snapshots', () => {
+  const bytes = syntheticDmo(20_000);
+  const parser = new Te4DmoLiveParser();
+  const split = 0x1200 + 10_000 * 128 + 1_200;
+  parser.append(bytes.subarray(0, split));
+  const first = parser.snapshot('long.dmo', 3, undefined, undefined, undefined, true);
+  assert.ok(first);
+  const scannedAfterFirstSnapshot = parser.pointEventFramesScannedThrough;
+  assert.equal(scannedAfterFirstSnapshot, parser.frameCount);
+
+  parser.snapshot('long.dmo', 3, undefined, undefined, undefined, true);
+  assert.equal(parser.pointEventFramesScannedThrough, scannedAfterFirstSnapshot);
+
+  parser.append(bytes.subarray(split));
+  const streamed = parser.snapshot('long.dmo', 3, undefined, undefined, undefined, true);
+  assert.ok(streamed);
+  const scannedAfterAppend = parser.pointEventFramesScannedThrough;
+  assert.equal(scannedAfterAppend, parser.frameCount);
+  parser.snapshot('long.dmo', 3, undefined, undefined, undefined, true);
+  assert.equal(parser.pointEventFramesScannedThrough, scannedAfterAppend);
+
+  const freshParser = new Te4DmoLiveParser();
+  freshParser.append(bytes);
+  assert.deepEqual(
+    streamed,
+    freshParser.snapshot('long.dmo', 3, undefined, undefined, undefined, true),
+  );
+});
+
 test('live court preserves recorded lateral signs independently of player handedness', () => {
   const parser = new Te4DmoLiveParser();
   parser.append(syntheticDmo());
