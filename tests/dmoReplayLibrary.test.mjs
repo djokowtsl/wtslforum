@@ -158,6 +158,17 @@ test('legacy Discord character annotations resolve both Federer slots without gu
     .missingBackhandStyle, [true, false]);
 });
 
+test('replay viewers hide character grip details and use a light palette in light mode', async () => {
+  const component = readFileSync(new URL('../components/DmoReplayLibrary.tsx', import.meta.url), 'utf8');
+  const styles = readFileSync(new URL('../components/DmoReplayLibrary.module.css', import.meta.url), 'utf8');
+  const globalStyles = readFileSync(new URL('../app/globals.css', import.meta.url), 'utf8');
+  assert.doesNotMatch(component, /characterStyleSummary|right-handed|left-handed|one-handed backhand|two-handed backhand/);
+  assert.match(component, /className=\{`\$\{styles\.library\} replay-library`\}/);
+  assert.match(globalStyles, /:root\[data-theme='light'\] \.replay-library\s*\{[\s\S]*?--panel:\s*#fff;/);
+  assert.match(globalStyles, /:root\[data-theme='light'\] \.replay-library \.replay-library-panel/);
+  assert.doesNotMatch(styles, /characterStyleNote/);
+});
+
 test('Match Replay Center catalog includes every submission and only safe recording links', async () => {
   const queries = [];
   const { listDmoReplaySubmissions } = loadModule('lib/dmoReplayLibrary.ts', {

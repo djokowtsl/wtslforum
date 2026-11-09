@@ -312,10 +312,6 @@
   padding: 0 5px;
 }
 
-.characterStyleNote {
-  line-height: 1.45;
-}
-
 .characterStyleLoading {
   display: grid;
   min-height: 440px;
@@ -358,59 +354,6 @@
   margin: 10px 0 0;
   color: var(--muted);
   font-size: 13px;
-}
-
-:global(:root[data-theme='light']) .listPanel,
-:global(:root[data-theme='light']) .viewerEmpty {
-  border-color: #d8e0eb;
-  background: #fff;
-  color: #172338;
-  box-shadow: 0 12px 32px rgba(28, 47, 78, .08);
-}
-
-:global(:root[data-theme='light']) .listHeading h2,
-:global(:root[data-theme='light']) .viewerHeading h1,
-:global(:root[data-theme='light']) .viewerEmpty h2,
-:global(:root[data-theme='light']) .matchPlayers {
-  color: #101b2d;
-}
-
-:global(:root[data-theme='light']) .eyebrow,
-:global(:root[data-theme='light']) .matchMeta,
-:global(:root[data-theme='light']) .matchDate,
-:global(:root[data-theme='light']) .searchLabel,
-:global(:root[data-theme='light']) .viewerHeading p,
-:global(:root[data-theme='light']) .viewerEmpty p {
-  color: #52627b;
-}
-
-:global(:root[data-theme='light']) .count {
-  border: 1px solid #d9e9bd;
-  background: #f1f8e8;
-  color: #365b11;
-}
-
-:global(:root[data-theme='light']) .search {
-  border-color: #cbd5e2;
-  background: #fff;
-  color: #172338;
-}
-
-:global(:root[data-theme='light']) .match {
-  border-color: #d8e0eb;
-  background: #fff;
-  color: #172338;
-}
-
-:global(:root[data-theme='light']) .match:hover,
-:global(:root[data-theme='light']) .match.active {
-  border-color: #a4c872;
-  background: #f5f9ef;
-}
-
-:global(:root[data-theme='light']) .matchBadge {
-  border-color: #d4e4bc;
-  color: #46651f;
 }
 
 @media (max-width: 900px) {
