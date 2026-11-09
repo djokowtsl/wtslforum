@@ -238,6 +238,28 @@ function naturalScalpGeometry() {
   return geometry;
 }
 
+function taperedHairGeometry(path: THREE.CatmullRomCurve3, radius: number) {
+  const tubularSegments = 24;
+  const radialSegments = 8;
+  const geometry = new THREE.TubeGeometry(path, tubularSegments, radius, radialSegments, false);
+  const positions = geometry.getAttribute('position');
+  const center = new THREE.Vector3();
+  const point = new THREE.Vector3();
+  for (let ring = 0; ring <= tubularSegments; ring++) {
+    const t = ring / tubularSegments;
+    path.getPointAt(t, center);
+    const taper = 0.2 + 0.8 * (1 - t) ** 0.6;
+    for (let segment = 0; segment <= radialSegments; segment++) {
+      const vertex = ring * (radialSegments + 1) + segment;
+      point.fromBufferAttribute(positions, vertex).sub(center).multiplyScalar(taper).add(center);
+      positions.setXYZ(vertex, point.x, point.y, point.z);
+    }
+  }
+  positions.needsUpdate = true;
+  geometry.computeVertexNormals();
+  return geometry;
+}
+
 export function buildStadiumEnvironment(
   scene: THREE.Scene,
   indoor = false,
@@ -1460,7 +1482,18 @@ export function makePlayer(shirtColor: number, shortsColor: number, isWta = fals
   });
   // Sculpted elliptical cross-sections create a human rib cage, waist and
   // shoulder shelf instead of a lathed toy barrel.
-  const body = new THREE.Mesh(ellipticalBodyGeometry([
+  const bodyProfile: Array<[number, number, number]> = isWta ? [
+    [-0.31, 0.17, 0.105],
+    [-0.285, 0.17, 0.105],
+    [-0.22, 0.16, 0.09],
+    [-0.12, 0.137, 0.082],
+    [-0.015, 0.15, 0.09],
+    [0.105, 0.19, 0.105],
+    [0.19, 0.205, 0.1],
+    [0.25, 0.205, 0.092],
+    [0.29, 0.11, 0.065],
+    [0.30, 0.025, 0.025],
+  ] : [
     [-0.31, 0.165, 0.105],
     [-0.285, 0.165, 0.105],
     [-0.22, 0.155, 0.085],
@@ -1471,7 +1504,8 @@ export function makePlayer(shirtColor: number, shortsColor: number, isWta = fals
     [0.25, 0.225, 0.095],
     [0.29, 0.11, 0.065],
     [0.30, 0.025, 0.025],
-  ], 32), shirt);
+  ];
+  const body = new THREE.Mesh(ellipticalBodyGeometry(bodyProfile, 32), shirt);
   body.position.y = 1.22;
   body.castShadow = true;
   const collar = new THREE.Mesh(new THREE.TorusGeometry(0.068, 0.007, 6, 20), realisticMaterial(0xe7e0d2, 0.85));
@@ -1533,15 +1567,16 @@ export function makePlayer(shirtColor: number, shortsColor: number, isWta = fals
     hip.add(waistband);
   } else {
     const skirt = new THREE.Mesh(ellipticalBodyGeometry([
-      [-0.24, 0.22, 0.135], [-0.20, 0.24, 0.145], [-0.11, 0.22, 0.14],
+      [-0.04, 0.245, 0.145], [-0.035, 0.27, 0.155], [-0.015, 0.245, 0.15],
       [0.015, 0.19, 0.125], [0.12, 0.17, 0.11], [0.15, 0.12, 0.085],
     ], 28), shorts);
     skirt.name = 'tennis-skirt';
+    skirt.userData.wtaHemOffset = -0.04;
     skirt.castShadow = true;
     hip.add(skirt);
   }
   hip.position.y = 0.9;
-  hip.scale.x = 1.08;
+  hip.scale.x = isWta ? 1.14 : 1.08;
   root.add(hip);
   const neck = new THREE.Mesh(new THREE.CylinderGeometry(0.045, 0.052, 0.11, 14), skin);
   neck.position.y = 1.56;
@@ -1633,13 +1668,69 @@ export function makePlayer(shirtColor: number, shortsColor: number, isWta = fals
   hair.name = 'natural-scalp';
   head.add(hair);
   if (isWta) {
-    const tie = new THREE.Mesh(new THREE.SphereGeometry(0.031, 12, 10), realisticMaterial(0x302923, 0.55));
+    const tie = new THREE.Mesh(
+      new THREE.TorusGeometry(0.022, 0.005, 6, 16),
+      realisticMaterial(0xd4b47b, 0.55),
+    );
+    tie.name = 'wta-hair-tie';
     tie.position.set(-0.01, -0.035, -0.088);
+    tie.rotation.x = Math.PI / 2;
     head.add(tie);
-    const ponytail = new THREE.Mesh(new THREE.CapsuleGeometry(0.021, 0.105, 4, 10), hairMaterial);
-    ponytail.position.set(-0.012, -0.105, -0.105);
-    ponytail.rotation.z = -0.12;
+    const ponytailPath = new THREE.CatmullRomCurve3([
+      new THREE.Vector3(-0.01, -0.035, -0.088),
+      new THREE.Vector3(-0.02, -0.105, -0.12),
+      new THREE.Vector3(-0.012, -0.2, -0.14),
+      new THREE.Vector3(0.012, -0.34, -0.13),
+    ]);
+    const ponytail = new THREE.Mesh(
+      taperedHairGeometry(ponytailPath, 0.018),
+      hairMaterial,
+    );
+    ponytail.name = 'wta-long-ponytail';
+    ponytail.castShadow = true;
     head.add(ponytail);
+    for (const side of [-1, 1] as const) {
+      const lockPath = new THREE.CatmullRomCurve3([
+        new THREE.Vector3(side * 0.052, 0.035, 0.032),
+        new THREE.Vector3(side * 0.071, -0.02, 0.054),
+        new THREE.Vector3(side * 0.082, -0.105, 0.056),
+        new THREE.Vector3(side * 0.066, -0.19, 0.045),
+        new THREE.Vector3(side * 0.087, -0.27, 0.022),
+        new THREE.Vector3(side * 0.09, -0.31, 0.012),
+      ]);
+      const lock = new THREE.Mesh(
+        taperedHairGeometry(lockPath, 0.013),
+        hairMaterial,
+      );
+      lock.name = `wta-front-lock-${side < 0 ? 'left' : 'right'}`;
+      lock.castShadow = true;
+      head.add(lock);
+    }
+    const blushMaterial = new THREE.MeshBasicMaterial({
+      color: 0xb87578, transparent: true, opacity: 0.2, depthWrite: false,
+    });
+    const studMaterial = realisticMaterial(0xd7bd87, 0.28);
+    for (const side of [-1, 1] as const) {
+      const cheek = new THREE.Mesh(new THREE.SphereGeometry(1, 14, 10), blushMaterial);
+      cheek.name = `wta-blush-${side < 0 ? 'left' : 'right'}`;
+      cheek.scale.set(0.02, 0.008, 0.003);
+      cheek.position.set(side * 0.052, -0.035, 0.09);
+      head.add(cheek);
+
+      const earring = new THREE.Mesh(new THREE.SphereGeometry(0.006, 12, 10), studMaterial);
+      earring.name = `wta-earring-${side < 0 ? 'left' : 'right'}`;
+      earring.position.set(side * 0.085, -0.018, 0.022);
+      earring.castShadow = true;
+      head.add(earring);
+    }
+    const lipTint = new THREE.Mesh(
+      new THREE.SphereGeometry(1, 14, 10),
+      new THREE.MeshBasicMaterial({ color: 0xa65d65, transparent: true, opacity: 0.32, depthWrite: false }),
+    );
+    lipTint.name = 'wta-lip-tint';
+    lipTint.scale.set(0.014, 0.004, 0.0025);
+    lipTint.position.set(0, -0.077, 0.092);
+    head.add(lipTint);
   }
 
   // poseLimb scales each anatomically slim segment to measured joint spacing.
@@ -1680,19 +1771,23 @@ export function makePlayer(shirtColor: number, shortsColor: number, isWta = fals
   const rightCalf = new THREE.Mesh(calfGeometry, skin);
   const trimMaterial = realisticMaterial(0xe7e0d2, 0.86);
   for (const sleeve of [leftArm, rightArm]) {
-    const shirtSleeve = new THREE.Mesh(ellipticalBodyGeometry([
-      [-0.535, 0.054, 0.055],
-      [-0.50, 0.078, 0.077],
-      [-0.34, 0.079, 0.078],
-      [-0.16, 0.075, 0.074],
-      [0.015, 0.07, 0.069],
-      [0.035, 0.067, 0.066],
-    ], 20), shirt);
+    const sleeveProfile: Array<[number, number, number]> = isWta
+      ? [
+        [-0.535, 0.054, 0.055], [-0.50, 0.078, 0.077], [-0.40, 0.079, 0.078],
+        [-0.31, 0.075, 0.074], [-0.28, 0.07, 0.069], [-0.25, 0.067, 0.066],
+      ]
+      : [
+        [-0.535, 0.054, 0.055], [-0.50, 0.078, 0.077], [-0.34, 0.079, 0.078],
+        [-0.16, 0.075, 0.074], [0.015, 0.07, 0.069], [0.035, 0.067, 0.066],
+      ];
+    const shirtSleeve = new THREE.Mesh(ellipticalBodyGeometry(sleeveProfile, 20), shirt);
+    shirtSleeve.name = isWta ? 'wta-cap-sleeve' : 'player-shirt-sleeve';
     shirtSleeve.castShadow = true;
     sleeve.add(shirtSleeve);
     const cuff = new THREE.Mesh(new THREE.TorusGeometry(0.067, 0.0045, 6, 18), trimMaterial);
     cuff.rotation.x = Math.PI / 2;
-    cuff.position.y = 0.02;
+    cuff.position.y = isWta ? -0.26 : 0.02;
+    cuff.name = isWta ? 'wta-short-sleeve-cuff' : 'player-shirt-sleeve-cuff';
     sleeve.add(cuff);
   }
   const sockMaterial = realisticMaterial(0xe4dfd2, 0.88);
@@ -1810,7 +1905,8 @@ export function makePlayer(shirtColor: number, shortsColor: number, isWta = fals
   }
   racket.position.set(0.39, 1.1, 0.04);
   root.add(racket);
-  root.scale.set(0.95, 0.95, 0.95);
+  const statureScale = isWta ? 0.91 : 0.95;
+  root.scale.set(statureScale, statureScale, statureScale);
   return {
     root, body, hip, head, leftArm, rightArm, leftForearm, rightForearm,
     leftLeg, rightLeg, leftCalf, rightCalf, leftElbow, rightElbow, leftKnee, rightKnee,

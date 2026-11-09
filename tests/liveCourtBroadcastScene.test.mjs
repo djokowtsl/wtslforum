@@ -749,6 +749,8 @@ test('crowd implementation contains no legacy stand block and keeps textured peo
 test('players use realistic materials and natural human proportions', () => {
   for (const isWta of [false, true]) {
     const rig = sceneApi.makePlayer(0xffffff, 0x445566, isWta);
+    assert.equal(rig.root.scale.y, isWta ? 0.91 : 0.95,
+      'WTA players should be slightly shorter than the standard player rig');
     rig.head.geometry.computeBoundingBox();
     const headSize = rig.head.geometry.boundingBox.getSize(new THREE.Vector3()).multiply(rig.head.scale);
     assert.ok(headSize.y <= 0.285 && headSize.y >= 0.22, `head height ${headSize.y}`);
@@ -770,7 +772,7 @@ test('players use realistic materials and natural human proportions', () => {
     assert.ok(crownStart.distanceTo(crownEnd) < 0.00001, 'the face opening closes above the forehead');
     const headNames = [];
     rig.head.traverse(child => headNames.push(child.name));
-    assert.equal(headNames.some(name => /anime|spike|blush/i.test(name)), false,
+    assert.equal(headNames.some(name => /anime|spike/i.test(name)), false,
       'face and hair details avoid cartoon-specific features');
     assert.equal(rig.head.children.some(child => child.geometry?.type === 'ConeGeometry'), false,
       'hair uses a continuous scalp silhouette instead of spikes');
@@ -807,7 +809,21 @@ test('players use realistic materials and natural human proportions', () => {
       assert.equal(shorts.geometry.type, 'ExtrudeGeometry');
       assert.equal(rig.hip.children.filter(part => part.name === 'shorts-volume').length, 1);
     } else {
-      assert.ok(rig.hip.getObjectByName('tennis-skirt'));
+      const skirt = rig.hip.getObjectByName('tennis-skirt');
+      assert.ok(skirt);
+      skirt.geometry.computeBoundingBox();
+      assert.ok(skirt.geometry.boundingBox.min.y > -0.11, 'WTA skirt hem sits higher on the thigh');
+      assert.equal(rig.hip.scale.x, 1.14, 'WTA hips should be fuller than the standard rig');
+      assert.ok(rig.root.getObjectByName('wta-long-ponytail'));
+      assert.ok(rig.root.getObjectByName('wta-front-lock-left'));
+      assert.ok(rig.root.getObjectByName('wta-blush-left'));
+      assert.ok(rig.root.getObjectByName('wta-earring-left'));
+      assert.ok(rig.root.getObjectByName('wta-lip-tint'));
+      const sleeve = rig.root.getObjectByName('wta-cap-sleeve');
+      assert.ok(sleeve);
+      sleeve.geometry.computeBoundingBox();
+      assert.ok(sleeve.geometry.boundingBox.max.y - sleeve.geometry.boundingBox.min.y < 0.31,
+        'WTA tops use short cap sleeves');
     }
     const face = new THREE.Mesh(rig.head.geometry, rig.head.material);
     face.updateMatrixWorld(true);
