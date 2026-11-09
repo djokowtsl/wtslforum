@@ -583,6 +583,27 @@ test('captured strokes and volleys animate the full body for either handedness',
   }
 });
 
+test('the same captured strokes and volleys retarget onto the female player rig', async () => {
+  const template = await nativePlayerTemplate('female');
+  const rig = sceneApi.makePlayer(0x275c77, 0x333333);
+  const attached = humans.attachHumanPlayer(template, rig, 0x275c77);
+  const handBones = ['upperarm_l', 'upperarm_r', 'lowerarm_l', 'lowerarm_r', 'hand_l', 'hand_r'];
+
+  for (const stroke of ['forehand', 'backhand', 'serve', 'volley-forehand', 'volley-backhand']) {
+    for (const handedness of ['right', 'left']) {
+      rig.root.userData.dominantHandedness = handedness;
+      rig.root.userData.groundstrokePlayback = {
+        stroke, deltaSeconds: 0, weight: 1, handedness, rootOffset: false,
+      };
+      const before = handBones.map(name => attached.pose.bones.get(name).getWorldQuaternion(new THREE.Quaternion()));
+      attached.update();
+      assert.ok(handBones.some((name, index) =>
+        attached.pose.bones.get(name).getWorldQuaternion(new THREE.Quaternion()).angleTo(before[index]) > 0.005),
+      `${stroke}/${handedness}: captured motion must animate the female rig`);
+    }
+  }
+});
+
 test('captured recovery compresses quick take-backs, limits trunk lean, and drives a wide lunge', async () => {
   const template = await nativePlayerTemplate('male');
   const rig = sceneApi.makePlayer(0x275c77, 0x333333);
