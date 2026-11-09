@@ -11,6 +11,20 @@ export type DmoReplayCharacterNames = readonly [
   string | null | undefined,
 ];
 
+/** Legacy Discord submissions stored explicit picks in trailing parentheses. */
+export function dmoReplayCharacterNames(
+  players: readonly [string, string],
+  savedPicks: DmoReplayCharacterNames,
+): [string | null, string | null] {
+  return players.map((player, index) => {
+    const saved = savedPicks[index]?.trim();
+    if (saved) return saved;
+    // This is only a lookup candidate: roster metadata must confirm its style.
+    // Never infer a character from the member's display name itself.
+    return player.match(/\(([^()]+)\)\s*$/)?.[1].trim() || null;
+  }) as [string | null, string | null];
+}
+
 const DEFAULT_HANDS: ['right', 'right'] = ['right', 'right'];
 const DEFAULT_STROKE_STYLES: PlayerStrokeStylePair = [
   { forehand: 'one', backhand: 'two' },

@@ -136,6 +136,28 @@ test('replay character picks map to their saved player slots and preserve one-ha
   assert.deepEqual(presentation.missingBackhandStyle, [false, false]);
 });
 
+test('legacy Discord character annotations resolve both Federer slots without guessing member names', () => {
+  const backhandModule = loadModule('lib/liveCharacterBackhand.mjs', {});
+  const { dmoReplayCharacterNames, buildDmoReplayCharacterSetupIndex, resolveDmoReplayCharacterPresentation } =
+    loadModule('lib/dmoReplayCharacterStyles.ts', { './liveCharacterBackhand.mjs': backhandModule });
+  const players = ['Squeaky (Roger Federer)', 'maastodontee (Roger Federer)'];
+  const names = dmoReplayCharacterNames(players, [null, null]);
+  assert.deepEqual(names, ['Roger Federer', 'Roger Federer']);
+  const setups = buildDmoReplayCharacterSetupIndex([{
+    character: 'Roger Federer', playing_hand: 'right', backhand_type: 'one-handed',
+  }]);
+  const presentation = resolveDmoReplayCharacterPresentation(players, names, setups);
+  assert.deepEqual(presentation.strokeStyles.map(style => style.backhand), ['one', 'one']);
+  assert.deepEqual(presentation.missingBackhandStyle, [false, false]);
+  assert.deepEqual(dmoReplayCharacterNames(players, ['Rafael Nadal', '  Roger Federer  ']),
+    ['Rafael Nadal', 'Roger Federer']);
+  assert.deepEqual(dmoReplayCharacterNames(['Roger Federer', 'Squeaky'], [null, '']),
+    [null, null]);
+  const unknown = dmoReplayCharacterNames(['Member (captain)', 'Other'], [null, null]);
+  assert.deepEqual(resolveDmoReplayCharacterPresentation(['Member', 'Other'], unknown, setups)
+    .missingBackhandStyle, [true, false]);
+});
+
 test('Match Replay Center catalog includes every submission and only safe recording links', async () => {
   const queries = [];
   const { listDmoReplaySubmissions } = loadModule('lib/dmoReplayLibrary.ts', {
