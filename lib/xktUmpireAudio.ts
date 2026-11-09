@@ -22,6 +22,17 @@ const AUTOMATED_LINE_CALLS: Record<string, string> = {
   fault: '/audio/xkt/line-calls/fault.mp3',
   out: '/audio/xkt/line-calls/out.mp3',
 };
+const ATP_OUT_CALLS = [
+  '/audio/xkt/line-calls/atp-out-01.mp3',
+  '/audio/xkt/line-calls/atp-out-02.mp3',
+  '/audio/xkt/line-calls/atp-out-03.mp3',
+  '/audio/xkt/line-calls/atp-out-04.mp3',
+  '/audio/xkt/line-calls/atp-out-05.mp3',
+  '/audio/xkt/line-calls/atp-out-06.mp3',
+  '/audio/xkt/line-calls/atp-out-07.mp3',
+  '/audio/xkt/line-calls/atp-out-08.mp3',
+  '/audio/xkt/line-calls/atp-out-09.mp3',
+];
 const voiceQueues = new WeakMap<BaseAudioContext, VoiceQueue>();
 const audioBuffers = new WeakMap<BaseAudioContext, Map<string, Promise<AudioBuffer>>>();
 const manifestPromises = new Map<string, Promise<unknown>>();
@@ -39,6 +50,16 @@ function pick<T>(items: T[] | undefined, random: () => number): T | null {
   if (!items?.length) return null;
   const index = Math.min(items.length - 1, Math.floor(Math.max(0, random()) * items.length));
   return items[index] ?? null;
+}
+
+export function resolveAutomatedLineCallPath(
+  text: string,
+  isWta: boolean,
+  random: () => number = Math.random,
+): string | null {
+  const call = text.trim().toLowerCase();
+  if (call === 'out' && !isWta) return pick(ATP_OUT_CALLS, random);
+  return AUTOMATED_LINE_CALLS[call] ?? null;
 }
 
 function normalizeName(value: string) {
@@ -227,7 +248,7 @@ export async function playXktUmpireCall(
   try {
     // Electronic line calls are a separate voice, not an umpire or a
     // browser-speech fallback. They share the queue and master mute control.
-    const lineCall = AUTOMATED_LINE_CALLS[text.trim().toLowerCase()];
+    const lineCall = resolveAutomatedLineCallPath(text, isWta);
     let urls: string[] | null;
     if (lineCall) {
       urls = [lineCall];
