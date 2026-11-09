@@ -5,6 +5,7 @@ import { ChevronLeft, ChevronRight, Minus, Pause, Play, Plus, RotateCcw, Volume2
 import * as THREE from 'three';
 import { OrbitControls } from 'three/examples/jsm/controls/OrbitControls.js';
 import {
+  LIVE_DMO_EVENT_SYNC_BUFFER_FRAMES,
   TE4_DMO_FRAMES_PER_SECOND,
   type Te4DmoReplaySpeed,
   type Te4LiveSnapshot,
@@ -40,6 +41,7 @@ import {
 } from '@/lib/liveCourtAudio';
 import {
   advanceLiveCourtPlayhead,
+  clampLiveCourtPlayheadToTail,
   clampPlayerCameraLateralPan,
   deriveLiveCourtFootworkEvents,
   deriveLiveCourtSkidMarks,
@@ -1964,6 +1966,7 @@ function ThreeCourt({
             sceneDataRef.current.playbackSpeed,
             samples,
             frameRate,
+            LIVE_DMO_EVENT_SYNC_BUFFER_FRAMES,
           ) ?? firstFrame;
         }
         playheadRef.current = currentFrame;
@@ -2036,8 +2039,15 @@ function ThreeCourt({
           }
         }
         lastSoundFrameRef.current = currentFrame;
+        const umpireFrame = fullReplay
+          ? currentFrame
+          : clampLiveCourtPlayheadToTail(
+            currentFrame,
+            samples,
+            LIVE_DMO_EVENT_SYNC_BUFFER_FRAMES,
+          ) ?? currentFrame;
         const previousCallFrame = lastUmpireCallFrameRef.current;
-        if (currentFrame < previousCallFrame) {
+        if (umpireFrame < previousCallFrame) {
           cancelUmpireCall(
             audioContextRef.current,
             liveUmpireMatchKey(sceneDataRef.current.snapshot.players, sceneDataRef.current.isWta),
@@ -2045,11 +2055,11 @@ function ThreeCourt({
         }
         const callsEnabled = umpireCallsEnabledRef.current && umpireSpeechReadyRef.current;
         const dueCalls = fullReplay
-          ? callsEnabled && currentFrame >= previousCallFrame && currentFrame - previousCallFrame < 120
-            ? umpireCallsBetween(umpireCallEventsRef.current, previousCallFrame, currentFrame) : []
+          ? callsEnabled && umpireFrame >= previousCallFrame && umpireFrame - previousCallFrame < 120
+            ? umpireCallsBetween(umpireCallEventsRef.current, previousCallFrame, umpireFrame) : []
           : consumeLiveUmpireCallEvents(
             liveUmpireEventCursorRef.current, umpireCallEventsRef.current,
-            previousCallFrame, currentFrame, callsEnabled,
+            previousCallFrame, umpireFrame, callsEnabled,
           );
         {
           for (const call of dueCalls) {
@@ -2081,7 +2091,7 @@ function ThreeCourt({
             );
           }
         }
-        lastUmpireCallFrameRef.current = currentFrame;
+        lastUmpireCallFrameRef.current = umpireFrame;
         const previousCalloutFrame = lastCalloutFrameRef.current;
         if (previousCalloutFrame === null || currentFrame < previousCalloutFrame) {
           lastCalloutFrameRef.current = currentFrame;
@@ -2412,7 +2422,14 @@ function ThreeCourt({
       umpireSpeechReadyRef.current = true;
       setUmpireSpeechReady(true);
       resetLiveUmpireEventCursor(liveUmpireEventCursorRef.current);
-      lastUmpireCallFrameRef.current = playheadRef.current ?? snapshot.frameCount;
+      const currentCallFrame = playheadRef.current ?? snapshot.frameCount;
+      lastUmpireCallFrameRef.current = fullReplay
+        ? currentCallFrame
+        : clampLiveCourtPlayheadToTail(
+          currentCallFrame,
+          sampleBufferRef.current,
+          LIVE_DMO_EVENT_SYNC_BUFFER_FRAMES,
+        ) ?? currentCallFrame;
       setSoundError('');
       const layers: Array<Promise<unknown>> = [];
       let sampleLoad = courtEffectSamplesLoadRef.current;
