@@ -6,6 +6,7 @@ import type { DmoReplayCatalogEntry } from '@/lib/dmoReplayLibrary';
 import { characterBroadcastSetup } from '@/lib/liveCharacterBackhand.mjs';
 import {
   buildDmoReplayCharacterSetupIndex,
+  dmoReplayCharacterNames,
   normalizeDmoReplayCharacterName,
   resolveDmoReplayCharacterPresentation,
 } from '@/lib/dmoReplayCharacterStyles';
@@ -50,10 +51,10 @@ export default function DmoReplayLibrary({
   const [loading, setLoading] = useState(!initialPage);
   const [loadingMore, setLoadingMore] = useState(false);
   const [error, setError] = useState('');
-  const characterNames: [string | null, string | null] = [
-    selected?.player1Character ?? null,
-    selected?.player2Character ?? null,
-  ];
+  const characterNames = dmoReplayCharacterNames(
+    [selected?.player1 ?? '', selected?.player2 ?? ''],
+    [selected?.player1Character, selected?.player2Character],
+  );
   const hasSelectedCharacters = Boolean(
     selected?.hasDmoFile && characterNames.some((name) => Boolean(name?.trim())),
   );
