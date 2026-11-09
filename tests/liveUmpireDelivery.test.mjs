@@ -113,6 +113,8 @@ test('both renderers consume late events and restore the enable control after br
   for (const file of ['DmoLiveCourt.tsx', 'DmoLiveCourt3D.tsx']) {
     const renderer = await readFile(new URL(`../components/${file}`, import.meta.url), 'utf8');
     assert.match(renderer, /consumeLiveUmpireCallEvents\(/);
+    assert.match(renderer, /LIVE_DMO_EVENT_SYNC_BUFFER_FRAMES/);
+    assert.match(renderer, /clampLiveCourtPlayheadToTail\(/);
     assert.match(renderer, /watchUmpireAudioContext\(context/);
     assert.match(renderer, /umpireSpeechReadyRef\.current = false;\s*setUmpireSpeechReady\(false\)/);
     assert.match(renderer, /event\.kind === 'point-end' && event\.frame < earliestFrame/);

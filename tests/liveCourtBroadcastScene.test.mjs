@@ -1431,14 +1431,22 @@ test('automated Fault and Out calls use dedicated audio clips without loading um
   );
   assert.equal(
     xktUmpireAudioApi.resolveAutomatedLineCallPath('Out', true, () => 0),
-    '/audio/xkt/line-calls/out.mp3',
-    'the ATP-only clips do not change WTA out calls',
+    null,
+    'do not substitute the generated generic Out clip for missing WTA recordings',
+  );
+  assert.equal(
+    xktUmpireAudioApi.resolveAutomatedLineCallPath('Fault', false),
+    '/audio/xkt/line-calls/fault.mp3',
+  );
+  assert.equal(
+    xktUmpireAudioApi.resolveAutomatedLineCallPath('Fault', true),
+    '/audio/xkt/line-calls/fault.mp3',
   );
 
   for (const text of ['Fault', 'Out']) {
     assert.equal(await xktUmpireAudioApi.playXktUmpireCall(context, text, false, fetcher), true);
   }
-  assert.equal(await xktUmpireAudioApi.playXktUmpireCall(context, 'Out', true, fetcher), true);
+  assert.equal(await xktUmpireAudioApi.playXktUmpireCall(context, 'Out', true, fetcher), false);
   const atpOutFiles = Array.from({ length: 9 }, (_, index) =>
     xktUmpireAudioApi.resolveAutomatedLineCallPath(
       'Out',
@@ -1447,8 +1455,9 @@ test('automated Fault and Out calls use dedicated audio clips without loading um
     ));
   assert.equal(new Set(atpOutFiles).size, 9, 'all distinct ATP clips are selectable');
   assert.ok(requestedUrls.includes('/audio/xkt/line-calls/fault.mp3'));
-  assert.ok(requestedUrls.includes('/audio/xkt/line-calls/out.mp3'));
   assert.ok(requestedUrls.some(url => url.startsWith('/audio/xkt/line-calls/atp-out-')));
+  assert.ok(!requestedUrls.includes('/audio/xkt/line-calls/out.mp3'),
+    'the generated generic Out clip is never fetched');
   assert.ok(
     requestedUrls.every(url => url.startsWith('/audio/xkt/line-calls/')),
     'dedicated line calls do not fetch umpire manifests',
@@ -1456,7 +1465,7 @@ test('automated Fault and Out calls use dedicated audio clips without loading um
   await xktUmpireAudioApi.preloadAutomatedLineCalls(context, fetcher);
   assert.ok(atpOutFiles.every(url => requestedUrls.includes(url)),
     'activation preloads every ATP variation, not only the generic out clip');
-  for (const file of ['fault.mp3', 'out.mp3', ...atpOutFiles.map(url => url.split('/').at(-1))]) {
+  for (const file of ['fault.mp3', ...atpOutFiles.map(url => url.split('/').at(-1))]) {
     const asset = await readFile(new URL(`../public/audio/xkt/line-calls/${file}`, import.meta.url));
     assert.ok(asset.byteLength > 5_000, `${file} is bundled as a real audio clip`);
   }
@@ -1464,7 +1473,7 @@ test('automated Fault and Out calls use dedicated audio clips without loading um
   startedSources[0].onended();
   assert.equal(startedSources.length, 2);
   startedSources[1].onended();
-  assert.equal(startedSources.length, 3);
+  assert.equal(startedSources.length, 2, 'unsupported WTA Out remains silent');
 });
 
 test('missing recorded umpire clips never trigger a browser-system voice', async () => {

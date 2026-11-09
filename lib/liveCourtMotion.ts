@@ -644,24 +644,39 @@ export function advanceLiveCourtPlayerPosition(
   return [current[0] + dx * fraction, current[1] + dz * fraction];
 }
 
+export function clampLiveCourtPlayheadToTail(
+  currentFrame: number | null,
+  samples: LiveCourtSample[],
+  tailBufferFrames = 0,
+): number | null {
+  if (!samples.length || currentFrame === null || !Number.isFinite(currentFrame)) return null;
+  const firstFrame = samples[0].frame;
+  const lastFrame = samples[samples.length - 1].frame;
+  const buffer = Number.isFinite(tailBufferFrames) ? Math.max(0, Math.floor(tailBufferFrames)) : 0;
+  const playbackEnd = Math.max(firstFrame, lastFrame - buffer);
+  return Math.max(firstFrame, Math.min(playbackEnd, currentFrame));
+}
+
 export function advanceLiveCourtPlayhead(
   currentFrame: number | null,
   elapsedMs: number,
   speed: number,
   samples: LiveCourtSample[],
   framesPerSecond = 60,
+  tailBufferFrames = 0,
 ): number | null {
   if (!samples.length) return null;
   const firstFrame = samples[0].frame;
-  const lastFrame = samples[samples.length - 1].frame;
-  const current = currentFrame === null || !Number.isFinite(currentFrame)
-    ? firstFrame
-    : Math.max(firstFrame, Math.min(lastFrame, currentFrame));
+  const current = clampLiveCourtPlayheadToTail(
+    currentFrame === null || !Number.isFinite(currentFrame) ? firstFrame : currentFrame,
+    samples,
+    tailBufferFrames,
+  ) ?? firstFrame;
   const elapsed = Math.max(0, Math.min(80, Number.isFinite(elapsedMs) ? elapsedMs : 0));
   const safeSpeed = Math.max(0, Number.isFinite(speed) ? speed : 0);
   const safeFrameRate = Math.max(0, Number.isFinite(framesPerSecond) ? framesPerSecond : 0);
   const next = current + elapsed * safeFrameRate * safeSpeed / 1000;
-  return Math.min(lastFrame, next);
+  return clampLiveCourtPlayheadToTail(next, samples, tailBufferFrames);
 }
 
 export function interpolateLiveCourtFrame(

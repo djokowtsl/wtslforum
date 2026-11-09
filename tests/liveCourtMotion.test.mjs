@@ -3,6 +3,7 @@ import test from 'node:test';
 import {
   advanceLiveCourtPlayerPosition,
   advanceLiveCourtPlayhead,
+  clampLiveCourtPlayheadToTail,
   deriveLiveCourtFootworkEvents,
   findLiveCourtShotInRange,
   findPlayerShotEvent,
@@ -28,6 +29,7 @@ import {
   mergeLiveCourtEvents,
   mergeLiveCourtSamples,
 } from '../lib/liveCourtMotion.ts';
+import { LIVE_DMO_EVENT_SYNC_BUFFER_FRAMES } from '../lib/te4DmoLive.ts';
 
 function sample(frame, ballX) {
   return { frame, values: [ballX, 0, 0, 1, 2, 3, 4] };
@@ -83,6 +85,21 @@ test('the playhead advances monotonically and stops at the newest frame instead 
   assert.equal(advanceLiveCourtPlayhead(null, 50, 1, samples), 13);
   assert.equal(advanceLiveCourtPlayhead(10, 50, 1, samples), 13);
   assert.equal(advanceLiveCourtPlayhead(13, 50, 1, samples), 13);
+});
+
+test('live playback keeps one DMO update interval ahead for event alignment', () => {
+  const samples = Array.from({ length: 120 }, (_, frame) => sample(frame, frame));
+  assert.equal(LIVE_DMO_EVENT_SYNC_BUFFER_FRAMES, 72);
+  assert.equal(clampLiveCourtPlayheadToTail(119, samples, LIVE_DMO_EVENT_SYNC_BUFFER_FRAMES), 47);
+  assert.equal(
+    advanceLiveCourtPlayhead(46, 80, 1, samples, 60, LIVE_DMO_EVENT_SYNC_BUFFER_FRAMES),
+    47,
+  );
+  assert.equal(
+    advanceLiveCourtPlayhead(100, 80, 1, samples, 60, LIVE_DMO_EVENT_SYNC_BUFFER_FRAMES),
+    47,
+    'playback cannot outrun the available DMO event window',
+  );
 });
 
 test('sample interpolation and rally boundaries track the absolute DMO frame', () => {

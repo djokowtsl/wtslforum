@@ -4,6 +4,7 @@ import { memo, useEffect, useRef, useState, type ReactNode } from 'react';
 import { Minus, Plus, RotateCcw, Volume2, VolumeX } from 'lucide-react';
 import {
   LIVE_DMO_FRAME_STALL_MS,
+  LIVE_DMO_EVENT_SYNC_BUFFER_FRAMES,
   TE4_DMO_FRAMES_PER_SECOND,
   type Te4DmoReplaySpeed,
   type Te4LiveSnapshot,
@@ -21,6 +22,7 @@ import {
 } from '@/lib/liveCourtProjection';
 import {
   advanceLiveCourtPlayhead,
+  clampLiveCourtPlayheadToTail,
   deriveLiveCourtFootworkEvents,
   interpolateLiveCourtFrame,
   liveCourtTrajectoryCue,
@@ -772,28 +774,36 @@ function DmoLiveCourt({
           current.playbackSpeed,
           samples,
           TE4_DMO_FRAMES_PER_SECOND,
+          fullReplayRef.current ? 0 : LIVE_DMO_EVENT_SYNC_BUFFER_FRAMES,
         );
       }
       const cursor = motionPreference.matches
         ? samples[samples.length - 1]?.frame ?? 0
         : playheadRef.current ?? samples[0]?.frame ?? 0;
+      const umpireCursor = fullReplayRef.current
+        ? cursor
+        : clampLiveCourtPlayheadToTail(
+          cursor,
+          samples,
+          LIVE_DMO_EVENT_SYNC_BUFFER_FRAMES,
+        ) ?? cursor;
       if (fullReplayRef.current && now - replayFrameUpdateAtRef.current >= 100) {
         replayFrameUpdateAtRef.current = now;
         replayFrameCallbackRef.current?.(cursor);
       }
       const previousCallFrame = lastUmpireCallFrameRef.current;
-      if (previousCallFrame === null || cursor < previousCallFrame) {
-        if (previousCallFrame !== null && cursor < previousCallFrame) {
+      if (previousCallFrame === null || umpireCursor < previousCallFrame) {
+        if (previousCallFrame !== null && umpireCursor < previousCallFrame) {
           cancelUmpireCall(audioContextRef.current, liveUmpireMatchKey(snapshot.players, isWta));
         }
-        lastUmpireCallFrameRef.current = cursor;
+        lastUmpireCallFrameRef.current = umpireCursor;
       } else {
         const callsEnabled = umpireCallsEnabledRef.current && umpireSpeechReadyRef.current;
         const dueCalls = fullReplayRef.current
-          ? callsEnabled ? umpireCallsBetween(umpireCallEventsRef.current, previousCallFrame, cursor) : []
+          ? callsEnabled ? umpireCallsBetween(umpireCallEventsRef.current, previousCallFrame, umpireCursor) : []
           : consumeLiveUmpireCallEvents(
             liveUmpireEventCursorRef.current, umpireCallEventsRef.current,
-            previousCallFrame, cursor, callsEnabled,
+            previousCallFrame, umpireCursor, callsEnabled,
           );
         {
           for (const call of dueCalls) {
@@ -825,7 +835,7 @@ function DmoLiveCourt({
             );
           }
         }
-        lastUmpireCallFrameRef.current = cursor;
+        lastUmpireCallFrameRef.current = umpireCursor;
       }
       try {
         drawScene(
@@ -994,7 +1004,18 @@ function DmoLiveCourt({
       umpireSpeechReadyRef.current = true;
       setUmpireSpeechReady(true);
       resetLiveUmpireEventCursor(liveUmpireEventCursorRef.current);
-      lastUmpireCallFrameRef.current = playheadRef.current ?? snapshot.frameCount;
+      const currentSamples = sampleBufferRef.current;
+      const latestFrame = currentSamples.at(-1)?.frame ?? snapshot.frameCount;
+      const currentCallFrame = fullReplayRef.current
+        ? playheadRef.current ?? latestFrame
+        : clampLiveCourtPlayheadToTail(
+          window.matchMedia('(prefers-reduced-motion: reduce)').matches
+            ? latestFrame
+            : playheadRef.current ?? latestFrame,
+          currentSamples,
+          LIVE_DMO_EVENT_SYNC_BUFFER_FRAMES,
+        ) ?? latestFrame;
+      lastUmpireCallFrameRef.current = currentCallFrame;
       setSoundError('');
       if (!courtEffectSamplesLoadRef.current) {
         courtEffectSamplesLoadRef.current = loadCourtEffectSamples(context).then(({ samples, missing }) => {

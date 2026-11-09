@@ -20,7 +20,6 @@ const UMPIRE_INDEX_URL = '/audio/xkt/umpire-index.json';
 const PLAYER_NAME_INDEX_URL = '/audio/xkt/name-index.json';
 const AUTOMATED_LINE_CALLS: Record<string, string> = {
   fault: '/audio/xkt/line-calls/fault.mp3',
-  out: '/audio/xkt/line-calls/out.mp3',
 };
 const ATP_OUT_CALLS = [
   '/audio/xkt/line-calls/atp-out-01.mp3',
@@ -58,7 +57,7 @@ export function resolveAutomatedLineCallPath(
   random: () => number = Math.random,
 ): string | null {
   const call = text.trim().toLowerCase();
-  if (call === 'out' && !isWta) return pick(ATP_OUT_CALLS, random);
+  if (call === 'out') return isWta ? null : pick(ATP_OUT_CALLS, random);
   return AUTOMATED_LINE_CALLS[call] ?? null;
 }
 
@@ -253,6 +252,7 @@ export async function playXktUmpireCall(
     if (lineCall) {
       urls = [lineCall];
     } else {
+      if (['fault', 'out'].includes(text.trim().toLowerCase())) return false;
       const [umpire, names] = await Promise.all([
         loadManifest<XktUmpireAudioIndex>(UMPIRE_INDEX_URL, fetcher),
         loadManifest<XktPlayerNameAudioIndex>(PLAYER_NAME_INDEX_URL, fetcher),
