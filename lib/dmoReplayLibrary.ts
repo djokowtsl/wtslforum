@@ -21,6 +21,8 @@ export type DmoReplayCatalogEntry = {
   roundName: string;
   player1: string;
   player2: string;
+  player1Character?: string;
+  player2Character?: string;
   submissionDate: string;
   source: 'discord' | 'forum';
   hasDmoFile: boolean;
@@ -81,12 +83,20 @@ function toDmoReplayCatalogEntry(row: Record<string, unknown>): DmoReplayCatalog
     ? row.private_blob_pathname
     : null;
   const externalUrl = safeRecordingUrl(row.external_url);
+  const player1Character = typeof row.player1_character === 'string'
+    ? row.player1_character.trim().slice(0, 100)
+    : '';
+  const player2Character = typeof row.player2_character === 'string'
+    ? row.player2_character.trim().slice(0, 100)
+    : '';
   return {
     id: String(row.id),
     tournament: String(row.tournament ?? ''),
     roundName: String(row.round_name ?? ''),
     player1: String(row.player1 ?? ''),
     player2: String(row.player2 ?? ''),
+    ...(player1Character ? { player1Character } : {}),
+    ...(player2Character ? { player2Character } : {}),
     submissionDate: String(row.submission_date ?? ''),
     source: row.source === 'discord' ? 'discord' : 'forum',
     hasDmoFile: Boolean(privateBlobPathname),
@@ -160,6 +170,7 @@ export async function listDmoReplaySubmissions(input: {
   const pattern = query ? `%${query.replace(/[\\%_]/g, '\\$&')}%` : null;
   const rows = await sql`
     SELECT id::text AS id,tournament,round_name,player1,player2,
+      player1_character,player2_character,
       submission_date::text AS submission_date,source,
       private_blob_pathname,file_name,external_url,coach_group_share_consent,
       CASE WHEN coach_group_share_consent IS TRUE
@@ -225,6 +236,7 @@ export async function getPublicDmoReplay(id: string): Promise<StoredDmoReplay | 
 export async function getDmoReplaySubmission(id: string): Promise<DmoSubmissionReplay | null> {
   const rows = await sql`
     SELECT id::text AS id,tournament,round_name,player1,player2,
+      player1_character,player2_character,
       submission_date::text AS submission_date,source,
       private_blob_pathname,file_name,external_url,coach_group_share_consent,
       CASE WHEN coach_group_share_consent IS TRUE
@@ -298,7 +310,7 @@ export function publicDmoReplayMetadata(replay: StoredDmoReplay): PublicDmoRepla
 export function dmoReplayCatalogMetadata(replay: DmoSubmissionReplay): DmoReplayCatalogEntry {
   const {
     id, tournament, roundName, player1, player2, submissionDate,
-    source, hasDmoFile, externalUrl, coachShareUrl,
+    player1Character, player2Character, source, hasDmoFile, externalUrl, coachShareUrl,
   } = replay;
   return {
     id,
@@ -306,6 +318,8 @@ export function dmoReplayCatalogMetadata(replay: DmoSubmissionReplay): DmoReplay
     roundName,
     player1,
     player2,
+    ...(player1Character ? { player1Character } : {}),
+    ...(player2Character ? { player2Character } : {}),
     submissionDate,
     source,
     hasDmoFile,

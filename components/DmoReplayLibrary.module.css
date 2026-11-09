@@ -312,6 +312,20 @@
   padding: 0 5px;
 }
 
+.characterStyleNote {
+  line-height: 1.45;
+}
+
+.characterStyleLoading {
+  display: grid;
+  min-height: 440px;
+  place-content: center;
+  padding: 28px;
+  color: var(--muted);
+  font-size: 13px;
+  text-align: center;
+}
+
 .viewerEmpty {
   display: grid;
   min-height: 440px;

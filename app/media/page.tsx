@@ -37,7 +37,7 @@ export default async function Media({ searchParams }: { searchParams: Promise<{ 
         {user ? (
           <div style={{ display: 'grid', gap: 18, marginBottom: 36 }}>
             <MediaSubmitForm />
-            <DmoSubmitForm />
+            <DmoSubmitForm userId={user.id} />
           </div>
         ) : (
           <div className="notice" style={{ marginBottom: 36 }}>
