@@ -20,10 +20,15 @@ async function loadTs(file, overrides = {}) {
 const stadiumArchitectureApi = await loadTs('../components/DmoStadiumArchitecture.ts');
 const venueApi = await loadTs('../lib/dmoVenue.ts');
 const surfaceApi = await loadTs('../lib/te4DmoSurface.ts');
+const crowdDensityApi = await loadTs('../lib/dmoCrowdDensity.ts');
+const crowdClothingApi = await loadTs('../lib/dmoCrowdClothing.ts');
+const crowdBrandingApi = await loadTs('../lib/dmoCrowdBranding.ts');
 const sceneApi = await loadTs('../components/DmoLiveCourt3DScene.ts', {
   './DmoStadiumArchitecture': stadiumArchitectureApi,
   '../lib/dmoVenue': venueApi,
   '@/lib/te4DmoSurface': surfaceApi,
+  '@/lib/dmoCrowdDensity': crowdDensityApi,
+  '@/lib/dmoCrowdClothing': crowdClothingApi,
 });
 const racketPose = await loadTs('../components/DmoRacketOrientation.ts');
 const articulated = await loadTs('../components/DmoArticulatedHands.ts', { './DmoRacketOrientation': racketPose });
@@ -48,12 +53,15 @@ const humans = await loadTs('../components/DmoHumanModels.ts', {
   './DmoRacketOrientation': racketPose, './DmoArticulatedHands': articulated,
   './DmoNativePlayer': nativePlayer, './DmoNativePlayerClaude': claudeNativePlayer,
   './DmoNativeKit': nativeKit,
+  '@/lib/dmoCrowdClothing': crowdClothingApi,
 });
 const crowdLodApi = await loadTs('../lib/dmoCrowdLod.ts');
 const crowds = await loadTs('../components/DmoHumanCrowd.ts', {
   './DmoHumanModels': humans,
   './DmoLiveCourt3DScene': sceneApi,
   '../lib/dmoCrowdLod': crowdLodApi,
+  '../lib/dmoCrowdClothing': crowdClothingApi,
+  '../lib/dmoCrowdBranding': crowdBrandingApi,
 });
 
 // Parse the real rig and geometry in Node, omitting image decoding (verified in browser).
@@ -105,6 +113,29 @@ async function articulatedHandAsset() {
 
 const close = (actual, expected) => assert.ok(actual.distanceTo(expected) < 0.00001,
   `${actual.toArray()} differs from ${expected.toArray()}`);
+// Joint locations alone miss stretched skinned feet and toes beyond the targets.
+function skinnedRegionBounds(model, space, bonePattern) {
+  const bounds = new THREE.Box3();
+  let count = 0;
+  model.updateMatrixWorld(true);
+  model.traverse((object) => {
+    if (!object.isSkinnedMesh) return;
+    object.skeleton.update();
+    const { position, skinWeight, skinIndex } = object.geometry.attributes;
+    for (let i = 0; i < position.count; i++) {
+      let dominant = 0;
+      for (let j = 1; j < 4; j++) {
+        if (skinWeight.getComponent(i, j) > skinWeight.getComponent(i, dominant)) dominant = j;
+      }
+      if (!bonePattern.test(object.skeleton.bones[skinIndex.getComponent(i, dominant)].name)) continue;
+      const point = object.getVertexPosition(i, new THREE.Vector3()).applyMatrix4(object.matrixWorld);
+      bounds.expandByPoint(space.worldToLocal(point));
+      count++;
+    }
+  });
+  assert.ok(count > 20, 'check a real skinned surface, not an empty or mocked joint set');
+  return bounds;
+}
 const handCanonical = new THREE.Quaternion().setFromRotationMatrix(new THREE.Matrix4().makeBasis(
   new THREE.Vector3(0, 0, 1), new THREE.Vector3(0, -1, 0), new THREE.Vector3(1, 0, 0),
 ));
@@ -123,10 +154,96 @@ test('recorded volley clips are compact, parsed, and attributed share-alike deri
     assert.match(provenance.source, /jdpulgarin\/Tennis-MoCap/);
     assert.equal(parsed.clip.tracks[0].times.length, 51);
     assert.ok(Math.abs(parsed.clip.tracks[0].times[23] - 0.92) < 1e-6,
-      'the inferred contact sample remains at 0.92 seconds');
+      'the existing excerpt retains its 25 Hz sample spacing');
     assert.equal(parsed.skeleton.bones.find(bone => bone.name === 'RightWrist')?.name, 'RightWrist');
     assert.ok(bytes.byteLength < 50_000, 'only the selected motion excerpt is shipped');
   }
+});
+
+test('seated spectator leg bones scale to their seat targets instead of hanging below them', async () => {
+  const model = await asset('male', 'crowd');
+  const space = new THREE.Group();
+  space.add(model);
+  const pose = new humans.HumanPose(model, space);
+  const upperLeg = model.getObjectByName('LeftUpLeg');
+  const lowerLeg = model.getObjectByName('LeftLeg');
+  assert.ok(upperLeg && lowerLeg);
+  const upperBone = upperLeg.children.find((child) => child instanceof THREE.Bone);
+  const lowerBone = lowerLeg.children.find((child) => child instanceof THREE.Bone);
+  assert.ok(upperBone && lowerBone);
+  const targets = sceneApi.getSeatedCrowdLegTargets(1);
+  const vector = (point) => new THREE.Vector3(...point);
+  const hip = vector(targets.hip);
+  const knee = vector(targets.knee);
+  const ankle = vector(targets.ankle);
+  const toe = vector(targets.toe);
+  const placedSegmentLength = (parent, child) => {
+    const first = parent.getWorldPosition(new THREE.Vector3());
+    const second = child.getWorldPosition(new THREE.Vector3());
+    space.worldToLocal(first);
+    space.worldToLocal(second);
+    return first.distanceTo(second);
+  };
+  pose.begin();
+  pose.place('Hips', hip);
+  pose.place('LeftUpLeg', hip, knee);
+  pose.place('LeftLeg', knee, ankle);
+  pose.place('LeftFoot', ankle, toe);
+  pose.finish();
+  const fittedUpperLength = placedSegmentLength(upperLeg, upperBone);
+  const fittedLowerLength = placedSegmentLength(lowerLeg, lowerBone);
+  assert.ok(Math.abs(fittedUpperLength - hip.distanceTo(knee)) < 1e-4,
+    `upper leg ${fittedUpperLength} vs ${hip.distanceTo(knee)}; scale ${upperLeg.scale.toArray()}, source ${upperBone.position.toArray()}`);
+  assert.ok(Math.abs(fittedLowerLength - knee.distanceTo(ankle)) < 1e-4,
+    `lower leg ${fittedLowerLength} vs ${knee.distanceTo(ankle)}; scale ${lowerLeg.scale.toArray()}, source ${lowerBone.position.toArray()}`);
+});
+
+for (const gender of ['male', 'female']) for (const detail of ['crowd', 'player']) {
+  test(`${gender} ${detail}: seated staff skin stays compact and umpire soles fit the footrest`, async () => {
+    const scene = new THREE.Scene();
+    const fixtures = sceneApi.buildCourtFixtures(scene);
+    const crowd = sceneApi.buildCrowd(scene);
+    const template = await asset(gender, detail);
+    crowds.attachHumanCourtStaff(scene, fixtures, [template, template], crowd, template);
+    const chair = scene.getObjectByName('wtsl-umpire-chair');
+    const umpire = scene.getObjectByName('wtsl-detailed-umpire');
+    const bar = scene.getObjectByName('wtsl-umpire-foot-bar');
+    const barTop = bar.position.y + bar.geometry.parameters.height / 2;
+    const feet = skinnedRegionBounds(umpire, chair, /Foot|ToeBase/);
+    assert.ok(feet.min.y >= barTop - 0.025 && feet.min.y <= barTop + 0.025,
+      `actual soles (${feet.min.y}) must meet the bar (${barTop}), not just the toe bones`);
+    assert.ok(feet.max.z < 0.55 && feet.max.z - feet.min.z < 0.35,
+      `umpire feet/toes must not stretch forward like extra shins: ${feet.min.z}..${feet.max.z}`);
+    const umpireLegs = skinnedRegionBounds(umpire, chair, /Leg|Foot|ToeBase/);
+    assert.ok(1.34 - umpireLegs.min.y < 0.44, 'actual leg surfaces stay near the seat');
+    for (const index of [1, 2]) {
+      const coach = scene.getObjectByName(`wtsl-court-coach-${index}`);
+      const space = scene.getObjectByName(`wtsl-coach-space-${index}`);
+      const legs = skinnedRegionBounds(coach, space, /Leg|Foot|ToeBase/);
+      assert.ok(legs.min.y > -0.07 && 0.4 - legs.min.y < 0.47,
+        `front-row coach ${index} must not dangle below its row: lowest skin ${legs.min.y}`);
+      const coachFeet = skinnedRegionBounds(coach, space, /Foot|ToeBase/);
+      assert.ok(coachFeet.max.z - coachFeet.min.z < 0.35, 'coach feet retain normal proportions');
+    }
+  });
+}
+
+test('one-handed backhand clip is loadable and carries its share-alike attribution', async () => {
+  const manifest = JSON.parse(await readFile(
+    new URL('../public/models/dmo-humans/provenance.json', import.meta.url),
+  ));
+  const bytes = await readFile(new URL(
+    '../public/models/dmo-humans/tennis-backhand-one.bvh',
+    import.meta.url,
+  ));
+  const parsed = new BVHLoader().parse(bytes.toString('utf8'));
+  const provenance = manifest.find(entry => entry.filename === 'tennis-backhand-one.bvh');
+  assert.ok(provenance);
+  assert.equal(provenance.bytes, bytes.byteLength);
+  assert.equal(provenance.license, 'CC-BY-SA-3.0');
+  assert.match(provenance.source, /astrejos_Reves\.bvh/);
+  assert.equal(parsed.skeleton.bones.find(bone => bone.name === 'RightWrist')?.name, 'RightWrist');
+  assert.ok(parsed.clip.duration > 5.66, 'the inferred contact time must be inside the recording');
 });
 
 for (const gender of ['male', 'female']) test(`${gender}: continuous native body retains wrists, clothes and segment lengths`, async () => {
@@ -179,10 +296,76 @@ for (const gender of ['male', 'female']) test(`${gender}: continuous native body
     'upper spine must aim through the neck, not its first clavicle child');
   assert.equal(rig.root.getObjectByName('articulated-right-hand'), undefined);
   const nativeBody = attached.model.getObjectByName('Avery_|_anatomical_body');
-  assert.deepEqual(nativeBody.geometry.getAttribute('position').array, source, 'body and hand surface must not be cut, grafted or curled');
+  const nativePositions = nativeBody.geometry.getAttribute('position').array;
+  const templateBody = template.getObjectByName('Avery_|_anatomical_body');
+  assert.deepEqual(templateBody.geometry.getAttribute('position').array, source,
+    'female shaping must not mutate the shared source asset');
+  assert.equal(nativePositions.length, source.length, 'body shaping must preserve the source topology');
+  if (gender === 'female') {
+    const skinIndex = templateBody.geometry.getAttribute('skinIndex');
+    const skinWeight = templateBody.geometry.getAttribute('skinWeight');
+    const torsoBones = new Set(templateBody.skeleton.bones
+      .map((bone, index) => /^(pelvis|spine_0[123])$/.test(bone.name) ? index : -1)
+      .filter(index => index >= 0));
+    const torsoInfluence = vertex => {
+      let weight = 0;
+      for (let k = 0; k < 4; k++) {
+        if (torsoBones.has(skinIndex.getComponent(vertex, k))) weight += skinWeight.getComponent(vertex, k);
+      }
+      return weight;
+    };
+    const meanAbsX = (values, minY, maxY) => {
+      let total = 0, count = 0;
+      for (let i = 0; i < values.length; i += 3) {
+        if (values[i + 1] >= minY && values[i + 1] <= maxY
+          && torsoInfluence(i / 3) >= 0.2) {
+          total += Math.abs(values[i]);
+          count++;
+        }
+      }
+      return total / Math.max(1, count);
+    };
+    const hipWidthBefore = meanAbsX(source, 0.82, 1.0);
+    const hipWidthAfter = meanAbsX(nativePositions, 0.82, 1.0);
+    const waistWidthBefore = meanAbsX(source, 1.04, 1.16);
+    const waistWidthAfter = meanAbsX(nativePositions, 1.04, 1.16);
+    assert.ok(hipWidthAfter > hipWidthBefore * 1.06,
+      `WTA hips should have a fuller athletic silhouette (${hipWidthBefore} -> ${hipWidthAfter})`);
+    assert.ok(waistWidthAfter < waistWidthBefore * 0.98,
+      `WTA waist should taper more than the male rig (${waistWidthBefore} -> ${waistWidthAfter})`);
+    let greatestChestProjection = 0;
+    for (let i = 0; i < source.length; i += 3) {
+      if (source[i + 1] > 1.17 && source[i + 1] < 1.32
+        && source[i + 2] > 0.04 && Math.abs(source[i]) < 0.12) {
+        greatestChestProjection = Math.max(greatestChestProjection, nativePositions[i + 2] - source[i + 2]);
+      }
+    }
+    assert.ok(greatestChestProjection > 0.03, 'WTA chest shaping should add a modest bust contour under the shirt');
+  } else {
+    assert.deepEqual(nativePositions, source, 'the standard body remains unchanged');
+  }
   assert.ok(attached.model.getObjectByName('native-tennis-shirt').geometry.index.count > 100);
   assert.ok(attached.model.getObjectByName('native-tennis-shorts').geometry.index.count > 100);
-  if (gender === 'female') assert.ok(attached.model.getObjectByName('native-tennis-skirt'));
+  const shirtGarment = attached.model.getObjectByName('native-tennis-shirt');
+  if (gender === 'female') {
+    const skirt = attached.model.getObjectByName('native-tennis-skirt');
+    const ponytail = attached.model.getObjectByName('native-player-ponytail-1');
+    assert.ok(skirt);
+    assert.equal(skirt.geometry.parameters.height, 0.16, 'WTA skirts should end higher on the thigh');
+    assert.equal(skirt.geometry.parameters.radiusBottom, 0.27, 'WTA skirts should follow the fuller hip silhouette');
+    assert.equal(shirtGarment.userData.sleeveEndFraction, 0.3, 'WTA shirts should use cap sleeves');
+    assert.ok(ponytail, 'both WTA players should have long tied-back hair');
+    ponytail.geometry.computeBoundingBox();
+    assert.ok(ponytail.geometry.boundingBox.max.y - ponytail.geometry.boundingBox.min.y > 0.29);
+    assert.ok(attached.model.getObjectByName('native-player-front-lock-left-1'));
+    assert.ok(attached.model.getObjectByName('native-wta-blush-left-1'));
+    assert.ok(attached.model.getObjectByName('native-wta-earring-left-1'));
+    assert.ok(attached.model.getObjectByName('native-wta-lip-tint-1'));
+  } else {
+    assert.equal(shirtGarment.userData.sleeveEndFraction, 0.46, 'standard kit sleeves should remain unchanged');
+    assert.equal(attached.model.getObjectByName('native-wta-blush-left-1'), undefined);
+    assert.equal(attached.model.getObjectByName('native-wta-earring-left-1'), undefined);
+  }
   {
     // Regression: the shirt must cover the shoulder tops (bind y 1.38-1.43 m)
     // and must stop at the neck base (never the face).
@@ -258,9 +441,11 @@ test('retargeted limb directions match the capture rather than its first-frame d
   const rig = sceneApi.makePlayer(0x275c77, 0x333333);
   const attached = humans.attachHumanPlayer(template, rig, 0x275c77);
   const sources = Object.fromEntries(await Promise.all([
-    'forehand', 'backhand', 'serve', 'volley-forehand', 'volley-backhand',
-  ].map(async stroke =>
-    [stroke, await readFile(new URL(`../public/models/dmo-humans/tennis-${stroke}.bvh`, import.meta.url), 'utf8')])));
+    'forehand', 'backhand', 'serve', 'smash', 'volley-forehand', 'volley-backhand',
+  ].map(async stroke => {
+    const filename = stroke === 'smash' ? 'tennis-smash-jarua.bvh' : `tennis-${stroke}.bvh`;
+    return [stroke, await readFile(new URL(`../public/models/dmo-humans/${filename}`, import.meta.url), 'utf8')];
+  })));
   attached.pose.reset();
   const capture = new capturedGroundstroke.DmoCapturedGroundstroke(attached.model, rig.root, attached.pose.rest, sources);
   const contact = {
@@ -268,9 +453,9 @@ test('retargeted limb directions match the capture rather than its first-frame d
     backhand: 9.28,
     serve: 2.56,
     'volley-forehand': 0.92,
-    'volley-backhand': 0.92,
+    'volley-backhand': 0.90,
   };
-  for (const stroke of Object.keys(sources)) {
+  for (const stroke of ['forehand', 'backhand', 'serve', 'volley-forehand', 'volley-backhand']) {
     const source = new BVHLoader().parse(sources[stroke]);
     const mixer = new THREE.AnimationMixer(source.skeleton.bones[0]);
     mixer.clipAction(source.clip).play();
@@ -461,6 +646,224 @@ test('captured strokes and volleys animate the full body for either handedness',
         assert.ok(attached.pose.bones.get(name).matrixWorld.elements.every(Number.isFinite));
       }
     }
+  }
+});
+
+test('the same captured strokes and volleys retarget onto the female player rig', async () => {
+  const template = await nativePlayerTemplate('female');
+  const rig = sceneApi.makePlayer(0x275c77, 0x333333);
+  const attached = humans.attachHumanPlayer(template, rig, 0x275c77);
+  const handBones = ['upperarm_l', 'upperarm_r', 'lowerarm_l', 'lowerarm_r', 'hand_l', 'hand_r'];
+
+  for (const stroke of ['forehand', 'backhand', 'serve', 'volley-forehand', 'volley-backhand']) {
+    for (const handedness of ['right', 'left']) {
+      rig.root.userData.dominantHandedness = handedness;
+      rig.root.userData.groundstrokePlayback = {
+        stroke, deltaSeconds: 0, weight: 1, handedness, rootOffset: false,
+      };
+      const before = handBones.map(name => attached.pose.bones.get(name).getWorldQuaternion(new THREE.Quaternion()));
+      attached.update();
+      assert.ok(handBones.some((name, index) =>
+        attached.pose.bones.get(name).getWorldQuaternion(new THREE.Quaternion()).angleTo(before[index]) > 0.005),
+      `${stroke}/${handedness}: captured motion must animate the female rig`);
+    }
+  }
+});
+
+test('captured recovery compresses quick take-backs, limits trunk lean, and drives a wide lunge', async () => {
+  const template = await nativePlayerTemplate('male');
+  const rig = sceneApi.makePlayer(0x275c77, 0x333333);
+  // Omit the variant argument: this is the player used by live broadcasts.
+  const attached = humans.attachHumanPlayer(template, rig, 0x275c77);
+
+  const playback = {
+    stroke: 'forehand', handedness: 'right', deltaSeconds: -0.2, weight: 1,
+    rootOffset: false, hands: 'one',
+  };
+  rig.root.userData.groundstrokePlayback = { ...playback, leadScale: 1 };
+  attached.update();
+  const ordinaryTakeBack = attached.pose.bones.get('hand_r').quaternion.clone();
+  rig.root.userData.groundstrokePlayback = { ...playback, leadScale: 1.7 };
+  attached.update();
+  const quickTakeBack = attached.pose.bones.get('hand_r').quaternion.clone();
+  assert.ok(ordinaryTakeBack.angleTo(quickTakeBack) > 0.02,
+    'a compressed lead should sample a later recorded preparation pose');
+
+  rig.root.userData.groundstrokePlayback = { ...playback, deltaSeconds: 0, leadScale: undefined };
+  attached.update();
+  const trunk = attached.pose.point('neck_01').sub(attached.pose.point('pelvis'));
+  const lean = trunk.angleTo(new THREE.Vector3(0, 1, 0));
+  assert.ok(lean <= THREE.MathUtils.degToRad(24.5),
+    `captured trunk lean ${THREE.MathUtils.radToDeg(lean)}°`);
+
+  rig.root.userData.groundstrokePlayback = undefined;
+  delete rig.root.userData.lunge;
+  attached.update();
+  const neutralLeadingKnee = attached.pose.point('calf_l').x;
+  rig.root.userData.lunge = { weight: 1, side: 1 };
+  attached.update();
+  assert.ok(attached.pose.point('calf_l').x > neutralLeadingKnee + 0.05,
+    'the leading knee should move out over the foot on the ball side');
+});
+
+test('the production native player selects the one-handed clip only for one-handed backhands', async () => {
+  const template = await nativePlayerTemplate('male');
+  const rig = sceneApi.makePlayer(0x275c77, 0x333333);
+  const attached = humans.attachHumanPlayer(template, rig, 0x275c77);
+  const sample = (stroke, hands) => {
+    rig.root.userData.groundstrokePlayback = {
+      stroke,
+      deltaSeconds: 0.15,
+      weight: 1,
+      handedness: 'right',
+      hands,
+      rootOffset: false,
+    };
+    attached.update();
+    return ['hand_l', 'hand_r'].map(name => attached.pose.point(name));
+  };
+  const oneHandedBackhand = sample('backhand', 'one');
+  const twoHandedBackhand = sample('backhand', 'two');
+  assert.ok(oneHandedBackhand[0].distanceTo(twoHandedBackhand[0]) > 0.05
+    || oneHandedBackhand[1].distanceTo(twoHandedBackhand[1]) > 0.05,
+  'the Claude production player must select the new backhand motion when requested');
+});
+
+test('the captured one-handed clip changes ground backhands, not forehands', async () => {
+  const template = await nativePlayerTemplate('male');
+  const rig = sceneApi.makePlayer(0x275c77, 0x333333);
+  const attached = humans.attachHumanPlayer(template, rig, 0x275c77);
+  const sources = Object.fromEntries(await Promise.all([
+    'forehand', 'backhand', 'serve', 'smash', 'volley-forehand', 'volley-backhand',
+  ].map(async stroke => {
+    const filename = stroke === 'smash' ? 'tennis-smash-jarua.bvh' : `tennis-${stroke}.bvh`;
+    return [stroke, await readFile(new URL(`../public/models/dmo-humans/${filename}`, import.meta.url), 'utf8')];
+  })));
+  sources.backhandOne = await readFile(
+    new URL('../public/models/dmo-humans/tennis-backhand-one.bvh', import.meta.url),
+    'utf8',
+  );
+  const capture = new capturedGroundstroke.DmoCapturedGroundstroke(
+    attached.model, rig.root, attached.pose.rest, sources,
+  );
+  const sample = (stroke, oneHanded, handedness = 'right') => {
+    attached.pose.reset();
+    capture.apply({
+      stroke,
+      deltaSeconds: 0.15,
+      weight: 1,
+      handedness,
+      rootOffset: false,
+      oneHanded,
+    });
+    return ['hand_l', 'hand_r'].map(name => attached.pose.point(name));
+  };
+  for (const handedness of ['right', 'left']) {
+    const oneHandedBackhand = sample('backhand', true, handedness);
+    const twoHandedBackhand = sample('backhand', false, handedness);
+    assert.ok(oneHandedBackhand[0].distanceTo(twoHandedBackhand[0]) > 0.05
+      || oneHandedBackhand[1].distanceTo(twoHandedBackhand[1]) > 0.05,
+    `${handedness}-handed player must use the one-handed backhand sample`);
+  }
+  const oneHandedForehand = sample('forehand', true);
+  const twoHandedForehand = sample('forehand', false);
+  assert.ok(oneHandedForehand[0].distanceTo(twoHandedForehand[0]) < 1e-6
+    && oneHandedForehand[1].distanceTo(twoHandedForehand[1]) < 1e-6,
+  'the one-handed backhand option must not alter forehand motion');
+});
+
+test('the Jarua smash is a one-handed overhead and mirrors to left-handed players', async () => {
+  const template = await nativePlayerTemplate('male');
+  const rig = sceneApi.makePlayer(0x275c77, 0x333333);
+  const attached = humans.attachHumanPlayer(template, rig, 0x275c77);
+  const read = (filename) => readFile(
+    new URL(`../public/models/dmo-humans/${filename}`, import.meta.url), 'utf8',
+  );
+  const sources = {
+    forehand: await read('tennis-forehand.bvh'),
+    backhand: await read('tennis-backhand.bvh'),
+    serve: await read('tennis-serve.bvh'),
+    smash: await read('tennis-smash-jarua.bvh'),
+    'volley-forehand': await read('tennis-volley-forehand.bvh'),
+    'volley-backhand': await read('tennis-volley-backhand.bvh'),
+  };
+  const capture = new capturedGroundstroke.DmoCapturedGroundstroke(
+    attached.model, rig.root, attached.pose.rest, sources,
+  );
+  assert.equal(capture.hasSmash, true);
+  for (const [handedness, side] of [['right', 'r'], ['left', 'l']]) {
+    attached.pose.reset();
+    capture.apply({
+      stroke: 'forehand',
+      deltaSeconds: 0,
+      weight: 1,
+      handedness,
+      rootOffset: false,
+      smash: true,
+    });
+    assert.ok(attached.pose.point(`hand_${side}`).y > attached.pose.point('head').y,
+      `${handedness}: racket hand should be above the head at smash contact`);
+    attached.pose.reset();
+    capture.apply({
+      stroke: 'forehand',
+      deltaSeconds: 0,
+      weight: 1,
+      handedness,
+      rootOffset: false,
+    });
+    assert.ok(attached.pose.point(`hand_${side}`).y < attached.pose.point('head').y,
+      `${handedness}: ordinary forehand contact should remain below the head`);
+  }
+});
+
+test('missing optional clips retain normal stroke behavior and keep the player loading', async () => {
+  const originalFetch = globalThis.fetch;
+  globalThis.fetch = async (input) => {
+    const filename = new URL(String(input), 'https://forum.test').pathname.split('/').pop();
+    if (filename === 'tennis-backhand-one.bvh' || filename === 'tennis-smash-jarua.bvh') {
+      return new Response('missing', { status: 404 });
+    }
+    const bytes = await readFile(new URL(`../public/models/dmo-humans/${filename}`, import.meta.url));
+    return new Response(bytes);
+  };
+  try {
+    const template = await humans.loadHumanModel('male', 'player', new AbortController().signal);
+    const rig = sceneApi.makePlayer(0x275c77, 0x333333);
+    const attached = humans.attachHumanPlayer(template, rig, 0x275c77);
+    assert.equal(rig.root.userData.capturedSmash, false);
+    rig.root.userData.groundstrokePlayback = {
+      stroke: 'forehand',
+      deltaSeconds: 0,
+      weight: 1,
+      handedness: 'right',
+      smash: true,
+      rootOffset: false,
+    };
+    assert.doesNotThrow(() => attached.update(), 'missing Jarua motion must leave the player usable');
+    const smashFallback = ['hand_l', 'hand_r'].map(name => attached.pose.point(name).clone());
+    rig.root.userData.groundstrokePlayback = {
+      stroke: 'forehand',
+      deltaSeconds: 0,
+      weight: 1,
+      handedness: 'right',
+      rootOffset: false,
+    };
+    attached.update();
+    for (const [index, name] of ['hand_l', 'hand_r'].entries()) {
+      assert.ok(smashFallback[index].distanceTo(attached.pose.point(name)) < 1e-6,
+        `missing smash asset falls back to the existing ${name} forehand pose`);
+    }
+    rig.root.userData.groundstrokePlayback = {
+      stroke: 'backhand',
+      deltaSeconds: 0,
+      weight: 1,
+      handedness: 'right',
+      hands: 'one',
+      rootOffset: false,
+    };
+    assert.doesNotThrow(() => attached.update());
+  } finally {
+    globalThis.fetch = originalFetch;
   }
 });
 
@@ -699,9 +1102,15 @@ test('crowd uses seated textured instancing and retains gaze/applause updates', 
   const oldCrowd = sceneApi.buildCrowd(scene);
   const batches = crowds.attachHumanCrowd(scene, oldCrowd, [await asset('male', 'crowd'), await asset('female', 'crowd')]);
   const occupiedSeats = oldCrowd.seats.filter((seat) => seat.occupied);
-  assert.equal(batches.length, 24);
+  assert.equal(batches.length, 96, 'eight appearance variants cover both body models and six poses');
   assert.ok(occupiedSeats.length < oldCrowd.seats.length, 'some seats remain empty');
+  assert.ok(batches.every((mesh) => mesh.instanceMatrix.count <= Math.max(
+    16, Math.ceil(oldCrowd.seats.length / 4),
+  )), 'appearance batches avoid allocating full-capacity crowd buffers each');
   assert.equal(batches.reduce((sum, mesh) => sum + mesh.count, 0), occupiedSeats.length);
+  const shoes = scene.getObjectByName('wtsl-detailed-crowd-shoes');
+  assert.ok(shoes?.isInstancedMesh);
+  assert.equal(shoes.count, occupiedSeats.length * 2);
   assert.equal(scene.getObjectByName('wtsl-spectator-heads').visible, false);
   oldCrowd.update(2, true, new THREE.Vector3(11, 0.5, 5));
   assert.ok(batches.some((mesh, index) => index % 6 >= 3 && mesh.count > 0));
@@ -716,6 +1125,12 @@ test('crowd uses seated textured instancing and retains gaze/applause updates', 
   assert.equal(caps.count,
     oldCrowd.seats.filter((seat) => seat.occupied && seat.sourceIndex % 17 === 7).length,
     'empty seats do not receive floating caps');
+  oldCrowd.setDensity(0);
+  oldCrowd.update(2.2, false);
+  assert.equal(shoes.count, 0, 'detailed footwear follows an empty crowd');
+  oldCrowd.setDensity(1);
+  oldCrowd.update(2.4, false);
+  assert.equal(shoes.count, oldCrowd.seats.length * 2, 'every detailed spectator keeps both shoes');
 });
 
 test('coaches occupy reserved lower-stand seats and the seated umpire tracks the ball', async () => {
@@ -746,10 +1161,10 @@ test('coaches occupy reserved lower-stand seats and the seated umpire tracks the
   const foot = posedBones.get('LeftFoot').getWorldPosition(new THREE.Vector3());
   const knee = posedBones.get('LeftLeg').getWorldPosition(new THREE.Vector3());
   const hip = posedBones.get('Hips').getWorldPosition(new THREE.Vector3());
-  assert.ok(foot.y >= 0.45 && foot.y <= 0.75, `umpire foot should rest near the chair footrest, got ${foot.y}`);
+  assert.ok(foot.y >= 1.0 && foot.y <= 1.04, `umpire foot should rest near the raised chair footrest, got ${foot.y}`);
   assert.ok(
-    knee.y > foot.y + 0.42 && knee.y < hip.y - 0.15,
-    `umpire legs should bend down from a seated knee (foot=${foot.y}, knee=${knee.y}, hip=${hip.y})`,
+    knee.y > foot.y + 0.25 && knee.y < foot.y + 0.30 && knee.y < hip.y - 0.04,
+    `umpire legs should stay tucked between the seated hip and raised footrest (foot=${foot.y}, knee=${knee.y}, hip=${hip.y})`,
   );
   const head = umpire.getObjectByName('Head');
   const before = head.quaternion.clone();

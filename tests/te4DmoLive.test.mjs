@@ -3,9 +3,11 @@ import test from 'node:test';
 import {
   replayCourtWindowDurationMs,
   replayCourtWindowFrames,
+  replayCourtSampleLimit,
   hasCompletedDmoPoints,
   replayFrameAtElapsedTime,
   formatLivePointScore,
+  deriveLiveDmoPointEndEvents,
   Te4DmoLiveParser,
 } from '../lib/te4DmoLive.ts';
 import {
@@ -27,9 +29,8 @@ function writeFixed(buffer, offset, value) {
   buffer.writeInt32LE(high, offset + 4);
 }
 
-function syntheticDmo() {
+function syntheticDmo(frameCount = 48) {
   const firstFrame = 0x1200;
-  const frameCount = 48;
   const buffer = Buffer.alloc(firstFrame + frameCount * 128 + 1200);
   Buffer.from('\x0fDemoTEM2-1.0g.0', 'binary').copy(buffer);
   Buffer.from('0115 Tokyo ATP 500', 'ascii').copy(buffer, 24);
@@ -191,6 +192,30 @@ test('court motion windows overlap successive updates at every replay speed', ()
     const windowFrames = replayCourtWindowFrames(speed);
     assert.equal(windowFrames, 180 * speed);
     assert.equal(replayCourtWindowDurationMs(windowFrames, speed), 3000);
+    assert.equal(replayCourtSampleLimit(speed), Math.ceil((windowFrames - 1) / 2) + 1);
+  }
+});
+
+test('replay snapshots preserve two-frame motion sampling at every speed within the API body limit', () => {
+  const parser = new Te4DmoLiveParser();
+  parser.append(syntheticDmo(900));
+
+  for (const speed of [1, 2, 4]) {
+    const snapshot = parser.snapshot(
+      'match.dmo',
+      3,
+      parser.frameCount,
+      replayCourtWindowFrames(speed),
+      replayCourtSampleLimit(speed),
+    );
+    assert.ok(snapshot);
+    assert.ok(snapshot.court.length <= replayCourtSampleLimit(speed));
+    const gaps = snapshot.courtFrameIndices.slice(1).map((frame, index) =>
+      frame - snapshot.courtFrameIndices[index],
+    );
+    assert.ok(gaps.length > 0);
+    assert.ok(gaps.every((gap) => gap <= 2), `speed ${speed}x has a gap larger than two frames`);
+    assert.ok(Buffer.byteLength(JSON.stringify(snapshot)) < 32 * 1024);
   }
 });
 
@@ -304,8 +329,38 @@ test('point-end markers reset the reconstructed court trajectory', () => {
 
   assert.deepEqual(snapshot?.trajectoryEvents, [
     { frame: 20, kind: 'shot', player: 1, shotType: 'serve' },
-    { frame: 25, kind: 'point-end' },
+    { frame: 25, kind: 'point-end', scoreEligible: false },
   ]);
+  const shortWindow = parser.snapshot('match.dmo', 3, parser.frameCount, 8, 8);
+  assert.ok(shortWindow.courtFrameIndices[0] > 25);
+  assert.deepEqual(shortWindow.trajectoryEvents, [],
+    'an unscored raw end marker cannot be retained as a completed-point event');
+});
+
+test('live DMO score events use scored point ends, not intermediate raw end markers', () => {
+  assert.deepEqual(
+    deriveLiveDmoPointEndEvents([25, 40, 75], [40, 75], 30, 75),
+    [
+      { frame: 40, kind: 'point-end' },
+      { frame: 75, kind: 'point-end' },
+    ],
+    'the first raw end marker is not a completed scored point',
+  );
+  assert.deepEqual(
+    deriveLiveDmoPointEndEvents([25, 40, 75], [40, 75], 60, 75),
+    [
+      { frame: 40, kind: 'point-end' },
+      { frame: 75, kind: 'point-end' },
+    ],
+    'the latest two scored point ends survive outside the motion window',
+  );
+  assert.deepEqual(
+    deriveLiveDmoPointEndEvents([25, 40], [40], 20, 40),
+    [
+      { frame: 25, kind: 'point-end', scoreEligible: false },
+      { frame: 40, kind: 'point-end' },
+    ],
+  );
 });
 
 test('invalid DMO signatures are marked instead of yielding a scoreboard', () => {

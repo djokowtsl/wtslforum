@@ -3,14 +3,31 @@ import assert from 'node:assert/strict';
 import {
   GROUNDSTROKE_LEAD_FRAMES, GROUNDSTROKE_MIN_LEAD_FRAMES, SERVE_LEAD_FRAMES,
   groundstrokeCaptureWeight, groundstrokeLeadFrames,
-  recordedStrokeForSide, recordedStrokeUsesTwoHands, serveCaptureWeight,
+  recordedBackhandFaceRoll, recordedStrokeForSide, recordedStrokeUsesTwoHands,
+  serveCaptureWeight, shouldCompressGroundstrokeTakeBack, SLICE_TIME_SCALE,
 } from '../components/DmoCapturedGroundstroke.ts';
 
-test('near-net contacts select the matching recorded volley clip', () => {
+test('qualified volleys select the matching side without replacing groundstrokes', () => {
   assert.equal(recordedStrokeForSide('forehand', true), 'volley-forehand');
   assert.equal(recordedStrokeForSide('backhand', true), 'volley-backhand');
   assert.equal(recordedStrokeForSide('forehand', false), 'forehand');
   assert.equal(recordedStrokeForSide('backhand', false), 'backhand');
+});
+
+test('slice playback uses the open volley-face roll and three-quarter speed', () => {
+  assert.equal(SLICE_TIME_SCALE, 0.75);
+  assert.equal(recordedBackhandFaceRoll('backhand', false, true), 35 * Math.PI / 180);
+  assert.equal(recordedBackhandFaceRoll('backhand', false), 0);
+});
+
+test('only unsliced topspin forehand and backhand drives use a compact take-back', () => {
+  assert.equal(shouldCompressGroundstrokeTakeBack('forehand'), true);
+  assert.equal(shouldCompressGroundstrokeTakeBack('backhand'), true);
+  assert.equal(shouldCompressGroundstrokeTakeBack('forehand', true), false, 'slices and touch shots keep recorded timing');
+  assert.equal(shouldCompressGroundstrokeTakeBack('backhand', true), false);
+  for (const stroke of ['serve', 'smash', 'volley-forehand', 'volley-backhand']) {
+    assert.equal(shouldCompressGroundstrokeTakeBack(stroke), false, `${stroke} is not a topspin drive`);
+  }
 });
 
 test('captured groundstroke blends in before contact and fades after follow-through', () => {

@@ -27,6 +27,7 @@ async function loadTs(path, overrides = {}) {
 }
 const stadiumArchitectureApi = await loadTs('../components/DmoStadiumArchitecture.ts');
 const venueApi = await loadTs('../lib/dmoVenue.ts');
+const crowdBrandingApi = await loadTs('../lib/dmoCrowdBranding.ts');
 const courtSurfaceApi = await loadTs('../lib/te4DmoSurface.ts');
 const crowdDensityApi = await loadTs('../lib/dmoCrowdDensity.ts');
 const sceneApi = await loadTs('../components/DmoLiveCourt3DScene.ts', {
@@ -49,6 +50,24 @@ const xktUmpireAudioApi = await loadTs('../lib/xktUmpireAudio.ts');
 const umpireApi = await loadTs('../lib/liveCourtUmpire.ts', {
   './xktUmpireAudio': xktUmpireAudioApi,
 });
+const liveDmoUmpireScoreSourceApi = await loadTs('../lib/liveDmoUmpireScoreSource.ts');
+
+test('an unsupported umpire call cannot cancel a supported score in progress', async () => {
+  const cancelled = [];
+  const api = await loadTs('../lib/liveCourtUmpire.ts', {
+    './xktUmpireAudio': {
+      playXktUmpireCall: async (_context, text) => text !== 'Missing clip',
+      cancelXktUmpireCalls: context => cancelled.push(context),
+    },
+  });
+  const context = { state: 'running' };
+  assert.equal(await api.speakUmpireCall('fifteen-love', context, false), true);
+  assert.equal(await api.speakUmpireCall('Out', context, false), true);
+  assert.equal(await api.speakUmpireCall('Missing clip', context, false), false);
+  assert.equal(cancelled.length, 0);
+  api.cancelUmpireCall(context);
+  assert.ok(cancelled.length > 0, 'explicit mute still cancels the active voice');
+});
 
 test('automatic crowd density follows the broadcaster-selected tournament round', () => {
   assert.equal(crowdDensityApi.resolveCrowdDensity('auto', 'round-of-64'), 0.58);
@@ -60,6 +79,109 @@ test('automatic crowd density follows the broadcaster-selected tournament round'
   assert.equal(crowdDensityApi.isCrowdSeatOccupied(17, 0), false);
   assert.equal(crowdDensityApi.isCrowdSeatOccupied(17, 1), true);
   assert.equal(crowdDensityApi.isCrowdSeatOccupied(17, 0.5), crowdDensityApi.isCrowdSeatOccupied(17, 0.5));
+});
+
+test('tournament and venue metadata resolve city lettering across the tour calendar', async () => {
+  const cityCases = [
+    ['Vienna', 'VIENNA'],
+    ['Erste Bank Open', 'VIENNA'],
+    ['Wiener Stadthalle', 'VIENNA'],
+    ['Miami Open', 'MIAMI'],
+    ['Roland Garros', 'PARIS'],
+    ['Wimbledon Centre Court', 'LONDON'],
+    ['Arthur Ashe Stadium', 'NEW YORK'],
+    ['ATP Doha', 'DOHA'],
+    ['Mutua Madrid Open', 'MADRID'],
+    ['Internazionali d’Italia', 'ROME'],
+    ['Barcelona Open', 'BARCELONA'],
+    ['BMW Open Munich', 'MUNICH'],
+    ['Mallorca Championships', 'SANTA PONSA'],
+    ['Surbiton Trophy', 'SURBITON'],
+    ['Libema Open', 'DEN BOSCH'],
+    ['China Open Beijing', 'BEIJING'],
+    ['WTA Finals Riyadh', 'RIYADH'],
+    ['A made-up tennis venue', undefined],
+    [null, undefined],
+  ];
+  for (const [venue, expectedCity] of cityCases) {
+    assert.equal(venueApi.resolveDmoVenueProfile(venue).cityLabel, expectedCity, String(venue));
+  }
+  assert.equal(venueApi.resolveDmoVenueProfile('A made-up tennis venue').cityLabel, undefined,
+    'unknown venue metadata must not invent a city label');
+  const sceneSource = await readFile(new URL('../components/DmoLiveCourt3DScene.ts', import.meta.url), 'utf8');
+  assert.match(sceneSource, /venue\.cityLabel && typeof document !== 'undefined'/);
+  assert.match(sceneSource, /wtsl-court-city-label/);
+  assert.match(sceneSource, /context\.fillText\(venue\.cityLabel/);
+  const liveCourtSource = await readFile(new URL('../components/DmoLiveCourt3D.tsx', import.meta.url), 'utf8');
+  assert.match(liveCourtSource, /sceneDataRef\.current\.snapshot\.stadium,\s*\n\s*\);/);
+});
+
+test('selected fan banners use the WTSL/ACE identity and a sparse original mascot mark', async () => {
+  assert.deepEqual(
+    Array.from({ length: 6 }, (_, index) => crowdBrandingApi.getCrowdBannerBranding(index)),
+    [
+      { label: 'ACE', mascot: 'rally-fox' },
+      { label: 'WTSL', mascot: null },
+      { label: 'ACE', mascot: null },
+      { label: 'WTSL', mascot: 'rally-fox' },
+      { label: 'ACE', mascot: null },
+      { label: 'WTSL', mascot: null },
+    ],
+  );
+  const crowdSource = await readFile(new URL('../components/DmoHumanCrowd.ts', import.meta.url), 'utf8');
+  assert.match(crowdSource, /getCrowdBannerBranding\(index\)/);
+  assert.match(crowdSource, /wtsl-fan-banner-panel/);
+  assert.match(crowdSource, /banner\.userData\.mascot = branding\.mascot/);
+  assert.match(crowdSource, /context\.translate\(canvas\.width \/ 2, 74\)/);
+});
+
+test('court lettering spans both baselines, faces play, and stays outside the lines', () => {
+  const originalDocument = globalThis.document;
+  const printed = [];
+  const noop = () => {};
+  const context = new Proxy({
+    fillText: text => printed.push(text),
+    createLinearGradient: () => ({ addColorStop: noop }),
+  }, { get: (target, key) => target[key] ?? noop });
+  globalThis.document = {
+    createElement: () => ({ width: 0, height: 0, getContext: () => context }),
+  };
+  try {
+    for (const [surface, venue, city] of [
+      ['hard', 'Paris Masters', 'PARIS'],
+      ['clay', 'Roland Garros', 'PARIS'],
+      ['grass', 'Wimbledon', 'LONDON'],
+      ['hard', 'Vienna', 'VIENNA'],
+      ['hard', 'Doha', 'DOHA'],
+    ]) {
+      const scene = new THREE.Scene();
+      sceneApi.buildCourt(scene, surface, false, venue);
+      scene.updateMatrixWorld(true);
+      const labels = scene.children.filter(object => object.name === 'wtsl-court-city-label');
+      assert.equal(labels.length, 2);
+      assert.deepEqual(labels.map(label => Math.sign(label.position.x)), [-1, 1]);
+      for (const label of labels) {
+        assert.equal(label.userData.cityLabel, city);
+        const bounds = new THREE.Box3().setFromObject(label);
+        assert.ok(bounds.max.x < -sceneApi.COURT_LENGTH / 2 || bounds.min.x > sceneApi.COURT_LENGTH / 2);
+        assert.ok(bounds.min.x >= -21 && bounds.max.x <= 21 && bounds.min.z >= -11 && bounds.max.z <= 11);
+        const widthDirection = new THREE.Vector3(1, 0, 0).applyQuaternion(label.quaternion);
+        assert.ok(Math.abs(widthDirection.z) > 0.99, 'the word spans the baseline width');
+        const letterTop = new THREE.Vector3(0, 1, 0).applyQuaternion(label.quaternion);
+        assert.ok(letterTop.x * label.position.x < 0, 'letter tops point toward the court');
+      }
+    }
+    const unknown = new THREE.Scene();
+    sceneApi.buildCourt(unknown, 'hard', true, 'Unmapped venue');
+    assert.equal(unknown.children.filter(object => object.name === 'wtsl-court-city-label').length, 0);
+    assert.ok(printed.includes('PARIS'));
+    assert.ok(printed.includes('LONDON'));
+    assert.ok(printed.includes('VIENNA'));
+    assert.ok(printed.includes('DOHA'));
+  } finally {
+    if (originalDocument === undefined) delete globalThis.document;
+    else globalThis.document = originalDocument;
+  }
 });
 
 test('crowd occupancy updates in place without changing the seating layout', () => {
@@ -77,94 +199,75 @@ test('crowd occupancy updates in place without changing the seating layout', () 
   assert.equal(heads.count, seatCount);
 });
 
-function smashFlight(player = 1) {
-  const event = { frame: 60, kind: 'shot', shotType: 'rally', player };
-  const incoming = { frame: 0, kind: 'shot', shotType: 'rally', player: player === 1 ? 2 : 1 };
-  const heights = [100, 160, 250, 350, 450, 500, 470, 410, 350, 300, 250];
-  const samples = heights.map((height, index) => ({
-    frame: index * 6,
-    values: [
-      -900 + index * 120, 0, height,
-      player === 1 ? 300 : -900, 0,
-      player === 2 ? 300 : -900, 0,
-    ],
-  }));
-  return { event, samples, events: [incoming, event], contact: samples.at(-1).values };
-}
-
-test('captured smashes require near-net overhead contact after an incoming descending lob', () => {
-  for (const player of [1, 2]) {
-    const flight = smashFlight(player);
-    assert.equal(smashApi.isCapturedSmashShot(
-      flight.event, flight.contact, flight.samples, flight.events, 60,
-    ), true);
-  }
+test('rally contacts at or above 2.2 m select a smash anywhere on court', () => {
+  const event = { frame: 60, kind: 'shot', shotType: 'rally', player: 1 };
+  const contact = [1100, 0, 220, 1100, 0, -900, 0];
+  assert.equal(smashApi.isCapturedSmashShot(event, contact), true,
+    'the exact height threshold qualifies at the baseline');
+  assert.equal(smashApi.isCapturedSmashShot({ ...event, player: 2 }, contact), true,
+    'either player may use the overhead');
+  assert.equal(smashApi.isCapturedSmashShot(event, [...contact.slice(0, 2), 500, ...contact.slice(3)]), true,
+    'higher contacts also qualify without inspecting the incoming flight or bounce');
+  assert.equal(smashApi.isCapturedSmashShot(event, [...contact.slice(0, 2), 219, ...contact.slice(3)]), false);
 });
 
-test('normal rallies and baseline shots keep their existing non-smash animations', () => {
-  const { event, samples, events, contact } = smashFlight();
-  const baseline = [...contact];
-  baseline[0] = baseline[3] = 1100;
-  assert.equal(smashApi.isCapturedSmashShot(event, baseline, samples, events), false,
-    'even a high lob contact at the baseline is not a near-net smash');
-  for (const centimetres of [40, 80, 120, 180, 224]) {
-    const normalContact = [...contact];
-    normalContact[2] = centimetres;
-    assert.equal(smashApi.isCapturedSmashShot(event, normalContact, samples, events), false,
-      `${centimetres} source centimetres must not be compared directly with a metre threshold`);
-  }
-  const flatFlight = samples.map(sample => ({ ...sample, values: sample.values.map(
-    (value, index) => index === 2 ? 260 : value,
-  ) }));
-  assert.equal(smashApi.isCapturedSmashShot(event, contact, flatFlight, events), false,
-    'high contact alone is not evidence of an incoming lob');
+test('smash selection excludes serves and invalid contacts', () => {
+  const event = { frame: 60, kind: 'shot', shotType: 'rally', player: 1 };
+  const contact = [0, 0, 250, 300, 0, -900, 0];
+  assert.equal(smashApi.isCapturedSmashShot({ ...event, shotType: 'serve' }, contact), false);
+  assert.equal(smashApi.isCapturedSmashShot({ ...event, kind: 'point-end' }, contact), false);
+  assert.equal(smashApi.isCapturedSmashShot(undefined, contact), false);
+  assert.equal(smashApi.isCapturedSmashShot({ ...event, player: undefined }, contact), false);
+  assert.equal(smashApi.isCapturedSmashShot(event, null), false);
+  assert.equal(smashApi.isCapturedSmashShot(event, [0, 0, Number.NaN, 0, 0, 0, 0]), false);
 });
 
-test('smash inference fails closed for serves, rising balls, sparse flights and missing opponents', () => {
-  const { event, samples, events, contact } = smashFlight();
-  assert.equal(smashApi.isCapturedSmashShot({ ...event, shotType: 'serve' }, contact, samples, events), false);
-  assert.equal(smashApi.isCapturedSmashShot(undefined, contact, samples, events), false);
-  assert.equal(smashApi.isCapturedSmashShot(event, null, samples, events), false,
-    'a missing interpolated contact keeps the original rally animation');
-  assert.equal(smashApi.isCapturedSmashShot(event, contact, samples, [event]), false);
-  assert.equal(smashApi.isCapturedSmashShot(event, contact, samples, [
-    events[0], { frame: 30, kind: 'point-end' }, event,
-  ]), false);
-  assert.equal(smashApi.isCapturedSmashShot(event, contact, samples.filter(
-    sample => sample.frame % 24 === 0,
-  ), events), false);
-  const risingFlight = samples.map((sample, index) => ({
-    ...sample, values: sample.values.map((value, axis) => axis === 2 && index === 9 ? 230 : value),
-  }));
-  assert.equal(smashApi.isCapturedSmashShot(event, contact, risingFlight, events), false,
-    'an earlier high apex is insufficient when the ball is rising again at contact');
-  const bouncedFlight = samples.map((sample, index) => ({
-    ...sample, values: sample.values.map((value, axis) => axis === 2 && index === 7 ? 5 : value),
-  }));
-  assert.equal(smashApi.isCapturedSmashShot(event, contact, bouncedFlight, events), false);
-});
-
-test('captured smash source parses, reaches its selected contact frame, and is credited', async () => {
-  const motion = await readFile(new URL('../public/models/dmo-humans/tennis-smash.bvh', import.meta.url), 'utf8');
+test('the Jarua smash is loadable and the existing Adorozco capture remains', async () => {
+  const motion = await readFile(new URL('../public/models/dmo-humans/tennis-smash-jarua.bvh', import.meta.url), 'utf8');
   const parsed = new BVHLoader().parse(motion);
-  assert.ok(parsed.clip.duration > 7.85, 'the selected contact frame is in the recording');
+  assert.ok(parsed.clip.duration > 7.6, 'the selected contact frame is in the recording');
   assert.ok(parsed.skeleton.bones.some((bone) => bone.name === 'RightWrist'));
-  assert.match(
-    await readFile(new URL('../public/models/dmo-humans/SMASH-MOCAP-CREDIT.md', import.meta.url), 'utf8'),
-    /CC BY-SA 3\.0/,
+  const manifest = JSON.parse(await readFile(
+    new URL('../public/models/dmo-humans/provenance.json', import.meta.url), 'utf8',
+  ));
+  const provenance = manifest.find((entry) => entry.filename === 'tennis-smash-jarua.bvh');
+  assert.equal(provenance.bytes, Buffer.byteLength(motion));
+  assert.equal(provenance.license, 'CC-BY-SA-3.0');
+  assert.match(provenance.source, /jarua_Remate\.bvh/);
+  assert.equal((await readFile(
+    new URL('../public/models/dmo-humans/tennis-smash.bvh', import.meta.url),
+  )).byteLength, 854760, 'the older Adorozco recording stays untouched');
+  const credit = await readFile(
+    new URL('../public/models/dmo-humans/SMASH-MOCAP-CREDIT.md', import.meta.url), 'utf8',
   );
+  assert.match(credit, /tennis-smash\.bvh/);
+  assert.match(credit, /tennis-smash-jarua\.bvh/);
+  assert.match(credit, /CC BY-SA 3\.0/);
 });
 
-test('captured smash motion is fetched and registered with the player retargeter', async () => {
-  const [modelSource, rigSource, courtSource] = await Promise.all([
+test('the optional Jarua smash is loaded by both player variants and selected for high rallies', async () => {
+  const [modelSource, rigSource, currentPlayerSource, claudePlayerSource, courtSource] = await Promise.all([
     readFile(new URL('../components/DmoHumanModels.ts', import.meta.url), 'utf8'),
     readFile(new URL('../components/DmoCapturedGroundstroke.ts', import.meta.url), 'utf8'),
+    readFile(new URL('../components/DmoNativePlayer.ts', import.meta.url), 'utf8'),
+    readFile(new URL('../components/DmoNativePlayerClaude.ts', import.meta.url), 'utf8'),
     readFile(new URL('../components/DmoLiveCourt3D.tsx', import.meta.url), 'utf8'),
   ]);
-  assert.match(modelSource, /load\('smash'\)/);
-  assert.match(rigSource, /smash: this\.prepare\('smash', sources\.smash, rest\)/);
-  assert.match(courtSource, /strokeCue === 'close-net'\s*&& isCapturedSmashShot\(\s*strokeEvent,\s*contactSample,\s*samples,\s*events,/);
-  assert.match(courtSource, /: recordedStrokeForSide\(baseStroke, strokeCue === 'close-net'\)/);
+  assert.match(modelSource, /tennis-smash-jarua\.bvh/);
+  assert.match(modelSource, /loadSmash/);
+  assert.match(rigSource, /if \(sources\.smash\)/);
+  assert.match(rigSource, /get hasSmash\(\)/);
+  assert.match(currentPlayerSource, /capturedSmash = capturedGroundstroke\.hasSmash/);
+  assert.match(claudePlayerSource, /capturedSmash = capturedGroundstroke\.hasSmash/);
+  assert.match(courtSource, /isCapturedSmashShot\(strokeEvent, contactSample\)/);
+  assert.match(courtSource, /recordedSmash \? 'forehand' : stroke/);
+  assert.match(courtSource, /\.\.\.\(recordedSmash \? \{ smash: true \} : \{\}\)/);
+  assert.match(courtSource, /!capturedEvent\.smash && contactSample/);
+  assert.match(courtSource, /hands: !capturedEvent\.smash/);
+  assert.ok(courtSource.indexOf('const strokeEvent =') < courtSource.indexOf('const crouch ='),
+    'the selected lead/contact event determines whether crouch is suppressed');
+  assert.match(courtSource, /const crouch = suppressSmashCrouch \? 0/);
+  assert.match(courtSource, /lowReachFull = capturedEvent\.smash\s*\?\s*0/);
 });
 
 test('live scoreboard sits below the court and both win estimates remain distinct', async () => {
@@ -226,7 +329,7 @@ test('recorded umpire playback replaces the previous voice for the same match', 
   ]);
 });
 
-test('stadium fills three open tiers with crowd, concourses, score displays and four tunnels', () => {
+test('stadium keeps its structure and clear score screen without smeared ribbon graphics', () => {
   for (const indoor of [false, true]) {
     const scene = new THREE.Scene();
     sceneApi.buildStadiumEnvironment(scene, indoor);
@@ -240,11 +343,13 @@ test('stadium fills three open tiers with crowd, concourses, score displays and 
       return matches;
     };
     const bowl = named(superstructure, 'wtsl-continuous-seating-bowl')[0];
-    assert.ok(bowl?.isMesh, 'one continuous mesh carries the full seating rake');
+    assert.ok(bowl?.isMesh, 'one uninterrupted bowl surface carries the full seating rake');
     assert.equal(bowl.geometry.userData.continuousPerimeter, true);
     assert.equal(bowl.geometry.userData.inwardFacing, true);
     assert.equal(bowl.geometry.userData.rows, 18, 'the bowl continues well above the sparse detailed crowd');
     assert.equal(bowl.geometry.userData.tiers, 3);
+    assert.equal(bowl.geometry.userData.sectionAisleCount, 16);
+    assert.equal(bowl.geometry.userData.passageGaps, 4);
     assert.ok(superstructure.userData.maxInteriorCameraDistance >= 26);
     assert.ok(superstructure.userData.maxInteriorCameraDistance <= 44,
       'manual zoom remains inside the venue rather than exposing the complete stadium');
@@ -264,6 +369,44 @@ test('stadium fills three open tiers with crowd, concourses, score displays and 
     assert.ok(seats.count > 4_000, 'empty upper rows still read as stands across the full bowl');
     assert.equal(seats.userData.rows, 18);
     assert.equal(seats.userData.inwardFacing, true);
+    assert.equal(seats.userData.sectionAisleCount, 16);
+    assert.equal(seats.userData.passageGaps, 4);
+    const stairs = named(superstructure, 'wtsl-stadium-section-stair-treads')[0];
+    assert.ok(stairs?.isInstancedMesh);
+    assert.equal(stairs.count, 18 * 16, 'stair treads repeat through every seating row and tier');
+    assert.equal(stairs.userData.alignedWithSeatGaps, true);
+    assert.equal(stairs.userData.continuousThroughTiers, true);
+    const stairPosition = new THREE.Vector3();
+    const stairMatrix = new THREE.Matrix4();
+    for (let index = 0; index < stairs.count; index += 1) {
+      stairs.getMatrixAt(index, stairMatrix);
+      stairPosition.setFromMatrixPosition(stairMatrix);
+      assert.equal(stadiumArchitectureApi.isUpperBowlSectionAisle(stairPosition.x, stairPosition.z), true,
+        'seat-row treads land in the matching radial section gap');
+    }
+    const concourseStairs = named(superstructure, 'wtsl-stadium-concourse-stair-treads')[0];
+    assert.ok(concourseStairs?.isInstancedMesh);
+    assert.equal(concourseStairs.count, 2 * 16 * 4,
+      'stair aisles bridge both horizontal concourse level transitions');
+    assert.equal(concourseStairs.userData.alignedWithSectionStairs, true);
+    for (let index = 0; index < concourseStairs.count; index += 1) {
+      concourseStairs.getMatrixAt(index, stairMatrix);
+      stairPosition.setFromMatrixPosition(stairMatrix);
+      assert.equal(stadiumArchitectureApi.isUpperBowlSectionAisle(stairPosition.x, stairPosition.z), true,
+        'concourse transition treads continue through the same radial aisle');
+    }
+    const firstSeatMatrix = new THREE.Matrix4();
+    const firstSeatPosition = new THREE.Vector3();
+    seats.getMatrixAt(0, firstSeatMatrix);
+    firstSeatPosition.setFromMatrixPosition(firstSeatMatrix);
+    assert.ok(Math.abs(firstSeatPosition.y - 3.55) < 1e-5,
+      'upper seats sit at the same body-to-seat height as the lower seating');
+    const firstSeatBackMatrix = new THREE.Matrix4();
+    const firstSeatBackPosition = new THREE.Vector3();
+    seatBacks.getMatrixAt(0, firstSeatBackMatrix);
+    firstSeatBackPosition.setFromMatrixPosition(firstSeatBackMatrix);
+    assert.ok(Math.abs(firstSeatBackPosition.y - 3.89) < 1e-5,
+      'seat backs support the lower torso instead of sitting below the spectators');
     assert.equal(named(superstructure, 'wtsl-continuous-bowl-spectator-bodies').length, 0,
       'the upper bowl does not keep a separate static crowd treatment');
     assert.equal(named(superstructure, 'wtsl-continuous-bowl-spectator-heads').length, 0);
@@ -279,10 +422,33 @@ test('stadium fills three open tiers with crowd, concourses, score displays and 
     assert.equal(named(superstructure, 'wtsl-advertising-board-baseline').length, 4);
     assert.equal(named(superstructure, 'wtsl-advertising-board-sideline').length, 4);
     assert.equal(named(superstructure, 'wtsl-scoreboard-screen').length, 2);
+    assert.equal(named(superstructure, 'wtsl-scoreboard-frame').length, 2);
     const concourses = named(superstructure, 'wtsl-stadium-concourse');
     assert.equal(concourses.length, 2);
     assert.ok(concourses.every((walkway) => walkway.userData.amenities.includes('concessions')
       && walkway.userData.amenities.includes('restrooms')));
+    const suiteFronts = named(superstructure, 'wtsl-stadium-suite-front');
+    const suiteWindows = named(superstructure, 'wtsl-stadium-suite-window');
+    assert.equal(suiteFronts.length, 2);
+    assert.equal(suiteWindows.length, 2);
+    assert.ok(suiteFronts.every((front) => front.isInstancedMesh
+      && front.userData.concourseBand === true
+      && front.userData.suiteCount === front.count
+      && front.count > 32
+      && front.count < 48), 'suite fronts avoid the main tunnels and stair aisles');
+    assert.ok(suiteWindows.every((front, index) => front.isInstancedMesh
+      && front.userData.integratedWith === 'concourse'
+      && front.count === suiteFronts[index].count), 'visible booth glazing repeats across both concourses');
+    const suitePosition = new THREE.Vector3();
+    const suiteMatrix = new THREE.Matrix4();
+    for (const front of suiteFronts) {
+      for (let index = 0; index < front.count; index += 1) {
+        front.getMatrixAt(index, suiteMatrix);
+        suitePosition.setFromMatrixPosition(suiteMatrix);
+        assert.equal(stadiumArchitectureApi.isUpperBowlAccessGap(suitePosition.x, suitePosition.z), false,
+          'suite fronts do not block tunnel passages or section stairs');
+      }
+    }
     assert.equal(named(superstructure, 'wtsl-court-tunnel-opening').length, 4);
     assert.equal(superstructure.userData.tunnelOpeningCount, 4);
     assert.equal(superstructure.userData.concourseCount, 2);
@@ -294,7 +460,6 @@ test('stadium fills three open tiers with crowd, concourses, score displays and 
     };
     superstructure.userData.updateScoreboard(scoreboard);
     assert.deepEqual(superstructure.userData.scoreboardData, scoreboard);
-    assert.equal(named(superstructure, 'wtsl-stadium-concourse-windows').length, 0);
     assert.equal(named(superstructure, 'wtsl-stadium-support-columns').length, 0);
     assert.equal(named(superstructure, 'wtsl-open-air-canopy').length, 0);
     assert.equal(named(superstructure, 'wtsl-indoor-roof-wing').length, 0);
@@ -302,6 +467,13 @@ test('stadium fills three open tiers with crowd, concourses, score displays and 
     assert.equal(Boolean(scene.getObjectByName('wtsl-indoor-ceiling')), false);
     assert.equal(stadium.children.some(child => /roof|shell|facade|exterior/i.test(child.name)), false);
   }
+});
+
+test('clear livescore screen remains while smeared stand ribbons are removed', async () => {
+  const source = await readFile(new URL('../components/DmoStadiumArchitecture.ts', import.meta.url), 'utf8');
+  assert.match(source, /screenDisplay\.update\(data\)/);
+  assert.match(source, /makeScreenTexture/);
+  assert.doesNotMatch(source, /makeRibbonTexture|ribbonDisplay\.update\(data\)/);
 });
 
 test('stadium and audience scale with recognized tournament capacities', async () => {
@@ -339,7 +511,8 @@ test('stadium and audience scale with recognized tournament capacities', async (
   const viewer = await readFile(new URL('../components/DmoLiveViewer.tsx', import.meta.url), 'utf8');
   assert.match(court, /sceneDataRef\.current\.snapshot\.stadium/);
   assert.match(court, /snapshot\.stadium\]\)/);
-  assert.doesNotMatch(court, /RENDERER_BUILD|player repair r14|recorded volleys \+/);
+  assert.doesNotMatch(court, /player repair r19|RENDERER_BUILD|Renderer build|buildTag/);
+  assert.doesNotMatch(court, /player repair r14|recorded volleys \+/);
   assert.doesNotMatch(court, /Drag to orbit · scroll to zoom|Use Look across court to pan laterally/);
   assert.match(court, /backgroundColor: colorToCss\(PALETTE\.shirtOne\)/);
   assert.match(court, /backgroundColor: colorToCss\(PALETTE\.shirtTwo\)/);
@@ -359,6 +532,20 @@ test('stadium and audience scale with recognized tournament capacities', async (
   assert.match(viewer, /previousSnapshot\.stadium === nextSnapshot\.stadium/);
 });
 
+test('stadium metadata refreshes when generic venue lettering resolves to another city', () => {
+  const scene = new THREE.Scene();
+  sceneApi.buildStadiumEnvironment(scene, false, undefined, 'Vienna');
+  const viennaStadium = scene.getObjectByName('wtsl-stadium-architecture');
+  assert.equal(viennaStadium.userData.cityLabel, 'VIENNA');
+  assert.equal(scene.userData.wtslStadiumVenue, 'Unspecified tennis venue:VIENNA');
+
+  sceneApi.buildStadiumEnvironment(scene, false, undefined, 'Doha');
+  const dohaStadium = scene.getObjectByName('wtsl-stadium-architecture');
+  assert.notEqual(dohaStadium, viennaStadium);
+  assert.equal(dohaStadium.userData.cityLabel, 'DOHA');
+  assert.equal(scene.userData.wtslStadiumVenue, 'Unspecified tennis venue:DOHA');
+});
+
 test('full-detail crowd seats remain sparse, near-court and gender-balanced across the unified bowl', () => {
   for (const genderIndex of [0, 1]) {
     const selected = Array.from({ length: 2 * 10_000 }, (_, index) => index)
@@ -375,7 +562,7 @@ test('one animated crowd ring fills the near apron and upper bowl with four cent
   const scene = new THREE.Scene();
   sceneApi.buildStadiumEnvironment(scene);
   const crowd = sceneApi.buildCrowd(scene);
-  assert.ok(crowd.seats.length > 5_000, 'detailed crowd seats continue through every stadium tier');
+  assert.ok(crowd.seats.length > 4_800, 'detailed crowd seats continue through every stadium tier');
   const occupiedSeats = crowd.seats.filter((seat) => seat.occupied);
   const emptySeats = crowd.seats.filter((seat) => !seat.occupied);
   assert.ok(emptySeats.length > 50 && emptySeats.length < crowd.seats.length * 0.04,
@@ -505,7 +692,7 @@ test('upper crowd anchors match the architecture seat coordinates and facing', (
   const architectureSeats = scene.getObjectByName('wtsl-continuous-bowl-seats');
   assert.ok(architectureSeats?.isInstancedMesh);
   const innerX = 27.8, innerZ = 18.8, rowWidth = 1.62, rowRise = 0.94;
-  const concourseWidth = 2.15, tierRows = 6, baseY = 2.7, tunnelHalfWidth = 2.5;
+  const concourseWidth = 2.15, tierRows = 6, baseY = 2.7;
   const rowRadiusStart = (row) => row * rowWidth + Math.floor(row / tierRows) * concourseWidth;
   const matrix = new THREE.Matrix4();
   const position = new THREE.Vector3();
@@ -519,9 +706,12 @@ test('upper crowd anchors match the architecture seat coordinates and facing', (
     const count = Math.round((Math.PI * 2 * ((ellipseX + ellipseZ) / 2)) / 0.86);
     const expected = [];
     for (let index = 0; index < count; index += 1) {
-      architectureSeats.getMatrixAt(sourceOffset + index, matrix);
+      const angle = (index / count) * Math.PI * 2;
+      const expectedX = Math.cos(angle) * ellipseX;
+      const expectedZ = Math.sin(angle) * ellipseZ;
+      if (stadiumArchitectureApi.isUpperBowlAccessGap(expectedX, expectedZ)) continue;
+      architectureSeats.getMatrixAt(sourceOffset + expected.length, matrix);
       matrix.decompose(position, rotation, scale);
-      if (Math.abs(position.x) < tunnelHalfWidth || Math.abs(position.z) < tunnelHalfWidth) continue;
       expected.push({ x: position.x, z: position.z, facing: Math.atan2(matrix.elements[8], matrix.elements[0]) });
     }
     const actual = crowd.seats.filter((seat) => seat.row === row + 4);
@@ -531,9 +721,21 @@ test('upper crowd anchors match the architecture seat coordinates and facing', (
       assert.ok(Math.abs(actual[index].z - expected[index].z) < 1e-5, `row ${row} z aligns`);
       assert.ok(Math.abs(actual[index].facing - expected[index].facing) < 1e-5,
         `row ${row} index ${index} at ${actual[index].x},${actual[index].z}: facing ${actual[index].facing} != architecture ${expected[index].facing}`);
-      assert.ok(Math.abs(actual[index].y - (baseY + row * rowRise)) < 1e-5, `row ${row} floor height aligns`);
+     assert.ok(Math.abs(actual[index].y - (baseY + row * rowRise + rowRise / 2)) < 1e-5,
+       `row ${row} seat height follows the sloped bowl row center`);
     }
-    sourceOffset += count;
+    sourceOffset += expected.length;
+  }
+  const upperCrowd = crowd.seats.filter((seat) => seat.row >= 4);
+  assert.ok(upperCrowd.every((seat) => !stadiumArchitectureApi.isUpperBowlAccessGap(seat.x, seat.z)),
+    'animated crowd anchors leave every section stair and centered passageway open');
+  for (let aisle = 0; aisle < stadiumArchitectureApi.UPPER_BOWL_AISLE_COUNT; aisle += 1) {
+    const angle = ((aisle + 0.5) / stadiumArchitectureApi.UPPER_BOWL_AISLE_COUNT) * Math.PI * 2;
+    const sampleRadius = 40;
+    assert.ok(stadiumArchitectureApi.isUpperBowlSectionAisle(
+      Math.cos(angle) * sampleRadius,
+      Math.sin(angle) * sampleRadius,
+    ), `aisle ${aisle} stays aligned along the rake`);
   }
 });
 
@@ -566,6 +768,8 @@ test('crowd implementation contains no legacy stand block and keeps textured peo
 test('players use realistic materials and natural human proportions', () => {
   for (const isWta of [false, true]) {
     const rig = sceneApi.makePlayer(0xffffff, 0x445566, isWta);
+    assert.equal(rig.root.scale.y, isWta ? 0.91 : 0.95,
+      'WTA players should be slightly shorter than the standard player rig');
     rig.head.geometry.computeBoundingBox();
     const headSize = rig.head.geometry.boundingBox.getSize(new THREE.Vector3()).multiply(rig.head.scale);
     assert.ok(headSize.y <= 0.285 && headSize.y >= 0.22, `head height ${headSize.y}`);
@@ -587,7 +791,7 @@ test('players use realistic materials and natural human proportions', () => {
     assert.ok(crownStart.distanceTo(crownEnd) < 0.00001, 'the face opening closes above the forehead');
     const headNames = [];
     rig.head.traverse(child => headNames.push(child.name));
-    assert.equal(headNames.some(name => /anime|spike|blush/i.test(name)), false,
+    assert.equal(headNames.some(name => /anime|spike/i.test(name)), false,
       'face and hair details avoid cartoon-specific features');
     assert.equal(rig.head.children.some(child => child.geometry?.type === 'ConeGeometry'), false,
       'hair uses a continuous scalp silhouette instead of spikes');
@@ -624,7 +828,21 @@ test('players use realistic materials and natural human proportions', () => {
       assert.equal(shorts.geometry.type, 'ExtrudeGeometry');
       assert.equal(rig.hip.children.filter(part => part.name === 'shorts-volume').length, 1);
     } else {
-      assert.ok(rig.hip.getObjectByName('tennis-skirt'));
+      const skirt = rig.hip.getObjectByName('tennis-skirt');
+      assert.ok(skirt);
+      skirt.geometry.computeBoundingBox();
+      assert.ok(skirt.geometry.boundingBox.min.y > -0.11, 'WTA skirt hem sits higher on the thigh');
+      assert.equal(rig.hip.scale.x, 1.14, 'WTA hips should be fuller than the standard rig');
+      assert.ok(rig.root.getObjectByName('wta-long-ponytail'));
+      assert.ok(rig.root.getObjectByName('wta-front-lock-left'));
+      assert.ok(rig.root.getObjectByName('wta-blush-left'));
+      assert.ok(rig.root.getObjectByName('wta-earring-left'));
+      assert.ok(rig.root.getObjectByName('wta-lip-tint'));
+      const sleeve = rig.root.getObjectByName('wta-cap-sleeve');
+      assert.ok(sleeve);
+      sleeve.geometry.computeBoundingBox();
+      assert.ok(sleeve.geometry.boundingBox.max.y - sleeve.geometry.boundingBox.min.y < 0.31,
+        'WTA tops use short cap sleeves');
     }
     const face = new THREE.Mesh(rig.head.geometry, rig.head.material);
     face.updateMatrixWorld(true);
@@ -677,12 +895,20 @@ test('spectators carry deterministic wardrobe, skin-tone, hair, and seated-silho
   const sample = crowd.seats.filter((seat) => seat.occupied).slice(0, 240);
   const appearances = sample.map((seat, index) =>
     sceneApi.getCrowdAppearance(seat.sourceIndex ?? index, seat.row));
+  assert.ok(appearances.every((look) => look.stature >= 0.94 && look.stature <= 1.03),
+    'seated people vary naturally without extreme height outliers');
   assert.ok(new Set(appearances.map((look) => look.skinToneIndex)).size >= 7,
     'the audience uses a broad, naturally varied skin-tone palette without appearance labels');
   assert.equal(new Set(appearances.map((look) => look.hairStyle)).size, 4,
     'multiple hair silhouettes are distributed through the crowd');
-  assert.equal(new Set(appearances.map((look) => look.wardrobe)).size, 4,
-    'spectator clothing has more than a repeating two-look alternation');
+  assert.equal(new Set(appearances.map((look) => look.wardrobe)).size, 8,
+    'detailed spectators use eight varied outfit and skin-tone looks');
+  const seatedLegs = sceneApi.getSeatedCrowdLegTargets(1);
+  assert.ok(Math.hypot(
+    seatedLegs.knee[0] - seatedLegs.ankle[0],
+    seatedLegs.knee[1] - seatedLegs.ankle[1],
+    seatedLegs.knee[2] - seatedLegs.ankle[2],
+  ) < 0.3, 'seated lower legs stay compact instead of hanging at standing length');
   assert.ok(new Set(appearances.map((look) => look.stature)).size >= 8,
     'seated stature varies subtly from person to person');
 
@@ -730,15 +956,37 @@ test('chair umpire has a natural bent-leg pose with feet supported by the chair 
     const shin = kneePoint.distanceTo(anklePoint);
     const kneeAngle = kneePoint.clone().sub(hipPoint).normalize()
       .angleTo(anklePoint.clone().sub(kneePoint).normalize());
-    assert.ok(thigh > 0.48 && thigh < 0.62, `human-length seated thigh ${thigh}`);
-    assert.ok(shin > 0.42 && shin < 0.52, `human-length seated shin ${shin}`);
-    assert.ok(kneeAngle > 1.55 && kneeAngle < 2.35, `naturally flexed seated knee ${kneeAngle}`);
-    assert.ok(Math.abs(toePoint.y - barTop) < 0.01,
-      'the toe rests on the top surface of the chair foot bar');
+    assert.ok(thigh > 0.28 && thigh < 0.33, `compact seated thigh ${thigh}`);
+    assert.ok(shin > 0.25 && shin < 0.30, `compact seated shin ${shin}`);
+    assert.ok(kneeAngle > 1.25 && kneeAngle < 1.75, `near-right-angle seated knee ${kneeAngle}`);
+    assert.ok(toePoint.y - barTop > 0.02 && toePoint.y - barTop < 0.04,
+      'the toe joint leaves room for the sole above the foot bar');
+    assert.ok(anklePoint.distanceTo(toePoint) < 0.15,
+      'the foot is not stretched into another long leg segment');
+    assert.ok(hipPoint.y - toePoint.y < 0.4, 'the legs stay tucked immediately below the seat');
     assert.ok(toePoint.z > anklePoint.z, 'the foot points forward onto the support bar');
   }
-  assert.ok(seat.position.y < 1.4 && footBar.position.y < 0.7,
-    'the official is not raised on an oversized chair');
+  assert.ok(seat.position.y < 1.4 && footBar.position.y > 0.86 && footBar.position.y < 0.92,
+    'the seated foot bar stays near the chair rungs instead of below the official');
+});
+
+test('seated crowd and coach legs stay compact and within the seat-to-step reach', () => {
+  const distance = (from, to) => new THREE.Vector3(...from).distanceTo(new THREE.Vector3(...to));
+  for (const side of [-1, 1]) {
+    const crowd = sceneApi.getSeatedCrowdLegTargets(side);
+    assert.ok(distance(crowd.hip, crowd.knee) < 0.24, 'crowd thighs stay tucked close to the seat');
+    assert.ok(distance(crowd.knee, crowd.ankle) < 0.25, 'crowd shins stay compact above the step');
+    assert.ok(crowd.hip[1] - crowd.toe[1] < 0.45, 'crowd feet do not hang far below the seated hips');
+    assert.ok(crowd.toe[1] < crowd.ankle[1] && crowd.toe[2] > crowd.ankle[2]);
+
+    const coach = sceneApi.getSeatedCoachLegTargets(side, 0.4);
+    assert.ok(distance(coach.hip, coach.knee) > 0.24 && distance(coach.hip, coach.knee) < 0.29);
+    assert.ok(distance(coach.knee, coach.ankle) > 0.25 && distance(coach.knee, coach.ankle) < 0.29);
+    assert.ok(coach.hip[1] - coach.toe[1] < 0.4,
+      'front-row coaches cannot retain standing-length legs while the ordinary crowd is compact');
+    assert.ok(coach.toe[1] >= 0, 'coach toe joints stay above their own row floor');
+    assert.ok(distance(coach.ankle, coach.toe) < 0.15);
+  }
 });
 
 test('venue modes retain the same enclosed bowl without adding roof or sky geometry', () => {
@@ -915,7 +1163,7 @@ test('court contacts stay compact and slide squeaks are silent', () => {
 
   for (const recorded of [false, true]) {
     const spaced = makeContext();
-    const samples = recorded ? { footstep: { duration: 0.45 } } : {};
+    const samples = recorded ? { footstep: { hard: [{ duration: 0.45 }] } } : {};
     for (let index = 0; index < 20; index += 1) {
       spaced.context.currentTime = index * 0.025;
       playLiveCourtEffect(spaced.context, 'footstep', 'hard', 1, samples);
@@ -930,7 +1178,7 @@ test('court contacts stay compact and slide squeaks are silent', () => {
     playLiveCourtEffect(spaced.context, 'racket', 'hard', 1);
     playLiveCourtEffect(spaced.context, 'bounce', 'hard', 1);
     assert.equal(spaced.sources.length, count + 2, 'footstep spacing never suppresses contacts');
-    assert.ok(spaced.gains.slice(0, count).every(gain => gain.gain.value < (recorded ? 0.35 : 0.6)),
+    assert.ok(spaced.gains.slice(0, count).every(gain => gain.gain.value < (recorded ? 0.07 : 0.11)),
       'footsteps stay quieter in both playback modes');
   }
 
@@ -1058,11 +1306,11 @@ test('court effects load only playable samples and sound checks exclude slides',
     clay.sources[0].playbackRate.value.toFixed(3),
     grass.sources[0].playbackRate.value.toFixed(3),
   ]).size, 3, 'surface profiles shape the same recording differently');
-  assert.ok(clay.gains[0].gain.value < 0.2, 'sampled footsteps are reduced beneath racket and ball contacts');
+  assert.ok(clay.gains[0].gain.value < 0.07, 'sampled footsteps are strongly reduced beneath racket and ball contacts');
   const synthesized = makeContext();
   playLiveCourtEffect(synthesized.context, 'footstep', 'clay', 1);
   assert.ok(
-    synthesized.gains[0].gain.value < 0.32,
+    synthesized.gains[0].gain.value < 0.11,
     'synthesized fallback footsteps also remain subdued',
   );
 
@@ -1118,8 +1366,14 @@ test('XKT umpire calls resolve score, tiebreak and recorded player-name clips', 
   ]);
   assert.equal(resolve('Game and set, Iga Świątek', true), null,
     'set calls without a known set number never choose a random ordinal');
-  assert.equal(resolve('Out'), null, 'out calls retain the existing browser-speech fallback');
-  assert.equal(resolve('Game, Unlisted Player'), null, 'missing recorded names fall back instead of being mislabelled');
+  assert.equal(resolve('Out'), null, 'unsupported out calls stay silent instead of using another voice');
+  assert.deepEqual(resolve('Game, Unlisted Player'), ['/game/game.mp3'],
+    'unlisted players still receive the recorded game call without a mismatched name');
+  assert.deepEqual(resolve('Advantage, Unlisted Player'), ['/score/advantage.mp3']);
+  assert.deepEqual(resolve('Game and second set, Unlisted Player'), [
+    '/game/game.mp3',
+    '/set/set-two.mp3',
+  ]);
 });
 
 test('recorded XKT calls decode, play through Web Audio, and stop on rewind', async () => {
@@ -1173,6 +1427,129 @@ test('recorded XKT calls decode, play through Web Audio, and stop on rewind', as
   assert.ok(requestedUrls.includes('/score/fifteen-all.mp3'));
   xktUmpireAudioApi.cancelXktUmpireCalls(context);
   assert.equal(startedSources[0].stopped, true);
+});
+
+test('automated Fault and Out calls use dedicated audio clips without loading umpire manifests', async () => {
+  const requestedUrls = [];
+  const startedSources = [];
+  const context = {
+    state: 'running',
+    destination: {},
+    decodeAudioData: async () => ({ duration: 0.4 }),
+    createBufferSource() {
+      const source = {
+        buffer: null,
+        onended: null,
+        connect(target) { return target; },
+        disconnect() {},
+        start() { startedSources.push(this); },
+        stop() { this.stopped = true; },
+      };
+      return source;
+    },
+    createGain() {
+      return { gain: { value: 0 }, connect() { return this; }, disconnect() {} };
+    },
+  };
+  const fetcher = async (url) => {
+    requestedUrls.push(url);
+    return { ok: true, arrayBuffer: async () => new ArrayBuffer(16) };
+  };
+
+  assert.equal(
+    xktUmpireAudioApi.resolveAutomatedLineCallPath('Out', false, () => 0),
+    '/audio/xkt/line-calls/atp-out-01.mp3',
+  );
+  assert.equal(
+    xktUmpireAudioApi.resolveAutomatedLineCallPath('Out', false, () => 0.999),
+    '/audio/xkt/line-calls/atp-out-09.mp3',
+  );
+  assert.equal(
+    xktUmpireAudioApi.resolveAutomatedLineCallPath('Out', true, () => 0),
+    null,
+    'do not substitute the generated generic Out clip for missing WTA recordings',
+  );
+  assert.equal(
+    xktUmpireAudioApi.resolveAutomatedLineCallPath('Fault', false),
+    '/audio/xkt/line-calls/fault.mp3',
+  );
+  assert.equal(
+    xktUmpireAudioApi.resolveAutomatedLineCallPath('Fault', true),
+    '/audio/xkt/line-calls/fault.mp3',
+  );
+
+  for (const text of ['Fault', 'Out']) {
+    assert.equal(await xktUmpireAudioApi.playXktUmpireCall(context, text, false, fetcher), true);
+  }
+  assert.equal(await xktUmpireAudioApi.playXktUmpireCall(context, 'Out', true, fetcher), false);
+  const atpOutFiles = Array.from({ length: 9 }, (_, index) =>
+    xktUmpireAudioApi.resolveAutomatedLineCallPath(
+      'Out',
+      false,
+      () => (index + 0.5) / 9,
+    ));
+  assert.equal(new Set(atpOutFiles).size, 9, 'all distinct ATP clips are selectable');
+  assert.ok(requestedUrls.includes('/audio/xkt/line-calls/fault.mp3'));
+  assert.ok(requestedUrls.some(url => url.startsWith('/audio/xkt/line-calls/atp-out-')));
+  assert.ok(!requestedUrls.includes('/audio/xkt/line-calls/out.mp3'),
+    'the generated generic Out clip is never fetched');
+  assert.ok(
+    requestedUrls.every(url => url.startsWith('/audio/xkt/line-calls/')),
+    'dedicated line calls do not fetch umpire manifests',
+  );
+  await xktUmpireAudioApi.preloadAutomatedLineCalls(context, fetcher);
+  assert.ok(atpOutFiles.every(url => requestedUrls.includes(url)),
+    'activation preloads every ATP variation, not only the generic out clip');
+  for (const file of ['fault.mp3', ...atpOutFiles.map(url => url.split('/').at(-1))]) {
+    const asset = await readFile(new URL(`../public/audio/xkt/line-calls/${file}`, import.meta.url));
+    assert.ok(asset.byteLength > 5_000, `${file} is bundled as a real audio clip`);
+  }
+  assert.equal(startedSources.length, 1, 'later calls queue behind the first');
+  startedSources[0].onended();
+  assert.equal(startedSources.length, 2);
+  startedSources[1].onended();
+  assert.equal(startedSources.length, 2, 'unsupported WTA Out remains silent');
+});
+
+test('missing recorded umpire clips never trigger a browser-system voice', async () => {
+  const utterances = [];
+  const hadWindow = Object.hasOwn(globalThis, 'window');
+  const previousWindow = globalThis.window;
+  const hadUtterance = Object.hasOwn(globalThis, 'SpeechSynthesisUtterance');
+  const PreviousUtterance = globalThis.SpeechSynthesisUtterance;
+  globalThis.window = {
+    speechSynthesis: {
+      speak: utterance => utterances.push(utterance),
+      cancel() {},
+    },
+  };
+  globalThis.SpeechSynthesisUtterance = class {
+    constructor(text) {
+      this.text = text;
+    }
+  };
+  try {
+    const playbackApi = await loadTs('../lib/liveCourtUmpire.ts', {
+      './xktUmpireAudio': {
+        cancelXktUmpireCalls() {},
+        playXktUmpireCall: async () => false,
+      },
+    });
+    const spoken = await playbackApi.speakUmpireCall(
+      'Game, Unlisted Player',
+      { state: 'running' },
+      false,
+      () => true,
+      'missing-clip-test',
+    );
+    assert.equal(spoken, false);
+    assert.equal(utterances.length, 0);
+  } finally {
+    if (hadWindow) globalThis.window = previousWindow;
+    else delete globalThis.window;
+    if (hadUtterance) globalThis.SpeechSynthesisUtterance = PreviousUtterance;
+    else delete globalThis.SpeechSynthesisUtterance;
+  }
 });
 
 test('point and game boundaries do not clear accumulated clay marks', async () => {
@@ -1314,6 +1691,117 @@ test('live score calls follow DMO point ends and stay within one score transitio
   );
 });
 
+test('raw DMO end markers cannot release a TE4 score unless the point scored', () => {
+  const events = umpireApi.deriveUmpireCallEvents([
+    { frame: 20, kind: 'point-end', scoreEligible: false },
+    { frame: 40, kind: 'point-end' },
+  ], [], []);
+  assert.deepEqual(events, [{ frame: 40, kind: 'point-end', text: '' }]);
+});
+
+test('only ongoing automatic streams use TE4 scores in the live-window fallback', async () => {
+  const viewer = await readFile(new URL('../components/DmoLiveViewer.tsx', import.meta.url), 'utf8');
+  const display = await readFile(new URL('../components/DmoLiveDisplay.tsx', import.meta.url), 'utf8');
+
+  assert.equal(
+    liveDmoUmpireScoreSourceApi.resolveLiveDmoUmpireScoreSource('manual', false),
+    'dmo',
+  );
+  assert.equal(
+    liveDmoUmpireScoreSourceApi.resolveLiveDmoUmpireScoreSource('auto', false),
+    'te4',
+  );
+  assert.equal(
+    liveDmoUmpireScoreSourceApi.resolveLiveDmoUmpireFallbackScoreSource('auto', false),
+    'te4',
+    'an ongoing automatic stream uses the TE4 live score',
+  );
+  assert.equal(
+    liveDmoUmpireScoreSourceApi.resolveLiveDmoUmpireFallbackScoreSource('auto', true),
+    'dmo',
+    'an automatic stream played as a historical DMO uses its recorded DMO score',
+  );
+  assert.equal(
+    liveDmoUmpireScoreSourceApi.resolveLiveDmoUmpireFallbackScoreSource('manual', true),
+    'dmo',
+  );
+  assert.equal(
+    liveDmoUmpireScoreSourceApi.resolveLiveDmoUmpireScoreSource('manual', true),
+    'replay',
+  );
+  const oldDmoReplayFallback = liveDmoUmpireScoreSourceApi.resolveLiveDmoUmpireScoreSource(
+    'manual', false,
+  );
+  assert.equal(oldDmoReplayFallback, 'dmo',
+    'legacy replay streams use the score path their live-window court actually renders');
+  assert.equal(
+    liveDmoUmpireScoreSourceApi.shouldPairLiveDmoScoreWithPointEnd(oldDmoReplayFallback, 'live'),
+    true,
+    'manual old-DMO playback pairs its DMO score changes with point-end events');
+  assert.equal(
+    liveDmoUmpireScoreSourceApi.shouldPairLiveDmoScoreWithPointEnd(
+      liveDmoUmpireScoreSourceApi.resolveLiveDmoUmpireScoreSource('manual', true), 'live',
+    ),
+    false,
+    'the full replay player remains event-scored instead',
+  );
+  assert.equal(
+    liveDmoUmpireScoreSourceApi.shouldPairLiveDmoScoreWithPointEnd('dmo', 'live'),
+    true,
+  );
+  assert.equal(
+    liveDmoUmpireScoreSourceApi.shouldPairLiveDmoScoreWithPointEnd('te4', 'live'),
+    true,
+  );
+  assert.equal(
+    liveDmoUmpireScoreSourceApi.shouldPairLiveDmoScoreWithPointEnd('replay', 'live'),
+    false,
+  );
+  assert.equal(
+    liveDmoUmpireScoreSourceApi.shouldPairLiveDmoScoreWithPointEnd('dmo', 'ended'),
+    false,
+  );
+  assert.match(display, /scoreSource === 'te4' \? liveScore \?\? null : snapshot\.score/);
+  assert.match(
+    display,
+    /live: shouldPairLiveDmoScoreWithPointEnd\(scoreSource, state\)/,
+  );
+  assert.match(
+    viewer,
+    /const fullReplayPlayer = broadcast\.replay && broadcast\.replayDataReady/,
+  );
+  assert.match(
+    viewer,
+    /resolveLiveDmoUmpireFallbackScoreSource\(\s*broadcast\.broadcastMode,\s*broadcast\.replay,?\s*\)/,
+  );
+  assert.match(
+    viewer,
+    /const scoreSource = fullReplayPlayer\s*\?\s*resolveLiveDmoUmpireScoreSource\(broadcast\.broadcastMode,\s*true\)\s*:\s*fallbackScoreSource/,
+  );
+  assert.match(viewer, /scoreSource={fallbackScoreSource}/);
+  assert.equal((viewer.match(/scoreSource={scoreSource}/g) ?? []).length, 1);
+
+  const players = ['Player One', 'Player Two'];
+  const source = liveDmoUmpireScoreSourceApi.resolveLiveDmoUmpireScoreSource('manual', false);
+  const enabled = liveDmoUmpireScoreSourceApi.shouldPairLiveDmoScoreWithPointEnd(source, 'live');
+  const tether = umpireApi.createLiveUmpireScoreTether();
+  const initial = { sets: [], games: [0, 0], pointText: ['0', '0'], tiebreak: false, server: 1 };
+  assert.equal(umpireApi.observeLiveUmpireScore(tether, initial, players, enabled), null);
+  assert.equal(umpireApi.observeLiveUmpireScore(
+    tether, { ...initial, pointText: ['15', '0'] }, players, enabled,
+  ), null);
+  const events = umpireApi.deriveUmpireCallEvents([{ frame: 20, kind: 'point-end' }], [], []);
+  assert.equal(umpireApi.umpireCallsBetween(events, 19, 20).length, 1);
+  const call = umpireApi.matchLiveUmpireScoreToDmoPointEnd(tether, enabled);
+  assert.equal(call, 'fifteen-love', 'the first new DMO point announces without a TE4 feed');
+  const manifest = JSON.parse(await readFile(
+    new URL('../public/audio/xkt/umpire-index.json', import.meta.url), 'utf8',
+  ));
+  assert.ok(xktUmpireAudioApi.resolveXktUmpireCallPaths(
+    call, manifest, { atp: {}, wta: {} }, false,
+  )?.length, 'the local DMO call resolves to a curated recording');
+});
+
 test('replay score calls follow point-end frames and only clear rally-outs are called', () => {
   const trajectory = [
     { frame: 10, kind: 'shot', shotType: 'rally' },
@@ -1346,7 +1834,10 @@ test('replay score calls follow point-end frames and only clear rally-outs are c
         { frame: 14, kind: 'point-end', scoreCall: 'fifteen-love' },
       ],
       [{ frame: 12, kind: 'bounce' }],
-      [{ frame: 12, values: [1_215, 0, 2, 0, 0, 0, 0] }],
+      [
+        { frame: 10, values: [-1_100, 0, 200, 0, 0, 0, 0] },
+        { frame: 12, values: [400, 0, 20, 0, 0, 0, 0] },
+      ],
     ),
     [{ frame: 14, kind: 'score', text: 'fifteen-love' }],
     'a serve bounce is not presented as an authoritative line call',
@@ -1393,22 +1884,172 @@ test('only the first bounce associated with a point can trigger an out call', ()
   );
 });
 
-test('umpire calls have independent controls in both court renderers', async () => {
+test('a delayed replay point-end cannot turn a later dead-ball bounce into Out', () => {
+  const calls = umpireApi.deriveUmpireCallEvents(
+    [{ frame: 10, kind: 'shot', shotType: 'rally' }, { frame: 160, kind: 'point-end' }],
+    [{ frame: 30, kind: 'bounce' }, { frame: 50, kind: 'bounce' }],
+    [
+      { frame: 30, values: [800, 0, 3, 0, 0, 0, 0] },
+      { frame: 50, values: [1_350, 0, 3, 0, 0, 0, 0] },
+    ],
+  );
+  assert.deepEqual(calls.filter(call => call.kind === 'out'), []);
+});
+
+test('full replay out detection reaches the recorded audio dispatcher', async () => {
+  const spoken = [];
+  const api = await loadTs('../lib/liveCourtUmpire.ts', {
+    './xktUmpireAudio': {
+      playXktUmpireCall: async (_context, text, isWta) => { spoken.push({ text, isWta }); return true; },
+      cancelXktUmpireCalls() {},
+    },
+  });
+  const calls = api.deriveUmpireCallEvents(
+    [{ frame: 10, kind: 'shot', shotType: 'rally' }, { frame: 100, kind: 'point-end' }],
+    [{ frame: 30, kind: 'bounce' }],
+    [{ frame: 30, values: [1_250, 0, 3, 0, 0, 0, 0] }],
+  );
+  for (const call of api.umpireCallsBetween(calls, 29, 31)) {
+    assert.equal(await api.speakUmpireCall(call.text, { state: 'running' }, false), true);
+  }
+  assert.deepEqual(spoken, [{ text: 'Out', isWta: false }]);
+});
+
+test('live out calls reach the playhead before the delayed point-end marker', () => {
+  const shot = { frame: 10, kind: 'shot', shotType: 'rally' };
+  const sounds = [{ frame: 30, kind: 'bounce' }];
+  const samples = [{ frame: 30, values: [1_250, 0, 4, 0, 0, 0, 0] }];
+  const pending = umpireApi.deriveUmpireCallEvents([shot], sounds, samples, { allowPendingPointEnd: true });
+  assert.deepEqual(pending, [{ frame: 30, kind: 'out', text: 'Out' }]);
+  const cursor = umpireApi.createLiveUmpireEventCursor();
+  assert.deepEqual(umpireApi.consumeLiveUmpireCallEvents(cursor, pending, 29, 31, true), pending);
+  const completed = umpireApi.deriveUmpireCallEvents(
+    [shot, { frame: 240, kind: 'point-end', scoreCall: 'fifteen-love' }],
+    sounds, samples, { allowPendingPointEnd: true },
+  );
+  assert.equal(umpireApi.consumeLiveUmpireCallEvents(cursor, completed, 239, 241, true)
+    .filter(call => call.kind === 'out').length, 0, 'late point-end never repeats the earlier line call');
+  assert.deepEqual(umpireApi.deriveUmpireCallEvents([shot], sounds, samples), [],
+    'full replays retain their point-end corroboration');
+});
+
+test('live line calls ignore later dead-ball bounces and uncertain first landings', () => {
+  const shot = { frame: 10, kind: 'shot', shotType: 'rally' };
+  const sounds = [{ frame: 30, kind: 'bounce' }, { frame: 50, kind: 'bounce' }];
+  for (const first of [[0, 0, 3], [1_250, 0, 45], [1_200, 0, 3]]) {
+    const samples = [
+      { frame: 30, values: [...first, 0, 0, 0, 0] },
+      { frame: 50, values: [1_350, 600, 3, 0, 0, 0, 0] },
+    ];
+    assert.deepEqual(umpireApi.deriveUmpireCallEvents([shot], sounds, samples,
+      { allowPendingPointEnd: true }), []);
+  }
+  assert.deepEqual(umpireApi.deriveUmpireCallEvents(
+    [shot, { frame: 20, kind: 'point-end' }], sounds,
+    [{ frame: 30, values: [1_350, 0, 3, 0, 0, 0, 0] }],
+    { allowPendingPointEnd: true },
+  ).filter(call => call.kind === 'out'), [], 'bounces after a completed point remain silent');
+});
+
+test('serve faults use first-bounce evidence and valid serves remain silent', () => {
+  const trajectory = [
+    { frame: 10, kind: 'shot', shotType: 'serve' },
+    { frame: 30, kind: 'shot', shotType: 'serve' },
+    { frame: 60, kind: 'point-end', scoreCall: 'fifteen-love' },
+  ];
+  const sounds = [
+    { frame: 15, kind: 'bounce' },
+    { frame: 35, kind: 'bounce' },
+  ];
+  const samples = [
+    { frame: 10, values: [-1_100, 0, 200, 0, 0, 0, 0] },
+    { frame: 15, values: [-300, 0, 20, 0, 0, 0, 0] },
+    { frame: 30, values: [-1_100, 0, 200, 0, 0, 0, 0] },
+    { frame: 35, values: [400, 0, 20, 0, 0, 0, 0] },
+  ];
+  assert.deepEqual(
+    umpireApi.deriveUmpireCallEvents(trajectory, sounds, samples),
+    [
+      { frame: 15, kind: 'fault', text: 'Fault' },
+      { frame: 60, kind: 'score', text: 'fifteen-love' },
+    ],
+  );
+});
+
+test('live line calls play only on an immediate frame crossing', () => {
+  const cursor = umpireApi.createLiveUmpireEventCursor();
+  const events = [
+    { frame: 105, kind: 'fault', text: 'Fault' },
+    { frame: 118, kind: 'out', text: 'Out' },
+    { frame: 130, kind: 'score', text: 'fifteen-love' },
+  ];
+  assert.deepEqual(
+    umpireApi.consumeLiveUmpireCallEvents(cursor, events, 100, 120, true),
+    [events[0], events[1]],
+  );
+  assert.deepEqual(
+    umpireApi.consumeLiveUmpireCallEvents(cursor, events, 120, 131, true),
+    [events[2]],
+  );
+  assert.deepEqual(
+    umpireApi.consumeLiveUmpireCallEvents(cursor, events, 131, 300, true),
+    [],
+    'a delayed line-call backlog is dropped',
+  );
+});
+
+test('all broadcast audio follows one master control in both court renderers', async () => {
   const primary = await readFile(new URL('../components/DmoLiveCourt3D.tsx', import.meta.url), 'utf8');
   const fallback = await readFile(new URL('../components/DmoLiveCourt.tsx', import.meta.url), 'utf8');
   for (const source of [primary, fallback]) {
-    assert.match(source, /aria-label=\{umpireCallsEnabled && !umpireSpeechReady/);
-    assert.match(source, /aria-pressed=\{umpireCallsEnabled && umpireSpeechReady\}/);
+    assert.match(source, /const umpireCallsEnabled = soundEnabled/);
+    assert.match(source, /const activateSoundFromGesture = async \(reportFailure = true\)/);
     assert.match(source, /observeLiveUmpireScore\(/);
     assert.match(source, /matchLiveUmpireScoreToDmoPointEnd\(/);
     assert.doesNotMatch(source, /formatLiveUmpireScoreCall\(current, previous, scoreboardData\.players\)/);
-    assert.match(source, /unlockBrowserUmpireSpeech\(\)/);
-    assert.match(source, /Enable calls/);
+    assert.match(source, /resumeUmpireAudioContext\(/);
+    assert.doesNotMatch(source, /unlockBrowserUmpireSpeech\(\)/);
+    assert.match(source, /void activateSoundFromGesture\(false\)/);
+    assert.match(source, /Mute all broadcast audio/);
+    assert.doesNotMatch(source, /Enable calls|data-umpire-calls-toggle|handleUmpireCallsToggle/);
+    assert.doesNotMatch(source, /Recorded umpire audio is unavailable for this call/);
+    const activationStart = source.indexOf('const handleSoundActivationGesture');
+    const activationEnd = source.indexOf('\n  };', activationStart);
+    const activationHandler = source.slice(activationStart, activationEnd);
+    assert.match(activationHandler, /data-sound-toggle/);
+    assert.match(activationHandler, /soundPointerActivationRef\.current = true/);
+    assert.match(activationHandler, /activateSoundFromGesture\(\)/);
+    assert.match(source, /setUmpireSpeechReady\(true\)/);
   }
   assert.match(primary, /call\.kind === 'score' \|\| call\.kind === 'point-end'/);
   assert.match(fallback, /call\.kind === 'score' \|\| call\.kind === 'point-end'/);
-  assert.doesNotMatch(primary, /soundOnRef\.current && umpireCallsEnabledRef\.current/);
-  assert.doesNotMatch(fallback, /soundEnabledRef\.current && umpireCallsEnabledRef\.current/);
+  assert.match(primary, /if \(!soundPreferenceRef\.current\) return;\s*void activateSoundFromGesture\(\)/);
+  assert.match(fallback, /if \(!soundEnabledRef\.current\) return;\s*void activateSoundFromGesture\(\)/);
+  assert.doesNotMatch(primary, /line.?judge/i);
+  assert.doesNotMatch(fallback, /line.?judge/i);
+});
+
+test('recorded umpire playback waits for a running audio context', async () => {
+  const suspendedContext = {
+    state: 'suspended',
+    resume: async function () {
+      this.state = 'running';
+    },
+  };
+  assert.equal(await umpireApi.resumeUmpireAudioContext(suspendedContext), true);
+  assert.equal(suspendedContext.state, 'running');
+
+  const blockedContext = {
+    state: 'suspended',
+    resume: async () => undefined,
+  };
+  assert.equal(await umpireApi.resumeUmpireAudioContext(blockedContext), false);
+
+  const rejectedContext = {
+    state: 'suspended',
+    resume: async () => { throw new Error('browser blocked activation'); },
+  };
+  assert.equal(await umpireApi.resumeUmpireAudioContext(rejectedContext), false);
 });
 
 test('broadcast court audio defaults on and the Court camera remains the initial preset', async () => {
@@ -1416,8 +2057,10 @@ test('broadcast court audio defaults on and the Court camera remains the initial
   const fallback = await readFile(new URL('../components/DmoLiveCourt.tsx', import.meta.url), 'utf8');
   assert.match(primary, /const \[soundEnabled, setSoundEnabled\] = useState\(true\)/);
   assert.match(fallback, /const \[soundEnabled, setSoundEnabled\] = useState\(true\)/);
-  assert.match(primary, /const \[umpireCallsEnabled, setUmpireCallsEnabled\] = useState\(true\)/);
-  assert.match(fallback, /const \[umpireCallsEnabled, setUmpireCallsEnabled\] = useState\(true\)/);
+  assert.match(primary, /const umpireCallsEnabled = soundEnabled/);
+  assert.match(fallback, /const umpireCallsEnabled = soundEnabled/);
+  assert.match(primary, /void activateSoundFromGesture\(false\)/);
+  assert.match(fallback, /void activateSoundFromGesture\(false\)/);
   assert.match(primary, /const \[gruntsEnabled, setGruntsEnabled\] = useState\(true\)/);
   assert.match(primary, /const \[cameraView, setCameraView\] = useState<CameraView>\('court'\)/);
   assert.match(primary, /onPointerDownCapture=\{\(event\) => handleSoundActivationGesture\(event\.target\)\}/);

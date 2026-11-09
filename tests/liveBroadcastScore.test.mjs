@@ -19,6 +19,7 @@ function load(path, mocks = {}) {
     if (name in mocks) return mocks[name];
     if (name === './liveBroadcast') return load('lib/liveBroadcast.ts');
     if (name === './liveScoreModel') return load('lib/liveScoreModel.ts');
+    if (name === '@/lib/liveDmoUmpireScoreSource') return load('lib/liveDmoUmpireScoreSource.ts');
     if (name === 'zod') return require('zod');
     return require(name);
   }, module, module.exports);
@@ -116,7 +117,9 @@ test('the rendered automatic scoreboard uses TE4 data, without changing the DMO 
     },
     './DmoLiveDisplay.module.css': { __esModule: true, default: new Proxy({}, { get: (_, key) => key }) },
   }).default;
-  const render = (props = {}) => renderToStaticMarkup(React.createElement(Display, { snapshot, state: 'live', ...props }));
+  const render = (props = {}) => renderToStaticMarkup(React.createElement(Display, {
+    snapshot, state: 'live', scoreSource: 'te4', ...props,
+  }));
   const html = render({ liveScore: helpers.scoreForLiveBroadcast(feed(), snapshot.players, 3) });
   assert.match(html, /5–7  7–5/);
   assert.doesNotMatch(html, /7–6/);
@@ -134,7 +137,10 @@ test('the rendered automatic scoreboard uses TE4 data, without changing the DMO 
   assert.doesNotMatch(unavailable, /7–6/);
   assert.equal(courtScoreboard.live, true);
   assert.equal(courtScoreboard.score, null, 'automatic live scoreboards do not fall back to reconstructed DMO data');
-  assert.match(render(), /7–6/); // Manual/historical replays keep their DMO score.
+  assert.match(render({ scoreSource: 'dmo' }), /7–6/);
+  assert.equal(courtScoreboard.live, true, 'manual live DMO calls pair the local score with DMO point ends');
+  assert.deepEqual(courtScoreboard.score.games, dmoScore.games);
+  render({ scoreSource: 'replay' });
   assert.equal(courtScoreboard.live, false);
   assert.deepEqual(courtScoreboard.score.games, dmoScore.games);
 });
@@ -154,6 +160,17 @@ test('the court buffering overlay clearly announces delays and stays absent when
   assert.doesNotMatch(buffered, /Buffering live court/);
   assert.match(buffered, /Waiting for the next match update/);
   assert.equal(renderToStaticMarkup(React.createElement(Overlay, { buffering: false })), '');
+});
+
+test('broadcast court headings use Live and do not display court surface badges', () => {
+  const fallback = readFileSync(new URL('../components/DmoLiveCourt.tsx', import.meta.url), 'utf8');
+  const threeDimensional = readFileSync(new URL('../components/DmoLiveCourt3D.tsx', import.meta.url), 'utf8');
+  const threeDimensionalStyles = readFileSync(new URL('../components/DmoLiveCourt3D.module.css', import.meta.url), 'utf8');
+  assert.match(fallback, /<strong>LIVE<\/strong>/);
+  assert.match(threeDimensional, /fullReplay \? 'FULL MATCH REPLAY' : 'LIVE'/);
+  assert.doesNotMatch(fallback, /LIVE COURT/);
+  assert.doesNotMatch(threeDimensional, /LIVE COURT|surfaceBadge|Court surface:/);
+  assert.doesNotMatch(threeDimensionalStyles, /surfaceBadge/);
 });
 
 const nextServer = { NextResponse: { json: (body, init) => Response.json(body, init) } };

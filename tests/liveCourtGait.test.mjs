@@ -2,6 +2,7 @@ import assert from 'node:assert/strict';
 import test from 'node:test';
 import {
   advanceGait, gaitFeet, newGaitState, returnReadiness, splitStepLift, MAX_LATERAL_REACH,
+  rallyOverWeight, RALLY_OVER_KNOWN_SECONDS, RALLY_OVER_UNANSWERED_SECONDS,
 } from '../lib/liveCourtGait.ts';
 
 function run(direction, speedMs, frames = 240, fps = 60) {
@@ -331,4 +332,37 @@ test('rally footwork keeps short quick steps; walking between points takes natur
   for (const speed of [1, 2, 3]) assert.ok(halfStride(speed, 0) < halfStride(speed, 1));
   assert.ok(Math.abs(halfStride(2, 0) - Math.min(0.42, 0.1 + 0.11 * 2)) < 1e-9,
     'rally footwork uses the short stride');
+});
+
+test('the rally relaxes after its last unanswered shot, before a delayed point-end', () => {
+  const fps = 30;
+  const events = [
+    { frame: 0, kind: 'shot' }, { frame: 30, kind: 'shot' }, { frame: 60, kind: 'shot' },
+    { frame: 180, kind: 'point-end' }, { frame: 300, kind: 'shot' },
+  ];
+  assert.equal(rallyOverWeight(events, 45, fps), 0);
+  assert.equal(rallyOverWeight(events, 60 + fps * RALLY_OVER_KNOWN_SECONDS - 1, fps), 0);
+  assert.equal(rallyOverWeight(events, 60 + fps * (RALLY_OVER_KNOWN_SECONDS + 0.4), fps), 1);
+  assert.equal(rallyOverWeight(events, 200, fps), 1);
+  const live = events.slice(0, 3);
+  assert.equal(rallyOverWeight(live, 60 + fps * 1.5, fps), 0);
+  assert.equal(rallyOverWeight(live, 60 + fps * (RALLY_OVER_UNANSWERED_SECONDS + 0.4), fps), 1);
+  assert.equal(rallyOverWeight([], 10, fps), 0);
+});
+
+test('a ball passing the receiver ends the rally even if TE4 logs an unreachable swing', () => {
+  const fps = 30;
+  const events = [
+    { frame: 0, kind: 'shot', player: 1 },
+    { frame: 60, kind: 'shot', player: 2 },
+  ];
+  const passed = shot => shot.frame === 0 ? 40 : undefined;
+
+  assert.equal(rallyOverWeight(events, 30, fps, passed), 0);
+  assert.equal(rallyOverWeight(events, 40 + fps * 0.3, fps, passed), 1,
+    'relaxation completes 0.3 seconds after the ball passes');
+  assert.equal(rallyOverWeight(events, 70, fps, passed), 1,
+    'the logged unreachable swing does not restart the rally');
+  assert.equal(rallyOverWeight(events, 45, fps), 0,
+    'without ball evidence, a logged reply still keeps the rally active');
 });

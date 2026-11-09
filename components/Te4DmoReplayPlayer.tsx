@@ -11,6 +11,7 @@ import {
   type Te4DmoReplayScore,
 } from '@/lib/te4DmoReplayScoreboard';
 import type { Te4ViewerData } from '@/lib/te4DmoTypes';
+import type { PlayerStrokeStylePair } from '@/lib/liveCourtPerformance';
 import { useTe4ViewerTheme } from '@/components/useTe4ViewerTheme';
 import DmoLiveCourt3D from './DmoLiveCourt3D';
 import DmoReplayScoreBug from './DmoReplayScoreBug';
@@ -24,6 +25,7 @@ type Props = {
   isWta?: boolean;
   tournamentRound?: string | null;
   handedness: ['left' | 'right', 'left' | 'right'];
+  strokeStyles?: PlayerStrokeStylePair;
   fallback?: ReactNode;
 };
 
@@ -47,6 +49,7 @@ export default function Te4DmoReplayPlayer({
   isWta,
   tournamentRound = 'auto',
   handedness,
+  strokeStyles,
   fallback,
 }: Props) {
   const frameRef = useRef<HTMLIFrameElement>(null);
@@ -61,8 +64,8 @@ export default function Te4DmoReplayPlayer({
   const replayScoreKeyRef = useRef('');
   const syncViewerTheme = useTe4ViewerTheme(frameRef);
   const snapshot = useMemo(() => initialSnapshot
-    ? { ...initialSnapshot, handedness }
-    : null, [initialSnapshot, handedness[0], handedness[1]]);
+    ? { ...initialSnapshot, handedness, strokeStyles: strokeStyles ?? initialSnapshot.strokeStyles }
+    : null, [initialSnapshot, handedness[0], handedness[1], strokeStyles]);
   const scoreTimeline = useMemo(
     () => viewer ? buildTe4DmoReplayScoreTimeline(viewer) : [],
     [viewer],

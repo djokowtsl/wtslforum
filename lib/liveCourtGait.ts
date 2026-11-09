@@ -242,6 +242,64 @@ export function planReposition(options: {
   return 'walk';
 }
 
+/** Seconds after an unanswered last shot at which the rally counts as over. */
+export const RALLY_OVER_KNOWN_SECONDS = 1.0;
+export const RALLY_OVER_UNANSWERED_SECONDS = 1.8;
+
+/**
+ * How far the rally is over (0..1). TE4 can mark a point several seconds after
+ * the last shot, so relax when the ball has passed the receiver, a known point-
+ * end exists, or no live reply arrives.
+ */
+export function rallyOverWeight<E extends { frame: number; kind: string }>(
+  events: E[],
+  frame: number,
+  frameRate: number,
+  /** Known frame when the ball passed the player who had to return this shot. */
+  ballPassed?: (shot: E) => number | undefined,
+) {
+  let low = 0, high = events.length;
+  while (low < high) {
+    const middle = (low + high) >> 1;
+    if (events[middle].frame <= frame) low = middle + 1; else high = middle;
+  }
+  let index = low - 1;
+  while (index >= 0 && events[index].kind !== 'shot') {
+    if (events[index].kind === 'point-end') return 1;
+    index -= 1;
+  }
+  if (index < 0) return 0;
+  const fps = Number.isFinite(frameRate) && frameRate > 0 ? frameRate : 1;
+  const smooth = (value: number) => {
+    const amount = Math.min(1, Math.max(0, value));
+    return amount * amount * (3 - 2 * amount);
+  };
+  // The ball passed the player who had to return it: relax, even if TE4 later
+  // logs his swing at a ball that has already gone by. Check the previous shot
+  // too, because that unreachable swing can be logged as another "shot".
+  if (ballPassed) {
+    const passed = ballPassed(events[index]);
+    if (passed !== undefined && passed <= frame) return smooth((frame - passed) / fps / 0.3);
+    let previous = index - 1;
+    while (previous >= 0 && events[previous].kind !== 'shot' && events[previous].kind !== 'point-end') {
+      previous -= 1;
+    }
+    if (previous >= 0 && events[previous].kind === 'shot') {
+      const previousPassed = ballPassed(events[previous]);
+      if (previousPassed !== undefined && previousPassed <= events[index].frame) {
+        return smooth((frame - previousPassed) / fps / 0.3);
+      }
+    }
+  }
+  const next = events[index + 1];
+  if (next?.kind === 'shot') return 0;
+  const delay = next?.kind === 'point-end'
+    ? RALLY_OVER_KNOWN_SECONDS
+    : RALLY_OVER_UNANSWERED_SECONDS;
+  const since = (frame - events[index].frame) / fps;
+  return smooth((since - delay) / 0.4);
+}
+
 /** True when the latest event at or before `frame` ended a point. */
 export function isBetweenPoints(events: { frame: number; kind: string }[], frame: number) {
   let low = 0, high = events.length;

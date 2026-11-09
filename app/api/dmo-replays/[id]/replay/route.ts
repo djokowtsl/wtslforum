@@ -4,7 +4,15 @@ import { NextResponse } from 'next/server';
 import { getSession } from '@/lib/auth';
 import { analyzeDmoBuffer } from '@/lib/te4DmoAnalysis';
 import { MAX_DMO_BYTES, Te4DmoAnalysisError } from '@/lib/te4DmoParser';
-import { getPublicDmoReplay, isDmoReplayId, publicDmoReplayMetadata } from '@/lib/dmoReplayLibrary';
+import {
+  dmoReplayCatalogMetadata,
+  getPublicDmoReplay,
+  getDmoReplaySubmission,
+  isDmoReplayId,
+  publicDmoReplayCatalogMetadata,
+  type DmoSubmissionReplay,
+  type StoredDmoReplay,
+} from '@/lib/dmoReplayLibrary';
 
 export const dynamic = 'force-dynamic';
 export const maxDuration = 60;
@@ -83,26 +91,21 @@ async function getViewerData(input: {
 
 export async function GET(_request: Request, { params }: { params: Promise<{ id: string }> }) {
   const user = await getSession();
-  if (!user) {
-    return NextResponse.json(
-      { error: 'Sign in to watch match replays.' },
-      { status: 401, headers: PRIVATE_HEADERS },
-    );
-  }
   const { id } = await params;
   if (!isDmoReplayId(id)) {
     return NextResponse.json({ error: 'Match replay not found.' }, { status: 404, headers: PRIVATE_HEADERS });
   }
 
-  const storeId = process.env.MODERATION_BLOB_STORE_ID;
-  if (!storeId) {
-    return NextResponse.json({ error: 'Private replay storage is not configured.' }, { status: 503, headers: PRIVATE_HEADERS });
-  }
-
   try {
-    const replay = await getPublicDmoReplay(id);
-    if (!replay) {
+    const replay = user
+      ? await getDmoReplaySubmission(id)
+      : await getPublicDmoReplay(id);
+    if (!replay || !replay.privateBlobPathname || !replay.fileName) {
       return NextResponse.json({ error: 'Match replay not found.' }, { status: 404, headers: PRIVATE_HEADERS });
+    }
+    const storeId = process.env.MODERATION_BLOB_STORE_ID;
+    if (!storeId) {
+      return NextResponse.json({ error: 'Private replay storage is not configured.' }, { status: 503, headers: PRIVATE_HEADERS });
     }
     const key = replayCachePath(id, replay.privateBlobPathname);
     let pending = inFlight.get(key);
@@ -120,7 +123,9 @@ export async function GET(_request: Request, { params }: { params: Promise<{ id:
     }
     const viewer = await pending;
     return NextResponse.json({
-      match: publicDmoReplayMetadata(replay),
+      match: user
+        ? dmoReplayCatalogMetadata(replay as DmoSubmissionReplay)
+        : publicDmoReplayCatalogMetadata(replay as StoredDmoReplay),
       viewer,
     }, { headers: PRIVATE_HEADERS });
   } catch (error) {

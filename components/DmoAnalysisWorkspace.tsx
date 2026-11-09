@@ -3,6 +3,7 @@
 import { uploadPresigned } from '@vercel/blob/client';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { Activity, AlertTriangle, ArrowUpRight, Check, ChevronRight, Clock3, Download, FileAudio2, FileUp, Gauge, LoaderCircle, RotateCcw, ShieldCheck, Trophy, X } from 'lucide-react';
+import FileDropSurface from '@/components/FileDropSurface';
 import { isPresignedUrlRetrievalFailure } from '@/lib/dmoUploadErrors';
 import { embedTe4ViewerHtml } from '@/lib/te4ViewerEmbed';
 import AdminCoachingReportPublishForm from '@/components/AdminCoachingReportPublishForm';
@@ -308,6 +309,20 @@ export default function DmoAnalysisWorkspace() {
     setJobs((current) => current.map((job) => job.id === id ? { ...job, ...changes } : job));
   };
 
+  const selectGameLogFile = (file: File | null) => {
+    if (!file || !activeMatchId) return;
+    if (!/\.(log|txt)$/i.test(file.name)) {
+      updateJob(activeMatchId, { logFile: undefined });
+      setGameLogError('Choose a plain-text .log or .txt engine log.');
+    } else if (file.size > MAX_GAME_LOG_BYTES) {
+      updateJob(activeMatchId, { logFile: undefined });
+      setGameLogError('Choose an engine log no larger than 10 MiB.');
+    } else {
+      setGameLogError('');
+      updateJob(activeMatchId, { logFile: file });
+    }
+  };
+
   const addFiles = (candidates: File[]) => {
     if (running.current) return;
     const accepted: DmoBatchJob[] = [];
@@ -460,22 +475,23 @@ export default function DmoAnalysisWorkspace() {
               event.currentTarget.value = '';
             }}
           />
-          <button
-            type="button"
-            className={styles.dropzone}
-            onClick={() => fileInput.current?.click()}
-            onDragOver={(event) => event.preventDefault()}
-            onDrop={(event) => {
-              event.preventDefault();
-              addFiles(Array.from(event.dataTransfer.files));
-            }}
-            aria-describedby="file-hint"
+          <FileDropSurface
+            onFiles={addFiles}
             disabled={busy || jobs.length >= MAX_BATCH_FILES}
+            prompt="Drop up to five .dmo recordings"
           >
-            <span className={styles.uploadGlyph}><FileUp size={23} /></span>
-            <span className={styles.dropTitle}>Choose recordings <b>or drop them here</b></span>
-            <span id="file-hint" className={styles.dropHint}>Up to {MAX_BATCH_FILES} DMO files · 64 MiB each · private uploads</span>
-          </button>
+            <button
+              type="button"
+              className={styles.dropzone}
+              onClick={() => fileInput.current?.click()}
+              aria-describedby="file-hint"
+              disabled={busy || jobs.length >= MAX_BATCH_FILES}
+            >
+              <span className={styles.uploadGlyph}><FileUp size={23} /></span>
+              <span className={styles.dropTitle}>Choose recordings <b>or drop them here</b></span>
+              <span id="file-hint" className={styles.dropHint}>Up to {MAX_BATCH_FILES} DMO files · 64 MiB each · private uploads</span>
+            </button>
+          </FileDropSurface>
           {jobs.length > 0 && (
             <div className={styles.batchQueue} aria-label="Selected DMO recordings">
               {jobs.map((job) => (
@@ -630,34 +646,37 @@ export default function DmoAnalysisWorkspace() {
             <div className={styles.logPanelIntro}>
               <p className={styles.kicker}>OPTIONAL GAME-LOG CHECK</p>
               <h2 id="te4tv-log-title">Cross-check with a TE4TV engine log</h2>
-              <p>Choose the local Director Mode log for this match. It is parsed in your browser and is never uploaded.</p>
+              <p>Choose or drop the local Director Mode log for this match. It is parsed in your browser and is never uploaded.</p>
             </div>
             <div className={styles.logControls}>
-              <input
-                ref={gameLogInput}
-                className={styles.fileInput}
-                type="file"
-                accept=".log,.txt,text/plain"
-                aria-label="Choose a TE4TV engine log"
-                onChange={(event) => {
-                  const file = event.currentTarget.files?.[0];
-                  event.currentTarget.value = '';
-                  if (!file || !activeMatchId) return;
-                  if (!/\.(log|txt)$/i.test(file.name)) {
-                    updateJob(activeMatchId, { logFile: undefined });
-                    setGameLogError('Choose a plain-text .log or .txt engine log.');
-                  } else if (file.size > MAX_GAME_LOG_BYTES) {
-                    updateJob(activeMatchId, { logFile: undefined });
-                    setGameLogError('Choose an engine log no larger than 10 MiB.');
-                  } else {
-                    setGameLogError('');
-                    updateJob(activeMatchId, { logFile: file });
+              <FileDropSurface
+                className={styles.logDropTarget}
+                onFiles={(files) => {
+                  if (files.length > 1) {
+                    setGameLogError('Drop one engine log at a time.');
+                    return;
                   }
+                  selectGameLogFile(files[0] ?? null);
                 }}
-              />
-              <button type="button" className={styles.logButton} onClick={() => gameLogInput.current?.click()}>
-                <FileUp size={14} /> {activeJob?.logFile ? 'Replace log' : 'Choose log'}
-              </button>
+                disabled={busy || !activeMatchId}
+                prompt="Drop a .log or .txt engine log"
+              >
+                <input
+                  ref={gameLogInput}
+                  className={styles.fileInput}
+                  type="file"
+                  accept=".log,.txt,text/plain"
+                  aria-label="Choose a TE4TV engine log"
+                  onChange={(event) => {
+                    const file = event.currentTarget.files?.[0] ?? null;
+                    event.currentTarget.value = '';
+                    selectGameLogFile(file);
+                  }}
+                />
+                <button type="button" className={styles.logButton} onClick={() => gameLogInput.current?.click()} disabled={busy || !activeMatchId}>
+                  <FileUp size={14} /> {activeJob?.logFile ? 'Replace log' : 'Choose log'}
+                </button>
+              </FileDropSurface>
               {activeJob?.logFile && (
                 <button
                   type="button"

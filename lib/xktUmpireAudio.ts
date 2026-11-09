@@ -18,6 +18,20 @@ type VoiceQueue = {
 
 const UMPIRE_INDEX_URL = '/audio/xkt/umpire-index.json';
 const PLAYER_NAME_INDEX_URL = '/audio/xkt/name-index.json';
+const AUTOMATED_LINE_CALLS: Record<string, string> = {
+  fault: '/audio/xkt/line-calls/fault.mp3',
+};
+const ATP_OUT_CALLS = [
+  '/audio/xkt/line-calls/atp-out-01.mp3',
+  '/audio/xkt/line-calls/atp-out-02.mp3',
+  '/audio/xkt/line-calls/atp-out-03.mp3',
+  '/audio/xkt/line-calls/atp-out-04.mp3',
+  '/audio/xkt/line-calls/atp-out-05.mp3',
+  '/audio/xkt/line-calls/atp-out-06.mp3',
+  '/audio/xkt/line-calls/atp-out-07.mp3',
+  '/audio/xkt/line-calls/atp-out-08.mp3',
+  '/audio/xkt/line-calls/atp-out-09.mp3',
+];
 const voiceQueues = new WeakMap<BaseAudioContext, VoiceQueue>();
 const audioBuffers = new WeakMap<BaseAudioContext, Map<string, Promise<AudioBuffer>>>();
 const manifestPromises = new Map<string, Promise<unknown>>();
@@ -35,6 +49,16 @@ function pick<T>(items: T[] | undefined, random: () => number): T | null {
   if (!items?.length) return null;
   const index = Math.min(items.length - 1, Math.floor(Math.max(0, random()) * items.length));
   return items[index] ?? null;
+}
+
+export function resolveAutomatedLineCallPath(
+  text: string,
+  isWta: boolean,
+  random: () => number = Math.random,
+): string | null {
+  const call = text.trim().toLowerCase();
+  if (call === 'out') return isWta ? null : pick(ATP_OUT_CALLS, random);
+  return AUTOMATED_LINE_CALLS[call] ?? null;
 }
 
 function normalizeName(value: string) {
@@ -83,21 +107,21 @@ export function resolveXktUmpireCallPaths(
     const name = resolvePlayerNameAudio(gameAndSet[2], names, isWta);
     const game = pick(umpire.gameCalls, random);
     const set = umpire.setCalls[setIndex];
-    return name && game && set ? [game, set, name] : null;
+    return game && set ? (name ? [game, set, name] : [game, set]) : null;
   }
 
   const game = call.match(/^Game,\s*(.+)$/i);
   if (game) {
     const name = resolvePlayerNameAudio(game[1], names, isWta);
     const gameClip = pick(umpire.gameCalls, random);
-    return name && gameClip ? [gameClip, name] : null;
+    return gameClip ? (name ? [gameClip, name] : [gameClip]) : null;
   }
 
   const advantage = call.match(/^Advantage,\s*(.+)$/i);
   if (advantage) {
     const name = resolvePlayerNameAudio(advantage[1], names, isWta);
     const scoreClip = pick(umpire.pointScores.advantage, random);
-    return name && scoreClip ? [scoreClip, name] : null;
+    return scoreClip ? (name ? [scoreClip, name] : [scoreClip]) : null;
   }
 
   if (/^deuce$/i.test(call)) {
@@ -166,6 +190,14 @@ async function loadAudioBuffer(
   return pending;
 }
 
+export async function preloadAutomatedLineCalls(
+  context: BaseAudioContext,
+  fetcher: (url: string) => Promise<Response> = url => fetch(url),
+): Promise<void> {
+  await Promise.all([...Object.values(AUTOMATED_LINE_CALLS), ...ATP_OUT_CALLS]
+    .map(url => loadAudioBuffer(context, url, fetcher)));
+}
+
 function playCallSequence(
   context: BaseAudioContext,
   state: VoiceQueue,
@@ -202,7 +234,7 @@ function playCallSequence(
   source.start();
 }
 
-/** Play recorded XKT score/name clips; callers retain browser speech as fallback. */
+/** Play recorded XKT umpire clips; do not substitute a different browser voice. */
 export async function playXktUmpireCall(
   context: BaseAudioContext,
   text: string,
@@ -213,11 +245,20 @@ export async function playXktUmpireCall(
   const state = voiceQueue(context);
   const generation = state.generation;
   try {
-    const [umpire, names] = await Promise.all([
-      loadManifest<XktUmpireAudioIndex>(UMPIRE_INDEX_URL, fetcher),
-      loadManifest<XktPlayerNameAudioIndex>(PLAYER_NAME_INDEX_URL, fetcher),
-    ]);
-    const urls = resolveXktUmpireCallPaths(text, umpire, names, isWta);
+    // Electronic line calls are a separate voice, not an umpire or a
+    // browser-speech fallback. They share the queue and master mute control.
+    const lineCall = resolveAutomatedLineCallPath(text, isWta);
+    let urls: string[] | null;
+    if (lineCall) {
+      urls = [lineCall];
+    } else {
+      if (['fault', 'out'].includes(text.trim().toLowerCase())) return false;
+      const [umpire, names] = await Promise.all([
+        loadManifest<XktUmpireAudioIndex>(UMPIRE_INDEX_URL, fetcher),
+        loadManifest<XktPlayerNameAudioIndex>(PLAYER_NAME_INDEX_URL, fetcher),
+      ]);
+      urls = resolveXktUmpireCallPaths(text, umpire, names, isWta);
+    }
     if (!urls || generation !== state.generation || context.state !== 'running') return false;
     const buffers = await Promise.all(urls.map(url => loadAudioBuffer(context, url, fetcher)));
     if (generation !== state.generation || context.state !== 'running') return false;

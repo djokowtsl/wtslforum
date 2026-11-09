@@ -1,11 +1,23 @@
 import { redirect } from 'next/navigation';
 import PageHero from '@/components/PageHero';
 import DmoDeliveryRetryButton from '@/components/DmoDeliveryRetryButton';
+import DmoReplayPublicationControl from '@/components/DmoReplayPublicationControl';
+import DmoSubmissionVisibilityControl from '@/components/DmoSubmissionVisibilityControl';
 import DmoSubmissionTagEditor from '@/components/DmoSubmissionTagEditor';
 import { getSession } from '@/lib/auth';
 import { listDmoSubmissions } from '@/lib/dmo-submissions';
 
 export const dynamic = 'force-dynamic';
+
+function playerReplayStyle(hand: string | null, backhand: string | null) {
+  const playingHand = hand === 'left' ? 'Left-handed' : hand === 'right' ? 'Right-handed' : null;
+  const backhandGrip = backhand === 'one-handed'
+    ? 'One-handed backhand'
+    : backhand === 'two-handed'
+      ? 'Two-handed backhand'
+      : null;
+  return [playingHand, backhandGrip].filter(Boolean).join(' · ') || 'Not recorded';
+}
 
 export default async function AdminDmoSubmissions() {
   const user = await getSession();
@@ -24,6 +36,7 @@ export default async function AdminDmoSubmissions() {
             <div className="notice">No DMO submissions have been received yet.</div>
           ) : submissions.map((submission) => {
             const id = Number(submission.id);
+            const submissionId = String(submission.id);
             const submissionDate = submission.submission_date instanceof Date
               ? submission.submission_date.toISOString().slice(0, 10)
               : String(submission.submission_date).slice(0, 10);
@@ -32,7 +45,7 @@ export default async function AdminDmoSubmissions() {
               dateStyle: 'medium',
             });
             return (
-              <article className="admin-card" key={id}>
+              <article className="admin-card" key={submissionId}>
                 <div style={{ display: 'flex', justifyContent: 'space-between', gap: 12, flexWrap: 'wrap' }}>
                   <h3 style={{ margin: 0 }}>{submission.tournament} — {submission.round_name}</h3>
                   <span className="notice">Submission date: {displayDate}</span>
@@ -40,11 +53,35 @@ export default async function AdminDmoSubmissions() {
                 <p style={{ margin: '10px 0 6px' }}>
                   <strong>{submission.player1}</strong> vs <strong>{submission.player2}</strong>
                 </p>
+                {(submission.player1_character || submission.player2_character
+                  || submission.player1_handedness || submission.player2_handedness
+                  || submission.player1_backhand_type || submission.player2_backhand_type) && (
+                  <p className="notice" style={{ margin: '0 0 8px' }}>
+                    Replay setup: {submission.player1} — {submission.player1_character || 'No selected character'}
+                    {' · '}{playerReplayStyle(submission.player1_handedness, submission.player1_backhand_type)};{' '}
+                    {submission.player2} — {submission.player2_character || 'No selected character'}
+                    {' · '}{playerReplayStyle(submission.player2_handedness, submission.player2_backhand_type)}
+                  </p>
+                )}
                 <p className="notice" style={{ marginBottom: 12 }}>
                   Submitted by {submission.account_name || submission.submitter_name}
                   {submission.submitter_discord_id ? ` · Discord ${submission.submitter_discord_id}` : ''}
                   {' · '}Source: {submission.source === 'discord' ? 'Discord' : 'Forum'}
                 </p>
+                <DmoReplayPublicationControl
+                  id={submissionId}
+                  hasDmoFile={Boolean(
+                    submission.private_blob_pathname
+                    && /\.dmo$/i.test(String(submission.file_name || submission.private_blob_pathname)),
+                  )}
+                  publicShareConsent={submission.public_share_consent === true}
+                  overrideActive={submission.public_replay_override_active === true}
+                />
+                <DmoSubmissionVisibilityControl
+                  id={submissionId}
+                  hidden={Boolean(submission.hidden_at)}
+                  hiddenBy={submission.hidden_by || ''}
+                />
                 <div style={{ display: 'flex', gap: 10, flexWrap: 'wrap', alignItems: 'center' }}>
                   <DmoSubmissionTagEditor
                     id={id}

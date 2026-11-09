@@ -5,6 +5,8 @@ import { ChevronLeft, ChevronRight, Minus, Pause, Play, Plus, RotateCcw, Volume2
 import * as THREE from 'three';
 import { OrbitControls } from 'three/examples/jsm/controls/OrbitControls.js';
 import {
+  LIVE_DMO_EVENT_SYNC_BUFFER_FRAMES,
+  LIVE_DMO_UPDATE_INTERVAL_MS,
   TE4_DMO_FRAMES_PER_SECOND,
   type Te4DmoReplaySpeed,
   type Te4LiveSnapshot,
@@ -12,19 +14,24 @@ import {
 import type { Te4CourtSurface } from '@/lib/te4DmoTypes';
 import { clampDmoCameraTarget, dmoCameraMaxDistanceInsideBowl } from '@/lib/dmoCameraConstraints';
 import { isCapturedSmashShot } from '@/lib/dmoSmash';
+import { isCapturedVolleyShot } from '@/lib/dmoVolley';
 import {
   CAPTURE_RECOVERY_FRAMES,
   RECOVERY_FADE_START,
   GROUNDSTROKE_LEAD_FRAMES,
   SERVE_LEAD_FRAMES,
+  VOLLEY_RECOVERY_FRAMES,
   groundstrokeCaptureWeight,
   groundstrokeLeadFrames,
   recordedStrokeForSide,
+  isRecordedVolley,
   recordedStrokeUsesTwoHands,
+  shouldCompressGroundstrokeTakeBack,
+  volleyCaptureWeight,
   serveCaptureWeight,
   type GroundstrokeName,
 } from './DmoCapturedGroundstroke';
-import { courtSurfaceDisplayName, isIndoorDmoVenue } from '@/lib/te4DmoSurface';
+import { isIndoorDmoVenue } from '@/lib/te4DmoSurface';
 import {
   deriveLiveCourtSoundEvents,
   loadCourtEffectSamples,
@@ -35,6 +42,9 @@ import {
 } from '@/lib/liveCourtAudio';
 import {
   advanceLiveCourtPlayhead,
+  withReachAttempts,
+  LIVE_CUSHION_SECONDS,
+  clampLiveCourtPlayheadToTail,
   clampPlayerCameraLateralPan,
   deriveLiveCourtFootworkEvents,
   deriveLiveCourtSkidMarks,
@@ -47,8 +57,22 @@ import {
   liveCourtEventsBetween,
   liveCourtTrajectoryCue,
   liveCourtFacingAngle,
+  liveCourtShotSpin,
+  liveCourtBallHeldSeconds,
   mergeLiveCourtEvents,
   mergeLiveCourtSamples,
+  liveCourtReplayFrameScale,
+  nextLiveCourtCarryMode,
+  SERVE_BOUNCE_END_SECONDS,
+  SERVE_BOUNCES,
+  SERVE_BOUNCE_SECONDS,
+  serveBounceHeight,
+  lowReachDrop,
+  ballPassedReceiverFrame,
+  lungeWeight,
+  LUNGE_FEET_APART,
+  LUNGE_DROP,
+  LOW_REACH_MAX_DROP,
   type LiveCourtCoordinates,
   type LiveCourtFootworkEvent,
   type LiveCourtMotionEvent,
@@ -61,6 +85,7 @@ import {
   gaitFeet,
   isBetweenPoints,
   isChangeoverCut,
+  rallyOverWeight,
   lastShotFrame,
   newGaitState,
   nextShotEvent,
@@ -106,7 +131,7 @@ import CourtPictureInPictureButton from './CourtPictureInPictureButton';
 import { attachHumanPlayer, disposeHumanModel, loadHumanModel } from './DmoHumanModels';
 import { attachHumanCourtStaff, attachHumanCrowd } from './DmoHumanCrowd';
 import { BROADCAST_PLAYER_KITS } from './DmoNativeKit';
-import { racketContactOrientation, racketGripElbow, racketGripWrist } from './DmoRacketOrientation';
+import { racketCarryOrientation, racketContactOrientation, racketGripElbow, racketGripWrist } from './DmoRacketOrientation';
 import type { StadiumScoreboardData } from './DmoStadiumArchitecture';
 import densityStyles from './DmoCrowdDensityControl.module.css';
 import {
@@ -116,15 +141,20 @@ import {
 } from '@/lib/dmoCrowdDensity';
 import {
   cancelUmpireCall,
+  createCourtAudioContext,
   createLiveUmpireScoreTether,
   deriveUmpireCallEvents,
-  isBrowserUmpireSpeechUnlocked,
+  createLiveUmpireEventCursor,
+  consumeLiveUmpireCallEvents,
+  resetLiveUmpireEventCursor,
   liveUmpireMatchKey,
   matchLiveUmpireScoreToDmoPointEnd,
   observeLiveUmpireScore,
+  preloadLineCallAudio,
   resetLiveUmpireScoreTether,
+  resumeUmpireAudioContext,
+  watchUmpireAudioContext,
   speakUmpireCall,
-  unlockBrowserUmpireSpeech,
   umpireCallsBetween,
   type UmpireCallEvent,
 } from '@/lib/liveCourtUmpire';
@@ -160,6 +190,31 @@ const DEFAULT_CAMERA = new THREE.Vector3(-18, 8, 19);
 
 /** The camera never goes lower than this above the court surface (metres). */
 const MIN_CAMERA_HEIGHT = 0.8;
+/** Frames (at 60 per second) before his own shot when a running player brings
+ * the racket back in front for the recorded take-back. */
+const RALLY_RUN_CARRY_CUTOFF_FRAMES = 36;
+/** Real walks face travel; short adjustments and imminent serves face the net. */
+const SHORT_WALK_METRES = 2;
+const SHORT_WALK_MAX_TURN = THREE.MathUtils.degToRad(60);
+const SERVE_IMMINENT_SECONDS = 1.5;
+const SERVE_IMMINENT_MAX_TURN = THREE.MathUtils.degToRad(30);
+/** A stretch for a ball going past is mostly arm and upper body: this share
+ *  of the lunge a groundstroke that wide would get. */
+const ATTEMPT_LUNGE_SHARE = 0.6;
+/** Beyond this reach (m from his centre) a two-handed player lets go with the
+ *  free hand to stretch for a backhand. */
+const ONE_HAND_STRETCH_METRES = 1.3;
+/** A volley this far (m) from his centre: he reaches out for it as in a stretch. */
+const WIDE_VOLLEY_METRES = 1;
+
+function limitHeadingToNet(heading: number, netFacing: number, secondsToServe: number, metresToGo: number) {
+  const limit = secondsToServe < SERVE_IMMINENT_SECONDS ? SERVE_IMMINENT_MAX_TURN
+    : metresToGo < SHORT_WALK_METRES ? SHORT_WALK_MAX_TURN : Math.PI;
+  const delta = Math.atan2(Math.sin(heading - netFacing), Math.cos(heading - netFacing));
+  return netFacing + THREE.MathUtils.clamp(delta, -limit, limit);
+}
+/** Furthest the hips turn toward a fast run across the court (radians). */
+const RUN_HIP_TURN = 1.05;
 
 const colorToCss = (color: number) => `#${color.toString(16).padStart(6, '0')}`;
 
@@ -218,6 +273,7 @@ function ThreeCourt({
   const viewportRef = useRef<HTMLDivElement>(null);
   const canvasHostRef = useRef<HTMLDivElement>(null);
   const canvasElementRef = useRef<HTMLCanvasElement>(null);
+  const mediaVideoRef = useRef<HTMLVideoElement>(null);
   const sceneRef = useRef<THREE.Scene | null>(null);
   const crowdRigRef = useRef<CrowdRig | null>(null);
   const audioContextRef = useRef<AudioContext | null>(null);
@@ -243,6 +299,14 @@ function ThreeCourt({
   const sampleBufferRef = useRef<LiveCourtSample[]>([]);
   const trajectoryEventsRef = useRef<LiveCourtMotionEvent[]>([]);
   const umpireCallEventsRef = useRef<UmpireCallEvent[]>([]);
+  // The events the players move to: TE4's, plus the beaten player's attempt at
+  // a ball that goes past him (live: only when known in time). Sounds, umpire
+  // calls, callouts and the ball use TE4's own events.
+  const motionEventsRef = useRef<LiveCourtMotionEvent[]>([]);
+  const attemptsSeenRef = useRef(new Map<string, boolean>());
+  // Live: how far (whole seconds) the court plays behind live, for the label.
+  const [courtDelay, setCourtDelay] = useState<number | null>(null);
+  const courtDelayReportedAtRef = useRef(0);
   const playheadRef = useRef<number | null>(null);
   const lastSoundFrameRef = useRef(Math.max(0, snapshot.frameCount - 3));
   const lastUmpireCallFrameRef = useRef(snapshot.courtFrameIndices?.[0] ?? 0);
@@ -279,6 +343,7 @@ function ThreeCourt({
     live: false,
   };
   const liveUmpireScoreTetherRef = useRef(createLiveUmpireScoreTether());
+  const liveUmpireEventCursorRef = useRef(createLiveUmpireEventCursor());
   const liveScoreboardRef = useRef(scoreboardData.live);
   liveScoreboardRef.current = scoreboardData.live;
   const sceneDataRef = useRef({
@@ -306,14 +371,14 @@ function ThreeCourt({
   const [cameraView, setCameraView] = useState<CameraView>('court');
   const [playerCameraPan, setPlayerCameraPan] = useState(0);
   const [soundEnabled, setSoundEnabled] = useState(true);
-  const [umpireCallsEnabled, setUmpireCallsEnabled] = useState(true);
-  const [umpireSpeechReady, setUmpireSpeechReady] = useState(isBrowserUmpireSpeechUnlocked());
+  const [soundReady, setSoundReady] = useState(false);
+  const umpireCallsEnabled = soundEnabled;
+  const [umpireSpeechReady, setUmpireSpeechReady] = useState(false);
   const [soundError, setSoundError] = useState('');
   const [crowdVolume, setCrowdVolume] = useState(0.24);
   const [effectsVolume, setEffectsVolume] = useState(0.9);
   const [hasCourtData, setHasCourtData] = useState(snapshot.court.length > 0);
   const [modelStatus, setModelStatus] = useState<'loading' | 'ready' | 'partial' | 'failed'>('loading');
-  const surfaceLabel = courtSurfaceDisplayName(surface);
   const [shotCallout, setShotCallout] = useState<{
     player: string;
     shotType: 'serve' | 'rally';
@@ -324,6 +389,7 @@ function ThreeCourt({
   umpireCallsEnabledRef.current = umpireCallsEnabled;
   const umpireSpeechReadyRef = useRef(umpireSpeechReady);
   umpireSpeechReadyRef.current = umpireSpeechReady;
+  const soundPointerActivationRef = useRef(false);
 
   useEffect(() => {
     const previous = previousSnapshotRef.current;
@@ -335,6 +401,8 @@ function ThreeCourt({
       sampleBufferRef.current = [];
       trajectoryEventsRef.current = [];
       umpireCallEventsRef.current = [];
+      motionEventsRef.current = [];
+      attemptsSeenRef.current.clear();
       soundEventsRef.current = [];
       skidMarksRef.current = [];
       footworkEventsRef.current = [];
@@ -348,6 +416,7 @@ function ThreeCourt({
       }
       lastSoundFrameRef.current = Math.max(0, snapshot.frameCount - 3);
       resetLiveUmpireScoreTether(liveUmpireScoreTetherRef.current);
+      resetLiveUmpireEventCursor(liveUmpireEventCursorRef.current);
       cancelUmpireCall(audioContextRef.current, liveUmpireMatchKey(snapshot.players, isWta));
       setHasCourtData(false);
     }
@@ -380,6 +449,24 @@ function ThreeCourt({
       snapshot.trajectoryEvents ?? [],
       earliestFrame,
     );
+    {
+      // Live: only an attempt seen in time to swing (its moment at least 0.5 s
+      // ahead of the playhead when it first shows up) is played; otherwise he'd
+      // snap into a late swing. Decided once per attempt.
+      const fps = snapshot.frameRate ?? TE4_DMO_FRAMES_PER_SECOND;
+      const withAttempts = withReachAttempts(
+        trajectoryEventsRef.current, sampleBufferRef.current, fps,
+        fullReplay ? undefined : sampleBufferRef.current.at(-1)?.frame,
+      );
+      const seen = attemptsSeenRef.current;
+      motionEventsRef.current = fullReplay ? withAttempts : withAttempts.filter((event) => {
+        if (!(event as { attempt?: boolean }).attempt) return true;
+        const key = `${event.frame}:${event.player}`;
+        if (!seen.has(key)) seen.set(key, event.frame - (playheadRef.current ?? event.frame) >= fps * 0.5);
+        return seen.get(key);
+      });
+      if (seen.size > 512) for (const key of [...seen.keys()].slice(0, seen.size - 512)) seen.delete(key);
+    }
     const footworkEvents = deriveLiveCourtFootworkEvents(
       sampleBufferRef.current,
       snapshot.frameRate ?? TE4_DMO_FRAMES_PER_SECOND,
@@ -393,9 +480,14 @@ function ThreeCourt({
       snapshot.frameRate ?? TE4_DMO_FRAMES_PER_SECOND,
     );
     umpireCallEventsRef.current = deriveUmpireCallEvents(
-      trajectoryEventsRef.current,
+      [
+        ...trajectoryEventsRef.current,
+        ...(snapshot.trajectoryEvents ?? []).filter(event =>
+          event.kind === 'point-end' && event.frame < earliestFrame),
+      ].sort((a, b) => a.frame - b.frame),
       soundEventsRef.current,
       sampleBufferRef.current,
+      { allowPendingPointEnd: !fullReplay },
     );
     const skidHistory = new Map(skidMarksRef.current.map(mark => [`${mark.frame}:${mark.player}`, mark]));
     for (const mark of deriveLiveCourtSkidMarks(
@@ -444,13 +536,24 @@ function ThreeCourt({
         isWta,
         () => umpireCallsEnabledRef.current && umpireSpeechReadyRef.current,
         liveUmpireMatchKey(snapshot.players, isWta),
-      ).then((spoken) => {
-        if (!spoken && umpireCallsEnabledRef.current && umpireSpeechReadyRef.current) {
-          setSoundError('Spoken umpire calls are unavailable in this browser.');
-        }
-      });
+      );
     }
   }, [scoreboardData, umpireCallsEnabled, umpireSpeechReady]);
+
+  useEffect(() => {
+    const context = audioContextRef.current;
+    if ((!umpireSpeechReady && !soundReady) || !context) return;
+    return watchUmpireAudioContext(context, () => {
+      soundOnRef.current = false;
+      setSoundReady(false);
+      crowdAudioRef.current?.pause();
+      umpireSpeechReadyRef.current = false;
+      setUmpireSpeechReady(false);
+      cancelUmpireCall(context, liveUmpireMatchKey(snapshot.players, isWta));
+      resetLiveUmpireEventCursor(liveUmpireEventCursorRef.current);
+      if (soundPreferenceRef.current) setSoundError('The browser paused audio. Tap Enable sound to resume.');
+    });
+  }, [umpireSpeechReady, soundReady, isWta, snapshot.players]);
 
   // Cues are consumed by the animation playhead, never snapshot arrival.
 
@@ -595,6 +698,7 @@ function ThreeCourt({
       scene,
       sceneDataRef.current.surface,
       sceneDataRef.current.isWta,
+      sceneDataRef.current.snapshot.stadium,
     );
     const fixtureRig = buildCourtFixtures(scene);
     const crowdRig = buildCrowd(scene, sceneDataRef.current.snapshot.stadium, crowdDensity);
@@ -657,6 +761,9 @@ function ThreeCourt({
     );
     ball.castShadow = true;
     scene.add(ball);
+    // Before a serve the ball is drawn in the server's free hand (bounces,
+    // then held until the toss); this eases it back onto the recorded toss.
+    const serveBall = { frame: -1, hand: null as THREE.Object3D | null };
     const ballShadow = new THREE.Mesh(
       new THREE.CircleGeometry(0.16, 20),
       new THREE.MeshBasicMaterial({ color: 0x061a18, transparent: true, opacity: 0.42 }),
@@ -793,9 +900,12 @@ function ThreeCourt({
           rig.root.position.addScaledVector(movement, Math.min(1, step / distance));
           rig.root.userData.walking = true;
           // Face the way he walks; square up to the net over the last half metre.
+          // Short adjustments and imminent serves stay facing the net.
+          const netFacing = liveCourtFacingAngle(position.x < 0 ? -1 : 1);
           rig.root.userData.walkHeading = distance > 0.5
-            ? Math.atan2(movement.x, movement.z)
-            : liveCourtFacingAngle(position.x < 0 ? -1 : 1);
+            ? limitHeadingToNet(Math.atan2(movement.x, movement.z), netFacing,
+              nextServe ? (nextServe.frame - frame) / replayRate : Number.POSITIVE_INFINITY, distance)
+            : netFacing;
         } else {
           // Follow the recording through a jitter filter (whole-cm samples every
           // other frame shake by a centimetre or two; see filterCourtPosition).
@@ -843,6 +953,9 @@ function ThreeCourt({
         if (replaySeconds > 0 || !lastPlaced) rig.root.userData.lastPlacedPosition = rig.root.position.clone();
       }
       const frameRate = sceneDataRef.current.snapshot.frameRate ?? TE4_DMO_FRAMES_PER_SECOND;
+      // Stroke timings below use 60-per-second frames. Full replays at 30 fps
+      // need their frame deltas converted or recorded motions run too slowly.
+      const frameScale = liveCourtReplayFrameScale(frameRate);
       const maxGapFrames = frameRate * sceneDataRef.current.playbackSpeed / 2;
       const prior = interpolateLiveCourtFrame(samples, Math.max(firstFrame, frame - 2), maxGapFrames) ?? values;
       const later = interpolateLiveCourtFrame(samples, Math.min(lastFrame, frame + 2), maxGapFrames) ?? values;
@@ -877,7 +990,31 @@ function ThreeCourt({
           const covering = Math.hypot(aheadX, aheadZ);
           const strolling = covering > (rig.root.userData.strollFacing ? 0.3 : 0.5);
           rig.root.userData.strollFacing = strolling;
-          if (strolling) strollHeading = Math.atan2(aheadX, aheadZ);
+          if (strolling) {
+            // How far the walk still goes: the path the recording has him walk
+            // over the next 4 s, up to where he stops or TE4 cuts (jumps him to
+            // his place). Judged by where he'd be later, a walk cut short by
+            // a jump, or a slow one, counted as a short adjustment and he
+            // side-stepped all the way back.
+            let metresToGo = 0;
+            {
+              let previous = values;
+              let still = 0;
+              for (let ahead = frame + 2; ahead <= Math.min(lastFrame, frame + frameRate * 4); ahead += 2) {
+                const next = interpolateLiveCourtFrame(samples, ahead, maxGapFrames);
+                if (!next) break;
+                const step = Math.hypot((next[xIndex] - previous[xIndex]) * SCALE, (next[zIndex] - previous[zIndex]) * SCALE);
+                if (step > 0.5) break; // a cut
+                metresToGo += step;
+                still = step * frameRate / 2 < 0.3 ? still + 2 : 0;
+                if (still >= frameRate / 2) break; // stopped
+                previous = next;
+              }
+            }
+            const serveDue = findLiveCourtShotInRange(events, frame, frame + frameRate * 90, 'serve');
+            strollHeading = limitHeadingToNet(Math.atan2(aheadX, aheadZ), liveCourtFacingAngle(courtSide),
+              serveDue ? (serveDue.frame - frame) / frameRate : Number.POSITIVE_INFINITY, metresToGo);
+          }
         }
       } else {
         rig.root.userData.strollFacing = false;
@@ -899,10 +1036,10 @@ function ThreeCourt({
       const turned = rig.root.userData.facingInitialized ? Math.abs(facing - rig.root.rotation.y) : 0;
       rig.root.userData.facingInitialized = true;
       const eventPlayer = index === 0 ? 1 : 2;
-      const nearbyEvent = findPlayerShotEvent(events, eventPlayer, frame, 24);
+      const nearbyEvent = findPlayerShotEvent(events, eventPlayer, frame, 24 / frameScale);
       const upcomingServe = nearbyEvent
         ? undefined
-        : findPlayerShotEvent(events, eventPlayer, frame, SERVE_LEAD_FRAMES, 'serve');
+        : findPlayerShotEvent(events, eventPlayer, frame, SERVE_LEAD_FRAMES / frameScale, 'serve');
       const event = nearbyEvent ?? (upcomingServe && upcomingServe.frame > frame ? upcomingServe : undefined);
       const serving = event?.shotType === 'serve';
       const contactCue = event
@@ -912,8 +1049,8 @@ function ThreeCourt({
           sceneDataRef.current.snapshot.frameRate ?? TE4_DMO_FRAMES_PER_SECOND,
         )
         : 'standard';
-      const jump = serving ? serveLift(frame - event.frame) : 0;
-      const strokeDelta = event ? frame - event.frame : Number.POSITIVE_INFINITY;
+      const jump = serving ? serveLift((frame - event.frame) * frameScale) : 0;
+      const strokeDelta = event ? (frame - event.frame) * frameScale : Number.POSITIVE_INFINITY;
       const strikeWeight = event
         ? THREE.MathUtils.smoothstep(strokeDelta, -5, 0)
           * (1 - THREE.MathUtils.smoothstep(strokeDelta, 0, 5))
@@ -958,6 +1095,11 @@ function ThreeCourt({
         (ballX - rig.root.position.x) * Math.sin(facing)
         + (ballZ - rig.root.position.z) * Math.cos(facing)
       ) / rig.root.scale.x;
+      // Where the player looks: the ball (when the recording has it), in rig
+      // space. Between points, more loosely.
+      const ballRecorded = Math.abs(values[0]) > 1 || Math.abs(values[1]) > 1;
+      rig.root.userData.lookTarget = [localX, ballY / rig.root.scale.y, localZ];
+      rig.root.userData.lookWeight = ballRecorded ? (isBetweenPoints(events, frame) ? 0.6 : 1) : 0;
       const slideWeight = liveCourtSlideWeight(footworkEventsRef.current, eventPlayer, frame, frameRate);
       const lateralVelocity = velocityX * localXAxis[0] + velocityZ * localXAxis[1];
       const slideDirection = Math.sign(lateralVelocity);
@@ -985,21 +1127,54 @@ function ThreeCourt({
       // points (and on a sprint with the racket at the side); short quick
       // footwork around the ball in a rally. Use the eased carry from last frame.
       gait.walking = walking ? 1 : THREE.MathUtils.clamp(Number(rig.root.userData.carryMove ?? 0), 0, 1);
-      advanceGait(gait, travel, steppingSpeed);
+      // On a fast run across the court the hips turn toward the run (up to
+      // ~60 degrees, chest half as much, eyes on the ball) and the steps go
+      // along it, alternating like a real run. A side-shuffle at that speed
+      // spread the legs wide and stiff. The gait works in the hips' frame.
+      const hipYaw = Number(rig.root.userData.runHipYaw ?? 0);
+      const toHips = (v: [number, number]): [number, number] => [
+        v[0] * Math.cos(hipYaw) - v[1] * Math.sin(hipYaw),
+        v[0] * Math.sin(hipYaw) + v[1] * Math.cos(hipYaw),
+      ];
+      const fromHips = (x: number, z: number): [number, number] => [
+        x * Math.cos(hipYaw) + z * Math.sin(hipYaw),
+        -x * Math.sin(hipYaw) + z * Math.cos(hipYaw),
+      ];
+      advanceGait(gait, toHips(travel), steppingSpeed);
       const [stepA, stepB] = gaitFeet(gait, steppingSpeed);
+      {
+        const travelDirection = fromHips(gait.direction[0], gait.direction[1]);
+        const across = Math.abs(travelDirection[0]);
+        const ownShotSoon = (() => {
+          const next = nextShotEvent(events, eventPlayer, frame);
+          return next !== undefined && (next.frame - frame) * frameScale < RALLY_RUN_CARRY_CUTOFF_FRAMES;
+        })();
+        const turnWanted = THREE.MathUtils.smoothstep(steppingSpeed, 2.6, 3.6)
+          * THREE.MathUtils.smoothstep(across, 0.5, 0.85) * gait.amount
+          * (ownShotSoon || walking ? 0 : 1);
+        const wantedYaw = THREE.MathUtils.clamp(
+          Math.atan2(travelDirection[0], Math.abs(travelDirection[1])),
+          -RUN_HIP_TURN,
+          RUN_HIP_TURN,
+        ) * turnWanted;
+        const maxTurn = 3 * Math.max(0, Math.min(0.1, replaySeconds));
+        rig.root.userData.runHipYaw = replaySeconds > 0.5
+          ? wantedYaw
+          : hipYaw + THREE.MathUtils.clamp(wantedYaw - hipYaw, -maxTurn, maxTurn);
+      }
       rig.root.userData.locomotionSpeed = steppingSpeed;
       const phase = gait.phase * Math.PI * 2 + index * Math.PI;
       const gaitSpeed = gait.amount * Math.min(1, speedMs / 4);
       // Return of serve: wide, low, hips hinged, racket in front, with a
       // split-step timed to the server's contact.
-      const opponentServe = findPlayerShotEvent(events, eventPlayer === 1 ? 2 : 1, frame, 90, 'serve');
-      const framesToServe = opponentServe ? opponentServe.frame - frame : Number.POSITIVE_INFINITY;
+      const opponentServe = findPlayerShotEvent(events, eventPlayer === 1 ? 2 : 1, frame, 90 / frameScale, 'serve');
+      const framesToServe = opponentServe ? (opponentServe.frame - frame) * frameScale : Number.POSITIVE_INFINITY;
       // Sets up once this player's own last shot is over, easing in rather than
       // switching on the frame the shot window ends.
       const ownLastShot = lastShotFrame(events, eventPlayer, frame);
       const upcomingOwn = event && event.frame > frame;
       const freeOfOwnShot = upcomingOwn ? 0
-        : ownLastShot === undefined ? 1 : THREE.MathUtils.smoothstep(frame - ownLastShot, 14, 34);
+        : ownLastShot === undefined ? 1 : THREE.MathUtils.smoothstep((frame - ownLastShot) * frameScale, 14, 34);
       // Only once he has arrived: walking back to the line (or any real
       // movement) is done upright, and the stance settles in after he stops.
       // Covers the walk back that TE4 records at the start of a point as well as
@@ -1054,6 +1229,27 @@ function ThreeCourt({
       servePreparation *= serveGate;
       serveToss *= serveGate;
       rig.root.userData.serveSetUp = serveGate;
+      // Pre-serve bounces (the recording only holds the ball still): the free
+      // hand meets the ball at the top of each bounce.
+      {
+        const ownServe = nextShotEvent(events, eventPlayer, frame);
+        const secondsToContact = ownServe?.shotType === 'serve' ? (ownServe.frame - frame) / frameRate : Number.NaN;
+        const held = Number.isFinite(secondsToContact) ? liveCourtBallHeldSeconds(samples, frame, frameRate) : 0;
+        const bounce = serveBounceHeight(secondsToContact, secondsToContact + held);
+        const start = SERVE_BOUNCE_END_SECONDS + SERVE_BOUNCES * SERVE_BOUNCE_SECONDS;
+        const handWeight = bounce === null ? 0
+          : THREE.MathUtils.smoothstep(start - secondsToContact, 0, 0.15)
+            * THREE.MathUtils.smoothstep(secondsToContact - SERVE_BOUNCE_END_SECONDS, 0, 0.15);
+        // TE4 holds the ball low (about hip height or below), out of reach of
+        // the hanging hand: the bounces start from a comfortable hand height
+        // (just above where the arm hangs), and the ball drawing uses the same top.
+        const top = Math.max(values[2] * SCALE, 0.9 * rig.root.scale.y);
+        rig.root.userData.serveBounceTop = top;
+        rig.root.userData.serveBounce = handWeight > 0 ? {
+          weight: handWeight,
+          hand: [localX, (top * Math.max(bounce!, 0.85) + BALL_RADIUS + 0.05) / rig.root.scale.y, localZ],
+        } : undefined;
+      }
       const returnGate = opponentServe
         ? easeGate('returnGate', stoppedAt(behindBaseline < 3.2), opponentServe.frame)
         : easeGate('returnGate', 0);
@@ -1074,9 +1270,9 @@ function ThreeCourt({
       // A small split-step as the opponent hits in a rally too (players are
       // neutral then, before turning to the ball), when not running hard.
       const opponentRallyShot = opponentServe ? undefined
-        : findPlayerShotEvent(events, eventPlayer === 1 ? 2 : 1, frame, 12, 'rally');
+        : findPlayerShotEvent(events, eventPlayer === 1 ? 2 : 1, frame, 12 / frameScale, 'rally');
       const rallySplit = opponentRallyShot && !walking
-        ? splitStepLift(opponentRallyShot.frame - frame) * 0.6 * freeOfOwnShot
+        ? splitStepLift((opponentRallyShot.frame - frame) * frameScale) * 0.6 * freeOfOwnShot
           * (1 - THREE.MathUtils.smoothstep(travelSpeed, 1.5, 3))
         : 0;
       const splitStep = opponentServe
@@ -1103,9 +1299,42 @@ function ThreeCourt({
           && jump < 0.001 && splitStep < 0.001 && rig.root.userData.stepLegs > 0.5,
         frameRate,
       );
+      // Pick the same current/lead shot used by the stroke player before
+      // computing body posture, so an overhead cannot crouch during its lead-in.
+      const heldStroke = rig.root.userData.capturedGroundstrokeEvent as {
+        frame: number; stroke: GroundstrokeName;
+      } | undefined;
+      const heldRecoveryFrames = isRecordedVolley(heldStroke?.stroke)
+        ? VOLLEY_RECOVERY_FRAMES * frameRate / 60 * frameScale
+        : CAPTURE_RECOVERY_FRAMES;
+      const recovering = heldStroke !== undefined && frame >= heldStroke.frame
+        && (frame - heldStroke.frame) * frameScale <= heldRecoveryFrames;
+      const comingShot = event || recovering ? undefined : nextShotEvent(events, eventPlayer, frame);
+      const leadEvent = comingShot && comingShot.shotType === 'rally'
+        && (comingShot.frame - frame) * frameScale <= GROUNDSTROKE_LEAD_FRAMES ? comingShot : undefined;
+      // A serve coming up does not cut short the previous stroke's recovery
+      // either (its recorded set-up starts ~1.8 s ahead); only a shot about to
+      // be played (within the 24-frame shot window) takes over.
+      const waitForRecovery = recovering && event && (event.frame - frame) * frameScale > 24
+        && event.frame !== heldStroke!.frame;
+      const strokeEvent = waitForRecovery ? undefined : event ?? leadEvent;
+      const strokeCue = !strokeEvent ? 'standard' : strokeEvent === event ? contactCue : inferLiveCourtContactCue(
+        strokeEvent,
+        samples,
+        sceneDataRef.current.snapshot.frameRate ?? TE4_DMO_FRAMES_PER_SECOND,
+      );
+      const contactSample = strokeEvent
+        ? interpolateLiveCourtFrame(samples, strokeEvent.frame, maxGapFrames)
+        : undefined;
       const bodyBounce = (stepA.lift + stepB.lift) * 0.3 + jump + splitStep;
-      const crouch = impactWeight * THREE.MathUtils.clamp((1.05 - ballY) / 0.95, 0, 1) * 0.18
-        + slideWeight * 0.13 + ready * 0.24;
+      const earlierCapturedSmash = Boolean(
+        (rig.root.userData.capturedGroundstrokeEvent as { smash?: boolean } | undefined)?.smash,
+      );
+      const suppressSmashCrouch = Boolean(rig.root.userData.capturedSmash
+        && (earlierCapturedSmash || isCapturedSmashShot(strokeEvent, contactSample)));
+      const crouch = suppressSmashCrouch ? 0
+        : impactWeight * lowReachDrop(ballY, Math.hypot(localX, localZ))
+          + slideWeight * 0.13 + ready * 0.24;
       rig.root.rotation.y = facing;
       const bodyY = 1.22 + bodyBounce - crouch * 0.45;
       const strokeSide = Math.sign(localX || dominantHandX(handedness));
@@ -1120,10 +1349,19 @@ function ThreeCourt({
       );
       rig.body.rotation.x = crouch * 0.5 + shapedFollowThrough * 0.08 - serveFollowThrough * 0.05
         + ready * 0.36 + runLean;
-      rig.body.rotation.y = trunkTurn;
+      rig.body.rotation.y = trunkTurn + hipYaw * 0.5;
       rig.hip.position.y = 0.90 + bodyBounce - crouch * 0.75;
+      // Standing between points: a slow, small weight shift from foot to foot
+      // instead of standing frozen (not once set up at the line).
+      {
+        const idle = isBetweenPoints(events, frame) && !walking && steppingSpeed < 0.3
+          ? 1 - Math.max(serveGate, returnGate) : 0;
+        const sway = Math.sin((frame / frameRate) * Math.PI * 2 * 0.3 + index * 1.7);
+        rig.hip.position.x = sway * 0.018 * idle;
+        rig.hip.rotation.z = -sway * 0.025 * idle;
+      }
       rig.hip.rotation.x = ready * 0.3 + runLean * 0.5;
-      rig.hip.rotation.y = trunkTurn * 0.42;
+      rig.hip.rotation.y = trunkTurn * 0.42 + hipYaw;
       rig.head.position.set(0, 1.73 + bodyBounce * 0.8 - crouch * 0.3 - ready * 0.12, ready * 0.26);
       rig.head.rotation.y = THREE.MathUtils.clamp(localX * 0.72, -0.28, 0.28) * (1 - ready);
       rig.head.rotation.x = THREE.MathUtils.clamp(-(ballY - 1.45) * 0.08, -0.18, 0.18) - ready * 0.08;
@@ -1139,16 +1377,68 @@ function ThreeCourt({
       rig.face.rightBrow.rotation.z = -0.04 - effort * 0.07;
       const leftHip = new THREE.Vector3(-0.13, 0.90 + bodyBounce - crouch * 0.75, 0);
       const rightHip = new THREE.Vector3(0.13, 0.90 + bodyBounce - crouch * 0.75, 0);
-      const leftFoot = new THREE.Vector3(
-        -stanceHalfWidth + stepA.x - slideSpread * 0.35,
-        0.1 + leftLift,
-        stepA.z + ready * 0.05,
-      );
-      const rightFoot = new THREE.Vector3(
-        stanceHalfWidth + stepB.x + slideSpread * 0.35,
-        0.1 + rightLift,
-        stepB.z + ready * 0.05,
-      );
+      const [leftFootX, leftFootZ] = fromHips(-stanceHalfWidth + stepA.x - slideSpread * 0.35, stepA.z + ready * 0.05);
+      const [rightFootX, rightFootZ] = fromHips(stanceHalfWidth + stepB.x + slideSpread * 0.35, stepB.z + ready * 0.05);
+      const leftFoot = new THREE.Vector3(leftFootX, 0.1 + leftLift, leftFootZ);
+      const rightFoot = new THREE.Vector3(rightFootX, 0.1 + rightLift, rightFootZ);
+      {
+        // A planted foot doesn't turn with the hips: once the hips have turned
+        // (toward or back from a run across the court) since it landed, it
+        // stays where it is on the court, moving only against the body's
+        // travel, until it lifts; in the air it eases back onto the stride.
+        // (The steps are laid out in the hips' frame, so turning that frame
+        // swung a planted foot round.) Held per foot from landing to lift-off,
+        // so repeated updates within one replay frame keep the hold.
+        type FootPin = { x: number; z: number; lift: number; yaw: number; ox: number; oz: number; frame: number };
+        const pins = rig.root.userData.footPins as { left: FootPin; right: FootPin } | undefined;
+        const seeking = replaySeconds > 0.5 || (pins !== undefined && frame < pins.left.frame);
+        const next = {} as { left: FootPin; right: FootPin };
+        for (const [key, foot, lift] of [['left', leftFoot, leftLift], ['right', rightFoot, rightLift]] as const) {
+          const before = seeking ? undefined : pins?.[key];
+          let ox = 0, oz = 0, yaw = hipYaw;
+          if (before && lift <= 1e-4 && before.lift <= 1e-4) {
+            yaw = before.yaw; // the hips' turn when this foot landed
+            if (Math.abs(hipYaw - yaw) > 1e-4 || Math.hypot(before.ox, before.oz) > 1e-4) {
+              ox = before.x - travel[0] - foot.x;
+              oz = before.z - travel[1] - foot.z;
+            }
+          } else if (before) {
+            const fade = Math.exp(-replaySeconds / 0.06);
+            ox = before.ox * fade;
+            oz = before.oz * fade;
+          }
+          foot.x += ox;
+          foot.z += oz;
+          next[key] = { x: foot.x, z: foot.z, lift, yaw, ox, oz, frame };
+        }
+        rig.root.userData.footPins = next;
+      }
+      {
+        // Wide-ball lunges spread the leading and trailing feet as recorded.
+        const lunge = rig.root.userData.lunge as { weight: number; side: number } | undefined;
+        if (lunge && lunge.weight > 0.001) {
+          const lead = lunge.side > 0 ? rightFoot : leftFoot;
+          const trail = lead === rightFoot ? leftFoot : rightFoot;
+          const apart = (lead.x - trail.x) * lunge.side;
+          const wanted = LUNGE_FEET_APART * lunge.weight;
+          if (apart < wanted) {
+            lead.x += (wanted - apart) * 0.6 * lunge.side;
+            trail.x -= (wanted - apart) * 0.4 * lunge.side;
+          }
+        }
+      }
+      // Recorded legs (walk / jog / run) for the detailed player: on a run or
+      // walk the swinging leg follows the recording (knee drive, heel lift);
+      // a planted foot stays exactly where the gait put it. Not for side
+      // shuffles, which the recordings (straight-ahead runs) don't show.
+      {
+        const hipsDirection = gait.direction;
+        const shuffle = THREE.MathUtils.smoothstep(Math.abs(hipsDirection[0]), 0.45, 0.85);
+        const backward = THREE.MathUtils.smoothstep(-hipsDirection[1], 0.2, 0.6);
+        rig.root.userData.recordedLegs = THREE.MathUtils.smoothstep(steppingSpeed, 0.9, 1.6)
+          * THREE.MathUtils.clamp(gait.amount, 0, 1) * (1 - shuffle) * (1 - backward);
+        rig.root.userData.gaitLift = { r: stepA.lift * landing, l: stepB.lift * landing };
+      }
       const leftKnee = new THREE.Vector3(
         leftHip.x + (leftFoot.x - leftHip.x) * 0.38,
         0.46 + bodyBounce - crouch * 0.35 + leftLift * 0.28,
@@ -1173,65 +1463,76 @@ function ThreeCourt({
       rig.rightShoe.rotation.z = slideDirection * slideWeight * 0.08;
       const dominantX = dominantHandX(handedness);
       const playerStrokeStyle = sceneDataRef.current.snapshot.strokeStyles?.[index];
-      // Classify the shot at contact, not from the travelling ball on every
-      // animation frame (which can switch forehand/backhand mid-swing).
-      // A groundstroke's recorded preparation starts ~0.65 s before contact,
-      // earlier than the procedural shot window, so the racket turns back from
-      // the carry instead of whipping into the backswing in a few frames. It
-      // never cuts short the previous stroke's recovery.
-      const heldStroke = rig.root.userData.capturedGroundstrokeEvent as { frame: number } | undefined;
-      const recovering = heldStroke !== undefined && frame >= heldStroke.frame
-        && frame - heldStroke.frame <= CAPTURE_RECOVERY_FRAMES;
-      const comingShot = event || recovering ? undefined : nextShotEvent(events, eventPlayer, frame);
-      const leadEvent = comingShot && comingShot.shotType === 'rally'
-        && comingShot.frame - frame <= GROUNDSTROKE_LEAD_FRAMES ? comingShot : undefined;
-      // A serve coming up does not cut short the previous stroke's recovery
-      // either (its recorded set-up starts ~1.8 s ahead); only a shot about to
-      // be played (within the 24-frame shot window) takes over.
-      const waitForRecovery = recovering && event && event.frame - frame > 24
-        && event.frame !== heldStroke!.frame;
-      const strokeEvent = waitForRecovery ? undefined : event ?? leadEvent;
-      const strokeCue = !strokeEvent ? 'standard' : strokeEvent === event ? contactCue : inferLiveCourtContactCue(
-        strokeEvent,
-        samples,
-        sceneDataRef.current.snapshot.frameRate ?? TE4_DMO_FRAMES_PER_SECOND,
-      );
-      const contactSample = strokeEvent
-        ? interpolateLiveCourtFrame(samples, strokeEvent.frame, maxGapFrames)
-        : undefined;
       const contactSide = contactSample
         ? ((contactSample[0] - contactSample[xIndex]) * localXAxis[0]
           + (contactSample[1] - contactSample[zIndex]) * localXAxis[1]) * SCALE / rig.root.scale.x
         : localX;
       const baseStroke = groundstrokeForBallSide(contactSide, handedness);
-      const isOverheadSmash = strokeCue === 'close-net'
-        && isCapturedSmashShot(
-          strokeEvent,
-          contactSample,
-          samples,
-          events,
-          sceneDataRef.current.snapshot.frameRate ?? TE4_DMO_FRAMES_PER_SECOND,
-        );
-      const stroke: GroundstrokeName = isOverheadSmash
-        ? 'smash'
-        : recordedStrokeForSide(baseStroke, strokeCue === 'close-net');
-      type CapturedEvent = { frame: number; stroke: GroundstrokeName; handedness: 'left' | 'right' };
+      const stroke = baseStroke;
+      type CapturedEvent = {
+        frame: number;
+        stroke: GroundstrokeName;
+        handedness: 'left' | 'right';
+        slice?: boolean;
+        spinSlice?: boolean;
+        smash?: boolean;
+        /** A stretch at a ball going past him (no TE4 shot). */
+        attempt?: boolean;
+        /** A two-hander's stretched backhand: he lets go with the free hand. */
+        oneHandReach?: boolean;
+      };
       let capturedEvent = rig.root.userData.capturedGroundstrokeEvent as CapturedEvent | undefined;
-      if (strokeEvent && strokeCue === 'soft-touch') {
+      // Inferred soft-touch cues are not a reason to replace a recorded stroke
+      // with the procedural arm pose; retain capture for both playing hands.
+      // Height at the rally contact is the only overhead selector; it applies
+      // on either side of a bounce and anywhere on court. Serves are excluded
+      // by isCapturedSmashShot.
+      const recordedSmash = Boolean(rig.root.userData.capturedSmash
+        && isCapturedSmashShot(strokeEvent, contactSample));
+      const recordedVolley = !recordedSmash
+        && strokeCue === 'close-net' && Boolean(rig.root.userData.capturedVolleys);
+      const recordedTouch = !recordedSmash
+        && strokeCue === 'soft-touch' && Boolean(rig.root.userData.capturedVolleys);
+      if (strokeEvent && !recordedSmash && (
+        (strokeCue === 'close-net' && !recordedVolley)
+        || (strokeCue === 'soft-touch' && !recordedTouch)
+      )) {
         delete rig.root.userData.capturedGroundstrokeEvent;
         delete rig.root.userData.groundstrokePlayback;
         capturedEvent = undefined;
-      } else if (strokeEvent) {
-        if (
-          capturedEvent?.frame !== strokeEvent.frame
-          || capturedEvent.handedness !== handedness
-          || capturedEvent.stroke !== stroke
-        ) {
+      }
+      if (strokeEvent) {
+        if (capturedEvent?.frame !== strokeEvent.frame || capturedEvent.handedness !== handedness) {
           capturedEvent = {
             frame: strokeEvent.frame,
-            stroke: strokeEvent.shotType === 'serve' ? 'serve' : stroke,
+            // The recording is a one-handed racket-side overhead, independent
+            // of which side of the body the ball approaches from.
+            stroke: strokeEvent.shotType === 'serve' ? 'serve' : recordedSmash ? 'forehand' : stroke,
             handedness,
+            ...(recordedSmash ? { smash: true } : {}),
+            ...((strokeEvent as { attempt?: boolean }).attempt ? { attempt: true } : {}),
+            ...((strokeEvent as { attempt?: boolean }).attempt && stroke === 'backhand' && contactSample
+              && Math.hypot((contactSample[0] - contactSample[xIndex]) * SCALE, (contactSample[1] - contactSample[zIndex]) * SCALE)
+                > ONE_HAND_STRETCH_METRES ? { oneHandReach: true } : {}),
           };
+          if (!recordedSmash && isCapturedVolleyShot(
+            strokeEvent, contactSample, samples, events, soundEventsRef.current,
+            sceneDataRef.current.snapshot.frameRate ?? TE4_DMO_FRAMES_PER_SECOND,
+          )) {
+            capturedEvent.stroke = recordedStrokeForSide(baseStroke, true);
+          } else if (
+            !recordedSmash
+            && rig.detailed
+            && !recordedVolley
+            && Boolean(rig.root.userData.capturedVolleys)
+            && strokeEvent.shotType === 'rally'
+            // (A stretch for a ball going past him is a full reach, not a slice.)
+            && !capturedEvent.attempt
+          ) {
+            const spinSlice = liveCourtShotSpin(samples, strokeEvent.frame, frameRate) === 'slice';
+            if (recordedTouch || spinSlice) capturedEvent.slice = true;
+            if (spinSlice) capturedEvent.spinSlice = true;
+          }
         }
         rig.root.userData.capturedGroundstrokeEvent = capturedEvent;
         if (contactSample) {
@@ -1241,7 +1542,14 @@ function ThreeCourt({
           const dx = (contactSample[0] - contactSample[xIndex]) * SCALE;
           const dz = (contactSample[1] - contactSample[zIndex]) * SCALE;
           rig.root.userData.contactTarget = {
-            key: `${strokeEvent.frame}:${capturedEvent.stroke}:${capturedEvent.handedness}`,
+            key: `${strokeEvent.frame}:${capturedEvent.stroke}:${capturedEvent.handedness}:${capturedEvent.smash ? 'smash' : ''}${capturedEvent.attempt ? ':stretch' : ''}`,
+            // A stretch: he reaches out toward a ball beyond his normal reach
+            // (a ball going past him, or a wide volley: the volley recording's
+            // contact is close in front, so a volley more than a metre to the
+            // side would otherwise miss it by about that much).
+            ...(capturedEvent.attempt
+              || (isRecordedVolley(capturedEvent.stroke) && Math.hypot(dx, dz) > WIDE_VOLLEY_METRES)
+              ? { stretch: true } : {}),
             point: [
               (dx * localXAxis[0] + dz * localXAxis[1]) / rig.root.scale.x,
               (Math.max(0, contactSample[2] * SCALE) + BALL_RADIUS) / rig.root.scale.y,
@@ -1252,10 +1560,16 @@ function ThreeCourt({
       }
       if (!capturedEvent) delete rig.root.userData.contactTarget;
       if (capturedEvent) {
-        const captureDelta = frame - capturedEvent.frame;
-        if (captureDelta < -SERVE_LEAD_FRAMES || captureDelta > CAPTURE_RECOVERY_FRAMES) {
+        const captureDelta = (frame - capturedEvent.frame) * frameScale;
+        const volley = isRecordedVolley(capturedEvent.stroke);
+        const recoveryFrames = volley
+          ? VOLLEY_RECOVERY_FRAMES * frameRate / 60 * frameScale
+          : CAPTURE_RECOVERY_FRAMES;
+        if (captureDelta < -SERVE_LEAD_FRAMES || captureDelta > recoveryFrames) {
           delete rig.root.userData.capturedGroundstrokeEvent;
           delete rig.root.userData.groundstrokePlayback;
+          rig.root.userData.lowReachDrop = 0;
+          delete rig.root.userData.lunge;
         } else {
           // Fade the next stroke in after the previous one has handed back,
           // rather than starting part-way up its envelope (a snap). A shot
@@ -1268,22 +1582,66 @@ function ThreeCourt({
           );
           const opponentContactGap = opponentContact === undefined
             ? undefined
-            : capturedEvent.frame - opponentContact;
+            : (capturedEvent.frame - opponentContact) * frameScale;
+          const returningServe = opponentContact !== undefined
+            && events.some(e => e.kind === 'shot' && e.frame === opponentContact && e.shotType === 'serve');
           const handOver = previousOwnShot === undefined ? 1 : Math.max(
-            THREE.MathUtils.smoothstep(frame - previousOwnShot, CAPTURE_RECOVERY_FRAMES, CAPTURE_RECOVERY_FRAMES + 24),
+            THREE.MathUtils.smoothstep(
+              (frame - previousOwnShot) * frameScale,
+              CAPTURE_RECOVERY_FRAMES,
+              CAPTURE_RECOVERY_FRAMES + 24,
+            ),
             THREE.MathUtils.smoothstep(captureDelta, -24, -8),
           );
           const weight = handOver * (capturedEvent.stroke === 'serve'
             ? serveCaptureWeight(captureDelta) * (captureDelta >= 0 ? 1 : Number(rig.root.userData.serveSetUp ?? 1))
-            : groundstrokeCaptureWeight(captureDelta, groundstrokeLeadFrames(opponentContactGap)));
+            : volley ? volleyCaptureWeight(captureDelta)
+              : groundstrokeCaptureWeight(captureDelta, groundstrokeLeadFrames(opponentContactGap)));
+          // (An attempt at a ball going past him is mainly a stretch, the arm
+          // and upper body reaching out; the legs only lunge for the furthest,
+          // and not as deep.)
+          const reachToBall = contactSample ? Math.hypot(
+            (contactSample[0] - contactSample[xIndex]) * SCALE,
+            (contactSample[1] - contactSample[zIndex]) * SCALE,
+          ) : 0;
+          const contactLunge = capturedEvent.stroke !== 'serve' && !volley
+            && !capturedEvent.smash && contactSample
+            ? lungeWeight(reachToBall, Boolean(capturedEvent.spinSlice))
+              * (capturedEvent.attempt ? ATTEMPT_LUNGE_SHARE : 1)
+            : 0;
+          const lungeTiming = THREE.MathUtils.smoothstep(captureDelta, -16, -2)
+            * (1 - THREE.MathUtils.smoothstep(captureDelta, 24, 44));
+          const lowOnly = capturedEvent.stroke !== 'serve' && !capturedEvent.smash && contactSample
+            ? lowReachDrop(Math.max(0, contactSample[2] * SCALE), 0)
+            : 0;
+          rig.root.userData.lowReachDrop = Math.min(
+            LOW_REACH_MAX_DROP,
+            lowOnly * weight + LUNGE_DROP * contactLunge * lungeTiming * Math.min(1, weight * 2),
+          );
+          rig.root.userData.lowReachFull = capturedEvent.smash
+            ? 0
+            : lowReachDrop(ballY, Math.hypot(localX, localZ));
+          const contactPoint = rig.root.userData.contactTarget?.point as [number, number, number] | undefined;
+          rig.root.userData.lunge = contactLunge > 0 && contactPoint
+            ? { weight: contactLunge * lungeTiming, side: Math.sign(contactPoint[0]) || 1 }
+            : undefined;
           if (weight > 0) {
             rig.root.userData.groundstrokePlayback = {
               stroke: capturedEvent.stroke,
-              deltaSeconds: captureDelta / frameRate,
+              deltaSeconds: captureDelta / 60,
               weight,
               handedness: capturedEvent.handedness,
               rootOffset: false,
-              hands: recordedStrokeUsesTwoHands(capturedEvent.stroke, playerStrokeStyle, false) ? 'two' : 'one',
+              hands: !capturedEvent.smash && !capturedEvent.slice && !capturedEvent.oneHandReach
+                && recordedStrokeUsesTwoHands(capturedEvent.stroke, playerStrokeStyle, false) ? 'two' : 'one',
+              ...(capturedEvent.smash ? { smash: true } : {}),
+              ...(capturedEvent.slice ? { slice: true } : {}),
+              // (A slice return does fit its whole preparation in: without it
+              // only the last ~0.3 s of the slice showed, and it read as a
+              // push or a drive. Rally slices keep their slow preparation.)
+              ...(shouldCompressGroundstrokeTakeBack(capturedEvent.stroke, capturedEvent.slice && !returningServe)
+                ? { leadScale: GROUNDSTROKE_LEAD_FRAMES / groundstrokeLeadFrames(opponentContactGap) }
+                : {}),
             };
           } else {
             delete rig.root.userData.groundstrokePlayback;
@@ -1291,8 +1649,11 @@ function ThreeCourt({
         }
       } else {
         delete rig.root.userData.groundstrokePlayback;
+        rig.root.userData.lowReachDrop = 0;
+        delete rig.root.userData.lunge;
       }
-      const twoHandedStroke = !serving
+        const twoHandedStroke = !serving && !capturedEvent?.smash && !isRecordedVolley(capturedEvent?.stroke)
+          && !capturedEvent?.slice && !capturedEvent?.oneHandReach
         && recordedStrokeUsesTwoHands(stroke, playerStrokeStyle, stroke === 'backhand');
       const armPump = Math.sin(phase * 0.55) * gaitSpeed * 0.12;
       // Between shots the racket is carried, not held up by the head: in front
@@ -1313,22 +1674,39 @@ function ThreeCourt({
       const ownNextShot = nextShotEvent(events, eventPlayer, frame);
       // (A serve coming up is handled by the serve set-up, which waits until he
       // is at the line; it must not take the relaxed walking carry away early.)
-      const shotDue = ownNextShot !== undefined && ownNextShot.shotType !== 'serve'
-        && ownNextShot.frame - frame < frameRate;
       // TE4 records the walk back to the line at the start of the next point;
       // that is walking too, so it gets the same relaxed carry as our own walks.
       // (Not once he has set up to serve or return: shuffling there is not a walk.)
-      const strolling = isBetweenPoints(events, frame)
-        ? THREE.MathUtils.smoothstep(travelSpeed, 0.5, 1.0) * (1 - Math.max(serveGate, returnGate))
-        : 0;
-      const carryIntent = walking ? 1 : shotDue ? 0 : Math.max(strolling, THREE.MathUtils.smoothstep(carrySpeed, 3.2, 4.6));
-      // Commit to one carry or the other (with hysteresis) and change over in
-      // a quick, eased 0.3 s. Following the intent directly could leave the
-      // arms hovering between the two carries for seconds at in-between
-      // speeds: free hand half-way to the throat, elbows folded out.
-      let carryMode = Boolean(rig.root.userData.carryMode);
-      if (carryIntent > 0.65) carryMode = true;
-      else if (carryIntent < 0.35) carryMode = false;
+      // Also relax when the last shot has gone unanswered or a point-end is
+      // delayed in the feed; the split-step and serve/return setup still win.
+      const rallyOver = rallyOverWeight(events, frame, frameRate, shot => {
+        const receiverIndex = shot.player === 1 ? 5 : shot.player === 2 ? 3 : undefined;
+        return receiverIndex === undefined
+          ? undefined
+          : ballPassedReceiverFrame(samples, shot.frame, frame, receiverIndex);
+      });
+      const strolling = Math.max(isBetweenPoints(events, frame) ? 1 : 0, rallyOver)
+        * (1 - Math.max(serveGate, returnGate));
+      // The racket comes up in front for the split-step around the opponent's
+      // contact and for his own shot. Recovery runs carry it at the side.
+      const opponent = eventPlayer === 1 ? 2 : 1;
+      const opponentNext = nextShotEvent(events, opponent, frame);
+      const opponentLast = lastShotFrame(events, opponent, frame);
+      const splitWindow = (opponentNext !== undefined && (opponentNext.frame - frame) / frameRate < 0.3)
+        || (opponentLast !== undefined && (frame - opponentLast) / frameRate < 0.2);
+      const ownShotNear = ownNextShot !== undefined && ownNextShot.shotType !== 'serve'
+        && (ownNextShot.frame - frame) / frameRate < 0.4;
+      const carryIntent = walking ? 1 : ownShotNear || (splitWindow && rallyOver < 0.5) ? 0
+        : Math.max(strolling, THREE.MathUtils.smoothstep(carrySpeed, 1.0, 1.6));
+      const carryMode = nextLiveCourtCarryMode(Boolean(rig.root.userData.carryMode), {
+        walking,
+        shotDue: ownShotNear || (splitWindow && rallyOver < 0.5),
+        strolling,
+        speed: carrySpeed,
+        carryIntent,
+      });
+      // Change carries in a quick, eased 0.3 s so speed noise cannot flick the
+      // racket or leave the arms hovering between poses.
       rig.root.userData.carryMode = carryMode;
       const previousRamp = Number(rig.root.userData.carryRamp ?? (carryMode ? 1 : 0));
       const carryRamp = replaySeconds > 0.5 ? (carryMode ? 1 : 0)
@@ -1468,6 +1846,9 @@ function ThreeCourt({
       const restingRacketAngle = -0.12 + Math.sin(phase * 0.55) * speed * 0.14;
       // Present the shaft forward of the forearm, not apparently through it.
       const resting = new THREE.Quaternion().setFromEuler(new THREE.Euler(0.42, 0, -restingRacketAngle));
+      if (handedness === 'left') {
+        resting.set(resting.x, -resting.y, -resting.z, resting.w);
+      }
       const backswingRotation = resting.clone().multiply(
         new THREE.Quaternion().setFromEuler(new THREE.Euler(0, 0, -strokeSide * 0.9)),
       );
@@ -1507,8 +1888,8 @@ function ThreeCourt({
       // (Angled across toward the backhand side it read as about to hit one.)
       const standingShaft = new THREE.Vector3(-Math.sign(dominantX) * 0.04, 0.32, 0.95).normalize();
       const movingShaft = new THREE.Vector3(-Math.sign(dominantX) * 0.1, -0.2 - 0.15 * (1 - runFactor), 0.97).normalize();
-      const carryRotation = racketContactOrientation(standingShaft, new THREE.Vector3(0, 1, 0).cross(standingShaft))
-        .slerp(racketContactOrientation(movingShaft, new THREE.Vector3(0, 1, 0).cross(movingShaft)), onTheMove);
+      const carryRotation = racketCarryOrientation(standingShaft, handedness)
+        .slerp(racketCarryOrientation(movingShaft, handedness), onTheMove);
       // Last frame's racket as the viewer saw it (the detailed player sets it).
       const visibleRacket = rig.racket.quaternion.clone();
       rig.racket.quaternion.copy(resting).slerp(carryRotation, carry);
@@ -1520,10 +1901,7 @@ function ThreeCourt({
       if (ready > 0) {
         // Head forward and up, straight at the server; face upright.
         const readyShaft = new THREE.Vector3(-Math.sign(dominantX) * 0.06, 0.42, 0.9).normalize();
-        const readyRotation = racketContactOrientation(
-          readyShaft,
-          new THREE.Vector3(0, 1, 0).cross(readyShaft),
-        );
+        const readyRotation = racketCarryOrientation(readyShaft, handedness);
         rig.racket.quaternion.slerp(readyRotation, ready);
       }
       // Preserve the original unarticulated hand surface; do not sculpt
@@ -1553,21 +1931,42 @@ function ThreeCourt({
       // The stroke being played back (if any) decides the grip style through
       // its recovery, rather than the ball's current side after the event passes.
       const recordedStroke = rig.root.userData.capturedGroundstrokeEvent as
-        { frame: number; stroke: GroundstrokeName } | undefined;
-      const recordedTwoHanded = recordedStrokeUsesTwoHands(
-        recordedStroke?.stroke,
-        playerStrokeStyle,
-        twoHandedStroke,
-      );
+        { frame: number; stroke: GroundstrokeName; slice?: boolean; smash?: boolean; oneHandReach?: boolean } | undefined;
+      const twoHandedSide = Boolean(recordedStroke)
+        && recordedStroke!.stroke !== 'serve'
+        && recordedStroke!.stroke !== 'smash'
+        && !recordedStroke!.smash
+        && !isRecordedVolley(recordedStroke!.stroke)
+        && recordedStrokeUsesTwoHands(recordedStroke!.stroke, playerStrokeStyle, false);
+      const recordedTwoHanded = recordedStroke
+        ? twoHandedSide && !recordedStroke.slice && !recordedStroke.smash && !recordedStroke.oneHandReach
+        : twoHandedStroke;
+      const sliceTakeBackHold = recordedStroke?.slice && twoHandedSide && frame <= recordedStroke.frame
+        ? 1 - THREE.MathUtils.smoothstep(
+          (frame - recordedStroke.frame) * frameScale,
+          -14,
+          -6,
+        )
+        : 0;
       // Two-handed players keep both hands on through the recovery.
       const recovery = recordedStroke && frame > recordedStroke.frame
-        ? 1 - THREE.MathUtils.smoothstep(frame - recordedStroke.frame, RECOVERY_FADE_START, CAPTURE_RECOVERY_FRAMES)
+        ? 1 - THREE.MathUtils.smoothstep(
+          (frame - recordedStroke.frame) * frameScale,
+          RECOVERY_FADE_START,
+          CAPTURE_RECOVERY_FRAMES,
+        )
         : 0;
       rig.root.userData.twoHandedStyle = recordedTwoHanded;
       const twoHandedWeight = recordedTwoHanded
         ? THREE.MathUtils.clamp(Math.max(strikeWeight, shapedBackswing, shapedFollowThrough, recovery) * 1.6, 0, 1)
         : 0;
-      rig.root.userData.supportHoldWeight = Math.max(twoHandedWeight, ready, carry * (1 - onTheMove));
+      rig.root.userData.supportHoldWeight = Math.max(
+        twoHandedWeight,
+        sliceTakeBackHold,
+        ready,
+        carry * (1 - onTheMove),
+      );
+      rig.root.userData.sliceTakeBackHold = sliceTakeBackHold;
       rig.root.userData.relaxedCarry = carry * onTheMove;
       // Walking, jogging and running with the racket at the side: recorded
       // arms follow the step phase (0 = the right foot landing in front).
@@ -1579,8 +1978,9 @@ function ThreeCourt({
       rig.root.userData.readyArms = Math.max(carry * (1 - onTheMove), ready);
       rig.root.userData.readyTime = frame / frameRate;
       rig.root.userData.returnCrouch = ready;
-      rig.root.userData.supportStrokeWeight = twoHandedWeight;
-      rig.root.userData.supportGripOffset = THREE.MathUtils.lerp(0.2, 0.11, twoHandedWeight);
+      const supportGrip = Math.max(twoHandedWeight, sliceTakeBackHold);
+      rig.root.userData.supportStrokeWeight = supportGrip;
+      rig.root.userData.supportGripOffset = THREE.MathUtils.lerp(0.2, 0.11, supportGrip);
       // Server's feet must stay behind the baseline until contact; landing
       // inside the court afterwards is legal and eases in. The guard also
       // eases in as the serve comes up: switched on at full strength it moved
@@ -1640,13 +2040,29 @@ function ThreeCourt({
         } else if (motionPreference.matches) {
           currentFrame = lastFrame;
         } else {
+          // Never closer than one DMO update to the newest data (bounce/Out
+          // calls need the next sample), and normally LIVE_CUSHION_SECONDS
+          // behind it, so a ball going past a player is known in time for him
+          // to stretch for it. Both are measured from the newest frame, so
+          // they don't add up.
           currentFrame = advanceLiveCourtPlayhead(
             playheadRef.current,
             elapsed,
             sceneDataRef.current.playbackSpeed,
             samples,
             frameRate,
+            LIVE_DMO_EVENT_SYNC_BUFFER_FRAMES,
+            LIVE_CUSHION_SECONDS * frameRate * sceneDataRef.current.playbackSpeed,
           ) ?? firstFrame;
+          if (now - courtDelayReportedAtRef.current >= 1000) {
+            courtDelayReportedAtRef.current = now;
+            // Behind the newest data, plus that data's average age on arrival
+            // (it comes in every LIVE_DMO_UPDATE_INTERVAL_MS).
+            const behind = (lastFrame - currentFrame) / (frameRate * Math.max(1, sceneDataRef.current.playbackSpeed))
+              + LIVE_DMO_UPDATE_INTERVAL_MS / 2000;
+            const seconds = Math.round(behind);
+            setCourtDelay(previous => (previous === seconds ? previous : seconds));
+          }
         }
         playheadRef.current = currentFrame;
         // Court wear survives point/game breaks. Reconstruct it only on a
@@ -1718,24 +2134,30 @@ function ThreeCourt({
           }
         }
         lastSoundFrameRef.current = currentFrame;
+        const umpireFrame = fullReplay
+          ? currentFrame
+          : clampLiveCourtPlayheadToTail(
+            currentFrame,
+            samples,
+            LIVE_DMO_EVENT_SYNC_BUFFER_FRAMES,
+          ) ?? currentFrame;
         const previousCallFrame = lastUmpireCallFrameRef.current;
-        if (currentFrame < previousCallFrame) {
+        if (umpireFrame < previousCallFrame) {
           cancelUmpireCall(
             audioContextRef.current,
             liveUmpireMatchKey(sceneDataRef.current.snapshot.players, sceneDataRef.current.isWta),
           );
         }
-        if (
-          currentFrame >= previousCallFrame
-          && currentFrame - previousCallFrame < 120
-          && umpireCallsEnabledRef.current
-          && umpireSpeechReadyRef.current
-        ) {
-          for (const call of umpireCallsBetween(
-            umpireCallEventsRef.current,
-            previousCallFrame,
-            currentFrame,
-          )) {
+        const callsEnabled = umpireCallsEnabledRef.current && umpireSpeechReadyRef.current;
+        const dueCalls = fullReplay
+          ? callsEnabled && umpireFrame >= previousCallFrame && umpireFrame - previousCallFrame < 120
+            ? umpireCallsBetween(umpireCallEventsRef.current, previousCallFrame, umpireFrame) : []
+          : consumeLiveUmpireCallEvents(
+            liveUmpireEventCursorRef.current, umpireCallEventsRef.current,
+            previousCallFrame, umpireFrame, callsEnabled,
+          );
+        {
+          for (const call of dueCalls) {
             if (!fullReplay && (call.kind === 'score' || call.kind === 'point-end')) {
               const liveScoreCall = matchLiveUmpireScoreToDmoPointEnd(
                 liveUmpireScoreTetherRef.current,
@@ -1750,11 +2172,7 @@ function ThreeCourt({
                   isWta,
                   () => umpireCallsEnabledRef.current && umpireSpeechReadyRef.current,
                   liveUmpireMatchKey(snapshot.players, isWta),
-                ).then((spoken) => {
-                  if (!spoken && umpireCallsEnabledRef.current && umpireSpeechReadyRef.current) {
-                    setSoundError('Spoken umpire calls are unavailable in this browser.');
-                  }
-                });
+                );
               }
               continue;
             }
@@ -1765,14 +2183,10 @@ function ThreeCourt({
               isWta,
               () => umpireCallsEnabledRef.current && umpireSpeechReadyRef.current,
               liveUmpireMatchKey(snapshot.players, isWta),
-            ).then((spoken) => {
-              if (!spoken && umpireCallsEnabledRef.current && umpireSpeechReadyRef.current) {
-                setSoundError('Spoken umpire calls are unavailable in this browser.');
-              }
-            });
+            );
           }
         }
-        lastUmpireCallFrameRef.current = currentFrame;
+        lastUmpireCallFrameRef.current = umpireFrame;
         const previousCalloutFrame = lastCalloutFrameRef.current;
         if (previousCalloutFrame === null || currentFrame < previousCalloutFrame) {
           lastCalloutFrameRef.current = currentFrame;
@@ -1806,6 +2220,55 @@ function ThreeCourt({
         const maxGapFrames = frameRate * sceneDataRef.current.playbackSpeed / 2;
         const values = interpolateLiveCourtFrame(samples, currentFrame, maxGapFrames) ?? samples[samples.length - 1].values;
         const ballPosition = new THREE.Vector3(values[0] * SCALE, Math.max(0, values[2]) * SCALE, values[1] * SCALE);
+        // Pre-serve: the recording holds the ball still, low by the hip (TE4's
+        // hand), until the toss. From the first bounce it is drawn in the
+        // server's free hand instead: bounced from hand height, then held,
+        // easing back onto the recorded flight once the toss starts.
+        let serveBallShown = false;
+        {
+          let pinned = false;
+          const nextServe = trajectoryEventsRef.current.find(e => e.kind === 'shot' && e.shotType === 'serve' && e.frame >= currentFrame);
+          if (nextServe) {
+            const secondsToContact = (nextServe.frame - currentFrame) / frameRate;
+            const held = liveCourtBallHeldSeconds(samples, currentFrame, frameRate);
+            const bounce = serveBounceHeight(secondsToContact, secondsToContact + held);
+            const start = SERVE_BOUNCE_END_SECONDS + SERVE_BOUNCES * SERVE_BOUNCE_SECONDS;
+            const inHand = secondsToContact <= start && secondsToContact + held >= start - 1e-3;
+            const server = nextServe.player === 1
+              ? players[0]
+              : nextServe.player === 2 ? players[1] : undefined;
+            const serverHandedness = nextServe.player === 1
+              ? sceneDataRef.current.snapshot.handedness?.[0]
+              : nextServe.player === 2 ? sceneDataRef.current.snapshot.handedness?.[1] : undefined;
+            const freeSide = (serverHandedness ?? 'right') === 'left' ? 'r' : 'l';
+            const handBone = server?.root.getObjectByName(`hand_${freeSide}`);
+            if (server && handBone && (bounce !== null || inHand)) {
+              // (The free hand as drawn last frame; ball centre just under the palm.)
+              const hand = handBone.getWorldPosition(new THREE.Vector3());
+              const top = Number(server.root.userData.serveBounceTop ?? ballPosition.y);
+              const target = new THREE.Vector3(
+                hand.x,
+                bounce !== null ? Math.max(ballPosition.y, top) * bounce : hand.y - 0.05 - BALL_RADIUS,
+                hand.z,
+              );
+              serveBall.frame = currentFrame;
+              serveBall.hand = handBone;
+              ballPosition.copy(target);
+              pinned = true;
+              serveBallShown = true;
+            }
+          }
+          const easeFrames = 0.3 * frameRate;
+          if (!pinned && serveBall.hand && currentFrame >= serveBall.frame && currentFrame - serveBall.frame < easeFrames) {
+            // Released: from the tossing hand onto the recorded flight (TE4
+            // jumps the ball from its hip hold to the toss).
+            const k = 1 - THREE.MathUtils.smoothstep((currentFrame - serveBall.frame) / easeFrames, 0, 1);
+            const hand = serveBall.hand.getWorldPosition(new THREE.Vector3());
+            ballPosition.lerp(hand.setY(hand.y - 0.05 - BALL_RADIUS), k);
+            ballPosition.y = Math.max(0, ballPosition.y);
+            serveBallShown = true;
+          }
+        }
         ball.position.copy(ballPosition);
         ball.position.y += BALL_RADIUS;
         ballShadow.position.set(ballPosition.x, 0.025, ballPosition.z);
@@ -1823,8 +2286,8 @@ function ThreeCourt({
           : activeShot
             ? firstPlayerDistance <= secondPlayerDistance ? 0 : 1
             : -1;
-        updatePlayer(players[0], values[3], values[4], 0, values, currentFrame, samples, lastFrame, firstFrame, trajectoryEventsRef.current, strikingPlayer === 0, elapsed, sceneDataRef.current.snapshot.handedness?.[0] ?? 'right');
-        updatePlayer(players[1], values[5], values[6], 1, values, currentFrame, samples, lastFrame, firstFrame, trajectoryEventsRef.current, strikingPlayer === 1, elapsed, sceneDataRef.current.snapshot.handedness?.[1] ?? 'right');
+        updatePlayer(players[0], values[3], values[4], 0, values, currentFrame, samples, lastFrame, firstFrame, motionEventsRef.current, strikingPlayer === 0, elapsed, sceneDataRef.current.snapshot.handedness?.[0] ?? 'right');
+        updatePlayer(players[1], values[5], values[6], 1, values, currentFrame, samples, lastFrame, firstFrame, motionEventsRef.current, strikingPlayer === 1, elapsed, sceneDataRef.current.snapshot.handedness?.[1] ?? 'right');
         if (soundOnRef.current && context?.state === 'running') {
           for (const player of players) {
             if (player.root.userData.footstepContact) {
@@ -1900,7 +2363,7 @@ function ThreeCourt({
         ));
         const knownPhase = Boolean(trajectoryEventsRef.current[0]
           && trajectoryEventsRef.current[0].frame <= currentFrame);
-        ball.visible = (showTrail || tossing || !knownPhase) && performance.now() >= changeoverUntil;
+        ball.visible = (showTrail || tossing || serveBallShown || !knownPhase) && performance.now() >= changeoverUntil;
         ballShadow.visible = ball.visible;
         (trailGeometry.attributes.position as THREE.BufferAttribute).needsUpdate = true;
       }
@@ -2027,18 +2490,41 @@ function ThreeCourt({
     viewportRef.current?.dispatchEvent(new CustomEvent<number>('courtplayerpan', { detail: pan }));
   };
 
-  const activateSoundFromGesture = async () => {
-    if (!soundPreferenceRef.current || soundOnRef.current || soundActivationPendingRef.current) return;
+  const activateSoundFromGesture = async (reportFailure = true) => {
+    if (!soundPreferenceRef.current
+      || (soundOnRef.current && audioContextRef.current?.state === 'running')) return;
+    if (soundActivationPendingRef.current) {
+      // An autoplay resume can be pending when the first trusted gesture arrives.
+      // Resume again inside that gesture rather than waiting for its timeout.
+      void audioContextRef.current?.resume().catch(() => {});
+      return;
+    }
     soundActivationPendingRef.current = true;
     try {
-      if (!audioContextRef.current) audioContextRef.current = new AudioContext();
+      if (!audioContextRef.current || audioContextRef.current.state === 'closed') {
+        audioContextRef.current = createCourtAudioContext();
+      }
       const context = audioContextRef.current;
-      await context.resume();
+      const resumed = await resumeUmpireAudioContext(context);
       if (!soundPreferenceRef.current) return;
-      if (context.state !== 'running') throw new Error('Audio context is not running');
+      if (!resumed) throw new Error(`Audio context is ${context.state}`);
+      void preloadLineCallAudio(context).catch(() => {});
       // Core court effects must not wait for, or fail with, optional MP3 layers.
       lastSoundFrameRef.current = playheadRef.current ?? snapshot.frameCount;
       soundOnRef.current = true;
+      setSoundReady(true);
+      umpireCallsEnabledRef.current = true;
+      umpireSpeechReadyRef.current = true;
+      setUmpireSpeechReady(true);
+      resetLiveUmpireEventCursor(liveUmpireEventCursorRef.current);
+      const currentCallFrame = playheadRef.current ?? snapshot.frameCount;
+      lastUmpireCallFrameRef.current = fullReplay
+        ? currentCallFrame
+        : clampLiveCourtPlayheadToTail(
+          currentCallFrame,
+          sampleBufferRef.current,
+          LIVE_DMO_EVENT_SYNC_BUFFER_FRAMES,
+        ) ?? currentCallFrame;
       setSoundError('');
       const layers: Array<Promise<unknown>> = [];
       let sampleLoad = courtEffectSamplesLoadRef.current;
@@ -2090,25 +2576,45 @@ function ThreeCourt({
           if (soundOnRef.current) setSoundError('Court effects are on; applause audio could not be loaded.');
         }));
       }
-      await Promise.all(layers);
-    } catch {
+      void Promise.all(layers);
+    } catch (error) {
       crowdAudioRef.current?.pause();
       soundOnRef.current = false;
-      if (soundPreferenceRef.current) setSoundError('Sound could not be enabled in this browser.');
+      setSoundReady(false);
+      if (soundPreferenceRef.current && reportFailure) {
+        const reason = error instanceof Error ? error.message : 'Audio activation failed';
+        setSoundError(`Sound could not start: ${reason}. Tap Enable sound to retry.`);
+      }
     } finally {
       soundActivationPendingRef.current = false;
     }
   };
 
   const toggleSound = async () => {
+    if (soundPointerActivationRef.current) {
+      soundPointerActivationRef.current = false;
+      return;
+    }
+    if (soundPreferenceRef.current
+      && (!soundOnRef.current || audioContextRef.current?.state !== 'running')) {
+      await activateSoundFromGesture();
+      return;
+    }
     if (soundPreferenceRef.current) {
       soundPreferenceRef.current = false;
+      umpireCallsEnabledRef.current = false;
+      umpireSpeechReadyRef.current = false;
+      setUmpireSpeechReady(false);
+      cancelUmpireCall(audioContextRef.current, liveUmpireMatchKey(snapshot.players, isWta));
+      resetLiveUmpireEventCursor(liveUmpireEventCursorRef.current);
+      setSoundError('');
       crowdAudioRef.current?.pause();
       for (const voice of activeGruntsRef.current) voice.stop();
       activeGruntsRef.current.clear();
       for (const voice of activeApplauseRef.current) voice.stop();
       activeApplauseRef.current.clear();
       soundOnRef.current = false;
+      setSoundReady(false);
       setSoundEnabled(false);
       return;
     }
@@ -2155,55 +2661,27 @@ function ThreeCourt({
       activeGruntsRef.current.clear();
     }
   };
-  const activateUmpireSpeechFromGesture = () => {
-    let audioReady = false;
-    try {
-      if (!audioContextRef.current) audioContextRef.current = new AudioContext();
-      void audioContextRef.current.resume().catch(() => {});
-      audioReady = true;
-    } catch {
-      audioReady = false;
-    }
-    const speechReady = unlockBrowserUmpireSpeech();
-    if (!audioReady && !speechReady) {
-      setSoundError('Spoken umpire calls are unavailable in this browser.');
-      return false;
-    }
-    umpireSpeechReadyRef.current = true;
-    setUmpireSpeechReady(true);
-    setSoundError('');
-    lastUmpireCallFrameRef.current = playheadRef.current
-      ?? replayFrameRef.current
-      ?? snapshot.courtFrameIndices?.[0]
-      ?? 0;
-    return true;
-  };
-  const changeUmpireCallsEnabled = (enabled: boolean) => {
-    if (enabled && !activateUmpireSpeechFromGesture()) return;
-    umpireCallsEnabledRef.current = enabled;
-    setUmpireCallsEnabled(enabled);
-    if (!enabled) {
-      cancelUmpireCall(audioContextRef.current, liveUmpireMatchKey(snapshot.players, isWta));
-      return;
-    }
-    lastUmpireCallFrameRef.current = playheadRef.current
-      ?? replayFrameRef.current
-      ?? snapshot.courtFrameIndices?.[0]
-      ?? 0;
-  };
-  const handleUmpireCallsToggle = () => {
-    if (umpireCallsEnabledRef.current && !umpireSpeechReadyRef.current) {
-      activateUmpireSpeechFromGesture();
-      return;
-    }
-    changeUmpireCallsEnabled(!umpireCallsEnabledRef.current);
-  };
   const handleSoundActivationGesture = (target: EventTarget | null) => {
-    if (target instanceof Element && target.closest('[data-sound-toggle], [data-pip-toggle]')) return;
-    if (!soundPreferenceRef.current || soundOnRef.current) return;
-    if (umpireCallsEnabledRef.current && !umpireSpeechReadyRef.current) activateUmpireSpeechFromGesture();
+    if (target instanceof Element) {
+      if (target.closest('[data-pip-toggle]')) return;
+      if (target.closest('[data-sound-toggle]')) {
+        if (!soundPreferenceRef.current) {
+          soundPreferenceRef.current = true;
+          setSoundEnabled(true);
+        } else if (soundOnRef.current && audioContextRef.current?.state === 'running') {
+          return;
+        }
+        soundPointerActivationRef.current = true;
+      }
+    }
+    if (!soundPreferenceRef.current) return;
     void activateSoundFromGesture();
   };
+  useEffect(() => {
+    // Default-on broadcasts and replays start immediately when autoplay is permitted.
+    // Otherwise the first trusted viewer gesture resumes every audio layer.
+    void activateSoundFromGesture(false);
+  }, [fullReplay]);
   const replayFrameRate = snapshot.frameRate ?? TE4_DMO_FRAMES_PER_SECOND;
   const replayStartFrame = sampleBufferRef.current[0]?.frame ?? snapshot.courtFrameIndices?.[0] ?? 0;
   const replayEndFrame = sampleBufferRef.current.at(-1)?.frame
@@ -2219,12 +2697,14 @@ function ThreeCourt({
     replayUiUpdateAt.current = 0;
     setReplayFrame(frame);
   };
-  const toggleReplay = () => {
-    if (umpireCallsEnabledRef.current) activateUmpireSpeechFromGesture();
+  const toggleReplay = async () => {
     if (replayPlayingRef.current) {
       replayPlayingRef.current = false;
       setReplayPlaying(false);
       return;
+    }
+    if (soundPreferenceRef.current && !soundOnRef.current) {
+      await activateSoundFromGesture();
     }
     if (replayFrameRef.current === null || replayFrameRef.current >= replayEndFrame) {
       seekReplay(replayStartFrame);
@@ -2239,15 +2719,29 @@ function ThreeCourt({
       className={styles.scene}
       aria-label={fullReplay ? 'Three-dimensional full match replay' : 'Three-dimensional live court'}
       onPointerDownCapture={(event) => handleSoundActivationGesture(event.target)}
-      onKeyDownCapture={(event) => handleSoundActivationGesture(event.target)}
+      onPointerCancelCapture={() => { soundPointerActivationRef.current = false; }}
+      onKeyDownCapture={(event) => {
+        if (event.target instanceof Element && event.target.closest('[data-sound-toggle]')) return;
+        handleSoundActivationGesture(event.target);
+      }}
     >
       <div className={styles.toolbar}>
         <div className={styles.title}>
           <span className={styles.liveDot} aria-hidden="true" />
-          <strong>{fullReplay ? 'FULL MATCH REPLAY' : 'LIVE COURT'}</strong>
-          <span className={styles.surfaceBadge} data-surface={surface} aria-label={`Court surface: ${surfaceLabel.toLowerCase()}`}>
-            {surfaceLabel}
-          </span>
+          <strong>{fullReplay ? 'FULL MATCH REPLAY' : 'LIVE'}</strong>
+          {!fullReplay && courtDelay !== null && courtDelay >= 1 && (
+            <span
+              style={{
+                display: 'inline-flex', alignItems: 'center', minHeight: 20, padding: '3px 7px',
+                border: '1px solid rgba(176, 244, 59, .35)', borderRadius: 999,
+                color: '#c9f27a', font: '750 9px/1 system-ui, sans-serif', letterSpacing: '.06em',
+                cursor: 'help',
+              }}
+              title="The court plays a few seconds behind the live match, so players can go for every ball and line calls are right. The score is live, so it can change before you see the point finish."
+            >
+              ~{courtDelay} s behind live
+            </span>
+          )}
         </div>
         <div className={styles.controls} aria-label="Court view controls">
           <div className={styles.presets} role="group" aria-label="Camera angle">
@@ -2280,12 +2774,14 @@ function ThreeCourt({
           </div>
           <CourtFullscreenButton
             targetRef={sceneElementRef}
+            videoRef={mediaVideoRef}
             className={styles.soundButton}
             statusClassName={styles.visuallyHidden}
             fallbackClassName={styles.fullscreenFallback}
           />
           <CourtPictureInPictureButton
             canvasRef={canvasElementRef}
+            mediaVideoRef={mediaVideoRef}
             className={styles.pictureInPictureButton}
             statusClassName={styles.pictureInPictureStatus}
             videoClassName={styles.pictureInPictureSource}
@@ -2322,27 +2818,13 @@ function ThreeCourt({
             className={styles.soundButton}
             data-sound-toggle
             type="button"
-            aria-pressed={soundEnabled}
+            aria-pressed={soundEnabled && soundReady}
+            aria-label={soundEnabled && soundReady ? 'Mute all broadcast audio' : 'Enable all broadcast audio on this device'}
+            title={soundEnabled && soundReady ? 'Mute all broadcast audio' : 'Enable all broadcast audio on this device'}
             onClick={() => void toggleSound()}
           >
             {soundEnabled ? <Volume2 size={15} /> : <VolumeX size={15} />}
-            <span>{soundEnabled ? 'Sound on' : 'Sound off'}</span>
-          </button>
-          <button
-            className={styles.soundButton}
-            type="button"
-            aria-label={umpireCallsEnabled && !umpireSpeechReady
-              ? 'Enable spoken umpire calls on this device'
-              : umpireCallsEnabled ? 'Turn umpire calls off' : 'Turn umpire calls on'}
-            aria-pressed={umpireCallsEnabled && umpireSpeechReady}
-            title={umpireCallsEnabled && !umpireSpeechReady
-              ? 'Tap to enable spoken umpire calls'
-              : umpireCallsEnabled ? 'Turn umpire calls off' : 'Turn umpire calls on'}
-            onClick={handleUmpireCallsToggle}
-          >
-            <span>{umpireCallsEnabled && !umpireSpeechReady
-              ? 'Enable calls'
-              : `Calls ${umpireCallsEnabled ? 'on' : 'off'}`}</span>
+            <span>{soundEnabled ? soundReady ? 'Sound on' : 'Enable sound' : 'Sound off'}</span>
           </button>
           <button
             className={styles.soundButton}

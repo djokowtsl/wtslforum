@@ -1,17 +1,17 @@
 .courtDensityShell {
-  position: relative;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
   min-width: 0;
 }
 
 .crowdDensityControl {
-  position: absolute;
-  z-index: 12;
-  top: 14px;
-  right: 14px;
+  position: static;
+  align-self: flex-end;
   display: flex;
   align-items: center;
   gap: 8px;
-  max-width: calc(100% - 28px);
+  max-width: 100%;
   padding: 7px 9px;
   border: 1px solid rgba(190, 205, 222, .24);
   border-radius: 9px;
@@ -33,9 +33,23 @@
 
 @media (max-width: 560px) {
   .crowdDensityControl {
-    top: 9px;
-    right: 9px;
+    align-self: stretch;
+    justify-content: space-between;
     gap: 5px;
     padding: 6px;
   }
+}
+
+:global(:root[data-theme='light']) .crowdDensityControl {
+  border-color: #d4deea;
+  background: rgba(255, 255, 255, .96);
+  color: #34445c;
+  box-shadow: 0 4px 14px rgba(28, 47, 78, .08);
+}
+
+:global(:root[data-theme='light']) .crowdDensityControl select {
+  border-color: #ccd7e4;
+  background: #f7f9fc;
+  color: #24344c;
+  color-scheme: light;
 }

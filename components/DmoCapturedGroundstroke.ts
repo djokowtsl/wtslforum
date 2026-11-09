@@ -11,13 +11,36 @@ export type GroundstrokeName =
 export type DominantHandedness = 'left' | 'right';
 export type PlayerStrokeHands = 'one' | 'two';
 
-export function recordedStrokeForSide(side: 'forehand' | 'backhand', atNet: boolean): GroundstrokeName {
-  if (!atNet) return side;
+/** The caller must establish a volley flight; net proximity alone is insufficient. */
+export function recordedStrokeForSide(side: 'forehand' | 'backhand', isVolley: boolean): GroundstrokeName {
+  if (!isVolley) return side;
   return side === 'forehand' ? 'volley-forehand' : 'volley-backhand';
 }
 
 export function isRecordedBackhand(stroke: GroundstrokeName | undefined) {
   return stroke === 'backhand' || stroke === 'volley-backhand';
+}
+
+export function isRecordedVolley(stroke: GroundstrokeName | undefined) {
+  return stroke === 'volley-forehand' || stroke === 'volley-backhand';
+}
+
+/** Only a topspin groundstroke drive uses the compact, faster take-back. */
+export function shouldCompressGroundstrokeTakeBack(
+  stroke: GroundstrokeName,
+  sliceOrTouch = false,
+) {
+  return (stroke === 'forehand' || stroke === 'backhand') && !sliceOrTouch;
+}
+
+/** The volley uses a continental grip, not the ground backhand regrip. */
+export function recordedBackhandFaceRoll(
+  stroke: GroundstrokeName | undefined,
+  oneHanded: boolean,
+  slice = false,
+) {
+  if (slice || stroke === 'volley-backhand') return 35 * Math.PI / 180;
+  return stroke === 'backhand' && oneHanded ? 72 * Math.PI / 180 : 0;
 }
 
 export function recordedStrokeUsesTwoHands(
@@ -36,8 +59,12 @@ export function recordedStrokeUsesTwoHands(
 }
 
 export type GroundstrokeMotionSources = {
-  [stroke in GroundstrokeName]: string;
+  [stroke in Exclude<GroundstrokeName, 'smash'>]: string;
 } & {
+  /** Optional recorded smash; overheads fall back to their normal stroke. */
+  smash?: string;
+  /** Optional captured one-handed backhand; missing data keeps the prior clip. */
+  backhandOne?: string;
   /** Recorded walk / jog / run for the arms between points (optional). */
   locomotion?: { walk: string; jog: string; run: string };
 };
@@ -50,6 +77,14 @@ export interface GroundstrokePlayback {
   scope?: 'full' | 'upper';
   rootOffset?: boolean;
   hands?: 'one' | 'two';
+  /** Select the one-handed recording for a ground backhand only. */
+  oneHanded?: boolean;
+  /** A detected slice uses the volley recording as a high-to-low stand-in. */
+  slice?: boolean;
+  /** A rally overhead uses the optional recorded smash, never a serve. */
+  smash?: boolean;
+  /** Speed up the take-back when a fast reply leaves too little preparation time. */
+  leadScale?: number;
   /** Recorded contact ball position in the player's local court space. */
   contactTarget?: [number, number, number];
 }
@@ -77,23 +112,36 @@ type MotionClip = {
   contactTime: number;
   contactRoot: THREE.Vector3;
   scale: number;
+  wristCalibration?: THREE.Quaternion;
   rightPairs: RetargetPair[];
   leftPairs: RetargetPair[];
 };
 
-const CONTACT_SECONDS: Record<GroundstrokeName, number> = {
+type MotionName = GroundstrokeName | 'backhandOne';
+
+const CONTACT_SECONDS: Record<MotionName, number> = {
   // The serve time is the repeated right-wrist speed/height peak in the source
   // clip; the source has no ball-contact marker, so this remains inferred.
   forehand: 13.4,
   backhand: 9.28,
   serve: 2.56,
-  // Tennis-MoCap's overhead-smash clip peaks at a right-wrist speed maximum
-  // near 7.85 s; the source recording has no ball-contact marker.
-  smash: 7.85,
+  // Jarua's recorded smash peaks near 7.6 s; the source has no ball marker.
+  smash: 7.6,
   // Tennis-MoCap volley excerpts use a 25 Hz BVH and retain the selected
-  // right-wrist speed peak at frame 23. The dataset has no ball marker.
+  // right-wrist speed peak near excerpt frame 23. The dataset has no ball marker.
   'volley-forehand': 0.92,
-  'volley-backhand': 0.92,
+  // Round 17's 3.42 s contact, minus this excerpt's 2.52 s start.
+  'volley-backhand': 0.90,
+  // Inferred from the third recorded swing's right-wrist speed peak.
+  backhandOne: 5.66,
+};
+
+/**
+ * The source has no racket markers. This wrist-local correction compensates
+ * for the one-handed recording's forearm roll so the racket is level at contact.
+ */
+const WRIST_CALIBRATION: Partial<Record<MotionName, [number, number, number, number]>> = {
+  backhandOne: [0.2929, -0.6615, -0.0411, 0.6892],
 };
 
 const READY_POSE_SECONDS = 0.5;
@@ -195,6 +243,33 @@ export function groundstrokeCaptureWeight(
  * in about a quarter of a second. */
 export const SERVE_LEAD_FRAMES = 110;
 
+/** Short volley preparation/recovery, in canonical 60 Hz frames. */
+export const VOLLEY_LEAD_FRAMES = 26;
+/** A slice exaggerates the recorded volley's arm and trunk motion by this
+ *  factor, measured from the contact pose: a higher, more turned take-back
+ *  and a longer, lower follow-through, with the contact itself unchanged. */
+export const SLICE_EMPHASIS = 1.4;
+/** The recorded volley's take-back is a compact punch, its hand never above
+ *  the contact: a slice raises the hitting arm by up to this much during the
+ *  take-back (high to low), back on the recording by contact. */
+const SLICE_TAKE_BACK_LIFT = THREE.MathUtils.degToRad(28);
+/** Most extra turn (rad) the emphasis adds to any one joint. */
+const SLICE_EMPHASIS_MAX_EXTRA = THREE.MathUtils.degToRad(35);
+const SLICE_EMPHASIS_BONES = [
+  'spine_01', 'spine_02', 'spine_03',
+  'clavicle_l', 'clavicle_r', 'upperarm_l', 'upperarm_r', 'lowerarm_l', 'lowerarm_r', 'hand_l', 'hand_r',
+];
+/** Playback speed of the volley recording when it stands in for a slice. */
+export const SLICE_TIME_SCALE = 0.75;
+export const VOLLEY_RECOVERY_FRAMES = 44;
+
+export function volleyCaptureWeight(frameDelta: number) {
+  if (!Number.isFinite(frameDelta)) return 0;
+  const smooth = THREE.MathUtils.smoothstep;
+  return smooth(frameDelta, -VOLLEY_LEAD_FRAMES, -10)
+    * (1 - smooth(frameDelta, 24, VOLLEY_RECOVERY_FRAMES));
+}
+
 export function serveCaptureWeight(frameDelta: number) {
   if (!Number.isFinite(frameDelta)) return 0;
   const smooth = THREE.MathUtils.smoothstep;
@@ -231,9 +306,14 @@ function mirrorQuaternionX(quaternion: THREE.Quaternion) {
 
 export class DmoCapturedGroundstroke {
   private readonly targets = new Map<string, THREE.Bone>();
-  private readonly motions: Record<GroundstrokeName, MotionClip>;
+  private readonly motions: Omit<Record<GroundstrokeName, MotionClip>, 'smash'> & {
+    smash?: MotionClip;
+    backhandOne?: MotionClip;
+  };
   private readonly model: THREE.Group;
   private readonly space: THREE.Group;
+  /** Per recording and side: the emphasised bones' local rotations at contact. */
+  private readonly contactLocals = new Map<string, Map<string, THREE.Quaternion>>();
 
   constructor(
     model: THREE.Group,
@@ -253,13 +333,39 @@ export class DmoCapturedGroundstroke {
       forehand: this.prepare('forehand', sources.forehand, rest),
       backhand: this.prepare('backhand', sources.backhand, rest),
       serve: this.prepare('serve', sources.serve, rest),
-      smash: this.prepare('smash', sources.smash, rest),
       'volley-forehand': this.prepare('volley-forehand', sources['volley-forehand'], rest),
       'volley-backhand': this.prepare('volley-backhand', sources['volley-backhand'], rest),
     };
+    if (sources.smash) {
+      try {
+        this.motions.smash = this.prepare('smash', sources.smash, rest);
+      } catch (error) {
+        console.warn('Captured smash could not be prepared; overheads keep the existing stroke.', error);
+      }
+    }
+    if (sources.backhandOne) {
+      try {
+        this.motions.backhandOne = this.prepare('backhandOne', sources.backhandOne, rest);
+      } catch (error) {
+        console.warn('Captured one-handed backhand could not be prepared; using the existing recording.', error);
+      }
+    }
   }
 
-  private prepare(stroke: GroundstrokeName, text: string, rest: Map<string, NativeRest>): MotionClip {
+  get hasOneHandedBackhand() {
+    return Boolean(this.motions.backhandOne);
+  }
+
+  /** The volley recordings (always loaded): they also stand in for slices. */
+  get hasVolleys() {
+    return Boolean(this.motions['volley-forehand'] && this.motions['volley-backhand']);
+  }
+
+  get hasSmash() {
+    return Boolean(this.motions.smash);
+  }
+
+  private prepare(stroke: MotionName, text: string, rest: Map<string, NativeRest>): MotionClip {
     const data = new BVHLoader().parse(text);
     const root = data.skeleton.bones[0];
     const mixer = new THREE.AnimationMixer(root);
@@ -286,6 +392,9 @@ export class DmoCapturedGroundstroke {
       contactTime,
       contactRoot,
       scale,
+      wristCalibration: WRIST_CALIBRATION[stroke]
+        ? new THREE.Quaternion(...WRIST_CALIBRATION[stroke]!).normalize()
+        : undefined,
       rightPairs: this.buildPairs(sourceBones, rest, false),
       leftPairs: this.buildPairs(sourceBones, rest, true),
     };
@@ -317,11 +426,29 @@ export class DmoCapturedGroundstroke {
   apply(playback: GroundstrokePlayback): CapturedBodyHints | null {
     const weight = THREE.MathUtils.clamp(playback.weight, 0, 1);
     if (weight <= 0 || !Number.isFinite(playback.deltaSeconds)) return null;
-    const motion = this.motions[playback.stroke];
+    const isVolley = playback.stroke === 'volley-forehand' || playback.stroke === 'volley-backhand';
+    const useSmash = playback.stroke === 'smash'
+      || (playback.smash === true && playback.stroke !== 'serve');
+    const smash = useSmash ? this.motions.smash : undefined;
+    const volley = !smash && playback.stroke !== 'serve' && (isVolley || playback.slice)
+      ? this.motions[playback.stroke === 'forehand' || playback.stroke === 'volley-forehand'
+        ? 'volley-forehand'
+        : 'volley-backhand']
+      : undefined;
+    const timeScale = playback.slice && !isVolley ? SLICE_TIME_SCALE : 1;
+    const fallbackStroke = playback.stroke === 'smash' ? 'forehand' : playback.stroke;
+    const motion = volley
+      || smash
+      || (playback.stroke === 'backhand' && playback.oneHanded && this.motions.backhandOne
+      ? this.motions.backhandOne
+      : this.motions[fallbackStroke]);
     const mirrored = playback.handedness === 'left';
     const pairs = mirrored ? motion.leftPairs : motion.rightPairs;
+    const leadScale = playback.deltaSeconds < 0
+      ? THREE.MathUtils.clamp(playback.leadScale ?? 1, 1, 2)
+      : 1;
     const time = THREE.MathUtils.clamp(
-      motion.contactTime + playback.deltaSeconds,
+      motion.contactTime + playback.deltaSeconds * timeScale * leadScale,
       0,
       motion.duration,
     );
@@ -344,19 +471,79 @@ export class DmoCapturedGroundstroke {
     pelvis.position.copy(pelvis.parent!.worldToLocal(this.space.localToWorld(pelvisSpacePosition)));
 
     const spaceRotation = this.space.getWorldQuaternion(new THREE.Quaternion());
-    for (const { target, source, targetRest } of pairs) {
-      target.parent!.updateWorldMatrix(true, false);
-      const sourceRotation = source.getWorldQuaternion(new THREE.Quaternion());
-      if (mirrored) {
-        sourceRotation.copy(mirrorQuaternionX(sourceRotation));
+    const retarget = () => {
+      for (const { target, source, targetRest } of pairs) {
+        target.parent!.updateWorldMatrix(true, false);
+        const sourceRotation = source.getWorldQuaternion(new THREE.Quaternion());
+        if (motion.wristCalibration && source.name === 'RightWrist') {
+          sourceRotation.multiply(motion.wristCalibration);
+        }
+        if (mirrored) {
+          sourceRotation.copy(mirrorQuaternionX(sourceRotation));
+        }
+        const desiredWorld = spaceRotation.clone().multiply(sourceRotation).multiply(targetRest);
+        target.quaternion.copy(
+          target.parent!.getWorldQuaternion(new THREE.Quaternion()).invert().multiply(desiredWorld),
+        );
+        target.updateMatrixWorld(true);
       }
-      const desiredWorld = spaceRotation.clone().multiply(sourceRotation).multiply(targetRest);
-      target.quaternion.copy(
-        target.parent!.getWorldQuaternion(new THREE.Quaternion()).invert().multiply(desiredWorld),
-      );
-      target.updateMatrixWorld(true);
+      this.model.updateMatrixWorld(true);
+    };
+    const emphasise = Boolean(playback.slice) && !isVolley && volley !== undefined;
+    let contactLocals: Map<string, THREE.Quaternion> | undefined;
+    if (emphasise) {
+      const key = `${playback.stroke}:${mirrored ? 'l' : 'r'}`;
+      contactLocals = this.contactLocals.get(key);
+      if (!contactLocals) {
+        // (Bones below the pelvis have the same local rotation wherever the
+        // player stands, so the contact pose is sampled once.)
+        motion.mixer.setTime(motion.contactTime);
+        motion.root.updateMatrixWorld(true);
+        retarget();
+        contactLocals = new Map(SLICE_EMPHASIS_BONES
+          .filter(name => this.targets.has(name))
+          .map(name => [name, this.targets.get(name)!.quaternion.clone()]));
+        this.contactLocals.set(key, contactLocals);
+        motion.mixer.setTime(time);
+        motion.root.updateMatrixWorld(true);
+      }
     }
-    this.model.updateMatrixWorld(true);
+    retarget();
+    if (contactLocals) {
+      // A slice, made prominent: each arm and trunk joint goes further the way
+      // the recording takes it from the contact pose (capped per joint).
+      for (const [name, atContact] of contactLocals) {
+        const bone = this.targets.get(name)!;
+        const offset = atContact.clone().invert().multiply(bone.quaternion);
+        if (offset.w < 0) offset.set(-offset.x, -offset.y, -offset.z, -offset.w);
+        const angle = 2 * Math.acos(THREE.MathUtils.clamp(offset.w, -1, 1));
+        if (angle < 1e-4) continue;
+        const axis = new THREE.Vector3(offset.x, offset.y, offset.z).normalize();
+        const extra = Math.min(angle * (SLICE_EMPHASIS - 1), SLICE_EMPHASIS_MAX_EXTRA);
+        bone.quaternion.multiply(new THREE.Quaternion().setFromAxisAngle(axis, extra));
+      }
+      this.model.updateMatrixWorld(true);
+      // High to low: lift the hitting arm through the take-back.
+      const fromContact = time - motion.contactTime;
+      const lift = SLICE_TAKE_BACK_LIFT
+        * THREE.MathUtils.smoothstep(fromContact, -0.6, -0.35)
+        * (1 - THREE.MathUtils.smoothstep(fromContact, -0.2, -0.02));
+      const upperArm = this.targets.get(mirrored ? 'upperarm_l' : 'upperarm_r');
+      const hand = this.targets.get(mirrored ? 'hand_l' : 'hand_r');
+      if (lift > 1e-4 && upperArm && hand) {
+        const shoulder = upperArm.getWorldPosition(new THREE.Vector3());
+        const reach = hand.getWorldPosition(new THREE.Vector3()).sub(shoulder);
+        const up = new THREE.Vector3(0, 1, 0).applyQuaternion(spaceRotation);
+        const axis = reach.clone().cross(up);
+        if (axis.lengthSq() > 1e-8) {
+          const turn = new THREE.Quaternion().setFromAxisAngle(axis.normalize(), lift);
+          const parentWorld = upperArm.parent!.getWorldQuaternion(new THREE.Quaternion());
+          const world = upperArm.getWorldQuaternion(new THREE.Quaternion());
+          upperArm.quaternion.copy(parentWorld.invert().multiply(turn.multiply(world)));
+          this.model.updateMatrixWorld(true);
+        }
+      }
+    }
 
     const sampled = new Map([...this.targets.entries()].map(([name, bone]) => [
       name,

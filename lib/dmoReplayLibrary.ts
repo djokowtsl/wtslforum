@@ -1,7 +1,13 @@
 import { sql } from '@/lib/db';
 import { parseTe4CoachShareUrl } from '@/lib/te4CoachEmbed';
+import {
+  isDmoBackhandType,
+  isDmoPlayingHand,
+  type DmoBackhandType,
+  type DmoPlayingHand,
+} from '@/lib/dmoSubmissionPlayerStyle';
 
-const PUBLIC_DMO_PATH = /^dmo\/[^/][^\\]*\.dmo$/i;
+const DMO_SUBMISSION_PATH = /^dmo\/[^/][^\\]*\.dmo$/i;
 const MAX_DATABASE_ID = '9223372036854775807';
 
 export type PublicDmoReplay = {
@@ -12,6 +18,29 @@ export type PublicDmoReplay = {
   player2: string;
   submissionDate: string;
   source: 'discord' | 'forum';
+  player1Handedness?: DmoPlayingHand;
+  player2Handedness?: DmoPlayingHand;
+  player1BackhandType?: DmoBackhandType;
+  player2BackhandType?: DmoBackhandType;
+  coachShareUrl?: string;
+};
+
+export type DmoReplayCatalogEntry = {
+  id: string;
+  tournament: string;
+  roundName: string;
+  player1: string;
+  player2: string;
+  player1Character?: string;
+  player2Character?: string;
+  player1Handedness?: DmoPlayingHand;
+  player2Handedness?: DmoPlayingHand;
+  player1BackhandType?: DmoBackhandType;
+  player2BackhandType?: DmoBackhandType;
+  submissionDate: string;
+  source: 'discord' | 'forum';
+  hasDmoFile: boolean;
+  externalUrl?: string;
   coachShareUrl?: string;
 };
 
@@ -20,11 +49,42 @@ export type StoredDmoReplay = PublicDmoReplay & {
   fileName: string;
 };
 
-export function isPublicDmoPath(value: unknown): value is string {
+export type DmoSubmissionReplay = DmoReplayCatalogEntry & {
+  privateBlobPathname: string | null;
+  fileName: string | null;
+};
+
+function toDmoReplayStyleMetadata(row: Record<string, unknown>) {
+  const player1Handedness = isDmoPlayingHand(row.player1_handedness) ? row.player1_handedness : undefined;
+  const player2Handedness = isDmoPlayingHand(row.player2_handedness) ? row.player2_handedness : undefined;
+  const player1BackhandType = isDmoBackhandType(row.player1_backhand_type) ? row.player1_backhand_type : undefined;
+  const player2BackhandType = isDmoBackhandType(row.player2_backhand_type) ? row.player2_backhand_type : undefined;
+  return {
+    ...(player1Handedness ? { player1Handedness } : {}),
+    ...(player2Handedness ? { player2Handedness } : {}),
+    ...(player1BackhandType ? { player1BackhandType } : {}),
+    ...(player2BackhandType ? { player2BackhandType } : {}),
+  };
+}
+
+export function isDmoSubmissionPath(value: unknown): value is string {
   return typeof value === 'string'
     && value.length <= 240
-    && PUBLIC_DMO_PATH.test(value)
+    && DMO_SUBMISSION_PATH.test(value)
     && !value.split('/').some((segment) => segment === '.' || segment === '..');
+}
+
+function safeRecordingUrl(value: unknown): string | undefined {
+  if (typeof value !== 'string' || !value.trim() || value.length > 2048) return undefined;
+  try {
+    const url = new URL(value);
+    if (!['http:', 'https:'].includes(url.protocol) || !url.hostname || url.username || url.password) {
+      return undefined;
+    }
+    return url.toString();
+  } catch {
+    return undefined;
+  }
 }
 
 function toPublicReplay(row: Record<string, unknown>): PublicDmoReplay {
@@ -37,8 +97,45 @@ function toPublicReplay(row: Record<string, unknown>): PublicDmoReplay {
     player2: String(row.player2 ?? ''),
     submissionDate: String(row.submission_date ?? ''),
     source: row.source === 'discord' ? 'discord' : 'forum',
+    ...toDmoReplayStyleMetadata(row),
     ...(coachShare.valid && coachShare.url ? { coachShareUrl: coachShare.url } : {}),
   };
+}
+
+function toDmoReplayCatalogEntry(row: Record<string, unknown>): DmoReplayCatalogEntry {
+  const coachShare = row.coach_group_share_consent === true
+    ? parseTe4CoachShareUrl(row.coach_share_url)
+    : { valid: false, url: null };
+  const privateBlobPathname = isDmoSubmissionPath(row.private_blob_pathname)
+    && /\.dmo$/i.test(String(row.file_name || row.private_blob_pathname))
+    ? row.private_blob_pathname
+    : null;
+  const externalUrl = safeRecordingUrl(row.external_url);
+  const player1Character = typeof row.player1_character === 'string'
+    ? row.player1_character.trim().slice(0, 100)
+    : '';
+  const player2Character = typeof row.player2_character === 'string'
+    ? row.player2_character.trim().slice(0, 100)
+    : '';
+  return {
+    id: String(row.id),
+    tournament: String(row.tournament ?? ''),
+    roundName: String(row.round_name ?? ''),
+    player1: String(row.player1 ?? ''),
+    player2: String(row.player2 ?? ''),
+    ...(player1Character ? { player1Character } : {}),
+    ...(player2Character ? { player2Character } : {}),
+    ...toDmoReplayStyleMetadata(row),
+    submissionDate: String(row.submission_date ?? ''),
+    source: row.source === 'discord' ? 'discord' : 'forum',
+    hasDmoFile: Boolean(privateBlobPathname),
+    ...(externalUrl ? { externalUrl } : {}),
+    ...(coachShare.valid && coachShare.url ? { coachShareUrl: coachShare.url } : {}),
+  };
+}
+
+function toPublicReplayCatalogEntry(replay: PublicDmoReplay): DmoReplayCatalogEntry {
+  return { ...replay, hasDmoFile: true };
 }
 
 export function isDmoReplayId(value: string): boolean {
@@ -64,10 +161,12 @@ export async function listPublicDmoReplays(input: {
   const pattern = query ? `%${query.replace(/[\\%_]/g, '\\$&')}%` : null;
   const rows = await sql`
     SELECT id::text AS id,tournament,round_name,player1,player2,
+      player1_handedness,player2_handedness,player1_backhand_type,player2_backhand_type,
       submission_date::text AS submission_date,source,
       CASE WHEN coach_group_share_consent IS TRUE THEN coach_share_url ELSE NULL END AS coach_share_url
     FROM dmo_submissions
-    WHERE (
+    WHERE hidden_at IS NULL
+      AND (
         public_share_consent IS TRUE
         OR EXISTS (
           SELECT 1
@@ -90,7 +189,52 @@ export async function listPublicDmoReplays(input: {
   const hasMore = rows.length > limit;
   const pageRows = rows.slice(0, limit);
   return {
-    matches: pageRows.map(toPublicReplay),
+    matches: pageRows.map(toPublicReplay).map(toPublicReplayCatalogEntry),
+    nextCursor: hasMore ? String(pageRows[pageRows.length - 1].id) : null,
+  };
+}
+
+/** The signed-in Match Replay Center lists every submitted record. */
+export async function listDmoReplaySubmissions(input: {
+  cursor?: string | null;
+  query?: string;
+  limit?: number;
+} = {}) {
+  const limit = Math.max(1, Math.min(50, Math.floor(input.limit ?? 24)));
+  const query = input.query?.trim().slice(0, 100) ?? '';
+  const pattern = query ? `%${query.replace(/[\\%_]/g, '\\$&')}%` : null;
+  const rows = await sql`
+    SELECT id::text AS id,tournament,round_name,player1,player2,
+      player1_character,player2_character,
+      player1_handedness,player2_handedness,player1_backhand_type,player2_backhand_type,
+      submission_date::text AS submission_date,source,
+      private_blob_pathname,file_name,external_url,coach_group_share_consent,
+      CASE WHEN coach_group_share_consent IS TRUE
+        AND (
+          public_share_consent IS TRUE
+          OR EXISTS (
+            SELECT 1
+            FROM dmo_replay_publication_overrides AS publication_override
+            WHERE publication_override.submission_id=dmo_submissions.id
+              AND publication_override.revoked_at IS NULL
+          )
+        )
+        THEN coach_share_url ELSE NULL END AS coach_share_url
+    FROM dmo_submissions
+    WHERE hidden_at IS NULL
+      AND (${input.cursor ?? null}::bigint IS NULL OR id < ${input.cursor ?? null}::bigint)
+      AND (
+        ${pattern}::text IS NULL
+        OR CONCAT_WS(' ',tournament,round_name,player1,player2) ILIKE ${pattern} ESCAPE E'\\\\'
+      )
+    ORDER BY id DESC
+    LIMIT ${limit + 1}
+  ` as Array<Record<string, unknown>>;
+
+  const hasMore = rows.length > limit;
+  const pageRows = rows.slice(0, limit);
+  return {
+    matches: pageRows.map(toDmoReplayCatalogEntry),
     nextCursor: hasMore ? String(pageRows[pageRows.length - 1].id) : null,
   };
 }
@@ -98,11 +242,13 @@ export async function listPublicDmoReplays(input: {
 export async function getPublicDmoReplay(id: string): Promise<StoredDmoReplay | null> {
   const rows = await sql`
     SELECT id::text AS id,tournament,round_name,player1,player2,
+      player1_handedness,player2_handedness,player1_backhand_type,player2_backhand_type,
       submission_date::text AS submission_date,source,
       CASE WHEN coach_group_share_consent IS TRUE THEN coach_share_url ELSE NULL END AS coach_share_url,
       private_blob_pathname,file_name
     FROM dmo_submissions
     WHERE id=${id}::bigint
+      AND hidden_at IS NULL
       AND (
         public_share_consent IS TRUE
         OR EXISTS (
@@ -117,12 +263,102 @@ export async function getPublicDmoReplay(id: string): Promise<StoredDmoReplay | 
     LIMIT 1
   ` as Array<Record<string, unknown>>;
   const row = rows[0];
-  if (!row || !isPublicDmoPath(row.private_blob_pathname)) return null;
+  if (!row || !isDmoSubmissionPath(row.private_blob_pathname)) return null;
 
   return {
     ...toPublicReplay(row),
     privateBlobPathname: row.private_blob_pathname,
     fileName: String(row.file_name || `match-${id}.dmo`).slice(0, 120),
+  };
+}
+
+export async function publishDmoReplaySubmission(input: {
+  id: string;
+  authorizedBy: string;
+  reason: string;
+}): Promise<boolean> {
+  if (!isDmoReplayId(input.id)) return false;
+  const authorizedBy = input.authorizedBy.trim().slice(0, 100);
+  const reason = input.reason.trim().slice(0, 500);
+  if (!authorizedBy || reason.length < 5) return false;
+
+  const rows = await sql`
+    SELECT private_blob_pathname,file_name
+    FROM dmo_submissions
+    WHERE id=${input.id}::bigint
+    LIMIT 1
+  ` as Array<Record<string, unknown>>;
+  const row = rows[0];
+  if (
+    !row
+    || !isDmoSubmissionPath(row.private_blob_pathname)
+    || !/\.dmo$/i.test(String(row.file_name || row.private_blob_pathname))
+  ) {
+    return false;
+  }
+
+  const published = await sql`
+    INSERT INTO dmo_replay_publication_overrides (
+      submission_id,authorized_by,reason,authorized_at,revoked_at
+    )
+    SELECT id,${authorizedBy},${reason},NOW(),NULL
+    FROM dmo_submissions
+    WHERE id=${input.id}::bigint
+      AND private_blob_pathname=${row.private_blob_pathname}
+      AND LOWER(COALESCE(file_name, private_blob_pathname)) LIKE '%.dmo'
+    ON CONFLICT (submission_id) DO UPDATE SET
+      authorized_by=EXCLUDED.authorized_by,
+      reason=EXCLUDED.reason,
+      authorized_at=NOW(),
+      revoked_at=NULL
+    RETURNING submission_id
+  ` as Array<Record<string, unknown>>;
+  return published.length > 0;
+}
+
+export async function revokeDmoReplayPublicationOverride(id: string): Promise<boolean> {
+  if (!isDmoReplayId(id)) return false;
+  const rows = await sql`
+    UPDATE dmo_replay_publication_overrides
+    SET revoked_at=NOW()
+    WHERE submission_id=${id}::bigint
+      AND revoked_at IS NULL
+    RETURNING submission_id
+  ` as Array<Record<string, unknown>>;
+  return rows.length > 0;
+}
+
+export async function getDmoReplaySubmission(id: string): Promise<DmoSubmissionReplay | null> {
+  const rows = await sql`
+    SELECT id::text AS id,tournament,round_name,player1,player2,
+      player1_character,player2_character,
+      player1_handedness,player2_handedness,player1_backhand_type,player2_backhand_type,
+      submission_date::text AS submission_date,source,
+      private_blob_pathname,file_name,external_url,coach_group_share_consent,
+      CASE WHEN coach_group_share_consent IS TRUE
+        AND (
+          public_share_consent IS TRUE
+          OR EXISTS (
+            SELECT 1
+            FROM dmo_replay_publication_overrides AS publication_override
+            WHERE publication_override.submission_id=dmo_submissions.id
+              AND publication_override.revoked_at IS NULL
+          )
+        )
+        THEN coach_share_url ELSE NULL END AS coach_share_url
+    FROM dmo_submissions
+    WHERE id=${id}::bigint
+      AND hidden_at IS NULL
+    LIMIT 1
+  ` as Array<Record<string, unknown>>;
+  const row = rows[0];
+  if (!row) return null;
+  const catalogEntry = toDmoReplayCatalogEntry(row);
+  const privateBlobPathname = catalogEntry.hasDmoFile ? String(row.private_blob_pathname) : null;
+  return {
+    ...catalogEntry,
+    privateBlobPathname,
+    fileName: privateBlobPathname ? String(row.file_name || `match-${id}.dmo`).slice(0, 120) : null,
   };
 }
 
@@ -133,6 +369,7 @@ export async function getPublicDmoCoachReplay(id: string): Promise<PublicDmoRepl
       submission_date::text AS submission_date,source,coach_share_url
     FROM dmo_submissions
     WHERE id=${id}::bigint
+      AND hidden_at IS NULL
       AND coach_group_share_consent IS TRUE
       AND (
         public_share_consent IS TRUE
@@ -155,7 +392,10 @@ export async function getPublicDmoCoachReplay(id: string): Promise<PublicDmoRepl
 }
 
 export function publicDmoReplayMetadata(replay: StoredDmoReplay): PublicDmoReplay {
-  const { id, tournament, roundName, player1, player2, submissionDate, source, coachShareUrl } = replay;
+  const {
+    id, tournament, roundName, player1, player2, submissionDate, source,
+    player1Handedness, player2Handedness, player1BackhandType, player2BackhandType, coachShareUrl,
+  } = replay;
   return {
     id,
     tournament,
@@ -164,6 +404,43 @@ export function publicDmoReplayMetadata(replay: StoredDmoReplay): PublicDmoRepla
     player2,
     submissionDate,
     source,
+    ...(player1Handedness ? { player1Handedness } : {}),
+    ...(player2Handedness ? { player2Handedness } : {}),
+    ...(player1BackhandType ? { player1BackhandType } : {}),
+    ...(player2BackhandType ? { player2BackhandType } : {}),
+    ...(coachShareUrl ? { coachShareUrl } : {}),
+  };
+}
+
+export function publicDmoReplayCatalogMetadata(replay: StoredDmoReplay): DmoReplayCatalogEntry {
+  return {
+    ...publicDmoReplayMetadata(replay),
+    hasDmoFile: true,
+  };
+}
+
+export function dmoReplayCatalogMetadata(replay: DmoSubmissionReplay): DmoReplayCatalogEntry {
+  const {
+    id, tournament, roundName, player1, player2, submissionDate,
+    player1Character, player2Character, player1Handedness, player2Handedness,
+    player1BackhandType, player2BackhandType, source, hasDmoFile, externalUrl, coachShareUrl,
+  } = replay;
+  return {
+    id,
+    tournament,
+    roundName,
+    player1,
+    player2,
+    ...(player1Character ? { player1Character } : {}),
+    ...(player2Character ? { player2Character } : {}),
+    ...(player1Handedness ? { player1Handedness } : {}),
+    ...(player2Handedness ? { player2Handedness } : {}),
+    ...(player1BackhandType ? { player1BackhandType } : {}),
+    ...(player2BackhandType ? { player2BackhandType } : {}),
+    submissionDate,
+    source,
+    hasDmoFile,
+    ...(externalUrl ? { externalUrl } : {}),
     ...(coachShareUrl ? { coachShareUrl } : {}),
   };
 }

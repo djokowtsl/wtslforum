@@ -2,15 +2,23 @@ import * as THREE from 'three';
 import { clone } from 'three/examples/jsm/utils/SkeletonUtils.js';
 import { disposeHumanModel, HumanPose, tintKit } from './DmoHumanModels';
 import {
-  CROWD_SKIN_TONES,
   getChairUmpireLegTargets,
   getCrowdAppearance,
+  CROWD_SKIN_TONES,
+  getSeatedCoachLegTargets,
+  getSeatedCrowdLegTargets,
   type CourtFixtureRig,
   type CrowdRig,
 } from './DmoLiveCourt3DScene';
 import { shouldUseHighDetailCrowdSeat } from '../lib/dmoCrowdLod';
+import { makeCrowdClothingOpaque } from '../lib/dmoCrowdClothing';
+import { getCrowdBannerBranding } from '../lib/dmoCrowdBranding';
 
-function tintedHuman(template: THREE.Group, tint: number) {
+function tintedHuman(
+  template: THREE.Group,
+  tint: number,
+  skinTone?: readonly [number, number, number],
+) {
   const model = clone(template) as THREE.Group;
   model.traverse((object) => {
     if (!(object instanceof THREE.SkinnedMesh)) return;
@@ -18,7 +26,10 @@ function tintedHuman(template: THREE.Group, tint: number) {
     object.material = Array.isArray(object.material)
       ? object.material.map((item) => item.clone())
       : object.material.clone();
-    tintKit(object, tint);
+    for (const material of Array.isArray(object.material) ? object.material : [object.material]) {
+      makeCrowdClothingOpaque(material);
+    }
+    tintKit(object, tint, skinTone);
   });
   return model;
 }
@@ -70,6 +81,7 @@ function addCrowdAccessories(scene: THREE.Scene, crowd: CrowdRig) {
   const bannerSeats = crowd.seats.filter((seat, index) =>
     seat.occupied && seat.row >= 6 && ((seat.sourceIndex ?? index) % 283) === 37);
   bannerSeats.slice(0, 36).forEach((seat, index) => {
+    const branding = getCrowdBannerBranding(index);
     const banner = new THREE.Group();
     banner.name = `wtsl-fan-banner-${index + 1}`;
     banner.position.set(seat.x, seat.y, seat.z);
@@ -106,7 +118,41 @@ function addCrowdAccessories(scene: THREE.Scene, crowd: CrowdRig) {
         context.font = '800 104px Arial, sans-serif';
         context.textAlign = 'center';
         context.textBaseline = 'middle';
-        context.fillText(index % 2 ? 'WTSL' : 'ACE', canvas.width / 2, canvas.height / 2 + 4);
+        if (branding.mascot === 'rally-fox') {
+          // A small, custom line-art fox with a tennis-ball pennant: a fan-made
+          // motif rather than a sponsor mark or a second character model.
+          context.save();
+          context.translate(canvas.width / 2, 74);
+          context.fillStyle = '#f5f1e5';
+          context.beginPath();
+          context.moveTo(-52, -32);
+          context.lineTo(-43, -70);
+          context.lineTo(-12, -52);
+          context.quadraticCurveTo(0, -58, 12, -52);
+          context.lineTo(43, -70);
+          context.lineTo(52, -32);
+          context.quadraticCurveTo(48, 3, 0, 18);
+          context.quadraticCurveTo(-48, 3, -52, -32);
+          context.fill();
+          context.fillStyle = '#26343a';
+          context.beginPath();
+          context.arc(-18, -26, 4.5, 0, Math.PI * 2);
+          context.arc(18, -26, 4.5, 0, Math.PI * 2);
+          context.fill();
+          context.beginPath();
+          context.moveTo(-5, -12);
+          context.lineTo(0, -7);
+          context.lineTo(5, -12);
+          context.closePath();
+          context.fill();
+          context.strokeStyle = '#d9bd62';
+          context.lineWidth = 5;
+          context.beginPath();
+          context.arc(59, -50, 13, -1.1, 1.1);
+          context.stroke();
+          context.restore();
+        }
+        context.fillText(branding.label, canvas.width / 2, branding.mascot ? 204 : canvas.height / 2 + 4);
         const texture = new THREE.CanvasTexture(canvas);
         texture.colorSpace = THREE.SRGBColorSpace;
         const material = panel.material as THREE.MeshStandardMaterial;
@@ -115,6 +161,7 @@ function addCrowdAccessories(scene: THREE.Scene, crowd: CrowdRig) {
         material.needsUpdate = true;
       }
     }
+    if (branding.mascot) banner.userData.mascot = branding.mascot;
     scene.add(banner);
   });
 }
@@ -139,11 +186,15 @@ function poseSeatedStaff(model: THREE.Group, space: THREE.Group, hipsY: number, 
     pose.place(`${side}Arm`, shoulder, elbow);
     pose.place(`${side}ForeArm`, elbow, wrist);
     pose.place(`${side}Hand`, wrist, wrist.clone().add(v(-sign * 0.05, 0, 0.08)));
-    const chairTargets = chairUmpire ? getChairUmpireLegTargets(sign, hipsY) : undefined;
-    const hip = chairTargets ? v(...chairTargets.hip) : v(sign * 0.11, hipsY);
-    const knee = chairTargets ? v(...chairTargets.knee) : v(sign * 0.14, hipsY - 0.34, 0.48);
-    const ankle = chairTargets ? v(...chairTargets.ankle) : v(sign * 0.14, hipsY - 1.02, 0.56);
-    const toe = chairTargets ? v(...chairTargets.toe) : v(sign * 0.14, hipsY - 1.12, 0.72);
+    const legTargets = chairUmpire
+      ? getChairUmpireLegTargets(sign, hipsY)
+      : getSeatedCoachLegTargets(sign, hipsY);
+    const point = (coordinates: readonly [number, number, number]) =>
+      v(coordinates[0], coordinates[1], coordinates[2]);
+    const hip = point(legTargets.hip);
+    const knee = point(legTargets.knee);
+    const ankle = point(legTargets.ankle);
+    const toe = point(legTargets.toe);
     pose.place(`${side}UpLeg`, hip, knee);
     pose.place(`${side}Leg`, knee, ankle);
     pose.place(`${side}Foot`, ankle, toe);
@@ -174,7 +225,7 @@ function seatedGeometry(template: THREE.Group, look: number, applause: boolean) 
   const pose = new HumanPose(model, space);
   const v = (x: number, y: number, z = 0) => new THREE.Vector3(x, y, z);
   pose.begin();
-  const hips = v(0, 0.63), neck = v(0, 1.13), head = v(0, 1.2);
+  const hips = v(0, 0.48), neck = v(0, 1.13), head = v(0, 1.2);
   pose.place('Hips', hips);
   for (const [name, y] of [['Spine02', 0.76], ['Spine01', 0.89], ['Spine', 1.02]] as const) {
     pose.place(name, v(0, y), neck);
@@ -189,10 +240,11 @@ function seatedGeometry(template: THREE.Group, look: number, applause: boolean) 
     pose.place(`${side}Arm`, shoulder, elbow);
     pose.place(`${side}ForeArm`, elbow, wrist);
     pose.place(`${side}Hand`, wrist, wrist.clone().add(v(-sign * 0.05, 0, 0.08)));
-    const hip = v(sign * 0.11, 0.63);
-    const knee = v(sign * 0.14, 0.43, 0.26);
-    const ankle = v(sign * 0.14, 0.12, 0.19);
-    const toe = v(sign * 0.14, 0.05, 0.29);
+    const legTargets = getSeatedCrowdLegTargets(sign);
+    const hip = v(...legTargets.hip);
+    const knee = v(...legTargets.knee);
+    const ankle = v(...legTargets.ankle);
+    const toe = v(...legTargets.toe);
     pose.place(`${side}UpLeg`, hip, knee);
     pose.place(`${side}Leg`, knee, ankle);
     pose.place(`${side}Foot`, ankle, toe);
@@ -225,20 +277,34 @@ export function attachHumanCrowd(scene: THREE.Scene, crowd: CrowdRig, templates:
   const batches: THREE.InstancedMesh[] = [];
   const highDetailBatches: THREE.InstancedMesh[] = [];
   const maxSeatCount = crowd.seats.length;
+  // Most seats are spread across 48 gender/look/pose batches; leave headroom
+  // without allocating a full crowd-sized matrix/color buffer for each one.
+  const batchCapacity = Math.max(16, Math.ceil(maxSeatCount / 4));
+  const wardrobeTints = [
+    [0x315a74, 0x9b4840, 0x40755e, 0x70638c, 0xb78b45, 0x3a6c78, 0x775145, 0x617257],
+    [0x4d6c8b, 0xb24e55, 0x448069, 0x826392, 0xb99052, 0x397287, 0x8c624c, 0x5c7658],
+  ];
   const makeBatches = (
     template: THREE.Group,
     target: THREE.InstancedMesh[],
     label: string,
-    clothingTint?: number,
+    clothingTint: number,
+    skinToneIndex: number,
   ) => {
-    const variant = clothingTint === undefined ? template : tintedHuman(template, clothingTint);
+    const skinTone = CROWD_SKIN_TONES[skinToneIndex];
+    const variant = tintedHuman(template, clothingTint, skinTone);
     let sourceMaterial: THREE.Material | undefined;
     variant.traverse((object) => {
-      if (object instanceof THREE.SkinnedMesh) sourceMaterial = Array.isArray(object.material) ? object.material[0] : object.material;
+      if (object instanceof THREE.SkinnedMesh) {
+        const materials = Array.isArray(object.material) ? object.material : [object.material];
+        materials.forEach(makeCrowdClothingOpaque);
+        sourceMaterial = materials[0];
+      }
     });
     if (!sourceMaterial) throw new Error('Crowd material missing.');
     for (const applauding of [false, true]) for (const look of [-0.5, 0, 0.5]) {
-      const mesh = new THREE.InstancedMesh(seatedGeometry(variant, look, applauding), sourceMaterial.clone(), maxSeatCount);
+      const crowdMaterial = makeCrowdClothingOpaque(sourceMaterial.clone());
+      const mesh = new THREE.InstancedMesh(seatedGeometry(variant, look, applauding), crowdMaterial, batchCapacity);
       mesh.name = `wtsl-${label}-spectators-${target.length}`;
       mesh.count = 0;
       mesh.frustumCulled = false;
@@ -248,14 +314,26 @@ export function attachHumanCrowd(scene: THREE.Scene, crowd: CrowdRig, templates:
     }
     if (variant !== template) disposeHumanModel(variant, false);
   };
-  const wardrobeTints = [
-    [0x638296, 0x343f4b],
-    [0x8e664b, 0x526047],
-  ] as const;
   templates.forEach((template, gender) => {
-    makeBatches(template, batches, `textured-${gender}-sport`, wardrobeTints[gender % 2][0]);
-    makeBatches(template, batches, `textured-${gender}-formal`, wardrobeTints[gender % 2][1]);
+    wardrobeTints[gender % wardrobeTints.length].forEach((tint, wardrobe) => {
+      makeBatches(template, batches, `textured-${gender}-look-${wardrobe}`, tint, wardrobe);
+    });
   });
+
+  const shoeGeometry = new THREE.CapsuleGeometry(0.045, 0.12, 4, 8);
+  shoeGeometry.rotateX(Math.PI / 2);
+  const shoeMesh = new THREE.InstancedMesh(
+    shoeGeometry,
+    new THREE.MeshStandardMaterial({ color: 0xffffff, roughness: 0.78 }),
+    maxSeatCount * 2,
+  );
+  shoeMesh.name = 'wtsl-detailed-crowd-shoes';
+  shoeMesh.count = 0;
+  shoeMesh.frustumCulled = false;
+  shoeMesh.instanceMatrix.setUsage(THREE.DynamicDrawUsage);
+  shoeMesh.castShadow = false;
+  shoeMesh.receiveShadow = false;
+  scene.add(shoeMesh);
 
   const dummy = new THREE.Object3D();
   const instanceColor = new THREE.Color();
@@ -264,10 +342,12 @@ export function attachHumanCrowd(scene: THREE.Scene, crowd: CrowdRig, templates:
   let highDetailSeats = new Set<number>();
   let lastUpdate = -Infinity, previousApplause = false, forceUpdate = true;
   const counts = new Uint16Array(batches.length);
+  const shoeColors = [0xe7e4db, 0x344153, 0x675044, 0x1f2935, 0xc7c0ad];
   const update: CrowdRig['update'] = (time, applauding, ball) => {
     if (!forceUpdate && time - lastUpdate < 0.16 && applauding === previousApplause) return;
     counts.fill(0);
     highDetailCounts.fill(0);
+    let shoeInstance = 0;
     crowd.seats.forEach((seat, index) => {
       if (!seat.occupied) return;
       const sourceIndex = seat.sourceIndex ?? index;
@@ -280,10 +360,13 @@ export function attachHumanCrowd(scene: THREE.Scene, crowd: CrowdRig, templates:
       const clap = applauding && sourceIndex % 5 !== 0 && Math.sin(time * 9 + sourceIndex) > -0.15;
       const useHighDetail = highDetailEnabled && highDetailBatches.length > 0 && highDetailSeats.has(index);
       const bucket = (clap ? 3 : 0) + gaze;
-      const wardrobe = appearance.wardrobe % 2;
-      const batchIndex = gender * 12 + wardrobe * 6 + bucket;
-      const mesh = useHighDetail ? highDetailBatches[bucket] : batches[batchIndex];
-      const instance = useHighDetail ? highDetailCounts[bucket]++ : counts[batchIndex]++;
+      const batchIndex = gender * 48 + appearance.wardrobe * 6 + bucket;
+      const mesh = useHighDetail
+        ? highDetailBatches[appearance.wardrobe * 6 + bucket]
+        : batches[batchIndex];
+      const instance = useHighDetail
+        ? highDetailCounts[appearance.wardrobe * 6 + bucket]++
+        : counts[batchIndex]++;
       const lean = ((sourceIndex % 5) - 2) * 0.009;
       const turn = ((sourceIndex * 3 % 5) - 2) * 0.012;
       dummy.position.set(seat.x, seat.y, seat.z);
@@ -291,10 +374,32 @@ export function attachHumanCrowd(scene: THREE.Scene, crowd: CrowdRig, templates:
       dummy.scale.set(0.9 + appearance.torsoWidth * 0.035, appearance.stature, 0.94 + appearance.torsoWidth * 0.04);
       dummy.updateMatrix();
       mesh.setMatrixAt(instance, dummy.matrix);
-      // Subtle warm-neutral tint variation gives the textured models a less repeated look.
-      const tone = CROWD_SKIN_TONES[appearance.skinToneIndex];
-      instanceColor.setRGB(tone[0], tone[1], tone[2]);
+      // Instance color multiplies the entire baked human mesh. Keep it neutral
+      // so rear torso and hip fabric cannot inherit the spectator's skin tone.
+      instanceColor.setRGB(1, 1, 1);
       mesh.setColorAt(instance, instanceColor);
+      for (const [side, sideIndex] of [[-1, 0], [1, 1]] as const) {
+        const leg = getSeatedCrowdLegTargets(side);
+        const localX = leg.ankle[0];
+        const localY = (leg.ankle[1] + leg.toe[1]) / 2;
+        const localZ = (leg.ankle[2] + leg.toe[2]) / 2;
+        const sinFacing = Math.sin(seat.facing);
+        const cosFacing = Math.cos(seat.facing);
+        dummy.position.set(
+          seat.x + cosFacing * localX + sinFacing * localZ,
+          seat.y + localY,
+          seat.z - sinFacing * localX + cosFacing * localZ,
+        );
+        dummy.rotation.set(0, seat.facing, 0);
+        dummy.scale.set(0.82, 0.84, 1);
+        dummy.updateMatrix();
+        shoeMesh.setMatrixAt(shoeInstance, dummy.matrix);
+        shoeMesh.setColorAt(
+          shoeInstance,
+          new THREE.Color(shoeColors[(sourceIndex + sideIndex) % shoeColors.length]),
+        );
+        shoeInstance += 1;
+      }
     });
     batches.forEach((mesh, index) => {
       mesh.count = counts[index]; mesh.instanceMatrix.needsUpdate = true;
@@ -304,6 +409,9 @@ export function attachHumanCrowd(scene: THREE.Scene, crowd: CrowdRig, templates:
       mesh.count = highDetailCounts[index]; mesh.instanceMatrix.needsUpdate = true;
       if (mesh.instanceColor) mesh.instanceColor.needsUpdate = true;
     });
+    shoeMesh.count = shoeInstance;
+    shoeMesh.instanceMatrix.needsUpdate = true;
+    if (shoeMesh.instanceColor) shoeMesh.instanceColor.needsUpdate = true;
     previousApplause = applauding; lastUpdate = time;
     forceUpdate = false;
   };
@@ -315,7 +423,9 @@ export function attachHumanCrowd(scene: THREE.Scene, crowd: CrowdRig, templates:
   };
   crowd.setHighDetailModel = (template, genderIndex) => {
     if (highDetailBatches.length > 0) return;
-    makeBatches(template, highDetailBatches, 'high-detail');
+    wardrobeTints[genderIndex % wardrobeTints.length].forEach((tint, wardrobe) => {
+      makeBatches(template, highDetailBatches, `high-detail-${wardrobe}`, tint, wardrobe);
+    });
     highDetailSeats = new Set(
       crowd.seats.flatMap((seat, index) =>
         shouldUseHighDetailCrowdSeat(seat.row, seat.sourceIndex ?? index, genderIndex) ? [index] : []),

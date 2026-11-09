@@ -46,12 +46,14 @@
   z-index: 2147483000;
   display: flex;
   flex-direction: column;
+  box-sizing: border-box;
   width: 100vw;
   height: 100vh;
   height: 100dvh;
-  min-height: 100vh;
+  min-height: 0;
   margin: 0;
   overflow: hidden;
+  overscroll-behavior: none;
   border: 0;
   border-radius: 0;
   background: #0b1426;
@@ -113,13 +115,13 @@
 
 .pictureInPictureSource {
   position: fixed;
-  top: 0;
-  left: 0;
-  z-index: -1;
-  width: 1px;
-  height: 1px;
+  top: 2px;
+  left: 2px;
+  z-index: 2;
+  width: 32px;
+  height: 18px;
   overflow: hidden;
-  opacity: 0;
+  opacity: .01;
   pointer-events: none;
 }
 
@@ -159,37 +161,6 @@
   border-radius: 50%;
   background: #e57360;
   box-shadow: 0 0 0 4px rgba(229, 115, 96, .14);
-}
-
-.surfaceBadge {
-  display: inline-flex;
-  align-items: center;
-  min-height: 20px;
-  padding: 3px 7px;
-  border: 1px solid rgba(161, 181, 208, .3);
-  border-radius: 999px;
-  background: rgba(90, 108, 134, .18);
-  color: #d1dbea;
-  font: 750 8px/1 system-ui, sans-serif;
-  letter-spacing: .08em;
-}
-
-.surfaceBadge[data-surface='clay'] {
-  border-color: rgba(226, 149, 119, .46);
-  background: rgba(154, 82, 62, .24);
-  color: #f0c0a8;
-}
-
-.surfaceBadge[data-surface='grass'] {
-  border-color: rgba(162, 199, 129, .42);
-  background: rgba(81, 115, 64, .26);
-  color: #c5e0ad;
-}
-
-.surfaceBadge[data-surface='hard'] {
-  border-color: rgba(135, 176, 230, .42);
-  background: rgba(65, 100, 150, .27);
-  color: #c6ddfa;
 }
 
 .controls {
@@ -642,5 +613,114 @@
 
   .viewport {
     min-height: 210px;
+  }
+}
+
+:global(:root[data-theme='light']) .scene {
+  border-color: #d7e0eb;
+  background: #f5f8fc;
+  box-shadow: 0 16px 40px rgba(28, 47, 78, .12);
+}
+
+:global(:root[data-theme='light']) .toolbar {
+  border-bottom-color: #dce4ee;
+  background: linear-gradient(100deg, #fff, #f2f6fb);
+}
+
+:global(:root[data-theme='light']) .title {
+  color: #172338;
+}
+
+:global(:root[data-theme='light']) .presets,
+:global(:root[data-theme='light']) .iconControls {
+  border-color: #d8e0eb;
+  background: #edf2f8;
+}
+
+:global(:root[data-theme='light']) .playerCameraControl,
+:global(:root[data-theme='light']) .volumeControl,
+:global(:root[data-theme='light']) .panControl,
+:global(:root[data-theme='light']) .replaySpeedControl {
+  color: #52627b;
+}
+
+:global(:root[data-theme='light']) .playerCameraControl select,
+:global(:root[data-theme='light']) .replaySpeedControl select {
+  border-color: #ccd7e4;
+  background: #fff;
+  color: #24344c;
+  color-scheme: light;
+}
+
+:global(:root[data-theme='light']) .presets button,
+:global(:root[data-theme='light']) .iconControls button,
+:global(:root[data-theme='light']) .soundButton,
+:global(:root[data-theme='light']) .pictureInPictureButton,
+:global(:root[data-theme='light']) .volumeButton,
+:global(:root[data-theme='light']) .panControl button,
+:global(:root[data-theme='light']) .replayToggle {
+  border-color: #ccd7e4;
+  background: #fff;
+  color: #34445c;
+}
+
+:global(:root[data-theme='light']) .presets button[aria-pressed='true'],
+:global(:root[data-theme='light']) .soundButton[aria-pressed='true'] {
+  border-color: #c8d9af;
+  background: #edf6df;
+  color: #3d5d18;
+}
+
+:global(:root[data-theme='light']) .presets button:hover,
+:global(:root[data-theme='light']) .iconControls button:hover,
+:global(:root[data-theme='light']) .soundButton:hover,
+:global(:root[data-theme='light']) .volumeButton:hover,
+:global(:root[data-theme='light']) .panControl button:hover,
+:global(:root[data-theme='light']) .replayToggle:hover {
+  border-color: #91b36c;
+  color: #3d5d18;
+}
+
+:global(:root[data-theme='light']) .volumeControl output,
+:global(:root[data-theme='light']) .replayClock {
+  color: #34445c;
+}
+
+:global(:root[data-theme='light']) .volumeButton,
+:global(:root[data-theme='light']) .panControl button {
+  background: #fff;
+}
+
+:global(:root[data-theme='light']) .volumeControl input,
+:global(:root[data-theme='light']) .panControl input,
+:global(:root[data-theme='light']) .replaySeek input {
+  accent-color: #527c23;
+}
+
+:global(:root[data-theme='light']) .pictureInPictureStatus,
+:global(:root[data-theme='light']) .soundError {
+  color: #82510c;
+}
+
+:global(:root[data-theme='light']) .legend {
+  border-top-color: #dce4ee;
+  color: #52627b;
+}
+
+:global(:root[data-theme='light']) .replayControls {
+  border-top-color: #dce4ee;
+  background: #f2f6fb;
+}
+
+:global(:root[data-theme='light']) .replayToggle:focus-visible,
+:global(:root[data-theme='light']) .replaySpeedControl select:focus-visible,
+:global(:root[data-theme='light']) .replaySeek input:focus-visible {
+  outline-color: #527c23;
+}
+
+@media (max-width: 720px) {
+  :global(:root[data-theme='light']) .volumeControl {
+    border-color: #d8e0eb;
+    background: #edf2f8;
   }
 }

@@ -3,7 +3,7 @@ import { resolveDmoVenueProfile, type DmoVenueProfile } from '../lib/dmoVenue';
 import type { Te4CourtSurface } from '@/lib/te4DmoTypes';
 import { courtSurfaceVisualProfile } from '@/lib/te4DmoSurface';
 import { isCrowdSeatOccupied } from '@/lib/dmoCrowdDensity';
-import { buildStadiumArchitecture } from './DmoStadiumArchitecture';
+import { buildStadiumArchitecture, isUpperBowlAccessGap } from './DmoStadiumArchitecture';
 
 export type PlayerRig = {
   detailed?: { update: () => void };
@@ -100,22 +100,45 @@ export const CROWD_SKIN_TONES = [
 /** Deterministic, unlabelled appearance variation shared by fallback and detailed spectators. */
 export function getCrowdAppearance(sourceIndex: number, row = 0) {
   const hash = Math.imul(sourceIndex ^ (row * 0x45d9f3b), 0x27d4eb2d) >>> 0;
+  // The detailed mesh renderer uses eight paired tone/wardrobe variants.
+  // Keep the fallback crowd on the same deterministic appearance key.
+  const appearance = (hash >>> 12) % 8;
   return {
-    skinToneIndex: hash % CROWD_SKIN_TONES.length,
+    skinToneIndex: appearance,
     hairStyle: (hash >>> 4) % 4,
-    wardrobe: (hash >>> 8) % 4,
-    stature: 0.91 + ((hash >>> 12) % 10) * 0.018,
+    wardrobe: appearance,
+    stature: 0.94 + ((hash >>> 12) % 10) * 0.01,
     torsoWidth: 0.88 + ((hash >>> 20) % 7) * 0.035,
   };
 }
 
-/** Joint targets in chair-local metres; knees flex and toes meet the foot bar. */
+/** Compact seated crowd joints in seat-local metres. */
+export function getSeatedCrowdLegTargets(sideSign: number) {
+  return {
+    hip: [sideSign * 0.11, 0.48, 0] as const,
+    knee: [sideSign * 0.14, 0.38, 0.18] as const,
+    ankle: [sideSign * 0.14, 0.16, 0.14] as const,
+    toe: [sideSign * 0.14, 0.05, 0.20] as const,
+  };
+}
+
+/** Seated lower-stand staff fit the seat and step instead of dangling below it. */
+export function getSeatedCoachLegTargets(sideSign: number, hipsY = 0.4) {
+  return {
+    hip: [sideSign * 0.11, hipsY, 0] as const,
+    knee: [sideSign * 0.14, hipsY - 0.05, 0.26] as const,
+    ankle: [sideSign * 0.14, hipsY - 0.32, 0.26] as const,
+    toe: [sideSign * 0.14, hipsY - 0.38, 0.37] as const,
+  };
+}
+
+/** Chair-local joints; bent knees and short feet put the skinned soles on the bar. */
 export function getChairUmpireLegTargets(sideSign: number, hipsY = 1.34) {
   return {
     hip: [sideSign * 0.11, hipsY, 0] as const,
-    knee: [sideSign * 0.14, hipsY - 0.20, 0.56] as const,
-    ankle: [sideSign * 0.14, 0.68, 0.40] as const,
-    toe: [sideSign * 0.14, 0.58, 0.68] as const,
+    knee: [sideSign * 0.14, hipsY - 0.05, 0.30] as const,
+    ankle: [sideSign * 0.14, 1.02, 0.30] as const,
+    toe: [sideSign * 0.14, 0.96, 0.41] as const,
   };
 }
 
@@ -215,6 +238,28 @@ function naturalScalpGeometry() {
   return geometry;
 }
 
+function taperedHairGeometry(path: THREE.CatmullRomCurve3, radius: number) {
+  const tubularSegments = 24;
+  const radialSegments = 8;
+  const geometry = new THREE.TubeGeometry(path, tubularSegments, radius, radialSegments, false);
+  const positions = geometry.getAttribute('position');
+  const center = new THREE.Vector3();
+  const point = new THREE.Vector3();
+  for (let ring = 0; ring <= tubularSegments; ring++) {
+    const t = ring / tubularSegments;
+    path.getPointAt(t, center);
+    const taper = 0.2 + 0.8 * (1 - t) ** 0.6;
+    for (let segment = 0; segment <= radialSegments; segment++) {
+      const vertex = ring * (radialSegments + 1) + segment;
+      point.fromBufferAttribute(positions, vertex).sub(center).multiplyScalar(taper).add(center);
+      positions.setXYZ(vertex, point.x, point.y, point.z);
+    }
+  }
+  positions.needsUpdate = true;
+  geometry.computeVertexNormals();
+  return geometry;
+}
+
 export function buildStadiumEnvironment(
   scene: THREE.Scene,
   indoor = false,
@@ -222,11 +267,12 @@ export function buildStadiumEnvironment(
   venueName?: string | null,
 ) {
   const venue = resolveDmoVenueProfile(venueName);
+  const venueKey = `${venue.label}:${venue.cityLabel ?? ''}`;
   const existing = scene.getObjectByName('wtsl-stadium-architecture');
   if (
     existing
     && scene.userData.wtslStadiumIndoor === indoor
-    && scene.userData.wtslStadiumVenue === venue.label
+    && scene.userData.wtslStadiumVenue === venueKey
   ) return;
   existing?.removeFromParent();
   scene.getObjectByName('wtsl-open-sky')?.removeFromParent();
@@ -235,10 +281,11 @@ export function buildStadiumEnvironment(
   scene.background = new THREE.Color(0x26383b);
   scene.fog = new THREE.Fog(0x26383b, 82, 205);
   scene.userData.wtslStadiumIndoor = indoor;
-  scene.userData.wtslStadiumVenue = venue.label;
+  scene.userData.wtslStadiumVenue = venueKey;
   const stadium = new THREE.Group();
   stadium.name = 'wtsl-stadium-architecture';
   stadium.userData.venueName = venue.label;
+  stadium.userData.cityLabel = venue.cityLabel;
   stadium.userData.capacity = venue.capacity;
   // Keep the lighting masts and crossbars out of the court sightlines. The
   // stadium retains its lighting through the non-blocking spotlights below.
@@ -485,7 +532,12 @@ function addCourtsideSafetyBarrier(scene: THREE.Scene) {
   scene.add(barrier);
 }
 
-export function buildCourt(scene: THREE.Scene, surface: Te4CourtSurface, isWta = false) {
+export function buildCourt(
+  scene: THREE.Scene,
+  surface: Te4CourtSurface,
+  isWta = false,
+  venueName?: string | null,
+) {
   const halfLength = COURT_LENGTH / 2;
   const halfWidth = COURT_WIDTH / 2;
   const singlesHalfWidth = SINGLES_WIDTH / 2;
@@ -513,6 +565,47 @@ export function buildCourt(scene: THREE.Scene, surface: Te4CourtSurface, isWta =
   runoff.rotation.x = -Math.PI / 2;
   runoff.receiveShadow = true;
   scene.add(runoff);
+  const venue = resolveDmoVenueProfile(venueName);
+  if (venue.cityLabel && typeof document !== 'undefined') {
+    const canvas = document.createElement('canvas');
+    canvas.width = 768;
+    canvas.height = 160;
+    const context = canvas.getContext('2d');
+    if (context) {
+      context.clearRect(0, 0, canvas.width, canvas.height);
+      context.fillStyle = 'rgba(245, 243, 233, 0.92)';
+      context.font = '800 82px Arial, sans-serif';
+      context.textAlign = 'center';
+      context.textBaseline = 'middle';
+      context.fillText(venue.cityLabel, canvas.width / 2, canvas.height / 2, 700);
+      const texture = new THREE.CanvasTexture(canvas);
+      texture.colorSpace = THREE.SRGBColorSpace;
+      texture.minFilter = THREE.LinearFilter;
+      texture.magFilter = THREE.LinearFilter;
+      const labelMaterial = new THREE.MeshBasicMaterial({
+        map: texture,
+        transparent: true,
+        depthWrite: false,
+        toneMapped: false,
+      });
+      for (const sign of [-1, 1]) {
+        const label = new THREE.Mesh(new THREE.PlaneGeometry(4.8, 1), labelMaterial);
+        label.name = 'wtsl-court-city-label';
+        label.userData = {
+          venue: venue.label,
+          cityLabel: venue.cityLabel,
+          onRunoff: true,
+          outsidePlayingSurface: true,
+        };
+        // Court length follows X, so baseline lettering spans Z. Face each
+        // end toward the playing area rather than printing one end upside down.
+        label.rotation.set(-Math.PI / 2, 0, sign * Math.PI / 2);
+        label.position.set(sign * 16.4, 0.009, 0);
+        label.renderOrder = 2;
+        scene.add(label);
+      }
+    }
+  }
 
   const playingTexture = courtSurfaceTexture(surface, 'playing');
   const playingSurface = new THREE.Mesh(
@@ -763,15 +856,16 @@ function buildUnifiedCrowd(scene: THREE.Scene, venue: DmoVenueProfile, density: 
       const angle = (index / count) * Math.PI * 2;
       const x = Math.cos(angle) * ellipseX;
       const z = Math.sin(angle) * ellipseZ;
-      // Keep the four centered bowl passageways clear on every upper tier.
-      if (Math.abs(x) < tunnelHalfWidth || Math.abs(z) < tunnelHalfWidth) continue;
+      // Match the architecture exactly: section stairs and the four centered
+      // passageways are kept clear of both seats and animated crowd anchors.
+      if (isUpperBowlAccessGap(x, z)) continue;
       const sourceIndex = (lowerRows + upperRow) * 10_000 + index;
       seats.push({
         x,
         z,
         row: lowerRows + upperRow,
         facing: Math.atan2(-Math.cos(angle), -Math.sin(angle)),
-        y: baseY + upperRow * rowRise,
+        y: baseY + upperRow * rowRise + rowRise / 2,
         sourceIndex,
         occupied: isCrowdSeatOccupied(sourceIndex, density),
       });
@@ -878,6 +972,30 @@ function buildUnifiedCrowd(scene: THREE.Scene, venue: DmoVenueProfile, density: 
     new THREE.MeshStandardMaterial({ color: 0xffffff, roughness: 0.84 }),
     spectatorSeats.length,
   );
+  const torsoClothingMesh = new THREE.InstancedMesh(
+    ellipticalBodyGeometry([
+      [0.585, 0.17, 0.13],
+      [0.64, 0.205, 0.15],
+      [0.78, 0.22, 0.16],
+      [0.94, 0.255, 0.18],
+      [1.055, 0.235, 0.17],
+      [1.13, 0.17, 0.125],
+      [1.17, 0.115, 0.095],
+    ], 20),
+    new THREE.MeshStandardMaterial({
+      color: 0xffffff,
+      roughness: 0.9,
+      metalness: 0,
+      side: THREE.DoubleSide,
+      transparent: false,
+      opacity: 1,
+      depthWrite: true,
+      polygonOffset: true,
+      polygonOffsetFactor: -1,
+      polygonOffsetUnits: -1,
+    }),
+    spectatorSeats.length,
+  );
   const headMesh = new THREE.InstancedMesh(
     new THREE.SphereGeometry(0.5, 8, 6),
     new THREE.MeshStandardMaterial({ color: 0xffffff, roughness: 0.74 }),
@@ -898,11 +1016,29 @@ function buildUnifiedCrowd(scene: THREE.Scene, venue: DmoVenueProfile, density: 
     new THREE.MeshStandardMaterial({ color: 0xffffff, roughness: 0.9 }),
     spectatorSeats.length * 2,
   );
+  const hipMesh = new THREE.InstancedMesh(
+    new THREE.SphereGeometry(0.5, 10, 7),
+    new THREE.MeshStandardMaterial({ color: 0xffffff, roughness: 0.88 }),
+    spectatorSeats.length,
+  );
+  // Keep the sole narrow and the shoe low-profile: the previous padded
+  // capsule was almost as tall as its width and looked like a boot.
+  const shoeGeometry = new THREE.CapsuleGeometry(0.036, 0.18, 4, 10);
+  shoeGeometry.rotateX(Math.PI / 2);
+  const shoeMesh = new THREE.InstancedMesh(
+    shoeGeometry,
+    new THREE.MeshStandardMaterial({ color: 0xffffff, roughness: 0.72 }),
+    spectatorSeats.length * 2,
+  );
   bodyMesh.name = 'wtsl-unified-crowd-fallback-bodies';
+  torsoClothingMesh.name = 'wtsl-unified-crowd-clothing-torsos';
+  torsoClothingMesh.userData = { opaqueGarmentCoverage: 'front-back-sides', allLods: true };
   headMesh.name = 'wtsl-spectator-heads';
   hairMesh.name = 'wtsl-spectator-hair';
   ponytailMesh.name = 'wtsl-spectator-ponytails';
   armMesh.name = 'wtsl-unified-crowd-fallback-arms';
+  hipMesh.name = 'wtsl-unified-crowd-fallback-hips';
+  shoeMesh.name = 'wtsl-unified-crowd-footwear';
   const shirtColors = [
     0xc96b52, 0x397e75, 0xd7b253, 0x526b98, 0xefe0c8, 0x885e80,
     0x465754, 0x9b624b, 0x83a7a1, 0xa9a08d, 0x6e4960, 0x384d64,
@@ -982,7 +1118,74 @@ function buildUnifiedCrowd(scene: THREE.Scene, venue: DmoVenueProfile, density: 
     placeArm(index * 2, seat, -1, 0, false);
     placeArm(index * 2 + 1, seat, 1, 0, false);
   });
+  const updateClothingInstances = () => {
+    const trouserColors = [
+      0x38444b, 0x56534b, 0x34404a, 0x635348,
+      0x4a514d, 0x414852, 0x665a4d, 0x4c5b52,
+    ];
+    const shoeColors = [0xd9d8d0, 0x41474b, 0x9d9b91];
+    const shirtColors = [
+      0x31566a, 0x9a493e, 0x42715f, 0x66506e, 0xa78b54, 0x3b5262,
+      0x8f5947, 0x596f78, 0x65774f, 0x806456, 0x41534e, 0x68708b,
+      0x31566a, 0x9a493e, 0x42715f, 0x66506e, 0xa78b54, 0x3b5262,
+      0x8f5947, 0x596f78, 0x65774f, 0x806456, 0x41534e, 0x68708b,
+    ];
+    occupiedSeats.forEach((seat, index) => {
+      const sourceIndex = seat.sourceIndex ?? index;
+      const appearance = getCrowdAppearance(sourceIndex, seat.row);
+      dummy.position.set(seat.x, seat.y, seat.z);
+      dummy.rotation.set(0, seat.facing, 0);
+      dummy.scale.set(
+        0.9 + appearance.torsoWidth * 0.035,
+        appearance.stature,
+        0.94 + appearance.torsoWidth * 0.04,
+      );
+      dummy.updateMatrix();
+      torsoClothingMesh.setMatrixAt(index, dummy.matrix);
+      torsoClothingMesh.setColorAt(
+        index,
+        new THREE.Color(shirtColors[appearance.wardrobe * 3 + (sourceIndex % 3)]),
+      );
+      dummy.position.set(seat.x, seat.y + 0.57, seat.z);
+      dummy.rotation.set(0, seat.facing, 0);
+      dummy.scale.set(0.31 * appearance.torsoWidth, 0.2 * appearance.stature, 0.235);
+      dummy.updateMatrix();
+      hipMesh.setMatrixAt(index, dummy.matrix);
+      hipMesh.setColorAt(index, new THREE.Color(trouserColors[appearance.wardrobe]));
+      const sinFacing = Math.sin(seat.facing);
+      const cosFacing = Math.cos(seat.facing);
+      for (const [side, shoeIndex] of [[-1, index * 2], [1, index * 2 + 1]] as const) {
+        const targets = getSeatedCrowdLegTargets(side);
+        const [ankleX, ankleY, ankleZ] = targets.ankle;
+        const [toeX, toeY, toeZ] = targets.toe;
+        const localX = (ankleX + toeX) * 0.5;
+        const localY = (ankleY + toeY) * 0.5;
+        const localZ = (ankleZ + toeZ) * 0.5;
+        dummy.position.set(
+          seat.x + cosFacing * localX + sinFacing * localZ,
+          seat.y + localY,
+          seat.z - sinFacing * localX + cosFacing * localZ,
+        );
+        dummy.rotation.set(0, seat.facing, 0);
+        dummy.scale.set(1.05, 0.95, 1);
+        dummy.updateMatrix();
+        shoeMesh.setMatrixAt(shoeIndex, dummy.matrix);
+        shoeMesh.setColorAt(shoeIndex, new THREE.Color(shoeColors[(sourceIndex + (side > 0 ? 1 : 0)) % shoeColors.length]));
+      }
+    });
+    torsoClothingMesh.instanceMatrix.needsUpdate = true;
+    hipMesh.instanceMatrix.needsUpdate = true;
+    shoeMesh.instanceMatrix.needsUpdate = true;
+    if (torsoClothingMesh.instanceColor) torsoClothingMesh.instanceColor.needsUpdate = true;
+    if (hipMesh.instanceColor) hipMesh.instanceColor.needsUpdate = true;
+    if (shoeMesh.instanceColor) shoeMesh.instanceColor.needsUpdate = true;
+  };
+  updateClothingInstances();
+  torsoClothingMesh.count = occupiedSeats.length;
+  hipMesh.count = occupiedSeats.length;
+  shoeMesh.count = occupiedSeats.length * 2;
   const fallbackMeshes = [bodyMesh, headMesh, hairMesh, ponytailMesh, armMesh];
+  const fallbackClothingMeshes = [torsoClothingMesh, hipMesh, shoeMesh];
   fallbackMeshes.forEach((mesh) => {
     mesh.count = mesh === armMesh ? occupiedSeats.length * 2 : occupiedSeats.length;
   });
@@ -994,6 +1197,17 @@ function buildUnifiedCrowd(scene: THREE.Scene, venue: DmoVenueProfile, density: 
     mesh.receiveShadow = false;
     scene.add(mesh);
   });
+  hipMesh.instanceMatrix.needsUpdate = true;
+  shoeMesh.instanceMatrix.needsUpdate = true;
+  hipMesh.instanceColor!.needsUpdate = true;
+  shoeMesh.instanceColor!.needsUpdate = true;
+  hipMesh.castShadow = false;
+  hipMesh.receiveShadow = false;
+  shoeMesh.castShadow = false;
+  shoeMesh.receiveShadow = false;
+  torsoClothingMesh.castShadow = false;
+  torsoClothingMesh.receiveShadow = false;
+  scene.add(torsoClothingMesh, hipMesh, shoeMesh);
   bodyMesh.instanceColor!.needsUpdate = true;
   headMesh.instanceColor!.needsUpdate = true;
   hairMesh.instanceColor!.needsUpdate = true;
@@ -1012,6 +1226,10 @@ function buildUnifiedCrowd(scene: THREE.Scene, venue: DmoVenueProfile, density: 
       fallbackMeshes.forEach((mesh) => {
         mesh.count = mesh === armMesh ? occupiedSeats.length * 2 : occupiedSeats.length;
       });
+      hipMesh.count = occupiedSeats.length;
+      shoeMesh.count = occupiedSeats.length * 2;
+      torsoClothingMesh.count = occupiedSeats.length;
+      updateClothingInstances();
       crowdRig.invalidateUpdate();
     },
     invalidateUpdate() {
@@ -1021,7 +1239,10 @@ function buildUnifiedCrowd(scene: THREE.Scene, venue: DmoVenueProfile, density: 
     setHighDetailEnabled(enabled) { crowdRig.highDetailEnabled = enabled; },
     setHighDetailModel: () => undefined,
     replacePeople(update) {
-      fallbackMeshes.forEach((mesh) => { mesh.visible = false; });
+      // The fitted, textured humans replace every fallback layer, including
+      // garment shells and shoes; leaving those visible creates colored tubes
+      // and oversized duplicate footwear over the real bodies.
+      for (const mesh of [...fallbackMeshes, ...fallbackClothingMeshes]) mesh.visible = false;
       detailedUpdate = update;
     },
     update(time, applauding, ballPosition) {
@@ -1166,7 +1387,7 @@ export function buildCourtFixtures(scene: THREE.Scene): CourtFixtureRig {
   addBox(chair, [0.82, 0.11, 0.72], [0, 1.1, 0], frameMaterial);
   addBox(chair, [0.58, 0.08, 0.58], [0, 1.27, 0], seatMaterial);
   addBox(chair, [0.58, 0.5, 0.09], [0, 1.56, -0.25], backMaterial);
-  const footBar = addBox(chair, [0.7, 0.08, 0.45], [0, 0.54, 0.52], frameMaterial);
+  const footBar = addBox(chair, [0.7, 0.08, 0.30], [0, 0.89, 0.41], frameMaterial);
   footBar.name = 'wtsl-umpire-foot-bar';
   footBar.userData.supportsSeatedFeet = true;
   for (const y of [0.72, 0.91, 1.08]) {
@@ -1261,7 +1482,18 @@ export function makePlayer(shirtColor: number, shortsColor: number, isWta = fals
   });
   // Sculpted elliptical cross-sections create a human rib cage, waist and
   // shoulder shelf instead of a lathed toy barrel.
-  const body = new THREE.Mesh(ellipticalBodyGeometry([
+  const bodyProfile: Array<[number, number, number]> = isWta ? [
+    [-0.31, 0.17, 0.105],
+    [-0.285, 0.17, 0.105],
+    [-0.22, 0.16, 0.09],
+    [-0.12, 0.137, 0.082],
+    [-0.015, 0.15, 0.09],
+    [0.105, 0.19, 0.105],
+    [0.19, 0.205, 0.1],
+    [0.25, 0.205, 0.092],
+    [0.29, 0.11, 0.065],
+    [0.30, 0.025, 0.025],
+  ] : [
     [-0.31, 0.165, 0.105],
     [-0.285, 0.165, 0.105],
     [-0.22, 0.155, 0.085],
@@ -1272,7 +1504,8 @@ export function makePlayer(shirtColor: number, shortsColor: number, isWta = fals
     [0.25, 0.225, 0.095],
     [0.29, 0.11, 0.065],
     [0.30, 0.025, 0.025],
-  ], 32), shirt);
+  ];
+  const body = new THREE.Mesh(ellipticalBodyGeometry(bodyProfile, 32), shirt);
   body.position.y = 1.22;
   body.castShadow = true;
   const collar = new THREE.Mesh(new THREE.TorusGeometry(0.068, 0.007, 6, 20), realisticMaterial(0xe7e0d2, 0.85));
@@ -1334,15 +1567,16 @@ export function makePlayer(shirtColor: number, shortsColor: number, isWta = fals
     hip.add(waistband);
   } else {
     const skirt = new THREE.Mesh(ellipticalBodyGeometry([
-      [-0.24, 0.22, 0.135], [-0.20, 0.24, 0.145], [-0.11, 0.22, 0.14],
+      [-0.04, 0.245, 0.145], [-0.035, 0.27, 0.155], [-0.015, 0.245, 0.15],
       [0.015, 0.19, 0.125], [0.12, 0.17, 0.11], [0.15, 0.12, 0.085],
     ], 28), shorts);
     skirt.name = 'tennis-skirt';
+    skirt.userData.wtaHemOffset = -0.04;
     skirt.castShadow = true;
     hip.add(skirt);
   }
   hip.position.y = 0.9;
-  hip.scale.x = 1.08;
+  hip.scale.x = isWta ? 1.14 : 1.08;
   root.add(hip);
   const neck = new THREE.Mesh(new THREE.CylinderGeometry(0.045, 0.052, 0.11, 14), skin);
   neck.position.y = 1.56;
@@ -1434,13 +1668,69 @@ export function makePlayer(shirtColor: number, shortsColor: number, isWta = fals
   hair.name = 'natural-scalp';
   head.add(hair);
   if (isWta) {
-    const tie = new THREE.Mesh(new THREE.SphereGeometry(0.031, 12, 10), realisticMaterial(0x302923, 0.55));
+    const tie = new THREE.Mesh(
+      new THREE.TorusGeometry(0.022, 0.005, 6, 16),
+      realisticMaterial(0xd4b47b, 0.55),
+    );
+    tie.name = 'wta-hair-tie';
     tie.position.set(-0.01, -0.035, -0.088);
+    tie.rotation.x = Math.PI / 2;
     head.add(tie);
-    const ponytail = new THREE.Mesh(new THREE.CapsuleGeometry(0.021, 0.105, 4, 10), hairMaterial);
-    ponytail.position.set(-0.012, -0.105, -0.105);
-    ponytail.rotation.z = -0.12;
+    const ponytailPath = new THREE.CatmullRomCurve3([
+      new THREE.Vector3(-0.01, -0.035, -0.088),
+      new THREE.Vector3(-0.02, -0.105, -0.12),
+      new THREE.Vector3(-0.012, -0.2, -0.14),
+      new THREE.Vector3(0.012, -0.34, -0.13),
+    ]);
+    const ponytail = new THREE.Mesh(
+      taperedHairGeometry(ponytailPath, 0.018),
+      hairMaterial,
+    );
+    ponytail.name = 'wta-long-ponytail';
+    ponytail.castShadow = true;
     head.add(ponytail);
+    for (const side of [-1, 1] as const) {
+      const lockPath = new THREE.CatmullRomCurve3([
+        new THREE.Vector3(side * 0.052, 0.035, 0.032),
+        new THREE.Vector3(side * 0.071, -0.02, 0.054),
+        new THREE.Vector3(side * 0.082, -0.105, 0.056),
+        new THREE.Vector3(side * 0.066, -0.19, 0.045),
+        new THREE.Vector3(side * 0.087, -0.27, 0.022),
+        new THREE.Vector3(side * 0.09, -0.31, 0.012),
+      ]);
+      const lock = new THREE.Mesh(
+        taperedHairGeometry(lockPath, 0.013),
+        hairMaterial,
+      );
+      lock.name = `wta-front-lock-${side < 0 ? 'left' : 'right'}`;
+      lock.castShadow = true;
+      head.add(lock);
+    }
+    const blushMaterial = new THREE.MeshBasicMaterial({
+      color: 0xb87578, transparent: true, opacity: 0.2, depthWrite: false,
+    });
+    const studMaterial = realisticMaterial(0xd7bd87, 0.28);
+    for (const side of [-1, 1] as const) {
+      const cheek = new THREE.Mesh(new THREE.SphereGeometry(1, 14, 10), blushMaterial);
+      cheek.name = `wta-blush-${side < 0 ? 'left' : 'right'}`;
+      cheek.scale.set(0.02, 0.008, 0.003);
+      cheek.position.set(side * 0.052, -0.035, 0.09);
+      head.add(cheek);
+
+      const earring = new THREE.Mesh(new THREE.SphereGeometry(0.006, 12, 10), studMaterial);
+      earring.name = `wta-earring-${side < 0 ? 'left' : 'right'}`;
+      earring.position.set(side * 0.085, -0.018, 0.022);
+      earring.castShadow = true;
+      head.add(earring);
+    }
+    const lipTint = new THREE.Mesh(
+      new THREE.SphereGeometry(1, 14, 10),
+      new THREE.MeshBasicMaterial({ color: 0xa65d65, transparent: true, opacity: 0.32, depthWrite: false }),
+    );
+    lipTint.name = 'wta-lip-tint';
+    lipTint.scale.set(0.014, 0.004, 0.0025);
+    lipTint.position.set(0, -0.077, 0.092);
+    head.add(lipTint);
   }
 
   // poseLimb scales each anatomically slim segment to measured joint spacing.
@@ -1481,19 +1771,23 @@ export function makePlayer(shirtColor: number, shortsColor: number, isWta = fals
   const rightCalf = new THREE.Mesh(calfGeometry, skin);
   const trimMaterial = realisticMaterial(0xe7e0d2, 0.86);
   for (const sleeve of [leftArm, rightArm]) {
-    const shirtSleeve = new THREE.Mesh(ellipticalBodyGeometry([
-      [-0.535, 0.054, 0.055],
-      [-0.50, 0.078, 0.077],
-      [-0.34, 0.079, 0.078],
-      [-0.16, 0.075, 0.074],
-      [0.015, 0.07, 0.069],
-      [0.035, 0.067, 0.066],
-    ], 20), shirt);
+    const sleeveProfile: Array<[number, number, number]> = isWta
+      ? [
+        [-0.535, 0.054, 0.055], [-0.50, 0.078, 0.077], [-0.40, 0.079, 0.078],
+        [-0.31, 0.075, 0.074], [-0.28, 0.07, 0.069], [-0.25, 0.067, 0.066],
+      ]
+      : [
+        [-0.535, 0.054, 0.055], [-0.50, 0.078, 0.077], [-0.34, 0.079, 0.078],
+        [-0.16, 0.075, 0.074], [0.015, 0.07, 0.069], [0.035, 0.067, 0.066],
+      ];
+    const shirtSleeve = new THREE.Mesh(ellipticalBodyGeometry(sleeveProfile, 20), shirt);
+    shirtSleeve.name = isWta ? 'wta-cap-sleeve' : 'player-shirt-sleeve';
     shirtSleeve.castShadow = true;
     sleeve.add(shirtSleeve);
     const cuff = new THREE.Mesh(new THREE.TorusGeometry(0.067, 0.0045, 6, 18), trimMaterial);
     cuff.rotation.x = Math.PI / 2;
-    cuff.position.y = 0.02;
+    cuff.position.y = isWta ? -0.26 : 0.02;
+    cuff.name = isWta ? 'wta-short-sleeve-cuff' : 'player-shirt-sleeve-cuff';
     sleeve.add(cuff);
   }
   const sockMaterial = realisticMaterial(0xe4dfd2, 0.88);
@@ -1611,7 +1905,8 @@ export function makePlayer(shirtColor: number, shortsColor: number, isWta = fals
   }
   racket.position.set(0.39, 1.1, 0.04);
   root.add(racket);
-  root.scale.set(0.95, 0.95, 0.95);
+  const statureScale = isWta ? 0.91 : 0.95;
+  root.scale.set(statureScale, statureScale, statureScale);
   return {
     root, body, hip, head, leftArm, rightArm, leftForearm, rightForearm,
     leftLeg, rightLeg, leftCalf, rightCalf, leftElbow, rightElbow, leftKnee, rightKnee,

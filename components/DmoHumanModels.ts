@@ -8,6 +8,7 @@ import { attachNativePlayer } from './DmoNativePlayer';
 import { attachNativePlayer as attachClaudeNativePlayer } from './DmoNativePlayerClaude';
 import type { GroundstrokeMotionSources, GroundstrokeName } from './DmoCapturedGroundstroke';
 import { BROADCAST_PLAYER_KITS, type NativePlayerKit } from './DmoNativeKit';
+import { isCrowdSkinPixel } from '@/lib/dmoCrowdClothing';
 
 type Gender = 'male' | 'female';
 type HumanModelDetail = 'player' | 'crowd' | 'crowd-high';
@@ -16,10 +17,21 @@ const UP = new THREE.Vector3(0, 1, 0);
 const nativeMotionSources = new WeakMap<THREE.Group, GroundstrokeMotionSources>();
 
 async function loadGroundstrokeMotionSources(base: string, signal: AbortSignal): Promise<GroundstrokeMotionSources> {
-  const load = async (stroke: GroundstrokeName) => {
+  const load = async (stroke: Exclude<GroundstrokeName, 'smash'>) => {
     const response = await fetch(`${base}/tennis-${stroke}.bvh`, { signal });
     if (!response.ok) throw new Error(`Captured ${stroke} motion request failed (${response.status}).`);
     return response.text();
+  };
+  const loadSmash = async () => {
+    try {
+      const response = await fetch(`${base}/tennis-smash-jarua.bvh`, { signal });
+      if (!response.ok) throw new Error(`Captured smash request failed (${response.status}).`);
+      return await response.text();
+    } catch (error) {
+      if (signal.aborted) throw error;
+      console.warn('Captured smash could not load; overheads keep the existing stroke.', error);
+      return undefined;
+    }
   };
   // Walking / jogging / running arms are optional: if they cannot load, the
   // player still loads with the existing carry behavior.
@@ -40,14 +52,26 @@ async function loadGroundstrokeMotionSources(base: string, signal: AbortSignal):
       return undefined;
     }
   };
-  const [forehand, backhand, serve, smash, volleyForehand, volleyBackhand, locomotion] = await Promise.all([
+  const loadBackhandOne = async () => {
+    try {
+      const response = await fetch(`${base}/tennis-backhand-one.bvh`, { signal });
+      if (!response.ok) throw new Error(`Captured one-handed backhand request failed (${response.status}).`);
+      return await response.text();
+    } catch (error) {
+      if (signal.aborted) throw error;
+      console.warn('Captured one-handed backhand could not load; using the existing recording.', error);
+      return undefined;
+    }
+  };
+  const [forehand, backhand, serve, smash, volleyForehand, volleyBackhand, locomotion, backhandOne] = await Promise.all([
     load('forehand'),
     load('backhand'),
     load('serve'),
-    load('smash'),
+    loadSmash(),
     load('volley-forehand'),
     load('volley-backhand'),
     loadLocomotion(),
+    loadBackhandOne(),
   ]);
   return {
     forehand,
@@ -57,6 +81,7 @@ async function loadGroundstrokeMotionSources(base: string, signal: AbortSignal):
     'volley-forehand': volleyForehand,
     'volley-backhand': volleyBackhand,
     locomotion,
+    backhandOne,
   };
 }
 
@@ -98,12 +123,20 @@ export function disposeHumanModel(model: THREE.Object3D, textures = true) {
 
 /** Absolute joint targets reuse the DMO rig's contact/footwork rather than a canned run clip. */
 export class HumanPose {
-  private bones = new Map<string, { bone: THREE.Bone; bind: THREE.Quaternion; direction: THREE.Vector3 }>();
+  private bones = new Map<string, {
+    bone: THREE.Bone;
+    bind: THREE.Quaternion;
+    direction: THREE.Vector3;
+    scale: THREE.Vector3;
+    child?: THREE.Bone;
+  }>();
   private spaceRotation = new THREE.Quaternion();
   private parentRotation = new THREE.Quaternion();
   private target = new THREE.Vector3();
   private direction = new THREE.Vector3();
   private rotation = new THREE.Quaternion();
+  private segmentStart = new THREE.Vector3();
+  private segmentEnd = new THREE.Vector3();
 
   constructor(readonly model: THREE.Group, readonly space: THREE.Group) {
     space.updateWorldMatrix(true, true);
@@ -111,7 +144,14 @@ export class HumanPose {
     model.traverse((object) => {
       if (!(object instanceof THREE.Bone)) return;
       const bind = inverseSpace.clone().multiply(object.getWorldQuaternion(new THREE.Quaternion()));
-      this.bones.set(object.name, { bone: object, bind, direction: UP.clone().applyQuaternion(bind) });
+      const child = object.children.find((item) => item instanceof THREE.Bone);
+      this.bones.set(object.name, {
+        bone: object,
+        bind,
+        direction: UP.clone().applyQuaternion(bind),
+        scale: object.scale.clone(),
+        child: child instanceof THREE.Bone ? child : undefined,
+      });
     });
     for (const required of ['Hips', 'Spine02', 'Spine01', 'Spine', 'Head', 'LeftHand', 'RightHand']) {
       if (!this.bones.has(required)) throw new Error(`Missing character joint: ${required}`);
@@ -126,15 +166,18 @@ export class HumanPose {
   place(name: string, from: THREE.Vector3, to?: THREE.Vector3, turn?: THREE.Quaternion) {
     const joint = this.bones.get(name);
     if (!joint) return;
-    const { bone, bind, direction } = joint;
+    const { bone, bind, direction, scale, child } = joint;
     const parent = bone.parent;
     if (!parent) return;
     parent.updateWorldMatrix(true, false);
     this.target.copy(from);
     this.space.localToWorld(this.target);
     bone.position.copy(parent.worldToLocal(this.target));
+    bone.scale.copy(scale);
     this.rotation.identity();
+    let segmentLength = 0;
     if (to && this.direction.subVectors(to, from).lengthSq() > 0.000001) {
+      segmentLength = this.direction.length();
       this.rotation.setFromUnitVectors(direction, this.direction.normalize());
     }
     if (turn) this.rotation.premultiply(turn);
@@ -142,6 +185,21 @@ export class HumanPose {
     parent.getWorldQuaternion(this.parentRotation).invert();
     bone.quaternion.copy(this.parentRotation.multiply(this.rotation));
     bone.updateMatrixWorld(true);
+    if (child && segmentLength > 0) {
+      // The source models stand with adult-length bones. Merely rotating those
+      // bones into seated target directions left long femurs/shins dangling
+      // into the next row. Fit to the actual transformed bone length, including
+      // parent scales, so both joints and skinned vertices land on the targets.
+      bone.getWorldPosition(this.segmentStart);
+      child.getWorldPosition(this.segmentEnd);
+      this.space.worldToLocal(this.segmentStart);
+      this.space.worldToLocal(this.segmentEnd);
+      const sourceLength = this.segmentStart.distanceTo(this.segmentEnd);
+      if (sourceLength > 0.0001 && Math.abs(scale.y) > 0.0001) {
+        bone.scale.y = scale.y * segmentLength / sourceLength;
+        bone.updateMatrixWorld(true);
+      }
+    }
   }
 
   /** Rigid anatomical wrist frame; this does not alter any hand vertices. */
@@ -175,7 +233,11 @@ function limbEnds(mesh: THREE.Mesh, from: THREE.Vector3, to: THREE.Vector3) {
 }
 
 /** Tint only the desaturated fabric, not skin, hair or facial features. */
-export function tintKit(mesh: THREE.SkinnedMesh, tint: number) {
+export function tintKit(
+  mesh: THREE.SkinnedMesh,
+  tint: number,
+  skinTone?: readonly [number, number, number],
+) {
   const material = (Array.isArray(mesh.material) ? mesh.material[0] : mesh.material) as THREE.MeshStandardMaterial;
   const image = material.map?.image as CanvasImageSource & { width: number; height: number };
   if (!image?.width || typeof document === 'undefined') return;
@@ -188,6 +250,13 @@ export function tintKit(mesh: THREE.SkinnedMesh, tint: number) {
   const uv = mesh.geometry.getAttribute('uv'), positions = mesh.geometry.getAttribute('position');
   const colors = new Float32Array(positions.count * 3);
   const shirt = new THREE.Color(tint);
+  const skin = skinTone ? new THREE.Color().setRGB(...skinTone) : undefined;
+  const referenceSkin = new THREE.Color(0xe5b59b);
+  const skinMultiplier = skin ? [
+    skin.r / referenceSkin.r,
+    skin.g / referenceSkin.g,
+    skin.b / referenceSkin.b,
+  ] : undefined;
   for (let i = 0; i < positions.count; i++) {
     const x = THREE.MathUtils.clamp(Math.floor(uv.getX(i) * canvas.width), 0, canvas.width - 1);
     // GLTF textures have flipY=false; UV zero addresses the image's top edge.
@@ -195,8 +264,9 @@ export function tintKit(mesh: THREE.SkinnedMesh, tint: number) {
     const offset = (y * canvas.width + x) * 4;
     const rgb = [pixels[offset], pixels[offset + 1], pixels[offset + 2]];
     const max = Math.max(...rgb), min = Math.min(...rgb);
+    const skinPixel = skinMultiplier && isCrowdSkinPixel(rgb[0], rgb[1], rgb[2]);
     const fabric = positions.getY(i) > 1.0 && positions.getY(i) < 1.48 && max > 60 && (max - min) / Math.max(1, max) < 0.18;
-    colors.set(fabric ? [shirt.r, shirt.g, shirt.b] : [1, 1, 1], i * 3);
+    colors.set(skinPixel ? skinMultiplier! : fabric ? [shirt.r, shirt.g, shirt.b] : [1, 1, 1], i * 3);
   }
   mesh.geometry.setAttribute('color', new THREE.BufferAttribute(colors, 3));
   material.vertexColors = true;

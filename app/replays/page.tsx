@@ -2,7 +2,7 @@ import type { Metadata } from 'next';
 import Link from 'next/link';
 import PageHero from '@/components/PageHero';
 import DmoReplayLibrary from '@/components/DmoReplayLibrary';
-import { listPublicDmoReplays } from '@/lib/dmoReplayLibrary';
+import { listDmoReplaySubmissions, listPublicDmoReplays } from '@/lib/dmoReplayLibrary';
 import { getSession } from '@/lib/auth';
 
 export const dynamic = 'force-dynamic';
@@ -14,36 +14,36 @@ export default async function ReplaysPage({
   searchParams: Promise<{ match?: string }>;
 }) {
   const user = await getSession();
-  if (!user) {
-    return (
-      <PageHero
-        eyebrow="Official WTSL match replays"
-        title="Match Replays"
-        actions={<a className="btn btn-discord btn-sm" href="/api/auth/discord">Log in with Discord</a>}
-      >
-        Sign in to browse and watch official match replays.
-      </PageHero>
-    );
-  }
   const params = await searchParams;
   const initialMatchId = params.match && /^\d{1,19}$/.test(params.match) ? params.match : '';
-  let initialPage: Awaited<ReturnType<typeof listPublicDmoReplays>> | null = null;
+  let initialPage: Awaited<ReturnType<typeof listDmoReplaySubmissions>> | null = null;
   try {
-    initialPage = await listPublicDmoReplays({ limit: 24 });
+    initialPage = user
+      ? await listDmoReplaySubmissions({ limit: 24 })
+      : await listPublicDmoReplays({ limit: 24 });
   } catch {
     // Let the client retry through the API so database outages show the existing error state.
   }
   return (
     <>
       <PageHero
+        className="replays-page-hero"
         eyebrow="Official WTSL match replays"
         title="Match Replays"
-        actions={<Link className="btn btn-sm" href="/livestreams">Live streams</Link>}
+        actions={user
+          ? <Link className="btn btn-sm" href="/livestreams">Live streams</Link>
+          : <a className="btn btn-discord btn-sm" href="/api/auth/discord">Log in with Discord</a>}
       >
-        Rewatch match recordings submitted to the WTSL DMO store.
+        {user
+          ? 'Browse current DMO submissions from the Forum and Discord. Signed-in members can watch stored match files or open submitted recording links.'
+          : 'Watch DMO replays that submitters have approved for public sharing or an admin has explicitly published. Other submissions remain private.'}
       </PageHero>
       <main className="container">
-        <DmoReplayLibrary initialMatchId={initialMatchId} initialPage={initialPage} />
+        <DmoReplayLibrary
+          initialMatchId={initialMatchId}
+          initialPage={initialPage}
+          publicOnly={!user}
+        />
       </main>
     </>
   );

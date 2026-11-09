@@ -46,6 +46,8 @@ export async function POST(_request: Request, { params }: { params: Promise<{ id
       roundName: submission.round_name,
       player1: submission.player1,
       player2: submission.player2,
+      player1Character: submission.player1_character,
+      player2Character: submission.player2_character,
       externalUrl: submission.external_url,
       file,
       fileName: submission.file_name,

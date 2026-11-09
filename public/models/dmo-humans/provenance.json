@@ -90,6 +90,27 @@
     "license": "CC BY-SA 3.0",
     "licenseUrl": "https://creativecommons.org/licenses/by-sa/3.0/",
     "notice": "NATIVE-RIG-AND-MOTION.md",
-    "modifications": "Source frames 252–452 from a 100 Hz recording, resampled by retaining every fourth frame to 25 Hz; 51 frames. Inferred contact at source frame 344 from the right-wrist speed peak; the source has no ball or racket markers. Joint rotations unchanged."
+    "modifications": "Source frames 252–452 from a 100 Hz recording, resampled by retaining every fourth frame to 25 Hz; 51 frames. Matches the supplied Round 17 backhand-volley excerpt exactly. Contact refined to 3.42 s in the full recording (0.90 s in this excerpt), inferred from wrist motion; no ball or racket markers. Joint rotations unchanged. Runtime grip calibration uses a 35-degree continental backhand-volley roll."
+  },
+  {
+    "filename": "tennis-backhand-one.bvh",
+    "bytes": 566520,
+    "source": "https://github.com/jdpulgarin/Tennis-MoCap/blob/main/data/astrejos_Reves.bvh",
+    "sourceSha256": "388677cff087dfc535531c34aed745c9c8ab6f0b53ef4760cd2d8ad8774be544",
+    "origin": "Tennis-MoCap, Caldas-Colombia tennis players (Pulgarin-Giraldo et al.)",
+    "license": "CC-BY-SA-3.0",
+    "notice": "NATIVE-RIG-AND-MOTION.md",
+    "modifications": "Resampled 100 Hz to 25 Hz by retaining every fourth frame; rotations unchanged. Used for one-handed backhands."
+  },
+  {
+    "filename": "tennis-smash-jarua.bvh",
+    "bytes": 565871,
+    "source": "https://github.com/jdpulgarin/Tennis-MoCap/blob/main/data/jarua_Remate.bvh",
+    "sourceSha256": "6661fbb6cef61fd146a8624eba09e5a8a0fa14e8849c783643ef63141e245f7a",
+    "origin": "Tennis-MoCap, Caldas-Colombia tennis players (Pulgarin-Giraldo et al.)",
+    "license": "CC-BY-SA-3.0",
+    "licenseUrl": "https://creativecommons.org/licenses/by-sa/3.0/",
+    "notice": "NATIVE-RIG-AND-MOTION.md",
+    "modifications": "Resampled 100 Hz to 25 Hz by retaining every fourth frame; rotations unchanged. Used for rally overheads at or above 2.2 m; contact at 7.6 s (hand-picked)."
   }
 ]

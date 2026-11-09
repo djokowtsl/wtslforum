@@ -30,6 +30,11 @@ function loadRoute(path, mocks) {
     if (name in mocks) return mocks[name];
     if (name.startsWith('node:')) return require(name);
     if (name === '@/lib/db') return { sql: async () => [] };
+    if (name === '@/lib/dmoSubmissionPlayerStyle') {
+      return loadRoute('lib/dmoSubmissionPlayerStyle.ts', {
+        './liveCharacterBackhand.mjs': loadRoute('lib/liveCharacterBackhand.mjs', {}),
+      });
+    }
     throw new Error(`Unexpected route dependency: ${name}`);
   }, module, module.exports);
   return module.exports;
@@ -662,6 +667,122 @@ test('DMO tag edits reject non-admins without updating metadata', async () => {
   assert.equal(updated, false);
 });
 
+test('DMO public publishing is admin-only, audited, and reversible', async () => {
+  let user = { ...admin, discordId: 'admin-discord-id' };
+  const publications = [];
+  const revocations = [];
+  const handlers = loadRoute('app/api/admin/dmo-submissions/[id]/publication/route.ts', {
+    'next/server': { NextResponse: { json: (body, init) => Response.json(body, init) } },
+    '@/lib/auth': { getSession: async () => user },
+    '@/lib/dmoReplayLibrary': {
+      isDmoReplayId: (value) => /^\d{1,19}$/.test(value) && value !== '0',
+      publishDmoReplaySubmission: async (input) => {
+        publications.push(input);
+        return true;
+      },
+      revokeDmoReplayPublicationOverride: async (id) => {
+        revocations.push(id);
+        return true;
+      },
+    },
+  });
+  const params = { params: Promise.resolve({ id: '41' }) };
+  const response = await handlers.POST(
+    new Request('https://forum.test/api/admin/dmo-submissions/41/publication', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ reason: 'Permission confirmed with both players' }),
+    }),
+    params,
+  );
+  assert.equal(response.status, 200);
+  assert.deepEqual(publications, [{
+    id: '41',
+    authorizedBy: 'admin-discord-id',
+    reason: 'Permission confirmed with both players',
+  }]);
+
+  const invalidReason = await handlers.POST(
+    new Request('https://forum.test/api/admin/dmo-submissions/41/publication', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ reason: 'ok' }),
+    }),
+    params,
+  );
+  assert.equal(invalidReason.status, 400);
+  assert.equal(publications.length, 1);
+
+  user = { ...user, isAdmin: false };
+  const forbidden = await handlers.DELETE(
+    new Request('https://forum.test/api/admin/dmo-submissions/41/publication', { method: 'DELETE' }),
+    params,
+  );
+  assert.equal(forbidden.status, 403);
+  assert.deepEqual(revocations, []);
+
+  user = { ...user, isAdmin: true };
+  const removed = await handlers.DELETE(
+    new Request('https://forum.test/api/admin/dmo-submissions/41/publication', { method: 'DELETE' }),
+    params,
+  );
+  assert.equal(removed.status, 200);
+  assert.deepEqual(revocations, ['41']);
+});
+
+test('DMO replay visibility is admin-only and hides or restores without deleting the submission', async () => {
+  let user = { ...admin, discordId: 'admin-discord-id' };
+  const changes = [];
+  const handlers = loadRoute('app/api/admin/dmo-submissions/[id]/visibility/route.ts', {
+    'next/server': { NextResponse: { json: (body, init) => Response.json(body, init) } },
+    '@/lib/auth': { getSession: async () => user },
+    '@/lib/dmoReplayLibrary': {
+      isDmoReplayId: (value) => /^\d{1,19}$/.test(value) && value !== '0',
+    },
+    '@/lib/dmo-submissions': {
+      setDmoSubmissionHidden: async (input) => {
+        changes.push(input);
+        return true;
+      },
+    },
+  });
+  const params = { params: Promise.resolve({ id: '22' }) };
+
+  const hidden = await handlers.PATCH(
+    new Request('https://forum.test/api/admin/dmo-submissions/22/visibility', {
+      method: 'PATCH',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ hidden: true }),
+    }),
+    params,
+  );
+  assert.equal(hidden.status, 200);
+  assert.deepEqual(changes[0], { id: '22', hidden: true, hiddenBy: 'admin-discord-id' });
+
+  const restored = await handlers.PATCH(
+    new Request('https://forum.test/api/admin/dmo-submissions/22/visibility', {
+      method: 'PATCH',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ hidden: false }),
+    }),
+    params,
+  );
+  assert.equal(restored.status, 200);
+  assert.deepEqual(changes[1], { id: '22', hidden: false, hiddenBy: 'admin-discord-id' });
+
+  user = { ...user, isAdmin: false };
+  const forbidden = await handlers.PATCH(
+    new Request('https://forum.test/api/admin/dmo-submissions/22/visibility', {
+      method: 'PATCH',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ hidden: true }),
+    }),
+    params,
+  );
+  assert.equal(forbidden.status, 403);
+  assert.equal(changes.length, 2);
+});
+
 test('Discord DMO sync preserves the original London submission date', async () => {
   const originalFetch = globalThis.fetch;
   const originalToken = process.env.DISCORD_BOT_TOKEN;
@@ -717,6 +838,8 @@ test('Discord DMO sync preserves the original London submission date', async () 
           round: 'Final',
           player1: 'Player One',
           player2: 'Player Two',
+          player1Character: 'Federer',
+          player2Character: 'Nadal',
           submitterDiscordId: '123',
           submitterName: 'Player One',
           discordChannelId: '1055277431398866995',
@@ -731,6 +854,8 @@ test('Discord DMO sync preserves the original London submission date', async () 
     assert.equal(created.roundName, 'Final');
     assert.equal(created.player1, 'Player One');
     assert.equal(created.player2, 'Player Two');
+    assert.equal(created.player1Character, 'Federer');
+    assert.equal(created.player2Character, 'Nadal');
     assert.equal(created.coachShareUrl, 'https://replays.knowthew.net/m/3f9a1c07b2e4d5a6');
     assert.equal(created.coachGroupShareConsent, undefined);
   } finally {
@@ -756,6 +881,12 @@ test('Forum DMO intake keeps Coach publication behind its own explicit consent',
     form.set('round', 'Final');
     form.set('player1', 'Player One');
     form.set('player2', 'Player Two');
+    form.set('player1Character', 'Federer');
+    form.set('player2Character', 'Nadal');
+    form.set('player1Handedness', 'right');
+    form.set('player2Handedness', 'left');
+    form.set('player1BackhandType', 'one-handed');
+    form.set('player2BackhandType', 'two-handed');
     form.set('coachShareUrl', includeCoach ? coachUrl : '');
     form.set('publicShareConsent', String(publicConsent));
     form.set('coachGroupShareConsent', String(coachConsent));
@@ -790,6 +921,11 @@ test('Forum DMO intake keeps Coach publication behind its own explicit consent',
           return { status: 'synced' };
         },
       },
+      '@/lib/dmoSubmissionUpload': {
+        isOwnedDmoSubmissionUploadPath: () => true,
+        MAX_DMO_SUBMISSION_BYTES: 20 * 1024 * 1024,
+        safeDmoSubmissionFileName: (name) => name,
+      },
     });
 
     const replayOnly = await route.POST(new Request('https://forum.test/api/dmo-submissions', {
@@ -799,6 +935,8 @@ test('Forum DMO intake keeps Coach publication behind its own explicit consent',
     assert.equal(replayOnly.status, 201);
     assert.equal(created[0].publicShareConsent, true);
     assert.equal(created[0].coachGroupShareConsent, false);
+    assert.equal(created[0].player1Character, 'Federer');
+    assert.equal(created[0].player2Character, 'Nadal');
     assert.deepEqual(groupSyncs, []);
 
     const replayAndCoach = await route.POST(new Request('https://forum.test/api/dmo-submissions', {

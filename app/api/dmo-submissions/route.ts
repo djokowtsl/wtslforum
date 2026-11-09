@@ -1,4 +1,4 @@
-import { del, put } from '@vercel/blob';
+import { del, get, head, put } from '@vercel/blob';
 import { NextRequest, NextResponse } from 'next/server';
 import { getSession } from '@/lib/auth';
 import { sendDmoSubmission } from '@/lib/discord';
@@ -8,16 +8,16 @@ import {
   updateDmoDiscordDelivery,
 } from '@/lib/dmo-submissions';
 import { parseTe4CoachShareUrl } from '@/lib/te4CoachEmbed';
+import { isDmoBackhandType, isDmoPlayingHand } from '@/lib/dmoSubmissionPlayerStyle';
 import { syncPublicDmoSubmissionToTe4CoachGroup } from '@/lib/te4CoachGroupServer';
+import {
+  isOwnedDmoSubmissionUploadPath,
+  MAX_DMO_SUBMISSION_BYTES,
+  safeDmoSubmissionFileName,
+} from '@/lib/dmoSubmissionUpload';
 
 export const dynamic = 'force-dynamic';
 export const maxDuration = 60;
-
-const MAX_BYTES = 20 * 1024 * 1024;
-
-function safeFilename(name: string) {
-  return name.replace(/[^a-zA-Z0-9._-]/g, '_').slice(-100) || 'match-recording.dmo';
-}
 
 export async function POST(req: NextRequest) {
   const user = await getSession();
@@ -34,12 +34,21 @@ export async function POST(req: NextRequest) {
   const roundName = String(form.get('round') ?? '').trim().slice(0, 60);
   const player1 = String(form.get('player1') ?? '').trim().slice(0, 100);
   const player2 = String(form.get('player2') ?? '').trim().slice(0, 100);
+  const player1Character = String(form.get('player1Character') ?? '').trim().slice(0, 100);
+  const player2Character = String(form.get('player2Character') ?? '').trim().slice(0, 100);
+  const player1Handedness = form.get('player1Handedness');
+  const player2Handedness = form.get('player2Handedness');
+  const player1BackhandType = form.get('player1BackhandType');
+  const player2BackhandType = form.get('player2BackhandType');
   const externalUrl = String(form.get('externalUrl') ?? '').trim().slice(0, 1000);
   const coachShare = parseTe4CoachShareUrl(String(form.get('coachShareUrl') ?? '').slice(0, 500));
   const entry = form.get('file');
   const file = entry instanceof File && entry.size > 0 ? entry : null;
-  const publicShareConsent = Boolean(file) && form.get('publicShareConsent') === 'true';
-  const coachGroupShareConsent = Boolean(file)
+  const uploadedPathname = String(form.get('privateBlobPathname') ?? '').trim();
+  const submittedFileName = String(form.get('fileName') ?? '').trim().slice(0, 120);
+  const hasDmoFile = Boolean(file || uploadedPathname);
+  const publicShareConsent = hasDmoFile && form.get('publicShareConsent') === 'true';
+  const coachGroupShareConsent = hasDmoFile
     && publicShareConsent
     && Boolean(coachShare.url)
     && form.get('coachGroupShareConsent') === 'true';
@@ -50,7 +59,21 @@ export async function POST(req: NextRequest) {
       { status: 400 },
     );
   }
-  if (!file && !externalUrl) {
+  if (
+    !isDmoPlayingHand(player1Handedness)
+    || !isDmoPlayingHand(player2Handedness)
+    || !isDmoBackhandType(player1BackhandType)
+    || !isDmoBackhandType(player2BackhandType)
+  ) {
+    return NextResponse.json(
+      { error: 'Choose a playing hand and backhand grip for both players.' },
+      { status: 400 },
+    );
+  }
+  if (file && uploadedPathname) {
+    return NextResponse.json({ error: 'Submit either a file or a completed private upload, not both.' }, { status: 400 });
+  }
+  if (!file && !uploadedPathname && !externalUrl) {
     return NextResponse.json(
       { error: 'Attach a .dmo file or provide a recording link.' },
       { status: 400 },
@@ -73,14 +96,58 @@ export async function POST(req: NextRequest) {
   if (file && !file.name.toLowerCase().endsWith('.dmo')) {
     return NextResponse.json({ error: 'Upload a .dmo match recording.' }, { status: 415 });
   }
-  if (file && file.size > MAX_BYTES) {
+  if (file && file.size > MAX_DMO_SUBMISSION_BYTES) {
     return NextResponse.json({ error: 'The file is too large (20MB max).' }, { status: 413 });
   }
 
   let privatePathname: string | null = null;
   let privateContentType: string | null = null;
+  let discordFile: Blob | null = file;
+  let discordFileUnavailable = false;
   const storeId = process.env.MODERATION_BLOB_STORE_ID;
-  if (file) {
+  if (uploadedPathname) {
+    if (!isOwnedDmoSubmissionUploadPath(uploadedPathname, user.id)) {
+      return NextResponse.json({ error: 'This upload does not belong to your account.' }, { status: 403 });
+    }
+    if (!submittedFileName || !submittedFileName.toLowerCase().endsWith('.dmo')) {
+      return NextResponse.json({ error: 'The uploaded recording name is not valid.' }, { status: 415 });
+    }
+    if (!storeId) {
+      return NextResponse.json(
+        { error: 'Private DMO storage is not configured yet.' },
+        { status: 503 },
+      );
+    }
+    try {
+      const uploadedBlob = await head(uploadedPathname, { storeId });
+      if (uploadedBlob.size > MAX_DMO_SUBMISSION_BYTES) {
+        return NextResponse.json({ error: 'The file is too large (20MB max).' }, { status: 413 });
+      }
+      if (uploadedBlob.contentType !== 'application/octet-stream') {
+        return NextResponse.json({ error: 'Upload a .dmo match recording.' }, { status: 415 });
+      }
+      privatePathname = uploadedPathname;
+      privateContentType = uploadedBlob.contentType;
+      if (process.env.DISCORD_BOT_TOKEN) {
+        try {
+          const storedBlob = await get(uploadedPathname, { access: 'private', storeId });
+          if (!storedBlob || storedBlob.statusCode !== 200 || !storedBlob.stream) {
+            throw new Error('The private DMO file could not be read.');
+          }
+          const bytes = await new Response(storedBlob.stream).arrayBuffer();
+          discordFile = new Blob(
+            [bytes],
+            { type: privateContentType || storedBlob.blob.contentType || 'application/octet-stream' },
+          );
+        } catch {
+          discordFileUnavailable = true;
+          console.error('[dmo] private DMO could not be prepared for Discord delivery');
+        }
+      }
+    } catch {
+      return NextResponse.json({ error: 'The uploaded recording could not be verified. Please upload it again.' }, { status: 400 });
+    }
+  } else if (file) {
     if (!storeId) {
       return NextResponse.json(
         { error: 'Private DMO storage is not configured yet.' },
@@ -89,7 +156,7 @@ export async function POST(req: NextRequest) {
     }
     try {
       const blob = await put(
-        `dmo/${Date.now()}-${safeFilename(file.name)}`,
+        `dmo/${Date.now()}-${safeDmoSubmissionFileName(file.name)}`,
         file,
         {
           access: 'private',
@@ -120,7 +187,13 @@ export async function POST(req: NextRequest) {
       roundName,
       player1,
       player2,
-      fileName: file?.name.slice(0, 120) ?? null,
+      player1Character: player1Character || null,
+      player2Character: player2Character || null,
+      player1Handedness,
+      player2Handedness,
+      player1BackhandType,
+      player2BackhandType,
+      fileName: file?.name.slice(0, 120) ?? (privatePathname ? submittedFileName : null),
       publicShareConsent,
       coachGroupShareConsent,
       coachShareUrl: coachShare.url,
@@ -152,16 +225,21 @@ export async function POST(req: NextRequest) {
   }
 
   try {
+    if (uploadedPathname && process.env.DISCORD_BOT_TOKEN && discordFileUnavailable) {
+      throw new Error('The stored DMO file could not be attached to Discord.');
+    }
     const delivery = await sendDmoSubmission({
       submitterName: user.username,
       tournament,
       roundName,
       player1,
       player2,
+      player1Character: player1Character || null,
+      player2Character: player2Character || null,
       externalUrl: externalUrl || null,
       coachShareUrl: coachShare.url,
-      file,
-      fileName: file?.name ?? null,
+      file: discordFile,
+      fileName: file?.name ?? (privatePathname ? submittedFileName : null),
     });
     await updateDmoDiscordDelivery(Number(submission.id), {
       status: 'sent',

@@ -16,11 +16,14 @@ https://github.com/jdpulgarin/Tennis-MoCap/blob/main/Copyright.md
 Creative Commons Attribution-ShareAlike 3.0 Unported:
 https://creativecommons.org/licenses/by-sa/3.0/
 
-Original files: jarua_Derecha_18seg.bvh, jarua_Reves.bvh, and jarua_Servicio.bvh.
-Motion files are sampled at 25 Hz by retaining every fourth 100 Hz source
-sample; joint rotations are unchanged. These motion derivatives remain CC BY-SA
-3.0. Runtime retargeting and finger grasp are authored adaptations, not the
-original participant's hand capture or Federer/Nadal motion.
+Original files: jarua_Derecha_18seg.bvh, jarua_Reves.bvh, jarua_Servicio.bvh,
+and jarua_Remate.bvh. The older `adorozco_Remate_11seg.bvh` smash derivative is
+also retained but is no longer selected.
+The one-handed backhand uses `astrejos_Reves.bvh` from the same dataset. Motion
+files are sampled at 25 Hz by retaining every fourth 100 Hz source sample;
+joint rotations are unchanged. These motion derivatives remain CC BY-SA 3.0.
+Runtime retargeting and grip calibration are authored adaptations, not the
+original participant's hand capture or a professional player's motion.
 
 Citation: Pulgarin-Giraldo J.D., Alvarez-Meza A.M., Melo-Betancourt L.G.,
 Ramos-Bermudez S., Castellanos-Dominguez G. “A Similarity Indicator for
@@ -36,6 +39,21 @@ BVH files contain no ball or racket markers. Each shipped clip preserves source
 frames 401–601 or 252–452, respectively, and keeps every fourth frame from the
 100 Hz recording (25 Hz output); joint rotations are not altered. The adapted
 clips remain CC BY-SA 3.0 and are identified in `provenance.json`.
+
+The shipped backhand excerpt matches frames 63–113 of the supplied Round 17
+25 Hz recording exactly; the full duplicate is not shipped. Its refined
+inferred contact is 3.42 s in that recording, or 0.90 s in this excerpt.
+The backhand-volley grip uses a 35-degree runtime continental-grip adjustment
+instead of the one-handed ground backhand's 72-degree regrip. Both volley
+recordings use a short preparation/recovery envelope. They are selected only
+for conservatively inferred unbounced incoming rally flights near the net,
+not every near-net contact; uncertain cases retain their groundstroke.
+
+The Jarua smash (`tennis-smash-jarua.bvh`) is used for rally contacts at or above
+2.2 m, independent of court position and bounce history. Its contact time is
+hand-picked at 7.6 s. The older Adorozco smash remains at `tennis-smash.bvh`;
+both recordings and their attribution are documented in
+`SMASH-MOCAP-CREDIT.md`.
 
 ## Walking, jogging and running (arms between points)
 Carnegie Mellon University Graphics Lab Motion Capture Database.

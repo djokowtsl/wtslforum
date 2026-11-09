@@ -6,12 +6,22 @@ export type Te4DmoReplaySpeed = 1 | 2 | 4;
 
 export const TE4_DMO_FRAMES_PER_SECOND = 60;
 export const LIVE_DMO_UPDATE_INTERVAL_MS = 1_200;
+export const LIVE_DMO_EVENT_SYNC_BUFFER_FRAMES = Math.ceil(
+  TE4_DMO_FRAMES_PER_SECOND * LIVE_DMO_UPDATE_INTERVAL_MS / 1000,
+);
 export const LIVE_DMO_HEARTBEAT_INTERVAL_MS = LIVE_DMO_UPDATE_INTERVAL_MS;
 export const LIVE_DMO_FRAME_STALL_MS = 5_000;
 export const LIVE_DMO_COURT_SAMPLES = 96;
+export const MAX_LIVE_DMO_COURT_SAMPLES = 400;
 
 export function replayCourtWindowFrames(speed: Te4DmoReplaySpeed): number {
   return Math.round(TE4_DMO_FRAMES_PER_SECOND * 3 * speed);
+}
+
+export function replayCourtSampleLimit(speed: Te4DmoReplaySpeed): number {
+  const windowFrames = replayCourtWindowFrames(speed);
+  // Match full replays, which retain one court sample every two source frames.
+  return Math.ceil(Math.max(0, windowFrames - 1) / 2) + 1;
 }
 
 export function replayCourtWindowDurationMs(frameCount: number, speed: Te4DmoReplaySpeed): number {
@@ -20,6 +30,21 @@ export function replayCourtWindowDurationMs(frameCount: number, speed: Te4DmoRep
     LIVE_DMO_UPDATE_INTERVAL_MS,
     safeFrameCount * 1000 / (TE4_DMO_FRAMES_PER_SECOND * speed),
   );
+}
+
+export function deriveLiveDmoPointEndEvents(
+  endFrames: number[],
+  completedPointEndFrames: number[],
+  firstFrame: number,
+  lastFrame: number,
+) {
+  const completedEnds = new Set(completedPointEndFrames);
+  const recentCompletedEnds = new Set(completedPointEndFrames.slice(-2));
+  return endFrames
+    .filter((frame) => frame <= lastFrame && (frame >= firstFrame || recentCompletedEnds.has(frame)))
+    .map((frame) => completedEnds.has(frame)
+      ? { frame, kind: 'point-end' as const }
+      : { frame, kind: 'point-end' as const, scoreEligible: false });
 }
 
 type Header = {
@@ -601,7 +626,10 @@ export class Te4DmoLiveParser {
       : this.shotSpeedKmh(parsed.openServe, true);
     const lastFrame = visibleFrameCount - 1;
     const firstFrame = Math.max(0, visibleFrameCount - Math.max(1, Math.floor(courtWindowFrames)));
-    const maxSamples = Math.max(2, Math.min(100, Math.floor(courtSampleLimit)));
+    const maxSamples = Math.max(2, Math.min(
+      MAX_LIVE_DMO_COURT_SAMPLES,
+      Math.floor(courtSampleLimit),
+    ));
     const court: number[][] = [];
     const courtFrameIndices: number[] = [];
     const sampleCount = Math.min(maxSamples, lastFrame - firstFrame + 1);
@@ -652,9 +680,14 @@ export class Te4DmoLiveParser {
     };
     for (const frame of parsed.serveFrames) addShotEvent(frame, 'serve');
     for (const frame of parsed.hitFrames) addShotEvent(frame, 'rally');
-    for (const frame of parsed.endFrames) {
-      if (frame >= firstFrame && frame <= lastFrame) trajectoryEvents.push({ frame, kind: 'point-end' });
-    }
+    // Raw end markers include faults and lets. Only the final end of a scored
+    // point can release its score call; keep recent scored ends for late audio.
+    trajectoryEvents.push(...deriveLiveDmoPointEndEvents(
+      parsed.endFrames,
+      points.map((point) => point.end),
+      firstFrame,
+      lastFrame,
+    ));
     trajectoryEvents.sort((a, b) =>
       a.frame - b.frame
       || (a.kind === b.kind ? 0 : a.kind === 'shot' ? -1 : 1),

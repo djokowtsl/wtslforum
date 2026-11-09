@@ -1,5 +1,9 @@
 import type { LiveCourtMotionEvent, LiveCourtSample } from './liveCourtMotion';
-import { cancelXktUmpireCalls, playXktUmpireCall } from './xktUmpireAudio';
+import {
+  cancelXktUmpireCalls,
+  playXktUmpireCall,
+  preloadAutomatedLineCalls,
+} from './xktUmpireAudio';
 
 let browserUmpireSpeechUnlocked = false;
 const activeXktUmpireContexts = new Map<string, BaseAudioContext>();
@@ -14,9 +18,48 @@ export function liveUmpireMatchKey(players: [string, string], isWta: boolean) {
 
 export type UmpireCallEvent = {
   frame: number;
-  kind: 'score' | 'point-end' | 'out';
+  kind: 'score' | 'point-end' | 'out' | 'fault';
   text: string;
 };
+
+export type LiveUmpireEventCursor = { pointEndFrame: number | null };
+
+export function createLiveUmpireEventCursor(): LiveUmpireEventCursor {
+  return { pointEndFrame: null };
+}
+
+export function resetLiveUmpireEventCursor(cursor: LiveUmpireEventCursor) {
+  cursor.pointEndFrame = null;
+}
+
+/**
+ * A live parser can report a point end after playback has passed its frame.
+ * Track consumed point ends independently of the playhead, without replaying
+ * history on join/unmute. Line calls still require an immediate frame crossing.
+ */
+export function consumeLiveUmpireCallEvents(
+  cursor: LiveUmpireEventCursor,
+  events: UmpireCallEvent[],
+  previousFrame: number | null,
+  currentFrame: number,
+  enabled: boolean,
+): UmpireCallEvent[] {
+  if (!enabled || previousFrame === null || currentFrame < previousFrame) {
+    cursor.pointEndFrame = currentFrame;
+    return [];
+  }
+  const floor = cursor.pointEndFrame ?? previousFrame;
+  const points = events.filter(event =>
+    event.kind !== 'out' && event.kind !== 'fault' && event.frame > floor && event.frame <= currentFrame,
+  ).sort((a, b) => a.frame - b.frame);
+  cursor.pointEndFrame = points.at(-1)?.frame ?? floor;
+  const outs = currentFrame - previousFrame < 120
+    ? umpireCallsBetween(events, previousFrame, currentFrame)
+      .filter(event => event.kind === 'out' || event.kind === 'fault')
+    : [];
+  return [...points.slice(-MAX_PENDING_LIVE_UMPIRE_SCORE_CALLS), ...outs]
+    .sort((a, b) => a.frame - b.frame);
+}
 
 export type UmpireScore = {
   sets: [number, number][];
@@ -258,10 +301,11 @@ export function deriveUmpireCallEvents(
   trajectoryEvents: LiveCourtMotionEvent[],
   soundEvents: UmpireSoundEvent[],
   samples: LiveCourtSample[],
+  options: { allowPendingPointEnd?: boolean } = {},
 ): UmpireCallEvent[] {
   const calls: UmpireCallEvent[] = [];
   for (const event of trajectoryEvents) {
-    if (event.kind === 'point-end') {
+    if (event.kind === 'point-end' && event.scoreEligible !== false) {
       const scoreCall = event.scoreCall?.trim();
       calls.push({
         frame: event.frame,
@@ -272,6 +316,8 @@ export function deriveUmpireCallEvents(
   }
 
   const checkedPointEnds = new Set<number>();
+  const checkedServes = new Set<number>();
+  const checkedRallyShots = new Set<number>();
   const bounces = soundEvents
     .filter((event) => event.kind === 'bounce')
     .sort((first, second) => first.frame - second.frame);
@@ -279,12 +325,54 @@ export function deriveUmpireCallEvents(
     const eventIndex = lowerBoundFrame(trajectoryEvents, bounce.frame);
     let previousShot: LiveCourtMotionEvent | undefined;
     for (let index = eventIndex - 1; index >= 0; index -= 1) {
+      if (trajectoryEvents[index].kind === 'point-end') break;
       if (trajectoryEvents[index].kind === 'shot') {
         previousShot = trajectoryEvents[index];
         break;
       }
     }
-    if (!previousShot || previousShot.shotType !== 'rally') continue;
+    if (!previousShot) continue;
+
+    if (previousShot.shotType === 'serve') {
+      // Only the first landing of a serve determines its line call. Require
+      // fresh samples and a clear margin outside the service area; unresolved
+      // net contacts, lets and close/uncertain landings remain silent.
+      if (checkedServes.has(previousShot.frame)) continue;
+      checkedServes.add(previousShot.frame);
+      if (bounce.frame - previousShot.frame > 180) continue;
+      const landing = nearestSample(samples, bounce.frame, 4);
+      const contact = nearestSample(samples, previousShot.frame, 4);
+      if (!landing || !contact || landing.values[2] > 30 || Math.abs(contact.values[0]) < 800) continue;
+      const [length, width] = landing.values;
+      const serverEnd = Math.sign(contact.values[0]);
+      const clearFault = serverEnd * length > -75
+        || serverEnd * length < -655
+        || Math.abs(width) > 427;
+      if (clearFault) calls.push({ frame: bounce.frame, kind: 'fault', text: 'Fault' });
+      continue;
+    }
+    if (previousShot.shotType !== 'rally') continue;
+    // Commit to the first landing before applying timing/evidence gates. An
+    // earlier in-bounds bounce must not be replaced by a later dead-ball bounce
+    // just because that later bounce is closer to the point-end marker.
+    if (checkedRallyShots.has(previousShot.frame)) continue;
+    checkedRallyShots.add(previousShot.frame);
+
+    if (options.allowPendingPointEnd) {
+      // Live point-end markers arrive after the ball lands. Waiting for one
+      // means the bounce has already passed the playhead and cannot be called.
+      // Only classify the first landing of this recorded shot, from fresh,
+      // low ball samples and the same conservative outer-court bounds.
+      if (bounce.frame - previousShot.frame > 180) continue;
+      const next = trajectoryEvents[eventIndex];
+      if (next?.kind === 'shot' && next.frame === bounce.frame) continue;
+      const landing = nearestSample(samples, bounce.frame, 4);
+      if (!landing || landing.values[2] > 30) continue;
+      if (Math.abs(landing.values[0]) > 1_201 || Math.abs(landing.values[1]) > 560) {
+        calls.push({ frame: bounce.frame, kind: 'out', text: 'Out' });
+      }
+      continue;
+    }
 
     let pointEnd: LiveCourtMotionEvent | undefined;
     let laterShot = false;
@@ -322,7 +410,7 @@ export function deriveUmpireCallEvents(
 
   const unique = new Map<string, UmpireCallEvent>();
   for (const call of calls) unique.set(`${call.frame}:${call.kind}`, call);
-  const priority = { out: 0, 'point-end': 1, score: 2 };
+  const priority = { out: 0, fault: 0, 'point-end': 1, score: 2 };
   return [...unique.values()].sort((first, second) =>
     first.frame - second.frame || priority[first.kind] - priority[second.kind],
   );
@@ -386,6 +474,55 @@ export function unlockBrowserUmpireSpeech(): boolean {
   }
 }
 
+type CourtAudioWindow = Window & { webkitAudioContext?: typeof AudioContext };
+
+/** Safari versions that lack the unprefixed Web Audio constructor still expose the WebKit name. */
+export function createCourtAudioContext(): AudioContext {
+  if (typeof window === 'undefined') throw new Error('Web Audio is unavailable outside the browser.');
+  const AudioContextConstructor = window.AudioContext
+    ?? (window as CourtAudioWindow).webkitAudioContext;
+  if (!AudioContextConstructor) throw new Error('This browser does not support Web Audio.');
+  return new AudioContextConstructor();
+}
+
+export async function resumeUmpireAudioContext(
+  context: Pick<AudioContext, 'state' | 'resume'>,
+  timeoutMs = 3000,
+): Promise<boolean> {
+  if (context.state === 'running') return true;
+  let timeout: ReturnType<typeof setTimeout> | undefined;
+  try {
+    await Promise.race([
+      context.resume(),
+      new Promise<never>((_, reject) => {
+        timeout = setTimeout(() => reject(new Error('Audio activation timed out')), timeoutMs);
+      }),
+    ]);
+  } catch {
+    return false;
+  } finally {
+    if (timeout !== undefined) clearTimeout(timeout);
+  }
+  const resumedState = context.state as AudioContextState;
+  return resumedState === 'running';
+}
+
+export function watchUmpireAudioContext(
+  context: BaseAudioContext,
+  onPaused: () => void,
+): () => void {
+  const stateChanged = () => {
+    if (context.state !== 'running') onPaused();
+  };
+  context.addEventListener('statechange', stateChanged);
+  stateChanged();
+  return () => context.removeEventListener('statechange', stateChanged);
+}
+
+export function preloadLineCallAudio(context: BaseAudioContext): Promise<void> {
+  return preloadAutomatedLineCalls(context);
+}
+
 export async function speakUmpireCall(
   text: string,
   context: BaseAudioContext | null | undefined,
@@ -400,21 +537,11 @@ export async function speakUmpireCall(
   }
   if (activeBrowserUmpireMatchKey === matchKey) cancelBrowserUmpireCall(matchKey);
 
-  if (context) {
-    activeXktUmpireContexts.set(matchKey, context);
-    if (await playXktUmpireCall(context, text, isWta)) return true;
-    if (activeXktUmpireContexts.get(matchKey) === context) {
-      cancelXktUmpireCalls(context);
-      activeXktUmpireContexts.delete(matchKey);
-    }
-  }
-  if (!shouldSpeak()) return false;
-  // Web Speech serializes utterances globally; replace an existing utterance
-  // for this match, but preserve queued calls belonging to other matches.
-  cancelBrowserUmpireCall(matchKey);
-  const spoken = speakBrowserUmpireCall(text);
-  if (spoken) activeBrowserUmpireMatchKey = matchKey;
-  return spoken;
+  if (!context || !shouldSpeak()) return false;
+  activeXktUmpireContexts.set(matchKey, context);
+  // A missing clip (for example an unsupported line call) must not cancel
+  // another supported score call that is already playing or still loading.
+  return playXktUmpireCall(context, text, isWta);
 }
 
 export function isBrowserUmpireSpeechUnlocked(): boolean {

@@ -171,13 +171,25 @@ test('live snapshot updates merge their recent points into the retained point lo
   const recentPoints = [
     { number: 1, scoreLabel: '0-0(15-0)', server: 1, winner: 1, rallyHits: 0, faults: 0 },
   ];
+  const court = Array.from({ length: 361 }, (_, index) => [
+    index,
+    -index,
+    30 + index % 5,
+    10,
+    -10,
+    20,
+    -20,
+  ]);
+  const courtFrameIndices = Array.from({ length: court.length }, (_, index) =>
+    180 + Math.round(index * 719 / (court.length - 1)),
+  );
   const snapshot = {
     version: 1,
     filename: 'match.dmo',
     stadium: null,
     players: ['One', 'Two'],
-    frameCount: 10,
-    courtFrameCount: 10,
+    frameCount: 900,
+    courtFrameCount: 720,
     pointCount: 1,
     bestOf: 3,
     score: {
@@ -200,8 +212,8 @@ test('live snapshot updates merge their recent points into the retained point lo
       acesOrUnreturned: 0,
     })),
     recentPoints,
-    court: [[0, 0, 0, 0, 0, 0, 0]],
-    courtFrameIndices: [0],
+    court,
+    courtFrameIndices,
   };
   const route = loadRoute('app/api/live-dmo/[id]/route.ts', {
     'next/server': nextServer,
@@ -301,6 +313,7 @@ test('signed-in admins can read broadcasts while guests cannot', async () => {
     stream: null,
     sourceMessageUrl: null,
     broadcastMode: 'manual',
+    tournamentRound: 'auto',
     isWta: false,
     replay: false,
     replayDataReady: false,
