@@ -1,0 +1,26 @@
+.surface {
+  position: relative;
+  width: 100%;
+  min-width: 0;
+}
+
+.surface[data-file-drop-active='true'] {
+  outline: 2px dashed var(--lime, #b0f43b);
+  outline-offset: 3px;
+}
+
+.overlay {
+  position: absolute;
+  z-index: 30;
+  inset: 0;
+  display: grid;
+  place-items: center;
+  padding: 14px;
+  border: 2px dashed var(--lime, #b0f43b);
+  border-radius: inherit;
+  background: rgba(2, 9, 22, .88);
+  color: var(--text-strong, #fff);
+  font: 750 14px/1.4 system-ui, sans-serif;
+  text-align: center;
+  pointer-events: none;
+}

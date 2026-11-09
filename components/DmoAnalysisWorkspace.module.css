@@ -163,6 +163,7 @@
 .logPanelIntro h2 { margin: 0; font: italic 800 17px/1.2 var(--font-display, sans-serif); }
 .logPanelIntro > p:last-child { margin: 6px 0 0; color: var(--dmo-muted); font-size: 10px; line-height: 1.5; }
 .logControls { display: flex; align-items: center; justify-content: flex-end; flex-wrap: wrap; gap: 7px; }
+.logDropTarget { width: auto; }
 .logButton, .logClearButton { display: inline-flex; align-items: center; justify-content: center; gap: 6px; min-height: 34px; padding: 0 10px; border: 1px solid var(--dmo-line-strong); border-radius: 8px; background: rgba(2,9,22,.2); color: var(--dmo-soft); font: 700 9px var(--font-body, sans-serif); cursor: pointer; }
 .logButton:hover, .logClearButton:hover { border-color: var(--dmo-lime); color: var(--dmo-lime); }
 .logButton:focus-visible, .logClearButton:focus-visible, .logOffset input:focus-visible { outline: 2px solid var(--dmo-lime); outline-offset: 3px; }

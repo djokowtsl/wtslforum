@@ -13,6 +13,7 @@ import {
 } from 'lucide-react';
 import type { ArticleDoc } from '@/lib/articleContent';
 import { safeArticleUrl } from '@/lib/articleContent';
+import FileDropSurface from './FileDropSurface';
 
 type Props = {
   mode: 'title' | 'body';
@@ -201,9 +202,25 @@ export default function ArticleRichEditor({ mode, value, onChange, label, disabl
         {!isTitle && <input ref={imageInput} type="file" accept="image/jpeg,image/png,image/gif,image/webp" hidden aria-label="Choose image file" onChange={e => { const file = e.currentTarget.files?.[0]; if (file) void uploadImage(file); e.currentTarget.value = ''; }} />}
       </div>
       <div className={`article-editor-shell ${isTitle ? 'title-editor' : ''}`} aria-label={label}>
-        <EditorContent editor={editor} />
+        {isTitle ? (
+          <EditorContent editor={editor} />
+        ) : (
+          <FileDropSurface
+            onFiles={(files) => {
+              if (files.length > 1) {
+                setMediaStatus('Drop one image at a time.');
+                return;
+              }
+              if (files[0]) void uploadImage(files[0]);
+            }}
+            disabled={disabled || uploading}
+            prompt="Drop a JPG, PNG, GIF or WebP image to insert"
+          >
+            <EditorContent editor={editor} />
+          </FileDropSurface>
+        )}
       </div>
-      {(mediaStatus || !isTitle) && <div className="article-toolbar-note" role="status" aria-live="polite">{mediaStatus || 'Images up to 4 MB · JPG, PNG, GIF or WebP · video URLs are kept as entered.'}</div>}
+      {(mediaStatus || !isTitle) && <div className="article-toolbar-note" role="status" aria-live="polite">{mediaStatus || 'Images up to 4 MB · JPG, PNG, GIF or WebP · drop an image into the body editor to attach it.'}</div>}
     </div>
   );
 }

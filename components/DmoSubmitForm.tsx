@@ -2,6 +2,7 @@
 
 import { useRouter } from 'next/navigation';
 import { useState, type FormEvent, type CSSProperties } from 'react';
+import FileDropSurface from './FileDropSurface';
 
 export default function DmoSubmitForm() {
   const router = useRouter();
@@ -20,6 +21,30 @@ export default function DmoSubmitForm() {
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState('');
   const [notice, setNotice] = useState('');
+
+  function selectFile(nextFile: File | null) {
+    setPublicShareConsent(false);
+    setCoachGroupShareConsent(false);
+    if (!nextFile) {
+      setFile(null);
+      setError('');
+      return;
+    }
+    if (!nextFile.name.toLowerCase().endsWith('.dmo')) {
+      setFile(null);
+      setFileInputKey((value) => value + 1);
+      setError('Choose a .dmo match recording.');
+      return;
+    }
+    if (nextFile.size > 20 * 1024 * 1024) {
+      setFile(null);
+      setFileInputKey((value) => value + 1);
+      setError('The file is too large (20MB max).');
+      return;
+    }
+    setFile(nextFile);
+    setError('');
+  }
 
   async function submit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
@@ -184,19 +209,21 @@ export default function DmoSubmitForm() {
           }}
           style={inputStyle}
         />
-        <label style={{ display: 'grid', gap: 6 }}>
-          <span>Or attach a .dmo file (20MB max)</span>
-          <input
-            key={fileInputKey}
-            type="file"
-            accept=".dmo,application/octet-stream"
-            onChange={(event) => {
-              setFile(event.target.files?.[0] ?? null);
-              setPublicShareConsent(false);
-              setCoachGroupShareConsent(false);
-            }}
-          />
-        </label>
+        <FileDropSurface
+          onFiles={(files) => selectFile(files[0] ?? null)}
+          disabled={busy}
+          prompt="Drop a .dmo match recording"
+        >
+          <label style={{ display: 'grid', gap: 6 }}>
+            <span>Or attach or drop a .dmo file (20MB max)</span>
+            <input
+              key={fileInputKey}
+              type="file"
+              accept=".dmo,application/octet-stream"
+              onChange={(event) => selectFile(event.target.files?.[0] ?? null)}
+            />
+          </label>
+        </FileDropSurface>
         <label style={{ display: 'flex', alignItems: 'flex-start', gap: 9 }}>
           <input
             type="checkbox"

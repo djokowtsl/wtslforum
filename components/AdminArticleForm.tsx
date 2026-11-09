@@ -4,6 +4,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { Eye, EyeOff, ImagePlus, RotateCcw, Save } from 'lucide-react';
 import ArticleRichEditor from '@/components/ArticleRichEditor';
 import ArticleRichText from '@/components/ArticleRichText';
+import FileDropSurface from '@/components/FileDropSurface';
 import {
   articlePlainText, emptyArticleDoc, hasArticleBody, legacyArticleDoc, readArticleContent, type ArticleDoc,
 } from '@/lib/articleContent';
@@ -212,14 +213,26 @@ export default function AdminArticleForm({ userId, articleId = null, onSaved, on
       <label className="article-field"><span>Article body</span><small>Give the story room to breathe. Media can be added from the toolbar.</small>
         <ArticleRichEditor mode="body" label="Article body" value={bodyDoc} onChange={value => change(setBodyDoc, value)} disabled={saving} onUploadingChange={setBodyUploading} />
       </label>
-      <div className="article-field"><span>Cover image</span><small>Upload a visual or use an existing public HTTP(S) image URL.</small>
+      <div className="article-field"><span>Cover image</span><small>Upload a visual or use an existing public HTTP(S) image URL. You can also drop an image below.</small>
         <input type="url" value={coverUrl} onChange={event => change(setCoverUrl, event.target.value)} placeholder="https://…" disabled={saving || coverUploading} aria-label="Cover image URL" />
-        <div className="article-form-actions">
-          <input ref={coverInput} type="file" accept="image/jpeg,image/png,image/gif,image/webp" hidden aria-label="Choose cover image" onChange={event => { const file = event.currentTarget.files?.[0]; if (file) void uploadCover(file); event.currentTarget.value = ''; }} />
-          <button type="button" className="btn btn-sm" onClick={() => coverInput.current?.click()} disabled={coverUploading || saving}><ImagePlus size={15} /> {coverUploading ? 'Uploading…' : 'Upload cover'}</button>
-          {coverUrl && <button type="button" className="btn btn-sm btn-ghost" onClick={() => change(setCoverUrl, '')} disabled={saving}>Remove cover</button>}
-        </div>
-        {coverUrl ? <figure className="article-cover-preview"><img src={coverUrl} alt="Cover preview" /><figcaption>Cover preview · shown above the article</figcaption></figure> : <div className="article-cover-placeholder">No cover selected</div>}
+        <FileDropSurface
+          onFiles={(files) => {
+            if (files.length > 1) {
+              setStatus({ kind: 'error', text: 'Drop one cover image at a time.' });
+              return;
+            }
+            if (files[0]) void uploadCover(files[0]);
+          }}
+          disabled={coverUploading || saving}
+          prompt="Drop a JPG, PNG, GIF or WebP cover image"
+        >
+          <div className="article-form-actions">
+            <input ref={coverInput} type="file" accept="image/jpeg,image/png,image/gif,image/webp" hidden aria-label="Choose cover image" onChange={event => { const file = event.currentTarget.files?.[0]; if (file) void uploadCover(file); event.currentTarget.value = ''; }} />
+            <button type="button" className="btn btn-sm" onClick={() => coverInput.current?.click()} disabled={coverUploading || saving}><ImagePlus size={15} /> {coverUploading ? 'Uploading…' : 'Upload cover'}</button>
+            {coverUrl && <button type="button" className="btn btn-sm btn-ghost" onClick={() => change(setCoverUrl, '')} disabled={saving}>Remove cover</button>}
+          </div>
+          {coverUrl ? <figure className="article-cover-preview"><img src={coverUrl} alt="Cover preview" /><figcaption>Cover preview · shown above the article</figcaption></figure> : <div className="article-cover-placeholder">No cover selected</div>}
+        </FileDropSurface>
       </div>
       {preview && <section className="article-preview" aria-label="Article preview"><span className="eyebrow">Reader preview</span>{coverUrl && <img className="article-preview-cover" src={coverUrl} alt="" />}<ArticleRichText doc={titleDoc} title className="article-public-title" /><ArticleRichText doc={bodyDoc} /></section>}
       <div className="article-form-actions">
