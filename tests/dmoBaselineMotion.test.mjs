@@ -20,7 +20,8 @@ test('ordinary player update includes the calibrated Round 18 motion repairs', (
   assert.match(court, /const RALLY_RUN_CARRY_CUTOFF_FRAMES = 36/);
   assert.match(update, /nextLiveCourtCarryMode\(Boolean\(rig\.root\.userData\.carryMode\),/);
   assert.match(update, /const strolling = Math\.max\(isBetweenPoints\(events, frame\) \? 1 : 0, rallyOver\)/);
-  assert.match(update, /rallyOverWeight\(events, frame, frameRate\)/);
+  assert.match(update, /rallyOverWeight\(events, frame, frameRate, shot =>/);
+  assert.match(update, /ballPassedReceiverFrame\(samples, shot\.frame, frame, receiverIndex\)/);
   assert.match(update, /sliceTakeBackHold/);
 });
 

@@ -63,6 +63,7 @@ import {
   SERVE_BOUNCE_SECONDS,
   serveBounceHeight,
   lowReachDrop,
+  ballPassedReceiverFrame,
   lungeWeight,
   LUNGE_FEET_APART,
   LUNGE_DROP,
@@ -1590,7 +1591,12 @@ function ThreeCourt({
       // (Not once he has set up to serve or return: shuffling there is not a walk.)
       // Also relax when the last shot has gone unanswered or a point-end is
       // delayed in the feed; the split-step and serve/return setup still win.
-      const rallyOver = rallyOverWeight(events, frame, frameRate);
+      const rallyOver = rallyOverWeight(events, frame, frameRate, shot => {
+        const receiverIndex = shot.player === 1 ? 5 : shot.player === 2 ? 3 : undefined;
+        return receiverIndex === undefined
+          ? undefined
+          : ballPassedReceiverFrame(samples, shot.frame, frame, receiverIndex);
+      });
       const strolling = Math.max(isBetweenPoints(events, frame) ? 1 : 0, rallyOver)
         * (1 - Math.max(serveGate, returnGate));
       // The racket comes up in front for the split-step around the opponent's

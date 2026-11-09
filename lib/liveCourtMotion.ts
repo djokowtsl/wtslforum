@@ -160,6 +160,37 @@ export function liveCourtBallHeldSeconds(
   return held;
 }
 
+/** How far beyond the receiver (cm) the ball must travel to count as past. */
+export const BALL_PASSED_MARGIN_CM = 100;
+
+/**
+ * Find when the ball has gone more than 1 m past the player who would reply.
+ * Only samples through `uptoFrame` are considered, so the same check works live.
+ */
+export function ballPassedReceiverFrame(
+  samples: LiveCourtSample[],
+  shotFrame: number,
+  uptoFrame: number,
+  receiverXIndex: 3 | 5,
+) {
+  if (!Number.isFinite(shotFrame) || !Number.isFinite(uptoFrame) || uptoFrame < shotFrame) return undefined;
+  let low = 0, high = samples.length;
+  while (low < high) {
+    const middle = (low + high) >> 1;
+    if (samples[middle].frame <= shotFrame) low = middle + 1;
+    else high = middle;
+  }
+  for (let index = low; index < samples.length && samples[index].frame <= uptoFrame; index += 1) {
+    const ball = samples[index].values[0];
+    const receiver = samples[index].values[receiverXIndex];
+    if (!Number.isFinite(ball) || !Number.isFinite(receiver) || receiver === 0) continue;
+    if (Math.sign(ball) === Math.sign(receiver) && Math.abs(ball) > Math.abs(receiver) + BALL_PASSED_MARGIN_CM) {
+      return samples[index].frame;
+    }
+  }
+  return undefined;
+}
+
 export type LiveCourtMotionEvent = {
   frame: number;
   kind: 'shot' | 'point-end';

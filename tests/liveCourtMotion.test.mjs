@@ -20,6 +20,8 @@ import {
   lowReachDrop,
   lungeWeight,
   LUNGE_DROP,
+  BALL_PASSED_MARGIN_CM,
+  ballPassedReceiverFrame,
   liveCourtShotSpin,
   liveCourtBallHeldSeconds,
   serveBounceHeight,
@@ -254,6 +256,29 @@ test('low and wide contacts use the calibrated conservative crouch', () => {
   assert.equal(lowReachDrop(0.2, 2.0), LOW_REACH_MAX_DROP);
   assert.equal(lowReachDrop(1.0, 4.3), 0);
   assert.equal(lowReachDrop(Number.NaN, 1), 0);
+});
+
+test('ballPassedReceiverFrame uses only samples after the shot and through the current frame', () => {
+  assert.equal(BALL_PASSED_MARGIN_CM, 100);
+  const negativeSide = [0, 10, 20, 30, 40].map((frame, index) => ({
+    frame,
+    values: [-600 - index * 200, 0, 50, 1200, 0, -1200, 0],
+  }));
+  assert.equal(ballPassedReceiverFrame(negativeSide, 0, 30, 5), undefined,
+    'the ball at -1200 cm is not past the player at -1200 cm');
+  assert.equal(ballPassedReceiverFrame(negativeSide, 0, 35, 5), undefined,
+    'future samples are not read on a live feed');
+  assert.equal(ballPassedReceiverFrame(negativeSide, 0, 40, 5), 40,
+    'the ball at -1400 cm is more than 1 m past the player');
+  assert.equal(ballPassedReceiverFrame(negativeSide, 40, 35, 5), undefined,
+    'invalid time windows fail closed');
+
+  const positiveSide = [0, 10, 20, 30, 40].map((frame, index) => ({
+    frame,
+    values: [600 + index * 200, 0, 50, 1200, 0, -1200, 0],
+  }));
+  assert.equal(ballPassedReceiverFrame(positiveSide, 0, 40, 3), 40,
+    'the same check works for a receiver on the positive side');
 });
 
 test('slices are inferred from ball flight through the first bounce', () => {
