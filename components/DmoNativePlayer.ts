@@ -215,6 +215,11 @@ export function attachNativePlayer(
     r: racketContactOrientation(grips.r.shaft, grips.r.palm) };
   const capturedGroundstroke = new DmoCapturedGroundstroke(model, rig.root, pose.rest, motionSources);
   rig.root.userData.capturedSmash = capturedGroundstroke.hasSmash;
+  // Tells the court renderer it can play recorded volleys near the net, and
+  // slices and touch shots (the volley recordings stand in for those). Without
+  // it no slice was ever chosen: one-handers' backhands still looked like one
+  // (the one-handed recording), two-handers' showed as plain drives.
+  rig.root.userData.capturedVolleys = capturedGroundstroke.hasVolleys;
   let capturedLocomotion: DmoCapturedLocomotion | null = null;
   try {
     capturedLocomotion = new DmoCapturedLocomotion(pose.rest, {

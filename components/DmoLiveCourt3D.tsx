@@ -198,6 +198,12 @@ const SHORT_WALK_METRES = 2;
 const SHORT_WALK_MAX_TURN = THREE.MathUtils.degToRad(60);
 const SERVE_IMMINENT_SECONDS = 1.5;
 const SERVE_IMMINENT_MAX_TURN = THREE.MathUtils.degToRad(30);
+/** A stretch for a ball going past is mostly arm and upper body: this share
+ *  of the lunge a groundstroke that wide would get. */
+const ATTEMPT_LUNGE_SHARE = 0.6;
+/** Beyond this reach (m from his centre) a two-handed player lets go with the
+ *  free hand to stretch for a backhand. */
+const ONE_HAND_STRETCH_METRES = 1.3;
 
 function limitHeadingToNet(heading: number, netFacing: number, secondsToServe: number, metresToGo: number) {
   const limit = secondsToServe < SERVE_IMMINENT_SECONDS ? SERVE_IMMINENT_MAX_TURN
@@ -1470,6 +1476,8 @@ function ThreeCourt({
         smash?: boolean;
         /** A stretch at a ball going past him (no TE4 shot). */
         attempt?: boolean;
+        /** A two-hander's stretched backhand: he lets go with the free hand. */
+        oneHandReach?: boolean;
       };
       let capturedEvent = rig.root.userData.capturedGroundstrokeEvent as CapturedEvent | undefined;
       // Inferred soft-touch cues are not a reason to replace a recorded stroke
@@ -1501,6 +1509,9 @@ function ThreeCourt({
             handedness,
             ...(recordedSmash ? { smash: true } : {}),
             ...((strokeEvent as { attempt?: boolean }).attempt ? { attempt: true } : {}),
+            ...((strokeEvent as { attempt?: boolean }).attempt && stroke === 'backhand' && contactSample
+              && Math.hypot((contactSample[0] - contactSample[xIndex]) * SCALE, (contactSample[1] - contactSample[zIndex]) * SCALE)
+                > ONE_HAND_STRETCH_METRES ? { oneHandReach: true } : {}),
           };
           if (!recordedSmash && isCapturedVolleyShot(
             strokeEvent, contactSample, samples, events, soundEventsRef.current,
@@ -1531,7 +1542,9 @@ function ThreeCourt({
           const dx = (contactSample[0] - contactSample[xIndex]) * SCALE;
           const dz = (contactSample[1] - contactSample[zIndex]) * SCALE;
           rig.root.userData.contactTarget = {
-            key: `${strokeEvent.frame}:${capturedEvent.stroke}:${capturedEvent.handedness}:${capturedEvent.smash ? 'smash' : ''}`,
+            key: `${strokeEvent.frame}:${capturedEvent.stroke}:${capturedEvent.handedness}:${capturedEvent.smash ? 'smash' : ''}${capturedEvent.attempt ? ':stretch' : ''}`,
+            // A stretch: he reaches out toward a ball beyond his normal reach.
+            ...(capturedEvent.attempt ? { stretch: true } : {}),
             point: [
               (dx * localXAxis[0] + dz * localXAxis[1]) / rig.root.scale.x,
               (Math.max(0, contactSample[2] * SCALE) + BALL_RADIUS) / rig.root.scale.y,
@@ -1579,18 +1592,17 @@ function ThreeCourt({
             ? serveCaptureWeight(captureDelta) * (captureDelta >= 0 ? 1 : Number(rig.root.userData.serveSetUp ?? 1))
             : volley ? volleyCaptureWeight(captureDelta)
               : groundstrokeCaptureWeight(captureDelta, groundstrokeLeadFrames(opponentContactGap)));
-          // (An attempt at a ball going past him is a full stretch however far
-          // it was: he goes for it.)
+          // (An attempt at a ball going past him is mainly a stretch, the arm
+          // and upper body reaching out; the legs only lunge for the furthest,
+          // and not as deep.)
           const reachToBall = contactSample ? Math.hypot(
             (contactSample[0] - contactSample[xIndex]) * SCALE,
             (contactSample[1] - contactSample[zIndex]) * SCALE,
           ) : 0;
           const contactLunge = capturedEvent.stroke !== 'serve' && !volley
             && !capturedEvent.smash && contactSample
-            ? lungeWeight(
-              capturedEvent.attempt ? Math.min(Math.max(reachToBall, 1.95), 2.4) : reachToBall,
-              Boolean(capturedEvent.spinSlice),
-            )
+            ? lungeWeight(reachToBall, Boolean(capturedEvent.spinSlice))
+              * (capturedEvent.attempt ? ATTEMPT_LUNGE_SHARE : 1)
             : 0;
           const lungeTiming = THREE.MathUtils.smoothstep(captureDelta, -16, -2)
             * (1 - THREE.MathUtils.smoothstep(captureDelta, 24, 44));
@@ -1615,7 +1627,7 @@ function ThreeCourt({
               weight,
               handedness: capturedEvent.handedness,
               rootOffset: false,
-              hands: !capturedEvent.smash && !capturedEvent.slice
+              hands: !capturedEvent.smash && !capturedEvent.slice && !capturedEvent.oneHandReach
                 && recordedStrokeUsesTwoHands(capturedEvent.stroke, playerStrokeStyle, false) ? 'two' : 'one',
               ...(capturedEvent.smash ? { smash: true } : {}),
               ...(capturedEvent.slice ? { slice: true } : {}),
@@ -1635,7 +1647,8 @@ function ThreeCourt({
         rig.root.userData.lowReachDrop = 0;
         delete rig.root.userData.lunge;
       }
-      const twoHandedStroke = !serving && !capturedEvent?.smash && !isRecordedVolley(capturedEvent?.stroke)
+        const twoHandedStroke = !serving && !capturedEvent?.smash && !isRecordedVolley(capturedEvent?.stroke)
+          && !capturedEvent?.slice && !capturedEvent?.oneHandReach
         && recordedStrokeUsesTwoHands(stroke, playerStrokeStyle, stroke === 'backhand');
       const armPump = Math.sin(phase * 0.55) * gaitSpeed * 0.12;
       // Between shots the racket is carried, not held up by the head: in front
@@ -1913,7 +1926,7 @@ function ThreeCourt({
       // The stroke being played back (if any) decides the grip style through
       // its recovery, rather than the ball's current side after the event passes.
       const recordedStroke = rig.root.userData.capturedGroundstrokeEvent as
-        { frame: number; stroke: GroundstrokeName; slice?: boolean; smash?: boolean } | undefined;
+        { frame: number; stroke: GroundstrokeName; slice?: boolean; smash?: boolean; oneHandReach?: boolean } | undefined;
       const twoHandedSide = Boolean(recordedStroke)
         && recordedStroke!.stroke !== 'serve'
         && recordedStroke!.stroke !== 'smash'
@@ -1921,7 +1934,7 @@ function ThreeCourt({
         && !isRecordedVolley(recordedStroke!.stroke)
         && recordedStrokeUsesTwoHands(recordedStroke!.stroke, playerStrokeStyle, false);
       const recordedTwoHanded = recordedStroke
-        ? twoHandedSide && !recordedStroke.slice && !recordedStroke.smash
+        ? twoHandedSide && !recordedStroke.slice && !recordedStroke.smash && !recordedStroke.oneHandReach
         : twoHandedStroke;
       const sliceTakeBackHold = recordedStroke?.slice && twoHandedSide && frame <= recordedStroke.frame
         ? 1 - THREE.MathUtils.smoothstep(

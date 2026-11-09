@@ -62,6 +62,11 @@ function slerpPath(a: THREE.Quaternion, b: THREE.Quaternion, t: number, long: bo
 /** Keep only a quarter of the contact correction's trunk bend. */
 const SPINE_BEND_SHARE = 0.25;
 const TRUNK_LEAN_LIMIT = THREE.MathUtils.degToRad(24);
+/** Stretching for a ball out of reach: the trunk may lean toward it this far
+ *  (a real stretch leans the upper body out over the reaching arm), and keeps
+ *  this share of the sideways CCD bend (the normal 0.25 keeps him upright). */
+const STRETCH_TRUNK_LEAN_LIMIT = THREE.MathUtils.degToRad(34);
+const STRETCH_SPINE_BEND_SHARE = 0.7;
 
 function clampRotation(q: THREE.Quaternion, limit: number) {
   const angle = 2 * Math.acos(THREE.MathUtils.clamp(Math.abs(q.w), -1, 1));
@@ -174,7 +179,7 @@ export function nativeTwoBone(
 
 type Side = 'l' | 'r';
 type Limb = { root: string; middle: string; end: string; restHinge: THREE.Vector3; lengths: [number, number] };
-type ContactTarget = { key: string; point: [number, number, number] };
+type ContactTarget = { key: string; point: [number, number, number]; stretch?: boolean };
 type Correction = { key: string; spine: THREE.Quaternion; shoulder: THREE.Quaternion; elbow: number };
 
 export function attachNativePlayer(
@@ -220,6 +225,11 @@ export function attachNativePlayer(
     r: racketContactOrientation(grips.r.shaft, grips.r.palm) };
   const capturedGroundstroke = new DmoCapturedGroundstroke(model, rig.root, pose.rest, motionSources);
   rig.root.userData.capturedSmash = capturedGroundstroke.hasSmash;
+  // Tells the court renderer it can play recorded volleys near the net, and
+  // slices and touch shots (the volley recordings stand in for those). Without
+  // it no slice was ever chosen: one-handers' backhands still looked like one
+  // (the one-handed recording), two-handers' showed as plain drives.
+  rig.root.userData.capturedVolleys = capturedGroundstroke.hasVolleys;
   let capturedLocomotion: DmoCapturedLocomotion | null = null;
   try {
     capturedLocomotion = new DmoCapturedLocomotion(pose.rest, {
@@ -331,12 +341,12 @@ export function attachNativePlayer(
     const part = new THREE.Quaternion().slerp(q, 1 / 3);
     for (const name of ['spine_01', 'spine_02', 'spine_03']) pose.turn(name, part);
   };
-  const limitTrunkLean = (weight: number) => {
+  const limitTrunkLean = (weight: number, limit = TRUNK_LEAN_LIMIT) => {
     if (weight <= 0) return;
     for (let pass = 0; pass < 3; pass++) {
       const trunk = pose.point('neck_01').sub(pose.point('pelvis'));
       const lean = Math.acos(THREE.MathUtils.clamp(trunk.y / Math.max(1e-6, trunk.length()), -1, 1));
-      const excess = (lean - TRUNK_LEAN_LIMIT) * weight;
+      const excess = (lean - limit) * weight;
       if (excess <= 1e-4) return;
       const axis = trunk.clone().cross(UP);
       if (axis.lengthSq() < 1e-10) return;
@@ -346,7 +356,7 @@ export function attachNativePlayer(
   };
   /** One CCD step about `joint`, limited so the accumulated turn stays within `total`. */
   const swingToward = (joint: string, side: Side, roll: THREE.Quaternion, goal: THREE.Vector3,
-    step: number, accumulated: THREE.Quaternion, total: number) => {
+    step: number, accumulated: THREE.Quaternion, total: number, stretch = false) => {
     const pivot = pose.point(joint);
     const from = racketHead(side, roll).sub(pivot), to = goal.clone().sub(pivot);
     if (from.lengthSq() < 1e-8 || to.lengthSq() < 1e-8) return new THREE.Quaternion();
@@ -355,7 +365,18 @@ export function attachNativePlayer(
       const axis = pose.point('neck_01').sub(pivot).normalize();
       const twist = new THREE.Quaternion().setFromAxisAngle(axis, twistAngle(q, axis));
       const bend = q.clone().multiply(twist.clone().invert());
-      q = new THREE.Quaternion().slerp(bend, SPINE_BEND_SHARE).multiply(twist);
+      if (!stretch) {
+        q = new THREE.Quaternion().slerp(bend, SPINE_BEND_SHARE).multiply(twist);
+      } else {
+        // A stretch: the extra bend is sideways only (leaning out over the
+        // reaching arm, about his forward axis); bending forward keeps the
+        // normal share, so he doesn't dive.
+        const forward = new THREE.Vector3(0, 0, 1).applyQuaternion(rig.root.getWorldQuaternion(new THREE.Quaternion()));
+        const sideLean = new THREE.Quaternion().setFromAxisAngle(forward, twistAngle(bend, forward));
+        const forwardBend = bend.clone().multiply(sideLean.clone().invert());
+        q = new THREE.Quaternion().slerp(forwardBend, SPINE_BEND_SHARE)
+          .multiply(new THREE.Quaternion().slerp(sideLean, STRETCH_SPINE_BEND_SHARE)).multiply(twist);
+      }
     }
     const room = total - angleOf(accumulated);
     if (room <= 0) return new THREE.Quaternion();
@@ -378,16 +399,18 @@ export function attachNativePlayer(
     const p = parentRotation(joint);
     return p.clone().multiply(q).multiply(p.invert());
   };
-  const solveCorrection = (side: Side, roll: THREE.Quaternion, goal: THREE.Vector3) => {
+  const solveCorrection = (side: Side, roll: THREE.Quaternion, goal: THREE.Vector3, stretch = false) => {
     let spine = new THREE.Quaternion(), shoulder = new THREE.Quaternion();
     let elbow = 0;
-    for (let i = 0; i < 8; i++) {
+    for (let i = 0; i < (stretch ? 12 : 8); i++) {
       // trunk rotation first (where a forehand's forward reach comes from),
       // then shoulder swing, then the elbow hinge for the remaining distance.
+      // (A stretch also leans the trunk out toward the ball and lets the
+      // shoulder reach further.)
       spine = toParent('spine_01', swingToward('spine_01', side, roll, goal, 0.12,
-        fromParent('spine_01', spine), 0.6)).multiply(spine);
+        fromParent('spine_01', spine), stretch ? 0.8 : 0.6, stretch)).multiply(spine);
       shoulder = toParent(`upperarm_${side}`, swingToward(`upperarm_${side}`, side, roll, goal, 0.2,
-        fromParent(`upperarm_${side}`, shoulder), 0.95)).multiply(shoulder);
+        fromParent(`upperarm_${side}`, shoulder), stretch ? 1.2 : 0.95)).multiply(shoulder);
       const s = pose.point(`upperarm_${side}`);
       const err = goal.distanceTo(s) - racketHead(side, roll).distanceTo(s);
       elbow += bendElbow(side, THREE.MathUtils.clamp(-err * 2.2, -0.3, 0.3));
@@ -577,7 +600,10 @@ export function attachNativePlayer(
         model.updateMatrixWorld(true);
       }
     }
-    if (capturedBody && playback && playback.stroke !== 'serve') limitTrunkLean(captureWeight);
+    const stretching = Boolean((rig.root.userData.contactTarget as ContactTarget | undefined)?.stretch);
+    if (capturedBody && playback && playback.stroke !== 'serve') {
+      limitTrunkLean(captureWeight, stretching ? STRETCH_TRUNK_LEAN_LIMIT : TRUNK_LEAN_LIMIT);
+    }
     const strokeRoll = new THREE.Quaternion();
     const backhandRoll = recordedBackhandFaceRoll(playback?.stroke, oneHandedStroke, playback?.slice);
     if (capturedBody && playback) {
@@ -593,14 +619,16 @@ export function attachNativePlayer(
           // the stroke path shifts coherently instead of kinking at impact.
           const saved = [...pose.bones.values()].map(b => [b, b.position.clone(), b.quaternion.clone()] as const);
           capturedGroundstroke.apply({ ...strokePlayback!, deltaSeconds: 0, weight: 1 });
-          limitTrunkLean(1);
+          limitTrunkLean(1, contact.stretch ? STRETCH_TRUNK_LEAN_LIMIT : TRUNK_LEAN_LIMIT);
           const fullRoll = backhandRoll
             ? new THREE.Quaternion().setFromAxisAngle(UP, (dominant === 'r' ? 1 : -1) * backhandRoll)
             : new THREE.Quaternion();
-          correction = { key: contact.key, ...solveCorrection(dominant, fullRoll, goal) };
+          correction = { key: contact.key, ...solveCorrection(dominant, fullRoll, goal, contact.stretch) };
           // A recorded contact the body cannot reach (bad sample, or a fixture
           // whose player is metres from the ball) must not contort the swing.
-          if (racketHead(dominant, fullRoll).distanceTo(goal) > 0.45) {
+          // A stretch is for a ball out of reach by design: he reaches as far
+          // as he can toward it (the solve's limits keep that natural).
+          if (!contact.stretch && racketHead(dominant, fullRoll).distanceTo(goal) > 0.45) {
             correction = { key: contact.key, spine: new THREE.Quaternion(), shoulder: new THREE.Quaternion(), elbow: 0 };
           }
           saved.forEach(([b, p, q]) => { b.position.copy(p); b.quaternion.copy(q); });
@@ -611,6 +639,9 @@ export function attachNativePlayer(
         if (weight > 0) {
           const identity = new THREE.Quaternion();
           turnSpine(fromParent('spine_01', identity.clone().slerp(correction.spine, weight)));
+          // (A stretch's sideways lean is added here, after the stroke's own
+          // limit: hold it to the stretch limit before the arm reaches.)
+          if (stretching) limitTrunkLean(weight, STRETCH_TRUNK_LEAN_LIMIT);
           pose.turn(`upperarm_${dominant}`,
             fromParent(`upperarm_${dominant}`, identity.clone().slerp(correction.shoulder, weight)));
           bendElbow(dominant, correction.elbow * weight);

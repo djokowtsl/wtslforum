@@ -70,3 +70,22 @@ test('live playback: soft 2 s cushion over the hard 1.2 s floor, measured from t
   // Without a cushion: the floor alone, unchanged.
   assert.equal(advanceLiveCourtPlayhead(500, 50, 1, samples, fps, floor), 503);
 });
+
+test('round 27: a stretch only when the racket could get near the ball, and not when he has given up on it', () => {
+  const fps = 30;
+  // Player 2 at x = -1200; he moves `drift` cm sideways per frame (toward +y = toward the ball).
+  const flight = (side, drift = 0, height = 100) => Array.from({ length: 31 }, (_, k) => {
+    const x = 1200 - k * 90;
+    const z = Math.abs(x + 900) < 50 ? 5 : height;
+    return { frame: k, values: [x, side, z, 1200, 0, -1200, drift * k] };
+  });
+  const rally = [{ frame: 0, kind: 'shot', player: 1, shotType: 'rally' }, { frame: 60, kind: 'point-end' }];
+  const stretches = s => withReachAttempts(rally, s, fps).some(e => e.attempt);
+  assert.ok(stretches(flight(180)), '1.8 m away: within a stretch');
+  assert.ok(!stretches(flight(240)), '2.4 m away: no realistic chance, he lets it go');
+  assert.ok(!stretches(flight(150, 0, 210)), 'passing above head height: no swing');
+  // Running toward it (8 cm/frame = 2.4 m/s), ending 1.6 m short: a stretch.
+  assert.ok(stretches(flight(160 + 8 * 27, 8)), 'running for it');
+  // Moving away from it (-3 cm/frame = 0.9 m/s): he has given up on it.
+  assert.ok(!stretches(flight(-81 + 150, -3)), 'moving away');
+});
