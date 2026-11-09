@@ -10,6 +10,7 @@ import {
   normalizeDmoReplayCharacterName,
   resolveDmoReplayCharacterPresentation,
 } from '@/lib/dmoReplayCharacterStyles';
+import { dmoReplayIsWta } from '@/lib/dmoReplayTour';
 import {
   buildTe4CoachAnalysisUrl,
   buildTe4CoachEmbedUrl,
@@ -391,6 +392,7 @@ export default function DmoReplayLibrary({
                   <Te4DmoReplayPlayer
                     replayUrl={replayUrl}
                     initialSpeed={1}
+                    isWta={dmoReplayIsWta(selected.tournament)}
                     handedness={characterPresentation?.handedness ?? ['right', 'right']}
                     strokeStyles={characterPresentation?.strokeStyles}
                   />

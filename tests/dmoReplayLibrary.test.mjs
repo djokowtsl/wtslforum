@@ -169,6 +169,17 @@ test('replay viewers hide character grip details and use a light palette in ligh
   assert.doesNotMatch(styles, /characterStyleNote/);
 });
 
+test('replay tour detection uses explicit WTA and ATP labels without guessing unmarked events', () => {
+  const { dmoReplayIsWta } = loadModule('lib/dmoReplayTour.ts', {});
+  assert.equal(dmoReplayIsWta('Roland Garros WTA'), true);
+  assert.equal(dmoReplayIsWta('WTA - Australian Open'), true);
+  assert.equal(dmoReplayIsWta('Roland Garros ATP'), false);
+  assert.equal(dmoReplayIsWta('Wimbledon'), undefined);
+  assert.equal(dmoReplayIsWta(null), undefined);
+  const replayLibrary = readFileSync(new URL('../components/DmoReplayLibrary.tsx', import.meta.url), 'utf8');
+  assert.match(replayLibrary, /isWta=\{dmoReplayIsWta\(selected\.tournament\)\}/);
+});
+
 test('Match Replay Center catalog includes every submission and only safe recording links', async () => {
   const queries = [];
   const { listDmoReplaySubmissions } = loadModule('lib/dmoReplayLibrary.ts', {
