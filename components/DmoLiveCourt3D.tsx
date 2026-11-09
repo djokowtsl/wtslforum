@@ -204,6 +204,8 @@ const ATTEMPT_LUNGE_SHARE = 0.6;
 /** Beyond this reach (m from his centre) a two-handed player lets go with the
  *  free hand to stretch for a backhand. */
 const ONE_HAND_STRETCH_METRES = 1.3;
+/** A volley this far (m) from his centre: he reaches out for it as in a stretch. */
+const WIDE_VOLLEY_METRES = 1;
 
 function limitHeadingToNet(heading: number, netFacing: number, secondsToServe: number, metresToGo: number) {
   const limit = secondsToServe < SERVE_IMMINENT_SECONDS ? SERVE_IMMINENT_MAX_TURN
@@ -1543,8 +1545,13 @@ function ThreeCourt({
           const dz = (contactSample[1] - contactSample[zIndex]) * SCALE;
           rig.root.userData.contactTarget = {
             key: `${strokeEvent.frame}:${capturedEvent.stroke}:${capturedEvent.handedness}:${capturedEvent.smash ? 'smash' : ''}${capturedEvent.attempt ? ':stretch' : ''}`,
-            // A stretch: he reaches out toward a ball beyond his normal reach.
-            ...(capturedEvent.attempt ? { stretch: true } : {}),
+            // A stretch: he reaches out toward a ball beyond his normal reach
+            // (a ball going past him, or a wide volley: the volley recording's
+            // contact is close in front, so a volley more than a metre to the
+            // side would otherwise miss it by about that much).
+            ...(capturedEvent.attempt
+              || (isRecordedVolley(capturedEvent.stroke) && Math.hypot(dx, dz) > WIDE_VOLLEY_METRES)
+              ? { stretch: true } : {}),
             point: [
               (dx * localXAxis[0] + dz * localXAxis[1]) / rig.root.scale.x,
               (Math.max(0, contactSample[2] * SCALE) + BALL_RADIUS) / rig.root.scale.y,

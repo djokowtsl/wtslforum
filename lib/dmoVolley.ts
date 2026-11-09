@@ -5,6 +5,13 @@ import type { LiveCourtCoordinates, LiveCourtMotionEvent, LiveCourtSample } from
  * incoming rally flight; ambiguous or sparse evidence retains a groundstroke.
  * Coordinates are source centimetres. This is an animation cue, not a statistic.
  */
+/** How far from the net (m) a ball taken before its bounce is a volley. Up to
+ *  the service line and a little behind: a player coming in volleys there
+ *  too. (At 4.2 m, service-line volleys were played as groundstrokes: a
+ *  one-hander's compact backhand passed for a volley, a two-hander's drive
+ *  didn't.) The unbounced-flight check below still decides. */
+export const VOLLEY_MAX_NET_DISTANCE = 8;
+
 export function isCapturedVolleyShot(
   event: LiveCourtMotionEvent | undefined,
   contact: LiveCourtCoordinates | null | undefined,
@@ -18,7 +25,7 @@ export function isCapturedVolleyShot(
   const playerIndex = event.player === 1 ? 3 : 5;
   const playerX = contact[playerIndex] * 0.01;
   const height = contact[2] * 0.01;
-  if (Math.abs(playerX) > 4.2 || height < 0.2 || height > 2.2) return false;
+  if (Math.abs(playerX) > VOLLEY_MAX_NET_DISTANCE || height < 0.2 || height > 2.2) return false;
   if (contact[0] * playerX <= 0) return false;
   if (Math.hypot(contact[0] - contact[playerIndex], contact[1] - contact[playerIndex + 1]) * 0.01 > 1.8) {
     return false;
