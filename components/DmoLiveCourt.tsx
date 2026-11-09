@@ -702,6 +702,7 @@ function DmoLiveCourt({
       ].sort((a, b) => a.frame - b.frame),
       soundEventsRef.current,
       sampleBufferRef.current,
+      { allowPendingPointEnd: !fullReplay },
     );
     if (playheadRef.current === null && sampleBufferRef.current.length) {
       playheadRef.current = sampleBufferRef.current[0].frame;

@@ -301,6 +301,7 @@ export function deriveUmpireCallEvents(
   trajectoryEvents: LiveCourtMotionEvent[],
   soundEvents: UmpireSoundEvent[],
   samples: LiveCourtSample[],
+  options: { allowPendingPointEnd?: boolean } = {},
 ): UmpireCallEvent[] {
   const calls: UmpireCallEvent[] = [];
   for (const event of trajectoryEvents) {
@@ -316,6 +317,7 @@ export function deriveUmpireCallEvents(
 
   const checkedPointEnds = new Set<number>();
   const checkedServes = new Set<number>();
+  const checkedRallyShots = new Set<number>();
   const bounces = soundEvents
     .filter((event) => event.kind === 'bounce')
     .sort((first, second) => first.frame - second.frame);
@@ -323,6 +325,7 @@ export function deriveUmpireCallEvents(
     const eventIndex = lowerBoundFrame(trajectoryEvents, bounce.frame);
     let previousShot: LiveCourtMotionEvent | undefined;
     for (let index = eventIndex - 1; index >= 0; index -= 1) {
+      if (trajectoryEvents[index].kind === 'point-end') break;
       if (trajectoryEvents[index].kind === 'shot') {
         previousShot = trajectoryEvents[index];
         break;
@@ -349,6 +352,27 @@ export function deriveUmpireCallEvents(
       continue;
     }
     if (previousShot.shotType !== 'rally') continue;
+    // Commit to the first landing before applying timing/evidence gates. An
+    // earlier in-bounds bounce must not be replaced by a later dead-ball bounce
+    // just because that later bounce is closer to the point-end marker.
+    if (checkedRallyShots.has(previousShot.frame)) continue;
+    checkedRallyShots.add(previousShot.frame);
+
+    if (options.allowPendingPointEnd) {
+      // Live point-end markers arrive after the ball lands. Waiting for one
+      // means the bounce has already passed the playhead and cannot be called.
+      // Only classify the first landing of this recorded shot, from fresh,
+      // low ball samples and the same conservative outer-court bounds.
+      if (bounce.frame - previousShot.frame > 180) continue;
+      const next = trajectoryEvents[eventIndex];
+      if (next?.kind === 'shot' && next.frame === bounce.frame) continue;
+      const landing = nearestSample(samples, bounce.frame, 4);
+      if (!landing || landing.values[2] > 30) continue;
+      if (Math.abs(landing.values[0]) > 1_201 || Math.abs(landing.values[1]) > 560) {
+        calls.push({ frame: bounce.frame, kind: 'out', text: 'Out' });
+      }
+      continue;
+    }
 
     let pointEnd: LiveCourtMotionEvent | undefined;
     let laterShot = false;

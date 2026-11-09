@@ -195,7 +195,7 @@ export async function preloadAutomatedLineCalls(
   context: BaseAudioContext,
   fetcher: (url: string) => Promise<Response> = url => fetch(url),
 ): Promise<void> {
-  await Promise.all(Object.values(AUTOMATED_LINE_CALLS)
+  await Promise.all([...Object.values(AUTOMATED_LINE_CALLS), ...ATP_OUT_CALLS]
     .map(url => loadAudioBuffer(context, url, fetcher)));
 }
 
