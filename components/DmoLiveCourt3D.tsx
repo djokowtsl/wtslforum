@@ -1243,9 +1243,42 @@ function ThreeCourt({
           && jump < 0.001 && splitStep < 0.001 && rig.root.userData.stepLegs > 0.5,
         frameRate,
       );
+      // Pick the same current/lead shot used by the stroke player before
+      // computing body posture, so an overhead cannot crouch during its lead-in.
+      const heldStroke = rig.root.userData.capturedGroundstrokeEvent as {
+        frame: number; stroke: GroundstrokeName;
+      } | undefined;
+      const heldRecoveryFrames = isRecordedVolley(heldStroke?.stroke)
+        ? VOLLEY_RECOVERY_FRAMES * frameRate / 60 * frameScale
+        : CAPTURE_RECOVERY_FRAMES;
+      const recovering = heldStroke !== undefined && frame >= heldStroke.frame
+        && (frame - heldStroke.frame) * frameScale <= heldRecoveryFrames;
+      const comingShot = event || recovering ? undefined : nextShotEvent(events, eventPlayer, frame);
+      const leadEvent = comingShot && comingShot.shotType === 'rally'
+        && (comingShot.frame - frame) * frameScale <= GROUNDSTROKE_LEAD_FRAMES ? comingShot : undefined;
+      // A serve coming up does not cut short the previous stroke's recovery
+      // either (its recorded set-up starts ~1.8 s ahead); only a shot about to
+      // be played (within the 24-frame shot window) takes over.
+      const waitForRecovery = recovering && event && (event.frame - frame) * frameScale > 24
+        && event.frame !== heldStroke!.frame;
+      const strokeEvent = waitForRecovery ? undefined : event ?? leadEvent;
+      const strokeCue = !strokeEvent ? 'standard' : strokeEvent === event ? contactCue : inferLiveCourtContactCue(
+        strokeEvent,
+        samples,
+        sceneDataRef.current.snapshot.frameRate ?? TE4_DMO_FRAMES_PER_SECOND,
+      );
+      const contactSample = strokeEvent
+        ? interpolateLiveCourtFrame(samples, strokeEvent.frame, maxGapFrames)
+        : undefined;
       const bodyBounce = (stepA.lift + stepB.lift) * 0.3 + jump + splitStep;
-      const crouch = impactWeight * lowReachDrop(ballY, Math.hypot(localX, localZ))
-        + slideWeight * 0.13 + ready * 0.24;
+      const earlierCapturedSmash = Boolean(
+        (rig.root.userData.capturedGroundstrokeEvent as { smash?: boolean } | undefined)?.smash,
+      );
+      const suppressSmashCrouch = Boolean(rig.root.userData.capturedSmash
+        && (earlierCapturedSmash || isCapturedSmashShot(strokeEvent, contactSample)));
+      const crouch = suppressSmashCrouch ? 0
+        : impactWeight * lowReachDrop(ballY, Math.hypot(localX, localZ))
+          + slideWeight * 0.13 + ready * 0.24;
       rig.root.rotation.y = facing;
       const bodyY = 1.22 + bodyBounce - crouch * 0.45;
       const strokeSide = Math.sign(localX || dominantHandX(handedness));
@@ -1374,37 +1407,6 @@ function ThreeCourt({
       rig.rightShoe.rotation.z = slideDirection * slideWeight * 0.08;
       const dominantX = dominantHandX(handedness);
       const playerStrokeStyle = sceneDataRef.current.snapshot.strokeStyles?.[index];
-      // Classify the shot at contact, not from the travelling ball on every
-      // animation frame (which can switch forehand/backhand mid-swing).
-      // A groundstroke's recorded preparation starts ~0.65 s before contact,
-      // earlier than the procedural shot window, so the racket turns back from
-      // the carry instead of whipping into the backswing in a few frames. It
-      // never cuts short the previous stroke's recovery.
-      const heldStroke = rig.root.userData.capturedGroundstrokeEvent as {
-        frame: number; stroke: GroundstrokeName;
-      } | undefined;
-      const heldRecoveryFrames = isRecordedVolley(heldStroke?.stroke)
-        ? VOLLEY_RECOVERY_FRAMES * frameRate / 60 * frameScale
-        : CAPTURE_RECOVERY_FRAMES;
-      const recovering = heldStroke !== undefined && frame >= heldStroke.frame
-        && (frame - heldStroke.frame) * frameScale <= heldRecoveryFrames;
-      const comingShot = event || recovering ? undefined : nextShotEvent(events, eventPlayer, frame);
-      const leadEvent = comingShot && comingShot.shotType === 'rally'
-        && (comingShot.frame - frame) * frameScale <= GROUNDSTROKE_LEAD_FRAMES ? comingShot : undefined;
-      // A serve coming up does not cut short the previous stroke's recovery
-      // either (its recorded set-up starts ~1.8 s ahead); only a shot about to
-      // be played (within the 24-frame shot window) takes over.
-      const waitForRecovery = recovering && event && (event.frame - frame) * frameScale > 24
-        && event.frame !== heldStroke!.frame;
-      const strokeEvent = waitForRecovery ? undefined : event ?? leadEvent;
-      const strokeCue = !strokeEvent ? 'standard' : strokeEvent === event ? contactCue : inferLiveCourtContactCue(
-        strokeEvent,
-        samples,
-        sceneDataRef.current.snapshot.frameRate ?? TE4_DMO_FRAMES_PER_SECOND,
-      );
-      const contactSample = strokeEvent
-        ? interpolateLiveCourtFrame(samples, strokeEvent.frame, maxGapFrames)
-        : undefined;
       const contactSide = contactSample
         ? ((contactSample[0] - contactSample[xIndex]) * localXAxis[0]
           + (contactSample[1] - contactSample[zIndex]) * localXAxis[1]) * SCALE / rig.root.scale.x
@@ -1417,13 +1419,21 @@ function ThreeCourt({
         handedness: 'left' | 'right';
         slice?: boolean;
         spinSlice?: boolean;
+        smash?: boolean;
       };
       let capturedEvent = rig.root.userData.capturedGroundstrokeEvent as CapturedEvent | undefined;
       // Inferred soft-touch cues are not a reason to replace a recorded stroke
       // with the procedural arm pose; retain capture for both playing hands.
-      const recordedVolley = strokeCue === 'close-net' && Boolean(rig.root.userData.capturedVolleys);
-      const recordedTouch = strokeCue === 'soft-touch' && Boolean(rig.root.userData.capturedVolleys);
-      if (strokeEvent && (
+      // Height at the rally contact is the only overhead selector; it applies
+      // on either side of a bounce and anywhere on court. Serves are excluded
+      // by isCapturedSmashShot.
+      const recordedSmash = Boolean(rig.root.userData.capturedSmash
+        && isCapturedSmashShot(strokeEvent, contactSample));
+      const recordedVolley = !recordedSmash
+        && strokeCue === 'close-net' && Boolean(rig.root.userData.capturedVolleys);
+      const recordedTouch = !recordedSmash
+        && strokeCue === 'soft-touch' && Boolean(rig.root.userData.capturedVolleys);
+      if (strokeEvent && !recordedSmash && (
         (strokeCue === 'close-net' && !recordedVolley)
         || (strokeCue === 'soft-touch' && !recordedTouch)
       )) {
@@ -1435,28 +1445,20 @@ function ThreeCourt({
         if (capturedEvent?.frame !== strokeEvent.frame || capturedEvent.handedness !== handedness) {
           capturedEvent = {
             frame: strokeEvent.frame,
-            stroke: strokeEvent.shotType === 'serve' ? 'serve' : stroke,
+            // The recording is a one-handed racket-side overhead, independent
+            // of which side of the body the ball approaches from.
+            stroke: strokeEvent.shotType === 'serve' ? 'serve' : recordedSmash ? 'forehand' : stroke,
             handedness,
+            ...(recordedSmash ? { smash: true } : {}),
           };
-          // Smash-only override: keep the ordinary PR 329 player update intact.
-          // Select once per contact; never reselect a normal stroke as facing changes.
-          if (capturedEvent.stroke !== 'serve' && strokeCue === 'close-net'
-            && isCapturedSmashShot(
-              strokeEvent,
-              contactSample,
-              samples,
-              events,
-              sceneDataRef.current.snapshot.frameRate ?? TE4_DMO_FRAMES_PER_SECOND,
-            )) {
-            capturedEvent.stroke = 'smash';
-          }
-          // End smash-only override.
-          else if (isCapturedVolleyShot(
+          if (!recordedSmash && isCapturedVolleyShot(
             strokeEvent, contactSample, samples, events, soundEventsRef.current,
             sceneDataRef.current.snapshot.frameRate ?? TE4_DMO_FRAMES_PER_SECOND,
           )) {
             capturedEvent.stroke = recordedStrokeForSide(baseStroke, true);
           } else if (
+            !recordedSmash
+            &&
             fullReplay
             && rig.detailed
             && !recordedVolley
@@ -1476,7 +1478,7 @@ function ThreeCourt({
           const dx = (contactSample[0] - contactSample[xIndex]) * SCALE;
           const dz = (contactSample[1] - contactSample[zIndex]) * SCALE;
           rig.root.userData.contactTarget = {
-            key: `${strokeEvent.frame}:${capturedEvent.stroke}:${capturedEvent.handedness}`,
+            key: `${strokeEvent.frame}:${capturedEvent.stroke}:${capturedEvent.handedness}:${capturedEvent.smash ? 'smash' : ''}`,
             point: [
               (dx * localXAxis[0] + dz * localXAxis[1]) / rig.root.scale.x,
               (Math.max(0, contactSample[2] * SCALE) + BALL_RADIUS) / rig.root.scale.y,
@@ -1522,7 +1524,8 @@ function ThreeCourt({
             ? serveCaptureWeight(captureDelta) * (captureDelta >= 0 ? 1 : Number(rig.root.userData.serveSetUp ?? 1))
             : volley ? volleyCaptureWeight(captureDelta)
               : groundstrokeCaptureWeight(captureDelta, groundstrokeLeadFrames(opponentContactGap)));
-          const contactLunge = capturedEvent.stroke !== 'serve' && !volley && contactSample
+          const contactLunge = capturedEvent.stroke !== 'serve' && !volley
+            && !capturedEvent.smash && contactSample
             ? lungeWeight(Math.hypot(
               (contactSample[0] - contactSample[xIndex]) * SCALE,
               (contactSample[1] - contactSample[zIndex]) * SCALE,
@@ -1530,14 +1533,16 @@ function ThreeCourt({
             : 0;
           const lungeTiming = THREE.MathUtils.smoothstep(captureDelta, -16, -2)
             * (1 - THREE.MathUtils.smoothstep(captureDelta, 24, 44));
-          const lowOnly = capturedEvent.stroke !== 'serve' && contactSample
+          const lowOnly = capturedEvent.stroke !== 'serve' && !capturedEvent.smash && contactSample
             ? lowReachDrop(Math.max(0, contactSample[2] * SCALE), 0)
             : 0;
           rig.root.userData.lowReachDrop = Math.min(
             LOW_REACH_MAX_DROP,
             lowOnly * weight + LUNGE_DROP * contactLunge * lungeTiming * Math.min(1, weight * 2),
           );
-          rig.root.userData.lowReachFull = lowReachDrop(ballY, Math.hypot(localX, localZ));
+          rig.root.userData.lowReachFull = capturedEvent.smash
+            ? 0
+            : lowReachDrop(ballY, Math.hypot(localX, localZ));
           const contactPoint = rig.root.userData.contactTarget?.point as [number, number, number] | undefined;
           rig.root.userData.lunge = contactLunge > 0 && contactPoint
             ? { weight: contactLunge * lungeTiming, side: Math.sign(contactPoint[0]) || 1 }
@@ -1549,8 +1554,9 @@ function ThreeCourt({
               weight,
               handedness: capturedEvent.handedness,
               rootOffset: false,
-              hands: !capturedEvent.slice
+              hands: !capturedEvent.smash && !capturedEvent.slice
                 && recordedStrokeUsesTwoHands(capturedEvent.stroke, playerStrokeStyle, false) ? 'two' : 'one',
+              ...(capturedEvent.smash ? { smash: true } : {}),
               ...(capturedEvent.slice ? { slice: true } : {}),
               ...(shouldCompressGroundstrokeTakeBack(capturedEvent.stroke, capturedEvent.slice)
                 ? { leadScale: GROUNDSTROKE_LEAD_FRAMES / groundstrokeLeadFrames(opponentContactGap) }
@@ -1565,7 +1571,7 @@ function ThreeCourt({
         rig.root.userData.lowReachDrop = 0;
         delete rig.root.userData.lunge;
       }
-      const twoHandedStroke = !serving && !isRecordedVolley(capturedEvent?.stroke)
+      const twoHandedStroke = !serving && !capturedEvent?.smash && !isRecordedVolley(capturedEvent?.stroke)
         && recordedStrokeUsesTwoHands(stroke, playerStrokeStyle, stroke === 'backhand');
       const armPump = Math.sin(phase * 0.55) * gaitSpeed * 0.12;
       // Between shots the racket is carried, not held up by the head: in front
@@ -1843,14 +1849,15 @@ function ThreeCourt({
       // The stroke being played back (if any) decides the grip style through
       // its recovery, rather than the ball's current side after the event passes.
       const recordedStroke = rig.root.userData.capturedGroundstrokeEvent as
-        { frame: number; stroke: GroundstrokeName; slice?: boolean } | undefined;
+        { frame: number; stroke: GroundstrokeName; slice?: boolean; smash?: boolean } | undefined;
       const twoHandedSide = Boolean(recordedStroke)
         && recordedStroke!.stroke !== 'serve'
         && recordedStroke!.stroke !== 'smash'
+        && !recordedStroke!.smash
         && !isRecordedVolley(recordedStroke!.stroke)
         && recordedStrokeUsesTwoHands(recordedStroke!.stroke, playerStrokeStyle, false);
       const recordedTwoHanded = recordedStroke
-        ? twoHandedSide && !recordedStroke.slice
+        ? twoHandedSide && !recordedStroke.slice && !recordedStroke.smash
         : twoHandedStroke;
       const sliceTakeBackHold = recordedStroke?.slice && twoHandedSide && frame <= recordedStroke.frame
         ? 1 - THREE.MathUtils.smoothstep(

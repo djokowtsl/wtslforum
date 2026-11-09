@@ -59,8 +59,10 @@ export function recordedStrokeUsesTwoHands(
 }
 
 export type GroundstrokeMotionSources = {
-  [stroke in GroundstrokeName]: string;
+  [stroke in Exclude<GroundstrokeName, 'smash'>]: string;
 } & {
+  /** Optional recorded smash; overheads fall back to their normal stroke. */
+  smash?: string;
   /** Optional captured one-handed backhand; missing data keeps the prior clip. */
   backhandOne?: string;
   /** Recorded walk / jog / run for the arms between points (optional). */
@@ -79,6 +81,8 @@ export interface GroundstrokePlayback {
   oneHanded?: boolean;
   /** A detected slice uses the volley recording as a high-to-low stand-in. */
   slice?: boolean;
+  /** A rally overhead uses the optional recorded smash, never a serve. */
+  smash?: boolean;
   /** Speed up the take-back when a fast reply leaves too little preparation time. */
   leadScale?: number;
   /** Recorded contact ball position in the player's local court space. */
@@ -121,9 +125,8 @@ const CONTACT_SECONDS: Record<MotionName, number> = {
   forehand: 13.4,
   backhand: 9.28,
   serve: 2.56,
-  // Tennis-MoCap's overhead-smash clip peaks at a right-wrist speed maximum
-  // near 7.85 s; the source recording has no ball-contact marker.
-  smash: 7.85,
+  // Jarua's recorded smash peaks near 7.6 s; the source has no ball marker.
+  smash: 7.6,
   // Tennis-MoCap volley excerpts use a 25 Hz BVH and retain the selected
   // right-wrist speed peak near excerpt frame 23. The dataset has no ball marker.
   'volley-forehand': 0.92,
@@ -289,7 +292,10 @@ function mirrorQuaternionX(quaternion: THREE.Quaternion) {
 
 export class DmoCapturedGroundstroke {
   private readonly targets = new Map<string, THREE.Bone>();
-  private readonly motions: Record<GroundstrokeName, MotionClip> & { backhandOne?: MotionClip };
+  private readonly motions: Omit<Record<GroundstrokeName, MotionClip>, 'smash'> & {
+    smash?: MotionClip;
+    backhandOne?: MotionClip;
+  };
   private readonly model: THREE.Group;
   private readonly space: THREE.Group;
 
@@ -311,10 +317,16 @@ export class DmoCapturedGroundstroke {
       forehand: this.prepare('forehand', sources.forehand, rest),
       backhand: this.prepare('backhand', sources.backhand, rest),
       serve: this.prepare('serve', sources.serve, rest),
-      smash: this.prepare('smash', sources.smash, rest),
       'volley-forehand': this.prepare('volley-forehand', sources['volley-forehand'], rest),
       'volley-backhand': this.prepare('volley-backhand', sources['volley-backhand'], rest),
     };
+    if (sources.smash) {
+      try {
+        this.motions.smash = this.prepare('smash', sources.smash, rest);
+      } catch (error) {
+        console.warn('Captured smash could not be prepared; overheads keep the existing stroke.', error);
+      }
+    }
     if (sources.backhandOne) {
       try {
         this.motions.backhandOne = this.prepare('backhandOne', sources.backhandOne, rest);
@@ -326,6 +338,10 @@ export class DmoCapturedGroundstroke {
 
   get hasOneHandedBackhand() {
     return Boolean(this.motions.backhandOne);
+  }
+
+  get hasSmash() {
+    return Boolean(this.motions.smash);
   }
 
   private prepare(stroke: MotionName, text: string, rest: Map<string, NativeRest>): MotionClip {
@@ -390,16 +406,21 @@ export class DmoCapturedGroundstroke {
     const weight = THREE.MathUtils.clamp(playback.weight, 0, 1);
     if (weight <= 0 || !Number.isFinite(playback.deltaSeconds)) return null;
     const isVolley = playback.stroke === 'volley-forehand' || playback.stroke === 'volley-backhand';
-    const volley = playback.stroke !== 'serve' && (isVolley || playback.slice)
+    const useSmash = playback.stroke === 'smash'
+      || (playback.smash === true && playback.stroke !== 'serve');
+    const smash = useSmash ? this.motions.smash : undefined;
+    const volley = !smash && playback.stroke !== 'serve' && (isVolley || playback.slice)
       ? this.motions[playback.stroke === 'forehand' || playback.stroke === 'volley-forehand'
         ? 'volley-forehand'
         : 'volley-backhand']
       : undefined;
     const timeScale = playback.slice && !isVolley ? SLICE_TIME_SCALE : 1;
+    const fallbackStroke = playback.stroke === 'smash' ? 'forehand' : playback.stroke;
     const motion = volley
+      || smash
       || (playback.stroke === 'backhand' && playback.oneHanded && this.motions.backhandOne
       ? this.motions.backhandOne
-      : this.motions[playback.stroke]);
+      : this.motions[fallbackStroke]);
     const mirrored = playback.handedness === 'left';
     const pairs = mirrored ? motion.leftPairs : motion.rightPairs;
     const leadScale = playback.deltaSeconds < 0

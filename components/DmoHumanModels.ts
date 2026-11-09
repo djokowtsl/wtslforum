@@ -17,10 +17,21 @@ const UP = new THREE.Vector3(0, 1, 0);
 const nativeMotionSources = new WeakMap<THREE.Group, GroundstrokeMotionSources>();
 
 async function loadGroundstrokeMotionSources(base: string, signal: AbortSignal): Promise<GroundstrokeMotionSources> {
-  const load = async (stroke: GroundstrokeName) => {
+  const load = async (stroke: Exclude<GroundstrokeName, 'smash'>) => {
     const response = await fetch(`${base}/tennis-${stroke}.bvh`, { signal });
     if (!response.ok) throw new Error(`Captured ${stroke} motion request failed (${response.status}).`);
     return response.text();
+  };
+  const loadSmash = async () => {
+    try {
+      const response = await fetch(`${base}/tennis-smash-jarua.bvh`, { signal });
+      if (!response.ok) throw new Error(`Captured smash request failed (${response.status}).`);
+      return await response.text();
+    } catch (error) {
+      if (signal.aborted) throw error;
+      console.warn('Captured smash could not load; overheads keep the existing stroke.', error);
+      return undefined;
+    }
   };
   // Walking / jogging / running arms are optional: if they cannot load, the
   // player still loads with the existing carry behavior.
@@ -56,7 +67,7 @@ async function loadGroundstrokeMotionSources(base: string, signal: AbortSignal):
     load('forehand'),
     load('backhand'),
     load('serve'),
-    load('smash'),
+    loadSmash(),
     load('volley-forehand'),
     load('volley-backhand'),
     loadLocomotion(),

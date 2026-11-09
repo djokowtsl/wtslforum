@@ -101,5 +101,16 @@
     "license": "CC-BY-SA-3.0",
     "notice": "NATIVE-RIG-AND-MOTION.md",
     "modifications": "Resampled 100 Hz to 25 Hz by retaining every fourth frame; rotations unchanged. Used for one-handed backhands."
+  },
+  {
+    "filename": "tennis-smash-jarua.bvh",
+    "bytes": 565871,
+    "source": "https://github.com/jdpulgarin/Tennis-MoCap/blob/main/data/jarua_Remate.bvh",
+    "sourceSha256": "6661fbb6cef61fd146a8624eba09e5a8a0fa14e8849c783643ef63141e245f7a",
+    "origin": "Tennis-MoCap, Caldas-Colombia tennis players (Pulgarin-Giraldo et al.)",
+    "license": "CC-BY-SA-3.0",
+    "licenseUrl": "https://creativecommons.org/licenses/by-sa/3.0/",
+    "notice": "NATIVE-RIG-AND-MOTION.md",
+    "modifications": "Resampled 100 Hz to 25 Hz by retaining every fourth frame; rotations unchanged. Used for rally overheads at or above 2.2 m; contact at 7.6 s (hand-picked)."
   }
 ]
