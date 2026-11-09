@@ -9,7 +9,7 @@ import {
   type LivePreMatchProbability,
   type LiveStream,
 } from '@/lib/liveBroadcast';
-import type { LiveBroadcastScore } from '@/lib/liveBroadcastScore';
+import { fetchLiveDmoJson, freshLiveDmoScore, LIVE_DMO_SCORE_MAX_AGE_MS, type ReceivedLiveScore } from '@/lib/liveDmoRefresh';
 import DmoLiveDisplay from './DmoLiveDisplay';
 import {
   resolveLiveDmoUmpireFallbackScoreSource,
@@ -44,7 +44,6 @@ type Broadcast = {
   likelyOfficial: boolean;
   updatedAt: string;
   stale: boolean;
-  liveScore?: LiveBroadcastScore | null;
   viewerCount?: number | null;
   viewers?: Array<{ displayName: string; avatarUrl: string | null }>;
 };
@@ -74,6 +73,7 @@ function mergePointLog(existing: Te4LivePoint[], incoming: Te4LivePoint[]) {
 }
 
 export default function DmoLiveViewer({ canWatch, voiceServer = '' }: Props) {
+  const [liveScores, setLiveScores] = useState<Record<string, ReceivedLiveScore>>({});
   const [broadcasts, setBroadcasts] = useState<Broadcast[]>([]);
   const [activeBroadcastIndex, setActiveBroadcastIndex] = useState(0);
   const broadcastListRef = useRef<HTMLDivElement>(null);
@@ -154,6 +154,8 @@ export default function DmoLiveViewer({ canWatch, voiceServer = '' }: Props) {
     }
     let active = true;
     let running = false;
+    const controller = new AbortController();
+    let lastTransportWarning = 0;
     const params = new URLSearchParams(window.location.search);
     const hashId = window.location.hash.startsWith('#broadcast-')
       ? decodeURIComponent(window.location.hash.slice('#broadcast-'.length))
@@ -163,11 +165,24 @@ export default function DmoLiveViewer({ canWatch, voiceServer = '' }: Props) {
       if (running || !active) return;
       running = true;
       try {
-        const response = await fetch('/api/live-dmo/current', { cache: 'no-store' });
-        const body = await response.json().catch(() => null);
-        if (!response.ok) throw new Error(typeof body?.error === 'string' ? body.error : `Live feed unavailable (${response.status}).`);
+        const { body, durationMs } = await fetchLiveDmoJson('/api/live-dmo/current', controller.signal);
         if (!active) return;
-        const nextBroadcasts = Array.isArray(body?.broadcasts) ? body.broadcasts as Broadcast[] : [];
+        if (!Array.isArray(body?.broadcasts)) throw new Error('The live feed returned an invalid broadcast list.');
+        const nextBroadcasts = body.broadcasts as Broadcast[];
+        const servedAt = Date.parse(body?.transport?.servedAt ?? '');
+        const snapshotAgeMs = Math.max(0, ...nextBroadcasts
+          .filter((broadcast) => broadcast.status === 'live' && !broadcast.replay && broadcast.snapshot)
+          .map((broadcast) => Number.isFinite(servedAt)
+            ? Math.max(0, servedAt - Date.parse(broadcast.updatedAt)) || 0
+            : 0));
+        if ((durationMs > 2_500 || snapshotAgeMs > 5_000) && Date.now() - lastTransportWarning > 15_000) {
+          lastTransportWarning = Date.now();
+          console.warn('[live-broadcast] snapshot transport delay', {
+            requestDurationMs: durationMs,
+            serverReadDurationMs: body?.transport?.readDurationMs,
+            snapshotAgeAtServerMs: snapshotAgeMs,
+          });
+        }
         setBroadcasts((current) => {
           const currentById = new Map(current.map((broadcast) => [broadcast.id, broadcast]));
           return nextBroadcasts.map((broadcast) => {
@@ -316,9 +331,57 @@ export default function DmoLiveViewer({ canWatch, voiceServer = '' }: Props) {
     );
     return () => {
       active = false;
+      controller.abort();
       window.clearInterval(timer);
     };
   }, [canWatch, hasActiveDmo]);
+
+  const activeScoreIdsKey = broadcasts
+    .filter((broadcast) => broadcast.status === 'live' && broadcast.broadcastMode === 'auto' && !broadcast.replay)
+    .map((broadcast) => broadcast.id).sort().join('|');
+
+  useEffect(() => {
+    setLiveScores({});
+    if (!canWatch || !activeScoreIdsKey) return;
+    const ids = activeScoreIdsKey.split('|');
+    const controller = new AbortController();
+    let active = true;
+    let running = false;
+    const refreshScores = async () => {
+      if (!active || running) return;
+      running = true;
+      try {
+        const { body } = await fetchLiveDmoJson('/api/live-dmo/scores', controller.signal);
+        if (!active) return;
+        if (!body.scores || typeof body.scores !== 'object' || Array.isArray(body.scores)) {
+          throw new Error('The score feed returned an invalid response.');
+        }
+        const receivedAt = Date.now();
+        setLiveScores(Object.fromEntries(ids.map((id) => [
+          id, { score: body?.scores?.[id] ?? null, receivedAt },
+        ])));
+      } catch {
+        if (active) setLiveScores({});
+      } finally {
+        running = false;
+      }
+    };
+    void refreshScores();
+    const timer = window.setInterval(() => { void refreshScores(); }, LIVE_DMO_UPDATE_INTERVAL_MS);
+    const expiry = window.setInterval(() => {
+      setLiveScores((current) => {
+        const entries = Object.entries(current);
+        const fresh = entries.filter(([, entry]) => Date.now() - entry.receivedAt < LIVE_DMO_SCORE_MAX_AGE_MS);
+        return fresh.length === entries.length ? current : Object.fromEntries(fresh);
+      });
+    }, 500);
+    return () => {
+      active = false;
+      controller.abort();
+      window.clearInterval(timer);
+      window.clearInterval(expiry);
+    };
+  }, [canWatch, activeScoreIdsKey]);
 
   const activeStreamIdsKey = broadcasts
     .filter((broadcast) => broadcast.status === 'live' && !broadcast.replay)
@@ -596,7 +659,7 @@ export default function DmoLiveViewer({ canWatch, voiceServer = '' }: Props) {
                           state={broadcast.status}
                           playbackSpeed={broadcast.replaySpeed}
                           liveScore={broadcast.broadcastMode === 'auto' && !broadcast.replay
-                            ? broadcast.liveScore ?? null
+                            ? freshLiveDmoScore(liveScores[broadcast.id])
                             : undefined}
                           stale={broadcast.stale}
                           updatedAt={broadcast.updatedAt}
@@ -616,7 +679,7 @@ export default function DmoLiveViewer({ canWatch, voiceServer = '' }: Props) {
                       state={broadcast.status}
                       playbackSpeed={broadcast.replay ? broadcast.replaySpeed : 1}
                       liveScore={broadcast.broadcastMode === 'auto' && !broadcast.replay
-                        ? broadcast.liveScore ?? null
+                        ? freshLiveDmoScore(liveScores[broadcast.id])
                         : undefined}
                       stale={broadcast.stale}
                       updatedAt={broadcast.updatedAt}

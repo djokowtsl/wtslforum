@@ -52,7 +52,7 @@ function validRequest(path, method = 'POST') {
 }
 
 const isSameSiteMutation = (request) => request.headers.get('origin') === 'https://forum.test';
-const nextServer = { NextResponse: { json: (body, init) => Response.json(body, init) } };
+const nextServer = { after: () => {}, NextResponse: { json: (body, init) => Response.json(body, init) } };
 
 test('only admins can start a live DMO broadcast', async () => {
   for (const user of [null, { discordId: 'member', isAdmin: false }]) {

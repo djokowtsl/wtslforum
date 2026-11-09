@@ -1,17 +1,16 @@
-import { NextResponse } from 'next/server';
+import { after, NextResponse } from 'next/server';
 import { getSession } from '@/lib/auth';
 import { sql } from '@/lib/db';
 import { hasCompletedDmoPoints } from '@/lib/te4DmoLive';
 import { cleanupExpiredLiveDmoBroadcasts, isLiveDmoReplayPath } from '@/lib/liveDmoStorage';
 import { isSameSiteMutation } from '@/lib/liveRequestSecurity';
-import { getLiveBroadcastScoreFeed } from '@/lib/liveScores';
-import { scoreForLiveBroadcast } from '@/lib/liveBroadcastScore';
 import { z } from 'zod';
 
 export const dynamic = 'force-dynamic';
 export const maxDuration = 120;
 const viewerHeartbeatSchema = z.object({ broadcastId: z.string().uuid() }).strict();
 const MAX_HEARTBEAT_BYTES = 512;
+let lastCleanupScheduledAt = 0;
 
 const PRIVATE_HEADERS = {
   'Cache-Control': 'private, no-store',
@@ -19,12 +18,25 @@ const PRIVATE_HEADERS = {
 };
 
 export async function GET() {
+  const startedAt = performance.now();
   const user = await getSession();
   if (!user) {
     return NextResponse.json({ error: 'Sign in to watch live broadcasts.' }, { status: 401, headers: PRIVATE_HEADERS });
   }
   try {
-    await cleanupExpiredLiveDmoBroadcasts();
+    // Never delay frame delivery for Discord announcement edits or Blob deletes.
+    // Next keeps this work alive after sending the response. Coalesce per instance.
+    if (Date.now() - lastCleanupScheduledAt >= 15_000) {
+      lastCleanupScheduledAt = Date.now();
+      after(async () => {
+        try {
+          await cleanupExpiredLiveDmoBroadcasts();
+        } catch (error) {
+          lastCleanupScheduledAt = 0;
+          console.error('[live-broadcast] background cleanup failed', error instanceof Error ? error.name : 'UnknownError');
+        }
+      });
+    }
     const rows = await sql`
       SELECT b.id, b.owner_discord_id, b.status, b.payload, b.sequence,
         b.started_at, b.updated_at, u.display_name AS owner_name,
@@ -116,24 +128,15 @@ export async function GET() {
         stale: Boolean(row.stale),
       }];
     });
-    const needsLiveScore = broadcasts.some((broadcast) =>
-      broadcast.broadcastMode === 'auto' && !broadcast.replay && broadcast.status === 'live',
-    );
-    const scoreFeed = needsLiveScore ? await getLiveBroadcastScoreFeed() : null;
-    const scoredBroadcasts = broadcasts.map((broadcast) => {
-      if (broadcast.broadcastMode !== 'auto' || broadcast.replay) return broadcast;
-      const players = broadcast.snapshot?.players ?? broadcast.players;
-      return {
-        ...broadcast,
-        liveScore: broadcast.status === 'live' && players
-          ? scoreForLiveBroadcast(scoreFeed, players, broadcast.snapshot?.bestOf)
-          : null,
-      };
-    });
+    const durationMs = Math.round(performance.now() - startedAt);
+    if (durationMs > 1_200) {
+      console.warn('[live-broadcast] slow snapshot read', { durationMs, broadcasts: broadcasts.length });
+    }
     return NextResponse.json({
-      broadcasts: scoredBroadcasts,
-      broadcast: scoredBroadcasts[0] ?? null,
-    }, { headers: PRIVATE_HEADERS });
+      broadcasts,
+      broadcast: broadcasts[0] ?? null,
+      transport: { servedAt: new Date().toISOString(), readDurationMs: durationMs },
+    }, { headers: { ...PRIVATE_HEADERS, 'Server-Timing': `snapshot;dur=${durationMs}` } });
   } catch (error) {
     console.error('[live-broadcast] viewer read failed', error instanceof Error ? error.name : 'UnknownError');
     return NextResponse.json(

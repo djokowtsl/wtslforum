@@ -124,6 +124,7 @@ async function readUpdate(request: Request) {
 }
 
 export async function PATCH(request: Request, context: RouteContext) {
+  const startedAt = performance.now();
   if (!isSameSiteMutation(request)) {
     return NextResponse.json({ error: 'Request origin could not be verified.' }, { status: 403, headers: PRIVATE_HEADERS });
   }
@@ -204,7 +205,17 @@ export async function PATCH(request: Request, context: RouteContext) {
     if (!rows.length) {
       return NextResponse.json({ error: 'Broadcast ended or this update is out of date.' }, { status: 409, headers: PRIVATE_HEADERS });
     }
-    return NextResponse.json({ ok: true }, { headers: PRIVATE_HEADERS });
+    const durationMs = Math.round(performance.now() - startedAt);
+    if (durationMs > 1_200) {
+      console.warn('[live-broadcast] slow snapshot upload', {
+        durationMs,
+        sequence: update.data.sequence,
+        frameCount: update.data.snapshot?.frameCount ?? null,
+      });
+    }
+    return NextResponse.json({ ok: true }, {
+      headers: { ...PRIVATE_HEADERS, 'Server-Timing': `upload;dur=${durationMs}` },
+    });
   } catch (error) {
     console.error('[live-broadcast] update failed', error instanceof Error ? error.name : 'UnknownError');
     return NextResponse.json({ error: 'Live broadcasting is temporarily unavailable.' }, { status: 503, headers: PRIVATE_HEADERS });

@@ -1,9 +1,29 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
+import { readFile } from 'node:fs/promises';
+import { createRequire } from 'node:module';
 import {
   advanceGait, gaitFeet, newGaitState, returnReadiness, splitStepLift, MAX_LATERAL_REACH,
   rallyOverWeight, RALLY_OVER_KNOWN_SECONDS, RALLY_OVER_UNANSWERED_SECONDS,
 } from '../lib/liveCourtGait.ts';
+
+// Next resolves extensionless TS imports; raw Node ESM does not. Use the same
+// source loader as the replay snapshot tests, without changing production imports.
+const require = createRequire(import.meta.url);
+async function loadTs(path, overrides = {}) {
+  const source = await readFile(new URL(path, import.meta.url), 'utf8');
+  const { code } = require('next/dist/build/swc').transformSync(source, {
+    jsc: { parser: { syntax: 'typescript' }, target: 'es2022' },
+    module: { type: 'commonjs' },
+  });
+  const module = { exports: {} };
+  new Function('module', 'exports', 'require', code)(module, module.exports,
+    name => overrides[name] ?? require(name));
+  return module.exports;
+}
+const umpireAudio = await loadTs('../lib/xktUmpireAudio.ts');
+const umpire = await loadTs('../lib/liveCourtUmpire.ts', { './xktUmpireAudio': umpireAudio });
+const replaySnapshot = await loadTs('../lib/te4DmoReplaySnapshot.ts', { './liveCourtUmpire': umpire });
 
 function run(direction, speedMs, frames = 240, fps = 60) {
   const state = newGaitState();
@@ -110,7 +130,7 @@ test('last shot lookup finds the player\'s own previous shot however far back', 
 });
 
 test('changeovers come from the score: odd games, odd sets, every six tie-break points', async () => {
-  const { changeoversAfterPoints } = await import('../lib/te4DmoReplaySnapshot.ts');
+  const { changeoversAfterPoints } = replaySnapshot;
   // Build a set point by point: games alternate servers; a game is 4 points.
   const points = [];
   let server = 1;
@@ -141,7 +161,7 @@ test('changeovers come from the score: odd games, odd sets, every six tie-break 
 });
 
 test('tie-break changeovers fall every six points and a 7-6 set changes ends', async () => {
-  const { changeoversAfterPoints } = await import('../lib/te4DmoReplaySnapshot.ts');
+  const { changeoversAfterPoints } = replaySnapshot;
   const points = [];
   let server = 1;
   for (let game = 0; game < 12; game++) {
@@ -160,7 +180,7 @@ test('tie-break changeovers fall every six points and a 7-6 set changes ends', a
 });
 
 test('a replay that starts mid-set counts from its first game score', async () => {
-  const { changeoversAfterPoints } = await import('../lib/te4DmoReplaySnapshot.ts');
+  const { changeoversAfterPoints } = replaySnapshot;
   const points = [
     { s: 1, set: 1, tb: 0, g: '2-2' }, { s: 1, set: 1, tb: 0, g: '2-2' },
     { s: 2, set: 1, tb: 0, g: '3-2' }, { s: 2, set: 1, tb: 0, g: '3-2' },
