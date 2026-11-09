@@ -662,6 +662,69 @@ test('DMO tag edits reject non-admins without updating metadata', async () => {
   assert.equal(updated, false);
 });
 
+test('DMO public publishing is admin-only, audited, and reversible', async () => {
+  let user = { ...admin, discordId: 'admin-discord-id' };
+  const publications = [];
+  const revocations = [];
+  const handlers = loadRoute('app/api/admin/dmo-submissions/[id]/publication/route.ts', {
+    'next/server': { NextResponse: { json: (body, init) => Response.json(body, init) } },
+    '@/lib/auth': { getSession: async () => user },
+    '@/lib/dmoReplayLibrary': {
+      isDmoReplayId: (value) => /^\d{1,19}$/.test(value) && value !== '0',
+      publishDmoReplaySubmission: async (input) => {
+        publications.push(input);
+        return true;
+      },
+      revokeDmoReplayPublicationOverride: async (id) => {
+        revocations.push(id);
+        return true;
+      },
+    },
+  });
+  const params = { params: Promise.resolve({ id: '41' }) };
+  const response = await handlers.POST(
+    new Request('https://forum.test/api/admin/dmo-submissions/41/publication', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ reason: 'Permission confirmed with both players' }),
+    }),
+    params,
+  );
+  assert.equal(response.status, 200);
+  assert.deepEqual(publications, [{
+    id: '41',
+    authorizedBy: 'admin-discord-id',
+    reason: 'Permission confirmed with both players',
+  }]);
+
+  const invalidReason = await handlers.POST(
+    new Request('https://forum.test/api/admin/dmo-submissions/41/publication', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ reason: 'ok' }),
+    }),
+    params,
+  );
+  assert.equal(invalidReason.status, 400);
+  assert.equal(publications.length, 1);
+
+  user = { ...user, isAdmin: false };
+  const forbidden = await handlers.DELETE(
+    new Request('https://forum.test/api/admin/dmo-submissions/41/publication', { method: 'DELETE' }),
+    params,
+  );
+  assert.equal(forbidden.status, 403);
+  assert.deepEqual(revocations, []);
+
+  user = { ...user, isAdmin: true };
+  const removed = await handlers.DELETE(
+    new Request('https://forum.test/api/admin/dmo-submissions/41/publication', { method: 'DELETE' }),
+    params,
+  );
+  assert.equal(removed.status, 200);
+  assert.deepEqual(revocations, ['41']);
+});
+
 test('Discord DMO sync preserves the original London submission date', async () => {
   const originalFetch = globalThis.fetch;
   const originalToken = process.env.DISCORD_BOT_TOKEN;
@@ -795,6 +858,11 @@ test('Forum DMO intake keeps Coach publication behind its own explicit consent',
           groupSyncs.push(id);
           return { status: 'synced' };
         },
+      },
+      '@/lib/dmoSubmissionUpload': {
+        isOwnedDmoSubmissionUploadPath: () => true,
+        MAX_DMO_SUBMISSION_BYTES: 20 * 1024 * 1024,
+        safeDmoSubmissionFileName: (name) => name,
       },
     });
 

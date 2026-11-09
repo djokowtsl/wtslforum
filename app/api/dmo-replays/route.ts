@@ -1,6 +1,10 @@
 import { NextResponse } from 'next/server';
 import { getSession } from '@/lib/auth';
-import { isDmoReplayId, listDmoReplaySubmissions } from '@/lib/dmoReplayLibrary';
+import {
+  isDmoReplayId,
+  listDmoReplaySubmissions,
+  listPublicDmoReplays,
+} from '@/lib/dmoReplayLibrary';
 
 export const dynamic = 'force-dynamic';
 
@@ -11,12 +15,6 @@ const PUBLIC_HEADERS = {
 
 export async function GET(request: Request) {
   const user = await getSession();
-  if (!user) {
-    return NextResponse.json(
-      { error: 'Sign in to browse match replays.' },
-      { status: 401, headers: PUBLIC_HEADERS },
-    );
-  }
   const url = new URL(request.url);
   const rawCursor = url.searchParams.get('cursor');
   const cursor = rawCursor && isDmoReplayId(rawCursor) ? rawCursor : null;
@@ -26,7 +24,9 @@ export async function GET(request: Request) {
   }
 
   try {
-    const page = await listDmoReplaySubmissions({ cursor, query });
+    const page = user
+      ? await listDmoReplaySubmissions({ cursor, query })
+      : await listPublicDmoReplays({ cursor, query });
     return NextResponse.json(page, { headers: PUBLIC_HEADERS });
   } catch {
     return NextResponse.json(

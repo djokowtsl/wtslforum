@@ -1,1 +1,2 @@
 - [Character profile copy](character-shot-choice-guidance.md) — keep profile prose conversational, source attribution compact, and serve speed separate from first-serve percentage.
+- [DMO replay public publication](dmo-replay-publication.md) — guests see only consented or explicitly admin-published DMO files; keep other submissions private and Coach consent separate.
