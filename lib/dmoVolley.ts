@@ -72,6 +72,7 @@ export function isCapturedVolleyShot(
   // Include the interpolated contact as the terminal sample, not the outgoing
   // flight. This also checks the final interval when the hit is between samples.
   incomingSamples.push({ frame: event.frame, values: contact });
+  const contactSample = incomingSamples.at(-1);
   for (const sample of incomingSamples) {
     if (!Number.isFinite(sample.frame) || !sample.values.every(Number.isFinite)) return false;
     const gap = sample.frame - previousFrame;
@@ -92,7 +93,11 @@ export function isCapturedVolleyShot(
       }
       // Reject a bounce missed between samples: an incoming free flight cannot
       // change from descending to rising or gain upward velocity abruptly.
-      if (previousVerticalSpeed !== undefined
+      // (Not on the contact point: when the hit falls between samples it is
+      // interpolated toward the next one, already on the outgoing shot, so the
+      // ball seemed to gain upward speed and real volleys were rejected as
+      // bounced. Its height still counts.)
+      if (sample !== contactSample && previousVerticalSpeed !== undefined
         && ((previousVerticalSpeed < -0.3 && speed > 0.3)
           || speed - previousVerticalSpeed > 2)) return false;
       previousVerticalSpeed = speed;

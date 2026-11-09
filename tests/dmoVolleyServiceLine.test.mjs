@@ -24,3 +24,18 @@ test('volleys up to the service line and a little behind it', () => {
   assert.equal(flight(700), true, 'just behind it');
   assert.equal(flight(1000), false, 'deep in the court: a groundstroke');
 });
+
+test('a volley hit between two samples is still a volley (the contact is blended toward the outgoing shot)', () => {
+  // Descending incoming flight, sampled every 5 frames; the hit at frame 62,
+  // between the last incoming sample (60) and the first outgoing one, so its
+  // interpolated height sits a little above the incoming arc.
+  const event = { frame: 62, kind: 'shot', shotType: 'rally', player: 1 };
+  const events = [{ frame: 0, kind: 'shot', shotType: 'rally', player: 2 }, event];
+  const samples = Array.from({ length: 13 }, (_, i) => ({
+    frame: i * 5, values: [-900 + i * 100, 70, 200 - i * 8, 300, 0, -900, 0],
+  }));
+  const contact = [340, 70, 108, 300, 0, -900, 0];
+  assert.equal(isCapturedVolleyShot(event, contact, samples, events, [], 60), true);
+  // A real bounce before the hit is still caught.
+  assert.equal(isCapturedVolleyShot(event, contact, samples, events, [{ frame: 40, kind: 'bounce' }], 60), false);
+});
