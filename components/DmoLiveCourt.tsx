@@ -1120,7 +1120,7 @@ function DmoLiveCourt({
     <section
       ref={sceneElementRef}
       className={styles.scene}
-      aria-label="Live court view"
+      aria-label="Live view"
       onPointerDownCapture={(event) => handleSoundActivationGesture(event.target)}
       onPointerCancelCapture={() => { soundPointerActivationRef.current = false; }}
       onKeyDownCapture={(event) => {
@@ -1130,7 +1130,7 @@ function DmoLiveCourt({
     >
       <div className={styles.sceneToolbar}>
         <div className={styles.sceneTitle}>
-          <strong>LIVE COURT</strong>
+          <strong>LIVE</strong>
         </div>
         <div className={styles.sceneControls}>
           <label className={styles.cameraControl}>

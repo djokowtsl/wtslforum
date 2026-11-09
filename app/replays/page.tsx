@@ -17,6 +17,7 @@ export default async function ReplaysPage({
   if (!user) {
     return (
       <PageHero
+        className="replays-page-hero"
         eyebrow="Official WTSL match replays"
         title="Match Replays"
         actions={<a className="btn btn-discord btn-sm" href="/api/auth/discord">Log in with Discord</a>}
@@ -36,6 +37,7 @@ export default async function ReplaysPage({
   return (
     <>
       <PageHero
+        className="replays-page-hero"
         eyebrow="Official WTSL match replays"
         title="Match Replays"
         actions={<Link className="btn btn-sm" href="/livestreams">Live streams</Link>}

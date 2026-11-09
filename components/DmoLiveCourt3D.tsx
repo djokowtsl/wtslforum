@@ -31,7 +31,7 @@ import {
   serveCaptureWeight,
   type GroundstrokeName,
 } from './DmoCapturedGroundstroke';
-import { courtSurfaceDisplayName, isIndoorDmoVenue } from '@/lib/te4DmoSurface';
+import { isIndoorDmoVenue } from '@/lib/te4DmoSurface';
 import {
   deriveLiveCourtSoundEvents,
   loadCourtEffectSamples,
@@ -371,7 +371,6 @@ function ThreeCourt({
   const [effectsVolume, setEffectsVolume] = useState(0.9);
   const [hasCourtData, setHasCourtData] = useState(snapshot.court.length > 0);
   const [modelStatus, setModelStatus] = useState<'loading' | 'ready' | 'partial' | 'failed'>('loading');
-  const surfaceLabel = courtSurfaceDisplayName(surface);
   const [shotCallout, setShotCallout] = useState<{
     player: string;
     shotType: 'serve' | 'rally';
@@ -2711,7 +2710,7 @@ function ThreeCourt({
       <div className={styles.toolbar}>
         <div className={styles.title}>
           <span className={styles.liveDot} aria-hidden="true" />
-          <strong>{fullReplay ? 'FULL MATCH REPLAY' : 'LIVE COURT'}</strong>
+          <strong>{fullReplay ? 'FULL MATCH REPLAY' : 'LIVE'}</strong>
           {!fullReplay && courtDelay !== null && courtDelay >= 1 && (
             <span
               style={{
@@ -2725,9 +2724,6 @@ function ThreeCourt({
               ~{courtDelay} s behind live
             </span>
           )}
-          <span className={styles.surfaceBadge} data-surface={surface} aria-label={`Court surface: ${surfaceLabel.toLowerCase()}`}>
-            {surfaceLabel}
-          </span>
         </div>
         <div className={styles.controls} aria-label="Court view controls">
           <div className={styles.presets} role="group" aria-label="Camera angle">

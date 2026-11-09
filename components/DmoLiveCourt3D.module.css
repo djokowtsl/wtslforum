@@ -163,37 +163,6 @@
   box-shadow: 0 0 0 4px rgba(229, 115, 96, .14);
 }
 
-.surfaceBadge {
-  display: inline-flex;
-  align-items: center;
-  min-height: 20px;
-  padding: 3px 7px;
-  border: 1px solid rgba(161, 181, 208, .3);
-  border-radius: 999px;
-  background: rgba(90, 108, 134, .18);
-  color: #d1dbea;
-  font: 750 8px/1 system-ui, sans-serif;
-  letter-spacing: .08em;
-}
-
-.surfaceBadge[data-surface='clay'] {
-  border-color: rgba(226, 149, 119, .46);
-  background: rgba(154, 82, 62, .24);
-  color: #f0c0a8;
-}
-
-.surfaceBadge[data-surface='grass'] {
-  border-color: rgba(162, 199, 129, .42);
-  background: rgba(81, 115, 64, .26);
-  color: #c5e0ad;
-}
-
-.surfaceBadge[data-surface='hard'] {
-  border-color: rgba(135, 176, 230, .42);
-  background: rgba(65, 100, 150, .27);
-  color: #c6ddfa;
-}
-
 .controls {
   display: flex;
   align-items: center;
