@@ -429,9 +429,13 @@ test('stadium keeps its structure and clear score screen without smeared ribbon 
     assert.equal(named(superstructure, 'wtsl-sideline-riser-0').length, 0);
     const blockingArchitecture = [];
     superstructure.traverse((object) => {
-      if (/retaining|riser|seat-cap|stadium-rib/i.test(object.name)) blockingArchitecture.push(object.name);
+      if (
+        /retaining|riser|seat-cap|stadium-rib/i.test(object.name)
+        && !/stadium-(?:section|concourse)-stair-risers/i.test(object.name)
+      ) blockingArchitecture.push(object.name);
     });
-    assert.deepEqual(blockingArchitecture, [], 'no retaining walls, caps, or ribs interrupt the court view');
+    assert.deepEqual(blockingArchitecture, [],
+      'stair risers stay in passageways, not in the court sightline');
     assert.equal(named(superstructure, 'wtsl-advertising-board-baseline').length, 4);
     assert.equal(named(superstructure, 'wtsl-advertising-board-sideline').length, 4);
     assert.equal(named(superstructure, 'wtsl-scoreboard-screen').length, 2);
@@ -480,6 +484,24 @@ test('stadium keeps its structure and clear score screen without smeared ribbon 
     assert.equal(Boolean(scene.getObjectByName('wtsl-indoor-ceiling')), indoor);
     assert.equal(stadium.children.some(child => /roof|shell|facade|exterior/i.test(child.name)), false);
   }
+});
+
+test('seat and concourse stairways close sightline gaps to the exterior', () => {
+  const scene = new THREE.Scene();
+  sceneApi.buildStadiumEnvironment(scene, false, undefined, 'Roland Garros');
+  const sectionTreads = scene.getObjectByName('wtsl-stadium-section-stair-treads');
+  const sectionRisers = scene.getObjectByName('wtsl-stadium-section-stair-risers');
+  const concourseTreads = scene.getObjectByName('wtsl-stadium-concourse-stair-treads');
+  const concourseRisers = scene.getObjectByName('wtsl-stadium-concourse-stair-risers');
+  assert.ok(sectionTreads && sectionRisers);
+  assert.ok(concourseTreads && concourseRisers);
+  assert.equal(sectionRisers.count,
+    (sectionTreads.userData.rowsPerAisle - 1) * sectionTreads.userData.sectionAisleCount);
+  assert.equal(sectionRisers.userData.backedByExterior, true);
+  assert.equal(concourseRisers.count,
+    concourseTreads.userData.transitionCount * concourseTreads.userData.sectionAisleCount
+      * (concourseTreads.userData.stepsPerTransition - 1));
+  assert.equal(concourseRisers.userData.backedByExterior, true);
 });
 
 test('clear livescore screen remains while smeared stand ribbons are removed', async () => {
@@ -1091,6 +1113,11 @@ test('Basel and Vienna indoor aliases get an underside-only ceiling within the b
   assert.ok(outdoorRim, 'outdoor seating has a clear structural edge against the sky');
   assert.equal(outdoorRim.userData.openSky, true, 'the rim frames the sky without a canopy');
   assert.equal(outdoorWalls.userData.openSky, true, 'outdoor walls close the bowl but leave the sky open above');
+  const outdoorStructure = scene.getObjectByName('wtsl-stadium-superstructure');
+  assert.ok(outdoorWalls.userData.upperEdge >= outdoorStructure.userData.topStandHeight + 8,
+    'the wall stands high enough to block sky through lower sections');
+  assert.ok(scene.getObjectByName('wtsl-stadium-exterior-tier-course-1'));
+  assert.ok(scene.getObjectByName('wtsl-stadium-exterior-tier-course-2'));
   assert.equal(outdoorWall.material.side, THREE.BackSide, 'wall is rendered for visitors inside the arena');
   const outdoorBowl = scene.getObjectByName('wtsl-continuous-seating-bowl');
   outdoorBowl.geometry.computeBoundingBox();

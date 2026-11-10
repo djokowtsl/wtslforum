@@ -541,6 +541,35 @@ export function buildStadiumArchitecture(
   stairTreads.castShadow = false;
   stairTreads.receiveShadow = true;
   decks.add(stairTreads);
+  const stairRisers = new THREE.InstancedMesh(
+    new THREE.BoxGeometry(1.64, rowRise - 0.11, 0.18),
+    new THREE.MeshStandardMaterial({ color: 0x303f44, roughness: 0.88 }),
+    Math.max(0, seatRows - 1) * UPPER_BOWL_AISLE_COUNT,
+  );
+  stairRisers.name = 'wtsl-stadium-section-stair-risers';
+  stairRisers.userData = {
+    sectionAisleCount: UPPER_BOWL_AISLE_COUNT,
+    transitions: Math.max(0, seatRows - 1),
+    backedByExterior: true,
+  };
+  const stairRiserTransform = new THREE.Object3D();
+  let stairRiserIndex = 0;
+  for (let row = 0; row < seatRows - 1; row += 1) {
+    const radius = rowRadiusStart(row) + rowWidth - 0.09;
+    const y = baseY + (row + 0.94) * rowRise;
+    for (let aisle = 0; aisle < UPPER_BOWL_AISLE_COUNT; aisle += 1) {
+      const angle = ((aisle + 0.5) / UPPER_BOWL_AISLE_COUNT) * Math.PI * 2;
+      const point = pointOnEllipseAtBearing(angle, innerX + radius, innerZ + radius);
+      stairRiserTransform.position.set(point.x, y, point.z);
+      stairRiserTransform.rotation.set(0, -angle - Math.PI / 2, 0);
+      stairRiserTransform.updateMatrix();
+      stairRisers.setMatrixAt(stairRiserIndex++, stairRiserTransform.matrix);
+    }
+  }
+  stairRisers.instanceMatrix.needsUpdate = true;
+  stairRisers.castShadow = false;
+  stairRisers.receiveShadow = true;
+  decks.add(stairRisers);
   const concourseStepsPerTier = 4;
   const concourseStairs = new THREE.InstancedMesh(
     new THREE.BoxGeometry(1.64, 0.11, concourseWidth / concourseStepsPerTier),
@@ -579,6 +608,43 @@ export function buildStadiumArchitecture(
   concourseStairs.castShadow = false;
   concourseStairs.receiveShadow = true;
   decks.add(concourseStairs);
+  const concourseStairRise = rowRise / concourseStepsPerTier;
+  const concourseRisers = new THREE.InstancedMesh(
+    new THREE.BoxGeometry(1.64, concourseStairRise, 0.15),
+    new THREE.MeshStandardMaterial({ color: 0x303f44, roughness: 0.88 }),
+    2 * UPPER_BOWL_AISLE_COUNT * (concourseStepsPerTier - 1),
+  );
+  concourseRisers.name = 'wtsl-stadium-concourse-stair-risers';
+  concourseRisers.userData = {
+    sectionAisleCount: UPPER_BOWL_AISLE_COUNT,
+    transitions: 2 * (concourseStepsPerTier - 1),
+    backedByExterior: true,
+  };
+  const concourseRiserTransform = new THREE.Object3D();
+  let concourseRiserIndex = 0;
+  for (const boundary of [tierRows, tierRows * 2]) {
+    const innerRadius = boundary * rowWidth + (boundary / tierRows - 1) * concourseWidth;
+    const floorY = baseY + boundary * rowRise;
+    for (let aisle = 0; aisle < UPPER_BOWL_AISLE_COUNT; aisle += 1) {
+      const angle = ((aisle + 0.5) / UPPER_BOWL_AISLE_COUNT) * Math.PI * 2;
+      for (let step = 0; step < concourseStepsPerTier - 1; step += 1) {
+        const radius = innerRadius + ((step + 1) / concourseStepsPerTier) * concourseWidth;
+        const point = pointOnEllipseAtBearing(angle, innerX + radius, innerZ + radius);
+        concourseRiserTransform.position.set(
+          point.x,
+          floorY + (step + 1) * concourseStairRise,
+          point.z,
+        );
+        concourseRiserTransform.rotation.set(0, -angle - Math.PI / 2, 0);
+        concourseRiserTransform.updateMatrix();
+        concourseRisers.setMatrixAt(concourseRiserIndex++, concourseRiserTransform.matrix);
+      }
+    }
+  }
+  concourseRisers.instanceMatrix.needsUpdate = true;
+  concourseRisers.castShadow = false;
+  concourseRisers.receiveShadow = true;
+  decks.add(concourseRisers);
 
   const boards = new THREE.Group();
   boards.name = 'wtsl-stadium-advertising-boards';
@@ -661,9 +727,8 @@ export function buildStadiumArchitecture(
   stadium.userData.maxInteriorCameraPan = maxInteriorCameraPan;
   const topStandHeight = baseY + seatRows * rowRise;
   stadium.userData.topStandHeight = topStandHeight;
-  const rimHeight = 1.8;
   const rimBaseY = topStandHeight + 0.35;
-  const rimTopY = rimBaseY + rimHeight;
+  const rimTopY = indoor ? topStandHeight + 2.15 : topStandHeight + 8.5;
   const wallRadiusX = innerX + outerSeatRadius + 0.4;
   const wallRadiusZ = innerZ + outerSeatRadius + 0.4;
   const exteriorWalls = new THREE.Group();
@@ -673,7 +738,8 @@ export function buildStadiumArchitecture(
   const wall = new THREE.Mesh(
     new THREE.CylinderGeometry(1, 1, rimTopY, perimeterSegments, 1, true),
     new THREE.MeshStandardMaterial({
-      color: 0x3b4c52, roughness: 0.86, metalness: 0.12,
+      color: 0x2c3b40, roughness: 0.84, metalness: 0.12,
+      emissive: 0x172126, emissiveIntensity: 0.32,
       side: THREE.BackSide,
     }),
   );
@@ -681,6 +747,21 @@ export function buildStadiumArchitecture(
   wall.position.y = rimTopY / 2;
   wall.scale.set(wallRadiusX, 1, wallRadiusZ);
   exteriorWalls.add(wall);
+
+  const tierCourseMaterial = new THREE.MeshStandardMaterial({
+    color: 0x626f71, roughness: 0.72, metalness: 0.18,
+  });
+  const tierBoundaries = [tierRows, tierRows * 2];
+  tierBoundaries.forEach((boundary, index) => {
+    const course = new THREE.Mesh(
+      new THREE.CylinderGeometry(1, 1, 0.22, perimeterSegments, 1, true),
+      tierCourseMaterial,
+    );
+    course.name = `wtsl-stadium-exterior-tier-course-${index + 1}`;
+    course.position.y = baseY + boundary * rowRise;
+    course.scale.set(wallRadiusX, 1, wallRadiusZ);
+    exteriorWalls.add(course);
+  });
 
   const supportMaterial = new THREE.MeshStandardMaterial({
     color: 0x293a40, roughness: 0.76, metalness: 0.24,
