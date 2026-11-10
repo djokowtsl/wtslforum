@@ -159,6 +159,52 @@ test('far LOD keeps every all-hand triangle from the approved complete model', (
   }
 });
 
+test('spectator gaze uses an instanced head-only shader instead of duplicate look meshes', () => {
+  const baked = api.bakeSpectator(templates['male-far'], 'rest');
+  const headMask = baked.geometry.getAttribute('spectatorHeadMask');
+  assert.ok(headMask);
+  assert.ok(Array.from(headMask.array).some(weight => weight > 0.5));
+  const shader = {
+    uniforms: {},
+    vertexShader: '#include <common>\n#include <beginnormal_vertex>\n#include <begin_vertex>',
+    fragmentShader: '#include <common>\n#include <color_fragment>',
+  };
+  baked.materials[0].onBeforeCompile(shader, {});
+  assert.match(shader.vertexShader, /attribute vec2 spectatorGaze/);
+  assert.match(shader.vertexShader, /spectatorHeadPivot/);
+  assert.match(shader.vertexShader, /vSpectatorClothing = spectatorClothing/);
+  assert.match(shader.vertexShader, /vSpectatorTint = spectatorTint/);
+  assert.ok(shader.uniforms.spectatorHeadPivot.value.isVector3);
+  baked.geometry.dispose();
+  baked.materials.forEach(material => material.dispose());
+});
+
+test('gaze updates turn heads in both directions without rotating seated bodies', () => {
+  const scene = new THREE.Scene();
+  const crowd = {
+    highDetailEnabled: false,
+    seats: [{ x: 0, y: 0, z: 0, facing: 0, row: 5, sourceIndex: 0, occupied: true }],
+    replacePeople(update) { this.update = update; },
+  };
+  api.attachSpectatorCrowd(scene, crowd, [templates['male-far'], templates['female-far']]);
+  const mesh = scene.getObjectByName('wtsl-spectator-far-0-rest');
+  const gaze = mesh.geometry.getAttribute('spectatorGaze');
+  crowd.update(1, false, new THREE.Vector3(8, 1, 0));
+  assert.ok(Math.abs(gaze.getX(0) - Math.cos(0.4)) < 0.00001);
+  assert.ok(Math.abs(gaze.getY(0) - Math.sin(0.4)) < 0.00001);
+  const body = mesh.instanceMatrix.array.slice(0, 16);
+  crowd.update(2, false, new THREE.Vector3(-8, 1, 0));
+  assert.ok(Math.abs(gaze.getY(0) + Math.sin(0.4)) < 0.00001);
+  assert.deepEqual(mesh.instanceMatrix.array.slice(0, 16), body);
+  crowd.update(3, false, new THREE.Vector3(0, 1, 8));
+  assert.equal(gaze.getX(0), 1);
+  assert.equal(gaze.getY(0), 0);
+  scene.children.forEach(mesh => {
+    mesh.geometry.dispose();
+    mesh.material.forEach(material => material.dispose());
+  });
+});
+
 test('instanced crowd handles applause, both genders, detail toggle and changing occupancy without duplicate shoes', () => {
   const scene = new THREE.Scene();
   const crowd = {
@@ -174,11 +220,12 @@ test('instanced crowd handles applause, both genders, detail toggle and changing
   crowd.update(1, false, new THREE.Vector3(0, 1, 8));
   assert.equal(total(), 8);
   assert.ok(active().some(o => o.name.includes('-full-')));
-  assert.ok(active().every(o => o.name.includes('-rest-')));
+  assert.ok(active().every(o => o.name.endsWith('-rest')));
+  assert.ok(active().every(o => o.geometry.getAttribute('spectatorGaze').isInstancedBufferAttribute));
   assert.ok(!scene.getObjectByName('wtsl-detailed-crowd-shoes'));
   crowd.update(2, true);
   assert.equal(total(), 8);
-  assert.ok(active().every(o => /-(open|closed)-/.test(o.name)));
+  assert.ok(active().every(o => /-(open|closed)$/.test(o.name)));
   crowd.setHighDetailEnabled(false); crowd.update(2, true);
   assert.equal(total(), 8); assert.ok(active().every(o => o.name.includes('-far-')));
   crowd.seats[0].occupied = false; crowd.invalidateUpdate(); crowd.update(2, false);
@@ -245,9 +292,10 @@ test('crowd distributes all sixteen identities without multiplying instance capa
   api.attachSpectatorCrowd(scene, crowd, roster);
   crowd.update(1, false);
   const meshes = scene.children.filter(object => object instanceof THREE.InstancedMesh);
+  assert.equal(meshes.length, 16 * 3, 'each identity has only one batch per applause pose');
   assert.equal(meshes.reduce((sum, mesh) => sum + mesh.count, 0), seats.length);
   assert.equal(new Set(meshes.filter(mesh => mesh.count).map(mesh => mesh.name.split('-')[3])).size, 16);
-  assert.equal(meshes.reduce((sum, mesh) => sum + mesh.instanceMatrix.count, 0), seats.length * 9);
+  assert.equal(meshes.reduce((sum, mesh) => sum + mesh.instanceMatrix.count, 0), seats.length * 3);
   meshes.forEach(mesh => {
     mesh.geometry.dispose();
     for (const material of mesh.material) material.dispose();

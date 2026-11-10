@@ -47,7 +47,7 @@ async function loadSpectatorFile(
   return scene;
 }
 
-function spectatorMaterial(source: THREE.Material) {
+function spectatorMaterial(source: THREE.Material, headPivot: THREE.Vector3) {
   const material = source.clone();
   if (material instanceof THREE.MeshStandardMaterial) {
     material.roughness = Math.max(material.roughness, 0.65);
@@ -55,19 +55,35 @@ function spectatorMaterial(source: THREE.Material) {
     material.vertexColors = true;
   }
   material.onBeforeCompile = shader => {
-    shader.vertexShader = shader.vertexShader.replace('#include <common>', `#include <common>
+    shader.uniforms.spectatorHeadPivot = { value: headPivot.clone() };
+    shader.vertexShader = shader.vertexShader
+      .replace('#include <common>', `#include <common>
 attribute float spectatorClothing;
 attribute vec3 spectatorTint;
+attribute vec2 spectatorGaze;
+attribute float spectatorHeadMask;
+uniform vec3 spectatorHeadPivot;
 varying float vSpectatorClothing;
-varying vec3 vSpectatorTint;`).replace('#include <begin_vertex>', `#include <begin_vertex>
+varying vec3 vSpectatorTint;`)
+      .replace('#include <beginnormal_vertex>', `#include <beginnormal_vertex>
+float spectatorHeadWeight = clamp(spectatorHeadMask, 0.0, 1.0);
+float spectatorGazeCos = mix(1.0, spectatorGaze.x, spectatorHeadWeight);
+float spectatorGazeSin = spectatorGaze.y * spectatorHeadWeight;
+vec3 spectatorBaseNormal = objectNormal;
+objectNormal.x = spectatorBaseNormal.x * spectatorGazeCos + spectatorBaseNormal.z * spectatorGazeSin;
+objectNormal.z = -spectatorBaseNormal.x * spectatorGazeSin + spectatorBaseNormal.z * spectatorGazeCos;`)
+      .replace('#include <begin_vertex>', `#include <begin_vertex>
 vSpectatorClothing = spectatorClothing;
-vSpectatorTint = spectatorTint;`);
+vSpectatorTint = spectatorTint;
+vec3 spectatorHeadOffset = transformed - spectatorHeadPivot;
+transformed.x = spectatorHeadPivot.x + spectatorHeadOffset.x * spectatorGazeCos + spectatorHeadOffset.z * spectatorGazeSin;
+transformed.z = spectatorHeadPivot.z - spectatorHeadOffset.x * spectatorGazeSin + spectatorHeadOffset.z * spectatorGazeCos;`);
     shader.fragmentShader = shader.fragmentShader.replace('#include <common>', `#include <common>
 varying float vSpectatorClothing;
 varying vec3 vSpectatorTint;`).replace('#include <color_fragment>', `#include <color_fragment>
 diffuseColor.rgb *= mix(vec3(1.0), vSpectatorTint, clamp(vSpectatorClothing, 0.0, 1.0));`);
   };
-  material.customProgramCacheKey = () => 'rocketbox-spectator-clothing';
+  material.customProgramCacheKey = () => 'rocketbox-spectator-clothing-head-gaze-v2';
   return material;
 }
 
@@ -77,6 +93,9 @@ export function bakeSpectator(
 ) {
   const model = clone(template) as THREE.Group;
   poseSpectator(model, applause, look);
+  const head = model.getObjectByName('Head');
+  if (!head) throw new Error('Spectator model is missing its head pivot.');
+  const headPivot = head.getWorldPosition(new THREE.Vector3());
   const parts: THREE.BufferGeometry[] = [];
   const materials: THREE.Material[] = [];
   const groups: { start: number; count: number; materialIndex: number }[] = [];
@@ -92,6 +111,7 @@ export function bakeSpectator(
     const skinIndex = geometry.getAttribute('skinIndex');
     const skinWeight = geometry.getAttribute('skinWeight');
     const clothing = new Float32Array(positions.count);
+    const headMask = new Float32Array(positions.count);
     const colors = new Float32Array(positions.count * 3);
     const sourceMaterials = Array.isArray(object.material) ? object.material : [object.material];
     // Recolour only the approved Rocketbox garments. VALID's original casual
@@ -100,6 +120,15 @@ export function bakeSpectator(
       && sourceMaterials.every(material => /_body/.test(material.name));
     const volumeSkin = template.userData.spectatorIdentity?.startsWith('valid-')
       ? createSpectatorSkin(object) : undefined;
+    const headJoints = new Set<number>();
+    object.skeleton.bones.forEach((joint, index) => {
+      for (let parent: THREE.Object3D | null = joint; parent; parent = parent.parent) {
+        if (parent.name === 'Head') {
+          headJoints.add(index);
+          break;
+        }
+      }
+    });
     const normalMatrices = object.skeleton.bones.map((joint, index) => new THREE.Matrix3().getNormalMatrix(
       object.matrixWorld.clone().multiply(object.bindMatrixInverse)
         .multiply(joint.matrixWorld).multiply(object.skeleton.boneInverses[index]).multiply(object.bindMatrix),
@@ -114,9 +143,11 @@ export function bakeSpectator(
       positions.setXYZ(i, point.x, point.y, point.z);
       normal.set(0, 0, 0);
       let protectedWeight = 0;
+      let headWeight = 0;
       for (let c = 0; c < 4; c++) {
         const joint = skinIndex.getComponent(i, c), weight = skinWeight.getComponent(i, c);
         if (!weight) continue;
+        if (headJoints.has(joint)) headWeight += weight;
         if (!volumeSkin) {
           contribution.copy(sourceNormal).applyMatrix3(normalMatrices[joint]);
           normal.addScaledVector(contribution, weight);
@@ -127,6 +158,7 @@ export function bakeSpectator(
       else normal.normalize();
       normals.setXYZ(i, normal.x, normal.y, normal.z);
       clothing[i] = isBody ? 1 - THREE.MathUtils.smoothstep(protectedWeight, 0.01, 0.25) : 0;
+      headMask[i] = Math.min(1, headWeight);
       colors[i * 3] = sourceColors?.getX(i) ?? 1;
       colors[i * 3 + 1] = sourceColors?.getY(i) ?? 1;
       colors[i * 3 + 2] = sourceColors?.getZ(i) ?? 1;
@@ -136,8 +168,9 @@ export function bakeSpectator(
     }
     geometry.setAttribute('color', new THREE.Float32BufferAttribute(colors, 3));
     geometry.setAttribute('spectatorClothing', new THREE.Float32BufferAttribute(clothing, 1));
+    geometry.setAttribute('spectatorHeadMask', new THREE.Float32BufferAttribute(headMask, 1));
     const materialOffset = materials.length;
-    materials.push(...sourceMaterials.map(spectatorMaterial));
+    materials.push(...sourceMaterials.map(source => spectatorMaterial(source, headPivot)));
     const localGroups = geometry.groups.length ? geometry.groups : [{
       start: 0, count: geometry.index!.count, materialIndex: 0,
     }];
@@ -159,9 +192,13 @@ export function bakeSpectator(
   return { geometry, materials };
 }
 
-type Batch = { mesh: THREE.InstancedMesh; tint: THREE.InstancedBufferAttribute; count: number };
+type Batch = {
+  mesh: THREE.InstancedMesh;
+  tint: THREE.InstancedBufferAttribute;
+  gaze: THREE.InstancedBufferAttribute;
+  count: number;
+};
 const poses = ['rest', 'open', 'closed'] as const;
-const looks = [-0.4, 0, 0.4];
 const clothingTints = [
   [1, 1, 1], [0.74, 0.88, 1.20], [1.12, 0.78, 0.72], [0.78, 1.08, 0.84],
   [1.10, 1.03, 0.75], [0.90, 0.77, 1.10], [0.76, 1.03, 1.12], [0.88, 0.87, 0.85],
@@ -186,21 +223,29 @@ export function attachSpectatorCrowd(scene: THREE.Scene, crowd: CrowdRig, templa
     return variants[hash % variants.length];
   });
   const capacities = templates.map((_, index) => Math.max(1, seatModels.filter(value => value === index).length));
+  const allBatches: Batch[] = [];
   const makeBatches = (template: THREE.Group, identity: number, detail: 'far' | 'full') => {
     const batches: Batch[] = [];
     const capacity = capacities[identity];
-    for (const pose of poses) for (const look of looks) {
-      const { geometry, materials } = bakeSpectator(template, pose, look, detail);
+    // Head direction is a per-instance shader input, not three copies of every
+    // seated pose. Preserve separate applause poses without tripling geometry.
+    for (const pose of poses) {
+      const { geometry, materials } = bakeSpectator(template, pose, 0, detail);
       const tint = new THREE.InstancedBufferAttribute(new Float32Array(capacity * 3).fill(1), 3);
       tint.setUsage(THREE.DynamicDrawUsage);
       geometry.setAttribute('spectatorTint', tint);
+      const gaze = new THREE.InstancedBufferAttribute(new Float32Array(capacity * 2), 2);
+      gaze.setUsage(THREE.DynamicDrawUsage);
+      geometry.setAttribute('spectatorGaze', gaze);
       const mesh = new THREE.InstancedMesh(geometry, materials, capacity);
-      mesh.name = `wtsl-spectator-${detail}-${identity}-${pose}-${look}`;
+      mesh.name = `wtsl-spectator-${detail}-${identity}-${pose}`;
       mesh.count = 0;
       mesh.frustumCulled = false;
       mesh.instanceMatrix.setUsage(THREE.DynamicDrawUsage);
       scene.add(mesh);
-      batches.push({ mesh, tint, count: 0 });
+      const batch = { mesh, tint, gaze, count: 0 };
+      batches.push(batch);
+      allBatches.push(batch);
     }
     return batches;
   };
@@ -209,8 +254,7 @@ export function attachSpectatorCrowd(scene: THREE.Scene, crowd: CrowdRig, templa
   let force = true, lastUpdate = -Infinity, lastApplause = false;
   const update: CrowdRig['update'] = (time, applauding, ball) => {
     if (!force && time - lastUpdate < 0.10 && applauding === lastApplause) return;
-    const all = [...far.flat(), ...full.flat()];
-    all.forEach(batch => { batch.count = 0; });
+    allBatches.forEach(batch => { batch.count = 0; });
     crowd.seats.forEach((seat, index) => {
       if (!seat.occupied) return;
       const source = seat.sourceIndex ?? index;
@@ -219,13 +263,13 @@ export function attachSpectatorCrowd(scene: THREE.Scene, crowd: CrowdRig, templa
       const identity = seatModels[index];
       let delta = ball ? Math.atan2(ball.x - seat.x, ball.z - seat.z) - seat.facing : 0;
       delta = THREE.MathUtils.euclideanModulo(delta + Math.PI, Math.PI * 2) - Math.PI;
-      const gaze = delta < -0.18 ? 0 : delta > 0.18 ? 2 : 1;
+      const gazeAngle = delta < -0.18 ? -0.4 : delta > 0.18 ? 0.4 : 0;
       // Hands remain raised throughout applause; they never jump back to the lap
       // between claps. Different spectators have independent open/closed phases.
       const pose = applauding ? (Math.sin(time * 9 + source * 1.7) > 0 ? 1 : 2) : 0;
       const high = crowd.highDetailEnabled && full[identity]
         && shouldUseHighDetailCrowdSeat(seat.row, source, gender);
-      const batch = (high ? full[identity] : far[identity])[pose * 3 + gaze];
+      const batch = (high ? full[identity] : far[identity])[pose];
       const instance = batch.count++;
       dummy.position.set(seat.x, seat.y, seat.z);
       dummy.rotation.set(((source % 5) - 2) * 0.006, seat.facing, 0);
@@ -234,11 +278,13 @@ export function attachSpectatorCrowd(scene: THREE.Scene, crowd: CrowdRig, templa
       batch.mesh.setMatrixAt(instance, dummy.matrix);
       const tint = clothingTints[appearance.wardrobe % clothingTints.length];
       batch.tint.setXYZ(instance, tint[0], tint[1], tint[2]);
+      batch.gaze.setXY(instance, Math.cos(gazeAngle), Math.sin(gazeAngle));
     });
-    all.forEach(batch => {
+    allBatches.forEach(batch => {
       batch.mesh.count = batch.count;
       batch.mesh.instanceMatrix.needsUpdate = true;
       batch.tint.needsUpdate = true;
+      batch.gaze.needsUpdate = true;
     });
     force = false; lastUpdate = time; lastApplause = applauding;
   };
