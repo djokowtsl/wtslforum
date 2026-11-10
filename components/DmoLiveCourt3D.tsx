@@ -125,6 +125,11 @@ import {
   type CrowdRig,
   type PlayerRig,
 } from './DmoLiveCourt3DScene';
+import {
+  BROADCAST_TIME_OF_DAY_OPTIONS,
+  createDmoBroadcastLighting,
+  type BroadcastTimeOfDay,
+} from './DmoBroadcastLighting';
 import styles from './DmoLiveCourt3D.module.css';
 import CourtFullscreenButton from './CourtFullscreenButton';
 import CourtPictureInPictureButton from './CourtPictureInPictureButton';
@@ -369,6 +374,13 @@ function ThreeCourt({
   const cameraViewRef = useRef<CameraView>('court');
   const playerCameraPanRef = useRef(0);
   const [cameraView, setCameraView] = useState<CameraView>('court');
+  const [timeOfDay, setTimeOfDay] = useState<BroadcastTimeOfDay>('day');
+  const timeOfDayRef = useRef(timeOfDay);
+  timeOfDayRef.current = timeOfDay;
+  const broadcastLightingRef = useRef<ReturnType<typeof createDmoBroadcastLighting> | null>(null);
+  useEffect(() => {
+    broadcastLightingRef.current?.apply(timeOfDay);
+  }, [timeOfDay]);
   const [playerCameraPan, setPlayerCameraPan] = useState(0);
   const [soundEnabled, setSoundEnabled] = useState(true);
   const [soundReady, setSoundReady] = useState(false);
@@ -613,12 +625,16 @@ function ThreeCourt({
 
     const scene = new THREE.Scene();
     sceneRef.current = scene;
+    const isIndoor = isIndoorDmoVenue(sceneDataRef.current.snapshot.stadium);
     buildStadiumEnvironment(
       scene,
-      isIndoorDmoVenue(sceneDataRef.current.snapshot.stadium),
+      isIndoor,
       sceneDataRef.current.scoreboard,
       sceneDataRef.current.snapshot.stadium,
     );
+    const broadcastLighting = createDmoBroadcastLighting(scene, renderer, isIndoor);
+    broadcastLightingRef.current = broadcastLighting;
+    broadcastLighting.apply(timeOfDayRef.current);
     const stadiumCameraData = scene.getObjectByName('wtsl-stadium-superstructure')?.userData;
     const stadiumCameraLimit = stadiumCameraData?.maxInteriorCameraDistance;
     const cameraMaxDistance = typeof stadiumCameraLimit === 'number' && Number.isFinite(stadiumCameraLimit)
@@ -679,20 +695,6 @@ function ThreeCourt({
       cameraViewRef.current = 'custom';
       setCameraView('custom');
     });
-
-    scene.add(new THREE.HemisphereLight(0xe2e4df, 0x34383a, 1.25));
-    const keyLight = new THREE.DirectionalLight(0xfff0dc, 2.35);
-    keyLight.position.set(-8, 22, 9);
-    keyLight.castShadow = true;
-    keyLight.shadow.mapSize.set(1024, 1024);
-    keyLight.shadow.camera.left = -24;
-    keyLight.shadow.camera.right = 24;
-    keyLight.shadow.camera.top = 25;
-    keyLight.shadow.camera.bottom = -25;
-    scene.add(keyLight);
-    const fillLight = new THREE.DirectionalLight(0xc4d0d0, 0.72);
-    fillLight.position.set(17, 9, -14);
-    scene.add(fillLight);
 
     const courtEffects = buildCourt(
       scene,
@@ -2444,6 +2446,7 @@ function ThreeCourt({
 
     return () => {
       if (crowdRigRef.current === crowdRig) crowdRigRef.current = null;
+      if (broadcastLightingRef.current === broadcastLighting) broadcastLightingRef.current = null;
       modelLoad.abort();
       window.cancelAnimationFrame(animation);
       observer.disconnect();
@@ -2748,6 +2751,18 @@ function ThreeCourt({
             <button type="button" aria-pressed={cameraView === 'court'} onClick={() => setPreset('court')}>Court</button>
             <button type="button" aria-pressed={cameraView === 'aerial'} onClick={() => setPreset('aerial')}>Aerial</button>
             <button type="button" aria-pressed={cameraView === 'tv'} onClick={() => setPreset('tv')}>TV view</button>
+          </div>
+          <div className={styles.presets} role="group" aria-label="Broadcast time of day">
+            {BROADCAST_TIME_OF_DAY_OPTIONS.map(option => (
+              <button
+                key={option.value}
+                type="button"
+                aria-pressed={timeOfDay === option.value}
+                onClick={() => setTimeOfDay(option.value)}
+              >
+                {option.label}
+              </button>
+            ))}
           </div>
           <label className={styles.playerCameraControl}>
             <span>Player view</span>
