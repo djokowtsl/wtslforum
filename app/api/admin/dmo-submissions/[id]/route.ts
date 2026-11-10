@@ -1,6 +1,7 @@
 import { NextResponse } from 'next/server';
 import { getSession } from '@/lib/auth';
-import { getDmoSubmission, updateDmoSubmissionTags } from '@/lib/dmo-submissions';
+import { getDmoSubmission, updateDmoSubmissionTags, type DmoSubmissionTags } from '@/lib/dmo-submissions';
+import { isDmoPlayingHand, isDmoBackhandType } from '@/lib/dmoSubmissionPlayerStyle';
 import { parseTe4CoachShareUrl } from '@/lib/te4CoachEmbed';
 import {
   removeTe4CoachLinkFromGroup,
@@ -62,9 +63,51 @@ export async function PATCH(
     );
   }
 
+  const metadata: Partial<DmoSubmissionTags> = {};
+  const has = (key: string) => Object.prototype.hasOwnProperty.call(body, key);
+  for (const key of ['player1Character', 'player2Character'] as const) {
+    if (!has(key)) continue;
+    if (body[key] !== null && (typeof body[key] !== 'string' || body[key].trim().length > 100)) {
+      return NextResponse.json({ error: 'Character names must be at most 100 characters.' }, { status: 400 });
+    }
+    metadata[key] = body[key]?.trim() || null;
+  }
+  for (const key of ['player1Handedness', 'player2Handedness'] as const) {
+    if (!has(key)) continue;
+    const value = body[key] === '' ? null : body[key];
+    if (value !== null && !isDmoPlayingHand(value)) {
+      return NextResponse.json({ error: 'Playing hand must be left, right, or not recorded.' }, { status: 400 });
+    }
+    metadata[key] = value;
+  }
+  for (const key of ['player1BackhandType', 'player2BackhandType'] as const) {
+    if (!has(key)) continue;
+    const value = body[key] === '' ? null : body[key];
+    if (value !== null && !isDmoBackhandType(value)) {
+      return NextResponse.json({ error: 'Backhand grip must be one-handed, two-handed, or not recorded.' }, { status: 400 });
+    }
+    metadata[key] = value;
+  }
+  if (has('externalUrl')) {
+    if (body.externalUrl !== null && (typeof body.externalUrl !== 'string' || body.externalUrl.length > 1000)) {
+      return NextResponse.json({ error: 'That recording link is not valid.' }, { status: 400 });
+    }
+    const url = body.externalUrl?.trim() || null;
+    if (url) {
+      try {
+        if (!['http:', 'https:'].includes(new URL(url).protocol)) throw new Error('Unsupported protocol');
+      } catch {
+        return NextResponse.json({ error: 'That recording link is not valid.' }, { status: 400 });
+      }
+    }
+    metadata.externalUrl = url;
+  }
   const previous = await getDmoSubmission(submissionId);
   if (!previous) {
     return NextResponse.json({ error: 'DMO submission not found.' }, { status: 404 });
+  }
+  if (has('externalUrl') && !metadata.externalUrl && previous.external_url && !previous.private_blob_pathname) {
+    return NextResponse.json({ error: 'Keep a recording link for a submission without an archived DMO file.' }, { status: 400 });
   }
   const oldGroupLink = buildTe4CoachGroupMatchUrl(previous.coach_share_url);
   const newGroupLink = coachShare
@@ -77,6 +120,7 @@ export async function PATCH(
     player1,
     player2,
     submissionDate,
+    ...metadata,
     ...(coachShare
       ? { coachShareUrl: coachShare.url, resetCoachGroupConsent }
       : {}),
