@@ -152,6 +152,7 @@ export default function CourtFullscreenButton({
     document.documentElement.style.overflow = 'hidden';
     target.classList.add(fallbackClassName);
     setIsFullscreen(true);
+    target.dispatchEvent(new Event('courtfullscreenchange', { bubbles: true }));
   }, [fallbackClassName, relaxClippingAncestors]);
 
   useEffect(() => {
@@ -170,6 +171,7 @@ export default function CourtFullscreenButton({
         restorePageStyles();
         releaseLandscapeLock();
         setIsFullscreen(false);
+        targetRef.current?.dispatchEvent(new Event('courtfullscreenchange', { bubbles: true }));
       }
     };
 
@@ -204,6 +206,7 @@ export default function CourtFullscreenButton({
           restorePageStyles();
           releaseLandscapeLock();
           setIsFullscreen(false);
+          target.dispatchEvent(new Event('courtfullscreenchange', { bubbles: true }));
           return;
         }
         const exit = doc.exitFullscreen ?? doc.webkitExitFullscreen;
