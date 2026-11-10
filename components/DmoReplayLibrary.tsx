@@ -417,6 +417,7 @@ export default function DmoReplayLibrary({
                     isWta={dmoReplayIsWta(selected.tournament)}
                     handedness={characterPresentation?.handedness ?? ['right', 'right']}
                     strokeStyles={characterPresentation?.strokeStyles}
+                    submissionPlayers={[selected.player1, selected.player2]}
                   />
                 )
               ) : (

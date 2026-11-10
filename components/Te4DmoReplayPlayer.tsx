@@ -4,6 +4,7 @@ import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } fro
 import { embedTe4ViewerHtml } from '@/lib/te4ViewerEmbed';
 import { te4ViewerToLiveSnapshot } from '@/lib/te4DmoReplaySnapshot';
 import type { Te4LiveSnapshot } from '@/lib/te4DmoLive';
+import { alignDmoReplayPlayerStyles } from '@/lib/dmoReplayCharacterStyles';
 import {
   buildTe4DmoReplayScoreTimeline,
   te4DmoReplayScoreAtFrame,
@@ -26,6 +27,7 @@ type Props = {
   tournamentRound?: string | null;
   handedness: ['left' | 'right', 'left' | 'right'];
   strokeStyles?: PlayerStrokeStylePair;
+  submissionPlayers?: readonly [string, string];
   fallback?: ReactNode;
 };
 
@@ -50,11 +52,16 @@ export default function Te4DmoReplayPlayer({
   tournamentRound = 'auto',
   handedness,
   strokeStyles,
+  submissionPlayers,
   fallback,
 }: Props) {
   const frameRef = useRef<HTMLIFrameElement>(null);
   const [viewer, setViewer] = useState<Te4ViewerData | null>(null);
   const [initialSnapshot, setInitialSnapshot] = useState<Te4LiveSnapshot | null>(null);
+  const [replayPresentation, setReplayPresentation] = useState<{
+    handedness: ['left' | 'right', 'left' | 'right'];
+    strokeStyles?: PlayerStrokeStylePair;
+  } | null>(null);
   const [view, setView] = useState<'court' | 'analysis'>('court');
   const [srcDoc, setSrcDoc] = useState('');
   const [loading, setLoading] = useState(true);
@@ -63,9 +70,15 @@ export default function Te4DmoReplayPlayer({
   const [replayScore, setReplayScore] = useState<Te4DmoReplayScore | null>(null);
   const replayScoreKeyRef = useRef('');
   const syncViewerTheme = useTe4ViewerTheme(frameRef);
+  const activeHandedness = replayPresentation?.handedness ?? handedness;
+  const activeStrokeStyles = replayPresentation?.strokeStyles ?? strokeStyles;
   const snapshot = useMemo(() => initialSnapshot
-    ? { ...initialSnapshot, handedness, strokeStyles: strokeStyles ?? initialSnapshot.strokeStyles }
-    : null, [initialSnapshot, handedness[0], handedness[1], strokeStyles]);
+    ? {
+      ...initialSnapshot,
+      handedness: activeHandedness,
+      strokeStyles: activeStrokeStyles ?? initialSnapshot.strokeStyles,
+    }
+    : null, [initialSnapshot, activeHandedness[0], activeHandedness[1], activeStrokeStyles]);
   const scoreTimeline = useMemo(
     () => viewer ? buildTe4DmoReplayScoreTimeline(viewer) : [],
     [viewer],
@@ -94,6 +107,7 @@ export default function Te4DmoReplayPlayer({
       setView('court');
       setViewer(null);
       setInitialSnapshot(null);
+      setReplayPresentation(null);
       setSrcDoc('');
       try {
         const dataUrl = replayUrl
@@ -105,10 +119,24 @@ export default function Te4DmoReplayPlayer({
           throw new Error(typeof payload?.error === 'string' ? payload.error : 'The replay could not be loaded.');
         }
         if (!isViewerData(payload?.viewer)) throw new Error('The replay data is incomplete.');
-        const nextSnapshot = te4ViewerToLiveSnapshot(payload.viewer, ['right', 'right']);
+        const replayPlayers = payload.viewer.names as [string, string];
+        const metadataPlayers = submissionPlayers ?? replayPlayers;
+        const replayHandedness = alignDmoReplayPlayerStyles(
+          metadataPlayers,
+          replayPlayers,
+          handedness,
+        );
+        const replayStrokeStyles = strokeStyles
+          ? alignDmoReplayPlayerStyles(metadataPlayers, replayPlayers, strokeStyles)
+          : undefined;
+        const nextSnapshot = te4ViewerToLiveSnapshot(payload.viewer, replayHandedness);
         if (!active) return;
         setViewer(payload.viewer);
         setInitialSnapshot(nextSnapshot);
+        setReplayPresentation({
+          handedness: replayHandedness,
+          ...(replayStrokeStyles ? { strokeStyles: replayStrokeStyles } : {}),
+        });
       } catch (cause) {
         if (active) setError(cause instanceof Error ? cause.message : 'The replay could not be loaded.');
       } finally {
@@ -134,7 +162,7 @@ export default function Te4DmoReplayPlayer({
         if (!shell.includes('__DATA__') || !shell.includes('__HANDEDNESS__')) {
           throw new Error('The classic replay player template is incomplete.');
         }
-        if (active) setSrcDoc(embedTe4ViewerHtml(shell, viewer, handedness));
+        if (active) setSrcDoc(embedTe4ViewerHtml(shell, viewer, activeHandedness));
       } catch (cause) {
         if (active) setClassicError(cause instanceof Error ? cause.message : 'The classic replay tools could not be loaded.');
       }
@@ -143,11 +171,11 @@ export default function Te4DmoReplayPlayer({
     return () => {
       active = false;
     };
-  }, [view, viewer, handedness[0], handedness[1]]);
+  }, [view, viewer, activeHandedness[0], activeHandedness[1]]);
 
   useEffect(() => {
-    frameRef.current?.contentWindow?.postMessage({ type: 'set-handedness', handedness }, '*');
-  }, [handedness[0], handedness[1]]);
+    frameRef.current?.contentWindow?.postMessage({ type: 'set-handedness', handedness: activeHandedness }, '*');
+  }, [activeHandedness[0], activeHandedness[1]]);
 
   if (loading) {
     return <div className={styles.loading} role="status">Loading full 3D match replay…</div>;
@@ -231,7 +259,7 @@ export default function Te4DmoReplayPlayer({
           onLoad={() => {
             syncViewerTheme();
             frameRef.current?.contentWindow?.postMessage({ type: 'set-speed', speed: initialSpeed }, '*');
-            frameRef.current?.contentWindow?.postMessage({ type: 'set-handedness', handedness }, '*');
+            frameRef.current?.contentWindow?.postMessage({ type: 'set-handedness', handedness: activeHandedness }, '*');
           }}
         />
       ) : (
