@@ -36,6 +36,9 @@ const nativeGrip = await loadTs('../components/DmoNativeGrip.ts');
 const capturedGroundstroke = await import('../components/DmoCapturedGroundstroke.ts');
 const capturedLocomotion = await import('../components/DmoCapturedLocomotion.ts');
 const nativeKit = await loadTs('../components/DmoNativeKit.ts');
+const nativeFaceApi = await loadTs('../components/DmoNativeFaces.ts', {
+  './DmoNativeKit': nativeKit,
+});
 const nativeTwist = await loadTs('../components/DmoNativeTwist.ts');
 const nativePlayer = await loadTs('../components/DmoNativePlayer.ts', {
   './DmoRacketOrientation': racketPose, './DmoNativeGrip': nativeGrip, './DmoNativeKit': nativeKit,
@@ -62,6 +65,7 @@ const crowds = await loadTs('../components/DmoHumanCrowd.ts', {
   '../lib/dmoCrowdLod': crowdLodApi,
   '../lib/dmoCrowdClothing': crowdClothingApi,
   '../lib/dmoCrowdBranding': crowdBrandingApi,
+  './DmoNativeFaces': nativeFaceApi,
 });
 
 // Parse the real rig and geometry in Node, omitting image decoding (verified in browser).
@@ -1180,6 +1184,54 @@ test('coaches occupy reserved lower-stand seats and the seated umpire tracks the
   const before = head.quaternion.clone();
   fixtures.update(new THREE.Vector3(7, 2, -10));
   assert.ok(head.quaternion.angleTo(before) > 0.01);
+});
+
+test('near-crowd faces reuse the native player head and follow seated gaze', async () => {
+  const nativeTemplate = await nativePlayerTemplate('male');
+  const faceSet = nativeFaceApi.createNativeFaceSet(nativeTemplate);
+  const highDetailMale = await asset('male', 'player');
+  const highDetailFemale = await asset('female', 'player');
+  const scene = new THREE.Scene();
+  const crowd = sceneApi.buildCrowd(scene);
+  const fixtures = sceneApi.buildCourtFixtures(scene);
+  crowds.attachHumanCrowd(
+    scene,
+    crowd,
+    [await asset('male', 'crowd'), await asset('female', 'crowd')],
+    faceSet,
+  );
+  crowd.setHighDetailModel(highDetailMale, 0);
+  crowd.update(0.2, false);
+
+  const skinMeshes = scene.children.filter((object) => object.name.startsWith('wtsl-native-face-'));
+  const hairMeshes = scene.children.filter((object) => object.name.startsWith('wtsl-native-hair-'));
+  const selectedNearSeats = crowd.seats.filter((seat) =>
+    seat.occupied && seat.row < 2 && (seat.sourceIndex % 2) === 0).length;
+  assert.ok(faceSet.male[0].skin.index.count / 3 > 4_000);
+  assert.ok(faceSet.male[0].hair.getAttribute('position').count > 100);
+  assert.equal(skinMeshes.reduce((sum, mesh) => sum + mesh.count, 0), selectedNearSeats);
+  assert.equal(hairMeshes.reduce((sum, mesh) => sum + mesh.count, 0), selectedNearSeats);
+
+  const highBody = scene.children.find((object) =>
+    object.name.startsWith('wtsl-high-detail-0-0-spectators-'));
+  let sourceBody;
+  highDetailMale.traverse((object) => {
+    if (!sourceBody && object.isSkinnedMesh) sourceBody = object;
+  });
+  assert.ok(highBody?.isInstancedMesh);
+  assert.ok(highBody.geometry.index.count < sourceBody.geometry.index.count,
+    'the old crowd face is removed before the exact player face is instanced');
+  crowds.attachHumanCourtStaff(
+    scene,
+    fixtures,
+    [highDetailMale, highDetailFemale],
+    crowd,
+    highDetailMale,
+    faceSet,
+  );
+  assert.ok(scene.getObjectByName('wtsl-detailed-umpire').getObjectByName('wtsl-native-player-face'));
+  assert.ok(scene.getObjectByName('wtsl-court-coach-1').getObjectByName('wtsl-native-player-face'));
+  nativeFaceApi.disposeNativeFaceSet(faceSet);
 });
 
 test('native player model supports the same landmark pose used for a detailed umpire', async () => {

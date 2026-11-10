@@ -546,15 +546,42 @@ test('stadium metadata refreshes when generic venue lettering resolves to anothe
   assert.equal(scene.userData.wtslStadiumVenue, 'Unspecified tennis venue:DOHA');
 });
 
-test('full-detail crowd seats remain sparse, near-court and gender-balanced across the unified bowl', () => {
+test('player-grade crowd models cover every seat in the nearest two rows', () => {
   for (const genderIndex of [0, 1]) {
     const selected = Array.from({ length: 2 * 10_000 }, (_, index) => index)
       .filter((index) => crowdLodApi.shouldUseHighDetailCrowdSeat(Math.floor(index / 10_000), index, genderIndex));
-    assert.equal(selected.length, 2_500);
+    assert.equal(selected.length, 10_000);
     assert.ok(selected.every((index) => index % 2 === genderIndex));
     assert.ok(selected.every((index) => Math.floor(index / 10_000) < crowdLodApi.HIGH_DETAIL_CROWD_ROW_LIMIT));
     assert.equal(crowdLodApi.shouldUseHighDetailCrowdSeat(2, 20_000, genderIndex), false,
-      'high-detail meshes stay limited to the nearest two crowd rows');
+      'high-detail meshes stay limited to the nearest two crowd rows for mobile performance');
+  }
+});
+
+test('nearby NPCs reuse the on-court native face with player-grade crowd bodies', async () => {
+  const [courtSource, faceSource, crowdProvenanceText] = await Promise.all([
+    readFile(new URL('../components/DmoLiveCourt3D.tsx', import.meta.url), 'utf8'),
+    readFile(new URL('../components/DmoNativeFaces.ts', import.meta.url), 'utf8'),
+    readFile(new URL('../public/models/dmo-humans/provenance.json', import.meta.url), 'utf8'),
+  ]);
+  assert.match(courtSource, /loadHumanModel\('male', 'crowd-high'/);
+  assert.match(courtSource, /loadHumanModel\('female', 'crowd-high'/);
+  assert.match(courtSource, /nativeFaces = createNativeFaceSet\(player\.value\)/);
+  assert.match(courtSource, /attachHumanCrowd\(scene, crowdRig, crowdTemplates, nativeFaces\)/);
+  assert.match(courtSource, /crowdRig\.setHighDetailModel\(maleHighDetailCrowd\.value, 0\)/);
+  assert.match(courtSource, /crowdRig\.setHighDetailModel\(femaleHighDetailCrowd\.value, 1\)/);
+  assert.match(courtSource, /attachHumanCourtStaff\([\s\S]{0,260}nativeFaces/);
+  assert.match(faceSource, /dressNativePlayer\(model/);
+  assert.match(faceSource, /extractBoneSurface\(body, head\)/);
+  assert.match(faceSource, /native-cropped-hair/);
+
+  const provenance = JSON.parse(crowdProvenanceText);
+  for (const gender of ['male', 'female']) {
+    const player = provenance.find((asset) => asset.filename === `${gender}-player.glb`);
+    const crowd = provenance.find((asset) => asset.filename === `${gender}-crowd.glb`);
+    assert.ok(player && crowd, `${gender} player and crowd assets are registered`);
+    assert.equal(player.sourceSha256, crowd.sourceSha256, `${gender} models share the same face source`);
+    assert.ok(player.triangles >= crowd.triangles * 7, `${gender} player-grade mesh has substantially more detail`);
   }
 });
 
@@ -753,7 +780,7 @@ test('crowd implementation contains no legacy stand block and keeps textured peo
     'the detailed crowd consumes the same deterministic variation as its fallback');
   assert.match(humanCrowdSource, /getChairUmpireLegTargets\(sign, hipsY\)/,
     'the seated umpire uses the regression-tested chair-local leg targets');
-  assert.match(humanCrowdSource, /'wtsl-detailed-umpire', 0x38536a, 1\.34, true/,
+  assert.match(humanCrowdSource, /attachStaffModel\(\s*chair,\s*detailedUmpireTemplate,\s*'wtsl-detailed-umpire',\s*0x38536a,\s*1\.34,\s*true,/,
     'the chair pose is anchored to the revised seat height');
   const seatedGeometrySource = humanCrowdSource.slice(
     humanCrowdSource.indexOf('function seatedGeometry('),
