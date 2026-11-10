@@ -83,27 +83,6 @@
   object-fit: fill;
 }
 
-@media (orientation: portrait) {
-  .scene:fullscreen .viewport::after,
-  .scene:-webkit-full-screen .viewport::after,
-  .scene.fullscreenFallback .viewport::after {
-    position: absolute;
-    z-index: 4;
-    bottom: 10px;
-    left: 50%;
-    padding: 6px 10px;
-    transform: translateX(-50%);
-    border: 1px solid rgba(150,180,230,.23);
-    border-radius: 999px;
-    background: rgba(5,15,34,.88);
-    color: #d9e3ef;
-    content: 'Rotate your phone for a wider view';
-    font: 600 10px/1.2 system-ui, sans-serif;
-    white-space: nowrap;
-    pointer-events: none;
-  }
-}
-
 .scene.fullscreenFallback .legend {
   flex-shrink: 0;
 }

@@ -18,11 +18,3 @@ export function getBroadcastRenderPixelRatio(
     : 1;
   return Math.min(deviceRatio, target.width / width, target.height / height);
 }
-
-export function getFullscreen16By9Size(width: number, height: number) {
-  if (![width, height].every(value => Number.isFinite(value) && value > 0)) {
-    return { width: 0, height: 0 };
-  }
-  const frameWidth = Math.min(width, height * 16 / 9);
-  return { width: frameWidth, height: frameWidth * 9 / 16 };
-}

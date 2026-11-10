@@ -64,10 +64,12 @@ test('mobile fullscreen uses native video or an unclipped viewport fallback', ()
   assert.match(fallbackCourt, /fallbackClassName=\{styles\.fullscreenFallback\}/);
   assert.match(fullscreenButton, /orientation\.lock\('landscape'\)/);
   assert.match(fullscreenButton, /orientation\?\.unlock/);
-  assert.match(liveCourt, /getFullscreen16By9Size/);
-  assert.match(fallbackCourt, /getFullscreen16By9Size/);
-  assert.match(styles, /Rotate your phone for a wider view/);
-  assert.match(fallbackStyles, /Rotate your phone for a wider view/);
+  assert.match(liveCourt, /renderer\.setSize\(width, height, false\)/);
+  assert.match(liveCourt, /camera\.aspect = width \/ height/);
+  assert.match(fallbackCourt, /\? \{ width: bounds\.width, height: bounds\.height \}/);
+  assert.match(fallbackCourt, /Math\.max\(canvas\.width \/ 900, canvas\.height \/ 520\)/);
+  assert.doesNotMatch(styles, /Rotate your phone for a wider view/);
+  assert.doesNotMatch(fallbackStyles, /Rotate your phone for a wider view/);
   assert.match(liveCourt, /CourtFullscreenButton[\s\S]*?videoRef=\{mediaVideoRef\}/);
   assert.match(fallbackCourt, /CourtFullscreenButton[\s\S]*?videoRef=\{mediaVideoRef\}/);
 });
@@ -129,11 +131,13 @@ test('saved player stroke setup reaches the full broadcast replay', () => {
   assert.match(replayPlayer, /strokeStyles: strokeStyles \?\? initialSnapshot\.strokeStyles/);
 });
 
-test('fullscreen expands the court while keeping playback controls available', () => {
+test('fullscreen fills the available screen and keeps playback controls available', () => {
   assert.match(styles, /\.scene:fullscreen/);
   assert.match(styles, /\.scene:fullscreen \.viewport/);
   assert.match(styles, /\.scene:fullscreen \.replayControls/);
   assert.match(liveCourt, /fullReplay && hasCourtData/);
+  assert.match(liveCourt, /host\.style\.width = '100%'/);
+  assert.match(liveCourt, /host\.style\.height = '100%'/);
   assert.match(liveCourt, /aria-label="Graphics resolution"/);
   assert.match(fallbackCourt, /aria-label="Graphics resolution"/);
   assert.match(liveCourt, /useState<BroadcastRenderQuality>\('1080p'\)/);
