@@ -36,6 +36,7 @@ test('day, evening, and night update outdoor sky, clouds, sunlight, and floodlig
   const sun = scene.getObjectByName('wtsl-broadcast-sun');
   const clouds = scene.getObjectByName('wtsl-broadcast-cloud-cover');
   const spotlights = scene.children.filter(child => child.name === 'wtsl-broadcast-floodlight');
+  const floodlightFixtures = scene.children.filter(child => child.name === 'wtsl-broadcast-floodlight-fixture');
 
   assert.ok(sky && sun && clouds);
   assert.equal(spotlights.length, 4);
@@ -57,11 +58,12 @@ test('day, evening, and night update outdoor sky, clouds, sunlight, and floodlig
   assert.equal(scene.userData.wtslBroadcastTimeOfDay, 'night');
   assert.equal(sun.visible, false);
   assert.equal(clouds.children.filter(cluster => cluster.visible).length, 2);
-  assert.ok(spotlights.every(light => light.intensity === 220));
+  assert.ok(spotlights.every(light => light.intensity === 60));
+  assert.ok(floodlightFixtures.every(fixture => fixture.material.emissiveIntensity === 0.45));
   assert.ok(spotlights.every(light => light.angle >= Math.PI / 3), 'the beams cover the court instead of missing it');
   assert.ok(courtFillLights.every(light => light.intensity === 0), 'daytime court fill lights turn off at night');
   assert.equal(scene.getObjectByName('wtsl-broadcast-sky').material.color.getHex(), 0x08101e);
-  assert.equal(renderer.toneMappingExposure, 0.68);
+  assert.equal(renderer.toneMappingExposure, 0.58);
 });
 
 test('indoor broadcasts keep the sky hidden but enable night court lighting', () => {
@@ -77,7 +79,7 @@ test('indoor broadcasts keep the sky hidden but enable night court lighting', ()
   assert.equal(scene.getObjectByName('wtsl-broadcast-sky').visible, false);
   assert.equal(scene.getObjectByName('wtsl-broadcast-sun').visible, false);
   assert.equal(scene.getObjectByName('wtsl-broadcast-cloud-cover').visible, false);
-  assert.equal(scene.children.filter(child => child.name === 'wtsl-broadcast-floodlight').every(light => light.intensity === 220), true);
+  assert.equal(scene.children.filter(child => child.name === 'wtsl-broadcast-floodlight').every(light => light.intensity === 60), true);
   assert.equal(courtFill.intensity, 0);
 });
 
