@@ -49,7 +49,8 @@ import CourtPictureInPictureButton from './CourtPictureInPictureButton';
 import {
   BROADCAST_RENDER_QUALITY_OPTIONS,
   getBroadcastRenderPixelRatio,
-  type BroadcastRenderQuality,
+  type BroadcastRenderResolution,
+  type BroadcastRenderSetting,
 } from './DmoRenderResolution';
 import { loadLiveGruntSamples } from '@/lib/liveGruntAudio';
 import {
@@ -91,8 +92,10 @@ type Props = {
   tournamentRound?: string | null;
   gruntsEnabled: boolean;
   onGruntsEnabledChange: (enabled: boolean) => void;
-  renderQuality: BroadcastRenderQuality;
-  onRenderQualityChange: (quality: BroadcastRenderQuality) => void;
+  renderQuality: BroadcastRenderResolution;
+  renderSetting: BroadcastRenderSetting;
+  onRenderSettingChange: (setting: BroadcastRenderSetting) => void;
+  onRenderFrame: (elapsedMs: number) => void;
 };
 export type GruntControlProps = Pick<Props, 'gruntsEnabled' | 'onGruntsEnabledChange'>;
 
@@ -534,7 +537,9 @@ function DmoLiveCourt({
   gruntsEnabled,
   onGruntsEnabledChange,
   renderQuality,
-  onRenderQualityChange,
+  renderSetting,
+  onRenderSettingChange,
+  onRenderFrame,
 }: Props) {
   const scoreboardData: StadiumScoreboardData = scoreboard ?? {
     players: snapshot.players,
@@ -544,6 +549,8 @@ function DmoLiveCourt({
   const sceneElementRef = useRef<HTMLElement>(null);
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const mediaVideoRef = useRef<HTMLVideoElement>(null);
+  const renderFrameObserverRef = useRef(onRenderFrame);
+  renderFrameObserverRef.current = onRenderFrame;
   const crowdDensityRef = useRef(crowdDensity);
   crowdDensityRef.current = crowdDensity;
   const cameraDragRef = useRef<{ x: number; y: number } | null>(null);
@@ -832,6 +839,7 @@ function DmoLiveCourt({
     const tick = (now: number) => {
       const elapsed = Math.max(0, now - lastTime);
       lastTime = now;
+      renderFrameObserverRef.current(elapsed);
       const current = sceneRef.current;
       const samples = current.samples;
       if (!motionPreference.matches && samples.length > 1) {
@@ -1280,9 +1288,10 @@ function DmoLiveCourt({
             <span>Resolution</span>
             <select
               aria-label="Graphics resolution"
-              value={renderQuality}
-              onChange={(event) => onRenderQualityChange(event.currentTarget.value as BroadcastRenderQuality)}
+              value={renderSetting}
+              onChange={(event) => onRenderSettingChange(event.currentTarget.value as BroadcastRenderSetting)}
             >
+              <option value="auto">Auto · {renderQuality}</option>
               {BROADCAST_RENDER_QUALITY_OPTIONS.map(option => (
                 <option key={option.value} value={option.value}>{option.label}</option>
               ))}

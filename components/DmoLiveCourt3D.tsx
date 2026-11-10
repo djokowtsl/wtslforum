@@ -118,9 +118,14 @@ import {
 import { loadLiveGruntSamples } from '@/lib/liveGruntAudio';
 import DmoLiveCourt, { type GruntControlProps } from './DmoLiveCourt';
 import {
+  AUTO_RENDER_RESOLUTIONS,
   BROADCAST_RENDER_QUALITY_OPTIONS,
+  createAdaptiveRenderState,
   getBroadcastRenderPixelRatio,
-  type BroadcastRenderQuality,
+  observeAdaptiveRenderFrame,
+  type AdaptiveRenderState,
+  type BroadcastRenderResolution,
+  type BroadcastRenderSetting,
 } from './DmoRenderResolution';
 import DmoLiveBufferingOverlay from './DmoLiveBufferingOverlay';
 import {
@@ -287,11 +292,15 @@ function ThreeCourt({
   onGruntsEnabledChange,
   onUnsupported,
   renderQuality,
-  onRenderQualityChange,
+  renderSetting,
+  onRenderSettingChange,
+  onRenderFrame,
 }: Props & GruntControlProps & {
   onUnsupported: () => void;
-  renderQuality: BroadcastRenderQuality;
-  onRenderQualityChange: (quality: BroadcastRenderQuality) => void;
+  renderQuality: BroadcastRenderResolution;
+  renderSetting: BroadcastRenderSetting;
+  onRenderSettingChange: (setting: BroadcastRenderSetting) => void;
+  onRenderFrame: (elapsedMs: number) => void;
 }) {
   const sceneElementRef = useRef<HTMLElement>(null);
   const viewportRef = useRef<HTMLDivElement>(null);
@@ -397,6 +406,8 @@ function ThreeCourt({
   const [timeOfDay, setTimeOfDay] = useState<BroadcastTimeOfDay>('day');
   const renderQualityRef = useRef(renderQuality);
   renderQualityRef.current = renderQuality;
+  const renderFrameObserverRef = useRef(onRenderFrame);
+  renderFrameObserverRef.current = onRenderFrame;
   const rendererResizeRef = useRef<(() => void) | null>(null);
   useEffect(() => {
     rendererResizeRef.current?.();
@@ -2087,6 +2098,7 @@ function ThreeCourt({
       if (graphicsFailed) return;
       animation = window.requestAnimationFrame(animate);
       const clockElapsed = Math.max(0, now - lastTime);
+      renderFrameObserverRef.current(clockElapsed);
       const elapsed = Math.min(80, clockElapsed);
       lastTime = now;
       const samples = sampleBufferRef.current;
@@ -2934,9 +2946,10 @@ function ThreeCourt({
             <span>Resolution</span>
             <select
               aria-label="Graphics resolution"
-              value={renderQuality}
-              onChange={(event) => onRenderQualityChange(event.currentTarget.value as BroadcastRenderQuality)}
+              value={renderSetting}
+              onChange={(event) => onRenderSettingChange(event.currentTarget.value as BroadcastRenderSetting)}
             >
+              <option value="auto">Auto · {renderQuality}</option>
               {BROADCAST_RENDER_QUALITY_OPTIONS.map(option => (
                 <option key={option.value} value={option.value}>{option.label}</option>
               ))}
@@ -3136,10 +3149,35 @@ function ThreeCourt({
 export default function DmoLiveCourt3D(props: Props) {
   const [use2dFallback, setUse2dFallback] = useState(false);
   const [gruntsEnabled, setGruntsEnabled] = useState(true);
-  const [renderQuality, setRenderQuality] = useState<BroadcastRenderQuality>('1080p');
+  const [renderSetting, setRenderSetting] = useState<BroadcastRenderSetting>('auto');
+  const [adaptiveTier, setAdaptiveTier] = useState(0);
+  const adaptiveStateRef = useRef<AdaptiveRenderState>(createAdaptiveRenderState());
+  const adaptiveTierRef = useRef(0);
+  const renderSettingRef = useRef(renderSetting);
+  renderSettingRef.current = renderSetting;
   const [crowdDensityChoice, setCrowdDensityChoice] = useState<CrowdDensityChoice>('auto');
   const crowdDensity = resolveCrowdDensity(crowdDensityChoice, props.tournamentRound);
   const useFallback = useCallback(() => setUse2dFallback(true), []);
+  const onRenderFrame = useCallback((elapsedMs: number) => {
+    if (renderSettingRef.current !== 'auto') return;
+    const nextTier = observeAdaptiveRenderFrame(
+      adaptiveStateRef.current,
+      elapsedMs,
+      document.visibilityState === 'visible',
+    );
+    if (nextTier === adaptiveTierRef.current) return;
+    adaptiveTierRef.current = nextTier;
+    setAdaptiveTier(nextTier);
+  }, []);
+  const onRenderSettingChange = useCallback((setting: BroadcastRenderSetting) => {
+    adaptiveStateRef.current = createAdaptiveRenderState();
+    adaptiveTierRef.current = 0;
+    setAdaptiveTier(0);
+    setRenderSetting(setting);
+  }, []);
+  const renderQuality = renderSetting === 'auto'
+    ? AUTO_RENDER_RESOLUTIONS[adaptiveTier]
+    : renderSetting;
   const gruntControls = { gruntsEnabled, onGruntsEnabledChange: setGruntsEnabled };
   const { fullReplay = false, ...courtProps } = props;
   return (
@@ -3164,7 +3202,9 @@ export default function DmoLiveCourt3D(props: Props) {
           fullReplay={fullReplay}
           crowdDensity={crowdDensity}
           renderQuality={renderQuality}
-          onRenderQualityChange={setRenderQuality}
+          renderSetting={renderSetting}
+          onRenderSettingChange={onRenderSettingChange}
+          onRenderFrame={onRenderFrame}
           {...gruntControls}
         />
       ) : (
@@ -3172,7 +3212,9 @@ export default function DmoLiveCourt3D(props: Props) {
           {...props}
           crowdDensity={crowdDensity}
           renderQuality={renderQuality}
-          onRenderQualityChange={setRenderQuality}
+          renderSetting={renderSetting}
+          onRenderSettingChange={onRenderSettingChange}
+          onRenderFrame={onRenderFrame}
           {...gruntControls}
           onUnsupported={useFallback}
         />
