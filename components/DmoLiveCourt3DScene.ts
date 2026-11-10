@@ -67,6 +67,13 @@ export type CourtFixtureRig = {
 export type CourtSurfaceEffects = {
   addSkidMark: (x: number, z: number, heading: number, intensity: number) => void;
   clearSkidMarks: () => void;
+  net: CourtNetRig;
+};
+
+export type CourtNetRig = {
+  impact: (z: number, strength: number, direction: number, timeSeconds: number) => void;
+  update: (timeSeconds: number) => void;
+  clear: () => void;
 };
 
 export const SCALE = 0.01;
@@ -85,6 +92,48 @@ const COURT_WIDTH = 10.97;
 const SINGLES_WIDTH = 8.23;
 const NET_CENTER_HEIGHT = 0.914;
 const NET_POST_HEIGHT = 1.07;
+
+function netHeightAt(z: number) {
+  const edge = THREE.MathUtils.clamp(Math.abs(z) / (COURT_WIDTH / 2), 0, 1);
+  return NET_CENTER_HEIGHT + (NET_POST_HEIGHT - NET_CENTER_HEIGHT) * edge;
+}
+
+export function detectCourtNetImpact(
+  older: Pick<THREE.Vector3, 'x' | 'y' | 'z'> | null,
+  previous: Pick<THREE.Vector3, 'x' | 'y' | 'z'>,
+  current: Pick<THREE.Vector3, 'x' | 'y' | 'z'>,
+) {
+  const deltaX = current.x - previous.x;
+  let contact: { y: number; z: number } | null = null;
+  let direction = 1;
+
+  if (Math.abs(deltaX) > 1e-5 && previous.x * current.x <= 0) {
+    const fraction = THREE.MathUtils.clamp(-previous.x / deltaX, 0, 1);
+    contact = {
+      y: previous.y + (current.y - previous.y) * fraction,
+      z: previous.z + (current.z - previous.z) * fraction,
+    };
+    direction = Math.sign(deltaX) || 1;
+  } else if (older) {
+    const incomingX = previous.x - older.x;
+    const outgoingX = current.x - previous.x;
+    if (incomingX * outgoingX < 0 && Math.abs(previous.x) <= 0.24) {
+      contact = { y: previous.y, z: previous.z };
+      direction = Math.sign(incomingX) || 1;
+    }
+  }
+
+  if (!contact
+    || contact.y < 0.12
+    || contact.y > netHeightAt(contact.z) + BALL_RADIUS + 0.025) return null;
+
+  const travel = Math.hypot(deltaX, current.y - previous.y, current.z - previous.z);
+  return {
+    z: contact.z,
+    strength: THREE.MathUtils.clamp(0.3 + travel * 1.8, 0.3, 1),
+    direction: direction < 0 ? -1 : 1,
+  };
+}
 
 export const CROWD_SKIN_TONES = [
   [1.0, 0.91, 0.79],
@@ -385,30 +434,346 @@ function courtSurfaceTexture(surface: Te4CourtSurface, region: 'playing' | 'runo
   return texture;
 }
 
-function tourNetTexture(isWta: boolean) {
+type CourtNetTheme = {
+  eventLabel: string;
+  postColor: number;
+  tapeColor: number;
+  accentColor: number;
+  inkColor: number;
+  meshColor: number;
+};
+
+function courtNetTheme(venue: DmoVenueProfile, isWta: boolean, surface: Te4CourtSurface): CourtNetTheme {
+  const namedThemes: Record<string, CourtNetTheme> = {
+    'Paris indoor arena': {
+      eventLabel: 'PARIS MASTERS',
+      postColor: 0x174b38,
+      tapeColor: 0xe9e7dc,
+      accentColor: 0x2a6a4d,
+      inkColor: 0x173d2f,
+      meshColor: 0x172722,
+    },
+    'Philippe-Chatrier Court': {
+      eventLabel: 'ROLAND-GARROS',
+      postColor: 0x16523c,
+      tapeColor: 0xeae7da,
+      accentColor: 0xc66d42,
+      inkColor: 0x174231,
+      meshColor: 0x1b2821,
+    },
+    'Suzanne Lenglen Court': {
+      eventLabel: 'ROLAND-GARROS',
+      postColor: 0x16523c,
+      tapeColor: 0xeae7da,
+      accentColor: 0xc66d42,
+      inkColor: 0x174231,
+      meshColor: 0x1b2821,
+    },
+    'Wimbledon Centre Court': {
+      eventLabel: 'WIMBLEDON',
+      postColor: 0x17432f,
+      tapeColor: 0xf0eee5,
+      accentColor: 0x68466d,
+      inkColor: 0x254632,
+      meshColor: 0x19241f,
+    },
+    'Wimbledon No. 1 Court': {
+      eventLabel: 'WIMBLEDON',
+      postColor: 0x17432f,
+      tapeColor: 0xf0eee5,
+      accentColor: 0x68466d,
+      inkColor: 0x254632,
+      meshColor: 0x19241f,
+    },
+    'Arthur Ashe Stadium': {
+      eventLabel: 'US OPEN',
+      postColor: 0x183756,
+      tapeColor: 0xf0f0eb,
+      accentColor: 0x2975b9,
+      inkColor: 0x183b5d,
+      meshColor: 0x17242e,
+    },
+    'Louis Armstrong Stadium': {
+      eventLabel: 'US OPEN',
+      postColor: 0x183756,
+      tapeColor: 0xf0f0eb,
+      accentColor: 0x2975b9,
+      inkColor: 0x183b5d,
+      meshColor: 0x17242e,
+    },
+    'Rod Laver Arena': {
+      eventLabel: 'AUSTRALIAN OPEN',
+      postColor: 0x15527a,
+      tapeColor: 0xf0f2ec,
+      accentColor: 0x1590bd,
+      inkColor: 0x16476b,
+      meshColor: 0x172733,
+    },
+    'Indian Wells Stadium 1': {
+      eventLabel: 'INDIAN WELLS',
+      postColor: 0x1d485b,
+      tapeColor: 0xf0ede2,
+      accentColor: 0xb8944f,
+      inkColor: 0x234352,
+      meshColor: 0x18272c,
+    },
+  };
+  const known = namedThemes[venue.label];
+  if (known) return known;
+
+  const accentColor = surface === 'clay' ? 0xb96b43
+    : surface === 'grass' ? 0x527a4b
+      : isWta ? 0xbd2f68 : 0x2878aa;
+  return {
+    eventLabel: venue.cityLabel ?? (isWta ? 'WTA TOUR' : 'ATP TOUR'),
+    postColor: surface === 'clay' || surface === 'grass' ? 0x194a36 : 0x1b3448,
+    tapeColor: 0xece9df,
+    accentColor,
+    inkColor: surface === 'clay' || surface === 'grass' ? 0x23452f : 0x1d3a50,
+    meshColor: 0x1b2726,
+  };
+}
+
+function courtNetBandTexture(theme: CourtNetTheme) {
   if (typeof document === 'undefined') return null;
   const canvas = document.createElement('canvas');
   canvas.width = 1024;
-  canvas.height = 64;
+  canvas.height = 96;
   const context = canvas.getContext('2d');
   if (!context) return null;
-  const accent = isWta ? '#bd2f68' : '#2878aa';
-  const ink = isWta ? '#54223a' : '#173c58';
-  const label = isWta ? 'WTA' : 'ATP TOUR';
-  context.fillStyle = '#e9e6d9';
+  const cssColor = (color: number) => `#${color.toString(16).padStart(6, '0')}`;
+  context.fillStyle = cssColor(theme.tapeColor);
   context.fillRect(0, 0, canvas.width, canvas.height);
-  context.fillStyle = accent;
-  context.fillRect(0, 0, canvas.width, 7);
-  context.font = '700 28px Arial, sans-serif';
+  context.fillStyle = cssColor(theme.accentColor);
+  context.fillRect(0, 0, canvas.width, 9);
+  context.fillRect(0, canvas.height - 4, canvas.width, 4);
+  context.font = '700 25px Arial, sans-serif';
   context.textBaseline = 'middle';
   context.textAlign = 'center';
-  context.fillStyle = ink;
-  for (const x of [170, 512, 854]) context.fillText(label, x, 38);
+  context.fillStyle = cssColor(theme.inkColor);
+  for (const x of [170, 512, 854]) {
+    context.fillText(theme.eventLabel, x, 54, 300);
+    context.fillStyle = cssColor(theme.accentColor);
+    context.fillRect(x - 116, 29, 12, 50);
+    context.fillStyle = cssColor(theme.inkColor);
+  }
   const texture = new THREE.CanvasTexture(canvas);
   texture.colorSpace = THREE.SRGBColorSpace;
   texture.minFilter = THREE.LinearFilter;
   texture.magFilter = THREE.LinearFilter;
   return texture;
+}
+
+function buildCourtNet(
+  scene: THREE.Scene,
+  venue: DmoVenueProfile,
+  isWta: boolean,
+  surface: Te4CourtSurface,
+): CourtNetRig {
+  const theme = courtNetTheme(venue, isWta, surface);
+  const netGroup = new THREE.Group();
+  netGroup.name = 'wtsl-court-net';
+  netGroup.userData = {
+    venue: venue.label,
+    eventLabel: theme.eventLabel,
+    tour: isWta ? 'WTA' : 'ATP',
+    surface,
+  };
+  scene.add(netGroup);
+
+  const segments = 72;
+  const rows = 16;
+  const bottomY = 0.035;
+  const points: number[] = [];
+  const addWire = (y1: number, z1: number, y2: number, z2: number) => {
+    points.push(0, y1, z1, 0, y2, z2);
+  };
+  const pointAt = (column: number, row: number) => {
+    const z = -COURT_WIDTH / 2 + (column / segments) * COURT_WIDTH;
+    const fraction = row / rows;
+    const y = bottomY + (netHeightAt(z) - bottomY) * fraction;
+    return { y, z };
+  };
+
+  for (let column = 0; column <= segments; column += 1) {
+    const bottom = pointAt(column, 0);
+    const top = pointAt(column, rows);
+    addWire(bottom.y, bottom.z, top.y, top.z);
+  }
+  for (let row = 1; row < rows; row += 1) {
+    for (let column = 0; column < segments; column += 1) {
+      const left = pointAt(column, row);
+      const right = pointAt(column + 1, row);
+      addWire(left.y, left.z, right.y, right.z);
+    }
+  }
+  for (let row = 0; row < rows; row += 1) {
+    for (let column = 0; column < segments; column += 1) {
+      if ((row + column) % 2 !== 0) continue;
+      const lowerLeft = pointAt(column, row);
+      const upperRight = pointAt(column + 1, row + 1);
+      addWire(lowerLeft.y, lowerLeft.z, upperRight.y, upperRight.z);
+    }
+  }
+  const netGeometry = new THREE.BufferGeometry();
+  const netPositions = new THREE.Float32BufferAttribute(points, 3);
+  netPositions.setUsage(THREE.DynamicDrawUsage);
+  netGeometry.setAttribute('position', netPositions);
+  const restPositions = Float32Array.from(netPositions.array as Float32Array);
+  const netMesh = new THREE.LineSegments(
+    netGeometry,
+    new THREE.LineBasicMaterial({ color: theme.meshColor, transparent: true, opacity: 0.88 }),
+  );
+  netMesh.name = 'wtsl-net-mesh';
+  netMesh.userData = { wireColumns: segments + 1, wireRows: rows, woven: true };
+  netMesh.frustumCulled = false;
+  netGroup.add(netMesh);
+
+  const tapeGroup = new THREE.Group();
+  tapeGroup.name = 'wtsl-net-top-tape-group';
+  netGroup.add(tapeGroup);
+  const tape = new THREE.Mesh(
+    new THREE.BoxGeometry(0.08, 0.045, COURT_WIDTH + 0.12),
+    new THREE.MeshStandardMaterial({ color: theme.tapeColor, roughness: 0.76 }),
+  );
+  tape.name = 'wtsl-net-top-tape';
+  tape.position.set(0, NET_CENTER_HEIGHT, 0);
+  tapeGroup.add(tape);
+
+  const netAccent = new THREE.Mesh(
+    new THREE.BoxGeometry(0.082, 0.008, COURT_WIDTH + 0.12),
+    new THREE.MeshBasicMaterial({ color: theme.accentColor }),
+  );
+  netAccent.name = 'wtsl-net-tour-accent';
+  netAccent.userData = { tour: isWta ? 'WTA' : 'ATP', eventLabel: theme.eventLabel };
+  netAccent.position.set(0, NET_CENTER_HEIGHT - 0.018, 0);
+  tapeGroup.add(netAccent);
+
+  const bandTexture = courtNetBandTexture(theme);
+  const brandMaterial = new THREE.MeshBasicMaterial({
+    color: bandTexture ? 0xffffff : theme.inkColor,
+    map: bandTexture ?? undefined,
+    side: THREE.DoubleSide,
+    toneMapped: false,
+  });
+  for (const [x, rotationY] of [[0.041, Math.PI / 2], [-0.041, -Math.PI / 2]] as const) {
+    const brandMark = new THREE.Mesh(
+      new THREE.PlaneGeometry(COURT_WIDTH, 0.045),
+      brandMaterial,
+    );
+    brandMark.name = 'wtsl-net-tour-mark';
+    brandMark.userData = { tour: isWta ? 'WTA' : 'ATP', eventLabel: theme.eventLabel };
+    brandMark.rotation.y = rotationY;
+    brandMark.position.set(x, NET_CENTER_HEIGHT, 0);
+    tapeGroup.add(brandMark);
+  }
+
+  const postMaterial = new THREE.MeshStandardMaterial({
+    color: theme.postColor,
+    roughness: 0.58,
+    metalness: 0.16,
+  });
+  const padMaterial = new THREE.MeshStandardMaterial({
+    color: theme.postColor,
+    roughness: 0.84,
+  });
+  const postAccentMaterial = new THREE.MeshBasicMaterial({ color: theme.accentColor });
+  for (const z of [-COURT_WIDTH / 2 - 0.08, COURT_WIDTH / 2 + 0.08]) {
+    const post = new THREE.Mesh(
+      new THREE.CylinderGeometry(0.04, 0.05, NET_POST_HEIGHT + 0.08, 14),
+      postMaterial,
+    );
+    post.name = 'wtsl-net-post';
+    post.userData.eventLabel = theme.eventLabel;
+    post.position.set(0, (NET_POST_HEIGHT + 0.08) / 2, z);
+    netGroup.add(post);
+
+    const pad = new THREE.Mesh(new THREE.BoxGeometry(0.14, 0.82, 0.14), padMaterial);
+    pad.name = 'wtsl-net-post-pad';
+    pad.userData.eventLabel = theme.eventLabel;
+    pad.position.set(0, 0.53, z);
+    netGroup.add(pad);
+    const padBand = new THREE.Mesh(new THREE.BoxGeometry(0.145, 0.055, 0.145), postAccentMaterial);
+    padBand.name = 'wtsl-net-post-band';
+    padBand.position.set(0, 0.88, z);
+    netGroup.add(padBand);
+    const postCap = new THREE.Mesh(
+      new THREE.CylinderGeometry(0.052, 0.052, 0.035, 14),
+      postMaterial,
+    );
+    postCap.name = 'wtsl-net-post-cap';
+    postCap.position.set(0, NET_POST_HEIGHT + 0.055, z);
+    netGroup.add(postCap);
+  }
+
+  const centerStrap = new THREE.Mesh(
+    new THREE.BoxGeometry(0.045, NET_CENTER_HEIGHT, 0.03),
+    new THREE.MeshStandardMaterial({ color: theme.tapeColor, roughness: 0.82 }),
+  );
+  centerStrap.name = 'wtsl-net-center-strap';
+  centerStrap.position.set(0, NET_CENTER_HEIGHT / 2, 0);
+  netGroup.add(centerStrap);
+
+  const impacts: Array<{ z: number; strength: number; direction: number; timeSeconds: number }> = [];
+  let vibrating = false;
+  const clear = () => {
+    impacts.length = 0;
+    if (!vibrating) return;
+    (netPositions.array as Float32Array).set(restPositions);
+    netPositions.needsUpdate = true;
+    tapeGroup.position.x = 0;
+    vibrating = false;
+  };
+  return {
+    impact: (z, strength, direction, timeSeconds) => {
+      if (![z, strength, direction, timeSeconds].every(Number.isFinite)) return;
+      impacts.push({
+        z: THREE.MathUtils.clamp(z, -COURT_WIDTH / 2, COURT_WIDTH / 2),
+        strength: THREE.MathUtils.clamp(strength, 0.2, 1),
+        direction: Math.sign(direction) || 1,
+        timeSeconds,
+      });
+      if (impacts.length > 8) impacts.shift();
+    },
+    update: (timeSeconds) => {
+      for (let index = impacts.length - 1; index >= 0; index -= 1) {
+        if (timeSeconds - impacts[index].timeSeconds > 1.15) impacts.splice(index, 1);
+      }
+      if (!impacts.length) {
+        clear();
+        return;
+      }
+
+      const livePositions = netPositions.array as Float32Array;
+      let tapeShift = 0;
+      for (const impulse of impacts) {
+        const age = Math.max(0, timeSeconds - impulse.timeSeconds);
+        tapeShift += impulse.direction * impulse.strength
+          * 0.016 * Math.sin(age * 42) * Math.exp(-age * 7);
+      }
+      tapeGroup.position.x = tapeShift;
+
+      for (let index = 0; index < restPositions.length; index += 3) {
+        const y = restPositions[index + 1];
+        const z = restPositions[index + 2];
+        const edge = Math.sin(Math.PI * THREE.MathUtils.clamp((z + COURT_WIDTH / 2) / COURT_WIDTH, 0, 1));
+        const heightWeight = 0.35 + 0.65 * THREE.MathUtils.clamp(y / NET_POST_HEIGHT, 0, 1);
+        let displacement = 0;
+        for (const impulse of impacts) {
+          const age = timeSeconds - impulse.timeSeconds;
+          if (age < 0) continue;
+          const distance = Math.abs(z - impulse.z);
+          const wave = Math.sin(age * 46 - distance * 5.4) * Math.exp(-age * 5.6);
+          displacement += impulse.direction * impulse.strength * 0.14
+            * edge * heightWeight * Math.exp(-distance * 1.45) * wave;
+        }
+        livePositions[index] = restPositions[index] + displacement;
+      }
+      netPositions.needsUpdate = true;
+      vibrating = true;
+    },
+    clear,
+  };
 }
 
 function claySkidTexture() {
@@ -642,65 +1007,7 @@ export function buildCourt(
   lineZ(SINGLES_WIDTH, 6.4, 0);
   lineX(12.8, 0, 0);
 
-  const netPoints: number[] = [];
-  const segments = 36;
-  const rows = 8;
-  const topAt = (z: number) =>
-    NET_CENTER_HEIGHT + (NET_POST_HEIGHT - NET_CENTER_HEIGHT) * Math.abs(z) / halfWidth;
-  for (let segment = 0; segment <= segments; segment += 1) {
-    const z = -halfWidth + (segment / segments) * COURT_WIDTH;
-    netPoints.push(0, 0.035, z, 0, topAt(z), z);
-  }
-  for (let row = 1; row < rows; row += 1) {
-    const fraction = row / rows;
-    for (let segment = 0; segment < segments; segment += 1) {
-      const z1 = -halfWidth + (segment / segments) * COURT_WIDTH;
-      const z2 = -halfWidth + ((segment + 1) / segments) * COURT_WIDTH;
-      netPoints.push(
-        0, 0.035 + (topAt(z1) - 0.035) * fraction, z1,
-        0, 0.035 + (topAt(z2) - 0.035) * fraction, z2,
-      );
-    }
-  }
-  const netGeometry = new THREE.BufferGeometry();
-  netGeometry.setAttribute('position', new THREE.Float32BufferAttribute(netPoints, 3));
-  const net = new THREE.LineSegments(
-    netGeometry,
-    new THREE.LineBasicMaterial({ color: 0xd9dfd2, transparent: true, opacity: 0.4 }),
-  );
-  net.frustumCulled = false;
-  scene.add(net);
-  const tape = material(0xe9e6d9, 0.76);
-  addBox(scene, [0.08, 0.045, COURT_WIDTH + 0.12], [0, NET_CENTER_HEIGHT, 0], tape);
-  const netAccentColor = isWta ? 0xbd2f68 : 0x2878aa;
-  const netAccent = new THREE.Mesh(
-    new THREE.BoxGeometry(0.082, 0.008, COURT_WIDTH + 0.12),
-    new THREE.MeshBasicMaterial({ color: netAccentColor }),
-  );
-  netAccent.name = 'wtsl-net-tour-accent';
-  netAccent.userData.tour = isWta ? 'WTA' : 'ATP';
-  netAccent.position.set(0, NET_CENTER_HEIGHT - 0.018, 0);
-  scene.add(netAccent);
-  const brandTexture = tourNetTexture(isWta);
-  const brandMaterial = new THREE.MeshBasicMaterial({
-    color: brandTexture ? 0xffffff : netAccentColor,
-    map: brandTexture ?? undefined,
-    side: THREE.DoubleSide,
-  });
-  for (const [x, rotationY] of [[0.041, Math.PI / 2], [-0.041, -Math.PI / 2]] as const) {
-    const brandMark = new THREE.Mesh(
-      new THREE.PlaneGeometry(COURT_WIDTH, 0.045),
-      brandMaterial,
-    );
-    brandMark.name = 'wtsl-net-tour-mark';
-    brandMark.userData.tour = isWta ? 'WTA' : 'ATP';
-    brandMark.rotation.y = rotationY;
-    brandMark.position.set(x, NET_CENTER_HEIGHT, 0);
-    scene.add(brandMark);
-  }
-  for (const z of [-halfWidth - 0.08, halfWidth + 0.08]) {
-    addBox(scene, [0.08, NET_POST_HEIGHT, 0.08], [0, NET_POST_HEIGHT / 2, z], tape);
-  }
+  const netRig = buildCourtNet(scene, venue, isWta, surface);
 
   const apronOutline = new THREE.LineLoop(
     new THREE.BufferGeometry().setFromPoints([
@@ -775,6 +1082,7 @@ export function buildCourt(
       nextSkidIndex = 0;
       skidMesh.instanceMatrix.needsUpdate = true;
     },
+    net: netRig,
   };
   return surfaceEffects;
 }
