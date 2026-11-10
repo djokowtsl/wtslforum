@@ -2203,6 +2203,13 @@ test('Paris net uses a dense weave and visible, decaying hit vibration', () => {
   assert.ok(mesh.userData.cellWidth <= 0.05);
   assert.ok(mesh.geometry.getAttribute('position').count > 17_000);
   assert.ok(mesh.material.color.getHex() > 0x303030, 'the woven net should not render near black');
+  assert.ok(mesh.material.color.getHex() < 0xa0a0a0, 'the woven net should remain gray, not white');
+  assert.equal(mesh.material.transparent, true);
+  assert.ok(
+    mesh.material.opacity >= 0.2 && mesh.material.opacity <= 0.35,
+    'the mesh should stay translucent but visible instead of reading as a solid white panel',
+  );
+  assert.equal(mesh.material.depthWrite, false, 'the mesh should not occlude the court behind it');
   assert.equal(mesh.material.toneMapped, false);
   assert.ok(scene.getObjectByName('wtsl-net-center-strap'));
 

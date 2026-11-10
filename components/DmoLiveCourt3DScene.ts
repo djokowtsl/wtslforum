@@ -626,7 +626,8 @@ function buildCourtNet(
     new THREE.LineBasicMaterial({
       color: theme.meshColor,
       transparent: true,
-      opacity: 0.82,
+      opacity: 0.3,
+      depthWrite: false,
       toneMapped: false,
     }),
   );
