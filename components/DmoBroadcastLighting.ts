@@ -53,17 +53,17 @@ const PRESETS: Record<BroadcastTimeOfDay, LightingPreset> = {
     visibleClouds: 6,
   },
   night: {
-    sky: 0x101a31,
-    fog: 0x151e30,
-    hemisphere: 0.48,
-    key: 0.12,
-    fill: 0.48,
-    floodlights: 300,
-    exposure: 0.9,
+    sky: 0x08101e,
+    fog: 0x0b1422,
+    hemisphere: 0.12,
+    key: 0.02,
+    fill: 0.08,
+    floodlights: 220,
+    exposure: 0.68,
     sunPosition: [-91, 23, -96],
     sunColor: 0xffae72,
-    cloudColor: 0x657185,
-    cloudOpacity: 0.34,
+    cloudColor: 0x3d4b60,
+    cloudOpacity: 0.28,
     visibleClouds: 2,
   },
 };
@@ -151,8 +151,14 @@ export function createDmoBroadcastLighting(
 
   const floodlightFixtures: THREE.Mesh[] = [];
   const floodlights: THREE.SpotLight[] = [];
-  for (const x of [-23, 23]) {
-    for (const z of [-20, 20]) {
+  const stadiumCourtLights: THREE.SpotLight[] = [];
+  scene.traverse(object => {
+    if (object instanceof THREE.SpotLight && object.name === 'wtsl-stadium-court-fill-light') {
+      stadiumCourtLights.push(object);
+    }
+  });
+  for (const x of [-20, 20]) {
+    for (const z of [-15, 15]) {
       const fixture = new THREE.Mesh(
         new THREE.BoxGeometry(2.4, 0.2, 0.34),
         new THREE.MeshStandardMaterial({
@@ -168,9 +174,10 @@ export function createDmoBroadcastLighting(
       scene.add(fixture);
       floodlightFixtures.push(fixture);
 
-      const light = new THREE.SpotLight(0xe5efff, 0, 72, Math.PI / 5, 0.7, 1);
+      const light = new THREE.SpotLight(0xdce9ff, 0, 72, Math.PI / 3, 0.72, 1);
+      light.name = 'wtsl-broadcast-floodlight';
       light.position.set(x, 18, z);
-      light.target.position.set(0, 0, 0);
+      light.target.position.set(x * 0.12, 0, z * 0.35);
       light.castShadow = false;
       scene.add(light, light.target);
       floodlights.push(light);
@@ -191,6 +198,12 @@ export function createDmoBroadcastLighting(
     key.intensity = preset.key;
     key.position.set(...preset.sunPosition);
     fill.intensity = preset.fill;
+    stadiumCourtLights.forEach(light => {
+      const daylightIntensity = Number(light.userData.wtslDaylightIntensity ?? 0);
+      light.intensity = timeOfDay === 'night'
+        ? 0
+        : daylightIntensity * (timeOfDay === 'evening' ? 0.45 : 1);
+    });
     sun.position.set(...preset.sunPosition);
     sun.visible = !indoor && timeOfDay !== 'night';
     cloudGroup.visible = !indoor;
