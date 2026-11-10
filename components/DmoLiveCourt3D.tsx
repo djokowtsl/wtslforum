@@ -125,6 +125,7 @@ import {
   buildCourtFixtures,
   buildCrowd,
   buildStadiumEnvironment,
+  detectCourtNetImpact,
   makePlayer,
   poseLimb,
   type CrowdRig,
@@ -855,6 +856,10 @@ function ThreeCourt({
     let changeoverLabelUntil = 0;
     let lastCrowdEventFrame: number | null = null;
     let crowdApplauseUntil = 0;
+    let olderNetBallPosition: THREE.Vector3 | null = null;
+    let previousNetBallPosition: THREE.Vector3 | null = null;
+    let previousNetBallFrame: number | null = null;
+    let lastNetImpactFrame = Number.NEGATIVE_INFINITY;
     let skidTimeline = skidMarksRef.current;
     let nextSkidMark = 0;
     let lastSkidFrame: number | null = null;
@@ -2301,6 +2306,38 @@ function ThreeCourt({
             serveBallShown = true;
           }
         }
+        if (previousNetBallFrame !== null) {
+          const frameGap = currentFrame - previousNetBallFrame;
+          if (frameGap < 0 || frameGap > frameRate * 0.25) {
+            olderNetBallPosition = null;
+            previousNetBallPosition = null;
+            previousNetBallFrame = null;
+            lastNetImpactFrame = Number.NEGATIVE_INFINITY;
+            courtEffects.net.clear();
+          }
+        }
+        if (previousNetBallPosition && currentFrame > (previousNetBallFrame ?? currentFrame)) {
+          const netImpact = detectCourtNetImpact(
+            olderNetBallPosition,
+            previousNetBallPosition,
+            ballPosition,
+          );
+          if (netImpact && currentFrame - lastNetImpactFrame > 4) {
+            courtEffects.net.impact(
+              netImpact.z,
+              netImpact.strength,
+              netImpact.direction,
+              now / 1000,
+            );
+            lastNetImpactFrame = currentFrame;
+          }
+        }
+        if (previousNetBallFrame === null || currentFrame > previousNetBallFrame) {
+          olderNetBallPosition = previousNetBallPosition;
+          previousNetBallPosition = ballPosition.clone();
+          previousNetBallFrame = currentFrame;
+        }
+        courtEffects.net.update(now / 1000);
         ball.position.copy(ballPosition);
         ball.position.y += BALL_RADIUS;
         ballShadow.position.set(ballPosition.x, 0.025, ballPosition.z);

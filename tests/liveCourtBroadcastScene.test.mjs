@@ -2137,3 +2137,65 @@ test('surface finishes and ATP/WTA net treatments follow detected viewer metadat
   assert.match(canvasSource, /drawLiveCourtBackdrop\(context, surface, camera, zoom, stadiumAtmosphere, isWta\)/);
   assert.match(threeSource, /sceneDataRef\.current\.isWta/);
 });
+
+test('Paris net picks up tournament styling, woven detail, and decaying hit vibration', () => {
+  const scene = new THREE.Scene();
+  const courtEffects = sceneApi.buildCourt(scene, 'hard', false, 'Paris Masters');
+  const net = scene.getObjectByName('wtsl-court-net');
+  const mesh = scene.getObjectByName('wtsl-net-mesh');
+  const posts = net?.children.filter(object => object.name === 'wtsl-net-post-pad') ?? [];
+  assert.ok(net && mesh);
+  assert.equal(net.userData.eventLabel, 'PARIS MASTERS');
+  assert.equal(posts.length, 2);
+  assert.ok(posts.every(post => post.userData.eventLabel === 'PARIS MASTERS'));
+  assert.ok(mesh.geometry.getAttribute('position').count > 3_000);
+  assert.ok(scene.getObjectByName('wtsl-net-center-strap'));
+
+  const positions = mesh.geometry.getAttribute('position');
+  const rest = Array.from(positions.array);
+  courtEffects.net.impact(0.3, 1, 1, 0);
+  courtEffects.net.update(0.04);
+  assert.notDeepEqual(Array.from(positions.array), rest);
+  courtEffects.net.update(2);
+  assert.deepEqual(Array.from(positions.array), rest);
+
+  const rolandGarros = new THREE.Scene();
+  sceneApi.buildCourt(rolandGarros, 'clay', false, 'Roland Garros');
+  assert.equal(rolandGarros.getObjectByName('wtsl-court-net').userData.eventLabel, 'ROLAND-GARROS');
+});
+
+test('net impact cues detect low crossings and rebounds but ignore clear shots', async () => {
+  const { detectCourtNetImpact } = sceneApi;
+  const crossing = detectCourtNetImpact(
+    new THREE.Vector3(-0.9, 0.7, -0.4),
+    new THREE.Vector3(-0.1, 0.8, 0.3),
+    new THREE.Vector3(0.1, 0.82, 0.5),
+  );
+  assert.ok(crossing);
+  assert.equal(crossing.direction, 1);
+  assert.ok(crossing.z > 0.3 && crossing.z < 0.5);
+
+  const rebound = detectCourtNetImpact(
+    new THREE.Vector3(-0.5, 0.72, -1),
+    new THREE.Vector3(-0.08, 0.74, -0.2),
+    new THREE.Vector3(-0.15, 0.75, -0.1),
+  );
+  assert.ok(rebound);
+  assert.equal(rebound.direction, 1);
+
+  assert.equal(detectCourtNetImpact(
+    null,
+    new THREE.Vector3(-0.1, 1.4, 0),
+    new THREE.Vector3(0.1, 1.45, 0.1),
+  ), null);
+  assert.equal(detectCourtNetImpact(
+    new THREE.Vector3(-0.8, 0.7, 0),
+    new THREE.Vector3(-0.5, 0.7, 0),
+    new THREE.Vector3(-0.2, 0.7, 0),
+  ), null);
+
+  const rendererSource = await readFile(new URL('../components/DmoLiveCourt3D.tsx', import.meta.url), 'utf8');
+  assert.match(rendererSource, /detectCourtNetImpact\(/);
+  assert.match(rendererSource, /courtEffects\.net\.impact\(/);
+  assert.match(rendererSource, /courtEffects\.net\.update\(/);
+});
