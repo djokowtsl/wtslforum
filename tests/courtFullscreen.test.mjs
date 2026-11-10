@@ -176,7 +176,13 @@ test('fullscreen fills the available screen and retains desktop playback control
   assert.match(liveCourt, /dmoFullscreenCourtCamera\(\s*viewportWidth, viewportHeight, fullscreenActive,\s*maxDistanceForTarget/);
   assert.match(liveCourt, /aria-label="Graphics resolution"/);
   assert.match(fallbackCourt, /aria-label="Graphics resolution"/);
-  assert.match(liveCourt, /useState<BroadcastRenderQuality>\('1080p'\)/);
+  assert.match(liveCourt, /useState<BroadcastRenderSetting>\('auto'\)/);
+  assert.match(liveCourt, /observeAdaptiveRenderFrame/);
+  assert.match(liveCourt, /AUTO_RENDER_RESOLUTIONS\[adaptiveTier\]/);
+  assert.match(liveCourt, /option value="auto">Auto · \{renderQuality\}/);
+  assert.match(fallbackCourt, /option value="auto">Auto · \{renderQuality\}/);
+  assert.match(liveCourt, /BROADCAST_RENDER_QUALITY_OPTIONS\.map/);
+  assert.match(fallbackCourt, /BROADCAST_RENDER_QUALITY_OPTIONS\.map/);
 });
 
 test('mobile fullscreen hides settings and playback UI but keeps an independent exit action', () => {
