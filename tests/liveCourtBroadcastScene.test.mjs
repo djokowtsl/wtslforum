@@ -1114,6 +1114,8 @@ test('Basel and Vienna indoor aliases get an underside-only ceiling within the b
   assert.equal(outdoorRim.userData.openSky, true, 'the rim frames the sky without a canopy');
   assert.equal(outdoorWalls.userData.openSky, true, 'outdoor walls close the bowl but leave the sky open above');
   const outdoorStructure = scene.getObjectByName('wtsl-stadium-superstructure');
+  assert.ok(outdoorWalls.userData.lowerEdge <= -7.5,
+    'the exterior backing extends below grade to stop low-angle sky leaks');
   assert.ok(outdoorWalls.userData.upperEdge >= outdoorStructure.userData.topStandHeight + 8,
     'the wall stands high enough to block sky through lower sections');
   assert.ok(scene.getObjectByName('wtsl-stadium-exterior-tier-course-1'));
@@ -1126,6 +1128,12 @@ test('Basel and Vienna indoor aliases get an underside-only ceiling within the b
   assert.ok(wallsBounds.max.z <= outdoorBowl.geometry.boundingBox.max.z + 0.66);
   const wallRay = new THREE.Raycaster(new THREE.Vector3(0, outdoorWalls.userData.upperEdge / 2, 0), new THREE.Vector3(1, 0, 0));
   assert.ok(wallRay.intersectObject(outdoorWall).length > 0, 'an interior view is backed by structure rather than open sky');
+  const lowSightline = new THREE.Raycaster(
+    new THREE.Vector3(0, 3, 0),
+    new THREE.Vector3(0, -0.09, -1).normalize(),
+  );
+  assert.ok(lowSightline.intersectObject(outdoorWall).length > 0,
+    'a downward sightline through low seating still meets the exterior wall');
 });
 
 test('court ground ends at the arena apron instead of extending into an exterior landscape', () => {
