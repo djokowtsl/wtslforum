@@ -4,6 +4,7 @@ import { useCallback, useEffect, useRef, useState } from 'react';
 import { ChevronLeft, ChevronRight, Minus, Pause, Play, Plus, RotateCcw, Volume2, VolumeX } from 'lucide-react';
 import * as THREE from 'three';
 import { OrbitControls } from 'three/examples/jsm/controls/OrbitControls.js';
+import { fullscreenCameraView, observeDmoManualCamera } from '@/lib/dmoCameraInteraction';
 import {
   LIVE_DMO_EVENT_SYNC_BUFFER_FRAMES,
   LIVE_DMO_UPDATE_INTERVAL_MS,
@@ -390,6 +391,7 @@ function ThreeCourt({
   const soundActivationPendingRef = useRef(false);
   const umpireCallsEnabledRef = useRef(true);
   const cameraViewRef = useRef<CameraView>('court');
+  const selectedCameraViewRef = useRef<Exclude<CameraView, 'custom'>>('court');
   const playerCameraPanRef = useRef(0);
   const [cameraView, setCameraView] = useState<CameraView>('court');
   const [timeOfDay, setTimeOfDay] = useState<BroadcastTimeOfDay>('day');
@@ -713,7 +715,7 @@ function ThreeCourt({
         camera.position.y += lift;
       }
     });
-    controls.addEventListener('start', () => {
+    const stopObservingManualCamera = observeDmoManualCamera(controls, () => {
       cameraViewRef.current = 'custom';
       setCameraView('custom');
     });
@@ -828,6 +830,7 @@ function ThreeCourt({
     trail.frustumCulled = false;
     scene.add(trail);
 
+    let wasFullscreen = false;
     const resize = () => {
       const bounds = viewport.getBoundingClientRect();
       if (!bounds.width || !bounds.height) return;
@@ -844,13 +847,20 @@ function ThreeCourt({
       renderer.setSize(width, height, false);
       camera.aspect = width / height;
       const compactFrame = bounds.width <= 720;
-      const activeView = cameraViewRef.current;
       const sceneElement = sceneElementRef.current;
       const fullscreenElement = document.fullscreenElement
         ?? (document as Document & { webkitFullscreenElement?: Element | null }).webkitFullscreenElement
         ?? null;
       const fullscreenActive = fullscreenElement === sceneElement
         || Boolean(sceneElement?.classList.contains(styles.fullscreenFallback));
+      const activeView = fullscreenCameraView<Exclude<CameraView, 'custom'>>(
+        cameraViewRef.current, selectedCameraViewRef.current, wasFullscreen, fullscreenActive,
+      );
+      if (activeView !== cameraViewRef.current) {
+        cameraViewRef.current = activeView;
+        setCameraView(activeView);
+      }
+      wasFullscreen = fullscreenActive;
       const fullscreenCourtCamera = activeView === 'court'
         ? dmoFullscreenCourtCamera(
           width, height, fullscreenActive, maxDistanceForTarget(new THREE.Vector3(0, 0.5, 0)),
@@ -892,6 +902,7 @@ function ThreeCourt({
     window.addEventListener('orientationchange', resize);
     document.addEventListener('fullscreenchange', resize);
     document.addEventListener('webkitfullscreenchange', resize);
+    document.addEventListener('courtfullscreenchange', resize);
     const observer = new ResizeObserver(resize);
     observer.observe(viewport);
     resize();
@@ -2501,6 +2512,7 @@ function ThreeCourt({
 
     const preset = (view: Exclude<CameraView, 'custom'>) => {
       cameraViewRef.current = view;
+      selectedCameraViewRef.current = view;
       if (view.startsWith('player-')) {
         playerCameraPanRef.current = 0;
         setPlayerCameraPan(0);
@@ -2596,7 +2608,9 @@ function ThreeCourt({
       window.removeEventListener('orientationchange', resize);
       document.removeEventListener('fullscreenchange', resize);
       document.removeEventListener('webkitfullscreenchange', resize);
+      document.removeEventListener('courtfullscreenchange', resize);
       if (rendererResizeRef.current === resize) rendererResizeRef.current = null;
+      stopObservingManualCamera();
       controls.dispose();
       viewport.removeEventListener('courtzoom', onZoom);
       viewport.removeEventListener('courtreset', reset);
