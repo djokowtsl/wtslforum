@@ -4,6 +4,7 @@ import {
   clampDmoCameraTarget,
   dmoCameraMaxDistanceInsideBowl,
   dmoCameraFloorLift,
+  responsiveDmoCourtCameraScale,
   DMO_CAMERA_PAN_LIMIT,
   DMO_CAMERA_VERTICAL_PAN_LIMIT,
   MIN_DMO_CAMERA_HEIGHT,
@@ -46,4 +47,14 @@ test('camera distance accounts for venue edge, target offset and maximum pan', (
     4,
     30,
   ) - (32 - 18 - Math.SQRT2 * 4)) < 1e-12);
+});
+
+test('compact court camera pulls back as fullscreen aspect narrows', () => {
+  assert.equal(responsiveDmoCourtCameraScale(1280, 720, true), 1);
+  assert.equal(responsiveDmoCourtCameraScale(640, 360, true), 1.22);
+  assert.equal(responsiveDmoCourtCameraScale(635, 475, false), 1.22);
+  assert.ok(responsiveDmoCourtCameraScale(635, 475, true) > 1.22);
+  assert.ok(responsiveDmoCourtCameraScale(635, 1131, true) > responsiveDmoCourtCameraScale(635, 475, true));
+  assert.ok(responsiveDmoCourtCameraScale(635, 1131, true) <= 2.2);
+  assert.equal(responsiveDmoCourtCameraScale(0, 0, true), 1);
 });

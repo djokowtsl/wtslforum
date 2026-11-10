@@ -12,7 +12,11 @@ import {
   type Te4LiveSnapshot,
 } from '@/lib/te4DmoLive';
 import type { Te4CourtSurface } from '@/lib/te4DmoTypes';
-import { clampDmoCameraTarget, dmoCameraMaxDistanceInsideBowl } from '@/lib/dmoCameraConstraints';
+import {
+  clampDmoCameraTarget,
+  dmoCameraMaxDistanceInsideBowl,
+  responsiveDmoCourtCameraScale,
+} from '@/lib/dmoCameraConstraints';
 import { isCapturedSmashShot } from '@/lib/dmoSmash';
 import { isCapturedVolleyShot } from '@/lib/dmoVolley';
 import {
@@ -842,8 +846,14 @@ function ThreeCourt({
       const activeView = cameraViewRef.current;
       camera.fov = activeView === 'aerial' ? 48 : compactFrame ? 38 : 34;
       camera.updateProjectionMatrix();
-      // Narrow screens must pull back, not crop out the near-baseline player.
-      const responsiveScale = compactFrame ? 1.22 : 1;
+      // Narrow portrait fullscreen needs a farther view to keep the court in frame.
+      const sceneElement = sceneElementRef.current;
+      const fullscreenElement = document.fullscreenElement
+        ?? (document as Document & { webkitFullscreenElement?: Element | null }).webkitFullscreenElement
+        ?? null;
+      const fullscreenActive = fullscreenElement === sceneElement
+        || Boolean(sceneElement?.classList.contains(styles.fullscreenFallback));
+      const responsiveScale = responsiveDmoCourtCameraScale(width, height, fullscreenActive);
       if (activeView === 'court') {
         camera.position.copy(DEFAULT_CAMERA).multiplyScalar(responsiveScale);
         controls.target.set(0, 0.5, 0);
@@ -2480,9 +2490,17 @@ function ThreeCourt({
         setPlayerCameraPan(0);
       }
       controls.target.set(0, 0.5, 0);
-      const compactFrame = viewportRef.current?.getBoundingClientRect().width ?? window.innerWidth;
-      const compactViewport = compactFrame <= 720;
-      const narrowScale = compactViewport ? 1.22 : 1;
+      const viewportBounds = viewportRef.current?.getBoundingClientRect();
+      const viewportWidth = viewportBounds?.width ?? window.innerWidth;
+      const viewportHeight = viewportBounds?.height ?? window.innerHeight;
+      const compactViewport = viewportWidth <= 720;
+      const sceneElement = sceneElementRef.current;
+      const fullscreenElement = document.fullscreenElement
+        ?? (document as Document & { webkitFullscreenElement?: Element | null }).webkitFullscreenElement
+        ?? null;
+      const fullscreenActive = fullscreenElement === sceneElement
+        || Boolean(sceneElement?.classList.contains(styles.fullscreenFallback));
+      const narrowScale = responsiveDmoCourtCameraScale(viewportWidth, viewportHeight, fullscreenActive);
       camera.fov = view === 'aerial' ? 50 : compactViewport ? 38 : 34;
       camera.updateProjectionMatrix();
       if (view === 'aerial') camera.position.set(0, Math.min(32, cameraMaxDistance * 0.98), 0.1);
@@ -2815,6 +2833,7 @@ function ThreeCourt({
     <section
       ref={sceneElementRef}
       className={styles.scene}
+      data-full-replay={fullReplay ? 'true' : undefined}
       aria-label={fullReplay ? 'Three-dimensional full match replay' : 'Three-dimensional live court'}
       onPointerDownCapture={(event) => handleSoundActivationGesture(event.target)}
       onPointerCancelCapture={() => { soundPointerActivationRef.current = false; }}
