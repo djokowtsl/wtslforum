@@ -295,6 +295,8 @@ export function buildStadiumEnvironment(
   scene.add(stadium);
   for (const [x, z] of [[-18, -13], [-18, 13], [18, -13], [18, 13]] as const) {
     const spot = new THREE.SpotLight(0xfff0d7, indoor ? 8 : 5, 48, Math.PI / 5, 0.68, 2);
+    spot.name = 'wtsl-stadium-court-fill-light';
+    spot.userData.wtslDaylightIntensity = indoor ? 8 : 5;
     spot.position.set(x, indoor ? 12.4 : 11.5, z);
     spot.target.position.set(0, 0, 0);
     spot.castShadow = false;
