@@ -7,6 +7,8 @@ type ElementRef<T extends HTMLElement> = { current: T | null };
 type PipMode = 'off' | 'native';
 type PipVideo = HTMLVideoElement & {
   requestPictureInPicture?: () => Promise<unknown>;
+  requestVideoFrameCallback?: (callback: (now: number, metadata: unknown) => void) => number;
+  cancelVideoFrameCallback?: (callbackId: number) => void;
   webkitPresentationMode?: 'inline' | 'picture-in-picture' | 'fullscreen';
   webkitSupportsPresentationMode?: (mode: 'picture-in-picture') => boolean;
   webkitSetPresentationMode?: (mode: 'inline' | 'picture-in-picture') => void;
@@ -36,24 +38,44 @@ function isIOSHomeScreenApp() {
 }
 
 function waitForVideoFrame(video: PipVideo) {
-  if (video.readyState >= 2 && video.videoWidth > 0 && video.videoHeight > 0) {
-    return Promise.resolve();
-  }
   return new Promise<void>((resolve, reject) => {
+    let timeout = 0;
+    let frameCallback: number | null = null;
+    let frameCount = 0;
+    const hasVideoData = () => (
+      video.readyState >= 2 && video.videoWidth > 0 && video.videoHeight > 0
+    );
     const finish = (error?: Error) => {
       window.clearTimeout(timeout);
+      if (frameCallback !== null) {
+        video.cancelVideoFrameCallback?.(frameCallback);
+        frameCallback = null;
+      }
       video.removeEventListener('loadeddata', check);
       video.removeEventListener('playing', check);
       video.removeEventListener('resize', check);
       if (error) reject(error);
       else resolve();
     };
-    const check = () => {
-      if (video.readyState >= 2 && video.videoWidth > 0 && video.videoHeight > 0) finish();
+    const onVideoFrame = () => {
+      frameCallback = null;
+      if (hasVideoData()) frameCount += 1;
+      if (frameCount >= 2) finish();
+      else check();
     };
-    const timeout = window.setTimeout(
-      () => finish(new Error('The court video did not produce a frame.')),
-      3000,
+    const check = () => {
+      if (!hasVideoData()) return;
+      if (!video.requestVideoFrameCallback) {
+        finish();
+        return;
+      }
+      if (frameCallback === null) {
+        frameCallback = video.requestVideoFrameCallback(onVideoFrame);
+      }
+    };
+    timeout = window.setTimeout(
+      () => finish(new Error('The court video did not produce two frames.')),
+      5000,
     );
     video.addEventListener('loadeddata', check);
     video.addEventListener('playing', check);
@@ -225,12 +247,16 @@ export default function CourtPictureInPictureButton({
       }
     };
     const onEnterPictureInPicture = () => setPipMode('native');
-    const onLeavePictureInPicture = () => setPipMode('off');
+    const onLeavePictureInPicture = () => {
+      if (video) video.controls = false;
+      setPipMode('off');
+    };
     const onWebkitPresentationModeChange = () => {
       if (video?.webkitPresentationMode === 'picture-in-picture') {
         setPipMode('native');
-      } else if (modeRef.current === 'native') {
-        setPipMode('off');
+      } else {
+        if (video) video.controls = false;
+        if (modeRef.current === 'native') setPipMode('off');
       }
     };
     video?.addEventListener('enterpictureinpicture', onEnterPictureInPicture);
@@ -246,6 +272,7 @@ export default function CourtPictureInPictureButton({
       if (video?.webkitPresentationMode === 'picture-in-picture') {
         video.webkitSetPresentationMode?.('inline');
       }
+      if (video) video.controls = false;
       videoReadyRef.current = false;
       preparationPromiseRef.current = null;
       stopStream();
@@ -285,6 +312,10 @@ export default function CourtPictureInPictureButton({
     }
 
     try {
+      if (supportsWebkitPip) video.controls = true;
+      // Reassert playback in the user gesture so WebKit has a live video layer
+      // when it promotes the captured canvas into its native PiP window.
+      void video.play().catch(() => {});
       // Keep the browser request in the click's user-activation window.
       const pictureInPicture = supportsWebkitPip
         ? requestWebkitPictureInPicture(video)
@@ -294,12 +325,14 @@ export default function CourtPictureInPictureButton({
         setPipMode('native');
       }).catch((reason: unknown) => {
         setPipMode('off');
+        if (supportsWebkitPip) video.controls = false;
         setError(reason instanceof Error
           ? `${reason.message} Tap PiP to try again.`
           : 'System Picture in Picture could not start. Tap PiP to try again.');
       });
     } catch (reason) {
       setPipMode('off');
+      if (supportsWebkitPip) video.controls = false;
       setError(reason instanceof Error
         ? `${reason.message} Tap PiP to try again.`
         : 'System Picture in Picture could not start. Tap PiP to try again.');

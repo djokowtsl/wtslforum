@@ -612,6 +612,25 @@
   }
 }
 
+@media (max-width: 720px) and (orientation: portrait) {
+  .scene:fullscreen .toolbar,
+  .scene:-webkit-full-screen .toolbar,
+  .scene.fullscreenFallback .toolbar {
+    box-sizing: border-box;
+    flex: 0 1 auto;
+    min-height: 0;
+    max-height: 34dvh;
+    gap: 6px;
+    overflow-y: auto;
+    overscroll-behavior: contain;
+    scrollbar-width: thin;
+    padding-top: max(6px, env(safe-area-inset-top));
+    padding-right: max(8px, env(safe-area-inset-right));
+    padding-bottom: 6px;
+    padding-left: max(8px, env(safe-area-inset-left));
+  }
+}
+
 @media (max-width: 420px) {
   .toolbar {
     padding: 9px;
