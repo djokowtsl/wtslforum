@@ -15,6 +15,12 @@ new Function('module', 'exports', code)(module, module.exports);
 
 const { getBroadcastRenderPixelRatio } = module.exports;
 
+test('720p offers a lower GPU pixel budget on laptops and high-density phones', () => {
+  assert.equal(getBroadcastRenderPixelRatio(1920, 1080, '720p', 2), 2 / 3);
+  assert.equal(getBroadcastRenderPixelRatio(390, 219.375, '720p', 3), 3);
+  assert.equal(getBroadcastRenderPixelRatio(844, 474.75, '720p', 3), 1280 / 844);
+});
+
 test('1080p rendering targets full HD without rendering beyond device pixels', () => {
   assert.equal(getBroadcastRenderPixelRatio(1920, 1080, '1080p', 3), 1);
   const mobileRatio = getBroadcastRenderPixelRatio(844, 474.75, '1080p', 3);

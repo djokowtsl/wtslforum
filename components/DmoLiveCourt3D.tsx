@@ -2086,7 +2086,8 @@ function ThreeCourt({
     const animate = (now: number) => {
       if (graphicsFailed) return;
       animation = window.requestAnimationFrame(animate);
-      const elapsed = Math.min(80, Math.max(0, now - lastTime));
+      const clockElapsed = Math.max(0, now - lastTime);
+      const elapsed = Math.min(80, clockElapsed);
       lastTime = now;
       const samples = sampleBufferRef.current;
       if (samples.length) {
@@ -2099,7 +2100,7 @@ function ThreeCourt({
           if (replayPlayingRef.current) {
             currentFrame = advanceLiveCourtPlayhead(
               replayFrameRef.current,
-              elapsed,
+              clockElapsed,
               replaySpeedRef.current,
               samples,
               frameRate,
@@ -2128,7 +2129,7 @@ function ThreeCourt({
           // they don't add up.
           currentFrame = advanceLiveCourtPlayhead(
             playheadRef.current,
-            elapsed,
+            clockElapsed,
             sceneDataRef.current.playbackSpeed,
             samples,
             frameRate,
@@ -2410,7 +2411,7 @@ function ThreeCourt({
           }
         }
         const gazeTarget = trailAllowed(trajectoryEventsRef.current, currentFrame) ? ball.position : undefined;
-        crowdRig.update(now / 1000, now < crowdApplauseUntil, gazeTarget);
+        crowdRig.update(now / 1000, now < crowdApplauseUntil, gazeTarget, camera);
         fixtureRig.update(gazeTarget);
         const activeView = cameraViewRef.current;
         if (activeView.startsWith('player-')) {

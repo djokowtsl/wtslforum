@@ -830,7 +830,7 @@ function DmoLiveCourt({
     let lastTime = performance.now();
     const motionPreference = window.matchMedia('(prefers-reduced-motion: reduce)');
     const tick = (now: number) => {
-      const elapsed = Math.min(80, Math.max(0, now - lastTime));
+      const elapsed = Math.max(0, now - lastTime);
       lastTime = now;
       const current = sceneRef.current;
       const samples = current.samples;

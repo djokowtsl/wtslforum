@@ -1,4 +1,5 @@
 export const BROADCAST_RENDER_QUALITY_OPTIONS = [
+  { value: '720p', label: '720p', width: 1280, height: 720 },
   { value: '1080p', label: '1080p', width: 1920, height: 1080 },
   { value: '4k', label: '4K', width: 3840, height: 2160 },
 ] as const;

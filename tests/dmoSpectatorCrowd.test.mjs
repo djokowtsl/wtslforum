@@ -205,6 +205,39 @@ test('gaze updates turn heads in both directions without rotating seated bodies'
   });
 });
 
+test('camera culling compacts visible spectators without changing occupancy or clipping edge bodies', () => {
+  const scene = new THREE.Scene();
+  const seats = [[0, 0], [100, 0], [0, 20], [5.3, 0]].map(([x, z], i) => ({
+    x, y: 0, z, row: 5, facing: 0, sourceIndex: i, occupied: true,
+  }));
+  const crowd = {
+    highDetailEnabled: false, seats,
+    replacePeople(update) { this.update = update; },
+  };
+  api.attachSpectatorCrowd(scene, crowd, [templates['male-far'], templates['female-far']]);
+  const total = () => scene.children.reduce((sum, mesh) => sum + mesh.count, 0);
+  const camera = new THREE.PerspectiveCamera(60, 1, 0.1, 100);
+  camera.position.set(0, 1, 8);
+  camera.lookAt(0, 1, 0);
+  crowd.update(1, false, undefined, camera);
+  assert.equal(total(), 2, 'off-screen/behind-camera people are not submitted, but an edge body remains');
+  assert.ok(seats.every(seat => seat.occupied), 'camera culling never changes selected crowd density');
+  for (const mesh of scene.children.filter(mesh => mesh.count)) {
+    assert.deepEqual(mesh.instanceMatrix.updateRanges, [{ start: 0, count: mesh.count * 16 }]);
+    assert.deepEqual(mesh.geometry.attributes.spectatorGaze.updateRanges, [{ start: 0, count: mesh.count * 2 }]);
+  }
+  camera.lookAt(0, 1, 25);
+  crowd.update(1.2, true, undefined, camera);
+  assert.equal(total(), 1, 'turning the camera restores previously hidden people');
+  assert.ok(scene.children.filter(mesh => mesh.count).every(mesh => /-(open|closed)$/.test(mesh.name)));
+  crowd.update(1.21, false);
+  assert.equal(total(), 4, 'callers without a camera retain complete crowd coverage');
+  scene.children.forEach(mesh => {
+    mesh.geometry.dispose();
+    mesh.material.forEach(material => material.dispose());
+  });
+});
+
 test('instanced crowd handles applause, both genders, detail toggle and changing occupancy without duplicate shoes', () => {
   const scene = new THREE.Scene();
   const crowd = {
@@ -235,6 +268,7 @@ test('instanced crowd handles applause, both genders, detail toggle and changing
 test('production court uses approved whole-body spectators rather than grafted hands', async () => {
   const source = await readFile(new URL('../components/DmoLiveCourt3D.tsx', import.meta.url), 'utf8');
   assert.match(source, /attachSpectatorCrowd\(scene, crowdRig/);
+  assert.match(source, /crowdRig\.update\(now \/ 1000, now < crowdApplauseUntil, gazeTarget, camera\)/);
   assert.doesNotMatch(source, /prepareCrowdHandGeometry|loadArticulatedHand/);
   const metadata = JSON.parse(await readFile(new URL('../public/models/dmo-humans/rocketbox-provenance.json', import.meta.url)));
   assert.equal(metadata.length, 4);
