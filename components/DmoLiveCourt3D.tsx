@@ -2965,7 +2965,7 @@ function ThreeCourt({
           </div>
           <CourtFullscreenButton
             targetRef={sceneElementRef}
-            className={styles.soundButton}
+            className={`${styles.soundButton} ${styles.mobileFullscreenExit}`}
             statusClassName={styles.visuallyHidden}
             fallbackClassName={styles.fullscreenFallback}
           />
