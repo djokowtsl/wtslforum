@@ -851,7 +851,8 @@ function ThreeCourt({
       const fullscreenElement = document.fullscreenElement
         ?? (document as Document & { webkitFullscreenElement?: Element | null }).webkitFullscreenElement
         ?? null;
-      const fullscreenActive = fullscreenElement === sceneElement
+      const nativeFullscreen = fullscreenElement === sceneElement;
+      const fullscreenActive = nativeFullscreen
         || Boolean(sceneElement?.classList.contains(styles.fullscreenFallback));
       const activeView = fullscreenCameraView<Exclude<CameraView, 'custom'>>(
         cameraViewRef.current, selectedCameraViewRef.current, wasFullscreen, fullscreenActive,
@@ -863,7 +864,7 @@ function ThreeCourt({
       wasFullscreen = fullscreenActive;
       const fullscreenCourtCamera = activeView === 'court'
         ? dmoFullscreenCourtCamera(
-          width, height, fullscreenActive, maxDistanceForTarget(new THREE.Vector3(0, 0.5, 0)),
+          width, height, nativeFullscreen, maxDistanceForTarget(new THREE.Vector3(0, 0.5, 0)),
         )
         : null;
       camera.fov = activeView === 'aerial'
@@ -871,7 +872,7 @@ function ThreeCourt({
         : fullscreenCourtCamera?.fov ?? (compactFrame ? 38 : 34);
       camera.updateProjectionMatrix();
       // Use an aspect-specific fullscreen pose to keep the whole court in frame.
-      const responsiveScale = responsiveDmoCourtCameraScale(width, height, fullscreenActive);
+      const responsiveScale = responsiveDmoCourtCameraScale(width, height, nativeFullscreen);
       if (activeView === 'court') {
         if (fullscreenCourtCamera) {
           camera.position.set(
@@ -2526,15 +2527,16 @@ function ThreeCourt({
       const fullscreenElement = document.fullscreenElement
         ?? (document as Document & { webkitFullscreenElement?: Element | null }).webkitFullscreenElement
         ?? null;
-      const fullscreenActive = fullscreenElement === sceneElement
+      const nativeFullscreen = fullscreenElement === sceneElement;
+      const fullscreenActive = nativeFullscreen
         || Boolean(sceneElement?.classList.contains(styles.fullscreenFallback));
       const fullscreenCourtCamera = view === 'court'
         ? dmoFullscreenCourtCamera(
-          viewportWidth, viewportHeight, fullscreenActive,
+          viewportWidth, viewportHeight, nativeFullscreen,
           maxDistanceForTarget(new THREE.Vector3(0, 0.5, 0)),
         )
         : null;
-      const narrowScale = responsiveDmoCourtCameraScale(viewportWidth, viewportHeight, fullscreenActive);
+      const narrowScale = responsiveDmoCourtCameraScale(viewportWidth, viewportHeight, nativeFullscreen);
       camera.fov = view === 'aerial'
         ? 50
         : fullscreenCourtCamera?.fov ?? (compactViewport ? 38 : 34);
