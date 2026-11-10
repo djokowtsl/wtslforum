@@ -15,6 +15,7 @@ type LightingPreset = {
   key: number;
   fill: number;
   floodlights: number;
+  floodlightFixtureEmission: number;
   exposure: number;
   sunPosition: [number, number, number];
   sunColor: number;
@@ -31,6 +32,7 @@ const PRESETS: Record<BroadcastTimeOfDay, LightingPreset> = {
     key: 2.15,
     fill: 0.68,
     floodlights: 0,
+    floodlightFixtureEmission: 0,
     exposure: 1,
     sunPosition: [-52, 68, -105],
     sunColor: 0xffe8b0,
@@ -45,6 +47,7 @@ const PRESETS: Record<BroadcastTimeOfDay, LightingPreset> = {
     key: 1.22,
     fill: 0.62,
     floodlights: 0.45,
+    floodlightFixtureEmission: 0,
     exposure: 0.94,
     sunPosition: [-91, 23, -96],
     sunColor: 0xffae72,
@@ -58,8 +61,9 @@ const PRESETS: Record<BroadcastTimeOfDay, LightingPreset> = {
     hemisphere: 0.12,
     key: 0.02,
     fill: 0.08,
-    floodlights: 220,
-    exposure: 0.68,
+    floodlights: 60,
+    floodlightFixtureEmission: 0.45,
+    exposure: 0.58,
     sunPosition: [-91, 23, -96],
     sunColor: 0xffae72,
     cloudColor: 0x3d4b60,
@@ -174,7 +178,7 @@ export function createDmoBroadcastLighting(
       scene.add(fixture);
       floodlightFixtures.push(fixture);
 
-      const light = new THREE.SpotLight(0xdce9ff, 0, 72, Math.PI / 3, 0.72, 1);
+      const light = new THREE.SpotLight(0xffe7cc, 0, 72, Math.PI / 3, 0.72, 1);
       light.name = 'wtsl-broadcast-floodlight';
       light.position.set(x, 18, z);
       light.target.position.set(x * 0.12, 0, z * 0.35);
@@ -217,7 +221,7 @@ export function createDmoBroadcastLighting(
     });
     floodlights.forEach(light => { light.intensity = preset.floodlights; });
     floodlightFixtures.forEach(fixture => {
-      (fixture.material as THREE.MeshStandardMaterial).emissiveIntensity = timeOfDay === 'night' ? 3.5 : 0;
+      (fixture.material as THREE.MeshStandardMaterial).emissiveIntensity = preset.floodlightFixtureEmission;
     });
     renderer.toneMappingExposure = preset.exposure;
     scene.userData.wtslBroadcastTimeOfDay = timeOfDay;
