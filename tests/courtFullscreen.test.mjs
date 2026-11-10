@@ -62,6 +62,15 @@ test('mobile fullscreen keeps the court controls instead of entering video-only 
   assert.doesNotMatch(fallbackStyles, /\.scene\.fullscreenFallback\s*\{[^}]*min-height:\s*100vh/s);
   assert.match(styles, /\.scene:fullscreen \.toolbar[\s\S]*?flex-shrink:\s*0/);
   assert.doesNotMatch(styles, /\.scene:fullscreen \.toolbar[\s\S]{0,180}display:\s*none/);
+  const portraitFullscreenStyles = styles.match(
+    /@media \(max-width: 720px\) and \(orientation: portrait\)\s*\{([\s\S]*?)\n\}/,
+  )?.[1] ?? '';
+  assert.match(portraitFullscreenStyles, /\.scene:fullscreen \.toolbar/);
+  assert.match(portraitFullscreenStyles, /\.scene\.fullscreenFallback \.toolbar/);
+  assert.match(portraitFullscreenStyles, /max-height:\s*34dvh/);
+  assert.match(portraitFullscreenStyles, /overflow-y:\s*auto/);
+  assert.match(portraitFullscreenStyles, /flex:\s*0 1 auto/);
+  assert.doesNotMatch(portraitFullscreenStyles, /toolbar[^{}]*display:\s*none/);
   const fullscreenProps = (court) => court.match(/<CourtFullscreenButton[\s\S]*?\/>/)?.[0] ?? '';
   for (const court of [liveCourt, fallbackCourt]) {
     assert.match(fullscreenProps(court), /targetRef=\{sceneElementRef\}/);
@@ -85,6 +94,8 @@ test('court picture-in-picture opens a native system window or reports unsupport
   assert.match(pictureInPictureButton, /webkitSupportsPresentationMode/);
   assert.match(pictureInPictureButton, /webkitSetPresentationMode/);
   assert.match(pictureInPictureButton, /waitForVideoFrame/);
+  assert.match(pictureInPictureButton, /requestVideoFrameCallback/);
+  assert.match(pictureInPictureButton, /frameCount >= 2/);
   assert.match(pictureInPictureButton, /video\.controls = true/);
   assert.match(pictureInPictureButton, /setVideoReady\(true\)/);
   assert.match(pictureInPictureButton, /disabled=\{!videoReady\}/);
@@ -95,6 +106,7 @@ test('court picture-in-picture opens a native system window or reports unsupport
   const requestCall = pictureInPictureButton.indexOf('video.requestPictureInPicture!()', toggleStart);
   assert.ok(toggleStart >= 0 && requestCall > toggleStart);
   assert.doesNotMatch(pictureInPictureButton.slice(toggleStart, requestCall), /\bawait\b/);
+  assert.match(pictureInPictureButton.slice(toggleStart, requestCall), /void video\.play\(\)\.catch/);
   for (const court of [liveCourt, fallbackCourt]) {
     assert.match(court, /target\.closest\('\[data-sound-toggle\]'\)/);
     assert.match(court, /target\.closest\('\[data-pip-toggle\]'\)/);
