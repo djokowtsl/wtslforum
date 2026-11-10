@@ -340,6 +340,7 @@ export function attachHumanCrowd(scene: THREE.Scene, crowd: CrowdRig, templates:
   let highDetailEnabled = crowd.highDetailEnabled;
   let highDetailCounts = new Uint16Array(0);
   let highDetailSeats = new Set<number>();
+  const highDetailGenderOffsets = new Map<number, number>();
   let lastUpdate = -Infinity, previousApplause = false, forceUpdate = true;
   const counts = new Uint16Array(batches.length);
   const shoeColors = [0xe7e4db, 0x344153, 0x675044, 0x1f2935, 0xc7c0ad];
@@ -358,14 +359,18 @@ export function attachHumanCrowd(scene: THREE.Scene, crowd: CrowdRig, templates:
       const appearance = getCrowdAppearance(sourceIndex, seat.row);
       // Alternate hands-apart and hands-together poses during applause.
       const clap = applauding && sourceIndex % 5 !== 0 && Math.sin(time * 9 + sourceIndex) > -0.15;
-      const useHighDetail = highDetailEnabled && highDetailBatches.length > 0 && highDetailSeats.has(index);
+      const highDetailOffset = highDetailGenderOffsets.get(gender);
+      const useHighDetail = highDetailEnabled
+        && highDetailOffset !== undefined
+        && highDetailSeats.has(index);
       const bucket = (clap ? 3 : 0) + gaze;
       const batchIndex = gender * 48 + appearance.wardrobe * 6 + bucket;
+      const highDetailBatchIndex = (highDetailOffset ?? 0) + appearance.wardrobe * 6 + bucket;
       const mesh = useHighDetail
-        ? highDetailBatches[appearance.wardrobe * 6 + bucket]
+        ? highDetailBatches[highDetailBatchIndex]
         : batches[batchIndex];
       const instance = useHighDetail
-        ? highDetailCounts[appearance.wardrobe * 6 + bucket]++
+        ? highDetailCounts[highDetailBatchIndex]++
         : counts[batchIndex]++;
       const lean = ((sourceIndex % 5) - 2) * 0.009;
       const turn = ((sourceIndex * 3 % 5) - 2) * 0.012;
@@ -422,14 +427,20 @@ export function attachHumanCrowd(scene: THREE.Scene, crowd: CrowdRig, templates:
     forceUpdate = true;
   };
   crowd.setHighDetailModel = (template, genderIndex) => {
-    if (highDetailBatches.length > 0) return;
+    if (!Number.isInteger(genderIndex)
+      || genderIndex < 0
+      || genderIndex >= templates.length
+      || highDetailGenderOffsets.has(genderIndex)) return;
+    const batchOffset = highDetailBatches.length;
     wardrobeTints[genderIndex % wardrobeTints.length].forEach((tint, wardrobe) => {
-      makeBatches(template, highDetailBatches, `high-detail-${wardrobe}`, tint, wardrobe);
+      makeBatches(template, highDetailBatches, `high-detail-${genderIndex}-${wardrobe}`, tint, wardrobe);
     });
-    highDetailSeats = new Set(
-      crowd.seats.flatMap((seat, index) =>
-        shouldUseHighDetailCrowdSeat(seat.row, seat.sourceIndex ?? index, genderIndex) ? [index] : []),
-    );
+    highDetailGenderOffsets.set(genderIndex, batchOffset);
+    crowd.seats.forEach((seat, index) => {
+      if (shouldUseHighDetailCrowdSeat(seat.row, seat.sourceIndex ?? index, genderIndex)) {
+        highDetailSeats.add(index);
+      }
+    });
     highDetailCounts = new Uint16Array(highDetailBatches.length);
     highDetailBatches.forEach((mesh) => { mesh.visible = highDetailEnabled; });
     forceUpdate = true;

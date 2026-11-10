@@ -736,10 +736,12 @@ function ThreeCourt({
       loadHumanModel(isWta ? 'female' : 'male', 'player', modelLoad.signal, modelAssetBase),
       loadHumanModel('male', 'crowd', modelLoad.signal, modelAssetBase),
       loadHumanModel('female', 'crowd', modelLoad.signal, modelAssetBase),
+      loadHumanModel('male', 'crowd-high', modelLoad.signal, modelAssetBase),
+      loadHumanModel('female', 'crowd-high', modelLoad.signal, modelAssetBase),
     ]).then((results) => {
       try {
         if (modelLoad.signal.aborted) return;
-        const [player, maleCrowd, femaleCrowd] = results;
+        const [player, maleCrowd, femaleCrowd, maleHighDetailCrowd, femaleHighDetailCrowd] = results;
         if (player.status === 'fulfilled') {
           attachHumanPlayer(player.value, players[0], PALETTE.shirtOne, undefined, undefined, BROADCAST_PLAYER_KITS[0], 0);
           attachHumanPlayer(player.value, players[1], PALETTE.shirtTwo, undefined, undefined, BROADCAST_PLAYER_KITS[1], 1);
@@ -748,17 +750,33 @@ function ThreeCourt({
         if (maleCrowd.status === 'fulfilled' && femaleCrowd.status === 'fulfilled') {
           const crowdTemplates: [THREE.Group, THREE.Group] = [maleCrowd.value, femaleCrowd.value];
           attachHumanCrowd(scene, crowdRig, crowdTemplates);
+          if (maleHighDetailCrowd.status === 'fulfilled') {
+            crowdRig.setHighDetailModel(maleHighDetailCrowd.value, 0);
+          }
+          if (femaleHighDetailCrowd.status === 'fulfilled') {
+            crowdRig.setHighDetailModel(femaleHighDetailCrowd.value, 1);
+          }
+          const highDetailCrowdTemplates: [THREE.Group, THREE.Group] = [
+            maleHighDetailCrowd.status === 'fulfilled' ? maleHighDetailCrowd.value : maleCrowd.value,
+            femaleHighDetailCrowd.status === 'fulfilled' ? femaleHighDetailCrowd.value : femaleCrowd.value,
+          ];
           attachHumanCourtStaff(
             scene,
             fixtureRig,
-            crowdTemplates,
+            highDetailCrowdTemplates,
             crowdRig,
-            crowdTemplates[0],
+            highDetailCrowdTemplates[0],
           );
         }
-        const failed = results.find((result) => result.status === 'rejected');
-        if (failed?.status === 'rejected') throw failed.reason;
-        setModelStatus('ready');
+        const requiredFailure = [player, maleCrowd, femaleCrowd]
+          .find((result) => result.status === 'rejected');
+        if (requiredFailure?.status === 'rejected') throw requiredFailure.reason;
+        const highDetailFailed = [maleHighDetailCrowd, femaleHighDetailCrowd]
+          .some((result) => result.status === 'rejected');
+        if (highDetailFailed) {
+          console.warn('Some player-grade crowd models could not load; distant crowd detail remains available.');
+        }
+        setModelStatus(highDetailFailed ? 'partial' : 'ready');
       } finally {
         // Visible instances retain texture maps; discard only the unused template buffers.
         results.forEach((result) => { if (result.status === 'fulfilled') disposeHumanModel(result.value, modelLoad.signal.aborted); });
