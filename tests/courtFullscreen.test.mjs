@@ -60,7 +60,7 @@ test('mobile fullscreen keeps the court controls instead of entering video-only 
   assert.match(fallbackStyles, /\.scene\.fullscreenFallback/);
   assert.doesNotMatch(styles, /\.scene\.fullscreenFallback\s*\{[^}]*min-height:\s*100vh/s);
   assert.doesNotMatch(fallbackStyles, /\.scene\.fullscreenFallback\s*\{[^}]*min-height:\s*100vh/s);
-  assert.match(styles, /\.scene:fullscreen \.toolbar,[\s\S]*?position:\s*absolute/);
+  assert.match(styles, /\.scene:fullscreen \.toolbar[\s\S]*?flex-shrink:\s*0/);
   assert.doesNotMatch(styles, /\.scene:fullscreen \.toolbar[\s\S]{0,180}display:\s*none/);
   const portraitFullscreenStyles = styles.match(
     /@media \(max-width: 720px\) and \(orientation: portrait\)\s*\{([\s\S]*?)\n\}/,
@@ -150,16 +150,10 @@ test('saved player stroke setup reaches the full broadcast replay', () => {
 test('fullscreen fills the available screen and keeps playback controls available', () => {
   assert.match(styles, /\.scene:fullscreen/);
   assert.match(styles, /\.scene:fullscreen \.viewport/);
-  assert.match(styles, /\.scene:fullscreen \.viewport,[\s\S]*?position:\s*absolute/);
-  assert.match(styles, /\.scene:fullscreen \.toolbar,[\s\S]*?position:\s*absolute/);
   assert.match(styles, /\.scene:fullscreen \.replayControls/);
-  assert.match(styles, /\.scene:fullscreen \.replayControls,[\s\S]*?position:\s*absolute/);
-  assert.match(liveCourt, /data-full-replay=\{fullReplay \? 'true' : undefined\}/);
   assert.match(liveCourt, /fullReplay && hasCourtData/);
   assert.match(liveCourt, /host\.style\.width = '100%'/);
   assert.match(liveCourt, /host\.style\.height = '100%'/);
-  assert.match(liveCourt, /responsiveDmoCourtCameraScale\(width, height, fullscreenActive\)/);
-  assert.match(liveCourt, /responsiveDmoCourtCameraScale\(viewportWidth, viewportHeight, fullscreenActive\)/);
   assert.match(liveCourt, /aria-label="Graphics resolution"/);
   assert.match(fallbackCourt, /aria-label="Graphics resolution"/);
   assert.match(liveCourt, /useState<BroadcastRenderQuality>\('1080p'\)/);

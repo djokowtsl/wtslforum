@@ -5,15 +5,6 @@ export const DMO_CAMERA_VERTICAL_PAN_LIMIT = 4;
 
 type DmoCameraPoint = { x: number; y: number; z: number };
 
-/** Preserve the embedded mobile view; fit fullscreen court framing to its viewport. */
-export function responsiveDmoCourtCameraScale(width: number, height: number, fullscreenActive: boolean) {
-  if (!Number.isFinite(width) || !Number.isFinite(height) || width <= 0 || height <= 0 || width > 720) return 1;
-  if (!fullscreenActive) return 1.22;
-  const aspect = Math.max(0.25, width / height);
-  const aspectScale = Math.sqrt((16 / 9) / aspect);
-  return Math.min(2.2, Math.max(1.22, 1.22 * aspectScale));
-}
-
 /** Keep manual panning anchored to the selected court or player view. */
 export function clampDmoCameraTarget(
   target: DmoCameraPoint,
