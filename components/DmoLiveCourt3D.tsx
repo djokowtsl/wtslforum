@@ -15,7 +15,6 @@ import type { Te4CourtSurface } from '@/lib/te4DmoTypes';
 import {
   clampDmoCameraTarget,
   dmoCameraMaxDistanceInsideBowl,
-  dmoFullscreenCourtCamera,
   responsiveDmoCourtCameraScale,
 } from '@/lib/dmoCameraConstraints';
 import { isCapturedSmashShot } from '@/lib/dmoSmash';
@@ -845,31 +844,18 @@ function ThreeCourt({
       camera.aspect = width / height;
       const compactFrame = bounds.width <= 720;
       const activeView = cameraViewRef.current;
+      camera.fov = activeView === 'aerial' ? 48 : compactFrame ? 38 : 34;
+      camera.updateProjectionMatrix();
+      // Narrow portrait fullscreen needs a farther view to keep the court in frame.
       const sceneElement = sceneElementRef.current;
       const fullscreenElement = document.fullscreenElement
         ?? (document as Document & { webkitFullscreenElement?: Element | null }).webkitFullscreenElement
         ?? null;
       const fullscreenActive = fullscreenElement === sceneElement
         || Boolean(sceneElement?.classList.contains(styles.fullscreenFallback));
-      const fullscreenCourtCamera = activeView === 'court'
-        ? dmoFullscreenCourtCamera(width, height, fullscreenActive)
-        : null;
-      camera.fov = activeView === 'aerial'
-        ? 48
-        : fullscreenCourtCamera?.fov ?? (compactFrame ? 38 : 34);
-      camera.updateProjectionMatrix();
-      // Narrow portrait fullscreen needs a farther view to keep the court in frame.
       const responsiveScale = responsiveDmoCourtCameraScale(width, height, fullscreenActive);
       if (activeView === 'court') {
-        if (fullscreenCourtCamera) {
-          camera.position.set(
-            fullscreenCourtCamera.x,
-            fullscreenCourtCamera.y,
-            fullscreenCourtCamera.z,
-          );
-        } else {
-          camera.position.copy(DEFAULT_CAMERA).multiplyScalar(responsiveScale);
-        }
+        camera.position.copy(DEFAULT_CAMERA).multiplyScalar(responsiveScale);
         controls.target.set(0, 0.5, 0);
         cameraTargetAnchor.copy(controls.target);
       } else if (activeView === 'tv') {
@@ -2514,27 +2500,12 @@ function ThreeCourt({
         ?? null;
       const fullscreenActive = fullscreenElement === sceneElement
         || Boolean(sceneElement?.classList.contains(styles.fullscreenFallback));
-      const fullscreenCourtCamera = view === 'court'
-        ? dmoFullscreenCourtCamera(viewportWidth, viewportHeight, fullscreenActive)
-        : null;
       const narrowScale = responsiveDmoCourtCameraScale(viewportWidth, viewportHeight, fullscreenActive);
-      camera.fov = view === 'aerial'
-        ? 50
-        : fullscreenCourtCamera?.fov ?? (compactViewport ? 38 : 34);
+      camera.fov = view === 'aerial' ? 50 : compactViewport ? 38 : 34;
       camera.updateProjectionMatrix();
       if (view === 'aerial') camera.position.set(0, Math.min(32, cameraMaxDistance * 0.98), 0.1);
       else if (view === 'tv') camera.position.set(0, 24 * narrowScale, 46 * narrowScale);
-      else if (view === 'court') {
-        if (fullscreenCourtCamera) {
-          camera.position.set(
-            fullscreenCourtCamera.x,
-            fullscreenCourtCamera.y,
-            fullscreenCourtCamera.z,
-          );
-        } else {
-          camera.position.copy(DEFAULT_CAMERA).multiplyScalar(narrowScale);
-        }
-      }
+      else if (view === 'court') camera.position.copy(DEFAULT_CAMERA).multiplyScalar(narrowScale);
       else {
         const playerIndex = view.startsWith('player-two') ? 1 : 0;
         const player = players[playerIndex];

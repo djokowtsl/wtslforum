@@ -4,7 +4,6 @@ import {
   clampDmoCameraTarget,
   dmoCameraMaxDistanceInsideBowl,
   dmoCameraFloorLift,
-  dmoFullscreenCourtCamera,
   responsiveDmoCourtCameraScale,
   DMO_CAMERA_PAN_LIMIT,
   DMO_CAMERA_VERTICAL_PAN_LIMIT,
@@ -58,23 +57,4 @@ test('compact court camera pulls back as fullscreen aspect narrows', () => {
   assert.ok(responsiveDmoCourtCameraScale(635, 1131, true) > responsiveDmoCourtCameraScale(635, 475, true));
   assert.ok(responsiveDmoCourtCameraScale(635, 1131, true) <= 2.2);
   assert.equal(responsiveDmoCourtCameraScale(0, 0, true), 1);
-});
-
-test('compact fullscreen camera frames the court for both device orientations', () => {
-  assert.deepEqual(dmoFullscreenCourtCamera(635, 1131, true), {
-    x: 0,
-    y: 22,
-    z: 18,
-    fov: 60,
-  });
-  assert.deepEqual(dmoFullscreenCourtCamera(1024, 360, true), {
-    x: 13,
-    y: 28.6,
-    z: 0,
-    fov: 22,
-  });
-  assert.equal(dmoFullscreenCourtCamera(635, 475, true), null);
-  assert.equal(dmoFullscreenCourtCamera(635, 1131, false), null);
-  assert.equal(dmoFullscreenCourtCamera(1280, 1800, true), null);
-  assert.equal(dmoFullscreenCourtCamera(1024, 576, true), null);
 });

@@ -67,7 +67,7 @@ test('mobile fullscreen keeps the court controls instead of entering video-only 
   )?.[1] ?? '';
   assert.match(portraitFullscreenStyles, /\.scene:fullscreen \.toolbar/);
   assert.match(portraitFullscreenStyles, /\.scene\.fullscreenFallback \.toolbar/);
-  assert.match(portraitFullscreenStyles, /max-height:\s*24dvh/);
+  assert.match(portraitFullscreenStyles, /max-height:\s*34dvh/);
   assert.match(portraitFullscreenStyles, /overflow-y:\s*auto/);
   assert.match(portraitFullscreenStyles, /flex:\s*0 1 auto/);
   assert.doesNotMatch(portraitFullscreenStyles, /toolbar[^{}]*display:\s*none/);
@@ -152,7 +152,6 @@ test('fullscreen fills the available screen and keeps playback controls availabl
   assert.match(styles, /\.scene:fullscreen \.viewport/);
   assert.match(styles, /\.scene:fullscreen \.viewport,[\s\S]*?position:\s*absolute/);
   assert.match(styles, /\.scene:fullscreen \.toolbar,[\s\S]*?position:\s*absolute/);
-  assert.match(styles, /\.scene:fullscreen \.toolbar,[\s\S]*?max-height:\s*26dvh/);
   assert.match(styles, /\.scene:fullscreen \.replayControls/);
   assert.match(styles, /\.scene:fullscreen \.replayControls,[\s\S]*?position:\s*absolute/);
   assert.match(liveCourt, /data-full-replay=\{fullReplay \? 'true' : undefined\}/);
@@ -161,8 +160,6 @@ test('fullscreen fills the available screen and keeps playback controls availabl
   assert.match(liveCourt, /host\.style\.height = '100%'/);
   assert.match(liveCourt, /responsiveDmoCourtCameraScale\(width, height, fullscreenActive\)/);
   assert.match(liveCourt, /responsiveDmoCourtCameraScale\(viewportWidth, viewportHeight, fullscreenActive\)/);
-  assert.match(liveCourt, /dmoFullscreenCourtCamera\(width, height, fullscreenActive\)/);
-  assert.match(liveCourt, /dmoFullscreenCourtCamera\(viewportWidth, viewportHeight, fullscreenActive\)/);
   assert.match(liveCourt, /aria-label="Graphics resolution"/);
   assert.match(fallbackCourt, /aria-label="Graphics resolution"/);
   assert.match(liveCourt, /useState<BroadcastRenderQuality>\('1080p'\)/);

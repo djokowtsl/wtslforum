@@ -541,7 +541,7 @@ test('stadium and audience scale with recognized tournament capacities', async (
   assert.match(court, /controls\.maxDistance = maxDistanceForTarget\(cameraTargetAnchor\)/);
   assert.match(court, /maxPolarAngle = THREE\.MathUtils\.degToRad\(75\)/);
   assert.match(court, /clampDmoCameraTarget\(controls\.target, cameraTargetAnchor, cameraPanLimit\)/);
-  assert.match(court, /camera\.fov = view === 'aerial'\s*\? 50/);
+  assert.match(court, /camera\.fov = view === 'aerial' \? 50/);
   assert.match(viewer, /previousSnapshot\.stadium === nextSnapshot\.stadium/);
 });
 

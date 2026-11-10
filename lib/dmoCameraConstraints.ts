@@ -14,31 +14,6 @@ export function responsiveDmoCourtCameraScale(width: number, height: number, ful
   return Math.min(2.2, Math.max(1.22, 1.22 * aspectScale));
 }
 
-export type DmoFullscreenCourtCamera = { x: number; y: number; z: number; fov: number };
-
-/** Rotate and elevate compact fullscreen views so the full court fits either orientation. */
-export function dmoFullscreenCourtCamera(
-  width: number,
-  height: number,
-  fullscreenActive: boolean,
-): DmoFullscreenCourtCamera | null {
-  if (
-    !fullscreenActive
-    || !Number.isFinite(width)
-    || !Number.isFinite(height)
-    || width <= 0
-    || height <= 0
-  ) {
-    return null;
-  }
-  const aspect = width / height;
-  if (width <= 720 && aspect < 0.8) return { x: 0, y: 22, z: 18, fov: 60 };
-  if (width <= 1200 && height <= 600 && aspect >= 1.9) {
-    return { x: 13, y: 28.6, z: 0, fov: 22 };
-  }
-  return null;
-}
-
 /** Keep manual panning anchored to the selected court or player view. */
 export function clampDmoCameraTarget(
   target: DmoCameraPoint,
