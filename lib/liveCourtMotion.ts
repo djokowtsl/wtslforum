@@ -793,7 +793,10 @@ export function advanceLiveCourtPlayhead(
     samples,
     tailBufferFrames,
   ) ?? firstFrame;
-  const elapsed = Math.max(0, Math.min(80, Number.isFinite(elapsedMs) ? elapsedMs : 0));
+  // This is a playback clock, not a physics timestep. Clipping each slow frame
+  // to 80ms made a 5 FPS renderer play a 1× match at only 0.4× speed. Preserve
+  // ordinary frame drops, while bounding a long suspended-tab resume to 1s.
+  const elapsed = Math.max(0, Math.min(1000, Number.isFinite(elapsedMs) ? elapsedMs : 0));
   const safeSpeed = Math.max(0, Number.isFinite(speed) ? speed : 0);
   const safeFrameRate = Math.max(0, Number.isFinite(framesPerSecond) ? framesPerSecond : 0);
   const cushion = Number.isFinite(cushionFrames) ? Math.max(0, cushionFrames) : 0;

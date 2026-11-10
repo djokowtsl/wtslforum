@@ -48,7 +48,7 @@ export type CrowdSeat = {
 };
 
 export type CrowdRig = {
-  update: (timeSeconds: number, applauding: boolean, ballPosition?: THREE.Vector3) => void;
+  update: (timeSeconds: number, applauding: boolean, ballPosition?: THREE.Vector3, camera?: THREE.Camera) => void;
   seats: CrowdSeat[];
   staffSeats: CrowdSeat[];
   replacePeople: (update: CrowdRig['update']) => void;
@@ -1584,9 +1584,9 @@ function buildUnifiedCrowd(scene: THREE.Scene, venue: DmoVenueProfile, density: 
       for (const mesh of [...fallbackMeshes, ...fallbackClothingMeshes]) mesh.visible = false;
       detailedUpdate = update;
     },
-    update(time, applauding, ballPosition) {
+    update(time, applauding, ballPosition, camera) {
       if (detailedUpdate) {
-        detailedUpdate(time, applauding, ballPosition);
+        detailedUpdate(time, applauding, ballPosition, camera);
         return;
       }
       if (time - lastUpdate < 0.12) return;

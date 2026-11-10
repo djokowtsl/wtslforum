@@ -251,12 +251,28 @@ export function attachSpectatorCrowd(scene: THREE.Scene, crowd: CrowdRig, templa
   };
   templates.forEach((template, gender) => far.push(makeBatches(template, gender, 'far')));
   const dummy = new THREE.Object3D();
+  const viewProjection = new THREE.Matrix4();
+  const viewFrustum = new THREE.Frustum();
+  // Include the whole seated body, raised hands and head turns at frame edges.
+  const seatBounds = new THREE.Sphere(new THREE.Vector3(), 1.6);
+  let lastCamera: THREE.Camera | undefined;
   let force = true, lastUpdate = -Infinity, lastApplause = false;
-  const update: CrowdRig['update'] = (time, applauding, ball) => {
-    if (!force && time - lastUpdate < 0.10 && applauding === lastApplause) return;
+  const update: CrowdRig['update'] = (time, applauding, ball, camera) => {
+    if (!force && camera === lastCamera && time - lastUpdate < 0.10 && applauding === lastApplause) return;
+    if (camera) {
+      camera.updateMatrixWorld();
+      viewProjection.multiplyMatrices(camera.projectionMatrix, camera.matrixWorldInverse);
+      viewFrustum.setFromProjectionMatrix(viewProjection, camera.coordinateSystem);
+    }
     allBatches.forEach(batch => { batch.count = 0; });
     crowd.seats.forEach((seat, index) => {
       if (!seat.occupied) return;
+      // A batch spans the entire bowl, so mesh-level frustum culling cannot
+      // reject its off-screen instances. Compact only visible people into it.
+      if (camera) {
+        seatBounds.center.set(seat.x, seat.y + 0.8, seat.z);
+        if (!viewFrustum.intersectsSphere(seatBounds)) return;
+      }
       const source = seat.sourceIndex ?? index;
       const appearance = getCrowdAppearance(source, seat.row);
       const gender = appearance.gender === 'female' ? 1 : 0;
@@ -282,11 +298,15 @@ export function attachSpectatorCrowd(scene: THREE.Scene, crowd: CrowdRig, templa
     });
     allBatches.forEach(batch => {
       batch.mesh.count = batch.count;
-      batch.mesh.instanceMatrix.needsUpdate = true;
-      batch.tint.needsUpdate = true;
-      batch.gaze.needsUpdate = true;
+      for (const attribute of [batch.mesh.instanceMatrix, batch.tint, batch.gaze]) {
+        attribute.clearUpdateRanges();
+        if (batch.count) {
+          attribute.addUpdateRange(0, batch.count * attribute.itemSize);
+          attribute.needsUpdate = true;
+        }
+      }
     });
-    force = false; lastUpdate = time; lastApplause = applauding;
+    force = false; lastUpdate = time; lastApplause = applauding; lastCamera = camera;
   };
   crowd.setHighDetailModel = (template, identity) => {
     if (identity < 0 || identity >= templates.length || full[identity]) return;

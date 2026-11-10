@@ -197,6 +197,16 @@ test('court lettering spans both baselines, faces play, and stays outside the li
   }
 });
 
+test('the real crowd rig forwards the active camera to the detailed renderer', () => {
+  const crowd = sceneApi.buildCrowd(new THREE.Scene());
+  const camera = new THREE.PerspectiveCamera();
+  const ball = new THREE.Vector3(1, 2, 3);
+  let received;
+  crowd.replacePeople((...args) => { received = args; });
+  crowd.update(1, true, ball, camera);
+  assert.deepEqual(received, [1, true, ball, camera]);
+});
+
 test('crowd occupancy updates in place without changing the seating layout', () => {
   const scene = new THREE.Scene();
   const crowd = sceneApi.buildCrowd(scene);

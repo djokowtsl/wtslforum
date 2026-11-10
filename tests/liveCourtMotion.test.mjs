@@ -1,5 +1,6 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
+import { readFile } from 'node:fs/promises';
 import {
   advanceLiveCourtPlayerPosition,
   advanceLiveCourtPlayhead,
@@ -100,6 +101,32 @@ test('live playback keeps one DMO update interval ahead for event alignment', ()
     47,
     'playback cannot outrun the available DMO event window',
   );
+});
+
+test('low rendering FPS does not turn the playback clock into slow motion', () => {
+  const samples = [sample(0, 0), sample(36000, 0)];
+  for (const renderingFps of [5, 10, 15, 30, 60]) {
+    let frame = 0;
+    for (let tick = 0; tick < renderingFps * 10; tick++) {
+      frame = advanceLiveCourtPlayhead(frame, 1000 / renderingFps, 1, samples, 60);
+    }
+    assert.ok(Math.abs(frame - 600) < 1e-7, `${renderingFps} rendered FPS still advances ten match seconds`);
+  }
+  assert.equal(advanceLiveCourtPlayhead(0, 200, 2, samples, 60), 24, 'selected playback speed is preserved');
+  assert.equal(advanceLiveCourtPlayhead(0, 20000, 1, samples, 60), 60, 'a suspended-tab gap is bounded to one second');
+  assert.equal(advanceLiveCourtPlayhead(0, NaN, 1, samples, 60), 0);
+});
+
+test('render loops pass wall-clock elapsed time rather than the animation safety timestep', async () => {
+  const threeD = await readFile(new URL('../components/DmoLiveCourt3D.tsx', import.meta.url), 'utf8');
+  assert.match(threeD, /const elapsed = Math\.min\(80, clockElapsed\)/, 'pose/physics retains its safety bound');
+  assert.equal(
+    [...threeD.matchAll(/advanceLiveCourtPlayhead\(\s*\w+Ref\.current,\s*clockElapsed,/g)].length,
+    2,
+    'both live and stored replay clocks receive untruncated frame time',
+  );
+  const twoD = await readFile(new URL('../components/DmoLiveCourt.tsx', import.meta.url), 'utf8');
+  assert.doesNotMatch(twoD, /const elapsed = Math\.min\(80/);
 });
 
 test('sample interpolation and rally boundaries track the absolute DMO frame', () => {
