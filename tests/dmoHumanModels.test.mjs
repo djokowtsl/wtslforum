@@ -349,11 +349,18 @@ for (const gender of ['male', 'female']) test(`${gender}: continuous native body
   const shirtGarment = attached.model.getObjectByName('native-tennis-shirt');
   if (gender === 'female') {
     const skirt = attached.model.getObjectByName('native-tennis-skirt');
+    const waistband = attached.model.getObjectByName('native-tennis-skirt-waistband');
+    const compressionShorts = attached.model.getObjectByName('native-tennis-shorts');
     const ponytail = attached.model.getObjectByName('native-player-ponytail-1');
     assert.ok(skirt);
+    assert.ok(waistband?.userData.overlapsTorsoAndSkirt,
+      'the fitted waistband bridges the shirt hem and skirt top');
     assert.equal(skirt.geometry.parameters.height, 0.16, 'WTA skirts should end higher on the thigh');
     assert.equal(skirt.geometry.parameters.radiusBottom, 0.27, 'WTA skirts should follow the fuller hip silhouette');
-    assert.equal(shirtGarment.userData.sleeveEndFraction, 0.3, 'WTA shirts should use cap sleeves');
+    assert.equal(shirtGarment.userData.sleeveEndFraction, 0.06, 'WTA shirts should use tank-top shoulder coverage');
+    compressionShorts.geometry.computeBoundingBox();
+    assert.ok(compressionShorts.geometry.boundingBox.min.y > 0.7,
+      'WTA compression shorts should stop beneath the skirt instead of extending down the thighs');
     assert.ok(ponytail, 'both WTA players should have long tied-back hair');
     ponytail.geometry.computeBoundingBox();
     assert.ok(ponytail.geometry.boundingBox.max.y - ponytail.geometry.boundingBox.min.y > 0.29);

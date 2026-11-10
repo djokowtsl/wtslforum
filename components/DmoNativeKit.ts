@@ -22,9 +22,10 @@ type Vertex = {
 };
 
 const smooth = THREE.MathUtils.smoothstep;
-const WTA_SHORT_SLEEVE_END_FRACTION = 0.3;
+const WTA_TANK_TOP_END_FRACTION = 0.06;
 const STANDARD_SHORT_SLEEVE_END_FRACTION = 0.46;
 const WTA_TENNIS_SKIRT_HEIGHT = 0.16;
+const WTA_UNDER_SKIRT_SHORTS_HEM_Y = 0.74;
 
 function taperedHairGeometry(path: THREE.CatmullRomCurve3, radius: number) {
   const tubularSegments = 24;
@@ -414,7 +415,7 @@ export function dressNativePlayer(
       return (fraction - along) * armness + 0.3 * (1 - armness);
     };
     const sleeveEndFraction = female
-      ? WTA_SHORT_SLEEVE_END_FRACTION
+      ? WTA_TANK_TOP_END_FRACTION
       : STANDARD_SHORT_SLEEVE_END_FRACTION;
     const shirtFields: Field[] = [
       i => points[i].y - 0.86,
@@ -423,7 +424,9 @@ export function dressNativePlayer(
       i => neck.y + 0.01 - points[i].y,
     ];
     const isTrunk = (i: number) => weightOf(i, /^(pelvis|spine_01|thigh|calf)/) > 0.5;
-    const shortsFields: Field[] = [i => points[i].y - 0.575, i => 0.975 - points[i].y];
+    const shortsFields: Field[] = female
+      ? [i => points[i].y - WTA_UNDER_SKIRT_SHORTS_HEM_Y, i => 0.975 - points[i].y]
+      : [i => points[i].y - 0.575, i => 0.975 - points[i].y];
 
     const fieldCache = new Map<Field[], Map<number, number[]>>();
     const sourceVertex = (i: number, fields: Field[]): Vertex => {
@@ -535,11 +538,24 @@ export function dressNativePlayer(
     skirt.name = 'native-tennis-skirt';
     skirt.userData.skirtLength = WTA_TENNIS_SKIRT_HEIGHT;
     model.updateMatrixWorld(true);
-    const world = pelvis.getWorldPosition(new THREE.Vector3())
+    const pelvisWorld = pelvis.getWorldPosition(new THREE.Vector3());
+    const world = pelvisWorld.clone()
       .add(new THREE.Vector3(0, -WTA_TENNIS_SKIRT_HEIGHT / 2 + 0.005, 0));
     model.add(skirt); skirt.position.copy(model.worldToLocal(world));
     skirt.quaternion.copy(model.getWorldQuaternion(new THREE.Quaternion()).invert());
     pelvis.attach(skirt);
+
+    const waistband = new THREE.Mesh(
+      new THREE.CylinderGeometry(0.17, 0.17, 0.055, 40, 1, true),
+      new THREE.MeshStandardMaterial({ color: kit.shortsColor, roughness: 0.88, side: THREE.DoubleSide }),
+    );
+    waistband.name = 'native-tennis-skirt-waistband';
+    waistband.userData.overlapsTorsoAndSkirt = true;
+    const waistbandWorld = pelvisWorld.add(new THREE.Vector3(0, 0.012, 0));
+    model.add(waistband);
+    waistband.position.copy(model.worldToLocal(waistbandWorld));
+    waistband.quaternion.copy(model.getWorldQuaternion(new THREE.Quaternion()).invert());
+    pelvis.attach(waistband);
   }
   addTourMark(model, kit, kitIndex);
   addGrooming(model, kit, kitIndex, female);

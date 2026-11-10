@@ -995,17 +995,19 @@ test('seated crowd and coach legs stay compact and within the seat-to-step reach
   }
 });
 
-test('venue modes retain the same enclosed bowl without adding roof or sky geometry', () => {
+test('venue modes retain the same enclosed bowl without adding exterior landscape', () => {
   const outdoor = new THREE.Scene();
   sceneApi.buildStadiumEnvironment(outdoor, false);
-  assert.equal(outdoor.getObjectByName('wtsl-open-sky'), undefined);
+  assert.equal(outdoor.getObjectByName('wtsl-open-sky'), undefined,
+    'the stadium builder leaves broadcast sky and weather to the time-of-day lighting controller');
   assert.ok(outdoor.children.some(item => item.isLight)
     || outdoor.getObjectByName('wtsl-stadium-architecture')?.children.some(item => item.isLight));
   assert.equal(isIndoorDmoVenue('Paris-Bercy'), true);
   assert.equal(isIndoorDmoVenue('Philippe Chatrier'), false);
   const indoor = new THREE.Scene();
   sceneApi.buildStadiumEnvironment(indoor, true);
-  assert.equal(indoor.getObjectByName('wtsl-open-sky'), undefined);
+  assert.equal(indoor.getObjectByName('wtsl-open-sky'), undefined,
+    'indoor venues keep the same enclosed bowl');
   assert.equal(indoor.getObjectByName('wtsl-indoor-ceiling'), undefined);
   assert.ok(indoor.getObjectByName('wtsl-continuous-seating-bowl'));
   assert.ok(outdoor.getObjectByName('wtsl-continuous-seating-bowl'));
