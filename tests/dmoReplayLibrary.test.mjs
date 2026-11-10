@@ -117,7 +117,9 @@ test('stored DMO paths must be private-store paths with a DMO filename', () => {
 test('replay character picks map to their saved player slots and preserve one-handed backhands', () => {
   const backhandModule = loadModule('lib/liveCharacterBackhand.mjs', {});
   const {
+    alignDmoReplayPlayerStyles,
     buildDmoReplayCharacterSetupIndex,
+    dmoReplayPlayerStyleOrder,
     resolveDmoReplayCharacterPresentation,
   } = loadModule('lib/dmoReplayCharacterStyles.ts', {
     './liveCharacterBackhand.mjs': backhandModule,
@@ -139,6 +141,39 @@ test('replay character picks map to their saved player slots and preserve one-ha
     { forehand: 'one', backhand: 'one' },
   ]);
   assert.deepEqual(presentation.missingBackhandStyle, [false, false]);
+});
+
+test('submitted replay styles follow the names and order inside the DMO recording', () => {
+  const backhandModule = loadModule('lib/liveCharacterBackhand.mjs', {});
+  const {
+    alignDmoReplayPlayerStyles,
+    dmoReplayPlayerStyleOrder,
+  } = loadModule('lib/dmoReplayCharacterStyles.ts', {
+    './liveCharacterBackhand.mjs': backhandModule,
+  });
+  const submissionPlayers = ['elmanzanas', 'BigWill'];
+  const replayPlayers = ['Bigwill', 'elmanzanas'];
+  const handedness = ['right', 'left'];
+  const backhands = ['two-handed', 'one-handed'];
+
+  assert.deepEqual(dmoReplayPlayerStyleOrder(submissionPlayers, replayPlayers), [1, 0]);
+  assert.deepEqual(alignDmoReplayPlayerStyles(submissionPlayers, replayPlayers, handedness), ['left', 'right']);
+  assert.deepEqual(alignDmoReplayPlayerStyles(submissionPlayers, replayPlayers, backhands), ['one-handed', 'two-handed']);
+  assert.deepEqual(
+    dmoReplayPlayerStyleOrder(['First', 'Second'], ['first', 'Renamed second']),
+    [0, 1],
+    'one unique name match anchors the other player slot',
+  );
+  assert.deepEqual(
+    dmoReplayPlayerStyleOrder(['First', 'Second'], ['Unknown', 'Other']),
+    [0, 1],
+    'unmatched names retain the submitted order instead of guessing',
+  );
+  assert.deepEqual(
+    dmoReplayPlayerStyleOrder(['Same', 'Same'], ['Same', 'Same']),
+    [0, 1],
+    'duplicate names cannot identify which player slot owns each style',
+  );
 });
 
 test('saved created-player styles override missing character picks for both replay slots', () => {

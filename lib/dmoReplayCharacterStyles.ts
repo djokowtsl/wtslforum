@@ -46,6 +46,38 @@ export function normalizeDmoReplayCharacterName(name: string) {
   return name.trim().replace(/\s+/g, ' ').toLocaleLowerCase('en-GB');
 }
 
+export function dmoReplayPlayerStyleOrder(
+  submissionPlayers: readonly [string, string],
+  replayPlayers: readonly [string, string],
+): [number, number] {
+  const submissionNames = submissionPlayers.map(normalizeDmoReplayCharacterName) as [string, string];
+  const replayNames = replayPlayers.map(normalizeDmoReplayCharacterName) as [string, string];
+  if (
+    !submissionNames.every(Boolean)
+    || !replayNames.every(Boolean)
+    || submissionNames[0] === submissionNames[1]
+    || replayNames[0] === replayNames[1]
+  ) return [0, 1];
+
+  const firstMatch = submissionNames.indexOf(replayNames[0]);
+  const secondMatch = submissionNames.indexOf(replayNames[1]);
+  if (firstMatch >= 0 && secondMatch >= 0 && firstMatch !== secondMatch) {
+    return [firstMatch, secondMatch];
+  }
+  if (firstMatch >= 0) return [firstMatch, 1 - firstMatch];
+  if (secondMatch >= 0) return [1 - secondMatch, secondMatch];
+  return [0, 1];
+}
+
+export function alignDmoReplayPlayerStyles<T>(
+  submissionPlayers: readonly [string, string],
+  replayPlayers: readonly [string, string],
+  styles: readonly [T, T],
+): [T, T] {
+  const order = dmoReplayPlayerStyleOrder(submissionPlayers, replayPlayers);
+  return [styles[order[0]], styles[order[1]]];
+}
+
 export function buildDmoReplayCharacterSetupIndex(rows: unknown) {
   const setups = new Map<string, CharacterBroadcastSetup>();
   if (!Array.isArray(rows)) return setups;
