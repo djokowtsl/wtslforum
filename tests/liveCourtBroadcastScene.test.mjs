@@ -558,16 +558,22 @@ test('player-grade crowd models cover every seat in the nearest two rows', () =>
   }
 });
 
-test('the nearest spectators, coaches, and umpire use high-resolution player-grade human models', async () => {
-  const [courtSource, crowdProvenanceText] = await Promise.all([
+test('nearby NPCs reuse the on-court native face with player-grade crowd bodies', async () => {
+  const [courtSource, faceSource, crowdProvenanceText] = await Promise.all([
     readFile(new URL('../components/DmoLiveCourt3D.tsx', import.meta.url), 'utf8'),
+    readFile(new URL('../components/DmoNativeFaces.ts', import.meta.url), 'utf8'),
     readFile(new URL('../public/models/dmo-humans/provenance.json', import.meta.url), 'utf8'),
   ]);
   assert.match(courtSource, /loadHumanModel\('male', 'crowd-high'/);
   assert.match(courtSource, /loadHumanModel\('female', 'crowd-high'/);
+  assert.match(courtSource, /nativeFaces = createNativeFaceSet\(player\.value\)/);
+  assert.match(courtSource, /attachHumanCrowd\(scene, crowdRig, crowdTemplates, nativeFaces\)/);
   assert.match(courtSource, /crowdRig\.setHighDetailModel\(maleHighDetailCrowd\.value, 0\)/);
   assert.match(courtSource, /crowdRig\.setHighDetailModel\(femaleHighDetailCrowd\.value, 1\)/);
-  assert.match(courtSource, /attachHumanCourtStaff\([\s\S]{0,220}highDetailCrowdTemplates/);
+  assert.match(courtSource, /attachHumanCourtStaff\([\s\S]{0,260}nativeFaces/);
+  assert.match(faceSource, /dressNativePlayer\(model/);
+  assert.match(faceSource, /extractBoneSurface\(body, head\)/);
+  assert.match(faceSource, /native-cropped-hair/);
 
   const provenance = JSON.parse(crowdProvenanceText);
   for (const gender of ['male', 'female']) {
@@ -774,7 +780,7 @@ test('crowd implementation contains no legacy stand block and keeps textured peo
     'the detailed crowd consumes the same deterministic variation as its fallback');
   assert.match(humanCrowdSource, /getChairUmpireLegTargets\(sign, hipsY\)/,
     'the seated umpire uses the regression-tested chair-local leg targets');
-  assert.match(humanCrowdSource, /'wtsl-detailed-umpire', 0x38536a, 1\.34, true/,
+  assert.match(humanCrowdSource, /attachStaffModel\(\s*chair,\s*detailedUmpireTemplate,\s*'wtsl-detailed-umpire',\s*0x38536a,\s*1\.34,\s*true,/,
     'the chair pose is anchored to the revised seat height');
   const seatedGeometrySource = humanCrowdSource.slice(
     humanCrowdSource.indexOf('function seatedGeometry('),

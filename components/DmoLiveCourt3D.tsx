@@ -141,6 +141,7 @@ import CourtFullscreenButton from './CourtFullscreenButton';
 import CourtPictureInPictureButton from './CourtPictureInPictureButton';
 import { attachHumanPlayer, disposeHumanModel, loadHumanModel } from './DmoHumanModels';
 import { attachHumanCourtStaff, attachHumanCrowd } from './DmoHumanCrowd';
+import { createNativeFaceSet, disposeNativeFaceSet } from './DmoNativeFaces';
 import { BROADCAST_PLAYER_KITS } from './DmoNativeKit';
 import { racketCarryOrientation, racketContactOrientation, racketGripElbow, racketGripWrist } from './DmoRacketOrientation';
 import type { StadiumScoreboardData } from './DmoStadiumArchitecture';
@@ -739,6 +740,7 @@ function ThreeCourt({
       loadHumanModel('male', 'crowd-high', modelLoad.signal, modelAssetBase),
       loadHumanModel('female', 'crowd-high', modelLoad.signal, modelAssetBase),
     ]).then((results) => {
+      let nativeFaces: ReturnType<typeof createNativeFaceSet> | undefined;
       try {
         if (modelLoad.signal.aborted) return;
         const [player, maleCrowd, femaleCrowd, maleHighDetailCrowd, femaleHighDetailCrowd] = results;
@@ -746,10 +748,11 @@ function ThreeCourt({
           attachHumanPlayer(player.value, players[0], PALETTE.shirtOne, undefined, undefined, BROADCAST_PLAYER_KITS[0], 0);
           attachHumanPlayer(player.value, players[1], PALETTE.shirtTwo, undefined, undefined, BROADCAST_PLAYER_KITS[1], 1);
           detailedPlayersReady = true;
+          nativeFaces = createNativeFaceSet(player.value);
         }
         if (maleCrowd.status === 'fulfilled' && femaleCrowd.status === 'fulfilled') {
           const crowdTemplates: [THREE.Group, THREE.Group] = [maleCrowd.value, femaleCrowd.value];
-          attachHumanCrowd(scene, crowdRig, crowdTemplates);
+          attachHumanCrowd(scene, crowdRig, crowdTemplates, nativeFaces);
           if (maleHighDetailCrowd.status === 'fulfilled') {
             crowdRig.setHighDetailModel(maleHighDetailCrowd.value, 0);
           }
@@ -766,6 +769,7 @@ function ThreeCourt({
             highDetailCrowdTemplates,
             crowdRig,
             highDetailCrowdTemplates[0],
+            nativeFaces,
           );
         }
         const requiredFailure = [player, maleCrowd, femaleCrowd]
@@ -778,6 +782,7 @@ function ThreeCourt({
         }
         setModelStatus(highDetailFailed ? 'partial' : 'ready');
       } finally {
+        if (nativeFaces) disposeNativeFaceSet(nativeFaces);
         // Visible instances retain texture maps; discard only the unused template buffers.
         results.forEach((result) => { if (result.status === 'fulfilled') disposeHumanModel(result.value, modelLoad.signal.aborted); });
       }

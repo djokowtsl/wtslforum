@@ -13,11 +13,18 @@ import {
 import { shouldUseHighDetailCrowdSeat } from '../lib/dmoCrowdLod';
 import { makeCrowdClothingOpaque } from '../lib/dmoCrowdClothing';
 import { getCrowdBannerBranding } from '../lib/dmoCrowdBranding';
+import {
+  fitNativeFaceToTemplate,
+  type NativeFaceFit,
+  type NativeFaceSet,
+  type NativeFaceVariant,
+} from './DmoNativeFaces';
 
 function tintedHuman(
   template: THREE.Group,
   tint: number,
   skinTone?: readonly [number, number, number],
+  stripHead = false,
 ) {
   const model = clone(template) as THREE.Group;
   model.traverse((object) => {
@@ -31,7 +38,39 @@ function tintedHuman(
     }
     tintKit(object, tint, skinTone);
   });
+  if (stripHead) stripSkinnedHumanHead(model);
   return model;
+}
+
+function stripSkinnedHumanHead(model: THREE.Group) {
+  model.traverse((object) => {
+    if (!(object instanceof THREE.SkinnedMesh)) return;
+    const geometry = object.geometry;
+    const headIndex = object.skeleton.bones.findIndex((bone) => bone.name.toLowerCase() === 'head');
+    const skinIndex = geometry.getAttribute('skinIndex');
+    const skinWeight = geometry.getAttribute('skinWeight');
+    const source = geometry.index;
+    if (headIndex < 0 || !skinIndex || !skinWeight || !source) return;
+    const weightOf = (vertex: number) => {
+      let total = 0;
+      for (let component = 0; component < 4; component++) {
+        if (skinIndex.getComponent(vertex, component) === headIndex) {
+          total += skinWeight.getComponent(vertex, component);
+        }
+      }
+      return total;
+    };
+    const kept: number[] = [];
+    for (let offset = 0; offset < source.count; offset += 3) {
+      const a = source.getX(offset), b = source.getX(offset + 1), c = source.getX(offset + 2);
+      const headWeight = (weightOf(a) + weightOf(b) + weightOf(c)) / 3;
+      if (headWeight < 0.3) kept.push(a, b, c);
+    }
+    geometry.setIndex(kept);
+    geometry.clearGroups();
+    geometry.addGroup(0, kept.length, 0);
+    geometry.computeVertexNormals();
+  });
 }
 
 function addCrowdAccessories(scene: THREE.Scene, crowd: CrowdRig) {
@@ -211,8 +250,38 @@ function attachStaffModel(
   tint: number,
   hipsY: number,
   chairUmpire = false,
+  nativeFace?: NativeFaceVariant,
+  skinToneIndex = 0,
 ) {
-  const model = tintedHuman(template, tint);
+  const model = tintedHuman(template, tint, undefined, Boolean(nativeFace));
+  if (nativeFace) {
+    const head = model.getObjectByName('Head');
+    if (!(head instanceof THREE.Bone)) throw new Error('Court staff model has no head joint.');
+    const fit = fitNativeFaceToTemplate(nativeFace, template);
+    const skinTone = CROWD_SKIN_TONES[skinToneIndex % CROWD_SKIN_TONES.length];
+    const face = new THREE.Mesh(
+      nativeFace.skin.clone(),
+      new THREE.MeshStandardMaterial({
+        color: new THREE.Color().setRGB(skinTone[0], skinTone[1], skinTone[2], THREE.SRGBColorSpace),
+        roughness: 0.76,
+      }),
+    );
+    face.name = 'wtsl-native-player-face';
+    face.position.copy(fit.position);
+    face.scale.copy(fit.scale);
+    face.castShadow = true;
+    face.receiveShadow = true;
+    const hair = new THREE.Mesh(
+      nativeFace.hair.clone(),
+      new THREE.MeshStandardMaterial({ color: nativeFace.hairColor, roughness: 0.86 }),
+    );
+    hair.name = 'wtsl-native-player-hair';
+    hair.position.copy(fit.position);
+    hair.scale.copy(fit.scale);
+    hair.castShadow = true;
+    hair.receiveShadow = true;
+    head.add(face, hair);
+  }
   model.name = name;
   space.add(model);
   return { model, ...poseSeatedStaff(model, space, hipsY, chairUmpire) };
@@ -223,34 +292,7 @@ function seatedGeometry(template: THREE.Group, look: number, applause: boolean) 
   const model = clone(template) as THREE.Group;
   space.add(model);
   const pose = new HumanPose(model, space);
-  const v = (x: number, y: number, z = 0) => new THREE.Vector3(x, y, z);
-  pose.begin();
-  const hips = v(0, 0.48), neck = v(0, 1.13), head = v(0, 1.2);
-  pose.place('Hips', hips);
-  for (const [name, y] of [['Spine02', 0.76], ['Spine01', 0.89], ['Spine', 1.02]] as const) {
-    pose.place(name, v(0, y), neck);
-  }
-  pose.place('neck', neck, head);
-  pose.place('Head', head, undefined, new THREE.Quaternion().setFromAxisAngle(v(0, 1), look));
-  for (const [side, sign] of [['Left', 1], ['Right', -1]] as const) {
-    const shoulder = v(sign * 0.2, 1.04);
-    const elbow = applause ? v(sign * 0.2, 0.98, 0.22) : v(sign * 0.24, 0.82, 0.12);
-    const wrist = applause ? v(sign * 0.04, 1.14, 0.28) : v(sign * 0.15, 0.69, 0.25);
-    pose.place(`${side}Shoulder`, v(sign * 0.04, 1.02), shoulder);
-    pose.place(`${side}Arm`, shoulder, elbow);
-    pose.place(`${side}ForeArm`, elbow, wrist);
-    pose.place(`${side}Hand`, wrist, wrist.clone().add(v(-sign * 0.05, 0, 0.08)));
-    const legTargets = getSeatedCrowdLegTargets(sign);
-    const hip = v(...legTargets.hip);
-    const knee = v(...legTargets.knee);
-    const ankle = v(...legTargets.ankle);
-    const toe = v(...legTargets.toe);
-    pose.place(`${side}UpLeg`, hip, knee);
-    pose.place(`${side}Leg`, knee, ankle);
-    pose.place(`${side}Foot`, ankle, toe);
-    pose.place(`${side}ToeBase`, toe);
-  }
-  pose.finish();
+  poseSeatedCrowd(pose, space, look, applause);
   let result: THREE.BufferGeometry | undefined;
   model.traverse((object) => {
     if (!(object instanceof THREE.SkinnedMesh)) return;
@@ -272,14 +314,90 @@ function seatedGeometry(template: THREE.Group, look: number, applause: boolean) 
   return result;
 }
 
+function poseSeatedCrowd(
+  pose: HumanPose,
+  space: THREE.Group,
+  look: number,
+  applauding: boolean,
+) {
+  const v = (x: number, y: number, z = 0) => new THREE.Vector3(x, y, z);
+  pose.begin();
+  const hips = v(0, 0.48), neck = v(0, 1.13), head = v(0, 1.2);
+  pose.place('Hips', hips);
+  for (const [name, y] of [['Spine02', 0.76], ['Spine01', 0.89], ['Spine', 1.02]] as const) {
+    pose.place(name, v(0, y), neck);
+  }
+  pose.place('neck', neck, head);
+  pose.place('Head', head, undefined, new THREE.Quaternion().setFromAxisAngle(v(0, 1), look));
+  for (const [side, sign] of [['Left', 1], ['Right', -1]] as const) {
+    const shoulder = v(sign * 0.2, 1.04);
+    const elbow = applauding ? v(sign * 0.2, 0.98, 0.22) : v(sign * 0.24, 0.82, 0.12);
+    const wrist = applauding ? v(sign * 0.04, 1.14, 0.28) : v(sign * 0.15, 0.69, 0.25);
+    pose.place(`${side}Shoulder`, v(sign * 0.04, 1.02), shoulder);
+    pose.place(`${side}Arm`, shoulder, elbow);
+    pose.place(`${side}ForeArm`, elbow, wrist);
+    pose.place(`${side}Hand`, wrist, wrist.clone().add(v(-sign * 0.05, 0, 0.08)));
+    const legTargets = getSeatedCrowdLegTargets(sign);
+    const hip = v(...legTargets.hip);
+    const knee = v(...legTargets.knee);
+    const ankle = v(...legTargets.ankle);
+    const toe = v(...legTargets.toe);
+    pose.place(`${side}UpLeg`, hip, knee);
+    pose.place(`${side}Leg`, knee, ankle);
+    pose.place(`${side}Foot`, ankle, toe);
+    pose.place(`${side}ToeBase`, toe);
+  }
+  pose.finish();
+}
+
+function seatedNativeFaceGeometry(
+  template: THREE.Group,
+  source: THREE.BufferGeometry,
+  fit: NativeFaceFit,
+  look: number,
+) {
+  const space = new THREE.Group();
+  const model = clone(template) as THREE.Group;
+  space.add(model);
+  const pose = new HumanPose(model, space);
+  poseSeatedCrowd(pose, space, look, false);
+  const head = model.getObjectByName('Head');
+  if (!(head instanceof THREE.Bone)) throw new Error('Crowd model has no head joint for the native face.');
+  head.updateWorldMatrix(true, false);
+  const fitMatrix = new THREE.Matrix4().compose(
+    fit.position,
+    new THREE.Quaternion(),
+    fit.scale,
+  );
+  fitMatrix.premultiply(head.matrixWorld);
+  const geometry = source.clone();
+  geometry.applyMatrix4(fitMatrix);
+  geometry.computeVertexNormals();
+  geometry.computeBoundingBox();
+  geometry.computeBoundingSphere();
+  model.traverse((object) => {
+    if (object instanceof THREE.SkinnedMesh) object.skeleton.dispose();
+  });
+  return geometry;
+}
+
 /** Textured seated humans use instancing; full-detail meshes are added progressively. */
-export function attachHumanCrowd(scene: THREE.Scene, crowd: CrowdRig, templates: THREE.Group[]) {
+export function attachHumanCrowd(
+  scene: THREE.Scene,
+  crowd: CrowdRig,
+  templates: THREE.Group[],
+  nativeFaces?: NativeFaceSet,
+) {
   const batches: THREE.InstancedMesh[] = [];
   const highDetailBatches: THREE.InstancedMesh[] = [];
+  const highFaceBatches: THREE.InstancedMesh[] = [];
   const maxSeatCount = crowd.seats.length;
   // Most seats are spread across 48 gender/look/pose batches; leave headroom
   // without allocating a full crowd-sized matrix/color buffer for each one.
   const batchCapacity = Math.max(16, Math.ceil(maxSeatCount / 4));
+  let highFaceCounts = new Uint16Array(0);
+  const highFaceGenderOffsets = new Map<number, number>();
+  const highFaceVariantsByGender = new Map<number, [NativeFaceVariant, NativeFaceVariant]>();
   const wardrobeTints = [
     [0x315a74, 0x9b4840, 0x40755e, 0x70638c, 0xb78b45, 0x3a6c78, 0x775145, 0x617257],
     [0x4d6c8b, 0xb24e55, 0x448069, 0x826392, 0xb99052, 0x397287, 0x8c624c, 0x5c7658],
@@ -290,9 +408,10 @@ export function attachHumanCrowd(scene: THREE.Scene, crowd: CrowdRig, templates:
     label: string,
     clothingTint: number,
     skinToneIndex: number,
+    replaceHead = false,
   ) => {
     const skinTone = CROWD_SKIN_TONES[skinToneIndex];
-    const variant = tintedHuman(template, clothingTint, skinTone);
+    const variant = tintedHuman(template, clothingTint, skinTone, replaceHead);
     let sourceMaterial: THREE.Material | undefined;
     variant.traverse((object) => {
       if (object instanceof THREE.SkinnedMesh) {
@@ -348,6 +467,7 @@ export function attachHumanCrowd(scene: THREE.Scene, crowd: CrowdRig, templates:
     if (!forceUpdate && time - lastUpdate < 0.16 && applauding === previousApplause) return;
     counts.fill(0);
     highDetailCounts.fill(0);
+    highFaceCounts.fill(0);
     let shoeInstance = 0;
     crowd.seats.forEach((seat, index) => {
       if (!seat.occupied) return;
@@ -383,6 +503,24 @@ export function attachHumanCrowd(scene: THREE.Scene, crowd: CrowdRig, templates:
       // so rear torso and hip fabric cannot inherit the spectator's skin tone.
       instanceColor.setRGB(1, 1, 1);
       mesh.setColorAt(instance, instanceColor);
+      const highFaceOffset = highFaceGenderOffsets.get(gender);
+      const faceVariants = highFaceVariantsByGender.get(gender);
+      if (useHighDetail && highFaceOffset !== undefined && faceVariants) {
+        const style = Math.floor(sourceIndex / 2) % faceVariants.length;
+        const faceBatchOffset = highFaceOffset + (style * 3 + gaze) * 2;
+        const skinInstance = highFaceCounts[faceBatchOffset]++;
+        const hairInstance = highFaceCounts[faceBatchOffset + 1]++;
+        const skinMesh = highFaceBatches[faceBatchOffset];
+        const hairMesh = highFaceBatches[faceBatchOffset + 1];
+        skinMesh.setMatrixAt(skinInstance, dummy.matrix);
+        hairMesh.setMatrixAt(hairInstance, dummy.matrix);
+        const skinTone = CROWD_SKIN_TONES[appearance.skinToneIndex];
+        skinMesh.setColorAt(
+          skinInstance,
+          new THREE.Color().setRGB(skinTone[0], skinTone[1], skinTone[2], THREE.SRGBColorSpace),
+        );
+        hairMesh.setColorAt(hairInstance, new THREE.Color(faceVariants[style].hairColor));
+      }
       for (const [side, sideIndex] of [[-1, 0], [1, 1]] as const) {
         const leg = getSeatedCrowdLegTargets(side);
         const localX = leg.ankle[0];
@@ -414,6 +552,10 @@ export function attachHumanCrowd(scene: THREE.Scene, crowd: CrowdRig, templates:
       mesh.count = highDetailCounts[index]; mesh.instanceMatrix.needsUpdate = true;
       if (mesh.instanceColor) mesh.instanceColor.needsUpdate = true;
     });
+    highFaceBatches.forEach((mesh, index) => {
+      mesh.count = highFaceCounts[index]; mesh.instanceMatrix.needsUpdate = true;
+      if (mesh.instanceColor) mesh.instanceColor.needsUpdate = true;
+    });
     shoeMesh.count = shoeInstance;
     shoeMesh.instanceMatrix.needsUpdate = true;
     if (shoeMesh.instanceColor) shoeMesh.instanceColor.needsUpdate = true;
@@ -424,6 +566,7 @@ export function attachHumanCrowd(scene: THREE.Scene, crowd: CrowdRig, templates:
     crowd.highDetailEnabled = enabled;
     highDetailEnabled = enabled;
     highDetailBatches.forEach((mesh) => { mesh.visible = enabled; });
+    highFaceBatches.forEach((mesh) => { mesh.visible = enabled; });
     forceUpdate = true;
   };
   crowd.setHighDetailModel = (template, genderIndex) => {
@@ -431,10 +574,60 @@ export function attachHumanCrowd(scene: THREE.Scene, crowd: CrowdRig, templates:
       || genderIndex < 0
       || genderIndex >= templates.length
       || highDetailGenderOffsets.has(genderIndex)) return;
+    let faceVariants: [NativeFaceVariant, NativeFaceVariant] | undefined;
+    const faceBatchSpecs: { geometry: THREE.BufferGeometry; style: number; gaze: number; part: number }[] = [];
+    if (nativeFaces) {
+      faceVariants = nativeFaces[genderIndex === 0 ? 'male' : 'female'];
+      const fit = fitNativeFaceToTemplate(faceVariants[0], template);
+      for (let style = 0; style < faceVariants.length; style++) {
+        for (const [gaze, look] of [-0.5, 0, 0.5].entries()) {
+          faceBatchSpecs.push({
+            geometry: seatedNativeFaceGeometry(template, faceVariants[style].skin, fit, look),
+            style,
+            gaze,
+            part: 0,
+          });
+          faceBatchSpecs.push({
+            geometry: seatedNativeFaceGeometry(template, faceVariants[style].hair, fit, look),
+            style,
+            gaze,
+            part: 1,
+          });
+        }
+      }
+    }
     const batchOffset = highDetailBatches.length;
     wardrobeTints[genderIndex % wardrobeTints.length].forEach((tint, wardrobe) => {
-      makeBatches(template, highDetailBatches, `high-detail-${genderIndex}-${wardrobe}`, tint, wardrobe);
+      makeBatches(
+        template,
+        highDetailBatches,
+        `high-detail-${genderIndex}-${wardrobe}`,
+        tint,
+        wardrobe,
+        Boolean(faceVariants),
+      );
     });
+    if (faceVariants) {
+      highFaceGenderOffsets.set(genderIndex, highFaceBatches.length);
+      highFaceVariantsByGender.set(genderIndex, faceVariants);
+      faceBatchSpecs.forEach(({ geometry, style, gaze, part }) => {
+        const mesh = new THREE.InstancedMesh(
+          geometry,
+          new THREE.MeshStandardMaterial({
+            color: 0xffffff,
+            roughness: part === 0 ? 0.76 : 0.86,
+            side: THREE.DoubleSide,
+          }),
+          batchCapacity,
+        );
+        mesh.name = `wtsl-native-${part === 0 ? 'face' : 'hair'}-${genderIndex}-${style}-${gaze}`;
+        mesh.count = 0;
+        mesh.frustumCulled = false;
+        mesh.instanceMatrix.setUsage(THREE.DynamicDrawUsage);
+        scene.add(mesh);
+        highFaceBatches.push(mesh);
+      });
+    }
     highDetailGenderOffsets.set(genderIndex, batchOffset);
     crowd.seats.forEach((seat, index) => {
       if (shouldUseHighDetailCrowdSeat(seat.row, seat.sourceIndex ?? index, genderIndex)) {
@@ -443,6 +636,8 @@ export function attachHumanCrowd(scene: THREE.Scene, crowd: CrowdRig, templates:
     });
     highDetailCounts = new Uint16Array(highDetailBatches.length);
     highDetailBatches.forEach((mesh) => { mesh.visible = highDetailEnabled; });
+    highFaceCounts = new Uint16Array(highFaceBatches.length);
+    highFaceBatches.forEach((mesh) => { mesh.visible = highDetailEnabled; });
     forceUpdate = true;
   };
   crowd.invalidateUpdate = () => {
@@ -462,6 +657,7 @@ export function attachHumanCourtStaff(
   templates: [THREE.Group, THREE.Group],
   crowd: CrowdRig,
   detailedUmpireTemplate: THREE.Group = templates[0],
+  nativeFaces?: NativeFaceSet,
 ) {
   const coachTints = [0x314a5a, 0x6e493b];
   crowd.staffSeats.forEach((seat, index) => {
@@ -478,6 +674,9 @@ export function attachHumanCourtStaff(
       `wtsl-court-coach-${index + 1}`,
       coachTints[index % coachTints.length],
       0.4,
+      false,
+      nativeFaces?.[index % 2 === 0 ? 'male' : 'female'][index % 2],
+      index + 2,
     );
   });
 
@@ -486,7 +685,16 @@ export function attachHumanCourtStaff(
   if (!(chair instanceof THREE.Group) || !(placeholder instanceof THREE.Group)) {
     throw new Error('Court fixtures are missing the umpire chair or placeholder.');
   }
-  const umpire = attachStaffModel(chair, detailedUmpireTemplate, 'wtsl-detailed-umpire', 0x38536a, 1.34, true);
+  const umpire = attachStaffModel(
+    chair,
+    detailedUmpireTemplate,
+    'wtsl-detailed-umpire',
+    0x38536a,
+    1.34,
+    true,
+    nativeFaces?.male[1],
+    4,
+  );
   umpire.model.userData.role = 'chair-umpire';
   const badge = new THREE.Group();
   badge.name = 'wtsl-umpire-badge';
