@@ -2149,6 +2149,8 @@ test('Paris net picks up tournament styling, woven detail, and decaying hit vibr
   assert.equal(posts.length, 2);
   assert.ok(posts.every(post => post.userData.eventLabel === 'PARIS MASTERS'));
   assert.ok(mesh.geometry.getAttribute('position').count > 3_000);
+  assert.ok(mesh.material.color.getHex() > 0x303030, 'the woven net should not render near black');
+  assert.equal(mesh.material.toneMapped, false);
   assert.ok(scene.getObjectByName('wtsl-net-center-strap'));
 
   const positions = mesh.geometry.getAttribute('position');
@@ -2162,6 +2164,10 @@ test('Paris net picks up tournament styling, woven detail, and decaying hit vibr
   const rolandGarros = new THREE.Scene();
   sceneApi.buildCourt(rolandGarros, 'clay', false, 'Roland Garros');
   assert.equal(rolandGarros.getObjectByName('wtsl-court-net').userData.eventLabel, 'ROLAND-GARROS');
+  assert.notEqual(
+    rolandGarros.getObjectByName('wtsl-net-mesh').material.color.getHex(),
+    mesh.material.color.getHex(),
+  );
 });
 
 test('net impact cues detect low crossings and rebounds but ignore clear shots', async () => {

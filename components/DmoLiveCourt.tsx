@@ -1290,7 +1290,6 @@ function DmoLiveCourt({
           </label>
           <CourtFullscreenButton
             targetRef={sceneElementRef}
-            videoRef={mediaVideoRef}
             className={styles.fullscreenButton}
             statusClassName={styles.visuallyHidden}
             fallbackClassName={styles.fullscreenFallback}

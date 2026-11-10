@@ -451,7 +451,7 @@ function courtNetTheme(venue: DmoVenueProfile, isWta: boolean, surface: Te4Court
       tapeColor: 0xe9e7dc,
       accentColor: 0x2a6a4d,
       inkColor: 0x173d2f,
-      meshColor: 0x172722,
+      meshColor: 0x4a7057,
     },
     'Philippe-Chatrier Court': {
       eventLabel: 'ROLAND-GARROS',
@@ -459,7 +459,7 @@ function courtNetTheme(venue: DmoVenueProfile, isWta: boolean, surface: Te4Court
       tapeColor: 0xeae7da,
       accentColor: 0xc66d42,
       inkColor: 0x174231,
-      meshColor: 0x1b2821,
+      meshColor: 0x4d7258,
     },
     'Suzanne Lenglen Court': {
       eventLabel: 'ROLAND-GARROS',
@@ -467,7 +467,7 @@ function courtNetTheme(venue: DmoVenueProfile, isWta: boolean, surface: Te4Court
       tapeColor: 0xeae7da,
       accentColor: 0xc66d42,
       inkColor: 0x174231,
-      meshColor: 0x1b2821,
+      meshColor: 0x4d7258,
     },
     'Wimbledon Centre Court': {
       eventLabel: 'WIMBLEDON',
@@ -475,7 +475,7 @@ function courtNetTheme(venue: DmoVenueProfile, isWta: boolean, surface: Te4Court
       tapeColor: 0xf0eee5,
       accentColor: 0x68466d,
       inkColor: 0x254632,
-      meshColor: 0x19241f,
+      meshColor: 0x526d54,
     },
     'Wimbledon No. 1 Court': {
       eventLabel: 'WIMBLEDON',
@@ -483,7 +483,7 @@ function courtNetTheme(venue: DmoVenueProfile, isWta: boolean, surface: Te4Court
       tapeColor: 0xf0eee5,
       accentColor: 0x68466d,
       inkColor: 0x254632,
-      meshColor: 0x19241f,
+      meshColor: 0x526d54,
     },
     'Arthur Ashe Stadium': {
       eventLabel: 'US OPEN',
@@ -491,7 +491,7 @@ function courtNetTheme(venue: DmoVenueProfile, isWta: boolean, surface: Te4Court
       tapeColor: 0xf0f0eb,
       accentColor: 0x2975b9,
       inkColor: 0x183b5d,
-      meshColor: 0x17242e,
+      meshColor: 0x596e80,
     },
     'Louis Armstrong Stadium': {
       eventLabel: 'US OPEN',
@@ -499,7 +499,7 @@ function courtNetTheme(venue: DmoVenueProfile, isWta: boolean, surface: Te4Court
       tapeColor: 0xf0f0eb,
       accentColor: 0x2975b9,
       inkColor: 0x183b5d,
-      meshColor: 0x17242e,
+      meshColor: 0x596e80,
     },
     'Rod Laver Arena': {
       eventLabel: 'AUSTRALIAN OPEN',
@@ -507,7 +507,7 @@ function courtNetTheme(venue: DmoVenueProfile, isWta: boolean, surface: Te4Court
       tapeColor: 0xf0f2ec,
       accentColor: 0x1590bd,
       inkColor: 0x16476b,
-      meshColor: 0x172733,
+      meshColor: 0x528096,
     },
     'Indian Wells Stadium 1': {
       eventLabel: 'INDIAN WELLS',
@@ -515,7 +515,7 @@ function courtNetTheme(venue: DmoVenueProfile, isWta: boolean, surface: Te4Court
       tapeColor: 0xf0ede2,
       accentColor: 0xb8944f,
       inkColor: 0x234352,
-      meshColor: 0x18272c,
+      meshColor: 0x77877a,
     },
   };
   const known = namedThemes[venue.label];
@@ -530,7 +530,7 @@ function courtNetTheme(venue: DmoVenueProfile, isWta: boolean, surface: Te4Court
     tapeColor: 0xece9df,
     accentColor,
     inkColor: surface === 'clay' || surface === 'grass' ? 0x23452f : 0x1d3a50,
-    meshColor: 0x1b2726,
+    meshColor: 0x4a6157,
   };
 }
 
@@ -622,7 +622,12 @@ function buildCourtNet(
   const restPositions = Float32Array.from(netPositions.array as Float32Array);
   const netMesh = new THREE.LineSegments(
     netGeometry,
-    new THREE.LineBasicMaterial({ color: theme.meshColor, transparent: true, opacity: 0.88 }),
+    new THREE.LineBasicMaterial({
+      color: theme.meshColor,
+      transparent: true,
+      opacity: 0.94,
+      toneMapped: false,
+    }),
   );
   netMesh.name = 'wtsl-net-mesh';
   netMesh.userData = { wireColumns: segments + 1, wireRows: rows, woven: true };

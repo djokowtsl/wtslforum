@@ -48,20 +48,26 @@ test('live and replay court renderers share an accessible fullscreen control', (
   assert.match(fullscreenButton, /aria-label=\{isFullscreen \? 'Exit full screen' : 'Watch full screen'\}/);
 });
 
-test('mobile fullscreen uses native video or an unclipped viewport fallback', () => {
+test('mobile fullscreen keeps the court controls instead of entering video-only fullscreen', () => {
   assert.match(fullscreenButton, /webkitRequestFullscreen/);
-  assert.match(fullscreenButton, /webkitEnterFullscreen/);
-  assert.match(fullscreenButton, /webkitbeginfullscreen/);
   assert.match(fullscreenButton, /fallbackClassName/);
   assert.match(fullscreenButton, /enterFallbackFullscreen/);
+  assert.match(fullscreenButton, /activeFullscreenElement\(\) !== target/);
   assert.match(fullscreenButton, /document\.body\.style\.position = 'fixed'/);
   assert.match(fullscreenButton, /relaxClippingAncestors/);
+  assert.doesNotMatch(fullscreenButton, /videoRef|webkitEnterFullscreen|webkitbeginfullscreen|webkitendfullscreen/);
   assert.match(styles, /\.scene\.fullscreenFallback/);
   assert.match(fallbackStyles, /\.scene\.fullscreenFallback/);
   assert.doesNotMatch(styles, /\.scene\.fullscreenFallback\s*\{[^}]*min-height:\s*100vh/s);
   assert.doesNotMatch(fallbackStyles, /\.scene\.fullscreenFallback\s*\{[^}]*min-height:\s*100vh/s);
-  assert.match(liveCourt, /fallbackClassName=\{styles\.fullscreenFallback\}/);
-  assert.match(fallbackCourt, /fallbackClassName=\{styles\.fullscreenFallback\}/);
+  assert.match(styles, /\.scene:fullscreen \.toolbar[\s\S]*?flex-shrink:\s*0/);
+  assert.doesNotMatch(styles, /\.scene:fullscreen \.toolbar[\s\S]{0,180}display:\s*none/);
+  const fullscreenProps = (court) => court.match(/<CourtFullscreenButton[\s\S]*?\/>/)?.[0] ?? '';
+  for (const court of [liveCourt, fallbackCourt]) {
+    assert.match(fullscreenProps(court), /targetRef=\{sceneElementRef\}/);
+    assert.match(fullscreenProps(court), /fallbackClassName=\{styles\.fullscreenFallback\}/);
+    assert.doesNotMatch(fullscreenProps(court), /videoRef=/);
+  }
   assert.match(fullscreenButton, /orientation\.lock\('landscape'\)/);
   assert.match(fullscreenButton, /orientation\?\.unlock/);
   assert.match(liveCourt, /renderer\.setSize\(width, height, false\)/);
@@ -70,8 +76,6 @@ test('mobile fullscreen uses native video or an unclipped viewport fallback', ()
   assert.match(fallbackCourt, /Math\.max\(canvas\.width \/ 900, canvas\.height \/ 520\)/);
   assert.doesNotMatch(styles, /Rotate your phone for a wider view/);
   assert.doesNotMatch(fallbackStyles, /Rotate your phone for a wider view/);
-  assert.match(liveCourt, /CourtFullscreenButton[\s\S]*?videoRef=\{mediaVideoRef\}/);
-  assert.match(fallbackCourt, /CourtFullscreenButton[\s\S]*?videoRef=\{mediaVideoRef\}/);
 });
 
 test('court picture-in-picture opens a native system window or reports unsupported browsers', () => {
