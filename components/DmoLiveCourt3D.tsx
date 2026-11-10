@@ -852,13 +852,15 @@ function ThreeCourt({
       const fullscreenActive = fullscreenElement === sceneElement
         || Boolean(sceneElement?.classList.contains(styles.fullscreenFallback));
       const fullscreenCourtCamera = activeView === 'court'
-        ? dmoFullscreenCourtCamera(width, height, fullscreenActive)
+        ? dmoFullscreenCourtCamera(
+          width, height, fullscreenActive, maxDistanceForTarget(new THREE.Vector3(0, 0.5, 0)),
+        )
         : null;
       camera.fov = activeView === 'aerial'
         ? 48
         : fullscreenCourtCamera?.fov ?? (compactFrame ? 38 : 34);
       camera.updateProjectionMatrix();
-      // Narrow portrait fullscreen needs a farther view to keep the court in frame.
+      // Use an aspect-specific fullscreen pose to keep the whole court in frame.
       const responsiveScale = responsiveDmoCourtCameraScale(width, height, fullscreenActive);
       if (activeView === 'court') {
         if (fullscreenCourtCamera) {
@@ -2515,7 +2517,10 @@ function ThreeCourt({
       const fullscreenActive = fullscreenElement === sceneElement
         || Boolean(sceneElement?.classList.contains(styles.fullscreenFallback));
       const fullscreenCourtCamera = view === 'court'
-        ? dmoFullscreenCourtCamera(viewportWidth, viewportHeight, fullscreenActive)
+        ? dmoFullscreenCourtCamera(
+          viewportWidth, viewportHeight, fullscreenActive,
+          maxDistanceForTarget(new THREE.Vector3(0, 0.5, 0)),
+        )
         : null;
       const narrowScale = responsiveDmoCourtCameraScale(viewportWidth, viewportHeight, fullscreenActive);
       camera.fov = view === 'aerial'

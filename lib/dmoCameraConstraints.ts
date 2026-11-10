@@ -21,6 +21,7 @@ export function dmoFullscreenCourtCamera(
   width: number,
   height: number,
   fullscreenActive: boolean,
+  maxDistance = Infinity,
 ): DmoFullscreenCourtCamera | null {
   if (
     !fullscreenActive
@@ -31,12 +32,42 @@ export function dmoFullscreenCourtCamera(
   ) {
     return null;
   }
+  // Court length follows X: view from its baseline in portrait and its sideline in landscape.
   const aspect = width / height;
-  if (width <= 720 && aspect < 0.8) return { x: 0, y: 22, z: 18, fov: 60 };
-  if (width <= 1200 && height <= 600 && aspect >= 1.9) {
-    return { x: 13, y: 28.6, z: 0, fov: 22 };
+  const position = width <= 720 && aspect < 0.8
+    ? { x: 5, y: 28, z: 0 }
+    : width <= 1200 && height <= 720 && aspect >= 1
+      ? { x: 0, y: 28.6, z: 13 }
+      : null;
+  if (!position) return null;
+
+  // OrbitControls enforces this limit. Fit at the distance it will actually use.
+  const initialDistance = Math.hypot(position.x, position.y - 0.5, position.z);
+  const scale = Number.isFinite(maxDistance) && maxDistance > 0
+    ? Math.min(1, maxDistance / initialDistance)
+    : 1;
+  const x = position.x * scale;
+  const y = 0.5 + (position.y - 0.5) * scale;
+  const z = position.z * scale;
+  const distance = initialDistance * scale;
+  const horizontal = Math.hypot(x, z);
+  const headingX = x / horizontal;
+  const headingZ = z / horizontal;
+  const elevationSin = (y - 0.5) / distance;
+  const elevationCos = horizontal / distance;
+  let requiredTan = 0;
+  // Include space behind the baselines and doubles sidelines for the players.
+  for (const courtX of [-13.4, 13.4]) {
+    for (const courtZ of [-6.24, 6.24]) {
+      const along = courtX * headingX + courtZ * headingZ;
+      const side = courtX * headingZ - courtZ * headingX;
+      const depth = distance - along * elevationCos + 0.5 * elevationSin;
+      const up = -along * elevationSin - 0.5 * elevationCos;
+      requiredTan = Math.max(requiredTan, Math.abs(up) / depth, Math.abs(side) / (depth * aspect));
+    }
   }
-  return null;
+  // Keep a small margin, accounting for perspective at every corner, not just the centre.
+  return { x, y, z, fov: 2 * Math.atan(requiredTan / 0.94) * 180 / Math.PI };
 }
 
 /** Keep manual panning anchored to the selected court or player view. */
