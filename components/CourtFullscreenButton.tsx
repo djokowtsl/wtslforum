@@ -25,6 +25,11 @@ type FullscreenVideoRef = {
   current: FullscreenVideo | null;
 };
 
+type LandscapeOrientation = {
+  lock?: (orientation: 'landscape') => Promise<void> | void;
+  unlock?: () => void;
+};
+
 type Props = {
   targetRef: FullscreenTargetRef;
   videoRef?: FullscreenVideoRef;
@@ -47,6 +52,7 @@ export default function CourtFullscreenButton({
 }: Props) {
   const [isFullscreen, setIsFullscreen] = useState(false);
   const [error, setError] = useState('');
+  const orientationLockRequestedRef = useRef(false);
   const ancestorStylesRef = useRef<Array<{ element: HTMLElement; style: string | null }>>([]);
   const savedPageStylesRef = useRef<{
     scrollY: number;
@@ -105,6 +111,40 @@ export default function CourtFullscreenButton({
     savedPageStylesRef.current = null;
   }, []);
 
+  const requestLandscapeLock = useCallback(async (enabled: boolean) => {
+    if (!enabled) return;
+    const orientation = (window.screen as unknown as { orientation?: LandscapeOrientation }).orientation;
+    if (!orientation?.lock) return;
+    try {
+      await orientation.lock('landscape');
+      orientationLockRequestedRef.current = true;
+      const stillFullscreen = activeFullscreenElement() === targetRef.current
+        || targetRef.current?.classList.contains(fallbackClassName) === true
+        || videoRef?.current?.webkitDisplayingFullscreen === true;
+      if (!stillFullscreen) {
+        try {
+          orientation.unlock?.();
+        } catch {
+          // Ignore a lock that the browser has already released.
+        }
+        orientationLockRequestedRef.current = false;
+      }
+    } catch {
+      // Some browsers allow fullscreen but do not expose orientation locking.
+    }
+  }, [fallbackClassName, targetRef, videoRef]);
+
+  const releaseLandscapeLock = useCallback(() => {
+    if (!orientationLockRequestedRef.current) return;
+    const orientation = (window.screen as unknown as { orientation?: LandscapeOrientation }).orientation;
+    try {
+      orientation?.unlock?.();
+    } catch {
+      // The browser may have already released its orientation lock.
+    }
+    orientationLockRequestedRef.current = false;
+  }, []);
+
   const enterFallbackFullscreen = useCallback((target: HTMLElement) => {
     relaxClippingAncestors(target);
     if (!savedPageStylesRef.current) {
@@ -129,22 +169,26 @@ export default function CourtFullscreenButton({
   useEffect(() => {
     const video = videoRef?.current;
     const syncFullscreenState = () => {
-      setIsFullscreen(
+      const fullscreen = (
         activeFullscreenElement() === targetRef.current
         || targetRef.current?.classList.contains(fallbackClassName) === true
-        || video?.webkitDisplayingFullscreen === true,
+        || video?.webkitDisplayingFullscreen === true
       );
+      setIsFullscreen(fullscreen);
+      if (!fullscreen) releaseLandscapeLock();
     };
     const onNativeVideoFullscreenStart = () => setIsFullscreen(true);
     const onNativeVideoFullscreenEnd = () => {
       if (video) video.controls = false;
       setIsFullscreen(false);
+      releaseLandscapeLock();
     };
     const exitFallback = (event: KeyboardEvent) => {
       if (event.key === 'Escape' && targetRef.current?.classList.contains(fallbackClassName)) {
         targetRef.current.classList.remove(fallbackClassName);
         restoreAncestorStyles();
         restorePageStyles();
+        releaseLandscapeLock();
         setIsFullscreen(false);
       }
     };
@@ -164,13 +208,15 @@ export default function CourtFullscreenButton({
       targetRef.current?.classList.remove(fallbackClassName);
       restoreAncestorStyles();
       restorePageStyles();
+      releaseLandscapeLock();
     };
-  }, [fallbackClassName, restoreAncestorStyles, restorePageStyles, targetRef, videoRef]);
+  }, [fallbackClassName, releaseLandscapeLock, restoreAncestorStyles, restorePageStyles, targetRef, videoRef]);
 
   const toggleFullscreen = async () => {
     const target = targetRef.current as FullscreenElement | null;
     if (!target) return;
     setError('');
+    const shouldLockLandscape = window.matchMedia('(max-width: 900px)').matches;
 
     const doc = document as FullscreenDocument;
     const enterNativeVideoFullscreen = () => {
@@ -195,31 +241,48 @@ export default function CourtFullscreenButton({
           target.classList.remove(fallbackClassName);
           restoreAncestorStyles();
           restorePageStyles();
+          releaseLandscapeLock();
           setIsFullscreen(false);
           return;
         }
         const exit = doc.exitFullscreen ?? doc.webkitExitFullscreen;
         if (!exit) throw new Error('Fullscreen exit is not supported.');
         await exit.call(doc);
+        releaseLandscapeLock();
       } else {
         const request = target.requestFullscreen ?? target.webkitRequestFullscreen;
         if (!request) {
-          if (enterNativeVideoFullscreen()) return;
+          if (enterNativeVideoFullscreen()) {
+            void requestLandscapeLock(shouldLockLandscape);
+            return;
+          }
           enterFallbackFullscreen(target);
+          void requestLandscapeLock(shouldLockLandscape);
           return;
         }
         try {
           await request.call(target);
+          await requestLandscapeLock(shouldLockLandscape);
         } catch {
-          if (enterNativeVideoFullscreen()) return;
+          if (enterNativeVideoFullscreen()) {
+            void requestLandscapeLock(shouldLockLandscape);
+            return;
+          }
           enterFallbackFullscreen(target);
+          void requestLandscapeLock(shouldLockLandscape);
           return;
         }
       }
       setIsFullscreen(activeFullscreenElement() === target);
     } catch {
-      if (enterNativeVideoFullscreen()) return;
-      if (target.isConnected) enterFallbackFullscreen(target);
+      if (enterNativeVideoFullscreen()) {
+        void requestLandscapeLock(shouldLockLandscape);
+        return;
+      }
+      if (target.isConnected) {
+        enterFallbackFullscreen(target);
+        void requestLandscapeLock(shouldLockLandscape);
+      }
       else setError('Full screen is unavailable in this browser.');
     }
   };

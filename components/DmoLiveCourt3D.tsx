@@ -110,6 +110,12 @@ import {
 } from '@/lib/liveCourtPerformance';
 import { loadLiveGruntSamples } from '@/lib/liveGruntAudio';
 import DmoLiveCourt, { type GruntControlProps } from './DmoLiveCourt';
+import {
+  BROADCAST_RENDER_QUALITY_OPTIONS,
+  getBroadcastRenderPixelRatio,
+  getFullscreen16By9Size,
+  type BroadcastRenderQuality,
+} from './DmoRenderResolution';
 import DmoLiveBufferingOverlay from './DmoLiveBufferingOverlay';
 import {
   BALL_RADIUS,
@@ -273,7 +279,13 @@ function ThreeCourt({
   gruntsEnabled,
   onGruntsEnabledChange,
   onUnsupported,
-}: Props & GruntControlProps & { onUnsupported: () => void }) {
+  renderQuality,
+  onRenderQualityChange,
+}: Props & GruntControlProps & {
+  onUnsupported: () => void;
+  renderQuality: BroadcastRenderQuality;
+  onRenderQualityChange: (quality: BroadcastRenderQuality) => void;
+}) {
   const sceneElementRef = useRef<HTMLElement>(null);
   const viewportRef = useRef<HTMLDivElement>(null);
   const canvasHostRef = useRef<HTMLDivElement>(null);
@@ -375,6 +387,12 @@ function ThreeCourt({
   const playerCameraPanRef = useRef(0);
   const [cameraView, setCameraView] = useState<CameraView>('court');
   const [timeOfDay, setTimeOfDay] = useState<BroadcastTimeOfDay>('day');
+  const renderQualityRef = useRef(renderQuality);
+  renderQualityRef.current = renderQuality;
+  const rendererResizeRef = useRef<(() => void) | null>(null);
+  useEffect(() => {
+    rendererResizeRef.current?.();
+  }, [renderQuality]);
   const timeOfDayRef = useRef(timeOfDay);
   timeOfDayRef.current = timeOfDay;
   const broadcastLightingRef = useRef<ReturnType<typeof createDmoBroadcastLighting> | null>(null);
@@ -604,9 +622,7 @@ function ThreeCourt({
       onUnsupported();
       return;
     }
-    // A restrained high-DPI cap keeps the reconstructed scene crisp on retina
-    // screens without multiplying crowd and shadow fill cost on mobile GPUs.
-    renderer.setPixelRatio(Math.min(window.devicePixelRatio || 1, 1.75));
+    renderer.setPixelRatio(1);
     renderer.outputColorSpace = THREE.SRGBColorSpace;
     renderer.toneMapping = THREE.ACESFilmicToneMapping;
     renderer.toneMappingExposure = 1.0;
@@ -787,8 +803,26 @@ function ThreeCourt({
     const resize = () => {
       const bounds = viewport.getBoundingClientRect();
       if (!bounds.width || !bounds.height) return;
-      renderer.setSize(bounds.width, bounds.height, false);
-      camera.aspect = bounds.width / bounds.height;
+      const fullscreenDocument = document as Document & { webkitFullscreenElement?: Element | null };
+      const sceneElement = sceneElementRef.current;
+      const isFullscreen = Boolean(sceneElement && (
+        sceneElement === document.fullscreenElement
+        || sceneElement === fullscreenDocument.webkitFullscreenElement
+        || sceneElement.classList.contains(styles.fullscreenFallback)
+      ));
+      const frame = isFullscreen
+        ? getFullscreen16By9Size(bounds.width, bounds.height)
+        : { width: bounds.width, height: bounds.height };
+      host.style.width = isFullscreen ? `${frame.width}px` : '100%';
+      host.style.height = isFullscreen ? `${frame.height}px` : '100%';
+      renderer.setPixelRatio(getBroadcastRenderPixelRatio(
+        frame.width,
+        frame.height,
+        renderQualityRef.current,
+        window.devicePixelRatio || 1,
+      ));
+      renderer.setSize(frame.width, frame.height, false);
+      camera.aspect = frame.width / frame.height;
       const compactFrame = bounds.width <= 720;
       const activeView = cameraViewRef.current;
       camera.fov = activeView === 'aerial' ? 48 : compactFrame ? 38 : 34;
@@ -812,6 +846,11 @@ function ThreeCourt({
       controls.minDistance = Math.min(preferredCameraMinDistance, controls.maxDistance);
       controls.update();
     };
+    rendererResizeRef.current = resize;
+    window.addEventListener('resize', resize);
+    window.addEventListener('orientationchange', resize);
+    document.addEventListener('fullscreenchange', resize);
+    document.addEventListener('webkitfullscreenchange', resize);
     const observer = new ResizeObserver(resize);
     observer.observe(viewport);
     resize();
@@ -2450,6 +2489,11 @@ function ThreeCourt({
       modelLoad.abort();
       window.cancelAnimationFrame(animation);
       observer.disconnect();
+      window.removeEventListener('resize', resize);
+      window.removeEventListener('orientationchange', resize);
+      document.removeEventListener('fullscreenchange', resize);
+      document.removeEventListener('webkitfullscreenchange', resize);
+      if (rendererResizeRef.current === resize) rendererResizeRef.current = null;
       controls.dispose();
       viewport.removeEventListener('courtzoom', onZoom);
       viewport.removeEventListener('courtreset', reset);
@@ -2782,6 +2826,18 @@ function ThreeCourt({
               <option value="player-two-third">{snapshot.players[1]} · Third person</option>
             </select>
           </label>
+          <label className={styles.playerCameraControl}>
+            <span>Resolution</span>
+            <select
+              aria-label="Graphics resolution"
+              value={renderQuality}
+              onChange={(event) => onRenderQualityChange(event.currentTarget.value as BroadcastRenderQuality)}
+            >
+              {BROADCAST_RENDER_QUALITY_OPTIONS.map(option => (
+                <option key={option.value} value={option.value}>{option.label}</option>
+              ))}
+            </select>
+          </label>
           <div className={styles.iconControls} role="group" aria-label="Zoom and reset">
             <button type="button" aria-label="Zoom out" onClick={() => requestZoom(1.15)}><Minus size={15} /></button>
             <button type="button" aria-label="Zoom in" onClick={() => requestZoom(0.87)}><Plus size={15} /></button>
@@ -2977,6 +3033,7 @@ function ThreeCourt({
 export default function DmoLiveCourt3D(props: Props) {
   const [use2dFallback, setUse2dFallback] = useState(false);
   const [gruntsEnabled, setGruntsEnabled] = useState(true);
+  const [renderQuality, setRenderQuality] = useState<BroadcastRenderQuality>('1080p');
   const [crowdDensityChoice, setCrowdDensityChoice] = useState<CrowdDensityChoice>('auto');
   const crowdDensity = resolveCrowdDensity(crowdDensityChoice, props.tournamentRound);
   const useFallback = useCallback(() => setUse2dFallback(true), []);
@@ -3003,12 +3060,16 @@ export default function DmoLiveCourt3D(props: Props) {
           {...courtProps}
           fullReplay={fullReplay}
           crowdDensity={crowdDensity}
+          renderQuality={renderQuality}
+          onRenderQualityChange={setRenderQuality}
           {...gruntControls}
         />
       ) : (
         <ThreeCourt
           {...props}
           crowdDensity={crowdDensity}
+          renderQuality={renderQuality}
+          onRenderQualityChange={setRenderQuality}
           {...gruntControls}
           onUnsupported={useFallback}
         />

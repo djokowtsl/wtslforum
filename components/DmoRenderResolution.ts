@@ -1,0 +1,28 @@
+export const BROADCAST_RENDER_QUALITY_OPTIONS = [
+  { value: '1080p', label: '1080p', width: 1920, height: 1080 },
+  { value: '4k', label: '4K', width: 3840, height: 2160 },
+] as const;
+
+export type BroadcastRenderQuality = typeof BROADCAST_RENDER_QUALITY_OPTIONS[number]['value'];
+
+export function getBroadcastRenderPixelRatio(
+  width: number,
+  height: number,
+  quality: BroadcastRenderQuality,
+  devicePixelRatio: number,
+) {
+  if (![width, height].every(value => Number.isFinite(value) && value > 0)) return 1;
+  const target = BROADCAST_RENDER_QUALITY_OPTIONS.find(option => option.value === quality)!;
+  const deviceRatio = Number.isFinite(devicePixelRatio) && devicePixelRatio > 0
+    ? devicePixelRatio
+    : 1;
+  return Math.min(deviceRatio, target.width / width, target.height / height);
+}
+
+export function getFullscreen16By9Size(width: number, height: number) {
+  if (![width, height].every(value => Number.isFinite(value) && value > 0)) {
+    return { width: 0, height: 0 };
+  }
+  const frameWidth = Math.min(width, height * 16 / 9);
+  return { width: frameWidth, height: frameWidth * 9 / 16 };
+}
