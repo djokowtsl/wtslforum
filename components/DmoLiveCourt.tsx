@@ -46,6 +46,12 @@ import {
 } from '@/lib/liveCourtStadium';
 import CourtFullscreenButton from './CourtFullscreenButton';
 import CourtPictureInPictureButton from './CourtPictureInPictureButton';
+import {
+  BROADCAST_RENDER_QUALITY_OPTIONS,
+  getBroadcastRenderPixelRatio,
+  getFullscreen16By9Size,
+  type BroadcastRenderQuality,
+} from './DmoRenderResolution';
 import { loadLiveGruntSamples } from '@/lib/liveGruntAudio';
 import {
   cancelUmpireCall,
@@ -86,6 +92,8 @@ type Props = {
   tournamentRound?: string | null;
   gruntsEnabled: boolean;
   onGruntsEnabledChange: (enabled: boolean) => void;
+  renderQuality: BroadcastRenderQuality;
+  onRenderQualityChange: (quality: BroadcastRenderQuality) => void;
 };
 export type GruntControlProps = Pick<Props, 'gruntsEnabled' | 'onGruntsEnabledChange'>;
 
@@ -526,6 +534,8 @@ function DmoLiveCourt({
   crowdDensity = 0.76,
   gruntsEnabled,
   onGruntsEnabledChange,
+  renderQuality,
+  onRenderQualityChange,
 }: Props) {
   const scoreboardData: StadiumScoreboardData = scoreboard ?? {
     players: snapshot.players,
@@ -753,6 +763,52 @@ function DmoLiveCourt({
       if (soundEnabledRef.current) setSoundError('The browser paused audio. Tap Enable sound to resume.');
     });
   }, [umpireSpeechReady, soundReady, isWta, snapshot.players]);
+
+  useEffect(() => {
+    const canvas = canvasRef.current;
+    const viewport = canvas?.parentElement;
+    const context = canvas?.getContext('2d');
+    if (!canvas || !viewport || !context) return;
+
+    const resize = () => {
+      const bounds = viewport.getBoundingClientRect();
+      if (!bounds.width || !bounds.height) return;
+      const fullscreenDocument = document as Document & { webkitFullscreenElement?: Element | null };
+      const isFullscreen = Boolean(sceneElementRef.current && (
+        sceneElementRef.current === document.fullscreenElement
+        || sceneElementRef.current === fullscreenDocument.webkitFullscreenElement
+        || sceneElementRef.current.classList.contains(styles.fullscreenFallback)
+      ));
+      const frame = isFullscreen
+        ? getFullscreen16By9Size(bounds.width, bounds.height)
+        : { width: bounds.width, height: bounds.width * 520 / 900 };
+      canvas.style.width = `${frame.width}px`;
+      canvas.style.height = `${frame.height}px`;
+      const pixelRatio = getBroadcastRenderPixelRatio(
+        frame.width,
+        frame.height,
+        renderQuality,
+        window.devicePixelRatio || 1,
+      );
+      canvas.width = Math.max(1, Math.round(frame.width * pixelRatio));
+      canvas.height = Math.max(1, Math.round(frame.height * pixelRatio));
+      context.setTransform(canvas.width / 900, 0, 0, canvas.height / 520, 0, 0);
+    };
+    const observer = new ResizeObserver(resize);
+    observer.observe(viewport);
+    window.addEventListener('resize', resize);
+    window.addEventListener('orientationchange', resize);
+    document.addEventListener('fullscreenchange', resize);
+    document.addEventListener('webkitfullscreenchange', resize);
+    resize();
+    return () => {
+      observer.disconnect();
+      window.removeEventListener('resize', resize);
+      window.removeEventListener('orientationchange', resize);
+      document.removeEventListener('fullscreenchange', resize);
+      document.removeEventListener('webkitfullscreenchange', resize);
+    };
+  }, [renderQuality]);
 
   useEffect(() => {
     const canvas = canvasRef.current;
@@ -1209,6 +1265,18 @@ function DmoLiveCourt({
           >
             Grunts {gruntsEnabled ? 'on' : 'off'}
           </button>
+          <label className={styles.renderQualityControl}>
+            <span>Resolution</span>
+            <select
+              aria-label="Graphics resolution"
+              value={renderQuality}
+              onChange={(event) => onRenderQualityChange(event.currentTarget.value as BroadcastRenderQuality)}
+            >
+              {BROADCAST_RENDER_QUALITY_OPTIONS.map(option => (
+                <option key={option.value} value={option.value}>{option.label}</option>
+              ))}
+            </select>
+          </label>
           <CourtFullscreenButton
             targetRef={sceneElementRef}
             videoRef={mediaVideoRef}

@@ -62,6 +62,12 @@ test('mobile fullscreen uses native video or an unclipped viewport fallback', ()
   assert.doesNotMatch(fallbackStyles, /\.scene\.fullscreenFallback\s*\{[^}]*min-height:\s*100vh/s);
   assert.match(liveCourt, /fallbackClassName=\{styles\.fullscreenFallback\}/);
   assert.match(fallbackCourt, /fallbackClassName=\{styles\.fullscreenFallback\}/);
+  assert.match(fullscreenButton, /orientation\.lock\('landscape'\)/);
+  assert.match(fullscreenButton, /orientation\?\.unlock/);
+  assert.match(liveCourt, /getFullscreen16By9Size/);
+  assert.match(fallbackCourt, /getFullscreen16By9Size/);
+  assert.match(styles, /Rotate your phone for a wider view/);
+  assert.match(fallbackStyles, /Rotate your phone for a wider view/);
   assert.match(liveCourt, /CourtFullscreenButton[\s\S]*?videoRef=\{mediaVideoRef\}/);
   assert.match(fallbackCourt, /CourtFullscreenButton[\s\S]*?videoRef=\{mediaVideoRef\}/);
 });
@@ -83,8 +89,10 @@ test('court picture-in-picture opens a native system window or reports unsupport
   const requestCall = pictureInPictureButton.indexOf('video.requestPictureInPicture!()', toggleStart);
   assert.ok(toggleStart >= 0 && requestCall > toggleStart);
   assert.doesNotMatch(pictureInPictureButton.slice(toggleStart, requestCall), /\bawait\b/);
-  assert.match(liveCourt, /target\.closest\([\s\S]*data-sound-toggle[\s\S]*data-pip-toggle/);
-  assert.match(fallbackCourt, /target\.closest\([\s\S]*data-sound-toggle[\s\S]*data-pip-toggle/);
+  for (const court of [liveCourt, fallbackCourt]) {
+    assert.match(court, /target\.closest\('\[data-sound-toggle\]'\)/);
+    assert.match(court, /target\.closest\('\[data-pip-toggle\]'\)/);
+  }
   assert.doesNotMatch(pictureInPictureButton, /setPipMode\('(inline|mini)'\)/);
   assert.match(liveCourt, /CourtPictureInPictureButton/);
   assert.match(fallbackCourt, /CourtPictureInPictureButton/);
@@ -126,6 +134,9 @@ test('fullscreen expands the court while keeping playback controls available', (
   assert.match(styles, /\.scene:fullscreen \.viewport/);
   assert.match(styles, /\.scene:fullscreen \.replayControls/);
   assert.match(liveCourt, /fullReplay && hasCourtData/);
+  assert.match(liveCourt, /aria-label="Graphics resolution"/);
+  assert.match(fallbackCourt, /aria-label="Graphics resolution"/);
+  assert.match(liveCourt, /useState<BroadcastRenderQuality>\('1080p'\)/);
 });
 
 test('embedded broadcast and replay players permit native fullscreen', () => {
