@@ -729,14 +729,17 @@ export function buildStadiumArchitecture(
   stadium.userData.topStandHeight = topStandHeight;
   const rimBaseY = topStandHeight + 0.35;
   const rimTopY = indoor ? topStandHeight + 2.15 : topStandHeight + 8.5;
+  const wallBaseY = indoor ? 0 : -8;
+  const wallHeight = rimTopY - wallBaseY;
   const wallRadiusX = innerX + outerSeatRadius + 0.4;
   const wallRadiusZ = innerZ + outerSeatRadius + 0.4;
   const exteriorWalls = new THREE.Group();
   exteriorWalls.name = 'wtsl-stadium-exterior-walls';
   exteriorWalls.userData.openSky = !indoor;
   exteriorWalls.userData.upperEdge = rimTopY;
+  exteriorWalls.userData.lowerEdge = wallBaseY;
   const wall = new THREE.Mesh(
-    new THREE.CylinderGeometry(1, 1, rimTopY, perimeterSegments, 1, true),
+    new THREE.CylinderGeometry(1, 1, wallHeight, perimeterSegments, 1, true),
     new THREE.MeshStandardMaterial({
       color: 0x2c3b40, roughness: 0.84, metalness: 0.12,
       emissive: 0x172126, emissiveIntensity: 0.32,
@@ -744,7 +747,7 @@ export function buildStadiumArchitecture(
     }),
   );
   wall.name = 'wtsl-stadium-exterior-wall-shell';
-  wall.position.y = rimTopY / 2;
+  wall.position.y = (wallBaseY + rimTopY) / 2;
   wall.scale.set(wallRadiusX, 1, wallRadiusZ);
   exteriorWalls.add(wall);
 

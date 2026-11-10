@@ -1,6 +1,11 @@
 import * as THREE from 'three';
 import { clone } from 'three/examples/jsm/utils/SkeletonUtils.js';
+import { mergeGeometries, mergeVertices } from 'three/examples/jsm/utils/BufferGeometryUtils.js';
 import { disposeHumanModel, HumanPose } from './DmoHumanModels';
+import {
+  createSeatedCrowdHandsGeometry, getSeatedCrowdHandTargets,
+  getSeatedCrowdHandFrame, refineCrowdForearms, type CrowdHandFit,
+} from './DmoNpcHands';
 import {
   getChairUmpireLegTargets,
   getCrowdAppearance,
@@ -44,6 +49,58 @@ function tintedHuman(
     if (object instanceof THREE.SkinnedMesh) dressNpc(object, tint, skinTone);
   });
   return model;
+}
+
+function stripRigidCrowdHands(geometry: THREE.BufferGeometry, skeleton: THREE.Skeleton) {
+  const index = geometry.index;
+  const skinIndex = geometry.getAttribute('skinIndex');
+  const skinWeight = geometry.getAttribute('skinWeight');
+  if (!index || !skinIndex || !skinWeight) return;
+  const handBones = new Set(skeleton.bones
+    .map((bone, index) => /^(Left|Right)Hand$/.test(bone.name) ? index : -1)
+    .filter(index => index >= 0));
+  if (!handBones.size) return;
+
+  const handWeight = (vertex: number) => {
+    let weight = 0;
+    for (let component = 0; component < 4; component++) {
+      if (handBones.has(skinIndex.getComponent(vertex, component))) {
+        weight += skinWeight.getComponent(vertex, component);
+      }
+    }
+    return weight;
+  };
+  const sourceGroups = geometry.groups.length
+    ? geometry.groups.map(group => ({ ...group }))
+    : [{ start: 0, count: index.count, materialIndex: 0 }];
+  const keptIndices: number[] = [];
+  const keptVertices = new Set<number>();
+  const removedVertices = new Set<number>();
+  const keptGroups: { start: number; count: number; materialIndex: number }[] = [];
+  for (const group of sourceGroups) {
+    const start = keptIndices.length;
+    const end = Math.min(index.count, group.start + group.count);
+    for (let offset = group.start; offset + 2 < end; offset += 3) {
+      const a = index.getX(offset);
+      const b = index.getX(offset + 1);
+      const c = index.getX(offset + 2);
+      const averageHandWeight = (handWeight(a) + handWeight(b) + handWeight(c)) / 3;
+      if (averageHandWeight >= 0.42) {
+        [a, b, c].forEach(vertex => removedVertices.add(vertex));
+        continue;
+      }
+      keptIndices.push(a, b, c);
+      [a, b, c].forEach(vertex => keptVertices.add(vertex));
+    }
+    const count = keptIndices.length - start;
+    if (count) keptGroups.push({ start, count, materialIndex: group.materialIndex ?? 0 });
+  }
+  geometry.setIndex(keptIndices);
+  geometry.clearGroups();
+  keptGroups.forEach(group => geometry.addGroup(group.start, group.count, group.materialIndex));
+  const positions = geometry.getAttribute('position');
+  return [1, -1].map(side => [...removedVertices].filter(vertex =>
+    keptVertices.has(vertex) && Math.sign(positions.getX(vertex)) === side));
 }
 
 function stripSkinnedHumanHead(model: THREE.Group) {
@@ -316,16 +373,23 @@ function makeStaffShoe(name: string, ankle: THREE.Vector3, toe: THREE.Vector3) {
   return shoe;
 }
 
-function seatedGeometry(template: THREE.Group, look: number, applause: boolean) {
+function seatedGeometry(
+  template: THREE.Group,
+  look: number,
+  applause: boolean,
+  handMaterialIndex: number,
+) {
   const space = new THREE.Group();
   const model = clone(template) as THREE.Group;
   space.add(model);
   const pose = new HumanPose(model, space);
   poseSeatedCrowd(pose, space, look, applause);
   let result: THREE.BufferGeometry | undefined;
+  let handFits: CrowdHandFit[] | undefined;
   model.traverse((object) => {
     if (!(object instanceof THREE.SkinnedMesh)) return;
     const geometry = object.geometry.clone();
+    const wristBoundaries = stripRigidCrowdHands(geometry, object.skeleton);
     const positions = geometry.getAttribute('position');
     const vertex = new THREE.Vector3();
     for (let i = 0; i < positions.count; i++) {
@@ -333,14 +397,47 @@ function seatedGeometry(template: THREE.Group, look: number, applause: boolean) 
       object.applyBoneTransform(i, vertex).applyMatrix4(object.matrixWorld);
       positions.setXYZ(i, vertex.x, vertex.y, vertex.z);
     }
+    if (!wristBoundaries?.every(boundary => boundary.length >= 3)) {
+      throw new Error('Could not locate the source crowd wrist seams.');
+    }
+    handFits = wristBoundaries.map((boundary, handIndex) => {
+      const center = new THREE.Vector3();
+      boundary.forEach(index => center.add(new THREE.Vector3().fromBufferAttribute(positions, index)));
+      center.multiplyScalar(1 / boundary.length);
+      const { width, normal } = getSeatedCrowdHandFrame(handIndex === 0 ? 1 : -1, applause);
+      let halfWidth = 0, halfThickness = 0;
+      boundary.forEach(index => {
+        const delta = new THREE.Vector3().fromBufferAttribute(positions, index).sub(center);
+        halfWidth = Math.max(halfWidth, Math.abs(delta.dot(width)));
+        halfThickness = Math.max(halfThickness, Math.abs(delta.dot(normal)));
+      });
+      return { center, halfWidth, halfThickness };
+    });
+    refineCrowdForearms(geometry, object.skeleton, handFits, applause);
     geometry.deleteAttribute('skinIndex'); geometry.deleteAttribute('skinWeight');
-    geometry.computeVertexNormals();
-    geometry.computeBoundingBox(); geometry.computeBoundingSphere();
+    geometry.deleteAttribute('normal');
+    const smoothGeometry = mergeVertices(geometry, 1e-5);
+    geometry.dispose();
+    smoothGeometry.computeVertexNormals();
+    smoothGeometry.computeBoundingBox(); smoothGeometry.computeBoundingSphere();
     object.skeleton.dispose();
-    result = geometry;
+    result = smoothGeometry;
   });
   if (!result) throw new Error('Crowd asset has no skinned human mesh.');
-  return result;
+  const hands = createSeatedCrowdHandsGeometry(applause, handFits);
+  hands.addGroup(0, hands.index?.count ?? hands.getAttribute('position').count, handMaterialIndex);
+  const combined = mergeGeometries([result, hands], false);
+  if (combined) {
+    const bodyIndexCount = result.index?.count ?? result.getAttribute('position').count;
+    result.groups.forEach(group => combined.addGroup(group.start, group.count, group.materialIndex));
+    combined.addGroup(bodyIndexCount, hands.index?.count ?? hands.getAttribute('position').count, handMaterialIndex);
+  }
+  result.dispose();
+  hands.dispose();
+  if (!combined) throw new Error('Could not combine NPC body and hand geometry.');
+  combined.computeBoundingBox();
+  combined.computeBoundingSphere();
+  return combined;
 }
 
 function poseSeatedCrowd(
@@ -361,14 +458,11 @@ function poseSeatedCrowd(
   for (const [side, sign] of [['Left', 1], ['Right', -1]] as const) {
     const shoulder = v(sign * 0.2, 1.04);
     const elbow = applauding ? v(sign * 0.2, 0.98, 0.22) : v(sign * 0.23, 0.76, 0.08);
-    const wrist = applauding ? v(sign * 0.04, 1.14, 0.28) : v(sign * 0.2, 0.58, 0.12);
+    const { wrist, tip } = getSeatedCrowdHandTargets(sign, applauding);
     pose.place(`${side}Shoulder`, v(sign * 0.04, 1.02), shoulder);
     pose.place(`${side}Arm`, shoulder, elbow);
     pose.place(`${side}ForeArm`, elbow, wrist);
-    const handTip = wrist.clone().add(applauding
-      ? v(-sign * 0.05, 0, 0.08)
-      : v(sign * 0.035, -0.025, 0.06));
-    pose.place(`${side}Hand`, wrist, handTip);
+    pose.place(`${side}Hand`, wrist, tip);
     const legTargets = getSeatedCrowdLegTargets(sign);
     const hip = v(...legTargets.hip);
     const knee = v(...legTargets.knee);
@@ -453,9 +547,16 @@ export function attachHumanCrowd(
       }
     });
     if (!sourceMaterials) throw new Error('Crowd material missing.');
+    const skinColor = new THREE.Color().setRGB(
+      skinTone[0], skinTone[1], skinTone[2], THREE.SRGBColorSpace,
+    );
+    const handMaterialIndex = sourceMaterials.length;
+    sourceMaterials.push(new THREE.MeshStandardMaterial({ color: skinColor, roughness: 0.82 }));
     for (const applauding of [false, true]) for (const look of [-0.5, 0, 0.5]) {
       const crowdMaterials = sourceMaterials.map(material => makeCrowdClothingOpaque(material.clone()));
-      const mesh = new THREE.InstancedMesh(seatedGeometry(variant, look, applauding), crowdMaterials, batchCapacity);
+      const mesh = new THREE.InstancedMesh(
+        seatedGeometry(variant, look, applauding, handMaterialIndex), crowdMaterials, batchCapacity,
+      );
       mesh.name = `wtsl-${label}-spectators-${target.length}`;
       mesh.count = 0;
       mesh.frustumCulled = false;

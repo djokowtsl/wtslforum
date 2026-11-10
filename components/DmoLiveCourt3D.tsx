@@ -148,6 +148,8 @@ import CourtFullscreenButton from './CourtFullscreenButton';
 import CourtPictureInPictureButton from './CourtPictureInPictureButton';
 import { attachHumanPlayer, disposeHumanModel, loadHumanModel } from './DmoHumanModels';
 import { attachHumanCourtStaff, attachHumanCrowd } from './DmoHumanCrowd';
+import { loadArticulatedHand } from './DmoArticulatedHands';
+import { prepareCrowdHandGeometry } from './DmoNpcHands';
 import { BROADCAST_PLAYER_KITS } from './DmoNativeKit';
 import { racketCarryOrientation, racketContactOrientation, racketGripElbow, racketGripWrist } from './DmoRacketOrientation';
 import type { StadiumScoreboardData } from './DmoStadiumArchitecture';
@@ -729,16 +731,20 @@ function ThreeCourt({
       loadHumanModel('female', 'crowd', modelLoad.signal, modelAssetBase),
       loadHumanModel('male', 'crowd-high', modelLoad.signal, modelAssetBase),
       loadHumanModel('female', 'crowd-high', modelLoad.signal, modelAssetBase),
-    ]).then((results) => {
+      loadArticulatedHand(modelLoad.signal, modelAssetBase),
+    ]).then(async (results) => {
       try {
         if (modelLoad.signal.aborted) return;
-        const [player, maleCrowd, femaleCrowd, maleHighDetailCrowd, femaleHighDetailCrowd] = results;
+        const [player, maleCrowd, femaleCrowd, maleHighDetailCrowd, femaleHighDetailCrowd, crowdHands] = results;
         if (player.status === 'fulfilled') {
           attachHumanPlayer(player.value, players[0], PALETTE.shirtOne, undefined, undefined, BROADCAST_PLAYER_KITS[0], 0);
           attachHumanPlayer(player.value, players[1], PALETTE.shirtTwo, undefined, undefined, BROADCAST_PLAYER_KITS[1], 1);
           detailedPlayersReady = true;
         }
-        if (maleCrowd.status === 'fulfilled' && femaleCrowd.status === 'fulfilled') {
+        if (maleCrowd.status === 'fulfilled' && femaleCrowd.status === 'fulfilled'
+          && crowdHands.status === 'fulfilled') {
+          await prepareCrowdHandGeometry(crowdHands.value);
+          if (modelLoad.signal.aborted) return;
           const crowdTemplates: [THREE.Group, THREE.Group] = [maleCrowd.value, femaleCrowd.value];
           attachHumanCrowd(scene, crowdRig, crowdTemplates);
           if (maleHighDetailCrowd.status === 'fulfilled') {
@@ -759,7 +765,7 @@ function ThreeCourt({
             highDetailCrowdTemplates[0],
           );
         }
-        const requiredFailure = [player, maleCrowd, femaleCrowd]
+        const requiredFailure = [player, maleCrowd, femaleCrowd, crowdHands]
           .find((result) => result.status === 'rejected');
         if (requiredFailure?.status === 'rejected') throw requiredFailure.reason;
         const highDetailFailed = [maleHighDetailCrowd, femaleHighDetailCrowd]

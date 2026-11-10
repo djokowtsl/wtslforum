@@ -60,6 +60,12 @@ const humans = await loadTs('../components/DmoHumanModels.ts', {
 });
 const crowdLodApi = await loadTs('../lib/dmoCrowdLod.ts');
 const npcWardrobe = await loadTs('../components/DmoNpcWardrobe.ts');
+const npcHands = await loadTs('../components/DmoNpcHands.ts');
+const handBytes = await readFile(new URL('../public/models/dmo-humans/articulated-hand.glb', import.meta.url));
+const handAsset = await new GLTFLoader().parseAsync(
+  handBytes.buffer.slice(handBytes.byteOffset, handBytes.byteOffset + handBytes.byteLength), '',
+);
+await npcHands.prepareCrowdHandGeometry(handAsset.scene);
 const crowds = await loadTs('../components/DmoHumanCrowd.ts', {
   './DmoHumanModels': humans,
   './DmoLiveCourt3DScene': sceneApi,
@@ -68,6 +74,37 @@ const crowds = await loadTs('../components/DmoHumanCrowd.ts', {
   '../lib/dmoCrowdBranding': crowdBrandingApi,
   './DmoNativeFaces': nativeFaceApi,
   './DmoNpcWardrobe': npcWardrobe,
+  './DmoNpcHands': npcHands,
+});
+
+test('seated NPC hands have compact palms, four fingers and a thumb per hand', () => {
+  for (const applauding of [false, true]) {
+    const geometry = npcHands.createSeatedCrowdHandsGeometry(applauding);
+    assert.equal(geometry.userData.palms, 2);
+    assert.equal(geometry.userData.fingers, 8);
+    assert.equal(geometry.userData.thumbs, 2);
+    assert.equal(geometry.userData.anatomicalHands, true);
+    assert.ok(geometry.index.count / 3 < 1500, 'anatomical hand LOD stays bounded for an instanced crowd');
+    assert.ok(Array.from(geometry.attributes.position.array).every(Number.isFinite));
+    const copy = npcHands.createSeatedCrowdHandsGeometry(applauding);
+    geometry.addGroup(0, geometry.index.count, 3);
+    assert.equal(copy.groups.length, 0, 'material groups cannot mutate the cached hand template');
+    for (const side of [-1, 1]) {
+      const { wrist, tip } = npcHands.getSeatedCrowdHandTargets(side, applauding);
+      const { normal, direction } = npcHands.getSeatedCrowdHandFrame(side, applauding);
+      if (applauding) {
+        assert.ok(normal.x * side < -0.99, 'clapping palms face the opposite hand');
+        assert.ok(direction.y > 0.9, 'clapping fingers point upward');
+      }
+      if (!applauding) {
+        assert.ok((tip.x - wrist.x) * side < -0.08, 'resting fingertips point toward the other hand across the lap');
+        assert.ok(Math.abs(tip.y - wrist.y) < 0.01, 'resting fingers do not hang down beside the knees');
+        assert.ok(normal.y < -0.99, 'resting palms lie down toward the lap');
+      }
+    }
+    geometry.dispose();
+    copy.dispose();
+  }
 });
 
 // Parse the real rig and geometry in Node, omitting image decoding (verified in browser).
@@ -1184,8 +1221,13 @@ test('crowd uses seated textured instancing and retains gaze/applause updates', 
   shoes.getColorAt(0, leftColor);
   shoes.getColorAt(1, rightColor);
   assert.ok(leftColor.equals(rightColor), 'each spectator wears a matched pair of shoes');
-  assert.ok(batches.every(mesh => Array.isArray(mesh.material) && mesh.geometry.groups.length === 3),
-    'full torso and trouser materials survive the static/instanced bake');
+  assert.ok(batches.every(mesh => Array.isArray(mesh.material) && mesh.geometry.groups.length === 4
+    && mesh.geometry.groups.map(group => group.materialIndex).join(',') === '0,1,2,3'),
+    'skin, torso, trousers and replacement hands retain separate materials through the bake');
+  for (const mesh of batches) {
+    const covered = mesh.geometry.groups.reduce((sum, group) => sum + group.count, 0);
+    assert.equal(covered, mesh.geometry.index.count, 'every baked body/hand triangle has a material');
+  }
   assert.equal(scene.getObjectByName('wtsl-spectator-heads').visible, false);
   oldCrowd.update(2, true, new THREE.Vector3(11, 0.5, 5));
   assert.ok(batches.some((mesh, index) => index % 6 >= 3 && mesh.count > 0));
