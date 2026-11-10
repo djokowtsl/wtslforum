@@ -147,7 +147,7 @@ test('saved player stroke setup reaches the full broadcast replay', () => {
   assert.match(replayPlayer, /strokeStyles: strokeStyles \?\? initialSnapshot\.strokeStyles/);
 });
 
-test('fullscreen fills the available screen and keeps playback controls available', () => {
+test('fullscreen fills the available screen and retains desktop playback controls', () => {
   assert.match(fullscreenButton, /dispatchEvent\(new Event\('courtfullscreenchange', \{ bubbles: true \}\)\)/);
   assert.match(liveCourt, /addEventListener\('courtfullscreenchange', resize\)/);
   assert.match(liveCourt, /removeEventListener\('courtfullscreenchange', resize\)/);
@@ -164,7 +164,6 @@ test('fullscreen fills the available screen and keeps playback controls availabl
   assert.match(styles, /\.scene\.fullscreenFallback \.toolbar\s*\{[^}]*max-height:\s*26dvh/s);
   assert.match(styles, /\.scene\.fullscreenFallback \.toolbar[\s\S]*?max-height:\s*24dvh/);
   assert.match(styles, /\.scene\.fullscreenFallback \.toolbar\s*\{[^}]*align-items:\s*flex-start/s);
-  assert.doesNotMatch(styles, /\.scene\.fullscreenFallback \.toolbar\s*\{[^}]*max-height:\s*none/s);
   assert.match(liveCourt, /dmoFullscreenCourtCamera\(\s*width, height, fullscreenActive/);
   assert.match(liveCourt, /responsiveDmoCourtCameraScale\(width, height, fullscreenActive\)/);
   assert.match(liveCourt, /data-full-replay=\{fullReplay \? 'true' : undefined\}/);
@@ -178,6 +177,17 @@ test('fullscreen fills the available screen and keeps playback controls availabl
   assert.match(liveCourt, /aria-label="Graphics resolution"/);
   assert.match(fallbackCourt, /aria-label="Graphics resolution"/);
   assert.match(liveCourt, /useState<BroadcastRenderQuality>\('1080p'\)/);
+});
+
+test('mobile fullscreen hides settings and playback UI but keeps an independent exit action', () => {
+  assert.match(liveCourt, /className=\{`\$\{styles\.soundButton\} \$\{styles\.mobileFullscreenExit\}`\}/);
+  const mobileStyles = styles.slice(styles.indexOf('/* Phone portrait and landscape fullscreen'));
+  assert.match(mobileStyles, /@media \(max-width: 900px\)/);
+  assert.match(mobileStyles, /\.controls > :not\(\.mobileFullscreenExit\)/);
+  assert.match(mobileStyles, /\.replayControls,[\s\S]*display:\s*none !important/);
+  assert.match(mobileStyles, /\.mobileFullscreenExit\s*\{[^}]*position:\s*absolute[^}]*pointer-events:\s*auto/s);
+  assert.match(mobileStyles, /top:\s*max\(12px, env\(safe-area-inset-top\)\)/);
+  assert.match(fullscreenButton, /aria-label=\{isFullscreen \? 'Exit full screen'/);
 });
 
 test('embedded broadcast and replay players permit native fullscreen', () => {

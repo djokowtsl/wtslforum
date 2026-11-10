@@ -820,3 +820,69 @@
     background: #edf2f8;
   }
 }
+
+/* Phone portrait and landscape fullscreen are court-only, except for a reachable
+   exit action. Never place that action inside a scrolling settings panel. */
+@media (max-width: 900px) {
+  .scene:fullscreen .title,
+  .scene:-webkit-full-screen .title,
+  .scene.fullscreenFallback .title,
+  .scene:fullscreen .controls > :not(.mobileFullscreenExit),
+  .scene:-webkit-full-screen .controls > :not(.mobileFullscreenExit),
+  .scene.fullscreenFallback .controls > :not(.mobileFullscreenExit),
+  .scene:fullscreen .legend,
+  .scene:-webkit-full-screen .legend,
+  .scene.fullscreenFallback .legend,
+  .scene:fullscreen .replayControls,
+  .scene:-webkit-full-screen .replayControls,
+  .scene.fullscreenFallback .replayControls,
+  .scene:fullscreen .soundError,
+  .scene:-webkit-full-screen .soundError,
+  .scene.fullscreenFallback .soundError {
+    display: none !important;
+  }
+
+  .scene:fullscreen .toolbar,
+  .scene:-webkit-full-screen .toolbar,
+  .scene.fullscreenFallback .toolbar {
+    inset: 0;
+    max-height: none;
+    min-height: 0;
+    padding: 0;
+    border: 0;
+    overflow: visible;
+    background: transparent;
+    backdrop-filter: none;
+    pointer-events: none;
+  }
+
+  .scene:fullscreen .mobileFullscreenExit,
+  .scene:-webkit-full-screen .mobileFullscreenExit,
+  .scene.fullscreenFallback .mobileFullscreenExit {
+    position: absolute;
+    top: max(12px, env(safe-area-inset-top));
+    right: max(12px, env(safe-area-inset-right));
+    z-index: 10;
+    display: inline-flex;
+    width: 46px;
+    height: 46px;
+    min-height: 46px;
+    padding: 0;
+    border: 1px solid rgba(231, 238, 248, .5);
+    border-radius: 50%;
+    background: rgba(6, 13, 29, .88);
+    color: #f1f5fb;
+    pointer-events: auto;
+  }
+
+  .scene:fullscreen .mobileFullscreenExit span,
+  .scene:-webkit-full-screen .mobileFullscreenExit span,
+  .scene.fullscreenFallback .mobileFullscreenExit span {
+    position: absolute;
+    width: 1px;
+    height: 1px;
+    overflow: hidden;
+    clip-path: inset(50%);
+    white-space: nowrap;
+  }
+}
