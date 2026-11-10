@@ -161,8 +161,8 @@ test('fullscreen fills the available screen and keeps playback controls availabl
   assert.match(liveCourt, /host\.style\.height = '100%'/);
   assert.match(liveCourt, /responsiveDmoCourtCameraScale\(width, height, fullscreenActive\)/);
   assert.match(liveCourt, /responsiveDmoCourtCameraScale\(viewportWidth, viewportHeight, fullscreenActive\)/);
-  assert.match(liveCourt, /dmoFullscreenCourtCamera\(width, height, fullscreenActive\)/);
-  assert.match(liveCourt, /dmoFullscreenCourtCamera\(viewportWidth, viewportHeight, fullscreenActive\)/);
+  assert.match(liveCourt, /dmoFullscreenCourtCamera\(\s*width, height, fullscreenActive, maxDistanceForTarget/);
+  assert.match(liveCourt, /dmoFullscreenCourtCamera\(\s*viewportWidth, viewportHeight, fullscreenActive,\s*maxDistanceForTarget/);
   assert.match(liveCourt, /aria-label="Graphics resolution"/);
   assert.match(fallbackCourt, /aria-label="Graphics resolution"/);
   assert.match(liveCourt, /useState<BroadcastRenderQuality>\('1080p'\)/);

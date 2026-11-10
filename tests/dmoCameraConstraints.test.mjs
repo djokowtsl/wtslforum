@@ -1,5 +1,6 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
+import { PerspectiveCamera, Vector3 } from 'three';
 import {
   clampDmoCameraTarget,
   dmoCameraMaxDistanceInsideBowl,
@@ -61,20 +62,41 @@ test('compact court camera pulls back as fullscreen aspect narrows', () => {
 });
 
 test('compact fullscreen camera frames the court for both device orientations', () => {
-  assert.deepEqual(dmoFullscreenCourtCamera(635, 1131, true), {
-    x: 0,
-    y: 22,
-    z: 18,
-    fov: 60,
-  });
-  assert.deepEqual(dmoFullscreenCourtCamera(1024, 360, true), {
-    x: 13,
-    y: 28.6,
-    z: 0,
-    fov: 22,
-  });
-  assert.equal(dmoFullscreenCourtCamera(635, 475, true), null);
+  const portrait = dmoFullscreenCourtCamera(635, 1131, true);
+  assert.deepEqual([portrait.x, portrait.y, portrait.z], [5, 28, 0]);
+  const landscape = dmoFullscreenCourtCamera(1024, 360, true);
+  assert.deepEqual([landscape.x, landscape.y, landscape.z], [0, 28.6, 13]);
+  assert.ok(dmoFullscreenCourtCamera(635, 475, true));
   assert.equal(dmoFullscreenCourtCamera(635, 1131, false), null);
   assert.equal(dmoFullscreenCourtCamera(1280, 1800, true), null);
-  assert.equal(dmoFullscreenCourtCamera(1024, 576, true), null);
+  assert.ok(dmoFullscreenCourtCamera(1024, 576, true));
+  assert.equal(dmoFullscreenCourtCamera(0, 900, true), null);
+  assert.equal(dmoFullscreenCourtCamera(390, NaN, true), null);
+});
+
+test('actual perspective projection keeps all court corners and player margins visible', () => {
+  for (const [width, height] of [
+    [390, 667], [390, 844], [402, 874], [600, 1200], [360, 1000],
+    [667, 390], [844, 390], [1024, 360], [1024, 576],
+  ]) {
+    for (const maxDistance of [18, 25, 32, 40]) {
+      const pose = dmoFullscreenCourtCamera(width, height, true, maxDistance);
+      const camera = new PerspectiveCamera(pose.fov, width / height, 0.1, 260);
+      camera.position.set(pose.x, pose.y, pose.z);
+      camera.lookAt(0, 0.5, 0);
+      camera.updateMatrixWorld();
+      assert.ok(camera.position.distanceTo(new Vector3(0, 0.5, 0)) <= maxDistance + 1e-9);
+      let largestProjectedEdge = 0;
+      for (const x of [-13.4, 13.4]) {
+        for (const z of [-6.24, 6.24]) {
+          const projected = new Vector3(x, 0, z).project(camera);
+          assert.ok(Math.abs(projected.x) <= 0.941, `horizontal crop at ${width}x${height}`);
+          assert.ok(Math.abs(projected.y) <= 0.941, `vertical crop at ${width}x${height}`);
+          assert.ok(projected.z > -1 && projected.z < 1);
+          largestProjectedEdge = Math.max(largestProjectedEdge, Math.abs(projected.x), Math.abs(projected.y));
+        }
+      }
+      assert.ok(largestProjectedEdge > 0.93, 'court should use the available screen, not shrink into a strip');
+    }
+  }
 });
