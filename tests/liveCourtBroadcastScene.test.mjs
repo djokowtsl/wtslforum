@@ -1474,8 +1474,13 @@ test('automated Fault and Out calls use dedicated audio clips without loading um
   );
   assert.equal(
     xktUmpireAudioApi.resolveAutomatedLineCallPath('Out', true, () => 0),
-    null,
-    'do not substitute the generated generic Out clip for missing WTA recordings',
+    '/audio/xkt/line-calls/atp-out-01.mp3',
+    'WTA uses the approved recorded Out clips already used for ATP',
+  );
+  assert.equal(
+    xktUmpireAudioApi.resolveAutomatedLineCallPath('Out', true, () => 0.999),
+    '/audio/xkt/line-calls/atp-out-09.mp3',
+    'the full shared Out clip set remains selectable for WTA',
   );
   assert.equal(
     xktUmpireAudioApi.resolveAutomatedLineCallPath('Fault', false),
@@ -1489,7 +1494,7 @@ test('automated Fault and Out calls use dedicated audio clips without loading um
   for (const text of ['Fault', 'Out']) {
     assert.equal(await xktUmpireAudioApi.playXktUmpireCall(context, text, false, fetcher), true);
   }
-  assert.equal(await xktUmpireAudioApi.playXktUmpireCall(context, 'Out', true, fetcher), false);
+  assert.equal(await xktUmpireAudioApi.playXktUmpireCall(context, 'Out', true, fetcher), true);
   const atpOutFiles = Array.from({ length: 9 }, (_, index) =>
     xktUmpireAudioApi.resolveAutomatedLineCallPath(
       'Out',
@@ -1516,7 +1521,9 @@ test('automated Fault and Out calls use dedicated audio clips without loading um
   startedSources[0].onended();
   assert.equal(startedSources.length, 2);
   startedSources[1].onended();
-  assert.equal(startedSources.length, 2, 'unsupported WTA Out remains silent');
+  assert.equal(startedSources.length, 3, 'the shared WTA Out clip plays after the queued ATP call');
+  startedSources[2].onended();
+  assert.equal(startedSources.length, 3);
 });
 
 test('missing recorded umpire clips never trigger a browser-system voice', async () => {
