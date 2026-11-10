@@ -2,6 +2,7 @@
 
 import { useRouter } from 'next/navigation';
 import { useEffect, useState, type FormEvent } from 'react';
+import DmoSubmissionPlayerStyleEditor, { type DmoPlayerStyleValues } from './DmoSubmissionPlayerStyleEditor';
 
 type DmoSubmissionTagEditorProps = {
   id: number;
@@ -12,7 +13,8 @@ type DmoSubmissionTagEditorProps = {
   submissionDate: string;
   coachShareUrl?: string | null;
   coachGroupShareConsent: boolean;
-};
+  externalUrl?: string | null;
+} & Partial<DmoPlayerStyleValues>;
 
 export default function DmoSubmissionTagEditor({
   id,
@@ -23,12 +25,23 @@ export default function DmoSubmissionTagEditor({
   submissionDate,
   coachShareUrl = '',
   coachGroupShareConsent,
+  externalUrl = '',
+  player1Character = '',
+  player2Character = '',
+  player1Handedness = '',
+  player2Handedness = '',
+  player1BackhandType = '',
+  player2BackhandType = '',
 }: DmoSubmissionTagEditorProps) {
   const router = useRouter();
   const [editing, setEditing] = useState(false);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState('');
   const [notice, setNotice] = useState('');
+  const playerStyle = {
+    player1Character, player2Character, player1Handedness, player2Handedness,
+    player1BackhandType, player2BackhandType,
+  };
   const [tags, setTags] = useState({
     tournament,
     roundName,
@@ -36,6 +49,8 @@ export default function DmoSubmissionTagEditor({
     player2,
     submissionDate,
     coachShareUrl: coachShareUrl ?? '',
+    externalUrl: externalUrl ?? '',
+    ...playerStyle,
   });
 
   useEffect(() => {
@@ -46,8 +61,13 @@ export default function DmoSubmissionTagEditor({
       player2,
       submissionDate,
       coachShareUrl: coachShareUrl ?? '',
+      externalUrl: externalUrl ?? '',
+      player1Character, player2Character, player1Handedness, player2Handedness,
+      player1BackhandType, player2BackhandType,
     });
-  }, [tournament, roundName, player1, player2, submissionDate, coachShareUrl]);
+  }, [tournament, roundName, player1, player2, submissionDate, coachShareUrl, externalUrl,
+    player1Character, player2Character, player1Handedness, player2Handedness,
+    player1BackhandType, player2BackhandType]);
 
   function cancelEdit() {
     setTags({
@@ -57,6 +77,8 @@ export default function DmoSubmissionTagEditor({
       player2,
       submissionDate,
       coachShareUrl: coachShareUrl ?? '',
+      externalUrl: externalUrl ?? '',
+      ...playerStyle,
     });
     setError('');
     setNotice('');
@@ -75,6 +97,7 @@ export default function DmoSubmissionTagEditor({
         body: JSON.stringify({
           ...tags,
           coachShareUrl: tags.coachShareUrl.trim() || null,
+          externalUrl: tags.externalUrl.trim() || null,
         }),
       });
       const body = await response.json().catch(() => null);
@@ -93,12 +116,14 @@ export default function DmoSubmissionTagEditor({
         setNotice('Tags saved.');
       }
       setTags({
+        ...tags,
         tournament: tags.tournament.trim(),
         roundName: tags.roundName.trim(),
         player1: tags.player1.trim(),
         player2: tags.player2.trim(),
         submissionDate: tags.submissionDate,
         coachShareUrl: tags.coachShareUrl.trim(),
+        externalUrl: tags.externalUrl.trim(),
       });
       setEditing(false);
       router.refresh();
@@ -131,7 +156,7 @@ export default function DmoSubmissionTagEditor({
         }}
         aria-expanded={editing}
       >
-        {editing ? 'Close tag editor' : 'Edit tags'}
+        {editing ? 'Close editor' : 'Edit submission'}
       </button>
       {!editing && tags.coachShareUrl && (
         <p className="notice" style={{ margin: '8px 0 0' }}>
@@ -192,6 +217,22 @@ export default function DmoSubmissionTagEditor({
               />
             </label>
           </div>
+          <DmoSubmissionPlayerStyleEditor
+            value={tags}
+            onChange={patch => setTags(current => ({ ...current, ...patch }))}
+            inputStyle={inputStyle}
+            disabled={busy}
+          />
+          <label style={{ display: 'grid', gap: 5 }}>
+            Recording link
+            <input
+              type="url"
+              maxLength={1000}
+              style={inputStyle}
+              value={tags.externalUrl}
+              onChange={event => setTags({ ...tags, externalUrl: event.target.value })}
+            />
+          </label>
           <label style={{ display: 'grid', gap: 5 }}>
             TE4 Coach match link
             <input
@@ -211,16 +252,16 @@ export default function DmoSubmissionTagEditor({
           </label>
           <div style={{ display: 'flex', gap: 8 }}>
             <button className="btn btn-sm" type="submit" disabled={busy}>
-              {busy ? 'Saving…' : 'Save tags'}
+              {busy ? 'Saving…' : 'Save details'}
             </button>
             <button className="btn btn-sm btn-ghost" type="button" onClick={cancelEdit} disabled={busy}>
               Cancel
             </button>
           </div>
           {error && <p role="alert" className="notice">{error}</p>}
-          {notice && <p role="status" className="notice">{notice}</p>}
         </form>
       )}
+      {notice && <p role="status" className="notice">{notice}</p>}
     </div>
   );
 }

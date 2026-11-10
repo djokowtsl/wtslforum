@@ -71,7 +71,10 @@ export type NewDmoSubmission = {
   submissionDate?: string | null;
 };
 
-export type DmoSubmissionTags = {
+export type DmoSubmissionTags = Pick<NewDmoSubmission,
+  'player1Character' | 'player2Character' | 'player1Handedness' | 'player2Handedness'
+  | 'player1BackhandType' | 'player2BackhandType' | 'externalUrl'
+> & {
   tournament: string;
   roundName: string;
   player1: string;
@@ -314,6 +317,13 @@ export async function updateDmoSubmissionTags(
         round_name=${tags.roundName},
         player1=${tags.player1},
         player2=${tags.player2},
+        player1_character=CASE WHEN ${tags.player1Character !== undefined} THEN ${tags.player1Character ?? null} ELSE player1_character END,
+        player2_character=CASE WHEN ${tags.player2Character !== undefined} THEN ${tags.player2Character ?? null} ELSE player2_character END,
+        player1_handedness=CASE WHEN ${tags.player1Handedness !== undefined} THEN ${tags.player1Handedness ?? null} ELSE player1_handedness END,
+        player2_handedness=CASE WHEN ${tags.player2Handedness !== undefined} THEN ${tags.player2Handedness ?? null} ELSE player2_handedness END,
+        player1_backhand_type=CASE WHEN ${tags.player1BackhandType !== undefined} THEN ${tags.player1BackhandType ?? null} ELSE player1_backhand_type END,
+        player2_backhand_type=CASE WHEN ${tags.player2BackhandType !== undefined} THEN ${tags.player2BackhandType ?? null} ELSE player2_backhand_type END,
+        external_url=CASE WHEN ${tags.externalUrl !== undefined} THEN ${tags.externalUrl ?? null} ELSE external_url END,
         submission_date=${tags.submissionDate}::date,
         coach_group_share_consent=CASE
           WHEN ${tags.resetCoachGroupConsent ?? false} THEN FALSE

@@ -89,6 +89,13 @@ export default async function AdminDmoSubmissions() {
                     roundName={submission.round_name}
                     player1={submission.player1}
                     player2={submission.player2}
+                    player1Character={submission.player1_character ?? ''}
+                    player2Character={submission.player2_character ?? ''}
+                    player1Handedness={submission.player1_handedness ?? ''}
+                    player2Handedness={submission.player2_handedness ?? ''}
+                    player1BackhandType={submission.player1_backhand_type ?? ''}
+                    player2BackhandType={submission.player2_backhand_type ?? ''}
+                    externalUrl={submission.external_url}
                     submissionDate={submissionDate}
                     coachShareUrl={submission.coach_share_url}
                     coachGroupShareConsent={submission.coach_group_share_consent === true}

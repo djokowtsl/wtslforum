@@ -642,6 +642,124 @@ test('DMO submission edits are admin-only and validate tags and Coach links', as
   assert.equal(calls.length, 2);
 });
 
+function adminMetadataHarness(previous = { private_blob_pathname: 'archive/match.dmo' }) {
+  const calls = [];
+  const handlers = loadRoute('app/api/admin/dmo-submissions/[id]/route.ts', {
+    'next/server': { NextResponse: { json: (body, init) => Response.json(body, init) } },
+    '@/lib/auth': { getSession: async () => admin },
+    '@/lib/te4CoachEmbed': te4CoachEmbed,
+    '@/lib/dmo-submissions': {
+      getDmoSubmission: async () => ({ id: 41, coach_share_url: null, coach_group_share_consent: false, ...previous }),
+      updateDmoSubmissionTags: async (id, tags) => { calls.push(tags); return { id, ...tags }; },
+    },
+    '@/lib/te4CoachGroupServer': {
+      removeTe4CoachLinkFromGroup: async () => ({ status: 'skipped' }),
+      syncPublicDmoSubmissionToTe4CoachGroup: async () => ({ status: 'skipped' }),
+    },
+  });
+  return {
+    calls,
+    patch: data => handlers.PATCH(new Request('https://forum.test/api/admin/dmo-submissions/41', {
+      method: 'PATCH', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        tournament: 'Autumn Cup', roundName: 'Final', player1: 'One', player2: 'Two',
+        submissionDate: '2026-11-10', ...data,
+      }),
+    }), { params: Promise.resolve({ id: '41' }) }),
+  };
+}
+
+test('admins can fill missing characters, hands, grips and recording links without changing consent', async () => {
+  const { patch, calls } = adminMetadataHarness();
+  const metadata = {
+    player1Character: ' R. Federer ', player2Character: 'Nadal',
+    player1Handedness: 'right', player2Handedness: 'left',
+    player1BackhandType: 'one-handed', player2BackhandType: 'two-handed',
+    externalUrl: ' https://example.com/match ',
+  };
+  assert.equal((await patch({ ...metadata, publicShareConsent: true, coachGroupShareConsent: true })).status, 200);
+  assert.equal(calls[0].player1Character, 'R. Federer');
+  assert.equal(calls[0].player2Character, 'Nadal');
+  for (const key of ['player1Handedness', 'player2Handedness', 'player1BackhandType', 'player2BackhandType']) {
+    assert.equal(calls[0][key], metadata[key]);
+  }
+  assert.equal(calls[0].externalUrl, 'https://example.com/match');
+  assert.equal(calls[0].publicShareConsent, undefined);
+  assert.equal(calls[0].coachGroupShareConsent, undefined);
+  assert.equal(calls[0].resetCoachGroupConsent, undefined);
+});
+
+test('admins can clear recorded style fields while omitted fields remain untouched', async () => {
+  const { patch, calls } = adminMetadataHarness();
+  assert.equal((await patch({ player1Character: '', player1Handedness: null, player1BackhandType: '', externalUrl: null })).status, 200);
+  assert.equal(calls[0].player1Character, null);
+  assert.equal(calls[0].player1Handedness, null);
+  assert.equal(calls[0].player1BackhandType, null);
+  assert.equal(calls[0].externalUrl, null);
+  assert.equal(Object.hasOwn(calls[0], 'player2Character'), false);
+  assert.equal(Object.hasOwn(calls[0], 'player2Handedness'), false);
+  assert.equal(Object.hasOwn(calls[0], 'player2BackhandType'), false);
+});
+
+test('admin metadata rejects invalid hands, grips, character types and unsafe recording links', async () => {
+  const { patch, calls } = adminMetadataHarness();
+  for (const data of [
+    { player1Handedness: 'ambidextrous' }, { player2Handedness: false },
+    { player1BackhandType: 'three-handed' }, { player2BackhandType: [] },
+    { player1Character: {} }, { player2Character: 'x'.repeat(101) },
+    { externalUrl: 'javascript:alert(1)' }, { externalUrl: 4 },
+    { externalUrl: 'https://example.com/' + 'x'.repeat(1000) },
+  ]) assert.equal((await patch(data)).status, 400);
+  assert.equal(calls.length, 0);
+});
+
+test('admin metadata cannot remove the only recording source from a link-only submission', async () => {
+  const { patch, calls } = adminMetadataHarness({ private_blob_pathname: null, external_url: 'https://example.com/original' });
+  assert.equal((await patch({ externalUrl: '' })).status, 400);
+  assert.equal(calls.length, 0);
+  assert.equal((await patch({ externalUrl: 'https://example.com/replacement' })).status, 200);
+  assert.equal((await patch({ player1Handedness: 'left' })).status, 200);
+  const legacy = adminMetadataHarness({ private_blob_pathname: null, external_url: null });
+  assert.equal((await legacy.patch({ player1Handedness: 'left', externalUrl: null })).status, 200,
+    'missing legacy source information must not block adding player metadata');
+});
+
+test('storage updates persist optional metadata and distinguish clearing from omission', async () => {
+  const queries = [];
+  const db = loadRoute('lib/dmo-submissions.ts', {
+    '@/lib/db': { sql: async (strings, ...values) => {
+      if (strings.join('').includes('UPDATE dmo_submissions')) {
+        queries.push({ strings, values });
+        return [{ id: 41 }];
+      }
+      return [];
+    } },
+  });
+  const columns = {
+    player1Character: 'player1_character', player2Character: 'player2_character',
+    player1Handedness: 'player1_handedness', player2Handedness: 'player2_handedness',
+    player1BackhandType: 'player1_backhand_type', player2BackhandType: 'player2_backhand_type',
+    externalUrl: 'external_url',
+  };
+  const base = { tournament: 'Cup', roundName: 'Final', player1: 'One', player2: 'Two', submissionDate: '2026-11-10' };
+  for (const metadata of [
+    { player1Character: 'Federer', player2Character: 'Nadal', player1Handedness: 'right', player2Handedness: 'left',
+      player1BackhandType: 'one-handed', player2BackhandType: 'two-handed', externalUrl: 'https://example.com/match' },
+    { player1Character: null, player1Handedness: null, player1BackhandType: null, externalUrl: null },
+    {},
+  ]) {
+    await db.updateDmoSubmissionTags(41, { ...base, ...metadata });
+    const { strings, values } = queries.at(-1);
+    for (const [key, column] of Object.entries(columns)) {
+      const index = strings.findIndex(fragment => fragment.includes(`${column}=CASE WHEN `));
+      assert.ok(index >= 0, column);
+      assert.equal(values[index], Object.hasOwn(metadata, key), `${column}: update only when supplied`);
+      assert.equal(values[index + 1], metadata[key] ?? null);
+    }
+    assert.doesNotMatch(strings.join(''), /private_blob_pathname\s*=|public_share_consent\s*=/);
+  }
+});
+
 test('DMO tag edits reject non-admins without updating metadata', async () => {
   let updated = false;
   const handlers = loadRoute('app/api/admin/dmo-submissions/[id]/route.ts', {
