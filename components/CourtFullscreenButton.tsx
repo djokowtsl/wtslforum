@@ -16,15 +16,6 @@ type FullscreenElement = HTMLElement & {
   webkitRequestFullscreen?: () => Promise<void> | void;
 };
 
-type FullscreenVideo = HTMLVideoElement & {
-  webkitDisplayingFullscreen?: boolean;
-  webkitEnterFullscreen?: () => void;
-};
-
-type FullscreenVideoRef = {
-  current: FullscreenVideo | null;
-};
-
 type LandscapeOrientation = {
   lock?: (orientation: 'landscape') => Promise<void> | void;
   unlock?: () => void;
@@ -32,7 +23,6 @@ type LandscapeOrientation = {
 
 type Props = {
   targetRef: FullscreenTargetRef;
-  videoRef?: FullscreenVideoRef;
   className: string;
   statusClassName: string;
   fallbackClassName: string;
@@ -45,7 +35,6 @@ function activeFullscreenElement() {
 
 export default function CourtFullscreenButton({
   targetRef,
-  videoRef,
   className,
   statusClassName,
   fallbackClassName,
@@ -119,8 +108,7 @@ export default function CourtFullscreenButton({
       await orientation.lock('landscape');
       orientationLockRequestedRef.current = true;
       const stillFullscreen = activeFullscreenElement() === targetRef.current
-        || targetRef.current?.classList.contains(fallbackClassName) === true
-        || videoRef?.current?.webkitDisplayingFullscreen === true;
+        || targetRef.current?.classList.contains(fallbackClassName) === true;
       if (!stillFullscreen) {
         try {
           orientation.unlock?.();
@@ -132,7 +120,7 @@ export default function CourtFullscreenButton({
     } catch {
       // Some browsers allow fullscreen but do not expose orientation locking.
     }
-  }, [fallbackClassName, targetRef, videoRef]);
+  }, [fallbackClassName, targetRef]);
 
   const releaseLandscapeLock = useCallback(() => {
     if (!orientationLockRequestedRef.current) return;
@@ -167,21 +155,13 @@ export default function CourtFullscreenButton({
   }, [fallbackClassName, relaxClippingAncestors]);
 
   useEffect(() => {
-    const video = videoRef?.current;
     const syncFullscreenState = () => {
       const fullscreen = (
         activeFullscreenElement() === targetRef.current
         || targetRef.current?.classList.contains(fallbackClassName) === true
-        || video?.webkitDisplayingFullscreen === true
       );
       setIsFullscreen(fullscreen);
       if (!fullscreen) releaseLandscapeLock();
-    };
-    const onNativeVideoFullscreenStart = () => setIsFullscreen(true);
-    const onNativeVideoFullscreenEnd = () => {
-      if (video) video.controls = false;
-      setIsFullscreen(false);
-      releaseLandscapeLock();
     };
     const exitFallback = (event: KeyboardEvent) => {
       if (event.key === 'Escape' && targetRef.current?.classList.contains(fallbackClassName)) {
@@ -197,20 +177,16 @@ export default function CourtFullscreenButton({
     document.addEventListener('fullscreenchange', syncFullscreenState);
     document.addEventListener('webkitfullscreenchange', syncFullscreenState);
     document.addEventListener('keydown', exitFallback);
-    video?.addEventListener('webkitbeginfullscreen', onNativeVideoFullscreenStart);
-    video?.addEventListener('webkitendfullscreen', onNativeVideoFullscreenEnd);
     return () => {
       document.removeEventListener('fullscreenchange', syncFullscreenState);
       document.removeEventListener('webkitfullscreenchange', syncFullscreenState);
       document.removeEventListener('keydown', exitFallback);
-      video?.removeEventListener('webkitbeginfullscreen', onNativeVideoFullscreenStart);
-      video?.removeEventListener('webkitendfullscreen', onNativeVideoFullscreenEnd);
       targetRef.current?.classList.remove(fallbackClassName);
       restoreAncestorStyles();
       restorePageStyles();
       releaseLandscapeLock();
     };
-  }, [fallbackClassName, releaseLandscapeLock, restoreAncestorStyles, restorePageStyles, targetRef, videoRef]);
+  }, [fallbackClassName, releaseLandscapeLock, restoreAncestorStyles, restorePageStyles, targetRef]);
 
   const toggleFullscreen = async () => {
     const target = targetRef.current as FullscreenElement | null;
@@ -219,21 +195,6 @@ export default function CourtFullscreenButton({
     const shouldLockLandscape = window.matchMedia('(max-width: 900px)').matches;
 
     const doc = document as FullscreenDocument;
-    const enterNativeVideoFullscreen = () => {
-      const video = videoRef?.current;
-      if (!video?.webkitEnterFullscreen || video.readyState < 2 || video.videoWidth <= 0) {
-        return false;
-      }
-      try {
-        video.controls = true;
-        video.webkitEnterFullscreen();
-        setIsFullscreen(true);
-        return true;
-      } catch {
-        video.controls = false;
-        return false;
-      }
-    };
 
     try {
       if (activeFullscreenElement() === target || target.classList.contains(fallbackClassName)) {
@@ -252,10 +213,6 @@ export default function CourtFullscreenButton({
       } else {
         const request = target.requestFullscreen ?? target.webkitRequestFullscreen;
         if (!request) {
-          if (enterNativeVideoFullscreen()) {
-            void requestLandscapeLock(shouldLockLandscape);
-            return;
-          }
           enterFallbackFullscreen(target);
           void requestLandscapeLock(shouldLockLandscape);
           return;
@@ -264,10 +221,6 @@ export default function CourtFullscreenButton({
           await request.call(target);
           await requestLandscapeLock(shouldLockLandscape);
         } catch {
-          if (enterNativeVideoFullscreen()) {
-            void requestLandscapeLock(shouldLockLandscape);
-            return;
-          }
           enterFallbackFullscreen(target);
           void requestLandscapeLock(shouldLockLandscape);
           return;
@@ -275,10 +228,6 @@ export default function CourtFullscreenButton({
       }
       setIsFullscreen(activeFullscreenElement() === target);
     } catch {
-      if (enterNativeVideoFullscreen()) {
-        void requestLandscapeLock(shouldLockLandscape);
-        return;
-      }
       if (target.isConnected) {
         enterFallbackFullscreen(target);
         void requestLandscapeLock(shouldLockLandscape);

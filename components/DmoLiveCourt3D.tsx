@@ -2873,7 +2873,6 @@ function ThreeCourt({
           </div>
           <CourtFullscreenButton
             targetRef={sceneElementRef}
-            videoRef={mediaVideoRef}
             className={styles.soundButton}
             statusClassName={styles.visuallyHidden}
             fallbackClassName={styles.fullscreenFallback}
