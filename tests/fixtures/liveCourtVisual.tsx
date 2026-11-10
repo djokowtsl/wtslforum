@@ -36,13 +36,6 @@ const snapshot = {
   stadium: new URLSearchParams(location.search).has('indoor') ? 'Indoor stadium' : 'Philippe Chatrier',
   frameCount: court.length, courtFrameCount: court.length, frameRate: 60,
   court, courtFrameIndices: indices, trajectoryEvents: events,
-  pointCount: 0, bestOf: 3,
-  score: {
-    sets: [], games: [0, 0], points: [0, 0], pointText: ['0', '0'],
-    tiebreak: false, server: 1,
-  },
-  currentPoint: { number: 1, server: 1, rallyHits: 0, serveSpeedKmh: null, inProgress: true },
-  winChance: [50, 50], winHistory: [], stats: [], recentPoints: [],
   // Deliberately no soundEvents: fallback contact derivation is exercised.
 } as Te4LiveSnapshot;
 
