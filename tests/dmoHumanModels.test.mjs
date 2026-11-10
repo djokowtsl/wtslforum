@@ -59,6 +59,7 @@ const humans = await loadTs('../components/DmoHumanModels.ts', {
   '@/lib/dmoCrowdClothing': crowdClothingApi,
 });
 const crowdLodApi = await loadTs('../lib/dmoCrowdLod.ts');
+const npcWardrobe = await loadTs('../components/DmoNpcWardrobe.ts');
 const crowds = await loadTs('../components/DmoHumanCrowd.ts', {
   './DmoHumanModels': humans,
   './DmoLiveCourt3DScene': sceneApi,
@@ -66,6 +67,7 @@ const crowds = await loadTs('../components/DmoHumanCrowd.ts', {
   '../lib/dmoCrowdClothing': crowdClothingApi,
   '../lib/dmoCrowdBranding': crowdBrandingApi,
   './DmoNativeFaces': nativeFaceApi,
+  './DmoNpcWardrobe': npcWardrobe,
 });
 
 // Parse the real rig and geometry in Node, omitting image decoding (verified in browser).
@@ -126,7 +128,9 @@ function skinnedRegionBounds(model, space, bonePattern) {
     if (!object.isSkinnedMesh) return;
     object.skeleton.update();
     const { position, skinWeight, skinIndex } = object.geometry.attributes;
+    const visible = object.geometry.index ? new Set(object.geometry.index.array) : null;
     for (let i = 0; i < position.count; i++) {
+      if (visible && !visible.has(i)) continue;
       let dominant = 0;
       for (let j = 1; j < 4; j++) {
         if (skinWeight.getComponent(i, j) > skinWeight.getComponent(i, dominant)) dominant = j;
@@ -138,6 +142,17 @@ function skinnedRegionBounds(model, space, bonePattern) {
     }
   });
   assert.ok(count > 20, 'check a real skinned surface, not an empty or mocked joint set');
+  return bounds;
+}
+function footwearBounds(space, prefix) {
+  const bounds = new THREE.Box3();
+  for (const side of ['left', 'right']) {
+    const shoe = space.getObjectByName(`${prefix}-shoe-${side}`);
+    assert.ok(shoe?.isMesh, `${prefix} needs both visible shoes`);
+    shoe.geometry.computeBoundingBox();
+    shoe.updateMatrix();
+    bounds.union(shoe.geometry.boundingBox.clone().applyMatrix4(shoe.matrix));
+  }
   return bounds;
 }
 const handCanonical = new THREE.Quaternion().setFromRotationMatrix(new THREE.Matrix4().makeBasis(
@@ -202,6 +217,46 @@ test('seated spectator leg bones scale to their seat targets instead of hanging 
     `lower leg ${fittedLowerLength} vs ${knee.distanceTo(ankle)}; scale ${lowerLeg.scale.toArray()}, source ${lowerBone.position.toArray()}`);
 });
 
+test('NPC torso aiming never stretches branching spine or shoulder bones', async () => {
+  const model = await asset('male', 'crowd');
+  const space = new THREE.Group();
+  space.add(model);
+  const names = ['Spine02', 'Spine01', 'Spine', 'LeftShoulder', 'RightShoulder', 'neck'];
+  const original = new Map(names.map(name => [name, model.getObjectByName(name).scale.clone()]));
+  const pose = new humans.HumanPose(model, space);
+  pose.begin();
+  names.forEach((name, i) => pose.place(name,
+    new THREE.Vector3(0, 0.5 + i * 0.1, 0), new THREE.Vector3(0, 1.3, 0)));
+  pose.finish();
+  names.forEach(name => assert.deepEqual(model.getObjectByName(name).scale.toArray(), original.get(name).toArray(),
+    `${name} must retain its bind scale instead of stretching the whole upper body`));
+});
+
+for (const gender of ['male', 'female']) test(`${gender}: NPCs replace bare feet and cover torso, hips and legs`, async () => {
+  const model = await asset(gender, 'crowd');
+  let mesh;
+  model.traverse(object => { if (object.isSkinnedMesh) mesh = object; });
+  mesh.geometry = mesh.geometry.clone();
+  assert.ok(npcWardrobe.stripBareFeet(mesh.geometry) > 30, 'remove real source barefoot triangles');
+  const index = mesh.geometry.index, positions = mesh.geometry.getAttribute('position');
+  for (let i = 0; i < index.count; i += 3) {
+    assert.ok(Math.max(...[0,1,2].map(c => positions.getY(index.getX(i+c)))) >= 0.115);
+  }
+  npcWardrobe.dressNpc(mesh, 0x9b4840, [0.6, 0.4, 0.3]);
+  assert.equal(mesh.geometry.groups.length, 3);
+  assert.ok(mesh.geometry.groups.every(group => group.count > 90), 'skin, full shirt, and trousers all have visible triangles');
+  assert.equal(mesh.material[1].color.getHex(), 0x9b4840);
+  assert.equal(mesh.material[1].map, null, 'the old crop-top atlas cannot leave the torso uncovered');
+});
+
+test('NPC renderer uses distinct source heads and keeps a balanced gender mix', async () => {
+  const source = await readFile(new URL('../components/DmoLiveCourt3D.tsx', import.meta.url), 'utf8');
+  assert.doesNotMatch(source, /createNativeFaceSet|disposeNativeFaceSet/);
+  const appearances = Array.from({length: 100}, (_, index) => sceneApi.getCrowdAppearance(index));
+  assert.equal(appearances.filter(item => item.gender === 'female').length, 50);
+  assert.equal(appearances.filter(item => item.gender === 'male').length, 50);
+});
+
 for (const gender of ['male', 'female']) for (const detail of ['crowd', 'player']) {
   test(`${gender} ${detail}: seated staff skin stays compact and umpire soles fit the footrest`, async () => {
     const scene = new THREE.Scene();
@@ -213,7 +268,7 @@ for (const gender of ['male', 'female']) for (const detail of ['crowd', 'player'
     const umpire = scene.getObjectByName('wtsl-detailed-umpire');
     const bar = scene.getObjectByName('wtsl-umpire-foot-bar');
     const barTop = bar.position.y + bar.geometry.parameters.height / 2;
-    const feet = skinnedRegionBounds(umpire, chair, /Foot|ToeBase/);
+    const feet = footwearBounds(chair, 'wtsl-umpire');
     assert.ok(feet.min.y >= barTop - 0.025 && feet.min.y <= barTop + 0.025,
       `actual soles (${feet.min.y}) must meet the bar (${barTop}), not just the toe bones`);
     assert.ok(feet.max.z < 0.55 && feet.max.z - feet.min.z < 0.35,
@@ -226,7 +281,7 @@ for (const gender of ['male', 'female']) for (const detail of ['crowd', 'player'
       const legs = skinnedRegionBounds(coach, space, /Leg|Foot|ToeBase/);
       assert.ok(legs.min.y > -0.07 && 0.4 - legs.min.y < 0.47,
         `front-row coach ${index} must not dangle below its row: lowest skin ${legs.min.y}`);
-      const coachFeet = skinnedRegionBounds(coach, space, /Foot|ToeBase/);
+      const coachFeet = footwearBounds(space, `wtsl-court-coach-${index}`);
       assert.ok(coachFeet.max.z - coachFeet.min.z < 0.35, 'coach feet retain normal proportions');
     }
   });
@@ -1125,6 +1180,12 @@ test('crowd uses seated textured instancing and retains gaze/applause updates', 
   const shoes = scene.getObjectByName('wtsl-detailed-crowd-shoes');
   assert.ok(shoes?.isInstancedMesh);
   assert.equal(shoes.count, occupiedSeats.length * 2);
+  const leftColor = new THREE.Color(), rightColor = new THREE.Color();
+  shoes.getColorAt(0, leftColor);
+  shoes.getColorAt(1, rightColor);
+  assert.ok(leftColor.equals(rightColor), 'each spectator wears a matched pair of shoes');
+  assert.ok(batches.every(mesh => Array.isArray(mesh.material) && mesh.geometry.groups.length === 3),
+    'full torso and trouser materials survive the static/instanced bake');
   assert.equal(scene.getObjectByName('wtsl-spectator-heads').visible, false);
   oldCrowd.update(2, true, new THREE.Vector3(11, 0.5, 5));
   assert.ok(batches.some((mesh, index) => index % 6 >= 3 && mesh.count > 0));

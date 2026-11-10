@@ -153,6 +153,7 @@ export function getCrowdAppearance(sourceIndex: number, row = 0) {
   // Keep the fallback crowd on the same deterministic appearance key.
   const appearance = (hash >>> 12) % 8;
   return {
+    gender: sourceIndex % 2 === 0 ? 'male' as const : 'female' as const,
     skinToneIndex: appearance,
     hairStyle: (hash >>> 4) % 4,
     wardrobe: appearance,
@@ -165,9 +166,9 @@ export function getCrowdAppearance(sourceIndex: number, row = 0) {
 export function getSeatedCrowdLegTargets(sideSign: number) {
   return {
     hip: [sideSign * 0.11, 0.48, 0] as const,
-    knee: [sideSign * 0.14, 0.38, 0.18] as const,
-    ankle: [sideSign * 0.14, 0.16, 0.14] as const,
-    toe: [sideSign * 0.14, 0.05, 0.20] as const,
+    knee: [sideSign * 0.14, 0.34, 0.18] as const,
+    ankle: [sideSign * 0.14, 0.10, 0.16] as const,
+    toe: [sideSign * 0.14, 0.04, 0.28] as const,
   };
 }
 
