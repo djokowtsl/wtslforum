@@ -102,27 +102,6 @@
   padding-bottom: max(8px, env(safe-area-inset-bottom));
 }
 
-@media (orientation: portrait) {
-  .scene:fullscreen .viewport::after,
-  .scene:-webkit-full-screen .viewport::after,
-  .scene.fullscreenFallback .viewport::after {
-    position: absolute;
-    z-index: 4;
-    bottom: 10px;
-    left: 50%;
-    padding: 6px 10px;
-    transform: translateX(-50%);
-    border: 1px solid rgba(152, 174, 207, .25);
-    border-radius: 999px;
-    background: rgba(3, 9, 20, .78);
-    color: #d2dced;
-    content: 'Rotate your phone for a wider view';
-    font: 600 11px/1.2 system-ui, sans-serif;
-    white-space: nowrap;
-    pointer-events: none;
-  }
-}
-
 .pictureInPictureButton {
   display: inline-flex;
   align-items: center;

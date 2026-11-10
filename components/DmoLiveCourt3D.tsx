@@ -113,7 +113,6 @@ import DmoLiveCourt, { type GruntControlProps } from './DmoLiveCourt';
 import {
   BROADCAST_RENDER_QUALITY_OPTIONS,
   getBroadcastRenderPixelRatio,
-  getFullscreen16By9Size,
   type BroadcastRenderQuality,
 } from './DmoRenderResolution';
 import DmoLiveBufferingOverlay from './DmoLiveBufferingOverlay';
@@ -803,26 +802,18 @@ function ThreeCourt({
     const resize = () => {
       const bounds = viewport.getBoundingClientRect();
       if (!bounds.width || !bounds.height) return;
-      const fullscreenDocument = document as Document & { webkitFullscreenElement?: Element | null };
-      const sceneElement = sceneElementRef.current;
-      const isFullscreen = Boolean(sceneElement && (
-        sceneElement === document.fullscreenElement
-        || sceneElement === fullscreenDocument.webkitFullscreenElement
-        || sceneElement.classList.contains(styles.fullscreenFallback)
-      ));
-      const frame = isFullscreen
-        ? getFullscreen16By9Size(bounds.width, bounds.height)
-        : { width: bounds.width, height: bounds.height };
-      host.style.width = isFullscreen ? `${frame.width}px` : '100%';
-      host.style.height = isFullscreen ? `${frame.height}px` : '100%';
+      const width = bounds.width;
+      const height = bounds.height;
+      host.style.width = '100%';
+      host.style.height = '100%';
       renderer.setPixelRatio(getBroadcastRenderPixelRatio(
-        frame.width,
-        frame.height,
+        width,
+        height,
         renderQualityRef.current,
         window.devicePixelRatio || 1,
       ));
-      renderer.setSize(frame.width, frame.height, false);
-      camera.aspect = frame.width / frame.height;
+      renderer.setSize(width, height, false);
+      camera.aspect = width / height;
       const compactFrame = bounds.width <= 720;
       const activeView = cameraViewRef.current;
       camera.fov = activeView === 'aerial' ? 48 : compactFrame ? 38 : 34;

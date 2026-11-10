@@ -49,7 +49,6 @@ import CourtPictureInPictureButton from './CourtPictureInPictureButton';
 import {
   BROADCAST_RENDER_QUALITY_OPTIONS,
   getBroadcastRenderPixelRatio,
-  getFullscreen16By9Size,
   type BroadcastRenderQuality,
 } from './DmoRenderResolution';
 import { loadLiveGruntSamples } from '@/lib/liveGruntAudio';
@@ -780,7 +779,7 @@ function DmoLiveCourt({
         || sceneElementRef.current.classList.contains(styles.fullscreenFallback)
       ));
       const frame = isFullscreen
-        ? getFullscreen16By9Size(bounds.width, bounds.height)
+        ? { width: bounds.width, height: bounds.height }
         : { width: bounds.width, height: bounds.width * 520 / 900 };
       canvas.style.width = `${frame.width}px`;
       canvas.style.height = `${frame.height}px`;
@@ -792,7 +791,19 @@ function DmoLiveCourt({
       );
       canvas.width = Math.max(1, Math.round(frame.width * pixelRatio));
       canvas.height = Math.max(1, Math.round(frame.height * pixelRatio));
-      context.setTransform(canvas.width / 900, 0, 0, canvas.height / 520, 0, 0);
+      if (isFullscreen) {
+        const scale = Math.max(canvas.width / 900, canvas.height / 520);
+        context.setTransform(
+          scale,
+          0,
+          0,
+          scale,
+          (canvas.width - 900 * scale) / 2,
+          (canvas.height - 520 * scale) / 2,
+        );
+      } else {
+        context.setTransform(canvas.width / 900, 0, 0, canvas.height / 520, 0, 0);
+      }
     };
     const observer = new ResizeObserver(resize);
     observer.observe(viewport);
