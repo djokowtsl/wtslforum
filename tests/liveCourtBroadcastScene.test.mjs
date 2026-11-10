@@ -52,6 +52,19 @@ const umpireApi = await loadTs('../lib/liveCourtUmpire.ts', {
 });
 const liveDmoUmpireScoreSourceApi = await loadTs('../lib/liveDmoUmpireScoreSource.ts');
 
+function assertNetMeshIsNeutral(scene, label) {
+  const mesh = scene.getObjectByName('wtsl-net-mesh');
+  assert.ok(mesh, `${label}: the court net mesh exists`);
+  const hex = mesh.material.color.getHex();
+  const channels = [(hex >> 16) & 0xff, (hex >> 8) & 0xff, hex & 0xff];
+  assert.ok(
+    Math.max(...channels) - Math.min(...channels) <= 12,
+    `${label}: net wires should be neutral gray, not green`,
+  );
+  assert.ok(Math.min(...channels) >= 100, `${label}: net wires remain visible, not near-black`);
+  assert.ok(mesh.material.opacity <= 0.85, `${label}: the weave stays translucent at court view`);
+}
+
 test('an unsupported umpire call cannot cancel a supported score in progress', async () => {
   const cancelled = [];
   const api = await loadTs('../lib/liveCourtUmpire.ts', {
@@ -2150,6 +2163,7 @@ test('surface finishes and ATP/WTA net treatments follow detected viewer metadat
 
   const wtaScene = new THREE.Scene();
   sceneApi.buildCourt(wtaScene, 'clay', true);
+  assertNetMeshIsNeutral(wtaScene, 'generic clay');
   assert.equal(wtaScene.getObjectByName('wtsl-court-runoff').userData.surface, 'clay');
   assert.equal(wtaScene.getObjectByName('wtsl-court-playing-surface').userData.surface, 'clay');
   assert.equal(wtaScene.getObjectByName('wtsl-net-tour-mark').userData.tour, 'WTA');
@@ -2157,6 +2171,7 @@ test('surface finishes and ATP/WTA net treatments follow detected viewer metadat
 
   const atpScene = new THREE.Scene();
   sceneApi.buildCourt(atpScene, 'hard', false);
+  assertNetMeshIsNeutral(atpScene, 'generic hard');
   assert.equal(atpScene.getObjectByName('wtsl-net-tour-mark').userData.tour, 'ATP');
   assert.notEqual(
     atpScene.getObjectByName('wtsl-net-tour-accent').material.color.getHex(),
@@ -2172,17 +2187,21 @@ test('surface finishes and ATP/WTA net treatments follow detected viewer metadat
   assert.match(threeSource, /sceneDataRef\.current\.isWta/);
 });
 
-test('Paris net picks up tournament styling, woven detail, and decaying hit vibration', () => {
+test('Paris net uses a dense weave and visible, decaying hit vibration', () => {
   const scene = new THREE.Scene();
   const courtEffects = sceneApi.buildCourt(scene, 'hard', false, 'Paris Masters');
   const net = scene.getObjectByName('wtsl-court-net');
   const mesh = scene.getObjectByName('wtsl-net-mesh');
   const posts = net?.children.filter(object => object.name === 'wtsl-net-post-pad') ?? [];
   assert.ok(net && mesh);
+  assertNetMeshIsNeutral(scene, 'Paris Masters');
   assert.equal(net.userData.eventLabel, 'PARIS MASTERS');
   assert.equal(posts.length, 2);
   assert.ok(posts.every(post => post.userData.eventLabel === 'PARIS MASTERS'));
-  assert.ok(mesh.geometry.getAttribute('position').count > 3_000);
+  assert.equal(mesh.userData.wireColumns, 241);
+  assert.equal(mesh.userData.wireRows, 24);
+  assert.ok(mesh.userData.cellWidth <= 0.05);
+  assert.ok(mesh.geometry.getAttribute('position').count > 17_000);
   assert.ok(mesh.material.color.getHex() > 0x303030, 'the woven net should not render near black');
   assert.equal(mesh.material.toneMapped, false);
   assert.ok(scene.getObjectByName('wtsl-net-center-strap'));
@@ -2192,11 +2211,21 @@ test('Paris net picks up tournament styling, woven detail, and decaying hit vibr
   courtEffects.net.impact(0.3, 1, 1, 0);
   courtEffects.net.update(0.04);
   assert.notDeepEqual(Array.from(positions.array), rest);
+  const maxDisplacement = Math.max(...Array.from(
+    { length: positions.count },
+    (_, index) => Math.abs(positions.getX(index) - rest[index * 3]),
+  ));
+  assert.ok(maxDisplacement > 0.12, 'a net strike should create an obvious mesh ripple');
+  assert.ok(
+    Math.abs(scene.getObjectByName('wtsl-net-top-tape-group').position.x) > 0.025,
+    'the top tape should visibly react to a net strike',
+  );
   courtEffects.net.update(2);
   assert.deepEqual(Array.from(positions.array), rest);
 
   const rolandGarros = new THREE.Scene();
   sceneApi.buildCourt(rolandGarros, 'clay', false, 'Roland Garros');
+  assertNetMeshIsNeutral(rolandGarros, 'Roland-Garros');
   assert.equal(rolandGarros.getObjectByName('wtsl-court-net').userData.eventLabel, 'ROLAND-GARROS');
   assert.notEqual(
     rolandGarros.getObjectByName('wtsl-net-mesh').material.color.getHex(),
@@ -2222,6 +2251,13 @@ test('net impact cues detect low crossings and rebounds but ignore clear shots',
   );
   assert.ok(rebound);
   assert.equal(rebound.direction, 1);
+
+  const sparseSampleRebound = detectCourtNetImpact(
+    new THREE.Vector3(-0.62, 0.74, -0.4),
+    new THREE.Vector3(-0.33, 0.75, -0.2),
+    new THREE.Vector3(-0.44, 0.76, -0.1),
+  );
+  assert.ok(sparseSampleRebound, 'a rebound near the net should survive sparse replay samples');
 
   assert.equal(detectCourtNetImpact(
     null,
