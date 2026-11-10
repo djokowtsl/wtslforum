@@ -2187,7 +2187,7 @@ test('surface finishes and ATP/WTA net treatments follow detected viewer metadat
   assert.match(threeSource, /sceneDataRef\.current\.isWta/);
 });
 
-test('Paris net picks up tournament styling, woven detail, and decaying hit vibration', () => {
+test('Paris net uses a dense weave and visible, decaying hit vibration', () => {
   const scene = new THREE.Scene();
   const courtEffects = sceneApi.buildCourt(scene, 'hard', false, 'Paris Masters');
   const net = scene.getObjectByName('wtsl-court-net');
@@ -2198,7 +2198,10 @@ test('Paris net picks up tournament styling, woven detail, and decaying hit vibr
   assert.equal(net.userData.eventLabel, 'PARIS MASTERS');
   assert.equal(posts.length, 2);
   assert.ok(posts.every(post => post.userData.eventLabel === 'PARIS MASTERS'));
-  assert.ok(mesh.geometry.getAttribute('position').count > 3_000);
+  assert.equal(mesh.userData.wireColumns, 241);
+  assert.equal(mesh.userData.wireRows, 24);
+  assert.ok(mesh.userData.cellWidth <= 0.05);
+  assert.ok(mesh.geometry.getAttribute('position').count > 17_000);
   assert.ok(mesh.material.color.getHex() > 0x303030, 'the woven net should not render near black');
   assert.equal(mesh.material.toneMapped, false);
   assert.ok(scene.getObjectByName('wtsl-net-center-strap'));
@@ -2208,6 +2211,15 @@ test('Paris net picks up tournament styling, woven detail, and decaying hit vibr
   courtEffects.net.impact(0.3, 1, 1, 0);
   courtEffects.net.update(0.04);
   assert.notDeepEqual(Array.from(positions.array), rest);
+  const maxDisplacement = Math.max(...Array.from(
+    { length: positions.count },
+    (_, index) => Math.abs(positions.getX(index) - rest[index * 3]),
+  ));
+  assert.ok(maxDisplacement > 0.12, 'a net strike should create an obvious mesh ripple');
+  assert.ok(
+    Math.abs(scene.getObjectByName('wtsl-net-top-tape-group').position.x) > 0.025,
+    'the top tape should visibly react to a net strike',
+  );
   courtEffects.net.update(2);
   assert.deepEqual(Array.from(positions.array), rest);
 
@@ -2239,6 +2251,13 @@ test('net impact cues detect low crossings and rebounds but ignore clear shots',
   );
   assert.ok(rebound);
   assert.equal(rebound.direction, 1);
+
+  const sparseSampleRebound = detectCourtNetImpact(
+    new THREE.Vector3(-0.62, 0.74, -0.4),
+    new THREE.Vector3(-0.33, 0.75, -0.2),
+    new THREE.Vector3(-0.44, 0.76, -0.1),
+  );
+  assert.ok(sparseSampleRebound, 'a rebound near the net should survive sparse replay samples');
 
   assert.equal(detectCourtNetImpact(
     null,
