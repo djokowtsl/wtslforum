@@ -1,0 +1,38 @@
+[
+  {
+    "filename": "rocketbox-male-full.glb",
+    "bytes": 606124,
+    "triangles": 8684,
+    "source": "https://raw.githubusercontent.com/927tanmay/react-ai-voice-avatar/fc1398c2f8ba600c3676a5277684ed4f3e2731d7/assets/avatars/aarav.glb",
+    "sourceSha256": "ebe6b1596256f314d1356cfc2f42d28203b5bf1864d0bf139845cb9d13ee6500",
+    "license": "MIT",
+    "modifications": "Unused facial morph buffers removed; textures converted to quality-90 WebP; original mesh and rig retained."
+  },
+  {
+    "filename": "rocketbox-male-far.glb",
+    "bytes": 599620,
+    "triangles": 3800,
+    "source": "https://raw.githubusercontent.com/927tanmay/react-ai-voice-avatar/fc1398c2f8ba600c3676a5277684ed4f3e2731d7/assets/avatars/aarav.glb",
+    "sourceSha256": "ebe6b1596256f314d1356cfc2f42d28203b5bf1864d0bf139845cb9d13ee6500",
+    "license": "MIT",
+    "modifications": "Hand vertices locked during UV-aware far-LOD simplification; textures converted to quality-90 WebP; original vertex positions and rig retained."
+  },
+  {
+    "filename": "rocketbox-female-full.glb",
+    "bytes": 652672,
+    "triangles": 8308,
+    "source": "https://raw.githubusercontent.com/927tanmay/react-ai-voice-avatar/fc1398c2f8ba600c3676a5277684ed4f3e2731d7/assets/avatars/ananya.glb",
+    "sourceSha256": "da87409e17292434ce468113888e40e1ce2259ccfe27214a775f8b1cd58066dd",
+    "license": "MIT",
+    "modifications": "Unused facial morph buffers removed; textures converted to quality-90 WebP; original mesh and rig retained."
+  },
+  {
+    "filename": "rocketbox-female-far.glb",
+    "bytes": 647248,
+    "triangles": 3702,
+    "source": "https://raw.githubusercontent.com/927tanmay/react-ai-voice-avatar/fc1398c2f8ba600c3676a5277684ed4f3e2731d7/assets/avatars/ananya.glb",
+    "sourceSha256": "da87409e17292434ce468113888e40e1ce2259ccfe27214a775f8b1cd58066dd",
+    "license": "MIT",
+    "modifications": "Hand vertices locked during UV-aware far-LOD simplification; textures converted to quality-90 WebP; original vertex positions and rig retained."
+  }
+]

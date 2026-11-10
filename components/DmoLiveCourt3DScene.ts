@@ -3,7 +3,7 @@ import { resolveDmoVenueProfile, type DmoVenueProfile } from '../lib/dmoVenue';
 import type { Te4CourtSurface } from '@/lib/te4DmoTypes';
 import { courtSurfaceVisualProfile } from '@/lib/te4DmoSurface';
 import { isCrowdSeatOccupied } from '@/lib/dmoCrowdDensity';
-import { buildStadiumArchitecture, isUpperBowlAccessGap } from './DmoStadiumArchitecture';
+import { addLowerBowlSectionStairs, buildStadiumArchitecture, isUpperBowlAccessGap } from './DmoStadiumArchitecture';
 
 export type PlayerRig = {
   detailed?: { update: () => void };
@@ -1104,6 +1104,7 @@ function buildUnifiedCrowd(scene: THREE.Scene, venue: DmoVenueProfile, density: 
   const seats: CrowdRig['seats'] = [];
   const nearSeats: CrowdRig['seats'] = [];
   const tunnelHalfWidth = 2.5;
+  const lowerAisleHalfWidth = 0.82;
   const lowerRows = 4;
   const lowerRowRise = 0.53;
   const lowerRowRun = 1.62;
@@ -1121,7 +1122,8 @@ function buildUnifiedCrowd(scene: THREE.Scene, venue: DmoVenueProfile, density: 
   };
 
   // The first four rows are a continuous, human-scaled ring immediately
-  // outside the clear runoff. Each side has its own centered access aisle.
+  // outside the clear runoff. Narrow stair aisles lead through every seating
+  // row and open into the wider ground-level tunnel entrances.
   for (let row = 0; row < lowerRows; row += 1) {
     const halfWidth = 22 + row * lowerRowRun;
     const halfDepth = 12 + row * lowerRowRun;
@@ -1136,7 +1138,7 @@ function buildUnifiedCrowd(scene: THREE.Scene, venue: DmoVenueProfile, density: 
       const count = Math.max(1, Math.floor(Math.abs(to - from) / spacing));
       for (let index = 0; index <= count; index += 1) {
         const value = from + (to - from) * index / count;
-        if (skipCenter && Math.abs(value) < tunnelHalfWidth) continue;
+        if (skipCenter && Math.abs(value) < lowerAisleHalfWidth) continue;
         place(value);
       }
     };
@@ -1160,8 +1162,8 @@ function buildUnifiedCrowd(scene: THREE.Scene, venue: DmoVenueProfile, density: 
     }
   }
 
-  // Match the upper bowl's three-tier seating rake, but place every person
-  // into the same animated crowd rig as the new continuous near-court rows.
+  // Match the upper bowl's three-tier seating rake and align the sixteen
+  // stair aisles with the four ground-level access tunnels.
   const innerX = 27.8;
   const innerZ = 18.8;
   const rowWidth = 1.62;
@@ -1214,7 +1216,13 @@ function buildUnifiedCrowd(scene: THREE.Scene, venue: DmoVenueProfile, density: 
     lowerRows * 8,
   );
   nearSupports.name = 'wtsl-near-court-seating-supports';
-  nearSupports.userData = { rows: lowerRows, style: 'narrow-beams', accessPassages: 4 };
+  nearSupports.userData = {
+    rows: lowerRows,
+    style: 'narrow-beams',
+    accessPassages: 4,
+    stairAisleWidth: lowerAisleHalfWidth * 2,
+    tunnelMouthWidth: tunnelHalfWidth * 2,
+  };
   const platformTransform = new THREE.Object3D();
   let supportIndex = 0;
   for (let row = 0; row < lowerRows; row += 1) {
@@ -1238,13 +1246,13 @@ function buildUnifiedCrowd(scene: THREE.Scene, venue: DmoVenueProfile, density: 
     const outerZ = halfDepth + corner;
     for (const side of [-1, 1]) {
       for (const direction of [-1, 1]) {
-        const segmentLength = outerX - tunnelHalfWidth;
-        const segmentCenter = direction * (outerX + tunnelHalfWidth) / 2;
+        const segmentLength = outerX - lowerAisleHalfWidth;
+        const segmentCenter = direction * (outerX + lowerAisleHalfWidth) / 2;
         addSupport(segmentCenter, side * halfDepth, segmentLength, 0.18);
       }
       for (const direction of [-1, 1]) {
-        const segmentLength = outerZ - tunnelHalfWidth;
-        const segmentCenter = direction * (outerZ + tunnelHalfWidth) / 2;
+        const segmentLength = outerZ - lowerAisleHalfWidth;
+        const segmentCenter = direction * (outerZ + lowerAisleHalfWidth) / 2;
         addSupport(side * (halfWidth + corner), segmentCenter, 0.18, segmentLength);
       }
     }
@@ -1253,6 +1261,14 @@ function buildUnifiedCrowd(scene: THREE.Scene, venue: DmoVenueProfile, density: 
   nearSupports.castShadow = false;
   nearSupports.receiveShadow = true;
   scene.add(nearSupports);
+  addLowerBowlSectionStairs(scene, {
+    rows: lowerRows,
+    rowRise: lowerRowRise,
+    rowRun: lowerRowRun,
+    baselineHalfDepth: 12,
+    sidelineHalfWidth: 22,
+    corner: 1.3,
+  });
 
   const nearSeatMesh = new THREE.InstancedMesh(
     new THREE.BoxGeometry(0.46, 0.1, 0.42),

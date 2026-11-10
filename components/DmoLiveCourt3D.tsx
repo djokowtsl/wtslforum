@@ -147,9 +147,9 @@ import styles from './DmoLiveCourt3D.module.css';
 import CourtFullscreenButton from './CourtFullscreenButton';
 import CourtPictureInPictureButton from './CourtPictureInPictureButton';
 import { attachHumanPlayer, disposeHumanModel, loadHumanModel } from './DmoHumanModels';
-import { attachHumanCourtStaff, attachHumanCrowd } from './DmoHumanCrowd';
-import { loadArticulatedHand } from './DmoArticulatedHands';
-import { prepareCrowdHandGeometry } from './DmoNpcHands';
+import { attachHumanCourtStaff, addCrowdAccessories } from './DmoHumanCrowd';
+import { attachSpectatorCrowd, loadSpectatorModel, loadDiverseSpectatorModel } from './DmoSpectatorCrowd';
+import { DIVERSE_SPECTATORS } from '../lib/dmoSpectatorRoster';
 import { BROADCAST_PLAYER_KITS } from './DmoNativeKit';
 import { racketCarryOrientation, racketContactOrientation, racketGripElbow, racketGripWrist } from './DmoRacketOrientation';
 import type { StadiumScoreboardData } from './DmoStadiumArchitecture';
@@ -727,51 +727,49 @@ function ThreeCourt({
     setModelStatus('loading');
     Promise.allSettled([
       loadHumanModel(isWta ? 'female' : 'male', 'player', modelLoad.signal, modelAssetBase),
-      loadHumanModel('male', 'crowd', modelLoad.signal, modelAssetBase),
-      loadHumanModel('female', 'crowd', modelLoad.signal, modelAssetBase),
+      loadSpectatorModel('male', 'far', modelLoad.signal, modelAssetBase),
+      loadSpectatorModel('female', 'far', modelLoad.signal, modelAssetBase),
       loadHumanModel('male', 'crowd-high', modelLoad.signal, modelAssetBase),
       loadHumanModel('female', 'crowd-high', modelLoad.signal, modelAssetBase),
-      loadArticulatedHand(modelLoad.signal, modelAssetBase),
-    ]).then(async (results) => {
+      loadSpectatorModel('male', 'full', modelLoad.signal, modelAssetBase),
+      loadSpectatorModel('female', 'full', modelLoad.signal, modelAssetBase),
+      ...DIVERSE_SPECTATORS.map(model => loadDiverseSpectatorModel(model.id, model.gender, modelLoad.signal, modelAssetBase)),
+    ]).then((results) => {
       try {
         if (modelLoad.signal.aborted) return;
-        const [player, maleCrowd, femaleCrowd, maleHighDetailCrowd, femaleHighDetailCrowd, crowdHands] = results;
+        const [player, maleCrowd, femaleCrowd, maleStaff, femaleStaff, maleHighDetailCrowd, femaleHighDetailCrowd, ...diverseCrowd] = results;
         if (player.status === 'fulfilled') {
           attachHumanPlayer(player.value, players[0], PALETTE.shirtOne, undefined, undefined, BROADCAST_PLAYER_KITS[0], 0);
           attachHumanPlayer(player.value, players[1], PALETTE.shirtTwo, undefined, undefined, BROADCAST_PLAYER_KITS[1], 1);
           detailedPlayersReady = true;
         }
-        if (maleCrowd.status === 'fulfilled' && femaleCrowd.status === 'fulfilled'
-          && crowdHands.status === 'fulfilled') {
-          await prepareCrowdHandGeometry(crowdHands.value);
-          if (modelLoad.signal.aborted) return;
-          const crowdTemplates: [THREE.Group, THREE.Group] = [maleCrowd.value, femaleCrowd.value];
-          attachHumanCrowd(scene, crowdRig, crowdTemplates);
+        if (maleCrowd.status === 'fulfilled' && femaleCrowd.status === 'fulfilled') {
+          const additions = diverseCrowd.flatMap(result => result.status === 'fulfilled' ? [result.value] : []);
+          const crowdTemplates = [maleCrowd.value, femaleCrowd.value, ...additions];
+          attachSpectatorCrowd(scene, crowdRig, crowdTemplates);
+          addCrowdAccessories(scene, crowdRig);
           if (maleHighDetailCrowd.status === 'fulfilled') {
             crowdRig.setHighDetailModel(maleHighDetailCrowd.value, 0);
           }
           if (femaleHighDetailCrowd.status === 'fulfilled') {
             crowdRig.setHighDetailModel(femaleHighDetailCrowd.value, 1);
           }
-          const highDetailCrowdTemplates: [THREE.Group, THREE.Group] = [
-            maleHighDetailCrowd.status === 'fulfilled' ? maleHighDetailCrowd.value : maleCrowd.value,
-            femaleHighDetailCrowd.status === 'fulfilled' ? femaleHighDetailCrowd.value : femaleCrowd.value,
-          ];
-          attachHumanCourtStaff(
-            scene,
-            fixtureRig,
-            highDetailCrowdTemplates,
-            crowdRig,
-            highDetailCrowdTemplates[0],
-          );
+          additions.forEach((template, index) => crowdRig.setHighDetailModel(template, index + 2));
+          // Staff retain their existing rig. Never send a Rocketbox spectator
+          // into the legacy absolute-joint staff posing code.
+          if (maleStaff.status === 'fulfilled' || femaleStaff.status === 'fulfilled') {
+            const male = maleStaff.status === 'fulfilled' ? maleStaff.value : (femaleStaff as PromiseFulfilledResult<THREE.Group>).value;
+            const female = femaleStaff.status === 'fulfilled' ? femaleStaff.value : male;
+            attachHumanCourtStaff(scene, fixtureRig, [male, female], crowdRig, male);
+          }
         }
-        const requiredFailure = [player, maleCrowd, femaleCrowd, crowdHands]
+        const requiredFailure = [player, maleCrowd, femaleCrowd]
           .find((result) => result.status === 'rejected');
         if (requiredFailure?.status === 'rejected') throw requiredFailure.reason;
-        const highDetailFailed = [maleHighDetailCrowd, femaleHighDetailCrowd]
+        const highDetailFailed = [maleHighDetailCrowd, femaleHighDetailCrowd, maleStaff, femaleStaff, ...diverseCrowd]
           .some((result) => result.status === 'rejected');
         if (highDetailFailed) {
-          console.warn('Some player-grade crowd models could not load; distant crowd detail remains available.');
+          console.warn('Some crowd identities or full-detail models could not load; the crowd roster is incomplete.');
         }
         setModelStatus(highDetailFailed ? 'partial' : 'ready');
       } finally {

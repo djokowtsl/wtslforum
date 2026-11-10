@@ -134,7 +134,7 @@ function stripSkinnedHumanHead(model: THREE.Group) {
   });
 }
 
-function addCrowdAccessories(scene: THREE.Scene, crowd: CrowdRig) {
+export function addCrowdAccessories(scene: THREE.Scene, crowd: CrowdRig) {
   const capSeats = crowd.seats.filter((seat, index) =>
     seat.occupied && ((seat.sourceIndex ?? index) % 17) === 7);
   if (capSeats.length) {
