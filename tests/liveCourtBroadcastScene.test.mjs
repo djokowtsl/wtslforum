@@ -1065,7 +1065,11 @@ test('Basel and Vienna indoor aliases get an underside-only ceiling within the b
     const ceiling = scene.getObjectByName('wtsl-indoor-ceiling');
     const panel = scene.getObjectByName('wtsl-indoor-ceiling-panel');
     const fascia = scene.getObjectByName('wtsl-indoor-upper-bowl-fascia');
+    const walls = scene.getObjectByName('wtsl-stadium-exterior-walls');
+    const wallShell = scene.getObjectByName('wtsl-stadium-exterior-wall-shell');
     assert.equal(ceiling.userData.passThrough, true);
+    assert.equal(walls.userData.openSky, false);
+    assert.ok(wallShell?.isMesh, 'the crowd gaps have an enclosing stadium wall behind them');
     assert.equal(panel.material.side, THREE.BackSide);
     const below = new THREE.Raycaster(new THREE.Vector3(0, 1.6, 0), new THREE.Vector3(0, 1, 0));
     const above = new THREE.Raycaster(new THREE.Vector3(0, ceiling.userData.height + 3, 0), new THREE.Vector3(0, -1, 0));
@@ -1081,6 +1085,20 @@ test('Basel and Vienna indoor aliases get an underside-only ceiling within the b
   const scene = new THREE.Scene();
   sceneApi.buildStadiumEnvironment(scene, false, undefined, 'Roland Garros');
   assert.equal(scene.getObjectByName('wtsl-indoor-ceiling'), undefined, 'outdoors remains open overhead');
+  const outdoorRim = scene.getObjectByName('wtsl-stadium-upper-rim');
+  const outdoorWalls = scene.getObjectByName('wtsl-stadium-exterior-walls');
+  const outdoorWall = scene.getObjectByName('wtsl-stadium-exterior-wall-shell');
+  assert.ok(outdoorRim, 'outdoor seating has a clear structural edge against the sky');
+  assert.equal(outdoorRim.userData.openSky, true, 'the rim frames the sky without a canopy');
+  assert.equal(outdoorWalls.userData.openSky, true, 'outdoor walls close the bowl but leave the sky open above');
+  assert.equal(outdoorWall.material.side, THREE.BackSide, 'wall is rendered for visitors inside the arena');
+  const outdoorBowl = scene.getObjectByName('wtsl-continuous-seating-bowl');
+  outdoorBowl.geometry.computeBoundingBox();
+  const wallsBounds = new THREE.Box3().setFromObject(outdoorWalls);
+  assert.ok(wallsBounds.max.x <= outdoorBowl.geometry.boundingBox.max.x + 0.66);
+  assert.ok(wallsBounds.max.z <= outdoorBowl.geometry.boundingBox.max.z + 0.66);
+  const wallRay = new THREE.Raycaster(new THREE.Vector3(0, outdoorWalls.userData.upperEdge / 2, 0), new THREE.Vector3(1, 0, 0));
+  assert.ok(wallRay.intersectObject(outdoorWall).length > 0, 'an interior view is backed by structure rather than open sky');
 });
 
 test('court ground ends at the arena apron instead of extending into an exterior landscape', () => {

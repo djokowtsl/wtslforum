@@ -661,6 +661,70 @@ export function buildStadiumArchitecture(
   stadium.userData.maxInteriorCameraPan = maxInteriorCameraPan;
   const topStandHeight = baseY + seatRows * rowRise;
   stadium.userData.topStandHeight = topStandHeight;
+  const rimHeight = 1.8;
+  const rimBaseY = topStandHeight + 0.35;
+  const rimTopY = rimBaseY + rimHeight;
+  const wallRadiusX = innerX + outerSeatRadius + 0.4;
+  const wallRadiusZ = innerZ + outerSeatRadius + 0.4;
+  const exteriorWalls = new THREE.Group();
+  exteriorWalls.name = 'wtsl-stadium-exterior-walls';
+  exteriorWalls.userData.openSky = !indoor;
+  exteriorWalls.userData.upperEdge = rimTopY;
+  const wall = new THREE.Mesh(
+    new THREE.CylinderGeometry(1, 1, rimTopY, perimeterSegments, 1, true),
+    new THREE.MeshStandardMaterial({
+      color: 0x3b4c52, roughness: 0.86, metalness: 0.12,
+      side: THREE.BackSide,
+    }),
+  );
+  wall.name = 'wtsl-stadium-exterior-wall-shell';
+  wall.position.y = rimTopY / 2;
+  wall.scale.set(wallRadiusX, 1, wallRadiusZ);
+  exteriorWalls.add(wall);
+
+  const supportMaterial = new THREE.MeshStandardMaterial({
+    color: 0x293a40, roughness: 0.76, metalness: 0.24,
+  });
+  const supportHeight = rimTopY;
+  for (let index = 0; index < 40; index += 1) {
+    const angle = ((index + 0.5) / 40) * Math.PI * 2;
+    const support = new THREE.Mesh(
+      new THREE.BoxGeometry(0.48, supportHeight, 0.48),
+      supportMaterial,
+    );
+    support.name = `wtsl-stadium-exterior-pilaster-${index + 1}`;
+    support.position.set(
+      wallRadiusX * Math.cos(angle),
+      supportHeight / 2,
+      wallRadiusZ * Math.sin(angle),
+    );
+    exteriorWalls.add(support);
+  }
+  stadium.add(exteriorWalls);
+
+  const upperRim = new THREE.Group();
+  upperRim.name = 'wtsl-stadium-upper-rim';
+  const railMaterial = new THREE.MeshStandardMaterial({
+    color: 0x7a8989, roughness: 0.66, metalness: 0.28,
+  });
+  for (const [name, y, thickness] of [
+    ['wtsl-stadium-upper-rim-cap', rimTopY, 0.12],
+    ['wtsl-stadium-upper-rim-base', rimBaseY, 0.08],
+  ] as const) {
+    const rail = new THREE.Mesh(
+      new THREE.CylinderGeometry(1, 1, thickness, perimeterSegments, 1, true),
+      railMaterial,
+    );
+    rail.name = name;
+    rail.position.y = y;
+    rail.scale.set(wallRadiusX, 1, wallRadiusZ);
+    upperRim.add(rail);
+  }
+  upperRim.userData.openSky = !indoor;
+  upperRim.userData.boundary = 'top of stands';
+  upperRim.userData.height = rimTopY;
+  stadium.userData.upperRimHeight = rimTopY;
+  stadium.add(upperRim);
   if (indoor) {
     const roofHeight = Math.max(20, topStandHeight + 6);
     const radiusX = innerX + outerSeatRadius;
