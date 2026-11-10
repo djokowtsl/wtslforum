@@ -63,7 +63,9 @@ test('day, evening, and night update outdoor sky, clouds, sunlight, and floodlig
   assert.ok(spotlights.every(light => light.angle >= Math.PI / 3), 'the beams cover the court instead of missing it');
   assert.ok(courtFillLights.every(light => light.intensity === 0), 'daytime court fill lights turn off at night');
   assert.equal(scene.getObjectByName('wtsl-broadcast-sky').material.color.getHex(), 0x08101e);
-  assert.equal(renderer.toneMappingExposure, 0.58);
+  assert.equal(renderer.toneMappingExposure, 0.82);
+  assert.ok(scene.children.find(child => child.isHemisphereLight).intensity >= 0.9,
+    'the whole bowl remains illuminated at night');
   assert.ok(sky.renderOrder < sun.renderOrder);
   assert.ok(sun.renderOrder < clouds.children[0].children[0].renderOrder);
   assert.ok(clouds.children.some(cluster => cluster.position.y > 90), 'clouds also cover upward-looking views');
@@ -91,6 +93,8 @@ test('indoor broadcasts keep the sky hidden but enable night court lighting', ()
     assert.equal(scene.getObjectByName('wtsl-broadcast-sun').visible, false);
     assert.equal(scene.getObjectByName('wtsl-broadcast-cloud-cover').visible, false);
   }
+  assert.ok(scene.children.find(child => child.isHemisphereLight).intensity >= 0.9,
+    'indoor crowd remains lit at night');
 });
 
 test('the live and replay toolbar exposes the time-of-day selector', async () => {
