@@ -52,6 +52,7 @@ test('mobile fullscreen keeps the court controls instead of entering video-only 
   assert.match(fullscreenButton, /webkitRequestFullscreen/);
   assert.match(fullscreenButton, /fallbackClassName/);
   assert.match(fullscreenButton, /enterFallbackFullscreen/);
+  assert.match(fullscreenButton, /activeFullscreenElement\(\) !== target/);
   assert.match(fullscreenButton, /document\.body\.style\.position = 'fixed'/);
   assert.match(fullscreenButton, /relaxClippingAncestors/);
   assert.doesNotMatch(fullscreenButton, /videoRef|webkitEnterFullscreen|webkitbeginfullscreen|webkitendfullscreen/);

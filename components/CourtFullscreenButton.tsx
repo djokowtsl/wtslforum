@@ -219,6 +219,11 @@ export default function CourtFullscreenButton({
         }
         try {
           await request.call(target);
+          if (activeFullscreenElement() !== target) {
+            enterFallbackFullscreen(target);
+            void requestLandscapeLock(shouldLockLandscape);
+            return;
+          }
           await requestLandscapeLock(shouldLockLandscape);
         } catch {
           enterFallbackFullscreen(target);
