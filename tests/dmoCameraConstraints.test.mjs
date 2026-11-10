@@ -10,7 +10,41 @@ import {
   DMO_CAMERA_PAN_LIMIT,
   DMO_CAMERA_VERTICAL_PAN_LIMIT,
   MIN_DMO_CAMERA_HEIGHT,
+  constrainDmoOrbit,
+  dmoOrbitSettings,
 } from '../lib/dmoCameraConstraints.ts';
+
+test('orbit settings allow all headings and overhead views with responsive touch damping', () => {
+  const touch = dmoOrbitSettings(true), desktop = dmoOrbitSettings(false);
+  assert.equal(touch.minAzimuthAngle, -Infinity);
+  assert.equal(touch.maxAzimuthAngle, Infinity);
+  assert.ok(touch.minPolarAngle < 0.04 && touch.maxPolarAngle > Math.PI * 0.98);
+  assert.ok(touch.rotateSpeed > desktop.rotateSpeed);
+  assert.ok(touch.dampingFactor > desktop.dampingFactor);
+});
+
+test('full vertical orbit remains bounded and stable instead of fighting the floor clamp', () => {
+  const anchor = new Vector3(0, 0.5, 0), target = anchor.clone();
+  for (const distance of [0.5, 14, 44]) for (const polar of [0.025, 0.8, Math.PI / 2, 2.2, Math.PI - 0.025]) {
+    for (let azimuth = 0; azimuth < Math.PI * 2; azimuth += Math.PI / 4) {
+      const camera = new Vector3(
+        Math.sin(polar) * Math.sin(azimuth) * distance,
+        target.y + Math.cos(polar) * distance,
+        Math.sin(polar) * Math.cos(azimuth) * distance,
+      );
+      const bounded = constrainDmoOrbit(camera, target, anchor, 7, 44);
+      assert.ok(bounded.camera.y >= MIN_DMO_CAMERA_HEIGHT - 1e-9);
+      assert.ok(bounded.target.y >= -1e-9);
+      assert.ok(bounded.camera.y <= 44.8 + 1e-9);
+      assert.ok(bounded.target.y <= 44.8 + 1e-9);
+      const offset = new Vector3().subVectors(bounded.camera, bounded.target);
+      assert.ok(Math.abs(offset.length() - distance) < 1e-9);
+      if (polar > Math.PI / 2) assert.ok(bounded.target.y > bounded.camera.y, 'can look up from court level');
+      assert.deepEqual(constrainDmoOrbit(bounded.camera, bounded.target, anchor, 7, 44), bounded,
+        'reapplying the correction must not move the eye/target or jitter');
+    }
+  }
+});
 
 test('court camera floor correction prevents panning below the surface', () => {
   assert.equal(dmoCameraFloorLift(4, 1), 0);

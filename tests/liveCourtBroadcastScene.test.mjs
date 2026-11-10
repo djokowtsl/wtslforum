@@ -477,7 +477,7 @@ test('stadium keeps its structure and clear score screen without smeared ribbon 
     assert.equal(named(superstructure, 'wtsl-open-air-canopy').length, 0);
     assert.equal(named(superstructure, 'wtsl-indoor-roof-wing').length, 0);
     assert.equal(Boolean(scene.getObjectByName('wtsl-open-sky')), false);
-    assert.equal(Boolean(scene.getObjectByName('wtsl-indoor-ceiling')), false);
+    assert.equal(Boolean(scene.getObjectByName('wtsl-indoor-ceiling')), indoor);
     assert.equal(stadium.children.some(child => /roof|shell|facade|exterior/i.test(child.name)), false);
   }
 });
@@ -539,8 +539,10 @@ test('stadium and audience scale with recognized tournament capacities', async (
   assert.doesNotMatch(fallback, /Drag to orbit · adjust angle and elevation|Live court view · drag to orbit/);
   assert.match(court, /maxInteriorCameraDistance/);
   assert.match(court, /controls\.maxDistance = maxDistanceForTarget\(cameraTargetAnchor\)/);
-  assert.match(court, /maxPolarAngle = THREE\.MathUtils\.degToRad\(75\)/);
-  assert.match(court, /clampDmoCameraTarget\(controls\.target, cameraTargetAnchor, cameraPanLimit\)/);
+  assert.match(court, /dmoOrbitSettings\(window\.matchMedia\('\(pointer: coarse\)'\)\.matches\)/);
+  assert.match(court, /constrainDmoOrbit\(/);
+  assert.match(court, /controls\.touches\.ONE = THREE\.TOUCH\.ROTATE/);
+  assert.match(court, /controls\.touches\.TWO = THREE\.TOUCH\.DOLLY_PAN/);
   assert.match(court, /camera\.fov = view === 'aerial'\s*\? 50/);
   assert.match(viewer, /previousSnapshot\.stadium === nextSnapshot\.stadium/);
 });
@@ -1049,9 +1051,36 @@ test('venue modes retain the same enclosed bowl without adding exterior landscap
   sceneApi.buildStadiumEnvironment(indoor, true);
   assert.equal(indoor.getObjectByName('wtsl-open-sky'), undefined,
     'indoor venues keep the same enclosed bowl');
-  assert.equal(indoor.getObjectByName('wtsl-indoor-ceiling'), undefined);
+  assert.ok(indoor.getObjectByName('wtsl-indoor-ceiling'));
   assert.ok(indoor.getObjectByName('wtsl-continuous-seating-bowl'));
   assert.ok(outdoor.getObjectByName('wtsl-continuous-seating-bowl'));
+});
+
+test('Basel and Vienna indoor aliases get an underside-only ceiling within the bowl', () => {
+  for (const name of ['Basel', 'Vienna', 'Basel_2026_TE4', 'Wiener Stadthalle', 'Swiss Indoors', 'Erste-Bank-Open']) {
+    assert.equal(isIndoorDmoVenue(name), true, name);
+    const scene = new THREE.Scene();
+    sceneApi.buildStadiumEnvironment(scene, isIndoorDmoVenue(name), undefined, name);
+    scene.updateMatrixWorld(true);
+    const ceiling = scene.getObjectByName('wtsl-indoor-ceiling');
+    const panel = scene.getObjectByName('wtsl-indoor-ceiling-panel');
+    const fascia = scene.getObjectByName('wtsl-indoor-upper-bowl-fascia');
+    assert.equal(ceiling.userData.passThrough, true);
+    assert.equal(panel.material.side, THREE.BackSide);
+    const below = new THREE.Raycaster(new THREE.Vector3(0, 1.6, 0), new THREE.Vector3(0, 1, 0));
+    const above = new THREE.Raycaster(new THREE.Vector3(0, ceiling.userData.height + 3, 0), new THREE.Vector3(0, -1, 0));
+    assert.ok(below.intersectObject(panel).length > 0, 'court-level upward view sees a roof');
+    assert.equal(above.intersectObject(panel).length, 0, 'above-ceiling camera sees through to the court');
+    assert.equal(fascia.material.side, THREE.BackSide, 'no exterior wall is rendered');
+    const bounds = new THREE.Box3().setFromObject(ceiling);
+    const bowl = scene.getObjectByName('wtsl-continuous-seating-bowl');
+    bowl.geometry.computeBoundingBox();
+    assert.ok(bounds.max.x <= bowl.geometry.boundingBox.max.x + 0.01);
+    assert.ok(bounds.max.z <= bowl.geometry.boundingBox.max.z + 0.01);
+  }
+  const scene = new THREE.Scene();
+  sceneApi.buildStadiumEnvironment(scene, false, undefined, 'Roland Garros');
+  assert.equal(scene.getObjectByName('wtsl-indoor-ceiling'), undefined, 'outdoors remains open overhead');
 });
 
 test('court ground ends at the arena apron instead of extending into an exterior landscape', () => {

@@ -169,6 +169,7 @@ function addPlane(
 export function buildStadiumArchitecture(
   initialScoreboard?: StadiumScoreboardData,
   venue: DmoVenueProfile = { label: 'Unspecified tennis venue', capacity: 0, upperRows: 18, tierRows: 6 },
+  indoor = false,
 ) {
   const stadium = new THREE.Group();
   stadium.name = 'wtsl-stadium-superstructure';
@@ -207,7 +208,7 @@ export function buildStadiumArchitecture(
   decks.name = 'wtsl-stadium-tiered-bowl';
   stadium.add(decks);
   // Three inward-facing seating tiers rise around the court. Wide annular
-  // concourses separate the tiers without adding retaining walls or a roof.
+  // concourses separate the tiers; indoor ceiling geometry ends at this bowl.
   const bowlPositions: number[] = [];
   const bowlColors: number[] = [];
   const bowlIndices: number[] = [];
@@ -658,5 +659,66 @@ export function buildStadiumArchitecture(
   stadium.userData.interiorSeatEdgeRadius = interiorSeatEdgeRadius;
   stadium.userData.maxInteriorCameraDistance = maxInteriorCameraDistance;
   stadium.userData.maxInteriorCameraPan = maxInteriorCameraPan;
+  const topStandHeight = baseY + seatRows * rowRise;
+  stadium.userData.topStandHeight = topStandHeight;
+  if (indoor) {
+    const roofHeight = Math.max(20, topStandHeight + 6);
+    const radiusX = innerX + outerSeatRadius;
+    const radiusZ = innerZ + outerSeatRadius;
+    const ceiling = new THREE.Group();
+    ceiling.name = 'wtsl-indoor-ceiling';
+    ceiling.userData.height = roofHeight;
+    ceiling.userData.passThrough = true;
+    const underside = new THREE.MeshStandardMaterial({
+      color: 0x647079, roughness: 0.94, metalness: 0,
+      emissive: 0x35414b, emissiveIntensity: 0.65, side: THREE.BackSide,
+    });
+    // Upward normals + BackSide: visible looking up from inside, invisible
+    // looking down from above. No roof collision or exterior shell is added.
+    const panelGeometry = new THREE.CircleGeometry(1, 96);
+    panelGeometry.rotateX(-Math.PI / 2);
+    const panel = new THREE.Mesh(panelGeometry, underside);
+    panel.name = 'wtsl-indoor-ceiling-panel';
+    panel.position.y = roofHeight;
+    panel.scale.set(radiusX, 1, radiusZ);
+    ceiling.add(panel);
+    const fascia = new THREE.Mesh(
+      new THREE.CylinderGeometry(1, 1, roofHeight - topStandHeight, 96, 1, true),
+      new THREE.MeshStandardMaterial({
+        color: 0x39464f, roughness: 0.96,
+        emissive: 0x1b252d, emissiveIntensity: 0.5, side: THREE.BackSide,
+      }),
+    );
+    fascia.name = 'wtsl-indoor-upper-bowl-fascia';
+    fascia.position.y = (roofHeight + topStandHeight) / 2;
+    fascia.scale.set(radiusX, 1, radiusZ);
+    ceiling.add(fascia);
+    const beamMaterial = new THREE.MeshStandardMaterial({
+      color: 0x29343c, roughness: 0.8, metalness: 0.3,
+      emissive: 0x10191f, emissiveIntensity: 0.45, side: THREE.BackSide,
+    });
+    const beam = (width: number, length: number, x: number, z: number) => {
+      const geometry = new THREE.PlaneGeometry(width, length);
+      geometry.rotateX(-Math.PI / 2);
+      const mesh = new THREE.Mesh(geometry, beamMaterial);
+      mesh.position.set(x, roofHeight - 0.12, z);
+      ceiling.add(mesh);
+    };
+    for (const fraction of [-0.6, -0.3, 0, 0.3, 0.6]) {
+      beam(0.48, 2 * radiusZ * Math.sqrt(1 - fraction ** 2), fraction * radiusX, 0);
+    }
+    for (const fraction of [-0.45, 0, 0.45]) {
+      beam(2 * radiusX * Math.sqrt(1 - fraction ** 2), 0.38, 0, fraction * radiusZ);
+    }
+    const lightGeometry = new THREE.PlaneGeometry(3.2, 0.65);
+    lightGeometry.rotateX(-Math.PI / 2);
+    const lightMaterial = new THREE.MeshBasicMaterial({ color: 0xe7e2d2, side: THREE.BackSide });
+    for (const x of [-12, 12]) for (const z of [-8, 8]) {
+      const fixture = new THREE.Mesh(lightGeometry, lightMaterial);
+      fixture.position.set(x, roofHeight - 0.2, z);
+      ceiling.add(fixture);
+    }
+    stadium.add(ceiling);
+  }
   return stadium;
 }

@@ -326,8 +326,8 @@ export function buildStadiumEnvironment(
   ) return;
   existing?.removeFromParent();
   scene.getObjectByName('wtsl-open-sky')?.removeFromParent();
-  // Keep the horizon inside the arena palette in every venue mode. The bowl
-  // itself closes the view; there is no outdoor sky or landscape backdrop.
+  // No exterior landscape: indoor ceilings close at the upper seating edge,
+  // while the lighting controller supplies only an outdoor sky beyond it.
   scene.background = new THREE.Color(0x26383b);
   scene.fog = new THREE.Fog(0x26383b, 82, 205);
   scene.userData.wtslStadiumIndoor = indoor;
@@ -339,7 +339,7 @@ export function buildStadiumEnvironment(
   stadium.userData.capacity = venue.capacity;
   // Keep the lighting masts and crossbars out of the court sightlines. The
   // stadium retains its lighting through the non-blocking spotlights below.
-  const architecture = buildStadiumArchitecture(scoreboard, venue);
+  const architecture = buildStadiumArchitecture(scoreboard, venue, indoor);
   stadium.add(architecture);
   stadium.userData.updateScoreboard = architecture.userData.updateScoreboard;
   scene.add(stadium);

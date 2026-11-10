@@ -5,6 +5,49 @@ export const DMO_CAMERA_VERTICAL_PAN_LIMIT = 4;
 
 type DmoCameraPoint = { x: number; y: number; z: number };
 
+export function dmoOrbitSettings(coarsePointer: boolean) {
+  return {
+    enableDamping: true,
+    dampingFactor: coarsePointer ? 0.14 : 0.075,
+    enablePan: true,
+    enableRotate: true,
+    screenSpacePanning: true,
+    panSpeed: 0.9,
+    zoomSpeed: 0.9,
+    rotateSpeed: coarsePointer ? 1.15 : 1,
+    minPolarAngle: 0.025,
+    maxPolarAngle: Math.PI - 0.025,
+    minAzimuthAngle: -Infinity,
+    maxAzimuthAngle: Infinity,
+  };
+}
+
+/**
+ * Keep the eye/target pair inside the bowl, without fighting OrbitControls at
+ * the floor. Both may move vertically so a court-level eye can look overhead.
+ */
+export function constrainDmoOrbit(
+  camera: DmoCameraPoint,
+  target: DmoCameraPoint,
+  anchor: DmoCameraPoint,
+  panLimit: number,
+  maxDistance: number,
+) {
+  const maxHeight = Math.max(34, maxDistance + MIN_DMO_CAMERA_HEIGHT);
+  const bounded = clampDmoCameraTarget(target, anchor, panLimit, maxHeight);
+  const eye = {
+    x: camera.x + (bounded.x - target.x),
+    y: camera.y + (bounded.y - target.y),
+    z: camera.z + (bounded.z - target.z),
+  };
+  const minimumShift = Math.max(MIN_DMO_CAMERA_HEIGHT - eye.y, -bounded.y);
+  const maximumShift = Math.min(maxHeight - eye.y, maxHeight - bounded.y);
+  const shift = Math.min(maximumShift, Math.max(minimumShift, 0));
+  eye.y = Math.max(MIN_DMO_CAMERA_HEIGHT, Math.min(maxHeight, eye.y + shift));
+  bounded.y = Math.max(0, Math.min(maxHeight, bounded.y + shift));
+  return { camera: eye, target: bounded };
+}
+
 /** Preserve the embedded mobile view; fit fullscreen court framing to its viewport. */
 export function responsiveDmoCourtCameraScale(width: number, height: number, fullscreenActive: boolean) {
   if (!Number.isFinite(width) || !Number.isFinite(height) || width <= 0 || height <= 0 || width > 720) return 1;

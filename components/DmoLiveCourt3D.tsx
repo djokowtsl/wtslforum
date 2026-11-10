@@ -14,7 +14,8 @@ import {
 } from '@/lib/te4DmoLive';
 import type { Te4CourtSurface } from '@/lib/te4DmoTypes';
 import {
-  clampDmoCameraTarget,
+  constrainDmoOrbit,
+  dmoOrbitSettings,
   dmoCameraMaxDistanceInsideBowl,
   dmoFullscreenCourtCamera,
   responsiveDmoCourtCameraScale,
@@ -205,8 +206,6 @@ type CameraView =
 // player and court scale.
 const DEFAULT_CAMERA = new THREE.Vector3(-18, 8, 19);
 
-/** The camera never goes lower than this above the court surface (metres). */
-const MIN_CAMERA_HEIGHT = 0.8;
 /** Frames (at 60 per second) before his own shot when a running player brings
  * the racket back in front for the recorded take-back. */
 const RALLY_RUN_CARRY_CUTOFF_FRAMES = 36;
@@ -677,42 +676,27 @@ function ThreeCourt({
       cameraPanLimit,
       cameraMaxDistance,
     );
-    const camera = new THREE.PerspectiveCamera(34, 1, 0.1, 260);
+    const camera = new THREE.PerspectiveCamera(34, 1, 0.1, 500);
     camera.position.copy(DEFAULT_CAMERA);
     camera.lookAt(0, 0.3, 0);
     const controls = new OrbitControls(camera, renderer.domElement);
     const cameraTargetAnchor = new THREE.Vector3(0, 0.5, 0);
     let preferredCameraMinDistance = 14;
     controls.target.copy(cameraTargetAnchor);
-    controls.enableDamping = true;
-    controls.dampingFactor = 0.075;
-    controls.enablePan = true;
-    controls.screenSpacePanning = true;
-    controls.panSpeed = 0.9;
-    controls.zoomSpeed = 0.9;
+    Object.assign(controls, dmoOrbitSettings(window.matchMedia('(pointer: coarse)').matches));
+    controls.touches.ONE = THREE.TOUCH.ROTATE;
+    controls.touches.TWO = THREE.TOUCH.DOLLY_PAN;
+    renderer.domElement.style.touchAction = 'none';
     controls.maxDistance = maxDistanceForTarget(cameraTargetAnchor);
     controls.minDistance = Math.min(preferredCameraMinDistance, controls.maxDistance);
-    controls.minPolarAngle = 0.04;
-    controls.maxPolarAngle = THREE.MathUtils.degToRad(75);
     controls.update();
-    // Keep manual panning near the selected view and prevent the camera from
-    // moving below the court when OrbitControls moves its target and camera.
+    // Preserve the bounded bowl while allowing full vertical look-around.
     controls.addEventListener('change', () => {
-      const boundedTarget = clampDmoCameraTarget(controls.target, cameraTargetAnchor, cameraPanLimit);
-      const correction = new THREE.Vector3(
-        boundedTarget.x - controls.target.x,
-        boundedTarget.y - controls.target.y,
-        boundedTarget.z - controls.target.z,
+      const bounded = constrainDmoOrbit(
+        camera.position, controls.target, cameraTargetAnchor, cameraPanLimit, cameraMaxDistance,
       );
-      if (correction.lengthSq() > 0) {
-        controls.target.set(boundedTarget.x, boundedTarget.y, boundedTarget.z);
-        camera.position.add(correction);
-      }
-      const lift = Math.max(0, -controls.target.y, MIN_CAMERA_HEIGHT - camera.position.y);
-      if (lift > 0) {
-        controls.target.y += lift;
-        camera.position.y += lift;
-      }
+      camera.position.set(bounded.camera.x, bounded.camera.y, bounded.camera.z);
+      controls.target.set(bounded.target.x, bounded.target.y, bounded.target.z);
     });
     const stopObservingManualCamera = observeDmoManualCamera(controls, () => {
       cameraViewRef.current = 'custom';

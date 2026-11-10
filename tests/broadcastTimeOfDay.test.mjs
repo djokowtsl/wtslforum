@@ -44,13 +44,13 @@ test('day, evening, and night update outdoor sky, clouds, sunlight, and floodlig
   lighting.apply('day');
   assert.equal(scene.userData.wtslBroadcastTimeOfDay, 'day');
   assert.equal(sun.visible, true);
-  assert.equal(clouds.children.filter(cluster => cluster.visible).length, 4);
+  assert.equal(clouds.children.filter(cluster => cluster.visible).length, 6);
   assert.equal(spotlights[0].intensity, 0);
   assert.ok(courtFillLights.every(light => light.intensity === 5));
 
   lighting.apply('evening');
   assert.equal(scene.userData.wtslBroadcastTimeOfDay, 'evening');
-  assert.equal(clouds.children.filter(cluster => cluster.visible).length, 6);
+  assert.equal(clouds.children.filter(cluster => cluster.visible).length, 8);
   assert.ok(sun.position.y < 30, 'the evening sun sits near the horizon');
   assert.ok(spotlights[0].intensity > 0, 'floodlights start warming up at dusk');
 
@@ -64,6 +64,9 @@ test('day, evening, and night update outdoor sky, clouds, sunlight, and floodlig
   assert.ok(courtFillLights.every(light => light.intensity === 0), 'daytime court fill lights turn off at night');
   assert.equal(scene.getObjectByName('wtsl-broadcast-sky').material.color.getHex(), 0x08101e);
   assert.equal(renderer.toneMappingExposure, 0.58);
+  assert.ok(sky.renderOrder < sun.renderOrder);
+  assert.ok(sun.renderOrder < clouds.children[0].children[0].renderOrder);
+  assert.ok(clouds.children.some(cluster => cluster.position.y > 90), 'clouds also cover upward-looking views');
 });
 
 test('indoor broadcasts keep the sky hidden but enable night court lighting', () => {
@@ -81,6 +84,13 @@ test('indoor broadcasts keep the sky hidden but enable night court lighting', ()
   assert.equal(scene.getObjectByName('wtsl-broadcast-cloud-cover').visible, false);
   assert.equal(scene.children.filter(child => child.name === 'wtsl-broadcast-floodlight').every(light => light.intensity === 60), true);
   assert.equal(courtFill.intensity, 0);
+  for (const time of ['day', 'evening', 'night']) {
+    lighting.apply(time);
+    assert.equal(scene.background.getHex(), 0x182129, 'indoor background cannot turn into blue outdoor sky');
+    assert.equal(scene.getObjectByName('wtsl-broadcast-sky').visible, false);
+    assert.equal(scene.getObjectByName('wtsl-broadcast-sun').visible, false);
+    assert.equal(scene.getObjectByName('wtsl-broadcast-cloud-cover').visible, false);
+  }
 });
 
 test('the live and replay toolbar exposes the time-of-day selector', async () => {
