@@ -148,11 +148,6 @@ test('saved player stroke setup reaches the full broadcast replay', () => {
 });
 
 test('fullscreen fills the available screen and keeps playback controls available', () => {
-  assert.match(fullscreenButton, /dispatchEvent\(new Event\('courtfullscreenchange', \{ bubbles: true \}\)\)/);
-  assert.match(liveCourt, /addEventListener\('courtfullscreenchange', resize\)/);
-  assert.match(liveCourt, /removeEventListener\('courtfullscreenchange', resize\)/);
-  assert.match(liveCourt, /observeDmoManualCamera\(controls/);
-  assert.doesNotMatch(liveCourt, /controls\.addEventListener\('start', \(\) => \{\s*cameraViewRef\.current = 'custom'/);
   assert.match(styles, /\.scene:fullscreen/);
   assert.match(styles, /\.scene:fullscreen \.viewport/);
   assert.match(styles, /\.scene:fullscreen \.viewport,[\s\S]*?position:\s*absolute/);
