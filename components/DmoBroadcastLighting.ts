@@ -110,7 +110,12 @@ export function createDmoBroadcastLighting(
     new THREE.MeshBasicMaterial({ color: PRESETS.day.sky, side: THREE.BackSide, fog: false, depthWrite: false }),
   );
   sky.name = 'wtsl-broadcast-sky';
-  sky.position.y = -12;
+  const stadiumRim = scene.getObjectByName('wtsl-stadium-superstructure');
+  const rimHeight = stadiumRim?.userData.upperRimHeight;
+  sky.position.y = !indoor && typeof rimHeight === 'number' && Number.isFinite(rimHeight)
+    ? rimHeight
+    : -12;
+  sky.userData.lowerHorizonY = sky.position.y;
   sky.visible = !indoor;
   sky.frustumCulled = false;
   sky.renderOrder = -100;
@@ -200,7 +205,8 @@ export function createDmoBroadcastLighting(
     skyMaterial.color.setHex(preset.sky);
     sunMaterial.color.setHex(preset.sunColor);
     sky.visible = !indoor;
-    scene.background = new THREE.Color(indoor ? 0x182129 : preset.sky);
+    // Time-of-day sky belongs above the open rim, never in holes between seats.
+    scene.background = new THREE.Color(indoor ? 0x182129 : 0x26383b);
     if (scene.fog instanceof THREE.Fog) scene.fog.color.setHex(indoor ? 0x182129 : preset.fog);
     hemisphere.intensity = preset.hemisphere;
     key.color.setHex(timeOfDay === 'evening' ? 0xffc18d : 0xfff0dc);

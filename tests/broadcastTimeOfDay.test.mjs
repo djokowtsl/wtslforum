@@ -97,6 +97,24 @@ test('indoor broadcasts keep the sky hidden but enable night court lighting', ()
     'indoor crowd remains lit at night');
 });
 
+test('outdoor sky colors stay above the stadium rim instead of leaking through seats', () => {
+  const scene = new THREE.Scene();
+  const stadium = new THREE.Group();
+  stadium.name = 'wtsl-stadium-superstructure';
+  stadium.userData.upperRimHeight = 28;
+  scene.add(stadium);
+  const lighting = lightingApi.createDmoBroadcastLighting(scene, { toneMappingExposure: 1 }, false);
+  const sky = scene.getObjectByName('wtsl-broadcast-sky');
+  assert.equal(sky.position.y, 28, 'the sky dome horizon starts at the open rim');
+
+  lighting.apply('day');
+  const daySky = sky.material.color.getHex();
+  assert.equal(scene.background.getHex(), 0x26383b, 'open seat seams use the dark stadium interior, not blue sky');
+  lighting.apply('evening');
+  assert.notEqual(sky.material.color.getHex(), daySky, 'time of day still changes the sky visible above the wall');
+  assert.equal(scene.background.getHex(), 0x26383b, 'changing time does not recolor leaks below the rim');
+});
+
 test('the live and replay toolbar exposes the time-of-day selector', async () => {
   const source = await readFile(new URL('../components/DmoLiveCourt3D.tsx', import.meta.url), 'utf8');
   assert.match(source, /aria-label="Broadcast time of day"/);

@@ -25,14 +25,94 @@ export const UPPER_BOWL_AISLE_COUNT = 16;
 export function isUpperBowlSectionAisle(x: number, z: number) {
   const angle = Math.atan2(z, x);
   const sectionAngle = (Math.PI * 2) / UPPER_BOWL_AISLE_COUNT;
-  const nearestCenter = Math.round(angle / sectionAngle - 0.5) + 0.5;
+  const nearestCenter = Math.round(angle / sectionAngle);
   let difference = angle - nearestCenter * sectionAngle;
   difference = Math.atan2(Math.sin(difference), Math.cos(difference));
   return Math.abs(difference) * Math.hypot(x, z) < 0.82;
 }
 
 export function isUpperBowlAccessGap(x: number, z: number) {
-  return isUpperBowlSectionAisle(x, z) || Math.abs(x) < 2.5 || Math.abs(z) < 2.5;
+  return isUpperBowlSectionAisle(x, z);
+}
+
+/** Build four narrow radial stair flights through the lower seats. The actual
+ * five-metre tunnel mouths remain open behind the last row. */
+export function addLowerBowlSectionStairs(
+  parent: THREE.Group | THREE.Scene,
+  dimensions: {
+    rows: number;
+    rowRise: number;
+    rowRun: number;
+    baselineHalfDepth: number;
+    sidelineHalfWidth: number;
+    corner: number;
+  },
+) {
+  const stepsPerTransition = 3;
+  const stepRun = dimensions.rowRun / stepsPerTransition;
+  const stepRise = dimensions.rowRise / stepsPerTransition;
+  const transitions = dimensions.rows - 1;
+  const count = transitions * stepsPerTransition * 4;
+  const treads = new THREE.InstancedMesh(
+    new THREE.BoxGeometry(1.64, 0.11, stepRun),
+    new THREE.MeshStandardMaterial({ color: 0x657270, roughness: 0.9 }),
+    count,
+  );
+  const risers = new THREE.InstancedMesh(
+    new THREE.BoxGeometry(1.64, stepRise, 0.08),
+    new THREE.MeshStandardMaterial({ color: 0x303f44, roughness: 0.88 }),
+    count,
+  );
+  treads.name = 'wtsl-lower-section-stair-treads';
+  risers.name = 'wtsl-lower-section-stair-risers';
+  const info = {
+    aisleCount: 4,
+    aisleWidth: 1.64,
+    stepsPerRow: stepsPerTransition,
+    flights: 4,
+    transitions: transitions,
+    continuesToTunnelEntrances: true,
+    leavesTunnelMouthsOpen: true,
+  };
+  treads.userData = { ...info };
+  risers.userData = { ...info };
+  const transform = new THREE.Object3D();
+  let index = 0;
+  for (let row = 0; row < transitions; row += 1) {
+    const rowY = 0.05 + row * dimensions.rowRise;
+    const baselineZ = dimensions.baselineHalfDepth + row * dimensions.rowRun;
+    const sidelineX = dimensions.sidelineHalfWidth + dimensions.corner + row * dimensions.rowRun;
+    for (const side of [-1, 1]) for (const along of ['baseline', 'sideline'] as const) {
+      for (let step = 0; step < stepsPerTransition; step += 1) {
+        const start = along === 'baseline' ? baselineZ : sidelineX;
+        const center = start + (step + 0.5) * stepRun;
+        transform.position.set(
+          along === 'baseline' ? 0 : side * center,
+          rowY + (step + 1) * stepRise - 0.055,
+          along === 'baseline' ? side * center : 0,
+        );
+        transform.rotation.set(0, along === 'sideline' ? Math.PI / 2 : 0, 0);
+        transform.updateMatrix();
+        treads.setMatrixAt(index, transform.matrix);
+        const edge = start + (step + 1) * stepRun;
+        transform.position.set(
+          along === 'baseline' ? 0 : side * edge,
+          rowY + (step + 0.5) * stepRise,
+          along === 'baseline' ? side * edge : 0,
+        );
+        transform.updateMatrix();
+        risers.setMatrixAt(index, transform.matrix);
+        index += 1;
+      }
+    }
+  }
+  for (const mesh of [treads, risers]) {
+    mesh.instanceMatrix.needsUpdate = true;
+    mesh.castShadow = false;
+    mesh.receiveShadow = true;
+    parent.add(mesh);
+  }
+  return { treads, risers };
 }
 
 function pointOnEllipseAtBearing(angle: number, semiAxisX: number, semiAxisZ: number) {
@@ -253,11 +333,11 @@ export function buildStadiumArchitecture(
       const midRadius = innerRadius + rowWidth / 2;
       const midX = Math.cos(angle) * (innerX + midRadius);
       const midZ = Math.sin(angle) * (innerZ + midRadius);
-      if (isUpperBowlAccessGap(midX, midZ)) continue;
       const inner = firstVertex + segment;
       const innerNext = firstVertex + next;
       const outer = firstVertex + perimeterSegments + segment;
       const outerNext = firstVertex + perimeterSegments + next;
+      if (isUpperBowlAccessGap(midX, midZ)) continue;
       bowlIndices.push(inner, outer, outerNext, inner, outerNext, innerNext);
     }
   }
@@ -525,7 +605,7 @@ export function buildStadiumArchitecture(
   for (let row = 0; row < seatRows; row += 1) {
     const radius = rowRadiusStart(row) + rowWidth / 2;
     for (let aisle = 0; aisle < UPPER_BOWL_AISLE_COUNT; aisle += 1) {
-      const angle = ((aisle + 0.5) / UPPER_BOWL_AISLE_COUNT) * Math.PI * 2;
+      const angle = (aisle / UPPER_BOWL_AISLE_COUNT) * Math.PI * 2;
       const point = pointOnEllipseAtBearing(angle, innerX + radius, innerZ + radius);
       stairTransform.position.set(
         point.x,
@@ -558,7 +638,7 @@ export function buildStadiumArchitecture(
     const radius = rowRadiusStart(row) + rowWidth - 0.09;
     const y = baseY + (row + 0.94) * rowRise;
     for (let aisle = 0; aisle < UPPER_BOWL_AISLE_COUNT; aisle += 1) {
-      const angle = ((aisle + 0.5) / UPPER_BOWL_AISLE_COUNT) * Math.PI * 2;
+      const angle = (aisle / UPPER_BOWL_AISLE_COUNT) * Math.PI * 2;
       const point = pointOnEllipseAtBearing(angle, innerX + radius, innerZ + radius);
       stairRiserTransform.position.set(point.x, y, point.z);
       stairRiserTransform.rotation.set(0, -angle - Math.PI / 2, 0);
@@ -589,7 +669,7 @@ export function buildStadiumArchitecture(
     const innerRadius = boundary * rowWidth + (boundary / tierRows - 1) * concourseWidth;
     const floorY = baseY + boundary * rowRise;
     for (let aisle = 0; aisle < UPPER_BOWL_AISLE_COUNT; aisle += 1) {
-      const angle = ((aisle + 0.5) / UPPER_BOWL_AISLE_COUNT) * Math.PI * 2;
+      const angle = (aisle / UPPER_BOWL_AISLE_COUNT) * Math.PI * 2;
       for (let step = 0; step < concourseStepsPerTier; step += 1) {
         const radius = innerRadius + ((step + 0.5) / concourseStepsPerTier) * concourseWidth;
         const point = pointOnEllipseAtBearing(angle, innerX + radius, innerZ + radius);
@@ -626,7 +706,7 @@ export function buildStadiumArchitecture(
     const innerRadius = boundary * rowWidth + (boundary / tierRows - 1) * concourseWidth;
     const floorY = baseY + boundary * rowRise;
     for (let aisle = 0; aisle < UPPER_BOWL_AISLE_COUNT; aisle += 1) {
-      const angle = ((aisle + 0.5) / UPPER_BOWL_AISLE_COUNT) * Math.PI * 2;
+      const angle = (aisle / UPPER_BOWL_AISLE_COUNT) * Math.PI * 2;
       for (let step = 0; step < concourseStepsPerTier - 1; step += 1) {
         const radius = innerRadius + ((step + 1) / concourseStepsPerTier) * concourseWidth;
         const point = pointOnEllipseAtBearing(angle, innerX + radius, innerZ + radius);
@@ -743,7 +823,8 @@ export function buildStadiumArchitecture(
     new THREE.MeshStandardMaterial({
       color: 0x2c3b40, roughness: 0.84, metalness: 0.12,
       emissive: 0x172126, emissiveIntensity: 0.32,
-      side: THREE.BackSide,
+      side: THREE.DoubleSide,
+      depthWrite: true,
     }),
   );
   wall.name = 'wtsl-stadium-exterior-wall-shell';

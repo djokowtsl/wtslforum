@@ -363,6 +363,9 @@ test('stadium keeps its structure and clear score screen without smeared ribbon 
     assert.equal(bowl.geometry.userData.tiers, 3);
     assert.equal(bowl.geometry.userData.sectionAisleCount, 16);
     assert.equal(bowl.geometry.userData.passageGaps, 4);
+    const exteriorWall = named(superstructure, 'wtsl-stadium-exterior-wall-shell')[0];
+    assert.equal(exteriorWall.material.side, THREE.DoubleSide, 'the full-height outer wall seals from either face');
+    assert.equal(exteriorWall.material.depthWrite, true);
     assert.ok(superstructure.userData.maxInteriorCameraDistance >= 26);
     assert.ok(superstructure.userData.maxInteriorCameraDistance <= 44,
       'manual zoom remains inside the venue rather than exposing the complete stadium');
@@ -595,7 +598,7 @@ test('player-grade crowd models cover every seat in the nearest two rows', () =>
   }
 });
 
-test('nearby NPCs retain distinct male/female source heads with player-grade bodies', async () => {
+test('nearby spectators use the approved complete models while staff keep their separate rig', async () => {
   const [courtSource, crowdProvenanceText] = await Promise.all([
     readFile(new URL('../components/DmoLiveCourt3D.tsx', import.meta.url), 'utf8'),
     readFile(new URL('../public/models/dmo-humans/provenance.json', import.meta.url), 'utf8'),
@@ -603,10 +606,14 @@ test('nearby NPCs retain distinct male/female source heads with player-grade bod
   assert.match(courtSource, /loadHumanModel\('male', 'crowd-high'/);
   assert.match(courtSource, /loadHumanModel\('female', 'crowd-high'/);
   assert.doesNotMatch(courtSource, /createNativeFaceSet|nativeFaces/);
-  assert.match(courtSource, /attachHumanCrowd\(scene, crowdRig, crowdTemplates\)/);
+  assert.match(courtSource, /loadSpectatorModel\('male', 'far'/);
+  assert.match(courtSource, /loadSpectatorModel\('female', 'far'/);
+  assert.match(courtSource, /loadSpectatorModel\('male', 'full'/);
+  assert.match(courtSource, /loadSpectatorModel\('female', 'full'/);
+  assert.match(courtSource, /attachSpectatorCrowd\(scene, crowdRig, crowdTemplates\)/);
   assert.match(courtSource, /crowdRig\.setHighDetailModel\(maleHighDetailCrowd\.value, 0\)/);
   assert.match(courtSource, /crowdRig\.setHighDetailModel\(femaleHighDetailCrowd\.value, 1\)/);
-  assert.match(courtSource, /attachHumanCourtStaff\([\s\S]{0,260}highDetailCrowdTemplates\[0\]/);
+  assert.match(courtSource, /attachHumanCourtStaff\(scene, fixtureRig, \[male, female\], crowdRig, male\)/);
 
   const provenance = JSON.parse(crowdProvenanceText);
   assert.notEqual(
@@ -623,7 +630,7 @@ test('nearby NPCs retain distinct male/female source heads with player-grade bod
   }
 });
 
-test('one animated crowd ring fills the near apron and upper bowl with four centered passageways', () => {
+test('continuous crowd seats include narrow stairs aligned to the four tunnel entrances', () => {
   const scene = new THREE.Scene();
   sceneApi.buildStadiumEnvironment(scene);
   const crowd = sceneApi.buildCrowd(scene);
@@ -643,15 +650,17 @@ test('one animated crowd ring fills the near apron and upper bowl with four cent
   for (let row = 4; row < 22; row += 1) {
     const upperRow = crowd.seats.filter((seat) => seat.row === row);
     assert.ok(upperRow.length > 100, `upper-bowl row ${row} remains populated`);
-    assert.ok(upperRow.every((seat) => Math.abs(seat.x) >= 2.5 && Math.abs(seat.z) >= 2.5),
-      'upper tiers keep the four centered passageways clear');
+    assert.ok(upperRow.every((seat) => Math.abs(seat.x) >= 0.82 && Math.abs(seat.z) >= 0.82),
+      'upper tiers clear the narrow stair aisles, not a five-metre void');
   }
   const nearSeats = crowd.seats.filter((seat) => seat.row < 4);
   const nearSupports = scene.getObjectByName('wtsl-near-court-seating-supports');
   assert.ok(nearSupports?.isInstancedMesh);
   assert.equal(nearSupports.count, 32, 'each lower row has narrow supports beneath its four seating sides');
   assert.equal(nearSupports.userData.style, 'narrow-beams');
-  assert.equal(nearSupports.userData.accessPassages, 4, 'the supports leave the four walk-through gaps open');
+  assert.equal(nearSupports.userData.accessPassages, 4, 'the stair aisles align to four ground-level tunnel entrances');
+  assert.equal(nearSupports.userData.stairAisleWidth, 1.64);
+  assert.equal(nearSupports.userData.tunnelMouthWidth, 5);
   assert.equal(scene.getObjectByName('wtsl-near-court-seating-platforms'), undefined,
     'lower seating does not sit on a broad floating platform');
   assert.equal(scene.getObjectByName('wtsl-near-court-seating-risers'), undefined);
@@ -663,10 +672,18 @@ test('one animated crowd ring fills the near apron and upper bowl with four cent
     'visible supports are slim beams, not seating slabs');
   const sidelineSeats = nearSeats.filter((seat) => Math.abs(seat.z) >= 12 && Math.abs(seat.x) < 22);
   const baselineSeats = nearSeats.filter((seat) => Math.abs(seat.x) >= 22 && Math.abs(seat.z) < 12);
-  assert.ok(sidelineSeats.every((seat) => Math.abs(seat.x) >= 2.5),
-    'the two sideline passageways remain open through the lower crowd');
-  assert.ok(baselineSeats.every((seat) => Math.abs(seat.z) >= 2.5),
-    'the two baseline passageways remain open through the lower crowd');
+  assert.ok(sidelineSeats.every((seat) => Math.abs(seat.x) >= 0.82),
+    'the two sideline stair aisles remain clear through the lower crowd');
+  assert.ok(baselineSeats.every((seat) => Math.abs(seat.z) >= 0.82),
+    'the two baseline stair aisles remain clear through the lower crowd');
+  assert.ok(nearSeats.some((seat) => seat.row === 0 && Math.abs(seat.x) >= 1.2
+    && Math.abs(seat.x) < 1.6 && Math.abs(seat.z) === 12),
+  'lower-row spectators fill the excess empty width beside the entrance stairs');
+  const lowerTreads = scene.getObjectByName('wtsl-lower-section-stair-treads');
+  const lowerRisers = scene.getObjectByName('wtsl-lower-section-stair-risers');
+  assert.ok(lowerTreads?.isInstancedMesh && lowerRisers?.isInstancedMesh);
+  assert.equal(lowerTreads.count, 36);
+  assert.equal(lowerRisers.count, lowerTreads.count);
   assert.ok(nearSeats.every((seat) => Math.abs(seat.x) >= 21.9 || Math.abs(seat.z) >= 11.7),
     'all lower spectators remain beyond the clear runoff');
   const detachedStands = [];
@@ -793,9 +810,9 @@ test('upper crowd anchors match the architecture seat coordinates and facing', (
   }
   const upperCrowd = crowd.seats.filter((seat) => seat.row >= 4);
   assert.ok(upperCrowd.every((seat) => !stadiumArchitectureApi.isUpperBowlAccessGap(seat.x, seat.z)),
-    'animated crowd anchors leave every section stair and centered passageway open');
+    'animated crowd anchors leave every section stair and tunnel-aligned aisle open');
   for (let aisle = 0; aisle < stadiumArchitectureApi.UPPER_BOWL_AISLE_COUNT; aisle += 1) {
-    const angle = ((aisle + 0.5) / stadiumArchitectureApi.UPPER_BOWL_AISLE_COUNT) * Math.PI * 2;
+    const angle = (aisle / stadiumArchitectureApi.UPPER_BOWL_AISLE_COUNT) * Math.PI * 2;
     const sampleRadius = 40;
     assert.ok(stadiumArchitectureApi.isUpperBowlSectionAisle(
       Math.cos(angle) * sampleRadius,
@@ -1120,7 +1137,7 @@ test('Basel and Vienna indoor aliases get an underside-only ceiling within the b
     'the wall stands high enough to block sky through lower sections');
   assert.ok(scene.getObjectByName('wtsl-stadium-exterior-tier-course-1'));
   assert.ok(scene.getObjectByName('wtsl-stadium-exterior-tier-course-2'));
-  assert.equal(outdoorWall.material.side, THREE.BackSide, 'wall is rendered for visitors inside the arena');
+   assert.equal(outdoorWall.material.side, THREE.DoubleSide, 'the wall seals views from both sides');
   const outdoorBowl = scene.getObjectByName('wtsl-continuous-seating-bowl');
   outdoorBowl.geometry.computeBoundingBox();
   const wallsBounds = new THREE.Box3().setFromObject(outdoorWalls);
