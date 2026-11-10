@@ -163,8 +163,10 @@ export function courtSurfaceVisualProfile(surface: Te4CourtSurface): CourtSurfac
 
 /** Decorative venue treatment; never changes the recorded surface or ball physics. */
 export function isIndoorDmoVenue(stadium: string | null | undefined): boolean {
-  return /\b(indoor|bercy|paris masters|atp finals|rotterdam|vienna|basel|stockholm|metz|antwerp)\b/i
-    .test(stadium ?? '');
+  const name = (stadium ?? '').normalize('NFKD').replace(/[\u0300-\u036f]/g, '')
+    .replace(/[_-]+/g, ' ');
+  return /\b(indoors?|bercy|paris masters|atp finals|rotterdam|vienna|basel|stockholm|metz|antwerp|swiss indoors|erste bank|wiener stadthalle|st\.? jakobshalle)\b/i
+    .test(name);
 }
 
 export function courtSurfaceSoundProfile(surface: Te4CourtSurface) {

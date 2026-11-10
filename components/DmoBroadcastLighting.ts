@@ -38,7 +38,7 @@ const PRESETS: Record<BroadcastTimeOfDay, LightingPreset> = {
     sunColor: 0xffe8b0,
     cloudColor: 0xf1f4f2,
     cloudOpacity: 0.72,
-    visibleClouds: 4,
+    visibleClouds: 6,
   },
   evening: {
     sky: 0x8f6c68,
@@ -53,7 +53,7 @@ const PRESETS: Record<BroadcastTimeOfDay, LightingPreset> = {
     sunColor: 0xffae72,
     cloudColor: 0xe2b5a1,
     cloudOpacity: 0.82,
-    visibleClouds: 6,
+    visibleClouds: 8,
   },
   night: {
     sky: 0x08101e,
@@ -74,11 +74,13 @@ const PRESETS: Record<BroadcastTimeOfDay, LightingPreset> = {
 
 const CLOUD_POSITIONS: Array<[number, number, number, number]> = [
   [-60, 37, -88, 1.05],
-  [-24, 48, -112, 0.8],
-  [22, 42, -102, 1.15],
-  [61, 34, -76, 0.9],
-  [-48, 51, 74, 0.82],
+  [61, 44, 76, 0.9],
+  [-78, 51, 44, 0.82],
+  [86, 48, -62, 0.8],
+  [-24, 108, -12, 1.15],
   [5, 39, 111, 1.1],
+  [32, 96, 20, 0.8],
+  [22, 42, -102, 1.15],
 ];
 
 export function createDmoBroadcastLighting(
@@ -111,15 +113,17 @@ export function createDmoBroadcastLighting(
   sky.position.y = -12;
   sky.visible = !indoor;
   sky.frustumCulled = false;
+  sky.renderOrder = -100;
   scene.add(sky);
 
   const sun = new THREE.Mesh(
     new THREE.SphereGeometry(4.2, 20, 14),
-    new THREE.MeshBasicMaterial({ color: PRESETS.day.sunColor, fog: false }),
+    new THREE.MeshBasicMaterial({ color: PRESETS.day.sunColor, fog: false, depthWrite: false }),
   );
   sun.name = 'wtsl-broadcast-sun';
   sun.position.set(...PRESETS.day.sunPosition);
   sun.frustumCulled = false;
+  sun.renderOrder = -90;
   scene.add(sun);
 
   const cloudGroup = new THREE.Group();
@@ -146,6 +150,7 @@ export function createDmoBroadcastLighting(
       const puff = new THREE.Mesh(cloudGeometry, material);
       puff.position.set(offsetX * scale, offsetY * scale, offsetZ * scale);
       puff.scale.set(7.5 * size * scale, 2.2 * size * scale, 3.8 * size * scale);
+      puff.renderOrder = -80;
       cluster.add(puff);
     }
     cloudGroup.add(cluster);
@@ -195,8 +200,8 @@ export function createDmoBroadcastLighting(
     skyMaterial.color.setHex(preset.sky);
     sunMaterial.color.setHex(preset.sunColor);
     sky.visible = !indoor;
-    scene.background = new THREE.Color(preset.sky);
-    if (scene.fog instanceof THREE.Fog) scene.fog.color.setHex(preset.fog);
+    scene.background = new THREE.Color(indoor ? 0x182129 : preset.sky);
+    if (scene.fog instanceof THREE.Fog) scene.fog.color.setHex(indoor ? 0x182129 : preset.fog);
     hemisphere.intensity = preset.hemisphere;
     key.color.setHex(timeOfDay === 'evening' ? 0xffc18d : 0xfff0dc);
     key.intensity = preset.key;
