@@ -571,24 +571,25 @@ test('player-grade crowd models cover every seat in the nearest two rows', () =>
   }
 });
 
-test('nearby NPCs reuse the on-court native face with player-grade crowd bodies', async () => {
-  const [courtSource, faceSource, crowdProvenanceText] = await Promise.all([
+test('nearby NPCs retain distinct male/female source heads with player-grade bodies', async () => {
+  const [courtSource, crowdProvenanceText] = await Promise.all([
     readFile(new URL('../components/DmoLiveCourt3D.tsx', import.meta.url), 'utf8'),
-    readFile(new URL('../components/DmoNativeFaces.ts', import.meta.url), 'utf8'),
     readFile(new URL('../public/models/dmo-humans/provenance.json', import.meta.url), 'utf8'),
   ]);
   assert.match(courtSource, /loadHumanModel\('male', 'crowd-high'/);
   assert.match(courtSource, /loadHumanModel\('female', 'crowd-high'/);
-  assert.match(courtSource, /nativeFaces = createNativeFaceSet\(player\.value\)/);
-  assert.match(courtSource, /attachHumanCrowd\(scene, crowdRig, crowdTemplates, nativeFaces\)/);
+  assert.doesNotMatch(courtSource, /createNativeFaceSet|nativeFaces/);
+  assert.match(courtSource, /attachHumanCrowd\(scene, crowdRig, crowdTemplates\)/);
   assert.match(courtSource, /crowdRig\.setHighDetailModel\(maleHighDetailCrowd\.value, 0\)/);
   assert.match(courtSource, /crowdRig\.setHighDetailModel\(femaleHighDetailCrowd\.value, 1\)/);
-  assert.match(courtSource, /attachHumanCourtStaff\([\s\S]{0,260}nativeFaces/);
-  assert.match(faceSource, /dressNativePlayer\(model/);
-  assert.match(faceSource, /extractBoneSurface\(body, head\)/);
-  assert.match(faceSource, /native-cropped-hair/);
+  assert.match(courtSource, /attachHumanCourtStaff\([\s\S]{0,260}highDetailCrowdTemplates\[0\]/);
 
   const provenance = JSON.parse(crowdProvenanceText);
+  assert.notEqual(
+    provenance.find(asset => asset.filename === 'male-crowd.glb').sourceSha256,
+    provenance.find(asset => asset.filename === 'female-crowd.glb').sourceSha256,
+    'the two genders must not point to the same source model',
+  );
   for (const gender of ['male', 'female']) {
     const player = provenance.find((asset) => asset.filename === `${gender}-player.glb`);
     const crowd = provenance.find((asset) => asset.filename === `${gender}-crowd.glb`);

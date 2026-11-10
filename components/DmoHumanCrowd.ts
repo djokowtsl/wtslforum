@@ -1,6 +1,6 @@
 import * as THREE from 'three';
 import { clone } from 'three/examples/jsm/utils/SkeletonUtils.js';
-import { disposeHumanModel, HumanPose, tintKit } from './DmoHumanModels';
+import { disposeHumanModel, HumanPose } from './DmoHumanModels';
 import {
   getChairUmpireLegTargets,
   getCrowdAppearance,
@@ -13,6 +13,7 @@ import {
 import { shouldUseHighDetailCrowdSeat } from '../lib/dmoCrowdLod';
 import { makeCrowdClothingOpaque } from '../lib/dmoCrowdClothing';
 import { getCrowdBannerBranding } from '../lib/dmoCrowdBranding';
+import { createNpcShoeGeometry, dressNpc, stripBareFeet } from './DmoNpcWardrobe';
 import {
   fitNativeFaceToTemplate,
   type NativeFaceFit,
@@ -30,15 +31,18 @@ function tintedHuman(
   model.traverse((object) => {
     if (!(object instanceof THREE.SkinnedMesh)) return;
     object.geometry = object.geometry.clone();
+    stripBareFeet(object.geometry);
     object.material = Array.isArray(object.material)
       ? object.material.map((item) => item.clone())
       : object.material.clone();
     for (const material of Array.isArray(object.material) ? object.material : [object.material]) {
       makeCrowdClothingOpaque(material);
     }
-    tintKit(object, tint, skinTone);
   });
   if (stripHead) stripSkinnedHumanHead(model);
+  model.traverse((object) => {
+    if (object instanceof THREE.SkinnedMesh) dressNpc(object, tint, skinTone);
+  });
   return model;
 }
 
@@ -253,7 +257,8 @@ function attachStaffModel(
   nativeFace?: NativeFaceVariant,
   skinToneIndex = 0,
 ) {
-  const model = tintedHuman(template, tint, undefined, Boolean(nativeFace));
+  const skinTone = CROWD_SKIN_TONES[skinToneIndex % CROWD_SKIN_TONES.length];
+  const model = tintedHuman(template, tint, skinTone, Boolean(nativeFace));
   if (nativeFace) {
     const head = model.getObjectByName('Head');
     if (!(head instanceof THREE.Bone)) throw new Error('Court staff model has no head joint.');
@@ -284,7 +289,31 @@ function attachStaffModel(
   }
   model.name = name;
   space.add(model);
-  return { model, ...poseSeatedStaff(model, space, hipsY, chairUmpire) };
+  const posed = poseSeatedStaff(model, space, hipsY, chairUmpire);
+  for (const [side, sign] of [['left', 1], ['right', -1]] as const) {
+    const targets = chairUmpire
+      ? getChairUmpireLegTargets(sign, hipsY)
+      : getSeatedCoachLegTargets(sign, hipsY);
+    space.add(makeStaffShoe(
+      `${chairUmpire ? 'wtsl-umpire' : name}-shoe-${side}`,
+      new THREE.Vector3(...targets.ankle),
+      new THREE.Vector3(...targets.toe),
+    ));
+  }
+  return { model, ...posed };
+}
+
+function makeStaffShoe(name: string, ankle: THREE.Vector3, toe: THREE.Vector3) {
+  const shoe = new THREE.Mesh(
+    createNpcShoeGeometry(),
+    new THREE.MeshStandardMaterial({ color: 0x30353a, roughness: 0.82 }),
+  );
+  shoe.position.copy(ankle).add(toe).multiplyScalar(0.5);
+  shoe.position.y -= 0.02;
+  shoe.name = name;
+  shoe.castShadow = true;
+  shoe.receiveShadow = true;
+  return shoe;
 }
 
 function seatedGeometry(template: THREE.Group, look: number, applause: boolean) {
@@ -331,12 +360,15 @@ function poseSeatedCrowd(
   pose.place('Head', head, undefined, new THREE.Quaternion().setFromAxisAngle(v(0, 1), look));
   for (const [side, sign] of [['Left', 1], ['Right', -1]] as const) {
     const shoulder = v(sign * 0.2, 1.04);
-    const elbow = applauding ? v(sign * 0.2, 0.98, 0.22) : v(sign * 0.24, 0.82, 0.12);
-    const wrist = applauding ? v(sign * 0.04, 1.14, 0.28) : v(sign * 0.15, 0.69, 0.25);
+    const elbow = applauding ? v(sign * 0.2, 0.98, 0.22) : v(sign * 0.23, 0.76, 0.08);
+    const wrist = applauding ? v(sign * 0.04, 1.14, 0.28) : v(sign * 0.2, 0.58, 0.12);
     pose.place(`${side}Shoulder`, v(sign * 0.04, 1.02), shoulder);
     pose.place(`${side}Arm`, shoulder, elbow);
     pose.place(`${side}ForeArm`, elbow, wrist);
-    pose.place(`${side}Hand`, wrist, wrist.clone().add(v(-sign * 0.05, 0, 0.08)));
+    const handTip = wrist.clone().add(applauding
+      ? v(-sign * 0.05, 0, 0.08)
+      : v(sign * 0.035, -0.025, 0.06));
+    pose.place(`${side}Hand`, wrist, handTip);
     const legTargets = getSeatedCrowdLegTargets(sign);
     const hip = v(...legTargets.hip);
     const knee = v(...legTargets.knee);
@@ -412,18 +444,18 @@ export function attachHumanCrowd(
   ) => {
     const skinTone = CROWD_SKIN_TONES[skinToneIndex];
     const variant = tintedHuman(template, clothingTint, skinTone, replaceHead);
-    let sourceMaterial: THREE.Material | undefined;
+    let sourceMaterials: THREE.Material[] | undefined;
     variant.traverse((object) => {
       if (object instanceof THREE.SkinnedMesh) {
         const materials = Array.isArray(object.material) ? object.material : [object.material];
         materials.forEach(makeCrowdClothingOpaque);
-        sourceMaterial = materials[0];
+        sourceMaterials = materials;
       }
     });
-    if (!sourceMaterial) throw new Error('Crowd material missing.');
+    if (!sourceMaterials) throw new Error('Crowd material missing.');
     for (const applauding of [false, true]) for (const look of [-0.5, 0, 0.5]) {
-      const crowdMaterial = makeCrowdClothingOpaque(sourceMaterial.clone());
-      const mesh = new THREE.InstancedMesh(seatedGeometry(variant, look, applauding), crowdMaterial, batchCapacity);
+      const crowdMaterials = sourceMaterials.map(material => makeCrowdClothingOpaque(material.clone()));
+      const mesh = new THREE.InstancedMesh(seatedGeometry(variant, look, applauding), crowdMaterials, batchCapacity);
       mesh.name = `wtsl-${label}-spectators-${target.length}`;
       mesh.count = 0;
       mesh.frustumCulled = false;
@@ -439,10 +471,8 @@ export function attachHumanCrowd(
     });
   });
 
-  const shoeGeometry = new THREE.CapsuleGeometry(0.045, 0.12, 4, 8);
-  shoeGeometry.rotateX(Math.PI / 2);
   const shoeMesh = new THREE.InstancedMesh(
-    shoeGeometry,
+    createNpcShoeGeometry(),
     new THREE.MeshStandardMaterial({ color: 0xffffff, roughness: 0.78 }),
     maxSeatCount * 2,
   );
@@ -475,8 +505,8 @@ export function attachHumanCrowd(
       let delta = ball ? Math.atan2(ball.x - seat.x, ball.z - seat.z) - seat.facing : 0;
       delta = THREE.MathUtils.euclideanModulo(delta + Math.PI, Math.PI * 2) - Math.PI;
       const gaze = delta < -0.18 ? 0 : delta > 0.18 ? 2 : 1;
-      const gender = sourceIndex % 2;
       const appearance = getCrowdAppearance(sourceIndex, seat.row);
+       const gender = appearance.gender === 'female' ? 1 : 0;
       // Alternate hands-apart and hands-together poses during applause.
       const clap = applauding && sourceIndex % 5 !== 0 && Math.sin(time * 9 + sourceIndex) > -0.15;
       const highDetailOffset = highDetailGenderOffsets.get(gender);
@@ -496,7 +526,12 @@ export function attachHumanCrowd(
       const turn = ((sourceIndex * 3 % 5) - 2) * 0.012;
       dummy.position.set(seat.x, seat.y, seat.z);
       dummy.rotation.set(lean, seat.facing + turn, 0);
-      dummy.scale.set(0.9 + appearance.torsoWidth * 0.035, appearance.stature, 0.94 + appearance.torsoWidth * 0.04);
+       const bodyScale = {
+         x: (0.88 + appearance.torsoWidth * 0.035) * (gender === 1 ? 0.94 : 1),
+         y: appearance.stature * (gender === 1 ? 0.97 : 1),
+         z: (0.92 + appearance.torsoWidth * 0.04) * (gender === 1 ? 1.02 : 1),
+       };
+       dummy.scale.set(bodyScale.x, bodyScale.y, bodyScale.z);
       dummy.updateMatrix();
       mesh.setMatrixAt(instance, dummy.matrix);
       // Instance color multiplies the entire baked human mesh. Keep it neutral
@@ -521,11 +556,11 @@ export function attachHumanCrowd(
         );
         hairMesh.setColorAt(hairInstance, new THREE.Color(faceVariants[style].hairColor));
       }
-      for (const [side, sideIndex] of [[-1, 0], [1, 1]] as const) {
+       for (const side of [-1, 1]) {
         const leg = getSeatedCrowdLegTargets(side);
-        const localX = leg.ankle[0];
-        const localY = (leg.ankle[1] + leg.toe[1]) / 2;
-        const localZ = (leg.ankle[2] + leg.toe[2]) / 2;
+         const localX = leg.ankle[0] * bodyScale.x;
+         const localY = ((leg.ankle[1] + leg.toe[1]) / 2 - 0.02) * bodyScale.y;
+         const localZ = (leg.ankle[2] + leg.toe[2]) / 2 * bodyScale.z;
         const sinFacing = Math.sin(seat.facing);
         const cosFacing = Math.cos(seat.facing);
         dummy.position.set(
@@ -534,12 +569,12 @@ export function attachHumanCrowd(
           seat.z - sinFacing * localX + cosFacing * localZ,
         );
         dummy.rotation.set(0, seat.facing, 0);
-        dummy.scale.set(0.82, 0.84, 1);
+         dummy.scale.set(bodyScale.x, bodyScale.y, bodyScale.z);
         dummy.updateMatrix();
         shoeMesh.setMatrixAt(shoeInstance, dummy.matrix);
         shoeMesh.setColorAt(
           shoeInstance,
-          new THREE.Color(shoeColors[(sourceIndex + sideIndex) % shoeColors.length]),
+           new THREE.Color(shoeColors[sourceIndex % shoeColors.length]),
         );
         shoeInstance += 1;
       }

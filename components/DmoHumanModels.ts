@@ -185,7 +185,10 @@ export class HumanPose {
     parent.getWorldQuaternion(this.parentRotation).invert();
     bone.quaternion.copy(this.parentRotation.multiply(this.rotation));
     bone.updateMatrixWorld(true);
-    if (child && segmentLength > 0) {
+    // Torso/shoulder targets are aiming guides, not segment endpoints. Scaling
+    // them to the neck stretches the chest repeatedly and deforms both arms.
+    const fitLimbLength = /^(Left|Right)(UpLeg|Leg|Foot|Arm|ForeArm)$/.test(name);
+    if (fitLimbLength && child && segmentLength > 0) {
       // The source models stand with adult-length bones. Merely rotating those
       // bones into seated target directions left long femurs/shins dangling
       // into the next row. Fit to the actual transformed bone length, including

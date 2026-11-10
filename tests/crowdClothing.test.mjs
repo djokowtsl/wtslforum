@@ -119,12 +119,12 @@ test('detailed crowd clothing is forced opaque without losing its texture', asyn
   ]);
   assert.match(source, /makeCrowdClothingOpaque/);
   assert.match(source, /wtsl-detailed-crowd-shoes/);
-  assert.match(source, /new THREE\.CapsuleGeometry\(0\.045,\s*0\.12/);
+  assert.match(source, /createNpcShoeGeometry\(\)/);
   assert.match(source, /shoeMesh\.count = shoeInstance/);
   assert.match(source, /appearance\.wardrobe \* 6 \+ bucket/);
-  assert.match(source, /tintKit\(object, tint, skinTone\)/);
+  assert.match(source, /dressNpc\(object, tint, skinTone\)/);
   assert.match(models, /isCrowdSkinPixel/);
   assert.match(scene, /const appearance = \(hash >>> 12\) % 8/);
-  assert.match(scene, /ankle: \[sideSign \* 0\.14, 0\.16, 0\.14\]/);
+  assert.match(scene, /ankle: \[sideSign \* 0\.14, 0\.10, 0\.16\]/);
   assert.match(source, /instanceColor\.setRGB\(1,\s*1,\s*1\)/);
 });
