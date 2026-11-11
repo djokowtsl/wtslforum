@@ -413,6 +413,7 @@ export default function DmoReplayLibrary({
                 ) : (
                   <Te4DmoReplayPlayer
                     replayUrl={replayUrl}
+                    replaySubmissionId={selected.id}
                     characterNames={characterNames}
                     initialSpeed={1}
                     isWta={dmoReplayIsWta(selected.tournament)}
