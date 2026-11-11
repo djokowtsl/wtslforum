@@ -59,6 +59,56 @@ export function responsiveDmoCourtCameraScale(width: number, height: number, ful
 
 export type DmoFullscreenCourtCamera = { x: number; y: number; z: number; fov: number };
 
+/** A level, baseline-aligned TV view with room around both players. */
+export function dmoTvBroadcastCamera(
+  width: number,
+  height: number,
+  maxDistance = Infinity,
+): DmoFullscreenCourtCamera | null {
+  if (
+    !Number.isFinite(width)
+    || !Number.isFinite(height)
+    || width <= 0
+    || height <= 0
+  ) {
+    return null;
+  }
+
+  const aspect = Math.max(0.25, width / height);
+  const portrait = aspect < 0.8;
+  const position = portrait ? { x: 38, y: 17, z: 0 } : { x: 35, y: 11, z: 0 };
+  const initialDistance = Math.hypot(position.x, position.y - 0.5, position.z);
+  const scale = Number.isFinite(maxDistance) && maxDistance > 0
+    ? Math.min(1, maxDistance / initialDistance)
+    : 1;
+  const x = position.x * scale;
+  const y = 0.5 + (position.y - 0.5) * scale;
+  const distance = initialDistance * scale;
+  const elevationSin = (y - 0.5) / distance;
+  const elevationCos = x / distance;
+  let requiredTan = Math.tan((portrait ? 32 : 34) * Math.PI / 360);
+
+  // Include both players, doubles sidelines, and movement space beyond each baseline.
+  for (const courtX of [-16, 16]) {
+    for (const courtZ of [-7.5, 7.5]) {
+      for (const playerY of [0, 2.2]) {
+        const depth = distance - courtX * elevationCos - (playerY - 0.5) * elevationSin;
+        const side = Math.abs(courtZ);
+        const up = -courtX * elevationSin + (playerY - 0.5) * elevationCos;
+        if (depth <= 0) return null;
+        requiredTan = Math.max(requiredTan, Math.abs(up) / depth, side / (depth * aspect));
+      }
+    }
+  }
+
+  return {
+    x,
+    y,
+    z: 0,
+    fov: 2 * Math.atan(requiredTan / 0.92) * 180 / Math.PI,
+  };
+}
+
 /** Rotate and elevate compact fullscreen views so the full court fits either orientation. */
 export function dmoFullscreenCourtCamera(
   width: number,

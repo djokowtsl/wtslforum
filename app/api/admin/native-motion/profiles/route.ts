@@ -168,7 +168,7 @@ export async function PUT(request: Request) {
       if (!clip || !nativeMotionClipSupportsStroke(clip, stroke as NativeMotionStroke)) {
         return NextResponse.json({ error: `The selected ${stroke} clip has no matching SDK event marker.` }, { status: 400, headers: PRIVATE_HEADERS });
       }
-      if (automaticFallback && (clip.hidden || clip.acceleration || clip.accelerationVariant)) {
+      if (automaticFallback && (clip.hidden || clip.accelerationVariant)) {
         return NextResponse.json({ error: 'Automatic fallback cannot use hidden or acceleration variants.' }, { status: 400, headers: PRIVATE_HEADERS });
       }
     }

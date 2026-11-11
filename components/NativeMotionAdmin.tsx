@@ -6,6 +6,7 @@ import {
   firstValidNativeMotionClip,
   NATIVE_MOTION_AUTOMATIC_PROFILE_KEY,
   NATIVE_MOTION_STROKES,
+  nativeMotionCharacterDefaults,
   nativeMotionClipSupportsStroke,
   nativeMotionProfileKey,
   type NativeMotionCatalog,
@@ -17,6 +18,7 @@ import {
 } from '@/lib/nativeMotionCatalogData';
 import styles from './NativeMotionAdmin.module.css';
 import NativeMotionMatchOverrides from './NativeMotionMatchOverrides';
+import SearchableClipSelect from './SearchableClipSelect';
 
 type DraftPick = { clipId: string; sourceHandedness: NativeMotionHand | '' };
 type Broadcast = {
@@ -53,7 +55,7 @@ function labelForClip(clip: NativeMotionCatalogClip) {
     clip.sourceBundle,
     clip.originalClipName,
     clip.hidden ? 'hidden' : '',
-    clip.acceleration || clip.accelerationVariant ? 'acceleration variant' : '',
+    clip.accelerationVariant ? 'acceleration variant' : '',
   ].filter(Boolean).join(' · ');
 }
 
@@ -72,9 +74,6 @@ export default function NativeMotionAdmin() {
   const [characterName, setCharacterName] = useState('');
   const [automaticFallback, setAutomaticFallback] = useState(false);
   const [picks, setPicks] = useState<Record<NativeMotionStroke, DraftPick>>(emptyPicks);
-  const [search, setSearch] = useState<Record<NativeMotionStroke, string>>({
-    forehand: '', backhand: '', serve: '',
-  });
   const [showVariants, setShowVariants] = useState(true);
   const [overrides, setOverrides] = useState<Record<string, [string, string]>>({});
   const [busy, setBusy] = useState(false);
@@ -88,21 +87,14 @@ export default function NativeMotionAdmin() {
     nativeMotionProfileKey(name) === nativeMotionProfileKey(characterName)
   )) ?? '';
   const filteredClips = useMemo(() => {
-    const searchText = Object.fromEntries(NATIVE_MOTION_STROKES.map((stroke) => [
-      stroke,
-      search[stroke].trim().toLocaleLowerCase('en-GB'),
-    ])) as Record<NativeMotionStroke, string>;
     return Object.fromEntries(NATIVE_MOTION_STROKES.map((stroke) => {
-      const query = searchText[stroke];
       const currentId = picks[stroke].clipId;
       return [stroke, catalog?.clips.filter((clip) => (
         nativeMotionClipSupportsStroke(clip, stroke)
-        && (showVariants || clip.id === currentId || (!clip.hidden && !clip.acceleration && !clip.accelerationVariant))
-        && (!query || `${clip.sourceBundle} ${clip.originalClipName} ${clip.label} ${clip.author}`
-          .toLocaleLowerCase('en-GB').includes(query))
+        && (showVariants || clip.id === currentId || (!clip.hidden && !clip.accelerationVariant))
       )) ?? []];
     })) as Record<NativeMotionStroke, NativeMotionCatalogClip[]>;
-  }, [catalog, search, picks, showVariants]);
+  }, [catalog, picks, showVariants]);
 
   useEffect(() => {
     let active = true;
@@ -133,7 +125,7 @@ export default function NativeMotionAdmin() {
         ]);
         if (!active) return;
         const loadedProfiles = Array.isArray(profilePayload.profiles) ? profilePayload.profiles as NativeMotionProfile[] : [];
-        const loadedCharacters = Array.isArray(profilePayload.characters)
+        const loadedCharacters: string[] = Array.isArray(profilePayload.characters)
           ? profilePayload.characters.filter((name: unknown): name is string => (
             typeof name === 'string' && Boolean(name.trim())
           ))
@@ -147,6 +139,43 @@ export default function NativeMotionAdmin() {
           broadcast.id,
           [broadcast.profileKeys[0] ?? '', broadcast.profileKeys[1] ?? ''],
         ])));
+        const savedKeys = new Set(loadedProfiles.map((profile) => profile.profileKey));
+        if (loadedCharacters.some((name) => !savedKeys.has(nativeMotionProfileKey(name)))) {
+          try {
+            const autoResponse = await fetch('/api/admin/native-motion/profiles/auto', { method: 'POST' });
+            const autoPayload = await autoResponse.json().catch(() => null);
+            if (!autoResponse.ok || !autoPayload || typeof autoPayload !== 'object') {
+              setMessage(parseError(autoPayload, 'Automatic character defaults could not be created.'));
+            } else {
+              const autoResult = autoPayload as {
+                created?: unknown;
+                skippedHandedness?: unknown;
+                skippedClips?: unknown;
+              };
+              const created = Array.isArray(autoResult.created)
+                ? autoResult.created as NativeMotionProfile[]
+                : [];
+              if (created.length) {
+                const merged = [
+                  ...loadedProfiles.filter((profile) => !created.some((newProfile) => newProfile.profileKey === profile.profileKey)),
+                  ...created,
+                ].sort((a, b) => Number(b.automaticFallback) - Number(a.automaticFallback)
+                  || a.characterName.localeCompare(b.characterName));
+                setProfiles(merged);
+              }
+              const skipped = Number(autoResult.skippedHandedness || 0) + Number(autoResult.skippedClips || 0);
+              if (created.length || skipped) {
+                setMessage(
+                  `Created defaults for ${created.length} characters.`
+                  + (skipped ? ` ${skipped} need consistent handedness data or matching clips.` : '')
+                  + ' You can edit any saved profile below.',
+                );
+              }
+            }
+          } catch {
+            setMessage('Automatic character defaults could not be created; you can still configure profiles below.');
+          }
+        }
         setLoadingError('');
       } catch (cause) {
         if (active) setLoadingError(cause instanceof Error ? cause.message : 'Animation settings could not be loaded.');
@@ -205,7 +234,13 @@ export default function NativeMotionAdmin() {
     setSelectedKey('__new__');
     setCharacterName(name);
     setAutomaticFallback(false);
-    setPicks(emptyPicks());
+    const defaults = catalog ? nativeMotionCharacterDefaults(catalog, name) : {};
+    const next = emptyPicks();
+    for (const stroke of NATIVE_MOTION_STROKES) {
+      const clip = defaults[stroke];
+      if (clip) next[stroke] = { clipId: clip.id, sourceHandedness: clip.sourceHandedness ?? '' };
+    }
+    setPicks(next);
     setDeleting(false);
     setMessage('');
     setError('');
@@ -365,7 +400,8 @@ export default function NativeMotionAdmin() {
             </label>
             <p className={styles.notice}>
               A player can use any number of characters. Each character keeps its own animation profile;
-              active manual streams can still override either player independently.
+              active manual streams can still override either player independently. Missing profiles are
+              generated from matching non-acceleration clips and the character’s consistent recorded playing hand.
             </p>
 
             <label className={styles.field}>
@@ -414,38 +450,32 @@ export default function NativeMotionAdmin() {
                 const currentId = picks[stroke].clipId;
                 const selectedClip = catalog.clips.find((clip) => clip.id === currentId);
                 const options = filteredClips[stroke];
+                const labelId = `native-motion-${stroke}-label`;
                 return (
                   <fieldset className={styles.stroke} key={stroke}>
                     <legend>{stroke[0].toUpperCase() + stroke.slice(1)}</legend>
                     <label className={styles.field}>
-                      <span>Search the source clips</span>
-                      <input
-                        type="search"
-                        value={search[stroke]}
-                        onChange={(event) => setSearch((value) => ({ ...value, [stroke]: event.target.value }))}
-                        placeholder="Bundle or animation name"
-                      />
-                    </label>
-                    <label className={styles.field}>
-                      <span>Recorded clip</span>
-                      <select
+                      <span id={labelId}>Recorded clip</span>
+                      <SearchableClipSelect
+                        id={`native-motion-${stroke}-clip`}
+                        labelledBy={labelId}
                         value={currentId}
-                        onChange={(event) => {
-                          const clip = catalog.clips.find((item) => item.id === event.target.value);
+                        placeholder="Search player or animation"
+                        options={[
+                          { value: '', label: 'Use standard replay motion' },
+                          ...options.map((clip) => ({ value: clip.id, label: labelForClip(clip) })),
+                          ...(currentId && selectedClip && !options.some((clip) => clip.id === currentId)
+                            ? [{ value: currentId, label: labelForClip(selectedClip) }]
+                            : []),
+                        ]}
+                        onChange={(clipId) => {
+                          const clip = catalog.clips.find((item) => item.id === clipId);
                           changePick(stroke, {
-                            clipId: event.target.value,
+                            clipId,
                             sourceHandedness: clip?.sourceHandedness ?? picks[stroke].sourceHandedness,
                           });
                         }}
-                      >
-                        <option value="">Use standard replay motion</option>
-                        {options.map((clip) => (
-                          <option value={clip.id} key={clip.id}>{labelForClip(clip)}</option>
-                        ))}
-                        {currentId && selectedClip && !options.some((clip) => clip.id === currentId) && (
-                          <option value={currentId}>{labelForClip(selectedClip)}</option>
-                        )}
-                      </select>
+                      />
                     </label>
                     {selectedClip && (
                       <p className={styles.clipMeta}>

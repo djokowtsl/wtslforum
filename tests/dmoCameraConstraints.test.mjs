@@ -6,6 +6,7 @@ import {
   dmoCameraMaxDistanceInsideBowl,
   dmoCameraFloorLift,
   dmoFullscreenCourtCamera,
+  dmoTvBroadcastCamera,
   responsiveDmoCourtCameraScale,
   DMO_CAMERA_PAN_LIMIT,
   DMO_CAMERA_VERTICAL_PAN_LIMIT,
@@ -106,6 +107,31 @@ test('compact fullscreen camera frames the court for both device orientations', 
   assert.ok(dmoFullscreenCourtCamera(1024, 576, true));
   assert.equal(dmoFullscreenCourtCamera(0, 900, true), null);
   assert.equal(dmoFullscreenCourtCamera(390, NaN, true), null);
+});
+
+test('TV view looks straight down the court and leaves room around both baselines', () => {
+  for (const [width, height] of [
+    [1280, 720], [1024, 576], [800, 800], [402, 874], [390, 667], [667, 390],
+  ]) {
+    for (const maxDistance of [32, 40, Infinity]) {
+      const pose = dmoTvBroadcastCamera(width, height, maxDistance);
+      assert.ok(pose);
+      assert.ok(pose.x > 0);
+      assert.equal(pose.z, 0);
+      const camera = new PerspectiveCamera(pose.fov, width / height, 0.1, 260);
+      camera.position.set(pose.x, pose.y, pose.z);
+      camera.lookAt(0, 0.5, 0);
+      camera.updateMatrixWorld();
+      assert.ok(camera.position.distanceTo(new Vector3(0, 0.5, 0)) <= maxDistance + 1e-9);
+      for (const x of [-16, 16]) for (const z of [-7.5, 7.5]) for (const y of [0, 2.2]) {
+        const projected = new Vector3(x, y, z).project(camera);
+        assert.ok(Math.abs(projected.x) <= 0.93, `horizontal crop at ${width}x${height}`);
+        assert.ok(Math.abs(projected.y) <= 0.93, `vertical crop at ${width}x${height}`);
+        assert.ok(projected.z > -1 && projected.z < 1);
+      }
+    }
+  }
+  assert.equal(dmoTvBroadcastCamera(0, 500), null);
 });
 
 test('actual perspective projection keeps all court corners and player margins visible', () => {

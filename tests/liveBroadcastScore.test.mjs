@@ -19,6 +19,9 @@ function load(path, mocks = {}) {
     if (name in mocks) return mocks[name];
     if (name === './liveBroadcast') return load('lib/liveBroadcast.ts');
     if (name === './liveScoreModel') return load('lib/liveScoreModel.ts');
+    if (name === './useNativePlayerMotions') {
+      return { useNativePlayerMotions: () => ({ sources: [], error: null }) };
+    }
     if (name === '@/lib/liveDmoUmpireScoreSource') return load('lib/liveDmoUmpireScoreSource.ts');
     if (name === 'zod') return require('zod');
     return require(name);
