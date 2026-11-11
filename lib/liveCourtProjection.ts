@@ -6,6 +6,8 @@ export type LiveCourtBall = { x: number; y: number; z: number };
 export type LiveCourtShotEvent = { frame: number; kind: 'shot' | 'point-end' };
 
 export const DEFAULT_LIVE_COURT_CAMERA: LiveCourtCamera = { azimuth: -42, elevation: 38 };
+// Baseline-aligned framing for the non-WebGL replay fallback, matching the TV view.
+export const DEFAULT_TV_COURT_CAMERA: LiveCourtCamera = { azimuth: 0, elevation: 18 };
 
 type Vector3 = LiveCourtWorldPoint;
 

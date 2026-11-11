@@ -14,6 +14,7 @@ import type { Te4CourtSurface } from '@/lib/te4DmoTypes';
 import {
   createCourtProjector,
   DEFAULT_LIVE_COURT_CAMERA,
+  DEFAULT_TV_COURT_CAMERA,
   findCourtRacketContact,
   playerRightVector,
   type LiveCourtCamera,
@@ -606,6 +607,7 @@ function DmoLiveCourt({
   umpireCallsEnabledRef.current = umpireCallsEnabled;
   umpireSpeechReadyRef.current = umpireSpeechReady;
   const soundPointerActivationRef = useRef(false);
+  const defaultCamera = fullReplay ? DEFAULT_TV_COURT_CAMERA : DEFAULT_LIVE_COURT_CAMERA;
   const sceneRef = useRef({
     samples: sampleBufferRef.current,
     trajectoryEvents: trajectoryEventsRef.current,
@@ -614,12 +616,17 @@ function DmoLiveCourt({
     playbackSpeed,
     stadiumAtmosphere,
     isWta,
-    camera: DEFAULT_LIVE_COURT_CAMERA,
+    camera: defaultCamera,
     zoom: 1,
   });
-  const [cameraAzimuth, setCameraAzimuth] = useState(DEFAULT_LIVE_COURT_CAMERA.azimuth);
-  const [cameraElevation, setCameraElevation] = useState(DEFAULT_LIVE_COURT_CAMERA.elevation);
+  const [cameraAzimuth, setCameraAzimuth] = useState(defaultCamera.azimuth);
+  const [cameraElevation, setCameraElevation] = useState(defaultCamera.elevation);
   const [zoom, setZoom] = useState(1);
+  useEffect(() => {
+    setCameraAzimuth(defaultCamera.azimuth);
+    setCameraElevation(defaultCamera.elevation);
+    setZoom(1);
+  }, [defaultCamera]);
   sceneRef.current = {
     samples: sampleBufferRef.current,
     trajectoryEvents: trajectoryEventsRef.current,
@@ -1239,8 +1246,8 @@ function DmoLiveCourt({
             aria-label="Reset court camera"
             title="Reset court camera"
             onClick={() => {
-              setCameraAzimuth(DEFAULT_LIVE_COURT_CAMERA.azimuth);
-              setCameraElevation(DEFAULT_LIVE_COURT_CAMERA.elevation);
+              setCameraAzimuth(defaultCamera.azimuth);
+              setCameraElevation(defaultCamera.elevation);
               setZoom(1);
             }}
           >
