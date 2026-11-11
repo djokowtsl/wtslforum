@@ -1,5 +1,6 @@
 import * as THREE from 'three';
 import { BVHLoader } from 'three/examples/jsm/loaders/BVHLoader.js';
+import { DmoBundledGroundstroke, type BundledMotionSource } from './DmoBundledGroundstroke';
 
 export type GroundstrokeName =
   | 'forehand'
@@ -67,6 +68,8 @@ export type GroundstrokeMotionSources = {
   backhandOne?: string;
   /** Recorded walk / jog / run for the arms between points (optional). */
   locomotion?: { walk: string; jog: string; run: string };
+  /** Native Unity recordings for this player's selected character and strokes. */
+  bundled?: BundledMotionSource;
 };
 
 export interface GroundstrokePlayback {
@@ -85,13 +88,23 @@ export interface GroundstrokePlayback {
   smash?: boolean;
   /** Speed up the take-back when a fast reply leaves too little preparation time. */
   leadScale?: number;
+  /** Neutral carry sampling must not reuse another recording's serve timing. */
+  readyPose?: boolean;
   /** Recorded contact ball position in the player's local court space. */
   contactTarget?: [number, number, number];
+}
+
+export interface CapturedClipTiming {
+  leadFrames: number;
+  recoveryFadeStart: number;
+  recoveryFrames: number;
 }
 
 export interface CapturedBodyHints {
   elbows: Record<'l' | 'r', THREE.Vector3>;
   wrists: Record<'l' | 'r', THREE.Vector3>;
+  /** Source-specific BVH wrist corrections must not alter native recordings. */
+  nativeRecording?: boolean;
 }
 
 type NativeRest = {
@@ -226,8 +239,10 @@ export function groundstrokeLeadFrames(framesSinceOpponentContactAtOwnContact?: 
 export function groundstrokeCaptureWeight(
   frameDelta: number,
   leadFrames = GROUNDSTROKE_LEAD_FRAMES,
+  timing?: CapturedClipTiming,
 ) {
   if (!Number.isFinite(frameDelta)) return 0;
+  if (timing) return nativeCaptureWeight(frameDelta, timing, Math.min(leadFrames, timing.leadFrames));
   const smooth = THREE.MathUtils.smoothstep;
   const lead = THREE.MathUtils.clamp(leadFrames, GROUNDSTROKE_MIN_LEAD_FRAMES, GROUNDSTROKE_LEAD_FRAMES);
   // One continuous envelope. (Separate backswing/impact/follow-through lobes
@@ -263,19 +278,26 @@ const SLICE_EMPHASIS_BONES = [
 export const SLICE_TIME_SCALE = 0.75;
 export const VOLLEY_RECOVERY_FRAMES = 44;
 
-export function volleyCaptureWeight(frameDelta: number) {
+export function volleyCaptureWeight(frameDelta: number, timing?: CapturedClipTiming) {
   if (!Number.isFinite(frameDelta)) return 0;
+  if (timing) return nativeCaptureWeight(frameDelta, timing, Math.min(VOLLEY_LEAD_FRAMES, timing.leadFrames));
   const smooth = THREE.MathUtils.smoothstep;
   return smooth(frameDelta, -VOLLEY_LEAD_FRAMES, -10)
     * (1 - smooth(frameDelta, 24, VOLLEY_RECOVERY_FRAMES));
 }
 
-export function serveCaptureWeight(frameDelta: number) {
+export function serveCaptureWeight(frameDelta: number, timing?: CapturedClipTiming) {
   if (!Number.isFinite(frameDelta)) return 0;
+  if (timing) return nativeCaptureWeight(frameDelta, timing, timing.leadFrames);
   const smooth = THREE.MathUtils.smoothstep;
   // Continuous from the start of the service motion to the end of recovery.
   return smooth(frameDelta, -SERVE_LEAD_FRAMES, -80)
     * (1 - smooth(frameDelta, RECOVERY_FADE_START, CAPTURE_RECOVERY_FRAMES));
+}
+
+function nativeCaptureWeight(frameDelta: number, timing: CapturedClipTiming, lead: number) {
+  return THREE.MathUtils.smoothstep(frameDelta, -lead, -lead + Math.min(20, lead * .7))
+    * (1 - THREE.MathUtils.smoothstep(frameDelta, timing.recoveryFadeStart, timing.recoveryFrames));
 }
 
 export function readyPosePlayback(
@@ -289,6 +311,7 @@ export function readyPosePlayback(
     handedness,
     scope,
     rootOffset: false,
+    readyPose: true,
   };
 }
 
@@ -305,6 +328,7 @@ function mirrorQuaternionX(quaternion: THREE.Quaternion) {
 }
 
 export class DmoCapturedGroundstroke {
+  private readonly bundled?: DmoBundledGroundstroke;
   private readonly targets = new Map<string, THREE.Bone>();
   private readonly motions: Omit<Record<GroundstrokeName, MotionClip>, 'smash'> & {
     smash?: MotionClip;
@@ -323,6 +347,7 @@ export class DmoCapturedGroundstroke {
   ) {
     this.model = model;
     this.space = space;
+    if (sources.bundled) this.bundled = new DmoBundledGroundstroke(model, space, sources.bundled);
     model.updateMatrixWorld(true);
     space.updateWorldMatrix(true, true);
     model.traverse((object) => {
@@ -424,6 +449,7 @@ export class DmoCapturedGroundstroke {
   }
 
   apply(playback: GroundstrokePlayback): CapturedBodyHints | null {
+    if (this.bundled?.has(playback)) return this.bundled.apply(playback);
     const weight = THREE.MathUtils.clamp(playback.weight, 0, 1);
     if (weight <= 0 || !Number.isFinite(playback.deltaSeconds)) return null;
     const isVolley = playback.stroke === 'volley-forehand' || playback.stroke === 'volley-backhand';
