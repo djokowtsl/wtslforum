@@ -9,7 +9,9 @@ import {
 import { NATIVE_MOTION_CATALOG_SHA256 } from '@/lib/nativeMotionCatalog';
 import {
   nativeMotionClipSupportsStroke,
+  mergeNativeMotionPicks,
   type NativeMotionCatalog,
+  type NativeMotionPicks,
   type NativeMotionProfile,
   type NativeMotionStroke,
 } from '@/lib/nativeMotionCatalogData';
@@ -19,6 +21,7 @@ type SourcePair = readonly [BundledMotionSource | null, BundledMotionSource | nu
 type ProfileResponse = {
   playerProfileKeys: [string | null, string | null];
   profiles: NativeMotionProfile[];
+  playerClipOverrides?: [NativeMotionPicks, NativeMotionPicks];
 };
 
 let catalogPromise: Promise<NativeMotionCatalog> | null = null;
@@ -65,16 +68,22 @@ function loadClip(clipId: string, catalog: NativeMotionCatalog) {
 export function useNativePlayerMotions({
   playerNames,
   broadcastId,
+  submissionId,
+  overridePlayerOrder = [0, 1],
   allowAutomaticFallback = false,
 }: {
   playerNames: readonly [string | null | undefined, string | null | undefined];
   broadcastId?: string;
+  submissionId?: string;
+  overridePlayerOrder?: readonly [number, number];
   allowAutomaticFallback?: boolean;
 }) {
   const [sources, setSources] = useState<SourcePair>([null, null]);
   const [error, setError] = useState('');
   const playerOne = playerNames[0]?.trim() ?? '';
   const playerTwo = playerNames[1]?.trim() ?? '';
+  const orderOne = overridePlayerOrder[0];
+  const orderTwo = overridePlayerOrder[1];
 
   useEffect(() => {
     let active = true;
@@ -94,6 +103,7 @@ export function useNativePlayerMotions({
           player2: playerTwo,
         });
         if (broadcastId) params.set('broadcastId', broadcastId);
+        if (submissionId) params.set('submissionId', submissionId);
         if (allowAutomaticFallback) params.set('fallback', '1');
         const response = await fetch(`/api/native-motion/profiles?${params.toString()}`, {
           cache: 'no-store',
@@ -109,23 +119,27 @@ export function useNativePlayerMotions({
           NativeMotionProfile | null,
           NativeMotionProfile | null,
         ];
-        if (!selected.some(Boolean)) {
+        const direct = payload.playerClipOverrides ?? [{}, {}];
+        const chosenPicks: [NativeMotionPicks, NativeMotionPicks] = [
+          mergeNativeMotionPicks(selected[0]?.clips, direct[orderOne]),
+          mergeNativeMotionPicks(selected[1]?.clips, direct[orderTwo]),
+        ];
+        if (!chosenPicks.some((picks) => Object.keys(picks).length)) {
           if (active) setSources([null, null]);
           return;
         }
 
         const catalog = await loadCatalog();
-        const clipIds = [...new Set(selected.flatMap((profile) => (
-          profile ? Object.values(profile.clips).flatMap((pick) => pick ? [pick.clipId] : []) : []
+        const clipIds = [...new Set(chosenPicks.flatMap((picks) => (
+          Object.values(picks).flatMap((pick) => pick ? [pick.clipId] : [])
         )))];
         const loadedClips = new Map(await Promise.all(clipIds.map(async (id) => (
           [id, await loadClip(id, catalog)] as const
         ))));
-        const sourceFor = (profile: NativeMotionProfile | null): BundledMotionSource | null => {
-          if (!profile) return null;
+        const sourceFor = (picks: NativeMotionPicks): BundledMotionSource | null => {
           const clips: BundledMotionSource['clips'] = {};
           for (const stroke of ['forehand', 'backhand', 'serve'] as const) {
-            const pick = profile.clips[stroke];
+            const pick = picks[stroke];
             if (!pick) continue;
             const metadata = catalog.clips.find((clip) => clip.id === pick.clipId);
             if (!nativeMotionClipSupportsStroke(metadata, stroke) || !metadata?.events) {
@@ -149,7 +163,7 @@ export function useNativePlayerMotions({
           }
           return Object.keys(clips).length ? { schema: catalog.rig, clips } : null;
         };
-        const next: SourcePair = [sourceFor(selected[0]), sourceFor(selected[1])];
+        const next: SourcePair = [sourceFor(chosenPicks[0]), sourceFor(chosenPicks[1])];
         if (active) {
           setSources(next);
           setError('');
@@ -172,7 +186,7 @@ export function useNativePlayerMotions({
       requestController?.abort();
       if (poll) window.clearInterval(poll);
     };
-  }, [playerOne, playerTwo, broadcastId, allowAutomaticFallback]);
+  }, [playerOne, playerTwo, broadcastId, submissionId, orderOne, orderTwo, allowAutomaticFallback]);
 
   return { sources, error };
 }

@@ -6,6 +6,7 @@ import { sql } from '@/lib/db';
 import {
   NATIVE_MOTION_AUTOMATIC_PROFILE_KEY,
   NATIVE_MOTION_STROKES,
+  deduplicateNativeMotionCharacterNames,
   nativeMotionClipSupportsStroke,
   nativeMotionProfileKey,
   type NativeMotionPicks,
@@ -40,6 +41,8 @@ type ProfileRow = {
   updated_at: Date | string;
 };
 
+type CharacterRow = { character_name: string };
+
 function toProfile(row: ProfileRow): NativeMotionProfile {
   return {
     profileKey: row.profile_key,
@@ -61,12 +64,40 @@ export async function GET() {
     return NextResponse.json({ error: 'Admin access required.' }, { status: 403, headers: PRIVATE_HEADERS });
   }
   try {
-    const rows = await sql`
-      SELECT profile_key, character_name, automatic_fallback, clips, updated_at
-      FROM dmo_native_motion_profiles
-      ORDER BY automatic_fallback DESC, character_name ASC
-    ` as ProfileRow[];
-    return NextResponse.json({ profiles: rows.map(toProfile) }, { headers: PRIVATE_HEADERS });
+    const [rows, characterRows] = await Promise.all([
+      sql`
+        SELECT profile_key, character_name, automatic_fallback, clips, updated_at
+        FROM dmo_native_motion_profiles
+        ORDER BY automatic_fallback DESC, character_name ASC
+      ` as Promise<ProfileRow[]>,
+      sql`
+        WITH recent_submissions AS (
+          SELECT player1_character, player2_character
+          FROM dmo_submissions
+          WHERE hidden_at IS NULL
+          ORDER BY id DESC
+          LIMIT 500
+        ), replay_characters AS (
+          SELECT NULLIF(BTRIM(player1_character), '') AS character_name
+          FROM recent_submissions
+          UNION ALL
+          SELECT NULLIF(BTRIM(player2_character), '') AS character_name
+          FROM recent_submissions
+        )
+        SELECT DISTINCT character_name
+        FROM replay_characters
+        WHERE character_name IS NOT NULL
+        ORDER BY character_name
+        LIMIT 200
+      ` as Promise<CharacterRow[]>,
+    ]);
+    const characters = deduplicateNativeMotionCharacterNames(
+      characterRows.map((row) => row.character_name),
+    );
+    return NextResponse.json(
+      { profiles: rows.map(toProfile), characters },
+      { headers: PRIVATE_HEADERS },
+    );
   } catch (error) {
     console.error('[native-motion] profile list failed', error instanceof Error ? error.name : 'UnknownError');
     return NextResponse.json(

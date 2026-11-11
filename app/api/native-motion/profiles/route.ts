@@ -1,5 +1,7 @@
 import { NextResponse } from 'next/server';
 import { sql } from '@/lib/db';
+import { getSession } from '@/lib/auth';
+import { getDmoReplaySubmission, getPublicDmoReplay, isDmoReplayId } from '@/lib/dmoReplayLibrary';
 import {
   NATIVE_MOTION_AUTOMATIC_PROFILE_KEY,
   nativeMotionProfileKey,
@@ -44,10 +46,24 @@ export async function GET(request: Request) {
   if (broadcastId && !BROADCAST_ID_RE.test(broadcastId)) {
     return NextResponse.json({ error: 'Broadcast not found.' }, { status: 404, headers: PROFILE_HEADERS });
   }
+  const submissionId = params.get('submissionId');
+  if (submissionId && !isDmoReplayId(submissionId)) {
+    return NextResponse.json({ error: 'Replay not found.' }, { status: 404, headers: { 'Cache-Control': 'private, no-store' } });
+  }
+  const headers = broadcastId || submissionId
+    ? { ...PROFILE_HEADERS, 'Cache-Control': 'private, no-store' }
+    : PROFILE_HEADERS;
   const exactKeys = playerNames.map(nativeMotionProfileKey) as [string, string];
   const useFallback = params.get('fallback') === '1';
 
   try {
+    if (submissionId) {
+      const user = await getSession();
+      const replay = user ? await getDmoReplaySubmission(submissionId) : await getPublicDmoReplay(submissionId);
+      if (!replay?.privateBlobPathname || !replay.fileName) {
+        return NextResponse.json({ error: 'Replay not found.' }, { status: 404, headers });
+      }
+    }
     const profiles = await sql`
       SELECT profile_key, character_name, automatic_fallback, clips, updated_at
       FROM dmo_native_motion_profiles
@@ -59,6 +75,7 @@ export async function GET(request: Request) {
     ` as ProfileRow[];
     const profileByKey = new Map(profiles.map((row) => [row.profile_key, toProfile(row)]));
     const overrideKeys: [string | null, string | null] = [null, null];
+    const playerClipOverrides: [NativeMotionPicks, NativeMotionPicks] = [{}, {}];
 
     if (broadcastId) {
       const overrideRows = await sql`
@@ -79,6 +96,25 @@ export async function GET(request: Request) {
       }
     }
 
+    const clipRows = submissionId
+      ? await sql`
+        SELECT player_index, clips FROM dmo_native_motion_player_overrides
+        WHERE submission_id = ${submissionId}::bigint
+      `
+      : broadcastId
+        ? await sql`
+          SELECT o.player_index, o.clips FROM dmo_native_motion_player_overrides o
+          JOIN dmo_live_broadcasts b ON b.id = o.broadcast_id
+          WHERE o.broadcast_id = ${broadcastId}::uuid AND b.status = 'live'
+            AND b.expires_at > NOW() AND b.payload->>'mode' = 'manual'
+        `
+        : [];
+    for (const row of clipRows) {
+      if (row.player_index === 0 || row.player_index === 1) {
+        playerClipOverrides[row.player_index as 0 | 1] = row.clips ?? {};
+      }
+    }
+
     const playerProfileKeys = exactKeys.map((key, index) => (
       overrideKeys[index]
       ?? (profileByKey.has(key) ? key : null)
@@ -90,12 +126,13 @@ export async function GET(request: Request) {
     return NextResponse.json(
       {
         playerProfileKeys,
+        playerClipOverrides,
         profiles: [...usedKeys].flatMap((key) => {
           const profile = profileByKey.get(key);
           return profile ? [profile] : [];
         }),
       },
-      { headers: PROFILE_HEADERS },
+      { headers },
     );
   } catch (error) {
     console.error('[native-motion] profile lookup failed', error instanceof Error ? error.name : 'UnknownError');

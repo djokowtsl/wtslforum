@@ -12,7 +12,13 @@ const { code } = transformSync(source, {
 });
 const module = { exports: {} };
 new Function('module', 'exports', 'require', code)(module, module.exports, require);
-const { firstValidNativeMotionClip, nativeMotionClipSupportsStroke } = module.exports;
+const {
+  deduplicateNativeMotionCharacterNames,
+  firstValidNativeMotionClip,
+  nativeMotionClipSupportsStroke,
+  nativeMotionProfileKey,
+  mergeNativeMotionPicks,
+} = module.exports;
 
 function clip(id, overrides = {}) {
   return {
@@ -32,6 +38,29 @@ function clip(id, overrides = {}) {
     ...overrides,
   };
 }
+
+test('character profiles are shared by normalized character names, not player accounts', () => {
+  assert.equal(nativeMotionProfileKey(' Federer  '), 'federer');
+  assert.equal(nativeMotionProfileKey('DJOKOVIC'), 'djokovic');
+  assert.deepEqual(
+    deduplicateNativeMotionCharacterNames(['Federer', ' federer  ', 'Djokovic', '', null]),
+    ['Djokovic', 'Federer'],
+  );
+});
+
+test('a match overrides only the chosen stroke with exactly one fixed version', () => {
+  const defaultForehand = { clipId: 'a1_b1', sourceHandedness: 'right' };
+  const defaultServe = { clipId: 'a2_b2', sourceHandedness: 'right' };
+  const chosenForehand = { clipId: 'a3_b3', sourceHandedness: 'left' };
+  const picks = mergeNativeMotionPicks(
+    { forehand: defaultForehand, serve: defaultServe },
+    { forehand: chosenForehand },
+  );
+  assert.equal(picks.forehand, chosenForehand);
+  assert.equal(picks.serve, defaultServe);
+  assert.equal(Array.isArray(picks.forehand), false);
+  assert.deepEqual(mergeNativeMotionPicks({}, {}), {});
+});
 
 test('a usable stroke clip needs the matching SDK contact marker in range', () => {
   assert.equal(nativeMotionClipSupportsStroke(clip('strike'), 'forehand'), true);

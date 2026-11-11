@@ -50,6 +50,25 @@ export function nativeMotionProfileKey(name: string) {
   return name.trim().replace(/\s+/g, ' ').toLocaleLowerCase('en-GB');
 }
 
+/** A match chooses exactly one clip per stroke; it never creates a variant rotation. */
+export function mergeNativeMotionPicks(defaults: NativeMotionPicks = {}, overrides: NativeMotionPicks = {}): NativeMotionPicks {
+  return Object.fromEntries(NATIVE_MOTION_STROKES.flatMap((stroke) => {
+    const pick = overrides[stroke] ?? defaults[stroke];
+    return pick ? [[stroke, pick]] : [];
+  }));
+}
+
+export function deduplicateNativeMotionCharacterNames(names: readonly unknown[]) {
+  const byProfileKey = new Map<string, string>();
+  for (const value of names) {
+    if (typeof value !== 'string') continue;
+    const name = value.trim().replace(/\s+/g, ' ');
+    const key = nativeMotionProfileKey(name);
+    if (key && !byProfileKey.has(key)) byProfileKey.set(key, name);
+  }
+  return [...byProfileKey.values()].sort((a, b) => a.localeCompare(b, 'en-GB'));
+}
+
 export function firstValidNativeMotionClip(
   catalog: NativeMotionCatalog,
   stroke: NativeMotionStroke,

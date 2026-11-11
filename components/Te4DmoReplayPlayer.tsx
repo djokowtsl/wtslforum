@@ -4,7 +4,7 @@ import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } fro
 import { embedTe4ViewerHtml } from '@/lib/te4ViewerEmbed';
 import { te4ViewerToLiveSnapshot } from '@/lib/te4DmoReplaySnapshot';
 import type { Te4LiveSnapshot } from '@/lib/te4DmoLive';
-import { alignDmoReplayPlayerStyles } from '@/lib/dmoReplayCharacterStyles';
+import { alignDmoReplayPlayerStyles, dmoReplayPlayerStyleOrder } from '@/lib/dmoReplayCharacterStyles';
 import {
   buildTe4DmoReplayScoreTimeline,
   te4DmoReplayScoreAtFrame,
@@ -23,6 +23,7 @@ import { useNativePlayerMotions } from './useNativePlayerMotions';
 type Props = {
   broadcastId?: string;
   replayUrl?: string;
+  replaySubmissionId?: string;
   characterNames?: readonly [string | null, string | null];
   allowAutomaticFallback?: boolean;
   initialSpeed: 1 | 2 | 4;
@@ -50,6 +51,7 @@ function isViewerData(value: unknown): value is Te4ViewerData {
 export default function Te4DmoReplayPlayer({
   broadcastId,
   replayUrl,
+  replaySubmissionId,
   characterNames,
   allowAutomaticFallback = false,
   initialSpeed,
@@ -100,6 +102,10 @@ export default function Te4DmoReplayPlayer({
   const nativeMotion = useNativePlayerMotions({
     playerNames: nativeMotionNames,
     broadcastId,
+    submissionId: replaySubmissionId,
+    overridePlayerOrder: viewer && submissionPlayers
+      ? dmoReplayPlayerStyleOrder(submissionPlayers, viewer.names)
+      : [0, 1],
     allowAutomaticFallback,
   });
 
