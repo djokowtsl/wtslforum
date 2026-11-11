@@ -48,6 +48,17 @@ test('live and replay court renderers share an accessible fullscreen control', (
   assert.match(fullscreenButton, /aria-label=\{isFullscreen \? 'Exit full screen' : 'Watch full screen'\}/);
 });
 
+test('full match replays open and reset to TV framing while live stays on court view', () => {
+  assert.match(liveCourt, /const initialCameraView: Exclude<CameraView, 'custom'> = fullReplay \? 'tv' : 'court';/);
+  assert.match(liveCourt, /const reset = \(\) => preset\(initialCameraView\)/);
+  assert.match(fallbackCourt, /const defaultCamera = fullReplay \? DEFAULT_TV_COURT_CAMERA : DEFAULT_LIVE_COURT_CAMERA;/);
+  assert.match(fallbackCourt, /camera: defaultCamera/);
+  assert.match(fallbackCourt, /useState\(defaultCamera\.azimuth\)/);
+  assert.match(fallbackCourt, /useState\(defaultCamera\.elevation\)/);
+  assert.match(fallbackCourt, /setCameraAzimuth\(defaultCamera\.azimuth\)/);
+  assert.match(fallbackCourt, /setCameraElevation\(defaultCamera\.elevation\)/);
+});
+
 test('mobile fullscreen keeps the court controls instead of entering video-only fullscreen', () => {
   assert.match(fullscreenButton, /webkitRequestFullscreen/);
   assert.match(fullscreenButton, /fallbackClassName/);

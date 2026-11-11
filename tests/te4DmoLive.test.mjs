@@ -12,6 +12,7 @@ import {
 } from '../lib/te4DmoLive.ts';
 import {
   DEFAULT_LIVE_COURT_CAMERA,
+  DEFAULT_TV_COURT_CAMERA,
   findCourtRacketContact,
   playerRightVector,
   projectCourtPoint,
@@ -277,6 +278,14 @@ test('default court view keeps the positive-x end on screen-right', () => {
   const negativeEnd = projectCourtPoint([-1189, 0, 0], DEFAULT_LIVE_COURT_CAMERA);
   const positiveEnd = projectCourtPoint([1189, 0, 0], DEFAULT_LIVE_COURT_CAMERA);
   assert.ok(negativeEnd[0] < positiveEnd[0]);
+});
+
+test('TV replay camera looks straight along the court length', () => {
+  const negativeEnd = projectCourtPoint([-1189, 0, 0], DEFAULT_TV_COURT_CAMERA);
+  const positiveEnd = projectCourtPoint([1189, 0, 0], DEFAULT_TV_COURT_CAMERA);
+  assert.equal(DEFAULT_TV_COURT_CAMERA.azimuth, 0);
+  assert.ok(Math.abs(negativeEnd[0] - 450) < 1);
+  assert.ok(Math.abs(positiveEnd[0] - 450) < 1);
 });
 
 test('racket side is the player’s right, independent of the camera view', () => {

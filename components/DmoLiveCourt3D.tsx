@@ -404,10 +404,16 @@ function ThreeCourt({
   const soundPreferenceRef = useRef(true);
   const soundActivationPendingRef = useRef(false);
   const umpireCallsEnabledRef = useRef(true);
-  const cameraViewRef = useRef<CameraView>('court');
-  const selectedCameraViewRef = useRef<Exclude<CameraView, 'custom'>>('court');
+  const initialCameraView: Exclude<CameraView, 'custom'> = fullReplay ? 'tv' : 'court';
+  const cameraViewRef = useRef<CameraView>(initialCameraView);
+  const selectedCameraViewRef = useRef<Exclude<CameraView, 'custom'>>(initialCameraView);
   const playerCameraPanRef = useRef(0);
-  const [cameraView, setCameraView] = useState<CameraView>('court');
+  const [cameraView, setCameraView] = useState<CameraView>(initialCameraView);
+  useEffect(() => {
+    cameraViewRef.current = initialCameraView;
+    selectedCameraViewRef.current = initialCameraView;
+    setCameraView(initialCameraView);
+  }, [initialCameraView]);
   const [timeOfDay, setTimeOfDay] = useState<BroadcastTimeOfDay>('day');
   const renderQualityRef = useRef(renderQuality);
   renderQualityRef.current = renderQuality;
@@ -2621,7 +2627,7 @@ function ThreeCourt({
       camera.position.copy(controls.target).add(direction);
       controls.update();
     };
-    const reset = () => preset('court');
+    const reset = () => preset(initialCameraView);
     const onZoom = (event: Event) => zoom((event as CustomEvent<number>).detail);
     const onPreset = (event: Event) =>
       preset((event as CustomEvent<Exclude<CameraView, 'custom'>>).detail);
