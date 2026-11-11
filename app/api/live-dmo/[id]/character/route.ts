@@ -11,7 +11,12 @@ const PRIVATE_HEADERS = {
   'X-Content-Type-Options': 'nosniff',
 };
 const updateSchema = z.object({
-  character: z.string().trim().min(1).max(120).nullable(),
+  character: z.string().trim().max(120).nullable().optional(),
+  opponentCharacter: z.string().trim().max(120).nullable().optional(),
+  playerCharacters: z.tuple([
+    z.string().trim().max(120).nullable(),
+    z.string().trim().max(120).nullable(),
+  ]).optional(),
 }).strict();
 const MAX_BODY_BYTES = 1_024;
 
@@ -47,12 +52,44 @@ export async function PATCH(request: Request, context: RouteContext) {
   }
 
   try {
+    const existing = await sql`
+      SELECT owner_discord_id, payload FROM dmo_live_broadcasts
+      WHERE id=${id}::uuid AND status='live' AND expires_at > NOW()
+      LIMIT 1
+    `;
+    if (!existing.length) {
+      return NextResponse.json({ error: 'Broadcast not found or no longer live.' }, { status: 404, headers: PRIVATE_HEADERS });
+    }
+    if (String(existing[0].owner_discord_id) !== user.discordId && !user.isAdmin) {
+      return NextResponse.json({ error: 'Only the stream owner or an admin can update its characters.' }, { status: 403, headers: PRIVATE_HEADERS });
+    }
+    const payload = existing[0].payload && typeof existing[0].payload === 'object'
+      ? existing[0].payload as Record<string, unknown>
+      : {};
+    const previousCharacters = Array.isArray(payload.playerCharacters)
+      && payload.playerCharacters.length === 2
+      ? payload.playerCharacters
+      : [typeof payload.character === 'string' ? payload.character : null, null];
+    const suppliedCharacters = parsed.data.playerCharacters;
+    const characters: [string | null, string | null] = suppliedCharacters
+      ? suppliedCharacters.map((name) => (typeof name === 'string' && name.trim() ? name.trim() : null)) as [string | null, string | null]
+      : [
+        Object.hasOwn(parsed.data, 'character')
+          ? (parsed.data.character?.trim() || null)
+          : (typeof previousCharacters[0] === 'string' ? previousCharacters[0] : null),
+        Object.hasOwn(parsed.data, 'opponentCharacter')
+          ? (parsed.data.opponentCharacter?.trim() || null)
+          : (typeof previousCharacters[1] === 'string' ? previousCharacters[1] : null),
+      ];
     const rows = await sql`
       UPDATE dmo_live_broadcasts
       SET payload=COALESCE(payload, '{}'::jsonb)
-            || jsonb_build_object('character', ${parsed.data.character}::text)
+            || jsonb_build_object(
+              'character', ${characters[0]}::text,
+              'opponentCharacter', ${characters[1]}::text,
+              'playerCharacters', ${JSON.stringify(characters)}::jsonb
+            )
       WHERE id=${id}::uuid
-        AND owner_discord_id=${user.discordId}
         AND status='live'
         AND expires_at > NOW()
       RETURNING id
@@ -60,7 +97,7 @@ export async function PATCH(request: Request, context: RouteContext) {
     if (!rows.length) {
       return NextResponse.json({ error: 'Broadcast not found or no longer live.' }, { status: 404, headers: PRIVATE_HEADERS });
     }
-    return NextResponse.json({ ok: true, character: parsed.data.character }, { headers: PRIVATE_HEADERS });
+    return NextResponse.json({ ok: true, character: characters[0], playerCharacters: characters }, { headers: PRIVATE_HEADERS });
   } catch (error) {
     console.error('[live-broadcast] character update failed', error instanceof Error ? error.name : 'UnknownError');
     return NextResponse.json({ error: 'Broadcast character could not be saved.' }, { status: 503, headers: PRIVATE_HEADERS });

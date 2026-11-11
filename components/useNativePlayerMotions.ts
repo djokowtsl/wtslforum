@@ -8,6 +8,10 @@ import {
 } from '@/lib/dmoBundledMotion.mjs';
 import { NATIVE_MOTION_CATALOG_SHA256 } from '@/lib/nativeMotionCatalog';
 import {
+  getDmoCharacterGruntSetting,
+  type DmoCharacterGruntSetting,
+} from '@/lib/dmoCharacterAppearance.mjs';
+import {
   nativeMotionClipSupportsStroke,
   mergeNativeMotionPicks,
   type NativeMotionCatalog,
@@ -22,6 +26,7 @@ type ProfileResponse = {
   playerProfileKeys: [string | null, string | null];
   profiles: NativeMotionProfile[];
   playerClipOverrides?: [NativeMotionPicks, NativeMotionPicks];
+  playerGruntSettings?: [DmoCharacterGruntSetting, DmoCharacterGruntSetting];
 };
 
 let catalogPromise: Promise<NativeMotionCatalog> | null = null;
@@ -79,6 +84,12 @@ export function useNativePlayerMotions({
   allowAutomaticFallback?: boolean;
 }) {
   const [sources, setSources] = useState<SourcePair>([null, null]);
+  const [playerGruntSettings, setPlayerGruntSettings] = useState<
+    [DmoCharacterGruntSetting, DmoCharacterGruntSetting]
+  >([
+    getDmoCharacterGruntSetting(playerNames[0]),
+    getDmoCharacterGruntSetting(playerNames[1]),
+  ]);
   const [error, setError] = useState('');
   const playerOne = playerNames[0]?.trim() ?? '';
   const playerTwo = playerNames[1]?.trim() ?? '';
@@ -91,6 +102,10 @@ export function useNativePlayerMotions({
     let requestController: AbortController | null = null;
     setSources([null, null]);
     setError('');
+    setPlayerGruntSettings([
+      getDmoCharacterGruntSetting(playerOne),
+      getDmoCharacterGruntSetting(playerTwo),
+    ]);
 
     const load = async () => {
       if (inFlight) return;
@@ -104,6 +119,10 @@ export function useNativePlayerMotions({
         });
         if (broadcastId) params.set('broadcastId', broadcastId);
         if (submissionId) params.set('submissionId', submissionId);
+        if (submissionId) {
+          params.set('playerIndex1', String(orderOne));
+          params.set('playerIndex2', String(orderTwo));
+        }
         if (allowAutomaticFallback) params.set('fallback', '1');
         const response = await fetch(`/api/native-motion/profiles?${params.toString()}`, {
           cache: 'no-store',
@@ -114,6 +133,9 @@ export function useNativePlayerMotions({
         if (!Array.isArray(payload.playerProfileKeys) || !Array.isArray(payload.profiles)) {
           throw new Error('The saved animation profile response is invalid.');
         }
+        const resolvedGrunts = payload.playerGruntSettings
+          ?? [getDmoCharacterGruntSetting(playerOne), getDmoCharacterGruntSetting(playerTwo)];
+        if (active) setPlayerGruntSettings(resolvedGrunts);
         const profiles = new Map(payload.profiles.map((profile) => [profile.profileKey, profile]));
         const selected = payload.playerProfileKeys.map((key) => key ? profiles.get(key) ?? null : null) as [
           NativeMotionProfile | null,
@@ -172,6 +194,10 @@ export function useNativePlayerMotions({
         if (active && !(cause instanceof DOMException && cause.name === 'AbortError')) {
           setError('Saved character animations could not be loaded; standard replay motion is active.');
           setSources([null, null]);
+          setPlayerGruntSettings([
+            getDmoCharacterGruntSetting(playerOne),
+            getDmoCharacterGruntSetting(playerTwo),
+          ]);
         }
       } finally {
         inFlight = false;
@@ -188,5 +214,5 @@ export function useNativePlayerMotions({
     };
   }, [playerOne, playerTwo, broadcastId, submissionId, orderOne, orderTwo, allowAutomaticFallback]);
 
-  return { sources, error };
+  return { sources, error, playerGruntSettings };
 }

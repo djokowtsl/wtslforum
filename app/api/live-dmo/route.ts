@@ -34,6 +34,10 @@ const startSchema = z.object({
   discordMessageUrl: z.string().trim().max(500).optional().default(''),
   players: z.tuple([z.string().trim().min(1).max(80), z.string().trim().min(1).max(80)]).optional(),
   character: z.string().trim().min(1).max(120).nullable().optional(),
+  playerCharacters: z.tuple([
+    z.string().trim().max(120).nullable(),
+    z.string().trim().max(120).nullable(),
+  ]).optional(),
   mode: z.enum(['manual', 'auto']).optional().default('manual'),
   replay: z.boolean().optional().default(false),
   replaySpeed: z.union([z.literal(1), z.literal(2), z.literal(4)]).optional().default(1),
@@ -218,6 +222,8 @@ export async function POST(request: Request) {
   const officialByTournament = await officialByTournamentFromSnapshot(
     broadcastPlayers,
   );
+  const playerCharacters = (body.playerCharacters ?? [body.character ?? null, null])
+    .map((name) => (typeof name === 'string' && name.trim() ? name.trim() : null)) as [string | null, string | null];
   const payload = {
     hasDmo: body.hasDmo,
     mode: body.mode,
@@ -234,6 +240,7 @@ export async function POST(request: Request) {
     sourceMessageUrl: verifiedMessageUrl,
     ...(broadcastPlayers ? { players: broadcastPlayers } : {}),
     ...(body.character ? { character: body.character } : {}),
+    playerCharacters,
   };
   if (!body.hasDmo && directStream) {
     try {
@@ -253,6 +260,7 @@ export async function POST(request: Request) {
         id: result.id,
         stream: directStream,
         ...(body.character ? { character: body.character } : {}),
+        playerCharacters,
         ...(broadcastPlayers ? { players: broadcastPlayers } : {}),
         isWta,
         replay: false,
@@ -320,6 +328,7 @@ export async function POST(request: Request) {
       id,
       stream,
       ...(body.character ? { character: body.character } : {}),
+      playerCharacters,
       ...(broadcastPlayers ? { players: broadcastPlayers } : {}),
       isWta,
       replay: body.replay,

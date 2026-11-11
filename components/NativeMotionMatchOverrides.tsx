@@ -9,6 +9,7 @@ import {
   type NativeMotionPicks,
   type NativeMotionStroke,
 } from '@/lib/nativeMotionCatalogData';
+import { getDmoCharacterGruntGroups } from '@/lib/dmoCharacterAppearance.mjs';
 import styles from './NativeMotionAdmin.module.css';
 import SearchableClipSelect from './SearchableClipSelect';
 
@@ -20,20 +21,26 @@ type Target = {
   characters: [string | null, string | null];
   label: string;
   playerClips: [NativeMotionPicks, NativeMotionPicks];
+  playerGruntOverrides: [null | { gruntGroup: string | null }, null | { gruntGroup: string | null }];
 };
 const keyFor = (target: Target) => `${target.type}:${target.id}`;
+const USE_PROFILE = '__profile__';
+const NO_GRUNT = '__no_grunt__';
 
 export default function NativeMotionMatchOverrides({ catalog }: { catalog: NativeMotionCatalog }) {
   const [query, setQuery] = useState('');
   const [targets, setTargets] = useState<Target[]>([]);
   const [selectedKey, setSelectedKey] = useState('');
   const [drafts, setDrafts] = useState<Record<string, [Draft, Draft]>>({});
+  const [gruntDrafts, setGruntDrafts] = useState<Record<string, [string, string]>>({});
+  const gruntGroups = getDmoCharacterGruntGroups();
   const [loading, setLoading] = useState(true);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState('');
   const [message, setMessage] = useState('');
   const selected = targets.find((target) => keyFor(target) === selectedKey) ?? null;
   const picks = drafts[selectedKey] ?? [{}, {}];
+  const gruntPicks = gruntDrafts[selectedKey] ?? [USE_PROFILE, USE_PROFILE];
 
   async function load(search: string, signal?: AbortSignal) {
     setLoading(true);
@@ -47,6 +54,12 @@ export default function NativeMotionMatchOverrides({ catalog }: { catalog: Nativ
       const next = body.targets as Target[];
       setTargets(next);
       setDrafts(Object.fromEntries(next.map((target) => [keyFor(target), target.playerClips])));
+      setGruntDrafts(Object.fromEntries(next.map((target) => [
+        keyFor(target),
+        target.playerGruntOverrides.map((override) => (
+          override === null ? USE_PROFILE : override.gruntGroup ?? NO_GRUNT
+        )) as [string, string],
+      ])) as Record<string, [string, string]>);
       setSelectedKey(next.length === 1 ? keyFor(next[0]) : '');
     } catch (cause) {
       if (!(cause instanceof DOMException && cause.name === 'AbortError')) {
@@ -91,7 +104,14 @@ export default function NativeMotionMatchOverrides({ catalog }: { catalog: Nativ
       const response = await fetch('/api/admin/native-motion/player-overrides', {
         method: 'PUT',
         headers: { 'content-type': 'application/json' },
-        body: JSON.stringify({ targetType: selected.type, targetId: selected.id, playerClips: picks }),
+        body: JSON.stringify({
+          targetType: selected.type,
+          targetId: selected.id,
+          playerClips: picks,
+          playerGruntOverrides: gruntPicks.map((value) => (
+            value === USE_PROFILE ? null : { gruntGroup: value === NO_GRUNT ? null : value }
+          )),
+        }),
       });
       const body = await response.json();
       if (!response.ok) throw new Error(body.error || 'Match choices could not be saved.');
@@ -146,6 +166,19 @@ export default function NativeMotionMatchOverrides({ catalog }: { catalog: Nativ
             {([0, 1] as const).map((index) => (
               <fieldset className={styles.stroke} key={index}>
                 <legend>{selected.players[index]}{selected.characters[index] ? ` (${selected.characters[index]})` : ''}</legend>
+                <label className={styles.field}>
+                  <span>Grunt bank</span>
+                  <select value={gruntPicks[index]} disabled={busy} onChange={(event) => {
+                    const next = [...gruntPicks] as [string, string];
+                    next[index] = event.currentTarget.value;
+                    setGruntDrafts((current) => ({ ...current, [selectedKey]: next }));
+                    setMessage('');
+                  }}>
+                    <option value={USE_PROFILE}>Use character profile</option>
+                    <option value={NO_GRUNT}>No grunt</option>
+                    {gruntGroups.map((group) => <option value={group.id} key={group.id}>{group.label}</option>)}
+                  </select>
+                </label>
                 {NATIVE_MOTION_STROKES.map((stroke) => {
                   const pick = picks[index][stroke];
                   return (
@@ -197,7 +230,8 @@ export default function NativeMotionMatchOverrides({ catalog }: { catalog: Nativ
             </button>
             <button type="button" className="btn btn-ghost" disabled={busy} onClick={() => {
               setDrafts((current) => ({ ...current, [selectedKey]: [{}, {}] }));
-              setMessage('Overrides cleared in the form. Save to restore the saved profile or standard motion.');
+              setGruntDrafts((current) => ({ ...current, [selectedKey]: [USE_PROFILE, USE_PROFILE] }));
+              setMessage('Overrides cleared in the form. Save to restore profile grunts and standard motion.');
             }}>Clear match overrides</button>
           </div>
         </>

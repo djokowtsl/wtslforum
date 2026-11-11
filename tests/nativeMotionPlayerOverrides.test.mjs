@@ -18,6 +18,14 @@ function load(path, mocks = {}) {
   return module.exports;
 }
 const catalogData = load('lib/nativeMotionCatalogData.ts');
+const characterGrunts = {
+  dmoCharacterNameKey: (name) => String(name ?? '').toLowerCase(),
+  getDmoCharacterGruntSetting: (name) => ({
+    groupId: name ? `profile-${String(name).toLowerCase()}` : null,
+    useGenericFallback: true,
+  }),
+  isDmoCharacterGruntGroup: (group) => group === 'male-aliassime',
+};
 const pick = { clipId: 'a1_b1', sourceHandedness: 'right' };
 const alternate = { clipId: 'a2_b2', sourceHandedness: 'left' };
 const broadcastId = 'd2917824-65d4-4c7f-976c-ac30004eb253';
@@ -30,6 +38,7 @@ function setup(options = {}) {
     '@/lib/liveRequestSecurity': { isSameSiteMutation: () => options.sameSite !== false },
     '@/lib/dmoReplayLibrary': { isDmoReplayId: (id) => /^[1-9]\d{0,18}$/.test(id) },
     '@/lib/nativeMotionCatalogData': catalogData,
+    '@/lib/dmoCharacterAppearance.mjs': characterGrunts,
     '@/lib/nativeMotionServer': {
       fetchNativeMotionCatalog: async () => ({
         clips: [
@@ -90,6 +99,19 @@ test('each player and stroke is stored separately and clearing restores defaults
   assert.match(cleared.writes[0].text, /DELETE/);
 });
 
+test('admins can assign a grunt bank or silence either match player', async () => {
+  const { route, writes } = setup();
+  const response = await route.PUT(request(body({
+    playerGruntOverrides: [{ gruntGroup: 'male-aliassime' }, { gruntGroup: null }],
+  })));
+  assert.equal(response.status, 200);
+  const gruntWrites = writes.filter((write) => write.text.includes('dmo_character_grunt_match_overrides'));
+  assert.equal(gruntWrites.length, 3);
+  assert.match(gruntWrites[0].text, /DELETE/);
+  assert.deepEqual(gruntWrites[1].values, ['17', 0, 'male-aliassime']);
+  assert.deepEqual(gruntWrites[2].values, ['17', 1, null]);
+});
+
 test('automatic, expired, hidden, and missing targets cannot receive overrides', async () => {
   for (const type of ['replay', 'manual']) {
     const { route, calls, writes } = setup({ exists: false });
@@ -143,6 +165,7 @@ test('replay resolver checks visibility and returns match overrides above option
       getDmoReplaySubmission: async () => { throw new Error('Private replay should not be read for a guest'); },
     },
     '@/lib/nativeMotionCatalogData': catalogData,
+    '@/lib/dmoCharacterAppearance.mjs': characterGrunts,
     '@/lib/db': { sql: async (strings) => {
       const text = strings.join('?'); queries.push(text);
       return text.includes('FROM dmo_native_motion_player_overrides') ? [{ player_index: 1, clips: { forehand: pick } }] : [];
@@ -158,6 +181,40 @@ test('replay resolver checks visibility and returns match overrides above option
     '@/lib/dmoReplayLibrary': { ...mocks['@/lib/dmoReplayLibrary'], getPublicDmoReplay: async () => null },
   });
   assert.equal((await hidden.GET(new Request('https://forum.test/api/native-motion/profiles?submissionId=17'))).status, 404);
+});
+
+test('replay grunt overrides follow replay player order and can explicitly disable audio', async () => {
+  const mocks = {
+    'next/server': { NextResponse: { json: (data, init) => Response.json(data, init) } },
+    '@/lib/auth': { getSession: async () => null },
+    '@/lib/dmoReplayLibrary': {
+      isDmoReplayId: () => true,
+      getPublicDmoReplay: async () => ({ privateBlobPathname: 'dmo/match.dmo', fileName: 'match.dmo' }),
+      getDmoReplaySubmission: async () => null,
+    },
+    '@/lib/nativeMotionCatalogData': catalogData,
+    '@/lib/dmoCharacterAppearance.mjs': characterGrunts,
+    '@/lib/db': { sql: async (strings) => {
+      const text = strings.join('?');
+      if (text.includes('FROM dmo_character_grunt_profiles')) {
+        return [{ profile_key: 'federer', grunt_group: 'male-aliassime' }];
+      }
+      if (text.includes('FROM dmo_character_grunt_match_overrides')) {
+        return [{ player_index: 1, grunt_group: null }];
+      }
+      return [];
+    } },
+  };
+  const route = load('app/api/native-motion/profiles/route.ts', mocks);
+  const response = await route.GET(new Request(
+    'https://forum.test/api/native-motion/profiles?submissionId=17&player1=Federer&player2=Djokovic&playerIndex1=1&playerIndex2=0',
+  ));
+  assert.equal(response.status, 200);
+  const payload = await response.json();
+  assert.deepEqual(payload.playerGruntSettings, [
+    { groupId: null, useGenericFallback: false },
+    { groupId: 'profile-djokovic', useGenericFallback: true },
+  ]);
 });
 
 test('playback uses one chosen version and preserves player identity when replay order reverses', async () => {
@@ -200,6 +257,7 @@ test('playback uses one chosen version and preserves player identity when replay
       '@/lib/dmoBundledMotion.mjs': { decodeBundledMotion: (buffer) => ({ selected: new TextDecoder().decode(buffer) }) },
       '@/lib/nativeMotionCatalog': { NATIVE_MOTION_CATALOG_SHA256: 'catalog-hash' },
       '@/lib/nativeMotionCatalogData': catalogData,
+      '@/lib/dmoCharacterAppearance.mjs': characterGrunts,
     });
     hook.useNativePlayerMotions({
       playerNames: ['Djokovic', 'Federer'], submissionId: '17', overridePlayerOrder: [1, 0],

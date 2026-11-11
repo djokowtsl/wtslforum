@@ -22,6 +22,7 @@ import { useNativePlayerMotions } from './useNativePlayerMotions';
 type Props = {
   broadcastId?: string;
   allowAutomaticFallback?: boolean;
+  playerCharacters?: readonly [string | null, string | null];
   snapshot: Te4LiveSnapshot;
   isWta?: boolean;
   state: 'live' | 'ended';
@@ -137,6 +138,7 @@ function ChanceChart({
 export default function DmoLiveDisplay({
   broadcastId,
   allowAutomaticFallback = false,
+  playerCharacters,
   snapshot,
   isWta = false,
   state,
@@ -162,8 +164,13 @@ export default function DmoLiveDisplay({
   const p2Stats = playerStats[1];
   const surface = surfaceForDmoTournament(snapshot.stadium);
   const buffering = state === 'live' && (stale || frameStalled);
+  const motionNames = [
+    playerCharacters?.[0] ?? snapshot.players[0],
+    playerCharacters?.[1] ?? snapshot.players[1],
+  ] as const;
+  const characterKey = motionNames.join('\u0000');
   const nativeMotion = useNativePlayerMotions({
-    playerNames: snapshot.players,
+    playerNames: motionNames,
     broadcastId,
     allowAutomaticFallback,
   });
@@ -223,11 +230,14 @@ export default function DmoLiveDisplay({
 
       <div className={styles.liveCourtStage}>
         <DmoLiveCourt
+          key={`${broadcastId ?? snapshot.filename}:${characterKey}`}
           snapshot={snapshot}
           playerBundledMotions={nativeMotion.sources}
           surface={surface}
           playbackSpeed={playbackSpeed}
           isWta={isWta}
+          playerCharacters={motionNames}
+          playerGruntSettings={nativeMotion.playerGruntSettings}
           buffering={buffering}
           scoreboard={stadiumScoreboard}
           tournamentRound={tournamentRound}

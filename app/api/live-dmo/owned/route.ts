@@ -35,6 +35,12 @@ export async function GET() {
           ...(typeof row.payload?.character === 'string'
             ? { character: row.payload.character }
             : {}),
+          playerCharacters: Array.isArray(row.payload?.playerCharacters)
+            && row.payload.playerCharacters.length === 2
+            ? row.payload.playerCharacters.map((name: unknown) => (
+              typeof name === 'string' && name.trim() ? name.trim() : null
+            ))
+            : [typeof row.payload?.character === 'string' ? row.payload.character : null, null],
         }
         : null,
     }, { headers: PRIVATE_HEADERS });

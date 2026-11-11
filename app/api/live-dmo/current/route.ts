@@ -88,6 +88,19 @@ export async function GET() {
         : Array.isArray(snapshot?.players) && snapshot.players.length === 2
           ? snapshot.players
           : null;
+      const rawPlayerCharacters = Array.isArray(stored.playerCharacters)
+        && stored.playerCharacters.length === 2
+        && stored.playerCharacters.every((name: unknown) => name === null
+          || (typeof name === 'string' && name.trim().length <= 120))
+        ? stored.playerCharacters.map((name: unknown) => (
+          typeof name === 'string' && name.trim() ? name.trim() : null
+        ))
+        : [typeof stored.character === 'string' && stored.character.trim()
+          ? stored.character.trim()
+          : null,
+        typeof stored.opponentCharacter === 'string' && stored.opponentCharacter.trim()
+          ? stored.opponentCharacter.trim()
+          : null];
       const stream = stored.stream && typeof stored.stream === 'object'
         && ['youtube', 'twitch', 'twitch-clip'].includes(stored.stream.provider)
         && typeof stored.stream.id === 'string'
@@ -100,9 +113,12 @@ export async function GET() {
         status: row.status,
         ownerName: row.owner_name || 'Forum member',
         canManageTour: user.isAdmin || String(row.owner_discord_id) === user.discordId,
+        canManageBroadcast: user.isAdmin || String(row.owner_discord_id) === user.discordId,
+        hasDmo,
         ...(typeof stored.character === 'string' && stored.character.trim().length <= 120
           ? { character: stored.character.trim() }
           : {}),
+        playerCharacters: rawPlayerCharacters,
         snapshot,
         stream,
         sourceMessageUrl: typeof stored.sourceMessageUrl === 'string' ? stored.sourceMessageUrl : null,

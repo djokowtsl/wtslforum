@@ -10,6 +10,7 @@ import {
   nativeMotionClipSupportsStroke,
   type NativeMotionPicks,
 } from '@/lib/nativeMotionCatalogData';
+import { isDmoCharacterGruntGroup } from '@/lib/dmoCharacterAppearance.mjs';
 
 export const dynamic = 'force-dynamic';
 const HEADERS = { 'Cache-Control': 'private, no-store', 'X-Content-Type-Options': 'nosniff' };
@@ -22,10 +23,17 @@ const clipsSchema = z.object({
   backhand: pickSchema.optional(),
   serve: pickSchema.optional(),
 }).strict();
+const gruntOverrideSchema = z.object({
+  gruntGroup: z.string().max(80).nullable(),
+}).strict();
 const bodySchema = z.object({
   targetType: z.enum(['replay', 'manual']),
   targetId: z.string().min(1).max(40),
   playerClips: z.tuple([clipsSchema, clipsSchema]),
+  playerGruntOverrides: z.tuple([
+    gruntOverrideSchema.nullable(),
+    gruntOverrideSchema.nullable(),
+  ]).optional(),
 }).strict();
 const uuidSchema = z.string().uuid();
 
@@ -41,7 +49,9 @@ export async function GET(request: Request) {
         SELECT s.id::text AS id, s.player1, s.player2, s.player1_character, s.player2_character,
           s.tournament, s.round_name, s.submission_date::text AS submitted_at,
           (SELECT jsonb_object_agg(o.player_index, o.clips)
-           FROM dmo_native_motion_player_overrides o WHERE o.submission_id = s.id) AS clip_overrides
+           FROM dmo_native_motion_player_overrides o WHERE o.submission_id = s.id) AS clip_overrides,
+          (SELECT jsonb_object_agg(o.player_index, jsonb_build_object('gruntGroup', o.grunt_group))
+           FROM dmo_character_grunt_match_overrides o WHERE o.submission_id = s.id) AS grunt_overrides
         FROM dmo_submissions s
         WHERE s.hidden_at IS NULL
           AND s.private_blob_pathname LIKE 'dmo/%'
@@ -53,7 +63,9 @@ export async function GET(request: Request) {
       sql`
         SELECT b.id::text AS id, b.payload->'players' AS players, b.started_at,
           (SELECT jsonb_object_agg(o.player_index, o.clips)
-           FROM dmo_native_motion_player_overrides o WHERE o.broadcast_id = b.id) AS clip_overrides
+           FROM dmo_native_motion_player_overrides o WHERE o.broadcast_id = b.id) AS clip_overrides,
+          (SELECT jsonb_object_agg(o.player_index, jsonb_build_object('gruntGroup', o.grunt_group))
+           FROM dmo_character_grunt_match_overrides o WHERE o.broadcast_id = b.id) AS grunt_overrides
         FROM dmo_live_broadcasts b
         WHERE b.status = 'live' AND b.expires_at > NOW() AND b.payload->>'mode' = 'manual'
         ORDER BY b.started_at DESC LIMIT 40
@@ -67,6 +79,7 @@ export async function GET(request: Request) {
         characters: [row.player1_character || null, row.player2_character || null],
         label: [row.tournament, row.round_name, row.submitted_at].filter(Boolean).join(' · '),
         playerClips: [row.clip_overrides?.['0'] ?? {}, row.clip_overrides?.['1'] ?? {}],
+        playerGruntOverrides: [row.grunt_overrides?.['0'] ?? null, row.grunt_overrides?.['1'] ?? null],
       })),
       ...broadcasts.flatMap((row) => {
         if (!Array.isArray(row.players) || row.players.length !== 2
@@ -78,6 +91,7 @@ export async function GET(request: Request) {
           characters: [null, null],
           label: `Active manual stream · ${new Date(row.started_at).toISOString()}`,
           playerClips: [row.clip_overrides?.['0'] ?? {}, row.clip_overrides?.['1'] ?? {}],
+          playerGruntOverrides: [row.grunt_overrides?.['0'] ?? null, row.grunt_overrides?.['1'] ?? null],
         }];
       }),
     ];
@@ -111,7 +125,7 @@ export async function PUT(request: Request) {
       status: 400, headers: HEADERS,
     });
   }
-  const { targetType, targetId, playerClips } = parsed.data;
+  const { targetType, targetId, playerClips, playerGruntOverrides } = parsed.data;
   if (targetType === 'replay' ? !isDmoReplayId(targetId) : !uuidSchema.safeParse(targetId).success) {
     return NextResponse.json({ error: 'Match not found.' }, { status: 404, headers: HEADERS });
   }
@@ -142,6 +156,13 @@ export async function PUT(request: Request) {
         }
       }
     }
+    for (const override of playerGruntOverrides ?? []) {
+      if (override?.gruntGroup && !isDmoCharacterGruntGroup(override.gruntGroup)) {
+        return NextResponse.json({ error: 'Choose a grunt bank from the available character profiles.' }, {
+          status: 400, headers: HEADERS,
+        });
+      }
+    }
     await transaction((query) => {
       const commands = [targetType === 'replay'
         ? query`DELETE FROM dmo_native_motion_player_overrides WHERE submission_id = ${targetId}::bigint`
@@ -158,6 +179,23 @@ export async function PUT(request: Request) {
             VALUES (${targetId}::uuid, ${index}, ${JSON.stringify(clips)}::jsonb)
           `);
       });
+      if (playerGruntOverrides) {
+        commands.push(targetType === 'replay'
+          ? query`DELETE FROM dmo_character_grunt_match_overrides WHERE submission_id = ${targetId}::bigint`
+          : query`DELETE FROM dmo_character_grunt_match_overrides WHERE broadcast_id = ${targetId}::uuid`);
+        playerGruntOverrides.forEach((override, index) => {
+          if (override === null) return;
+          commands.push(targetType === 'replay'
+            ? query`
+              INSERT INTO dmo_character_grunt_match_overrides (submission_id, player_index, grunt_group)
+              VALUES (${targetId}::bigint, ${index}, ${override.gruntGroup}::text)
+            `
+            : query`
+              INSERT INTO dmo_character_grunt_match_overrides (broadcast_id, player_index, grunt_group)
+              VALUES (${targetId}::uuid, ${index}, ${override.gruntGroup}::text)
+            `);
+        });
+      }
       return commands;
     });
     return NextResponse.json({ ok: true }, { headers: HEADERS });

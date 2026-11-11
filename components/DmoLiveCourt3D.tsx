@@ -116,7 +116,9 @@ import {
   trailAllowed,
   type PlayerHandedness,
 } from '@/lib/liveCourtPerformance';
-import { loadLiveGruntSamples } from '@/lib/liveGruntAudio';
+import { loadLiveCharacterGruntSamples } from '@/lib/liveGruntAudio';
+import { getDmoCharacterAppearance } from '@/lib/dmoCharacterAppearance.mjs';
+import type { DmoCharacterGruntSetting } from '@/lib/dmoCharacterAppearance.mjs';
 import DmoLiveCourt, { type GruntControlProps } from './DmoLiveCourt';
 import {
   AUTO_RENDER_RESOLUTIONS,
@@ -190,6 +192,8 @@ import {
 type Props = {
   modelAssetBase?: string;
   playerBundledMotions?: readonly [BundledMotionSource | null, BundledMotionSource | null];
+  playerCharacters?: readonly [string | null, string | null];
+  playerGruntSettings?: readonly [DmoCharacterGruntSetting | null, DmoCharacterGruntSetting | null];
   snapshot: Te4LiveSnapshot;
   surface: Te4CourtSurface;
   playbackSpeed: Te4DmoReplaySpeed;
@@ -283,6 +287,8 @@ function playSample(
 function ThreeCourt({
   modelAssetBase,
   playerBundledMotions,
+  playerCharacters = [null, null],
+  playerGruntSettings,
   snapshot,
   surface,
   playbackSpeed,
@@ -321,7 +327,15 @@ function ThreeCourt({
   useEffect(() => {
     crowdRigRef.current?.setDensity(crowdDensity);
   }, [crowdDensity]);
-  const gruntAudioRef = useRef<{ isWta: boolean; samples: AudioBuffer[] } | null>(null);
+  const playerCharacterKey = playerCharacters.map((name) => name?.trim() ?? '').join('\u0000');
+  const playerGruntKey = `${playerCharacterKey}\u0001${playerGruntSettings
+    ?.map((setting) => setting ? `${setting.groupId ?? ''}:${setting.useGenericFallback}` : '')
+    .join('\u0000') ?? ''}`;
+  const gruntAudioRef = useRef<{
+    isWta: boolean;
+    characterKey: string;
+    samples: [AudioBuffer[], AudioBuffer[]];
+  } | null>(null);
   const applauseAudioRef = useRef<AudioBuffer | null>(null);
   const courtEffectSamplesRef = useRef<CourtEffectSamples>({});
   const courtEffectSamplesLoadRef = useRef<Promise<void> | null>(null);
@@ -737,8 +751,18 @@ function ThreeCourt({
     const crowdRig = buildCrowd(scene, sceneDataRef.current.snapshot.stadium, crowdDensity);
     crowdRigRef.current = crowdRig;
     const players = [
-      makePlayer(PALETTE.shirtOne, 0x335d58, isWta),
-      makePlayer(PALETTE.shirtTwo, 0x514b61, isWta),
+      makePlayer(
+        PALETTE.shirtOne,
+        0x335d58,
+        isWta,
+        getDmoCharacterAppearance(playerCharacters[0]),
+      ),
+      makePlayer(
+        PALETTE.shirtTwo,
+        0x514b61,
+        isWta,
+        getDmoCharacterAppearance(playerCharacters[1]),
+      ),
     ];
     players.forEach(({ root }, index) => {
       root.userData.dominantHandedness = sceneDataRef.current.snapshot.handedness?.[index] ?? 'right';
@@ -2245,9 +2269,15 @@ function ThreeCourt({
                 activeApplauseRef.current.clear();
               }
               const audioCue = liveCourtTrajectoryCue(cue, gruntsEnabledRef.current);
-              if (audioCue === 'grunt' && gruntAudioRef.current?.isWta === isWta) {
-                const samples = gruntAudioRef.current.samples;
-                const sample = samples[Math.floor(Math.random() * samples.length)];
+              if (audioCue === 'grunt'
+                && gruntAudioRef.current?.isWta === isWta
+                && gruntAudioRef.current.characterKey === playerGruntKey) {
+                const playerSamples = cue.player === 1
+                  ? gruntAudioRef.current.samples[0]
+                  : cue.player === 2
+                    ? gruntAudioRef.current.samples[1]
+                    : [...gruntAudioRef.current.samples[0], ...gruntAudioRef.current.samples[1]];
+                const sample = playerSamples[Math.floor(Math.random() * playerSamples.length)];
                 if (sample) playSample(context, sample, 0.72, activeGruntsRef.current, 0.92 + Math.random() * 0.12);
               } else if (audioCue === 'cheer' && cue.frame % 3 === 0 && applauseAudioRef.current) {
                 playSample(context, applauseAudioRef.current,
@@ -2684,7 +2714,7 @@ function ThreeCourt({
       materials.forEach((item) => item.dispose());
       textures.forEach((texture) => texture.dispose());
     };
-  }, [fullReplay, isWta, modelAssetBase, playerBundledMotions, onUnsupported, snapshot.filename, snapshot.stadium]);
+  }, [fullReplay, isWta, modelAssetBase, playerBundledMotions, onUnsupported, playerCharacterKey, snapshot.filename, snapshot.stadium]);
 
   const requestZoom = (factor: number) => {
     viewportRef.current?.dispatchEvent(new CustomEvent<number>('courtzoom', { detail: factor }));
@@ -2766,9 +2796,12 @@ function ThreeCourt({
           if (soundOnRef.current) setSoundError('Court effects are on; crowd audio could not be loaded.');
         }));
       }
-      if (gruntAudioRef.current?.isWta !== isWta) {
-        layers.push(loadLiveGruntSamples(context, isWta).then(samples => {
-          if (soundOnRef.current) gruntAudioRef.current = { isWta, samples };
+      if (gruntAudioRef.current?.isWta !== isWta
+        || gruntAudioRef.current.characterKey !== playerGruntKey) {
+        layers.push(loadLiveCharacterGruntSamples(
+          context, isWta, playerCharacters, playerGruntSettings,
+        ).then(samples => {
+          if (soundOnRef.current) gruntAudioRef.current = { isWta, characterKey: playerGruntKey, samples };
         }).catch(() => {
           if (soundOnRef.current) setSoundError('Court effects are on; player grunt audio could not be loaded.');
         }));
@@ -2839,17 +2872,19 @@ function ThreeCourt({
 
   useEffect(() => {
     const context = audioContextRef.current;
-    if (!soundEnabled || !gruntsEnabled || !context || gruntAudioRef.current?.isWta === isWta) return;
+    if (!soundEnabled || !gruntsEnabled || !context
+      || (gruntAudioRef.current?.isWta === isWta
+        && gruntAudioRef.current.characterKey === playerGruntKey)) return;
     let cancelled = false;
-    void loadLiveGruntSamples(context, isWta)
+    void loadLiveCharacterGruntSamples(context, isWta, playerCharacters, playerGruntSettings)
       .then((samples) => {
-        if (!cancelled) gruntAudioRef.current = { isWta, samples };
+        if (!cancelled) gruntAudioRef.current = { isWta, characterKey: playerGruntKey, samples };
       })
       .catch(() => {
         if (!cancelled) setSoundError('Player grunt audio could not be loaded.');
       });
     return () => { cancelled = true; };
-  }, [isWta, soundEnabled, gruntsEnabled]);
+  }, [isWta, playerGruntKey, soundEnabled, gruntsEnabled]);
   const changeCrowdVolume = (volume: number) => {
     setCrowdVolume(volume);
     crowdVolumeRef.current = volume;
