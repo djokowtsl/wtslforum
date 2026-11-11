@@ -122,6 +122,7 @@ import {
   BROADCAST_RENDER_QUALITY_OPTIONS,
   createAdaptiveRenderState,
   getBroadcastRenderPixelRatio,
+  getInitialBroadcastRenderSetting,
   observeAdaptiveRenderFrame,
   type AdaptiveRenderState,
   type BroadcastRenderResolution,
@@ -2949,7 +2950,7 @@ function ThreeCourt({
               value={renderSetting}
               onChange={(event) => onRenderSettingChange(event.currentTarget.value as BroadcastRenderSetting)}
             >
-              <option value="auto">Auto · {renderQuality}</option>
+              {!fullReplay && <option value="auto">Auto · {renderQuality}</option>}
               {BROADCAST_RENDER_QUALITY_OPTIONS.map(option => (
                 <option key={option.value} value={option.value}>{option.label}</option>
               ))}
@@ -3147,9 +3148,15 @@ function ThreeCourt({
 }
 
 export default function DmoLiveCourt3D(props: Props) {
+  const { fullReplay = false, ...courtProps } = props;
   const [use2dFallback, setUse2dFallback] = useState(false);
   const [gruntsEnabled, setGruntsEnabled] = useState(true);
-  const [renderSetting, setRenderSetting] = useState<BroadcastRenderSetting>('auto');
+  const [selectedRenderSetting, setRenderSetting] = useState<BroadcastRenderSetting>(
+    () => getInitialBroadcastRenderSetting(fullReplay),
+  );
+  const renderSetting = fullReplay && selectedRenderSetting === 'auto'
+    ? '1080p'
+    : selectedRenderSetting;
   const [adaptiveTier, setAdaptiveTier] = useState(0);
   const adaptiveStateRef = useRef<AdaptiveRenderState>(createAdaptiveRenderState());
   const adaptiveTierRef = useRef(0);
@@ -3179,7 +3186,6 @@ export default function DmoLiveCourt3D(props: Props) {
     ? AUTO_RENDER_RESOLUTIONS[adaptiveTier]
     : renderSetting;
   const gruntControls = { gruntsEnabled, onGruntsEnabledChange: setGruntsEnabled };
-  const { fullReplay = false, ...courtProps } = props;
   return (
     <div className={densityStyles.courtDensityShell}>
       <label className={densityStyles.crowdDensityControl}>

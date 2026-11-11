@@ -144,7 +144,7 @@ test('live score table stays below the broadcast scene and crowd control stays i
 
 test('saved player stroke setup reaches the full broadcast replay', () => {
   assert.match(broadcastViewer, /strokeStyles=\{broadcast\.snapshot\.strokeStyles\}/);
-  assert.match(replayPlayer, /strokeStyles: strokeStyles \?\? initialSnapshot\.strokeStyles/);
+  assert.match(replayPlayer, /strokeStyles: activeStrokeStyles \?\? initialSnapshot\.strokeStyles/);
 });
 
 test('fullscreen fills the available screen and retains desktop playback controls', () => {
@@ -176,11 +176,11 @@ test('fullscreen fills the available screen and retains desktop playback control
   assert.match(liveCourt, /dmoFullscreenCourtCamera\(\s*viewportWidth, viewportHeight, fullscreenActive,\s*maxDistanceForTarget/);
   assert.match(liveCourt, /aria-label="Graphics resolution"/);
   assert.match(fallbackCourt, /aria-label="Graphics resolution"/);
-  assert.match(liveCourt, /useState<BroadcastRenderSetting>\('auto'\)/);
+  assert.match(liveCourt, /getInitialBroadcastRenderSetting\(fullReplay\)/);
   assert.match(liveCourt, /observeAdaptiveRenderFrame/);
   assert.match(liveCourt, /AUTO_RENDER_RESOLUTIONS\[adaptiveTier\]/);
-  assert.match(liveCourt, /option value="auto">Auto · \{renderQuality\}/);
-  assert.match(fallbackCourt, /option value="auto">Auto · \{renderQuality\}/);
+  assert.match(liveCourt, /!fullReplay && <option value="auto">Auto · \{renderQuality\}<\/option>/);
+  assert.match(fallbackCourt, /!fullReplay && <option value="auto">Auto · \{renderQuality\}<\/option>/);
   assert.match(liveCourt, /BROADCAST_RENDER_QUALITY_OPTIONS\.map/);
   assert.match(fallbackCourt, /BROADCAST_RENDER_QUALITY_OPTIONS\.map/);
 });

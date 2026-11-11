@@ -1291,7 +1291,7 @@ function DmoLiveCourt({
               value={renderSetting}
               onChange={(event) => onRenderSettingChange(event.currentTarget.value as BroadcastRenderSetting)}
             >
-              <option value="auto">Auto · {renderQuality}</option>
+              {!fullReplay && <option value="auto">Auto · {renderQuality}</option>}
               {BROADCAST_RENDER_QUALITY_OPTIONS.map(option => (
                 <option key={option.value} value={option.value}>{option.label}</option>
               ))}

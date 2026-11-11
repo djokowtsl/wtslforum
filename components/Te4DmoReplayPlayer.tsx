@@ -232,6 +232,7 @@ export default function Te4DmoReplayPlayer({
       {view === 'court' ? (
         <>
           <DmoLiveCourt3D
+            key={`${broadcastId ?? replayUrl ?? 'replay'}:${viewer.names[0]}:${viewer.names[1]}`}
             snapshot={snapshot}
             surface={viewer.surface}
             playbackSpeed={initialSpeed}
