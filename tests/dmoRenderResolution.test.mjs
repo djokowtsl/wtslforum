@@ -16,9 +16,15 @@ new Function('module', 'exports', code)(module, module.exports);
 const {
   AUTO_RENDER_RESOLUTIONS,
   createAdaptiveRenderState,
+  getInitialBroadcastRenderSetting,
   getBroadcastRenderPixelRatio,
   observeAdaptiveRenderFrame,
 } = module.exports;
+
+test('match replays start at 1080p while live broadcasts remain adaptive', () => {
+  assert.equal(getInitialBroadcastRenderSetting(true), '1080p');
+  assert.equal(getInitialBroadcastRenderSetting(false), 'auto');
+});
 
 test('720p offers a lower GPU pixel budget on laptops and high-density phones', () => {
   assert.equal(getBroadcastRenderPixelRatio(1920, 1080, '720p', 2), 2 / 3);

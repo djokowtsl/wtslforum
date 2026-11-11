@@ -8,6 +8,10 @@ export type BroadcastRenderQuality = typeof BROADCAST_RENDER_QUALITY_OPTIONS[num
 export type BroadcastRenderSetting = BroadcastRenderQuality | 'auto';
 export type BroadcastRenderResolution = BroadcastRenderQuality | '540p' | '360p';
 
+export function getInitialBroadcastRenderSetting(fullReplay: boolean): BroadcastRenderSetting {
+  return fullReplay ? '1080p' : 'auto';
+}
+
 const RENDER_RESOLUTIONS: Record<BroadcastRenderResolution, { width: number; height: number }> = {
   '360p': { width: 640, height: 360 },
   '540p': { width: 960, height: 540 },
