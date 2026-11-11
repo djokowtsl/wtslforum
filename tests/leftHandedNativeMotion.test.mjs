@@ -23,7 +23,13 @@ const scene = await load('components/DmoLiveCourt3DScene', {
   '@/lib/dmoCrowdDensity': await load('lib/dmoCrowdDensity'),
 });
 const racket = await load('components/DmoRacketOrientation');
-const capture = await load('components/DmoCapturedGroundstroke');
+const bundledMotion = await import('../lib/dmoBundledMotion.mjs');
+const bundledGroundstroke = await load('components/DmoBundledGroundstroke', {
+  '@/lib/dmoBundledMotion.mjs': bundledMotion,
+});
+const capture = await load('components/DmoCapturedGroundstroke', {
+  './DmoBundledGroundstroke': bundledGroundstroke,
+});
 const active = await load('components/DmoNativePlayerClaude', {
   './DmoRacketOrientation': racket,
   './DmoNativeGrip': await load('components/DmoNativeGrip'),
