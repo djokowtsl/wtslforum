@@ -11,8 +11,8 @@ export default async function AdminDmoAnimations() {
   if (!user.isAdmin) redirect('/');
   return (
     <>
-      <PageHero eyebrow="Staff" title="Character animations">
-        Assign verified bundled clips to replay characters and manual-stream players.
+      <PageHero eyebrow="Staff" title="Replay & live-stream animations">
+        Choose one fixed animation per player and stroke for each match, with optional character defaults.
       </PageHero>
       <main className="container">
         <NativeMotionAdmin />
