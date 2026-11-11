@@ -7,6 +7,7 @@ import {
   NATIVE_MOTION_AUTOMATIC_PROFILE_KEY,
   NATIVE_MOTION_STROKES,
   nativeMotionClipSupportsStroke,
+  nativeMotionProfileKey,
   type NativeMotionCatalog,
   type NativeMotionCatalogClip,
   type NativeMotionHand,
@@ -15,6 +16,7 @@ import {
   type NativeMotionStroke,
 } from '@/lib/nativeMotionCatalogData';
 import styles from './NativeMotionAdmin.module.css';
+import NativeMotionMatchOverrides from './NativeMotionMatchOverrides';
 
 type DraftPick = { clipId: string; sourceHandedness: NativeMotionHand | '' };
 type Broadcast = {
@@ -64,6 +66,7 @@ function parseError(payload: unknown, fallback: string) {
 export default function NativeMotionAdmin() {
   const [catalog, setCatalog] = useState<NativeMotionCatalog | null>(null);
   const [profiles, setProfiles] = useState<NativeMotionProfile[]>([]);
+  const [knownCharacters, setKnownCharacters] = useState<string[]>([]);
   const [broadcasts, setBroadcasts] = useState<Broadcast[]>([]);
   const [selectedKey, setSelectedKey] = useState('__new__');
   const [characterName, setCharacterName] = useState('');
@@ -72,7 +75,7 @@ export default function NativeMotionAdmin() {
   const [search, setSearch] = useState<Record<NativeMotionStroke, string>>({
     forehand: '', backhand: '', serve: '',
   });
-  const [showVariants, setShowVariants] = useState(false);
+  const [showVariants, setShowVariants] = useState(true);
   const [overrides, setOverrides] = useState<Record<string, [string, string]>>({});
   const [busy, setBusy] = useState(false);
   const [deleting, setDeleting] = useState(false);
@@ -81,6 +84,9 @@ export default function NativeMotionAdmin() {
   const [error, setError] = useState('');
 
   const selectedProfile = profiles.find((profile) => profile.profileKey === selectedKey) ?? null;
+  const selectedKnownCharacter = knownCharacters.find((name) => (
+    nativeMotionProfileKey(name) === nativeMotionProfileKey(characterName)
+  )) ?? '';
   const filteredClips = useMemo(() => {
     const searchText = Object.fromEntries(NATIVE_MOTION_STROKES.map((stroke) => [
       stroke,
@@ -108,6 +114,9 @@ export default function NativeMotionAdmin() {
           fetch('/api/admin/native-motion/broadcasts', { cache: 'no-store' }),
         ]);
         const catalogPayload = await catalogResponse.json().catch(() => null);
+        if (catalogResponse.status === 404) {
+          throw new Error('The animation catalog is not available on the published Bot/Core service. Republish the updated Bot/Core service, then reload this page.');
+        }
         if (!catalogResponse.ok) throw new Error(parseError(catalogPayload, 'The animation catalog could not be loaded.'));
         if (!catalogPayload || catalogPayload.format !== 'WTMC1' || !Array.isArray(catalogPayload.clips)) {
           throw new Error('The animation catalog is invalid.');
@@ -124,9 +133,15 @@ export default function NativeMotionAdmin() {
         ]);
         if (!active) return;
         const loadedProfiles = Array.isArray(profilePayload.profiles) ? profilePayload.profiles as NativeMotionProfile[] : [];
+        const loadedCharacters = Array.isArray(profilePayload.characters)
+          ? profilePayload.characters.filter((name: unknown): name is string => (
+            typeof name === 'string' && Boolean(name.trim())
+          ))
+          : [];
         const loadedBroadcasts = Array.isArray(broadcastPayload.broadcasts) ? broadcastPayload.broadcasts as Broadcast[] : [];
         setCatalog(catalogPayload as NativeMotionCatalog);
         setProfiles(loadedProfiles);
+        setKnownCharacters(loadedCharacters);
         setBroadcasts(loadedBroadcasts);
         setOverrides(Object.fromEntries(loadedBroadcasts.map((broadcast) => [
           broadcast.id,
@@ -175,6 +190,25 @@ export default function NativeMotionAdmin() {
       return;
     }
     startNewCharacterProfile();
+  }
+
+  function selectKnownCharacter(name: string) {
+    if (!name) return;
+    const key = nativeMotionProfileKey(name);
+    const existing = profiles.find((profile) => (
+      !profile.automaticFallback && profile.profileKey === key
+    ));
+    if (existing) {
+      selectProfile(existing.profileKey);
+      return;
+    }
+    setSelectedKey('__new__');
+    setCharacterName(name);
+    setAutomaticFallback(false);
+    setPicks(emptyPicks());
+    setDeleting(false);
+    setMessage('');
+    setError('');
   }
 
   function changePick(stroke: NativeMotionStroke, patch: Partial<DraftPick>) {
@@ -284,11 +318,15 @@ export default function NativeMotionAdmin() {
 
   return (
     <div className={styles.admin}>
+      {catalog && <NativeMotionMatchOverrides catalog={catalog} />}
       <section className={styles.card} aria-labelledby="native-motion-title">
         <div className={styles.heading}>
           <div>
             <h2 id="native-motion-title">Character animation profiles</h2>
-            <p>Assign verified Unity clips to exact character names. No source handedness is guessed.</p>
+            <p>
+              Optional defaults for a game character. Match-specific choices above take priority,
+              regardless of which player or character is selected.
+            </p>
           </div>
           <div className={styles.actions}>
             <button type="button" className="btn btn-sm" onClick={startNewCharacterProfile}>New character</button>
@@ -306,6 +344,30 @@ export default function NativeMotionAdmin() {
         {!catalog && !loadingError && <p className={styles.notice} role="status">Loading the verified animation catalog…</p>}
         {catalog && (
           <>
+            <label className={styles.field}>
+              <span>Character selected in a submitted replay</span>
+              <select
+                value={selectedKnownCharacter}
+                onChange={(event) => selectKnownCharacter(event.target.value)}
+              >
+                <option value="">Choose a character to configure</option>
+                {knownCharacters.map((name) => {
+                  const configured = profiles.some((profile) => (
+                    !profile.automaticFallback && profile.profileKey === nativeMotionProfileKey(name)
+                  ));
+                  return (
+                    <option value={name} key={nativeMotionProfileKey(name)}>
+                      {name} · {configured ? 'animation saved' : 'needs animation setup'}
+                    </option>
+                  );
+                })}
+              </select>
+            </label>
+            <p className={styles.notice}>
+              A player can use any number of characters. Each character keeps its own animation profile;
+              active manual streams can still override either player independently.
+            </p>
+
             <label className={styles.field}>
               <span>Saved profile</span>
               <select value={selectedKey} onChange={(event) => selectProfile(event.target.value)}>
