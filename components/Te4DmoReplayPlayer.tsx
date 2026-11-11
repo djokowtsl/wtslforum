@@ -18,10 +18,13 @@ import DmoLiveCourt3D from './DmoLiveCourt3D';
 import DmoReplayScoreBug from './DmoReplayScoreBug';
 import type { StadiumScoreboardData } from './DmoStadiumArchitecture';
 import styles from './Te4DmoReplayPlayer.module.css';
+import { useNativePlayerMotions } from './useNativePlayerMotions';
 
 type Props = {
   broadcastId?: string;
   replayUrl?: string;
+  characterNames?: readonly [string | null, string | null];
+  allowAutomaticFallback?: boolean;
   initialSpeed: 1 | 2 | 4;
   isWta?: boolean;
   tournamentRound?: string | null;
@@ -47,6 +50,8 @@ function isViewerData(value: unknown): value is Te4ViewerData {
 export default function Te4DmoReplayPlayer({
   broadcastId,
   replayUrl,
+  characterNames,
+  allowAutomaticFallback = false,
   initialSpeed,
   isWta,
   tournamentRound = 'auto',
@@ -83,6 +88,20 @@ export default function Te4DmoReplayPlayer({
     () => viewer ? buildTe4DmoReplayScoreTimeline(viewer) : [],
     [viewer],
   );
+  const nativeMotionNames = viewer
+    ? characterNames
+      ? alignDmoReplayPlayerStyles(
+        submissionPlayers ?? viewer.names,
+        viewer.names,
+        characterNames,
+      )
+      : [viewer.names[0], viewer.names[1]] as const
+    : [null, null] as const;
+  const nativeMotion = useNativePlayerMotions({
+    playerNames: nativeMotionNames,
+    broadcastId,
+    allowAutomaticFallback,
+  });
 
   useEffect(() => {
     const initialScore = te4DmoReplayScoreAtFrame(scoreTimeline, 0);
@@ -239,9 +258,13 @@ export default function Te4DmoReplayPlayer({
             isWta={isWta ?? false}
             tournamentRound={tournamentRound}
             fullReplay
+            playerBundledMotions={nativeMotion.sources}
             scoreboard={replayScoreboard}
             onReplayFrameChange={handleReplayFrameChange}
           />
+          {nativeMotion.error && (
+            <p className={styles.classicError} role="status">{nativeMotion.error}</p>
+          )}
           {replayScore && (
             <DmoReplayScoreBug players={viewer.names} score={replayScore} />
           )}

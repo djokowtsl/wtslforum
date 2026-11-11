@@ -601,11 +601,12 @@ export function attachNativePlayer(
       }
     }
     const stretching = Boolean((rig.root.userData.contactTarget as ContactTarget | undefined)?.stretch);
-    if (capturedBody && playback && playback.stroke !== 'serve') {
+    if (capturedBody && !capturedBody.nativeRecording && playback && playback.stroke !== 'serve') {
       limitTrunkLean(captureWeight, stretching ? STRETCH_TRUNK_LEAN_LIMIT : TRUNK_LEAN_LIMIT);
     }
     const strokeRoll = new THREE.Quaternion();
-    const backhandRoll = recordedBackhandFaceRoll(playback?.stroke, oneHandedStroke, playback?.slice);
+    const backhandRoll = capturedBody?.nativeRecording ? 0
+      : recordedBackhandFaceRoll(playback?.stroke, oneHandedStroke, playback?.slice);
     if (capturedBody && playback) {
       if (backhandRoll) {
         strokeRoll.setFromAxisAngle(UP, (dominant === 'r' ? 1 : -1) * backhandRoll * captureWeight);
@@ -619,7 +620,9 @@ export function attachNativePlayer(
           // the stroke path shifts coherently instead of kinking at impact.
           const saved = [...pose.bones.values()].map(b => [b, b.position.clone(), b.quaternion.clone()] as const);
           capturedGroundstroke.apply({ ...strokePlayback!, deltaSeconds: 0, weight: 1 });
-          limitTrunkLean(1, contact.stretch ? STRETCH_TRUNK_LEAN_LIMIT : TRUNK_LEAN_LIMIT);
+          if (!capturedBody.nativeRecording) {
+            limitTrunkLean(1, contact.stretch ? STRETCH_TRUNK_LEAN_LIMIT : TRUNK_LEAN_LIMIT);
+          }
           const fullRoll = backhandRoll
             ? new THREE.Quaternion().setFromAxisAngle(UP, (dominant === 'r' ? 1 : -1) * backhandRoll)
             : new THREE.Quaternion();
@@ -641,7 +644,7 @@ export function attachNativePlayer(
           turnSpine(fromParent('spine_01', identity.clone().slerp(correction.spine, weight)));
           // (A stretch's sideways lean is added here, after the stroke's own
           // limit: hold it to the stretch limit before the arm reaches.)
-          if (stretching) limitTrunkLean(weight, STRETCH_TRUNK_LEAN_LIMIT);
+          if (stretching && !capturedBody.nativeRecording) limitTrunkLean(weight, STRETCH_TRUNK_LEAN_LIMIT);
           pose.turn(`upperarm_${dominant}`,
             fromParent(`upperarm_${dominant}`, identity.clone().slerp(correction.shoulder, weight)));
           bendElbow(dominant, correction.elbow * weight);

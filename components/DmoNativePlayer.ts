@@ -587,9 +587,12 @@ export function attachNativePlayer(
         model.updateMatrixWorld(true);
       }
     }
-    if (capturedBody && playback && playback.stroke !== 'serve') limitTrunkLean(captureWeight);
+    if (capturedBody && !capturedBody.nativeRecording && playback && playback.stroke !== 'serve') {
+      limitTrunkLean(captureWeight);
+    }
     const strokeRoll = new THREE.Quaternion();
-    const backhandRoll = recordedBackhandFaceRoll(playback?.stroke, oneHandedStroke, playback?.slice);
+    const backhandRoll = capturedBody?.nativeRecording ? 0
+      : recordedBackhandFaceRoll(playback?.stroke, oneHandedStroke, playback?.slice);
     if (capturedBody && playback) {
       if (backhandRoll) {
         strokeRoll.setFromAxisAngle(UP, (dominant === 'r' ? 1 : -1) * backhandRoll * captureWeight);
@@ -603,7 +606,7 @@ export function attachNativePlayer(
           // the stroke path shifts coherently instead of kinking at impact.
           const saved = [...pose.bones.values()].map(b => [b, b.position.clone(), b.quaternion.clone()] as const);
           capturedGroundstroke.apply({ ...strokePlayback!, deltaSeconds: 0, weight: 1 });
-          limitTrunkLean(1);
+          if (!capturedBody.nativeRecording) limitTrunkLean(1);
           const fullRoll = backhandRoll
             ? new THREE.Quaternion().setFromAxisAngle(UP, (dominant === 'r' ? 1 : -1) * backhandRoll)
             : new THREE.Quaternion();

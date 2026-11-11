@@ -17,8 +17,11 @@ import { surfaceForDmoTournament } from '@/lib/te4DmoSurface';
 import type { StadiumScoreboardData } from './DmoStadiumArchitecture';
 import DmoLiveCourt from './DmoLiveCourt3D';
 import styles from './DmoLiveDisplay.module.css';
+import { useNativePlayerMotions } from './useNativePlayerMotions';
 
 type Props = {
+  broadcastId?: string;
+  allowAutomaticFallback?: boolean;
   snapshot: Te4LiveSnapshot;
   isWta?: boolean;
   state: 'live' | 'ended';
@@ -132,6 +135,8 @@ function ChanceChart({
 }
 
 export default function DmoLiveDisplay({
+  broadcastId,
+  allowAutomaticFallback = false,
   snapshot,
   isWta = false,
   state,
@@ -157,6 +162,11 @@ export default function DmoLiveDisplay({
   const p2Stats = playerStats[1];
   const surface = surfaceForDmoTournament(snapshot.stadium);
   const buffering = state === 'live' && (stale || frameStalled);
+  const nativeMotion = useNativePlayerMotions({
+    playerNames: snapshot.players,
+    broadcastId,
+    allowAutomaticFallback,
+  });
   const statusLabel = state === 'ended' ? 'Broadcast ended' : buffering ? 'Buffering' : 'Live';
   // Automatic streams use TE4 only; manual live streams use their DMO score.
   // Replays keep DMO display data but are timed from their recorded events.
@@ -214,6 +224,7 @@ export default function DmoLiveDisplay({
       <div className={styles.liveCourtStage}>
         <DmoLiveCourt
           snapshot={snapshot}
+          playerBundledMotions={nativeMotion.sources}
           surface={surface}
           playbackSpeed={playbackSpeed}
           isWta={isWta}
@@ -221,6 +232,9 @@ export default function DmoLiveDisplay({
           scoreboard={stadiumScoreboard}
           tournamentRound={tournamentRound}
         />
+        {nativeMotion.error && (
+          <p className={styles.pointNote} role="status">{nativeMotion.error}</p>
+        )}
         <p className={styles.pointNote}>
           {liveScore !== undefined
             ? liveScore

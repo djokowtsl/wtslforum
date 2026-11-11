@@ -153,6 +153,7 @@ import styles from './DmoLiveCourt3D.module.css';
 import CourtFullscreenButton from './CourtFullscreenButton';
 import CourtPictureInPictureButton from './CourtPictureInPictureButton';
 import { attachHumanPlayer, disposeHumanModel, loadHumanModel } from './DmoHumanModels';
+import { bundledCaptureTiming, type BundledMotionSource } from './DmoBundledGroundstroke';
 import { attachHumanCourtStaff, addCrowdAccessories } from './DmoHumanCrowd';
 import { attachSpectatorCrowd, loadSpectatorModel, loadDiverseSpectatorModel } from './DmoSpectatorCrowd';
 import { DIVERSE_SPECTATORS } from '../lib/dmoSpectatorRoster';
@@ -187,6 +188,7 @@ import {
 
 type Props = {
   modelAssetBase?: string;
+  playerBundledMotions?: readonly [BundledMotionSource | null, BundledMotionSource | null];
   snapshot: Te4LiveSnapshot;
   surface: Te4CourtSurface;
   playbackSpeed: Te4DmoReplaySpeed;
@@ -279,6 +281,7 @@ function playSample(
 
 function ThreeCourt({
   modelAssetBase,
+  playerBundledMotions,
   snapshot,
   surface,
   playbackSpeed,
@@ -738,7 +741,8 @@ function ThreeCourt({
     let detailedPlayersReady = false;
     setModelStatus('loading');
     Promise.allSettled([
-      loadHumanModel(isWta ? 'female' : 'male', 'player', modelLoad.signal, modelAssetBase),
+      loadHumanModel(isWta ? 'female' : 'male', 'player', modelLoad.signal, modelAssetBase,
+        playerBundledMotions?.find(Boolean)?.schema.modelHash),
       loadSpectatorModel('male', 'far', modelLoad.signal, modelAssetBase),
       loadSpectatorModel('female', 'far', modelLoad.signal, modelAssetBase),
       loadHumanModel('male', 'crowd-high', modelLoad.signal, modelAssetBase),
@@ -751,8 +755,10 @@ function ThreeCourt({
         if (modelLoad.signal.aborted) return;
         const [player, maleCrowd, femaleCrowd, maleStaff, femaleStaff, maleHighDetailCrowd, femaleHighDetailCrowd, ...diverseCrowd] = results;
         if (player.status === 'fulfilled') {
-          attachHumanPlayer(player.value, players[0], PALETTE.shirtOne, undefined, undefined, BROADCAST_PLAYER_KITS[0], 0);
-          attachHumanPlayer(player.value, players[1], PALETTE.shirtTwo, undefined, undefined, BROADCAST_PLAYER_KITS[1], 1);
+          attachHumanPlayer(player.value, players[0], PALETTE.shirtOne, undefined, undefined,
+            BROADCAST_PLAYER_KITS[0], 0, playerBundledMotions?.[0] ?? undefined);
+          attachHumanPlayer(player.value, players[1], PALETTE.shirtTwo, undefined, undefined,
+            BROADCAST_PLAYER_KITS[1], 1, playerBundledMotions?.[1] ?? undefined);
           detailedPlayersReady = true;
         }
         if (maleCrowd.status === 'fulfilled' && femaleCrowd.status === 'fulfilled') {
@@ -1129,10 +1135,13 @@ function ThreeCourt({
       const turned = rig.root.userData.facingInitialized ? Math.abs(facing - rig.root.rotation.y) : 0;
       rig.root.userData.facingInitialized = true;
       const eventPlayer = index === 0 ? 1 : 2;
+      const bundledSource = playerBundledMotions?.[index];
+      const nativeServeTiming = bundledCaptureTiming(bundledSource, { stroke: 'serve' });
       const nearbyEvent = findPlayerShotEvent(events, eventPlayer, frame, 24 / frameScale);
       const upcomingServe = nearbyEvent
         ? undefined
-        : findPlayerShotEvent(events, eventPlayer, frame, SERVE_LEAD_FRAMES / frameScale, 'serve');
+        : findPlayerShotEvent(events, eventPlayer, frame,
+          (nativeServeTiming?.leadFrames ?? SERVE_LEAD_FRAMES) / frameScale, 'serve');
       const event = nearbyEvent ?? (upcomingServe && upcomingServe.frame > frame ? upcomingServe : undefined);
       const serving = event?.shotType === 'serve';
       const contactCue = event
@@ -1396,10 +1405,12 @@ function ThreeCourt({
       // computing body posture, so an overhead cannot crouch during its lead-in.
       const heldStroke = rig.root.userData.capturedGroundstrokeEvent as {
         frame: number; stroke: GroundstrokeName;
+        slice?: boolean; smash?: boolean;
       } | undefined;
-      const heldRecoveryFrames = isRecordedVolley(heldStroke?.stroke)
+      const heldNativeTiming = heldStroke ? bundledCaptureTiming(bundledSource, heldStroke) : undefined;
+      const heldRecoveryFrames = heldNativeTiming?.recoveryFrames ?? (isRecordedVolley(heldStroke?.stroke)
         ? VOLLEY_RECOVERY_FRAMES * frameRate / 60 * frameScale
-        : CAPTURE_RECOVERY_FRAMES;
+        : CAPTURE_RECOVERY_FRAMES);
       const recovering = heldStroke !== undefined && frame >= heldStroke.frame
         && (frame - heldStroke.frame) * frameScale <= heldRecoveryFrames;
       const comingShot = event || recovering ? undefined : nextShotEvent(events, eventPlayer, frame);
@@ -1655,10 +1666,12 @@ function ThreeCourt({
       if (capturedEvent) {
         const captureDelta = (frame - capturedEvent.frame) * frameScale;
         const volley = isRecordedVolley(capturedEvent.stroke);
-        const recoveryFrames = volley
+        const nativeTiming = bundledCaptureTiming(bundledSource, capturedEvent);
+        const recoveryFrames = nativeTiming?.recoveryFrames ?? (volley
           ? VOLLEY_RECOVERY_FRAMES * frameRate / 60 * frameScale
-          : CAPTURE_RECOVERY_FRAMES;
-        if (captureDelta < -SERVE_LEAD_FRAMES || captureDelta > recoveryFrames) {
+          : CAPTURE_RECOVERY_FRAMES);
+        if (captureDelta < -Math.max(SERVE_LEAD_FRAMES, nativeTiming?.leadFrames ?? 0)
+          || captureDelta > recoveryFrames) {
           delete rig.root.userData.capturedGroundstrokeEvent;
           delete rig.root.userData.groundstrokePlayback;
           rig.root.userData.lowReachDrop = 0;
@@ -1687,9 +1700,9 @@ function ThreeCourt({
             THREE.MathUtils.smoothstep(captureDelta, -24, -8),
           );
           const weight = handOver * (capturedEvent.stroke === 'serve'
-            ? serveCaptureWeight(captureDelta) * (captureDelta >= 0 ? 1 : Number(rig.root.userData.serveSetUp ?? 1))
-            : volley ? volleyCaptureWeight(captureDelta)
-              : groundstrokeCaptureWeight(captureDelta, groundstrokeLeadFrames(opponentContactGap)));
+            ? serveCaptureWeight(captureDelta, nativeTiming) * (captureDelta >= 0 ? 1 : Number(rig.root.userData.serveSetUp ?? 1))
+            : volley ? volleyCaptureWeight(captureDelta, nativeTiming)
+              : groundstrokeCaptureWeight(captureDelta, groundstrokeLeadFrames(opponentContactGap), nativeTiming));
           // (An attempt at a ball going past him is mainly a stretch, the arm
           // and upper body reaching out; the legs only lunge for the furthest,
           // and not as deep.)
@@ -1733,7 +1746,8 @@ function ThreeCourt({
               // only the last ~0.3 s of the slice showed, and it read as a
               // push or a drive. Rally slices keep their slow preparation.)
               ...(shouldCompressGroundstrokeTakeBack(capturedEvent.stroke, capturedEvent.slice && !returningServe)
-                ? { leadScale: GROUNDSTROKE_LEAD_FRAMES / groundstrokeLeadFrames(opponentContactGap) }
+                ? { leadScale: (nativeTiming?.leadFrames ?? GROUNDSTROKE_LEAD_FRAMES)
+                  / groundstrokeLeadFrames(opponentContactGap) }
                 : {}),
             };
           } else {
@@ -2025,6 +2039,7 @@ function ThreeCourt({
       // its recovery, rather than the ball's current side after the event passes.
       const recordedStroke = rig.root.userData.capturedGroundstrokeEvent as
         { frame: number; stroke: GroundstrokeName; slice?: boolean; smash?: boolean; oneHandReach?: boolean } | undefined;
+      const nativeRecovery = recordedStroke ? bundledCaptureTiming(bundledSource, recordedStroke) : undefined;
       const twoHandedSide = Boolean(recordedStroke)
         && recordedStroke!.stroke !== 'serve'
         && recordedStroke!.stroke !== 'smash'
@@ -2045,8 +2060,8 @@ function ThreeCourt({
       const recovery = recordedStroke && frame > recordedStroke.frame
         ? 1 - THREE.MathUtils.smoothstep(
           (frame - recordedStroke.frame) * frameScale,
-          RECOVERY_FADE_START,
-          CAPTURE_RECOVERY_FRAMES,
+          nativeRecovery?.recoveryFadeStart ?? RECOVERY_FADE_START,
+          nativeRecovery?.recoveryFrames ?? CAPTURE_RECOVERY_FRAMES,
         )
         : 0;
       rig.root.userData.twoHandedStyle = recordedTwoHanded;
@@ -2455,8 +2470,8 @@ function ThreeCourt({
           } else {
             const follow = playerPosition.clone()
               .add(new THREE.Vector3(0, 3.0, 0))
-              .addScaledVector(forward, -6.2)
-              .addScaledVector(side, 1.25);
+              .addScaledVector(forward, 1.6)
+              .addScaledVector(side, 3.0);
             const aim = playerPosition.clone()
               .add(new THREE.Vector3(0, servingView ? 1.8 : 1.0, 0))
               .addScaledVector(forward, 1.5)
@@ -2559,14 +2574,18 @@ function ThreeCourt({
           0,
           Math.cos(player.root.rotation.y),
         );
+        const side = new THREE.Vector3(forward.z, 0, -forward.x);
         if (view.endsWith('-first')) {
           camera.position.copy(player.root.position).add(new THREE.Vector3(0, 1.55, 0));
           controls.target.copy(camera.position).addScaledVector(forward, 16);
         } else {
           camera.position.copy(player.root.position)
-            .add(new THREE.Vector3(0, 2.4, 0))
-            .addScaledVector(forward, -3.6);
-          controls.target.copy(player.root.position).add(new THREE.Vector3(0, 1.0, 0));
+            .add(new THREE.Vector3(0, 3.0, 0))
+            .addScaledVector(forward, 1.6)
+            .addScaledVector(side, 3.0);
+          controls.target.copy(player.root.position)
+            .add(new THREE.Vector3(0, 1.0, 0))
+            .addScaledVector(forward, 1.5);
         }
       }
       cameraTargetAnchor.copy(controls.target);
@@ -2640,7 +2659,7 @@ function ThreeCourt({
       materials.forEach((item) => item.dispose());
       textures.forEach((texture) => texture.dispose());
     };
-  }, [fullReplay, isWta, modelAssetBase, onUnsupported, snapshot.filename, snapshot.stadium]);
+  }, [fullReplay, isWta, modelAssetBase, playerBundledMotions, onUnsupported, snapshot.filename, snapshot.stadium]);
 
   const requestZoom = (factor: number) => {
     viewportRef.current?.dispatchEvent(new CustomEvent<number>('courtzoom', { detail: factor }));
