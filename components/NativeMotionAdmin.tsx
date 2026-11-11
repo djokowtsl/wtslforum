@@ -353,7 +353,7 @@ export default function NativeMotionAdmin() {
 
   return (
     <div className={styles.admin}>
-      {catalog && <NativeMotionMatchOverrides catalog={catalog} />}
+      <NativeMotionMatchOverrides catalog={catalog ?? undefined} />
       <section className={styles.card} aria-labelledby="native-motion-title">
         <div className={styles.heading}>
           <div>

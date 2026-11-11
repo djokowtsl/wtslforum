@@ -29,12 +29,12 @@ const gruntOverrideSchema = z.object({
 const bodySchema = z.object({
   targetType: z.enum(['replay', 'manual']),
   targetId: z.string().min(1).max(40),
-  playerClips: z.tuple([clipsSchema, clipsSchema]),
+  playerClips: z.tuple([clipsSchema, clipsSchema]).optional(),
   playerGruntOverrides: z.tuple([
     gruntOverrideSchema.nullable(),
     gruntOverrideSchema.nullable(),
   ]).optional(),
-}).strict();
+}).strict().refine((body) => body.playerClips !== undefined || body.playerGruntOverrides !== undefined);
 const uuidSchema = z.string().uuid();
 
 export async function GET(request: Request) {
@@ -57,6 +57,7 @@ export async function GET(request: Request) {
           AND s.private_blob_pathname LIKE 'dmo/%'
           AND LOWER(COALESCE(s.file_name, s.private_blob_pathname)) LIKE '%.dmo'
           AND (${pattern}::text IS NULL
+            OR s.id::text = ${search}::text
             OR CONCAT_WS(' ',s.tournament,s.round_name,s.player1,s.player2) ILIKE ${pattern} ESCAPE E'\\\\')
         ORDER BY s.id DESC LIMIT 40
       `,
@@ -143,7 +144,7 @@ export async function PUT(request: Request) {
     if (!targets.length) {
       return NextResponse.json({ error: 'Replay or active manual stream not found.' }, { status: 404, headers: HEADERS });
     }
-    if (playerClips.some((clips) => Object.keys(clips).length)) {
+    if (playerClips?.some((clips) => Object.keys(clips).length)) {
       const catalog = await fetchNativeMotionCatalog();
       for (const clips of playerClips) {
         for (const stroke of NATIVE_MOTION_STROKES) {
@@ -164,21 +165,24 @@ export async function PUT(request: Request) {
       }
     }
     await transaction((query) => {
-      const commands = [targetType === 'replay'
-        ? query`DELETE FROM dmo_native_motion_player_overrides WHERE submission_id = ${targetId}::bigint`
-        : query`DELETE FROM dmo_native_motion_player_overrides WHERE broadcast_id = ${targetId}::uuid`];
-      playerClips.forEach((clips: NativeMotionPicks, index) => {
-        if (!Object.keys(clips).length) return;
+      const commands = [];
+      if (playerClips) {
         commands.push(targetType === 'replay'
-          ? query`
-            INSERT INTO dmo_native_motion_player_overrides (submission_id, player_index, clips)
-            VALUES (${targetId}::bigint, ${index}, ${JSON.stringify(clips)}::jsonb)
-          `
-          : query`
-            INSERT INTO dmo_native_motion_player_overrides (broadcast_id, player_index, clips)
-            VALUES (${targetId}::uuid, ${index}, ${JSON.stringify(clips)}::jsonb)
-          `);
-      });
+          ? query`DELETE FROM dmo_native_motion_player_overrides WHERE submission_id = ${targetId}::bigint`
+          : query`DELETE FROM dmo_native_motion_player_overrides WHERE broadcast_id = ${targetId}::uuid`);
+        playerClips.forEach((clips: NativeMotionPicks, index) => {
+          if (!Object.keys(clips).length) return;
+          commands.push(targetType === 'replay'
+            ? query`
+              INSERT INTO dmo_native_motion_player_overrides (submission_id, player_index, clips)
+              VALUES (${targetId}::bigint, ${index}, ${JSON.stringify(clips)}::jsonb)
+            `
+            : query`
+              INSERT INTO dmo_native_motion_player_overrides (broadcast_id, player_index, clips)
+              VALUES (${targetId}::uuid, ${index}, ${JSON.stringify(clips)}::jsonb)
+            `);
+        });
+      }
       if (playerGruntOverrides) {
         commands.push(targetType === 'replay'
           ? query`DELETE FROM dmo_character_grunt_match_overrides WHERE submission_id = ${targetId}::bigint`

@@ -32,6 +32,7 @@ const broadcastId = 'd2917824-65d4-4c7f-976c-ac30004eb253';
 function setup(options = {}) {
   const calls = [];
   const writes = [];
+  let catalogFetches = 0;
   const route = load('app/api/admin/native-motion/player-overrides/route.ts', {
     'next/server': { NextResponse: { json: (data, init) => Response.json(data, init) } },
     '@/lib/auth': { getSession: async () => options.user === undefined ? { isAdmin: true } : options.user },
@@ -40,12 +41,15 @@ function setup(options = {}) {
     '@/lib/nativeMotionCatalogData': catalogData,
     '@/lib/dmoCharacterAppearance.mjs': characterGrunts,
     '@/lib/nativeMotionServer': {
-      fetchNativeMotionCatalog: async () => ({
-        clips: [
-          { id: 'a1_b1', duration: 1, events: { kind: 'strike', contactTime: 0.5 }, hidden: true, accelerationVariant: true },
-          { id: 'a2_b2', duration: 1, events: { kind: 'serve', contactTime: 0.5 } },
-        ],
-      }),
+      fetchNativeMotionCatalog: async () => {
+        catalogFetches += 1;
+        return {
+          clips: [
+            { id: 'a1_b1', duration: 1, events: { kind: 'strike', contactTime: 0.5 }, hidden: true, accelerationVariant: true },
+            { id: 'a2_b2', duration: 1, events: { kind: 'serve', contactTime: 0.5 } },
+          ],
+        };
+      },
     },
     '@/lib/db': {
       sql: async (strings, ...values) => {
@@ -61,7 +65,7 @@ function setup(options = {}) {
       },
     },
   });
-  return { route, calls, writes };
+  return { route, calls, writes, get catalogFetches() { return catalogFetches; } };
 }
 const request = (body) => new Request('https://forum.test/api/admin/native-motion/player-overrides', {
   method: 'PUT', headers: { 'content-type': 'application/json' }, body: JSON.stringify(body),
@@ -112,6 +116,26 @@ test('admins can assign a grunt bank or silence either match player', async () =
   assert.deepEqual(gruntWrites[2].values, ['17', 1, null]);
 });
 
+test('grunt-only saves preserve animation overrides and do not require the motion catalog', async () => {
+  const harness = setup();
+  const response = await harness.route.PUT(request({
+    targetType: 'replay',
+    targetId: '17',
+    playerGruntOverrides: [{ gruntGroup: 'male-aliassime' }, { gruntGroup: null }],
+  }));
+  assert.equal(response.status, 200);
+  assert.equal(harness.catalogFetches, 0);
+  assert.equal(harness.writes.length, 3);
+  assert.ok(harness.writes.every((write) => write.text.includes('dmo_character_grunt_match_overrides')));
+});
+
+test('an update must include animation or grunt choices', async () => {
+  const { route, writes } = setup();
+  const response = await route.PUT(request({ targetType: 'replay', targetId: '17' }));
+  assert.equal(response.status, 400);
+  assert.equal(writes.length, 0);
+});
+
 test('automatic, expired, hidden, and missing targets cannot receive overrides', async () => {
   for (const type of ['replay', 'manual']) {
     const { route, calls, writes } = setup({ exists: false });
@@ -142,16 +166,17 @@ test('invalid strokes, arrays of alternatives, and missing handedness are reject
 });
 
 test('admin search returns both players’ fixed selections for the selected replay', async () => {
-  const { route } = setup({ rows: (text) => text.includes('FROM dmo_submissions')
+  const harness = setup({ rows: (text) => text.includes('FROM dmo_submissions')
     ? [{
       id: '17', player1: 'elmanzanas', player2: 'Bigwill', player1_character: 'Federer',
       player2_character: 'Djokovic', tournament: 'Shenzhen', round_name: 'Final',
       submitted_at: '2026-11-01', clip_overrides: { 0: { forehand: pick }, 1: { serve: alternate } },
     }] : [] });
-  const response = await route.GET(new Request('https://forum.test/api/admin/native-motion/player-overrides?q=Shenzhen'));
+  const response = await harness.route.GET(new Request('https://forum.test/api/admin/native-motion/player-overrides?q=Shenzhen'));
   assert.equal(response.status, 200);
   const payload = await response.json();
   assert.deepEqual(payload.targets[0].playerClips, [{ forehand: pick }, { serve: alternate }]);
+  assert.match(harness.calls.find((call) => call.text.includes('FROM dmo_submissions')).text, /OR s\.id::text = \?/);
 });
 
 test('replay resolver checks visibility and returns match overrides above optional profiles', async () => {
