@@ -27,7 +27,7 @@ const keyFor = (target: Target) => `${target.type}:${target.id}`;
 const USE_PROFILE = '__profile__';
 const NO_GRUNT = '__no_grunt__';
 
-export default function NativeMotionMatchOverrides({ catalog }: { catalog: NativeMotionCatalog }) {
+export default function NativeMotionMatchOverrides({ catalog }: { catalog?: NativeMotionCatalog }) {
   const [query, setQuery] = useState('');
   const [targets, setTargets] = useState<Target[]>([]);
   const [selectedKey, setSelectedKey] = useState('');
@@ -81,7 +81,7 @@ export default function NativeMotionMatchOverrides({ catalog }: { catalog: Nativ
       if (!clipId) delete next[player][stroke];
       else next[player][stroke] = {
         clipId,
-        sourceHandedness: hand ?? catalog.clips.find((clip) => clip.id === clipId)?.sourceHandedness ?? '',
+        sourceHandedness: hand ?? catalog?.clips.find((clip) => clip.id === clipId)?.sourceHandedness ?? '',
       };
       return { ...current, [selectedKey]: next };
     });
@@ -94,10 +94,12 @@ export default function NativeMotionMatchOverrides({ catalog }: { catalog: Nativ
     setError('');
     setMessage('');
     try {
-      for (const player of picks) {
-        for (const stroke of NATIVE_MOTION_STROKES) {
-          if (player[stroke] && !player[stroke]?.sourceHandedness) {
-            throw new Error(`Confirm the original handedness for each selected ${stroke} clip.`);
+      if (catalog) {
+        for (const player of picks) {
+          for (const stroke of NATIVE_MOTION_STROKES) {
+            if (player[stroke] && !player[stroke]?.sourceHandedness) {
+              throw new Error(`Confirm the original handedness for each selected ${stroke} clip.`);
+            }
           }
         }
       }
@@ -107,7 +109,7 @@ export default function NativeMotionMatchOverrides({ catalog }: { catalog: Nativ
         body: JSON.stringify({
           targetType: selected.type,
           targetId: selected.id,
-          playerClips: picks,
+          ...(catalog ? { playerClips: picks } : {}),
           playerGruntOverrides: gruntPicks.map((value) => (
             value === USE_PROFILE ? null : { gruntGroup: value === NO_GRUNT ? null : value }
           )),
@@ -115,7 +117,9 @@ export default function NativeMotionMatchOverrides({ catalog }: { catalog: Nativ
       });
       const body = await response.json();
       if (!response.ok) throw new Error(body.error || 'Match choices could not be saved.');
-      setMessage('Saved for this match only. Reopen the replay to load the selected clips; live streams update automatically.');
+      setMessage(catalog
+        ? 'Saved for this match only. Reopen the replay to load the selected clips; live streams update automatically.'
+        : 'Grunt choices saved for this match only.');
     } catch (cause) {
       setError(cause instanceof Error ? cause.message : 'Match choices could not be saved.');
     } finally { setBusy(false); }
@@ -129,20 +133,22 @@ export default function NativeMotionMatchOverrides({ catalog }: { catalog: Nativ
 
   return (
     <section className={styles.card} aria-labelledby="match-animation-title">
-      <h2 id="match-animation-title">Choose animations for a specific match</h2>
+      <h2 id="match-animation-title">Choose animations and grunts for a specific match</h2>
       <p>
-        Select a submitted replay or an active manual stream. Choose any compatible catalog clip for each player and stroke.
-        All versions, including hidden and acceleration variants, are available. Character names do not restrict your choices.
+        Select a submitted replay or an active manual stream. Search by player, tournament, or replay ID.
+        Match-specific grunt choices work independently of the animation catalog.
       </p>
-      <p className={styles.notice}>
-        One selected clip plays for each stroke—no cycling or random versions.
-        These choices override character profiles only for the selected match.
-      </p>
+      {catalog && (
+        <p className={styles.notice}>
+          One selected clip plays for each stroke—no cycling or random versions.
+          All versions, including hidden and acceleration variants, are available. These choices override character profiles only for the selected match.
+        </p>
+      )}
       <form className={styles.searchRow} onSubmit={search}>
         <label className={styles.field}>
-          <span>Find a replay by player or tournament</span>
+          <span>Find a replay by player, tournament, or ID</span>
           <input value={query} onChange={(event) => setQuery(event.target.value)}
-            placeholder="elmanzanas, Bigwill or Shenzhen" maxLength={100} />
+            placeholder="Player name, Shenzhen, or 25" maxLength={100} />
         </label>
         <button type="submit" className="btn btn-sm" disabled={loading}>Search matches</button>
       </form>
@@ -179,7 +185,7 @@ export default function NativeMotionMatchOverrides({ catalog }: { catalog: Nativ
                     {gruntGroups.map((group) => <option value={group.id} key={group.id}>{group.label}</option>)}
                   </select>
                 </label>
-                {NATIVE_MOTION_STROKES.map((stroke) => {
+                {catalog && NATIVE_MOTION_STROKES.map((stroke) => {
                   const pick = picks[index][stroke];
                   return (
                     <div className={styles.matchStroke} key={stroke}>
@@ -231,8 +237,10 @@ export default function NativeMotionMatchOverrides({ catalog }: { catalog: Nativ
             <button type="button" className="btn btn-ghost" disabled={busy} onClick={() => {
               setDrafts((current) => ({ ...current, [selectedKey]: [{}, {}] }));
               setGruntDrafts((current) => ({ ...current, [selectedKey]: [USE_PROFILE, USE_PROFILE] }));
-              setMessage('Overrides cleared in the form. Save to restore profile grunts and standard motion.');
-            }}>Clear match overrides</button>
+              setMessage(catalog
+                ? 'Overrides cleared in the form. Save to restore profile grunts and standard motion.'
+                : 'Grunt overrides cleared in the form. Save to restore character profile grunts.');
+            }}>{catalog ? 'Clear match overrides' : 'Use character profile grunts'}</button>
           </div>
         </>
       )}
