@@ -140,6 +140,33 @@
   font-size: 0.82rem;
 }
 
+.searchRow {
+  display: flex;
+  align-items: end;
+  gap: 12px;
+}
+
+.searchRow > label {
+  flex: 1;
+}
+
+.searchRow > button {
+  margin-bottom: 12px;
+}
+
+.playerChoices {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 16px;
+  margin: 20px 0;
+}
+
+.matchStroke + .matchStroke {
+  border-top: 1px solid var(--border, #344155);
+  margin-top: 18px;
+  padding-top: 8px;
+}
+
 @media (max-width: 800px) {
   .heading {
     align-items: flex-start;
@@ -148,6 +175,14 @@
 
   .strokeGrid {
     grid-template-columns: 1fr;
+  }
+
+  .playerChoices {
+    grid-template-columns: 1fr;
+  }
+
+  .searchRow {
+    display: block;
   }
 
   .card {
