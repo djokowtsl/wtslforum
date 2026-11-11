@@ -3,6 +3,7 @@ import test from 'node:test';
 import { readFile } from 'node:fs/promises';
 import { createRequire } from 'node:module';
 import * as THREE from 'three';
+import * as dmoCharacterAppearance from '../lib/dmoCharacterAppearance.mjs';
 
 const require = createRequire(import.meta.url);
 const { transformSync } = require('next/dist/build/swc');
@@ -28,6 +29,7 @@ const sceneApi = await loadTs('../components/DmoLiveCourt3DScene.ts', {
   '../lib/dmoVenue': await loadTs('../lib/dmoVenue.ts'),
   '@/lib/te4DmoSurface': await loadTs('../lib/te4DmoSurface.ts'),
   '@/lib/dmoCrowdDensity': await loadTs('../lib/dmoCrowdDensity.ts'),
+  '@/lib/dmoCharacterAppearance.mjs': dmoCharacterAppearance,
 });
 const clothingApi = await loadTs('../lib/dmoCrowdClothing.ts');
 

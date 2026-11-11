@@ -30,7 +30,9 @@ const mocks = {
   '@/lib/liveBroadcastScore': { scoreForLiveBroadcast: () => null },
   '@/lib/dmoReplayLibrary': {
     isDmoReplayId: (id) => /^\d{1,19}$/.test(id),
+    listDmoReplaySubmissions: async () => ({ replays: [], nextCursor: null }),
     listPublicDmoReplays: async () => ({ replays: [], nextCursor: null }),
+    getDmoReplaySubmission: async () => null,
     getPublicDmoReplay: async () => null,
     publicDmoReplayMetadata: (replay) => replay,
   },
@@ -103,9 +105,9 @@ for (const [role, user] of roles) {
 
       if (path === 'app/replays/page.tsx' && !user) {
         const hero = elements.find((element) => element.type === PageHero);
-        assert.ok(hero, 'guests receive a sign-in page for replays');
-        assert.equal(hero.props.actions.props.href, '/api/auth/discord');
-        assert.match(hero.props.children, /Sign in to browse and watch/);
+        assert.ok(hero, 'guests receive the public replay page');
+        assert.match(hero.props.children, /approved for public sharing|explicitly published/);
+        assert.ok(elements.some((element) => element.type === ReplayLibrary));
         return;
       }
 
@@ -126,7 +128,7 @@ for (const [role, user] of roles) {
   }
 
   for (const path of viewerReads) {
-    test(`${role} follows the sign-in policy for ${path}`, async () => {
+    test(`${role} follows the public replay policy for ${path}`, async () => {
       const route = load(path, user);
       const isReplayRoute = path.includes('dmo-replays');
       const id = isReplayRoute ? '21' : LIVE_ID;
@@ -134,7 +136,9 @@ for (const [role, user] of roles) {
       const response = await route.GET(request, { params: Promise.resolve({ id }) });
 
       if (!user) {
-        assert.equal(response.status, 401);
+        if (path === 'app/api/dmo-replays/route.ts') assert.equal(response.status, 200);
+        else if (isReplayRoute) assert.equal(response.status, 404);
+        else assert.equal(response.status, 401);
       } else {
         assert.notEqual(response.status, 401);
         assert.notEqual(response.status, 403);

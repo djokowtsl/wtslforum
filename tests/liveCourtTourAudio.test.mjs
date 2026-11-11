@@ -23,7 +23,14 @@ const { code } = transformSync(gruntAudioModuleSource, {
   module: { type: 'commonjs' },
 });
 const gruntAudioModule = { exports: {} };
-new Function('module', 'exports', code)(gruntAudioModule, gruntAudioModule.exports);
+new Function('require', 'module', 'exports', code)((specifier) => (
+  specifier === './dmoCharacterAppearance.mjs'
+    ? {
+      getDmoCharacterGruntSetting: () => ({ groupId: null, useGenericFallback: true }),
+      getDmoGruntGroupUrls: () => [],
+    }
+    : require(specifier)
+), gruntAudioModule, gruntAudioModule.exports);
 const {
   liveGruntAudioUrl,
   liveGruntAudioUrls,
@@ -42,7 +49,7 @@ test('live courts use varied tour-matched XKT effort-grunt samples', async () =>
     const sample = await stat(new URL(`../public${url}`, import.meta.url));
     assert.ok(sample.size > 1_000);
   }
-  assert.match(threeCourt, /loadLiveGruntSamples\(context, isWta\)/);
+  assert.match(threeCourt, /loadLiveCharacterGruntSamples\(context, isWta, playerCharacters, playerGruntSettings\)/);
   assert.match(threeCourt, /gruntAudioRef\.current\?\.isWta === isWta/);
 });
 
@@ -65,9 +72,9 @@ test('legacy grunt files remain available when every XKT grunt sample fails', as
 test('the 2D fallback uses the same WTA sample and recorded court effects', () => {
   assert.match(fallbackCourt, /isWta \? 260 : 150/);
   assert.match(fallbackCourt, /isWta \? 520 : 340/);
-  assert.match(fallbackCourt, /loadLiveGruntSamples\(context, isWta\)/);
-  assert.match(fallbackCourt, /isWta \? wtaGruntAudioRef\.current : atpGruntAudioRef\.current/);
-  assert.match(fallbackCourt, /playLiveCourtCue\(context, cue, activeGruntVoicesRef\.current, isWta,[\s\S]*?courtEffectSamplesRef\.current\)/);
+  assert.match(fallbackCourt, /loadLiveCharacterGruntSamples\(context, isWta, playerCharacters, playerGruntSettings\)/);
+  assert.match(fallbackCourt, /gruntAudioRef\.current\?\.isWta === isWta/);
+  assert.match(fallbackCourt, /playLiveCourtCue\(context, event\.kind, activeGruntVoicesRef\.current, isWta,\s*gruntSamples, surface, courtEffectSamplesRef\.current, event\.player\)/);
   assert.match(fallbackCourt, /deriveLiveCourtFootworkEvents\(/);
   assert.match(fallbackCourt, /playLiveCourtEffect\(context, kind, surface, 0\.9, courtEffectSamples\)/);
 });

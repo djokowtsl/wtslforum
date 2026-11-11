@@ -8,6 +8,11 @@ import {
   type NativeMotionPicks,
   type NativeMotionProfile,
 } from '@/lib/nativeMotionCatalogData';
+import {
+  dmoCharacterNameKey,
+  getDmoCharacterGruntSetting,
+  type DmoCharacterGruntSetting,
+} from '@/lib/dmoCharacterAppearance.mjs';
 
 export const dynamic = 'force-dynamic';
 
@@ -54,6 +59,14 @@ export async function GET(request: Request) {
     ? { ...PROFILE_HEADERS, 'Cache-Control': 'private, no-store' }
     : PROFILE_HEADERS;
   const exactKeys = playerNames.map(nativeMotionProfileKey) as [string, string];
+  const gruntProfileKeys = playerNames.map(dmoCharacterNameKey) as [string, string];
+  const playerIndexes = [
+    Number(params.get('playerIndex1') ?? 0),
+    Number(params.get('playerIndex2') ?? 1),
+  ] as [number, number];
+  if (playerIndexes.some((index) => index !== 0 && index !== 1)) {
+    return NextResponse.json({ error: 'Invalid replay player order.' }, { status: 400, headers });
+  }
   const useFallback = params.get('fallback') === '1';
 
   try {
@@ -76,6 +89,24 @@ export async function GET(request: Request) {
     const profileByKey = new Map(profiles.map((row) => [row.profile_key, toProfile(row)]));
     const overrideKeys: [string | null, string | null] = [null, null];
     const playerClipOverrides: [NativeMotionPicks, NativeMotionPicks] = [{}, {}];
+    const playerGruntSettings: [DmoCharacterGruntSetting, DmoCharacterGruntSetting] = [
+      getDmoCharacterGruntSetting(playerNames[0]),
+      getDmoCharacterGruntSetting(playerNames[1]),
+    ];
+    const gruntProfileRows = await sql`
+      SELECT profile_key, grunt_group
+      FROM dmo_character_grunt_profiles
+      WHERE profile_key IN (${gruntProfileKeys[0] || PROFILE_KEY_NONE}, ${gruntProfileKeys[1] || PROFILE_KEY_NONE})
+    `;
+    const gruntProfileByKey = new Map(gruntProfileRows.map((row: any) => [row.profile_key, row.grunt_group]));
+    playerGruntSettings.forEach((setting, index) => {
+      if (gruntProfileKeys[index] && gruntProfileByKey.has(gruntProfileKeys[index])) {
+        playerGruntSettings[index] = {
+          groupId: gruntProfileByKey.get(gruntProfileKeys[index]) ?? null,
+          useGenericFallback: false,
+        };
+      }
+    });
 
     if (broadcastId) {
       const overrideRows = await sql`
@@ -106,13 +137,37 @@ export async function GET(request: Request) {
           SELECT o.player_index, o.clips FROM dmo_native_motion_player_overrides o
           JOIN dmo_live_broadcasts b ON b.id = o.broadcast_id
           WHERE o.broadcast_id = ${broadcastId}::uuid AND b.status = 'live'
-            AND b.expires_at > NOW() AND b.payload->>'mode' = 'manual'
+            AND b.expires_at > NOW()
         `
         : [];
     for (const row of clipRows) {
       if (row.player_index === 0 || row.player_index === 1) {
         playerClipOverrides[row.player_index as 0 | 1] = row.clips ?? {};
       }
+    }
+    const gruntOverrideRows = submissionId
+      ? await sql`
+        SELECT player_index, grunt_group
+        FROM dmo_character_grunt_match_overrides
+        WHERE submission_id=${submissionId}::bigint
+      `
+      : broadcastId
+        ? await sql`
+          SELECT o.player_index, o.grunt_group
+          FROM dmo_character_grunt_match_overrides o
+          JOIN dmo_live_broadcasts b ON b.id = o.broadcast_id
+          WHERE o.broadcast_id=${broadcastId}::uuid
+            AND b.status='live' AND b.expires_at > NOW()
+        `
+        : [];
+    for (const row of gruntOverrideRows) {
+      if (row.player_index !== 0 && row.player_index !== 1) continue;
+      const requestIndex = playerIndexes.indexOf(row.player_index);
+      if (requestIndex < 0) continue;
+      playerGruntSettings[requestIndex] = {
+        groupId: row.grunt_group ?? null,
+        useGenericFallback: false,
+      };
     }
 
     const playerProfileKeys = exactKeys.map((key, index) => (
@@ -127,6 +182,7 @@ export async function GET(request: Request) {
       {
         playerProfileKeys,
         playerClipOverrides,
+        playerGruntSettings,
         profiles: [...usedKeys].flatMap((key) => {
           const profile = profileByKey.get(key);
           return profile ? [profile] : [];

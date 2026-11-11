@@ -257,11 +257,13 @@ export default function Te4DmoReplayPlayer({
       {view === 'court' ? (
         <>
           <DmoLiveCourt3D
-            key={`${broadcastId ?? replayUrl ?? 'replay'}:${viewer.names[0]}:${viewer.names[1]}`}
+            key={`${broadcastId ?? replayUrl ?? 'replay'}:${viewer.names[0]}:${viewer.names[1]}:${nativeMotionNames.join(':')}`}
             snapshot={snapshot}
             surface={viewer.surface}
             playbackSpeed={initialSpeed}
             isWta={isWta ?? false}
+            playerCharacters={nativeMotionNames}
+            playerGruntSettings={nativeMotion.playerGruntSettings}
             tournamentRound={tournamentRound}
             fullReplay
             playerBundledMotions={nativeMotion.sources}

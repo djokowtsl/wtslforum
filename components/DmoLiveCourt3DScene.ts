@@ -1,4 +1,5 @@
 import * as THREE from 'three';
+import { dmoCharacterBodyScale } from '@/lib/dmoCharacterAppearance.mjs';
 import { resolveDmoVenueProfile, type DmoVenueProfile } from '../lib/dmoVenue';
 import type { Te4CourtSurface } from '@/lib/te4DmoTypes';
 import { courtSurfaceVisualProfile } from '@/lib/te4DmoSurface';
@@ -1804,7 +1805,12 @@ export function buildCourtFixtures(scene: THREE.Scene): CourtFixtureRig {
   return fixtureRig;
 }
 
-export function makePlayer(shirtColor: number, shortsColor: number, isWta = false): PlayerRig {
+export function makePlayer(
+  shirtColor: number,
+  shortsColor: number,
+  isWta = false,
+  appearance?: { heightCm: number | null; weightKg: number | null } | null,
+): PlayerRig {
   const root = new THREE.Group();
   const skin = new THREE.MeshPhysicalMaterial({
     color: 0xc89574, roughness: 0.72, metalness: 0, clearcoat: 0.035, clearcoatRoughness: 0.82,
@@ -2228,7 +2234,14 @@ export function makePlayer(shirtColor: number, shortsColor: number, isWta = fals
   racket.position.set(0.39, 1.1, 0.04);
   root.add(racket);
   const statureScale = isWta ? 0.91 : 0.95;
-  root.scale.set(statureScale, statureScale, statureScale);
+  const physicalScale = appearance
+    ? dmoCharacterBodyScale(appearance.heightCm, appearance.weightKg, isWta)
+    : { width: 1, height: 1 };
+  root.scale.set(
+    statureScale * physicalScale.width,
+    statureScale * physicalScale.height,
+    statureScale * physicalScale.width,
+  );
   return {
     root, body, hip, head, leftArm, rightArm, leftForearm, rightForearm,
     leftLeg, rightLeg, leftCalf, rightCalf, leftElbow, rightElbow, leftKnee, rightKnee,

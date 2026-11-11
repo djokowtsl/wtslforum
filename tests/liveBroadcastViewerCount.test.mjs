@@ -4,7 +4,10 @@ import { readFileSync } from 'node:fs';
 import { createRequire } from 'node:module';
 
 const require = createRequire(import.meta.url);
-const nextServer = { NextResponse: { json: (body, init) => Response.json(body, init) } };
+const nextServer = {
+  NextResponse: { json: (body, init) => Response.json(body, init) },
+  after: () => {},
+};
 
 function loadRoute({ user = { discordId: 'trusted-member', isAdmin: true }, rows = [
   { viewer_count: 3, display_name: 'Ada Fan', avatar_url: 'https://cdn.discordapp.com/avatars/123/a.png' },

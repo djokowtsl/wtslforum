@@ -197,6 +197,7 @@ export default function DmoLiveHost({ displayName, canPrepareFullReplay }: Props
     updateCharacterBackhandStatus('idle');
   };
   const [savedBroadcastCharacter, setSavedBroadcastCharacter] = useState('');
+  const [savedBroadcastOpponentCharacter, setSavedBroadcastOpponentCharacter] = useState('');
   const [savingCharacter, setSavingCharacter] = useState(false);
   const [officialByBroadcaster, setOfficialByBroadcaster] = useState(false);
   const [discordMessageUrl, setDiscordMessageUrl] = useState('');
@@ -345,15 +346,24 @@ export default function DmoLiveHost({ displayName, canPrepareFullReplay }: Props
         const response = await fetch('/api/live-dmo/owned', { cache: 'no-store' });
         if (!response.ok) return;
         const body = await response.json() as {
-          broadcast?: { id?: string; stream?: unknown; character?: string | null } | null;
+          broadcast?: {
+            id?: string;
+            stream?: unknown;
+            character?: string | null;
+            playerCharacters?: [string | null, string | null];
+          } | null;
         };
         if (active && !broadcastId && body.broadcast?.id && body.broadcast.stream) {
           broadcastModeRef.current = 'manual';
           setBroadcastMode('manual');
           setBroadcastId(body.broadcast.id);
           const savedCharacter = body.broadcast.character || '';
+          const savedCharacters = body.broadcast.playerCharacters ?? [savedCharacter || null, null];
+          const savedOpponentCharacter = savedCharacters[1] ?? '';
           setCharacter(savedCharacter);
+          setOpponentCharacter(savedOpponentCharacter);
           setSavedBroadcastCharacter(savedCharacter);
+          setSavedBroadcastOpponentCharacter(savedOpponentCharacter);
           setNotice('Your stream link is live. You can stop it here when you are finished.');
         }
       } catch {
@@ -633,6 +643,7 @@ export default function DmoLiveHost({ displayName, canPrepareFullReplay }: Props
           discordMessageUrl: mode === 'manual' ? discordMessageUrl.trim() : '',
           players,
           character: character.trim() || null,
+          playerCharacters: [character.trim() || null, opponentCharacter.trim() || null],
           mode,
           bestOf: broadcastBestOf,
           tournamentRound,
@@ -645,13 +656,17 @@ export default function DmoLiveHost({ displayName, canPrepareFullReplay }: Props
         id?: string;
         players?: [string, string];
         character?: string | null;
+        playerCharacters?: [string | null, string | null];
       };
       if (!body.id) throw new Error('The broadcast could not be started.');
       createdBroadcastId = body.id;
       const canonicalPlayers = body.players ?? players ?? null;
       const savedCharacter = body.character ?? character.trim();
+      const savedOpponentCharacter = body.playerCharacters?.[1] ?? opponentCharacter.trim();
       setCharacter(savedCharacter);
+      setOpponentCharacter(savedOpponentCharacter);
       setSavedBroadcastCharacter(savedCharacter);
+      setSavedBroadcastOpponentCharacter(savedOpponentCharacter);
       canonicalBroadcastPlayers.current = canonicalPlayers;
       replay.current = null;
       resetDmoReaderOnNextPoll.current = false;
@@ -819,22 +834,29 @@ export default function DmoLiveHost({ displayName, canPrepareFullReplay }: Props
   };
 
   const saveBroadcastCharacter = async () => {
-    if (!broadcastId || busy || savingCharacter || character === savedBroadcastCharacter) return;
+    if (!broadcastId || busy || savingCharacter
+      || (character === savedBroadcastCharacter
+        && opponentCharacter === savedBroadcastOpponentCharacter)) return;
     setSavingCharacter(true);
     setError('');
-    const nextCharacter = character.trim() || null;
+    const playerCharacters: [string | null, string | null] = [
+      character.trim() || null,
+      opponentCharacter.trim() || null,
+    ];
     try {
       const response = await fetch(`/api/live-dmo/${broadcastId}/character`, {
         method: 'PATCH',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ character: nextCharacter }),
+        body: JSON.stringify({ playerCharacters }),
       });
       if (!response.ok) throw new Error(await responseError(response));
-      setCharacter(nextCharacter ?? '');
-      setSavedBroadcastCharacter(nextCharacter ?? '');
-      setNotice(nextCharacter
-        ? `${nextCharacter} is now shown on your broadcast.`
-        : 'The character label has been removed from your broadcast.');
+      setCharacter(playerCharacters[0] ?? '');
+      setOpponentCharacter(playerCharacters[1] ?? '');
+      setSavedBroadcastCharacter(playerCharacters[0] ?? '');
+      setSavedBroadcastOpponentCharacter(playerCharacters[1] ?? '');
+      setNotice(playerCharacters.some(Boolean)
+        ? 'Both selected TE4 characters are now shown on your broadcast.'
+        : 'The character selections have been removed from your broadcast.');
     } catch (cause) {
       setError(cause instanceof Error ? cause.message : 'The broadcast character could not be saved.');
     } finally {
@@ -1346,7 +1368,7 @@ export default function DmoLiveHost({ displayName, canPrepareFullReplay }: Props
               aria-label="Opponent’s TE4 character"
               value={opponentCharacter}
               onChange={(event) => updateCharacterSelections(character, event.currentTarget.value)}
-              disabled={characterRosterStatus === 'loading' || busy || Boolean(broadcastId)}
+              disabled={characterRosterStatus === 'loading' || busy || savingCharacter}
             >
               <option value="">No character</option>
               {opponentCharacter && !characterChoices.includes(opponentCharacter) && (
@@ -1371,15 +1393,16 @@ export default function DmoLiveHost({ displayName, canPrepareFullReplay }: Props
               type="button"
               className={styles.secondaryButton}
               onClick={() => void saveBroadcastCharacter()}
-              disabled={busy || savingCharacter || character === savedBroadcastCharacter}
+              disabled={busy || savingCharacter
+                || (character === savedBroadcastCharacter
+                  && opponentCharacter === savedBroadcastOpponentCharacter)}
             >
               {savingCharacter
                 ? 'Saving…'
                 : character === savedBroadcastCharacter
-                  ? 'Character saved'
-                  : character
-                    ? savedBroadcastCharacter ? 'Update character' : 'Add character'
-                    : 'Remove character'}
+                  && opponentCharacter === savedBroadcastOpponentCharacter
+                    ? 'Characters saved'
+                    : 'Save characters'}
             </button>
           )}
         </div>

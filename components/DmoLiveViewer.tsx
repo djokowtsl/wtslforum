@@ -16,6 +16,7 @@ import {
   resolveLiveDmoUmpireScoreSource,
 } from '@/lib/liveDmoUmpireScoreSource';
 import LiveBroadcastChat from './LiveBroadcastComments';
+import LiveAnimationPicker from './LiveAnimationPicker';
 import LiveStreamEmbed from './LiveStreamEmbed';
 import Te4DmoReplayPlayer from './Te4DmoReplayPlayer';
 import VoiceRoom from './VoiceRoom';
@@ -29,6 +30,7 @@ type Broadcast = {
   status: 'live' | 'ended';
   ownerName: string;
   character?: string | null;
+  playerCharacters?: [string | null, string | null];
   snapshot: Te4LiveSnapshot | null;
   stream: LiveStream | null;
   players: [string, string] | null;
@@ -36,6 +38,8 @@ type Broadcast = {
   isWta: boolean;
   tournamentRound?: string;
   canManageTour: boolean;
+  canManageBroadcast: boolean;
+  hasDmo: boolean;
   replay: boolean;
   replayDataReady: boolean;
   replaySpeed: 1 | 2 | 4;
@@ -646,6 +650,7 @@ export default function DmoLiveViewer({ canWatch, voiceServer = '' }: Props) {
                   broadcast.replay && broadcast.replayDataReady ? (
                     <Te4DmoReplayPlayer
                       broadcastId={broadcast.id}
+                      characterNames={broadcast.playerCharacters ?? [broadcast.character ?? null, null]}
                       allowAutomaticFallback={broadcast.broadcastMode === 'auto'}
                       initialSpeed={broadcast.replaySpeed}
                       isWta={broadcast.isWta}
@@ -656,6 +661,7 @@ export default function DmoLiveViewer({ canWatch, voiceServer = '' }: Props) {
                         <DmoLiveDisplay
                           broadcastId={broadcast.id}
                           allowAutomaticFallback={broadcast.broadcastMode === 'auto'}
+                          playerCharacters={broadcast.playerCharacters}
                           snapshot={broadcast.snapshot}
                           isWta={broadcast.isWta}
                           tournamentRound={broadcast.tournamentRound}
@@ -678,6 +684,7 @@ export default function DmoLiveViewer({ canWatch, voiceServer = '' }: Props) {
                     <DmoLiveDisplay
                       broadcastId={broadcast.id}
                       allowAutomaticFallback={broadcast.broadcastMode === 'auto'}
+                      playerCharacters={broadcast.playerCharacters}
                       snapshot={broadcast.snapshot}
                       isWta={broadcast.isWta}
                       tournamentRound={broadcast.tournamentRound}
@@ -706,6 +713,13 @@ export default function DmoLiveViewer({ canWatch, voiceServer = '' }: Props) {
                       ? 'The live court view will appear shortly.'
                       : 'This broadcast ended before DMO court data became available.'}</p>
                   </div>
+                )}
+                {broadcast.status === 'live' && broadcast.hasDmo && broadcast.canManageBroadcast && (
+                  <LiveAnimationPicker
+                    broadcastId={broadcast.id}
+                    players={broadcast.players ?? broadcast.snapshot?.players ?? ['', '']}
+                    playerCharacters={broadcast.playerCharacters ?? [broadcast.character ?? null, null]}
+                  />
                 )}
                 {voiceServer && voiceRoom && broadcast.status === 'live' && !broadcast.replay && broadcast.stream && (
                   <VoiceRoom

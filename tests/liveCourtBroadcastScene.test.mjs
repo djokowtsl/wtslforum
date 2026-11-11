@@ -4,6 +4,7 @@ import { readFile } from 'node:fs/promises';
 import { createRequire } from 'node:module';
 import * as THREE from 'three';
 import { BVHLoader } from 'three/examples/jsm/loaders/BVHLoader.js';
+import * as dmoCharacterAppearance from '../lib/dmoCharacterAppearance.mjs';
 import {
   courtSurfaceSoundProfile,
   courtSurfaceVisualProfile,
@@ -35,6 +36,7 @@ const sceneApi = await loadTs('../components/DmoLiveCourt3DScene.ts', {
   '../lib/dmoVenue': venueApi,
   '@/lib/te4DmoSurface': courtSurfaceApi,
   '@/lib/dmoCrowdDensity': crowdDensityApi,
+  '@/lib/dmoCharacterAppearance.mjs': dmoCharacterAppearance,
 });
 const crowdLodApi = await loadTs('../lib/dmoCrowdLod.ts');
 const smashApi = await loadTs('../lib/dmoSmash.ts');
@@ -2227,7 +2229,7 @@ test('broadcast court audio defaults on and the Court camera remains the initial
   assert.match(primary, /void activateSoundFromGesture\(false\)/);
   assert.match(fallback, /void activateSoundFromGesture\(false\)/);
   assert.match(primary, /const \[gruntsEnabled, setGruntsEnabled\] = useState\(true\)/);
-  assert.match(primary, /const \[cameraView, setCameraView\] = useState<CameraView>\('court'\)/);
+  assert.match(primary, /const initialCameraView: Exclude<CameraView, 'custom'> = fullReplay \? 'tv' : 'court'/);
   assert.match(primary, /onPointerDownCapture=\{\(event\) => handleSoundActivationGesture\(event\.target\)\}/);
   assert.match(fallback, /onPointerDownCapture=\{\(event\) => handleSoundActivationGesture\(event\.target\)\}/);
   assert.match(primary, /data-sound-toggle/);

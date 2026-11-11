@@ -229,6 +229,7 @@ test('a signed-in Forum member can start a stream directly from a supported URL'
     id: 'external-stream-123',
     stream,
     character: 'Serena Williams',
+    playerCharacters: ['Serena Williams', null],
     isWta: false,
     replay: false,
     replaySpeed: 1,
@@ -251,8 +252,11 @@ test('broadcast owners can add or remove a character on a live stream', async ()
     '@/lib/liveRequestSecurity': { isSameSiteMutation: () => true },
     '@/lib/db': {
       sql: async (strings, ...values) => {
-        updates.push({ query: strings.join('?'), values });
-        return [{ id: broadcastId }];
+        const query = strings.join('?');
+        updates.push({ query, values });
+        return query.includes('SELECT owner_discord_id')
+          ? [{ owner_discord_id: 'broadcast-owner', payload: {} }]
+          : [{ id: broadcastId }];
       },
     },
   });
@@ -263,16 +267,25 @@ test('broadcast owners can add or remove a character on a live stream', async ()
 
   const added = await send('Serena Williams');
   assert.equal(added.status, 200);
-  assert.deepEqual(await added.json(), { ok: true, character: 'Serena Williams' });
-  assert.match(updates[0].query, /owner_discord_id/);
+  assert.deepEqual(await added.json(), {
+    ok: true,
+    character: 'Serena Williams',
+    playerCharacters: ['Serena Williams', null],
+  });
+  assert.match(updates[0].query, /SELECT owner_discord_id/);
   assert.match(updates[0].query, /status='live'/);
-  assert.ok(updates[0].values.includes('broadcast-owner'));
-  assert.ok(updates[0].values.includes('Serena Williams'));
+  assert.ok(updates[0].values.includes(broadcastId));
+  assert.match(updates[1].query, /UPDATE dmo_live_broadcasts/);
+  assert.ok(updates[1].values.includes('Serena Williams'));
 
   const removed = await send(null);
   assert.equal(removed.status, 200);
-  assert.deepEqual(await removed.json(), { ok: true, character: null });
-  assert.ok(updates[1].values.includes(null));
+  assert.deepEqual(await removed.json(), {
+    ok: true,
+    character: null,
+    playerCharacters: [null, null],
+  });
+  assert.ok(updates[3].values.includes(null));
 });
 
 test('automatic Discord stream intake requires the shared secret and a verified Forum account', async () => {

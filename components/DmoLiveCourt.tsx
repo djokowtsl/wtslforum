@@ -53,7 +53,8 @@ import {
   type BroadcastRenderResolution,
   type BroadcastRenderSetting,
 } from './DmoRenderResolution';
-import { loadLiveGruntSamples } from '@/lib/liveGruntAudio';
+import { loadLiveCharacterGruntSamples } from '@/lib/liveGruntAudio';
+import type { DmoCharacterGruntSetting } from '@/lib/dmoCharacterAppearance.mjs';
 import {
   cancelUmpireCall,
   createCourtAudioContext,
@@ -88,6 +89,8 @@ type Props = {
   onReplayFrameChange?: (frame: number) => void;
   stadiumAtmosphere?: boolean;
   isWta?: boolean;
+  playerCharacters?: readonly [string | null, string | null];
+  playerGruntSettings?: readonly [DmoCharacterGruntSetting | null, DmoCharacterGruntSetting | null];
   buffering?: boolean;
   crowdDensity?: number;
   tournamentRound?: string | null;
@@ -508,12 +511,20 @@ function playLiveCourtCue(
   kind: CourtCue,
   activeGrunts: Set<ActiveGruntVoice>,
   isWta: boolean,
-  gruntSamples: AudioBuffer[] | null,
+  gruntSamples: [AudioBuffer[], AudioBuffer[]] | null,
   surface: Te4CourtSurface,
   courtEffectSamples: CourtEffectSamples,
+  player?: number,
 ) {
-  if (kind === 'grunt' && gruntSamples?.length) {
-    playRecordedGrunt(context, gruntSamples, activeGrunts);
+  const samples = player === 1
+    ? gruntSamples?.[0]
+    : player === 2
+      ? gruntSamples?.[1]
+      : gruntSamples
+        ? [...gruntSamples[0], ...gruntSamples[1]]
+        : [];
+  if (kind === 'grunt' && gruntSamples !== null) {
+    if (samples?.length) playRecordedGrunt(context, samples, activeGrunts);
     return;
   }
   if (kind === 'racket' || kind === 'bounce' || kind === 'footstep') {
@@ -533,6 +544,8 @@ function DmoLiveCourt({
   onReplayFrameChange,
   stadiumAtmosphere = true,
   isWta = false,
+  playerCharacters = [null, null],
+  playerGruntSettings,
   buffering = false,
   crowdDensity = 0.76,
   gruntsEnabled,
@@ -583,8 +596,15 @@ function DmoLiveCourt({
   const audioContextRef = useRef<AudioContext | null>(null);
   const crowdBedRef = useRef<CrowdBed | null>(null);
   const activeGruntVoicesRef = useRef(new Set<ActiveGruntVoice>());
-  const atpGruntAudioRef = useRef<AudioBuffer[] | null>(null);
-  const wtaGruntAudioRef = useRef<AudioBuffer[] | null>(null);
+  const playerCharacterKey = playerCharacters.map((name) => name?.trim() ?? '').join('\u0000');
+  const playerGruntKey = `${playerCharacterKey}\u0001${playerGruntSettings
+    ?.map((setting) => setting ? `${setting.groupId ?? ''}:${setting.useGenericFallback}` : '')
+    .join('\u0000') ?? ''}`;
+  const gruntAudioRef = useRef<{
+    isWta: boolean;
+    characterKey: string;
+    samples: [AudioBuffer[], AudioBuffer[]];
+  } | null>(null);
   const courtEffectSamplesRef = useRef<CourtEffectSamples>({});
   const courtEffectSamplesLoadRef = useRef<Promise<void> | null>(null);
   const lastSoundFrameRef = useRef(Math.max(0, snapshot.frameCount - 3));
@@ -963,6 +983,10 @@ function DmoLiveCourt({
     if (!soundEnabled) return;
     const context = audioContextRef.current;
     if (!context || context.state !== 'running') return;
+    const gruntSamples = gruntAudioRef.current?.isWta === isWta
+      && gruntAudioRef.current.characterKey === playerGruntKey
+      ? gruntAudioRef.current.samples
+      : null;
     if (snapshot.frameCount < lastSoundFrameRef.current) {
       playedSoundEventsRef.current.clear();
       lastSoundFrameRef.current = Math.max(0, snapshot.frameCount - 3);
@@ -972,7 +996,7 @@ function DmoLiveCourt({
       const key = `${event.frame}:${event.kind}`;
       if (event.frame < lastSoundFrameRef.current || playedSoundEventsRef.current.has(key)) continue;
       playLiveCourtCue(context, event.kind, activeGruntVoicesRef.current, isWta,
-        isWta ? wtaGruntAudioRef.current : atpGruntAudioRef.current, surface, courtEffectSamplesRef.current);
+        gruntSamples, surface, courtEffectSamplesRef.current);
       playedSoundEventsRef.current.add(key);
     }
     for (const event of deriveLiveCourtFootworkEvents(
@@ -984,15 +1008,15 @@ function DmoLiveCourt({
       const key = `${event.frame}:${event.kind}:${event.player}`;
       if (event.frame < lastSoundFrameRef.current || playedSoundEventsRef.current.has(key)) continue;
       playLiveCourtCue(context, event.kind, activeGruntVoicesRef.current, isWta,
-        isWta ? wtaGruntAudioRef.current : atpGruntAudioRef.current, surface, courtEffectSamplesRef.current);
+        gruntSamples, surface, courtEffectSamplesRef.current, event.player);
       playedSoundEventsRef.current.add(key);
     }
     for (const event of snapshot.trajectoryEvents ?? []) {
       const cue = liveCourtTrajectoryCue(event, gruntsEnabled);
-      const key = `${event.frame}:${event.kind}`;
+      const key = `${event.frame}:${event.kind}:${event.player ?? ''}`;
       if (event.frame < lastSoundFrameRef.current || playedSoundEventsRef.current.has(key)) continue;
       if (cue) playLiveCourtCue(context, cue, activeGruntVoicesRef.current, isWta,
-        isWta ? wtaGruntAudioRef.current : atpGruntAudioRef.current, surface, courtEffectSamplesRef.current);
+        gruntSamples, surface, courtEffectSamplesRef.current, event.player);
       playedSoundEventsRef.current.add(key);
     }
     lastSoundFrameRef.current = Math.max(lastSoundFrameRef.current, snapshot.frameCount - 3);
@@ -1015,8 +1039,7 @@ function DmoLiveCourt({
       // Closing the context below stops any remaining generated audio.
     }
     crowdBedRef.current = null;
-    wtaGruntAudioRef.current = null;
-    atpGruntAudioRef.current = null;
+    gruntAudioRef.current = null;
     void audioContextRef.current?.close();
     audioContextRef.current = null;
   }, []);
@@ -1064,11 +1087,13 @@ function DmoLiveCourt({
       if (!resumed) throw new Error(`Audio context is ${context.state}`);
       void preloadLineCallAudio(context).catch(() => {});
 
-      const currentGruntSamples = isWta ? wtaGruntAudioRef.current : atpGruntAudioRef.current;
+      const currentGruntSamples = gruntAudioRef.current?.isWta === isWta
+        && gruntAudioRef.current.characterKey === playerGruntKey;
       if (gruntsEnabled && !currentGruntSamples) {
-        void loadLiveGruntSamples(context, isWta).then((samples) => {
-          if (isWta) wtaGruntAudioRef.current = samples;
-          else atpGruntAudioRef.current = samples;
+        void loadLiveCharacterGruntSamples(
+          context, isWta, playerCharacters, playerGruntSettings,
+        ).then((samples) => {
+          gruntAudioRef.current = { isWta, characterKey: playerGruntKey, samples };
         }).catch(() => {
           if (soundEnabledRef.current) setSoundError('Player grunt audio could not be loaded; court effects remain enabled.');
         });
@@ -1180,23 +1205,21 @@ function DmoLiveCourt({
   }, [fullReplay]);
 
   useEffect(() => {
-    const currentGruntSamples = isWta ? wtaGruntAudioRef.current : atpGruntAudioRef.current;
-    if (!soundEnabled || !gruntsEnabled || currentGruntSamples) return;
+    const hasCurrentGruntSamples = gruntAudioRef.current?.isWta === isWta
+      && gruntAudioRef.current.characterKey === playerGruntKey;
+    if (!soundEnabled || !gruntsEnabled || hasCurrentGruntSamples) return;
     const context = audioContextRef.current;
     if (!context) return;
     let cancelled = false;
-    void loadLiveGruntSamples(context, isWta)
+    void loadLiveCharacterGruntSamples(context, isWta, playerCharacters, playerGruntSettings)
       .then((samples) => {
-        if (!cancelled) {
-          if (isWta) wtaGruntAudioRef.current = samples;
-          else atpGruntAudioRef.current = samples;
-        }
+        if (!cancelled) gruntAudioRef.current = { isWta, characterKey: playerGruntKey, samples };
       })
       .catch(() => {
         if (!cancelled) setSoundError('The player grunt samples could not be loaded.');
       });
     return () => { cancelled = true; };
-  }, [isWta, soundEnabled, gruntsEnabled]);
+  }, [isWta, playerGruntKey, soundEnabled, gruntsEnabled]);
 
   return (
     <section

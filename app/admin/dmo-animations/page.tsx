@@ -1,5 +1,6 @@
 import { redirect } from 'next/navigation';
 import NativeMotionAdmin from '@/components/NativeMotionAdmin';
+import NativeCharacterGruntProfiles from '@/components/NativeCharacterGruntProfiles';
 import PageHero from '@/components/PageHero';
 import { getSession } from '@/lib/auth';
 
@@ -12,10 +13,11 @@ export default async function AdminDmoAnimations() {
   return (
     <>
       <PageHero eyebrow="Staff" title="Replay & live-stream animations">
-        Choose one fixed animation per player and stroke for each match, with optional character defaults.
+        Choose fixed animations and character grunt defaults, with match-specific controls for staff and stream owners.
       </PageHero>
       <main className="container">
         <NativeMotionAdmin />
+        <NativeCharacterGruntProfiles />
       </main>
     </>
   );
