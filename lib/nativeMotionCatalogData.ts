@@ -32,6 +32,9 @@ export type NativeMotionCatalogClip = {
   } | null;
 };
 
+export type NativeMotionCharacterDefaults =
+  Partial<Record<NativeMotionStroke, NativeMotionCatalogClip>>;
+
 export type NativeMotionCatalog = {
   format: 'WTMC1';
   rig: BundledRigSchema;
@@ -76,9 +79,87 @@ export function firstValidNativeMotionClip(
   return catalog.clips.find((clip) => (
     nativeMotionClipSupportsStroke(clip, stroke)
     && !clip.hidden
-    && !clip.acceleration
     && !clip.accelerationVariant
   )) ?? null;
+}
+
+function words(value: string) {
+  return value
+    .normalize('NFKD')
+    .replace(/\p{M}/gu, '')
+    .toLocaleLowerCase('en-GB')
+    .match(/[\p{L}\p{N}]+/gu) ?? [];
+}
+
+function isAccelerationClip(clip: NativeMotionCatalogClip) {
+  return clip.accelerationVariant
+    || words(`${clip.sourceBundle} ${clip.originalClipName} ${clip.label}`)
+      .some((word) => word === 'acc' || word === 'acceleration');
+}
+
+function clipSupportsNamedStroke(clip: NativeMotionCatalogClip, stroke: NativeMotionStroke) {
+  const clipWords = words(`${clip.sourceBundle} ${clip.originalClipName} ${clip.label}`);
+  if (stroke === 'serve') {
+    return clipWords.some((word) => word === 'serve' || word === 'service');
+  }
+  if (stroke === 'forehand') {
+    return clipWords.some((word) => word === 'forehand' || word === 'fh');
+  }
+  return clipWords.some((word) => word === 'backhand' || word === 'bh');
+}
+
+/**
+ * Suggest one character-specific, non-acceleration clip per available stroke.
+ * The catalog's `acceleration` field links a regular clip to its faster
+ * counterpart, so only `accelerationVariant` identifies the variant itself.
+ */
+export function nativeMotionCharacterDefaults(
+  catalog: NativeMotionCatalog,
+  characterName: string,
+): NativeMotionCharacterDefaults {
+  const identity = words(
+    characterName
+      .replace(/\([^)]*\)/g, ' ')
+      .replace(/\b(classic|master|pro|retro|prime|custom)\b/gi, ' '),
+  ).filter((word) => word.length >= 3);
+  const surname = identity.at(-1);
+  if (!surname) return {};
+
+  const candidates = catalog.clips.flatMap((clip) => {
+    if (clip.hidden || isAccelerationClip(clip)) return [];
+    const clipWords = new Set(words(`${clip.sourceBundle} ${clip.originalClipName} ${clip.label}`));
+    if (!clipWords.has(surname)) return [];
+    const identityMatches = identity.filter((word) => clipWords.has(word)).length;
+    const variantWords = new Set(words(`${clip.sourceBundle} ${clip.originalClipName} ${clip.label}`));
+    const regularBonus = variantWords.has('reg') || variantWords.has('regular') ? -20 : 0;
+    const slicePenalty = variantWords.has('slice') ? 12 : 0;
+    const version = [...variantWords].map((word) => /^v(\d+)$/.exec(word))
+      .filter((match): match is RegExpExecArray => Boolean(match))
+      .map((match) => Number(match[1]))
+      .sort((a, b) => a - b)[0] ?? 0;
+    return [{
+      clip,
+      identityMatches,
+      variantScore: regularBonus + slicePenalty + version,
+    }];
+  });
+
+  const defaults: NativeMotionCharacterDefaults = {};
+  for (const stroke of NATIVE_MOTION_STROKES) {
+    const chosen = candidates
+      .filter(({ clip }) => (
+        nativeMotionClipSupportsStroke(clip, stroke)
+        && clipSupportsNamedStroke(clip, stroke)
+      ))
+      .sort((a, b) => (
+        b.identityMatches - a.identityMatches
+        || a.variantScore - b.variantScore
+        || a.clip.label.localeCompare(b.clip.label, 'en-GB')
+        || a.clip.id.localeCompare(b.clip.id)
+      ))[0]?.clip;
+    if (chosen) defaults[stroke] = chosen;
+  }
+  return defaults;
 }
 
 export function nativeMotionClipSupportsStroke(

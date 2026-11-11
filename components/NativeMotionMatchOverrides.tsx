@@ -10,6 +10,7 @@ import {
   type NativeMotionStroke,
 } from '@/lib/nativeMotionCatalogData';
 import styles from './NativeMotionAdmin.module.css';
+import SearchableClipSelect from './SearchableClipSelect';
 
 type Draft = Partial<Record<NativeMotionStroke, { clipId: string; sourceHandedness: NativeMotionHand | '' }>>;
 type Target = {
@@ -150,16 +151,29 @@ export default function NativeMotionMatchOverrides({ catalog }: { catalog: Nativ
                   return (
                     <div className={styles.matchStroke} key={stroke}>
                       <label className={styles.field}>
-                        <span>{stroke[0].toUpperCase() + stroke.slice(1)} version</span>
-                        <select value={pick?.clipId ?? ''} onChange={(event) => change(index, stroke, event.target.value)}>
-                          <option value="">Use saved profile or standard motion</option>
-                          {catalog.clips.filter((clip) => nativeMotionClipSupportsStroke(clip, stroke)).map((clip) => (
-                            <option key={clip.id} value={clip.id}>
-                              {[clip.sourceBundle, clip.originalClipName, clip.hidden ? 'hidden' : '',
-                                clip.acceleration || clip.accelerationVariant ? 'acceleration variant' : ''].filter(Boolean).join(' · ')}
-                            </option>
-                          ))}
-                        </select>
+                        <span id={`match-${index}-${stroke}-label`}>
+                          {stroke[0].toUpperCase() + stroke.slice(1)} version
+                        </span>
+                        <SearchableClipSelect
+                          id={`match-${index}-${stroke}-clip`}
+                          labelledBy={`match-${index}-${stroke}-label`}
+                          value={pick?.clipId ?? ''}
+                          options={[
+                            { value: '', label: 'Use saved profile or standard motion' },
+                            ...catalog.clips
+                              .filter((clip) => nativeMotionClipSupportsStroke(clip, stroke))
+                              .map((clip) => ({
+                                value: clip.id,
+                                label: [
+                                  clip.sourceBundle,
+                                  clip.originalClipName,
+                                  clip.hidden ? 'hidden' : '',
+                                  clip.accelerationVariant ? 'acceleration variant' : '',
+                                ].filter(Boolean).join(' · '),
+                              })),
+                          ]}
+                          onChange={(clipId) => change(index, stroke, clipId)}
+                        />
                       </label>
                       {pick && (
                         <label className={styles.field}>

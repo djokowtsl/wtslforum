@@ -18,6 +18,7 @@ import {
   dmoOrbitSettings,
   dmoCameraMaxDistanceInsideBowl,
   dmoFullscreenCourtCamera,
+  dmoTvBroadcastCamera,
   responsiveDmoCourtCameraScale,
 } from '@/lib/dmoCameraConstraints';
 import { isCapturedSmashShot } from '@/lib/dmoSmash';
@@ -868,9 +869,12 @@ function ThreeCourt({
           width, height, fullscreenActive, maxDistanceForTarget(new THREE.Vector3(0, 0.5, 0)),
         )
         : null;
+      const tvBroadcastCamera = activeView === 'tv'
+        ? dmoTvBroadcastCamera(width, height, maxDistanceForTarget(new THREE.Vector3(0, 0.5, 0)))
+        : null;
       camera.fov = activeView === 'aerial'
         ? 48
-        : fullscreenCourtCamera?.fov ?? (compactFrame ? 38 : 34);
+        : tvBroadcastCamera?.fov ?? fullscreenCourtCamera?.fov ?? (compactFrame ? 38 : 34);
       camera.updateProjectionMatrix();
       // Use an aspect-specific fullscreen pose to keep the whole court in frame.
       const responsiveScale = responsiveDmoCourtCameraScale(width, height, fullscreenActive);
@@ -887,7 +891,11 @@ function ThreeCourt({
         controls.target.set(0, 0.5, 0);
         cameraTargetAnchor.copy(controls.target);
       } else if (activeView === 'tv') {
-        camera.position.set(0, 24 * responsiveScale, 46 * responsiveScale);
+        if (tvBroadcastCamera) {
+          camera.position.set(tvBroadcastCamera.x, tvBroadcastCamera.y, tvBroadcastCamera.z);
+        } else {
+          camera.position.set(35, 11, 0);
+        }
         controls.target.set(0, 0.5, 0);
         cameraTargetAnchor.copy(controls.target);
       } else if (activeView === 'aerial') {
@@ -2548,13 +2556,24 @@ function ThreeCourt({
           maxDistanceForTarget(new THREE.Vector3(0, 0.5, 0)),
         )
         : null;
+      const tvBroadcastCamera = view === 'tv'
+        ? dmoTvBroadcastCamera(
+          viewportWidth, viewportHeight, maxDistanceForTarget(new THREE.Vector3(0, 0.5, 0)),
+        )
+        : null;
       const narrowScale = responsiveDmoCourtCameraScale(viewportWidth, viewportHeight, fullscreenActive);
       camera.fov = view === 'aerial'
         ? 50
-        : fullscreenCourtCamera?.fov ?? (compactViewport ? 38 : 34);
+        : tvBroadcastCamera?.fov ?? fullscreenCourtCamera?.fov ?? (compactViewport ? 38 : 34);
       camera.updateProjectionMatrix();
       if (view === 'aerial') camera.position.set(0, Math.min(32, cameraMaxDistance * 0.98), 0.1);
-      else if (view === 'tv') camera.position.set(0, 24 * narrowScale, 46 * narrowScale);
+      else if (view === 'tv') {
+        if (tvBroadcastCamera) {
+          camera.position.set(tvBroadcastCamera.x, tvBroadcastCamera.y, tvBroadcastCamera.z);
+        } else {
+          camera.position.set(35, 11, 0);
+        }
+      }
       else if (view === 'court') {
         if (fullscreenCourtCamera) {
           camera.position.set(

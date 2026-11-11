@@ -64,6 +64,65 @@
   opacity: 0.55;
 }
 
+.clipPicker {
+  position: relative;
+}
+
+.clipPicker > input {
+  width: 100%;
+  min-width: 0;
+  padding: 10px 12px;
+  border: 1px solid var(--border, #39475c);
+  border-radius: 9px;
+  color: var(--text, #eef2f8);
+  background: var(--background, #0d1522);
+}
+
+.clipPicker > input:focus-visible {
+  outline: 2px solid var(--accent, #76a9fa);
+  outline-offset: 2px;
+}
+
+.clipListbox {
+  position: absolute;
+  z-index: 30;
+  top: calc(100% + 5px);
+  right: 0;
+  left: 0;
+  max-height: 270px;
+  overflow-y: auto;
+  padding: 5px;
+  border: 1px solid var(--border, #39475c);
+  border-radius: 10px;
+  background: var(--surface, #111b2b);
+  box-shadow: 0 12px 28px rgba(0, 0, 0, 0.38);
+}
+
+.clipOption {
+  display: block;
+  width: 100%;
+  padding: 9px 10px;
+  border: 0;
+  border-radius: 6px;
+  color: var(--text, #eef2f8);
+  background: transparent;
+  text-align: left;
+  overflow-wrap: anywhere;
+  cursor: pointer;
+}
+
+.clipOption:hover,
+.clipOption[aria-selected='true'],
+.clipOption[data-active='true'] {
+  background: rgba(118, 169, 250, 0.16);
+}
+
+.clipEmpty {
+  margin: 0;
+  padding: 10px;
+  font-size: 0.9rem;
+}
+
 .strokeGrid {
   display: grid;
   grid-template-columns: repeat(3, minmax(0, 1fr));
