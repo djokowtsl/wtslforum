@@ -7,6 +7,7 @@ import { attachArticulatedHands } from './DmoArticulatedHands';
 import { attachNativePlayer } from './DmoNativePlayer';
 import { attachNativePlayer as attachClaudeNativePlayer } from './DmoNativePlayerClaude';
 import type { GroundstrokeMotionSources, GroundstrokeName } from './DmoCapturedGroundstroke';
+import type { BundledMotionSource } from './DmoBundledGroundstroke';
 import { BROADCAST_PLAYER_KITS, type NativePlayerKit } from './DmoNativeKit';
 import { isCrowdSkinPixel } from '@/lib/dmoCrowdClothing';
 
@@ -90,20 +91,36 @@ export function humanModelAssetFilename(gender: Gender, detail: HumanModelDetail
   return `${gender}-${detail === 'crowd-high' ? 'player' : 'crowd'}.glb`;
 }
 
-export async function loadHumanModel(gender: Gender, detail: HumanModelDetail, signal: AbortSignal, base = '/models/dmo-humans') {
+export async function loadHumanModel(
+  gender: Gender,
+  detail: HumanModelDetail,
+  signal: AbortSignal,
+  base = '/models/dmo-humans',
+  expectedMotionModelHash?: string,
+) {
   const filename = humanModelAssetFilename(gender, detail);
   const [response, motionSources] = await Promise.all([
     fetch(`${base}/${filename}`, { signal }),
     detail === 'player' ? loadGroundstrokeMotionSources(base, signal) : Promise.resolve(undefined),
   ]);
   if (!response.ok) throw new Error(`Character model request failed (${response.status}).`);
-  const gltf = await new GLTFLoader().parseAsync(await response.arrayBuffer(), '');
+  const bytes = await response.arrayBuffer();
+  let verifiedHash: string | undefined;
+  if (detail === 'player' && expectedMotionModelHash) {
+    verifiedHash = [...new Uint8Array(await crypto.subtle.digest('SHA-256', bytes))]
+      .map(value => value.toString(16).padStart(2, '0')).join('');
+    if (verifiedHash !== expectedMotionModelHash) {
+      throw new Error('The bundled player recordings do not match the loaded player model.');
+    }
+  }
+  const gltf = await new GLTFLoader().parseAsync(bytes, '');
   if (signal.aborted) {
     disposeHumanModel(gltf.scene);
     throw new DOMException('Character load cancelled.', 'AbortError');
   }
   if (detail === 'player') {
     Object.assign(gltf.scene.userData, { continuousPlayer: true, gender });
+    if (verifiedHash) gltf.scene.userData.bundledMotionModelHash = verifiedHash;
     nativeMotionSources.set(gltf.scene, motionSources!);
   }
   return gltf.scene;
@@ -283,12 +300,14 @@ export function attachHumanPlayer(
   nativePlayerVariant: NativePlayerVariant = 'claude',
   kit: NativePlayerKit = BROADCAST_PLAYER_KITS[0],
   kitIndex = 0,
+  bundledMotion?: BundledMotionSource,
 ) {
   if (template.userData.continuousPlayer) {
     const motions = nativeMotionSources.get(template);
     if (!motions) throw new Error('Captured forehand, backhand, and serve motion data was not loaded.');
     const attach = nativePlayerVariant === 'claude' ? attachClaudeNativePlayer : attachNativePlayer;
-    return attach(template, rig, shirtColor, motions, kit, kitIndex);
+    return attach(template, rig, shirtColor,
+      bundledMotion ? { ...motions, bundled: bundledMotion } : motions, kit, kitIndex);
   }
   const model = clone(template) as THREE.Group;
   model.name = 'wtsl-textured-rigged-player';
