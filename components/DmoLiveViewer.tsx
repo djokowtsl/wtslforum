@@ -646,6 +646,7 @@ export default function DmoLiveViewer({ canWatch, voiceServer = '' }: Props) {
                   broadcast.replay && broadcast.replayDataReady ? (
                     <Te4DmoReplayPlayer
                       broadcastId={broadcast.id}
+                      allowAutomaticFallback={broadcast.broadcastMode === 'auto'}
                       initialSpeed={broadcast.replaySpeed}
                       isWta={broadcast.isWta}
                       tournamentRound={broadcast.tournamentRound}
@@ -653,6 +654,8 @@ export default function DmoLiveViewer({ canWatch, voiceServer = '' }: Props) {
                       strokeStyles={broadcast.snapshot.strokeStyles}
                       fallback={(
                         <DmoLiveDisplay
+                          broadcastId={broadcast.id}
+                          allowAutomaticFallback={broadcast.broadcastMode === 'auto'}
                           snapshot={broadcast.snapshot}
                           isWta={broadcast.isWta}
                           tournamentRound={broadcast.tournamentRound}
@@ -673,6 +676,8 @@ export default function DmoLiveViewer({ canWatch, voiceServer = '' }: Props) {
                     />
                   ) : (
                     <DmoLiveDisplay
+                      broadcastId={broadcast.id}
+                      allowAutomaticFallback={broadcast.broadcastMode === 'auto'}
                       snapshot={broadcast.snapshot}
                       isWta={broadcast.isWta}
                       tournamentRound={broadcast.tournamentRound}
