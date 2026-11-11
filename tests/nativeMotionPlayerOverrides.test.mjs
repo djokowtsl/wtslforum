@@ -1,0 +1,220 @@
+import assert from 'node:assert/strict';
+import test from 'node:test';
+import { readFileSync } from 'node:fs';
+import { createRequire } from 'node:module';
+
+const require = createRequire(import.meta.url);
+const { transformSync } = require('next/dist/build/swc');
+function load(path, mocks = {}) {
+  const { code } = transformSync(readFileSync(new URL(`../${path}`, import.meta.url), 'utf8'), {
+    jsc: { parser: { syntax: 'typescript' }, target: 'es2022' },
+    module: { type: 'commonjs' },
+  });
+  const module = { exports: {} };
+  new Function('require', 'module', 'exports', code)((name) => {
+    if (name in mocks) return mocks[name];
+    return require(name);
+  }, module, module.exports);
+  return module.exports;
+}
+const catalogData = load('lib/nativeMotionCatalogData.ts');
+const pick = { clipId: 'a1_b1', sourceHandedness: 'right' };
+const alternate = { clipId: 'a2_b2', sourceHandedness: 'left' };
+const broadcastId = 'd2917824-65d4-4c7f-976c-ac30004eb253';
+function setup(options = {}) {
+  const calls = [];
+  const writes = [];
+  const route = load('app/api/admin/native-motion/player-overrides/route.ts', {
+    'next/server': { NextResponse: { json: (data, init) => Response.json(data, init) } },
+    '@/lib/auth': { getSession: async () => options.user === undefined ? { isAdmin: true } : options.user },
+    '@/lib/liveRequestSecurity': { isSameSiteMutation: () => options.sameSite !== false },
+    '@/lib/dmoReplayLibrary': { isDmoReplayId: (id) => /^[1-9]\d{0,18}$/.test(id) },
+    '@/lib/nativeMotionCatalogData': catalogData,
+    '@/lib/nativeMotionServer': {
+      fetchNativeMotionCatalog: async () => ({
+        clips: [
+          { id: 'a1_b1', duration: 1, events: { kind: 'strike', contactTime: 0.5 }, hidden: true, accelerationVariant: true },
+          { id: 'a2_b2', duration: 1, events: { kind: 'serve', contactTime: 0.5 } },
+        ],
+      }),
+    },
+    '@/lib/db': {
+      sql: async (strings, ...values) => {
+        const text = strings.join('?');
+        calls.push({ text, values });
+        return options.rows?.(text) ?? (options.exists === false ? [] : [{ id: '17' }]);
+      },
+      transaction: async (build) => {
+        build((strings, ...values) => {
+          writes.push({ text: strings.join('?'), values });
+          return {};
+        });
+      },
+    },
+  });
+  return { route, calls, writes };
+}
+const request = (body) => new Request('https://forum.test/api/admin/native-motion/player-overrides', {
+  method: 'PUT', headers: { 'content-type': 'application/json' }, body: JSON.stringify(body),
+});
+const body = (overrides = {}) => ({
+  targetType: 'replay', targetId: '17', playerClips: [{ forehand: pick }, {}], ...overrides,
+});
+
+test('guests, members, and cross-site requests cannot change match animations', async () => {
+  for (const options of [{ user: null }, { user: { isAdmin: false } }, { sameSite: false }]) {
+    const { route, calls, writes } = setup(options);
+    assert.equal((await route.PUT(request(body()))).status, 403);
+    assert.equal(calls.length, 0);
+    assert.equal(writes.length, 0);
+  }
+});
+
+test('a replay accepts an arbitrary compatible variant without character restrictions', async () => {
+  const { route, writes } = setup();
+  assert.equal((await route.PUT(request(body()))).status, 200);
+  assert.equal(writes.length, 2);
+  assert.match(writes[0].text, /DELETE.+submission_id/s);
+  assert.deepEqual(writes[1].values, ['17', 0, JSON.stringify({ forehand: pick })]);
+});
+
+test('each player and stroke is stored separately and clearing restores defaults', async () => {
+  const first = setup();
+  const response = await first.route.PUT(request(body({ playerClips: [{ forehand: pick }, { serve: alternate }] })));
+  assert.equal(response.status, 200);
+  assert.equal(first.writes.length, 3);
+  assert.deepEqual(first.writes[2].values, ['17', 1, JSON.stringify({ serve: alternate })]);
+  const cleared = setup();
+  assert.equal((await cleared.route.PUT(request(body({ playerClips: [{}, {}] })))).status, 200);
+  assert.equal(cleared.writes.length, 1);
+  assert.match(cleared.writes[0].text, /DELETE/);
+});
+
+test('automatic, expired, hidden, and missing targets cannot receive overrides', async () => {
+  for (const type of ['replay', 'manual']) {
+    const { route, calls, writes } = setup({ exists: false });
+    const response = await route.PUT(request(body({ targetType: type, targetId: type === 'replay' ? '17' : broadcastId })));
+    assert.equal(response.status, 404);
+    assert.equal(writes.length, 0);
+    assert.match(calls[0].text, type === 'manual' ? /mode'.+= 'manual'/ : /hidden_at IS NULL/);
+  }
+});
+
+test('manual streams save the chosen clips under the broadcast, not the character', async () => {
+  const { route, writes } = setup();
+  assert.equal((await route.PUT(request(body({ targetType: 'manual', targetId: broadcastId })))).status, 200);
+  assert.match(writes[1].text, /\(broadcast_id, player_index, clips\)/);
+  assert.equal(writes[1].values[0], broadcastId);
+});
+
+test('invalid strokes, arrays of alternatives, and missing handedness are rejected', async () => {
+  for (const playerClips of [
+    [{ forehand: alternate }, {}],
+    [{ forehand: [pick, alternate] }, {}],
+    [{ forehand: { clipId: 'a1_b1' } }, {}],
+  ]) {
+    const { route, writes } = setup();
+    assert.equal((await route.PUT(request(body({ playerClips })))).status, 400);
+    assert.equal(writes.length, 0);
+  }
+});
+
+test('admin search returns both players’ fixed selections for the selected replay', async () => {
+  const { route } = setup({ rows: (text) => text.includes('FROM dmo_submissions')
+    ? [{
+      id: '17', player1: 'elmanzanas', player2: 'Bigwill', player1_character: 'Federer',
+      player2_character: 'Djokovic', tournament: 'Shenzhen', round_name: 'Final',
+      submitted_at: '2026-11-01', clip_overrides: { 0: { forehand: pick }, 1: { serve: alternate } },
+    }] : [] });
+  const response = await route.GET(new Request('https://forum.test/api/admin/native-motion/player-overrides?q=Shenzhen'));
+  assert.equal(response.status, 200);
+  const payload = await response.json();
+  assert.deepEqual(payload.targets[0].playerClips, [{ forehand: pick }, { serve: alternate }]);
+});
+
+test('replay resolver checks visibility and returns match overrides above optional profiles', async () => {
+  const queries = [];
+  const mocks = {
+    'next/server': { NextResponse: { json: (data, init) => Response.json(data, init) } },
+    '@/lib/auth': { getSession: async () => null },
+    '@/lib/dmoReplayLibrary': {
+      isDmoReplayId: () => true,
+      getPublicDmoReplay: async () => ({ privateBlobPathname: 'dmo/match.dmo', fileName: 'match.dmo' }),
+      getDmoReplaySubmission: async () => { throw new Error('Private replay should not be read for a guest'); },
+    },
+    '@/lib/nativeMotionCatalogData': catalogData,
+    '@/lib/db': { sql: async (strings) => {
+      const text = strings.join('?'); queries.push(text);
+      return text.includes('FROM dmo_native_motion_player_overrides') ? [{ player_index: 1, clips: { forehand: pick } }] : [];
+    } },
+  };
+  const route = load('app/api/native-motion/profiles/route.ts', mocks);
+  const response = await route.GET(new Request('https://forum.test/api/native-motion/profiles?submissionId=17&player1=Federer&player2=Djokovic'));
+  assert.equal(response.status, 200);
+  assert.equal(response.headers.get('cache-control'), 'private, no-store');
+  assert.deepEqual((await response.json()).playerClipOverrides, [{}, { forehand: pick }]);
+  const hidden = load('app/api/native-motion/profiles/route.ts', {
+    ...mocks,
+    '@/lib/dmoReplayLibrary': { ...mocks['@/lib/dmoReplayLibrary'], getPublicDmoReplay: async () => null },
+  });
+  assert.equal((await hidden.GET(new Request('https://forum.test/api/native-motion/profiles?submissionId=17'))).status, 404);
+});
+
+test('playback uses one chosen version and preserves player identity when replay order reverses', async () => {
+  const changes = [];
+  const requests = [];
+  const oldFetch = globalThis.fetch;
+  let stateIndex = 0;
+  let cleanup;
+  const clipMetadata = (id) => ({
+    id, duration: 1, events: { kind: 'strike', contactTime: 0.5 },
+  });
+  globalThis.fetch = async (input) => {
+    const url = String(input);
+    requests.push(url);
+    if (url.startsWith('/api/native-motion/profiles?')) {
+      return Response.json({
+        playerProfileKeys: ['djokovic', 'federer'],
+        profiles: [
+          { profileKey: 'djokovic', clips: { forehand: { clipId: 'a3_b3', sourceHandedness: 'right' } } },
+          { profileKey: 'federer', clips: {} },
+        ],
+        playerClipOverrides: [{ forehand: pick }, { forehand: { ...pick, clipId: 'a4_b4' } }],
+      });
+    }
+    if (url.endsWith('/catalog.json')) return Response.json({
+      format: 'WTMC1', rig: { modelHash: 'test-rig' },
+      clips: ['a1_b1', 'a3_b3', 'a4_b4'].map(clipMetadata),
+    });
+    return new Response(new TextEncoder().encode(url.includes('a4_b4') ? 'second-player' : 'first-player'));
+  };
+  try {
+    const hook = load('components/useNativePlayerMotions.ts', {
+      react: {
+        useState: (initial) => {
+          const index = stateIndex++;
+          return [initial, (value) => { if (index === 0) changes.push(value); }];
+        },
+        useEffect: (effect) => { cleanup = effect(); },
+      },
+      '@/lib/dmoBundledMotion.mjs': { decodeBundledMotion: (buffer) => ({ selected: new TextDecoder().decode(buffer) }) },
+      '@/lib/nativeMotionCatalog': { NATIVE_MOTION_CATALOG_SHA256: 'catalog-hash' },
+      '@/lib/nativeMotionCatalogData': catalogData,
+    });
+    hook.useNativePlayerMotions({
+      playerNames: ['Djokovic', 'Federer'], submissionId: '17', overridePlayerOrder: [1, 0],
+    });
+    for (let attempt = 0; attempt < 20 && changes.length < 2; attempt++) {
+      await new Promise((resolve) => setTimeout(resolve, 5));
+    }
+    const sources = changes.at(-1);
+    assert.equal(sources[0].clips.forehand.clip.selected, 'second-player');
+    assert.equal(sources[1].clips.forehand.clip.selected, 'first-player');
+    assert.equal(requests.some((url) => url.includes('a3_b3.wtm')), false);
+    assert.equal(requests.filter((url) => url.endsWith('.wtm')).length, 2);
+    assert.match(requests[0], /submissionId=17/);
+  } finally {
+    cleanup?.();
+    globalThis.fetch = oldFetch;
+  }
+});
