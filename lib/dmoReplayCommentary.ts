@@ -16,6 +16,8 @@ export function buildDmoReplayCommentaryPoints(viewer: Te4ViewerData) {
       shots: point.sh, shotEndTime: point.fc - 1,
       scoreBeforeLabel: `${point.g}(${point.pt})`,
       scoreAfterLabel: next ? `${next.g}(${next.pt})` : undefined,
+      setBefore: point.set,
+      setAfter: next?.set,
     }];
   });
 }

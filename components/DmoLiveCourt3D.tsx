@@ -3196,12 +3196,10 @@ function ThreeCourt({
               : commentary.enabled ? 'Turn match commentary off' : 'Turn match commentary on'}
             aria-busy={commentary.voiceLoading}
             title="Turn match commentary on or off."
-            disabled={!soundEnabled || !soundReady || commentary.voiceLoading}
+            disabled={!soundEnabled || !soundReady}
             onClick={commentary.toggle}
           >
-            <span>{commentary.voiceLoading
-              ? 'Preparing voice…'
-              : `Commentary ${commentary.enabled ? 'on' : 'off'}`}</span>
+            <span>{`Commentary ${commentary.enabled ? 'on' : 'off'}`}</span>
           </button>
           {commentary.voiceLoading && (
             <span className={styles.localVoiceNotice} role="status">

@@ -132,7 +132,7 @@ test('signed-in admins can fetch the full private point log', async () => {
 test('point log batches are same-site, validated, owner-only updates', async () => {
   const queries = [];
   const points = [
-    { number: 1, scoreLabel: '0-0(15-0)', server: 1, winner: 1, rallyHits: 0, faults: 0 },
+    { number: 1, frame: 480, isTiebreak: false, serveSpeedKmh: 188, scoreLabel: '0-0(15-0)', setNumber: 2, server: 1, winner: 1, rallyHits: 0, faults: 0 },
   ];
   const route = loadRoute('app/api/live-dmo/[id]/points/route.ts', {
     'next/server': nextServer,
@@ -169,7 +169,7 @@ test('point log batches are same-site, validated, owner-only updates', async () 
 test('live snapshot updates merge their recent points into the retained point log', async () => {
   const queries = [];
   const recentPoints = [
-    { number: 1, scoreLabel: '0-0(15-0)', server: 1, winner: 1, rallyHits: 0, faults: 0 },
+    { number: 1, frame: 480, isTiebreak: false, serveSpeedKmh: 188, scoreLabel: '0-0(15-0)', setNumber: 2, server: 1, winner: 1, rallyHits: 0, faults: 0 },
   ];
   const court = Array.from({ length: 361 }, (_, index) => [
     index,

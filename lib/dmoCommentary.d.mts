@@ -30,6 +30,8 @@ export type DmoCommentaryPoint = {
   shotEndTime?: number;
   scoreBeforeLabel?: string | null;
   scoreAfterLabel?: string | null;
+  setBefore?: number;
+  setAfter?: number;
 };
 
 export type DmoBrowserVoice = {
