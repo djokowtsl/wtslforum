@@ -14,6 +14,9 @@ const PRIVATE_HEADERS = {
 const player = z.union([z.literal(1), z.literal(2)]);
 const pointSchema = z.object({
   number: z.number().int().min(1).max(20_000),
+  frame: z.number().int().min(0).max(1_000_000).optional(),
+  isTiebreak: z.boolean().optional(),
+  serveSpeedKmh: z.number().min(0).max(400).nullable().optional(),
   scoreLabel: z.string().max(40).optional(),
   setNumber: z.number().int().min(1).max(10).optional(),
   server: player,
