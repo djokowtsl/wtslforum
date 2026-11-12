@@ -105,6 +105,8 @@ export function buildDmoPointCommentary(
   recentLines?: readonly string[],
 ): string;
 
+export function isDmoGameEnding(point: DmoCommentaryPoint): boolean;
+
 export function buildDmoRallyCommentary(options: {
   names?: readonly (string | null | undefined)[];
   rallyShotCount: number;

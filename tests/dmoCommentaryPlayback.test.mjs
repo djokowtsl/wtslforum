@@ -28,11 +28,14 @@ function harness(voices = [
   localVoiceSupported = true,
   mobileLocalVoicePreview = false,
   audioContextAvailable = true,
+  holdAudioPlayback = false,
+  audioDuration = 0,
 } = {}) {
   const originals = Object.fromEntries(['window', 'SpeechSynthesisUtterance', 'fetch',
     'setTimeout', 'clearTimeout', 'setInterval', 'clearInterval'].map((key) => [key, globalThis[key]]));
   const originalNow = Date.now;
   const slots = [], spoken = [], generated = [], requests = [], storage = new Map(), timers = new Map();
+  const audioCompletions = [];
   const defaultModel = {
     async generate(text, options) {
       generated.push({ text, ...options });
@@ -54,13 +57,16 @@ function harness(voices = [
     state = 'running';
     destination = {};
     async resume() {}
-    createBuffer() { return { copyToChannel() {} }; }
+    createBuffer() { return { duration: audioDuration, copyToChannel() {} }; }
     createBufferSource() {
       return {
         buffer: null,
         onended: null,
         connect() {},
-        start() { this.onended?.(); },
+        start() {
+          if (holdAudioPlayback) audioCompletions.push(() => this.onended?.());
+          else this.onended?.();
+        },
         stop() { this.onended?.(); },
       };
     }
@@ -170,6 +176,7 @@ function harness(voices = [
   render();
   return { render, advance, finish, cleanup, spoken: generated, nativeSpoken: spoken,
     generated, playback, requests, storage, flush, value, synthesis,
+    finishAudio: () => audioCompletions.shift()?.(),
     get pointCommentaryCalls() { return pointCommentaryCalls; } };
 }
 
@@ -201,7 +208,7 @@ test('live reactions wait for the visible point end and finish after the next ra
   } finally { h.cleanup(); }
 });
 
-test('routine holds stay quiet and a verified break gets a short call', async () => {
+test('every verified game ending gets a short call, including routine holds', async () => {
   const h = harness();
   try {
     await h.value().toggle(); h.render(); h.advance(0); h.finish(); h.advance(12_000);
@@ -210,7 +217,9 @@ test('routine holds stay quiet and a verified break gets a short call', async ()
       { number: 2, frame: 1200, winner: 1, server: 1, rallyHits: 5, scoreLabel: '1-0(0-0)' },
     ] } });
     h.playback.frame = 1200; h.advance(500);
-    assert.equal(h.spoken.length, 2);
+    await h.flush(); h.render();
+    assert.equal(h.spoken.length, 3);
+    assert.match(h.spoken[2].text, /game/i);
     h.finish(); h.advance(10_000);
     h.render({ snapshot: { pointCount: 3, recentPoints: [
       { number: 1, frame: 1100, winner: 1, server: 1, rallyHits: 5, scoreLabel: '0-0(30-30)' },
@@ -221,10 +230,9 @@ test('routine holds stay quiet and a verified break gets a short call', async ()
     h.playback.frame = 1300; h.advance(500);
     await h.flush(); h.render();
     assert.equal(h.spoken.length, 4);
-    assert.equal(h.spoken[2].voice, 'af_heart');
-    assert.equal(h.spoken[3].voice, 'am_michael');
-    assert.equal(h.spoken[2].voice, 'af_heart');
-    assert.match(h.spoken[2].text, /break/i);
+    assert.equal(h.spoken[2].voice, 'am_michael');
+    assert.equal(h.spoken[3].voice, 'af_heart');
+    assert.match(h.spoken[3].text, /break/i);
   } finally { h.cleanup(); }
 });
 
@@ -238,6 +246,54 @@ test('live point scores such as 15-30 never become game announcements', async ()
     ] } });
     h.playback.frame = 1200; h.advance(500);
     assert.equal(h.spoken.length, 2);
+  } finally { h.cleanup(); }
+});
+
+test('game-ending calls survive a busy voice and later point updates', async () => {
+  const h = harness(undefined, { holdAudioPlayback: true, audioDuration: 60 });
+  const points = [
+    { number: 1, frame: 1100, winner: 1, server: 1, rallyHits: 4, scoreLabel: '0-0(40-30)' },
+    { number: 2, frame: 1200, winner: 1, server: 1, rallyHits: 4, scoreLabel: '1-0(0-0)' },
+  ];
+  try {
+    await enableLoadedKokoro(h);
+    h.playback.frame = 1200;
+    h.render({ snapshot: { pointCount: 2, recentPoints: points } });
+    h.advance(10_000);
+    await h.flush(); h.render();
+    assert.equal(h.generated.length, 2, 'the opening is still occupying the voice');
+    h.render({ snapshot: { pointCount: 3, recentPoints: [
+      ...points,
+      { number: 3, frame: 1300, winner: 2, server: 2, rallyHits: 12, scoreLabel: '1-0(0-15)' },
+    ] } });
+    h.playback.frame = 1300;
+    h.finishAudio(); await h.flush();
+    h.finishAudio(); await h.flush();
+    h.advance(200); await h.flush(); h.render();
+    assert.equal(h.generated.length, 3);
+    assert.match(h.generated[2].text, /game/i, 'a later point cannot replace the queued game ending');
+    h.finishAudio(); await h.flush();
+  } finally { h.cleanup(); }
+});
+
+test('batched replay updates preserve every completed game', async () => {
+  const h = harness();
+  try {
+    h.playback.frame = 0;
+    h.render({ fullReplay: true, replayFrame: 0, commentaryPoints: [
+      { number: 4, frame: 100, winner: 1, server: 1, rallyHits: 4,
+        scoreBeforeLabel: '0-0(40-30)', scoreAfterLabel: '1-0(0-0)' },
+      { number: 8, frame: 200, winner: 2, server: 2, rallyHits: 4,
+        scoreBeforeLabel: '1-0(30-40)', scoreAfterLabel: '1-1(0-0)' },
+    ] });
+    await enableLoadedKokoro(h);
+    h.advance(1000);
+    h.playback.frame = 300;
+    h.render({ replayFrame: 300 });
+    h.advance(200); await h.flush(); h.render();
+    h.advance(600); await h.flush(); h.render();
+    assert.equal(h.generated.length, 4, 'opening plus one short call for each game');
+    assert.ok(h.generated.slice(2).every((line) => /game/i.test(line.text)));
   } finally { h.cleanup(); }
 });
 
@@ -493,7 +549,7 @@ test('Kokoro download does not depend on an available shared audio context', asy
   } finally { h.cleanup(); }
 });
 
-test('Kokoro generation failure falls back to device speech', async () => {
+test('Kokoro generation failures report the cause without device-speech fallback', async () => {
   const localModel = {
     async generate() {
       throw new Error('WASM memory allocation failed');
@@ -505,7 +561,71 @@ test('Kokoro generation failure falls back to device speech', async () => {
     h.render();
     assert.equal(h.spoken.length, 0);
     assert.equal(h.nativeSpoken.length, 0);
-    assert.match(h.value().voiceStatus, /Kokoro playback failed/);
+    assert.match(h.value().voiceStatus, /Kokoro playback failed during local speech generation/);
+    assert.match(h.value().error, /WASM memory allocation failed/);
+  } finally { h.cleanup(); }
+});
+
+test('mobile Kokoro gives slower local speech generation more time', async () => {
+  const finishGeneration = [];
+  const h = harness(undefined, {
+    mobileLocalVoicePreview: true,
+    localModel: {
+      generate() {
+        return new Promise((resolve) => finishGeneration.push(resolve));
+      },
+    },
+  });
+  try {
+    await enableLoadedKokoro(h);
+    assert.equal(finishGeneration.length, 1);
+
+    h.advance(20_000);
+    assert.match(h.value().voiceStatus, /Generating commentary locally/);
+    assert.equal(h.value().error, '');
+    assert.equal(h.nativeSpoken.length, 0);
+
+    const audio = { audio: new Float32Array([0.1, -0.1]), sampling_rate: 24_000 };
+    finishGeneration[0](audio);
+    await h.flush();
+    assert.equal(finishGeneration.length, 2);
+    finishGeneration[1](audio);
+    await h.flush();
+    h.render();
+
+    assert.equal(finishGeneration.length, 2);
+    assert.equal(h.nativeSpoken.length, 0);
+    assert.equal(h.value().error, '');
+    assert.match(h.value().voiceStatus, /Local Kokoro voices are ready/);
+  } finally { h.cleanup(); }
+});
+
+test('the co-commentator is prepared while the first voice is still playing', async () => {
+  let calls = 0;
+  let finishReply;
+  const audio = { audio: new Float32Array([0.1]), sampling_rate: 24_000 };
+  const h = harness(undefined, {
+    holdAudioPlayback: true,
+    localModel: {
+      generate() {
+        calls += 1;
+        return calls === 1 ? Promise.resolve(audio)
+          : new Promise((resolve) => { finishReply = resolve; });
+      },
+    },
+  });
+  try {
+    await enableLoadedKokoro(h);
+    assert.equal(calls, 2, 'reply generation starts before the first audio ends');
+    finishReply(audio);
+    await h.flush();
+    h.finishAudio();
+    await h.flush();
+    h.finishAudio();
+    await h.flush(); h.render();
+    assert.equal(h.value().error, '');
+    assert.equal(h.nativeSpoken.length, 0);
+    assert.match(h.value().voiceStatus, /voices are ready/);
   } finally { h.cleanup(); }
 });
 
@@ -516,7 +636,7 @@ test('only Squeaky admins can see commentary diagnostics', () => {
   assert.equal(canViewDmoVoiceDiagnostics({ isAdmin: false, username: 'Squeaky' }), false);
 });
 
-test('local Kokoro is attempted on mobile and low-memory devices with runtime fallback', () => {
+test('mobile and low-memory devices remain eligible for local Kokoro', () => {
   assert.equal(
     isDmoLocalVoiceDeviceSupported({ userAgent: 'Mozilla/5.0 (iPhone)', maxTouchPoints: 5 }),
     true,
@@ -607,15 +727,16 @@ test('commentary reuses the court audio context instead of creating a separate i
   } finally { h.cleanup(); }
 });
 
-test('stalled Kokoro generation falls back instead of keeping commentary silently busy forever', async () => {
+test('stalled Kokoro generation reports failure without a device-speech fallback', async () => {
   const h = harness(undefined, { localModel: { generate: () => new Promise(() => {}) } });
   try {
     await enableLoadedKokoro(h);
     assert.equal(h.spoken.length, 0);
-    h.advance(15_001); await h.flush(); h.render();
+    h.advance(30_001); await h.flush(); h.render();
     assert.equal(h.spoken.length, 0);
     assert.equal(h.nativeSpoken.length, 0);
-    assert.match(h.value().voiceStatus, /Kokoro playback failed/);
+    assert.match(h.value().voiceStatus, /Kokoro playback failed during local speech generation/);
+    assert.match(h.value().error, /Commentary voice timed out/);
   } finally { h.cleanup(); }
 });
 

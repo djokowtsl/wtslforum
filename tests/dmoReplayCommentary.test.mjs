@@ -41,8 +41,8 @@ test('ordinary viewer point scores do not announce a game or set', () => {
   }, names), '');
 });
 
-test('routine game transitions stay quiet and break-point conversions remain grounded', () => {
-  assert.equal(call({ g: '2-3', pt: '40-0' }, { g: '3-3', pt: '0-0' }), '');
+test('routine game transitions get a short call and break-point conversions remain grounded', () => {
+  assert.match(call({ g: '2-3', pt: '40-0' }, { g: '3-3', pt: '0-0' }), /barboza.*game|game.*barboza/i);
   assert.match(call({ g: '2-3', pt: '40-30', s: 2 }, { g: '3-3', pt: '0-0' }), /break/i);
 });
 

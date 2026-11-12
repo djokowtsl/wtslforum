@@ -194,7 +194,15 @@ test('pressure-point calls distinguish a break, a save, and a game point', () =>
   );
 });
 
-test('routine games stay quiet while verified set wins are called once', () => {
+test('routine games receive a short call while verified set wins are called once', () => {
+  const hold = {
+    winner: 1, server: 1, rallyHits: 4,
+    scoreBeforeLabel: '2-1(40-30)', scoreAfterLabel: '3-1(0-0)',
+  };
+  assert.match(buildDmoPointCommentary(hold, ['Player One', 'Player Two']), /game/i);
+  assert.equal(buildDmoPointCommentary(hold, ['Player One', 'Player Two'], [
+    'Game to Player One.', 'Player One takes the game.', 'That game goes to Player One.',
+  ]), 'Game to Player One.', 'repetition avoidance cannot silence a completed game');
   assert.match(
     buildDmoPointCommentary({
       winner: 2,
