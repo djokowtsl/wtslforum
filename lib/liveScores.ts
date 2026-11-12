@@ -6,6 +6,7 @@ import {
   adjustOfficialH2HPercent,
   h2hRecordWinPercent,
   parseLiveWtslMatches,
+  readOfficialH2HRecord,
   readOfficialH2HPercent,
   resolveLivePlayer,
   type ParsedLiveMatch,
@@ -25,6 +26,14 @@ type ProbabilitySource = 'official' | 'all-results' | 'no-history';
 type H2HProbability = { percent: number | null; source: ProbabilitySource | null };
 const h2hCache = new Map<string, { at: number; result: H2HProbability }>();
 const h2hRequests = new Map<string, Promise<H2HProbability>>();
+const dmoH2hRecordCache = new Map<
+  string,
+  { at: number; result: { firstWins: number; secondWins: number; matches: number } }
+>();
+const dmoH2hRecordRequests = new Map<
+  string,
+  Promise<{ firstWins: number; secondWins: number; matches: number } | null>
+>();
 let allResultsCache: { at: number; rows: WTSLAllResultRow[] } | null = null;
 let allResultsRequest: Promise<WTSLAllResultRow[]> | null = null;
 let liveMatchesRequest: Promise<ParsedLiveMatch[]> | null = null;
@@ -211,6 +220,51 @@ async function h2hBasePercent(
     return await request;
   } finally {
     if (h2hRequests.get(cacheKey) === request) h2hRequests.delete(cacheKey);
+  }
+}
+
+async function officialDmoH2hRecord(
+  tour: string,
+  first: PlayerRow,
+  second: PlayerRow,
+): Promise<{ firstWins: number; secondWins: number; matches: number } | null> {
+  const firstId = String(first.wtsl_player_id);
+  const secondId = String(second.wtsl_player_id);
+  const cacheKey = `${tour}:${firstId}:${secondId}`;
+  const cached = dmoH2hRecordCache.get(cacheKey);
+  if (cached && Date.now() - cached.at < H2H_CACHE_MS) return cached.result;
+  const pending = dmoH2hRecordRequests.get(cacheKey);
+  if (pending) return pending;
+
+  const request = (async () => {
+    const url = new URL(H2H_PAGE_URL);
+    url.searchParams.set('tour', tour);
+    url.searchParams.set('pl_one', firstId);
+    url.searchParams.set('pl_two', secondId);
+    const response = await fetch(url, {
+      headers: { 'user-agent': 'WTSL Forum DMO commentary' },
+      cache: 'no-store',
+      signal: AbortSignal.timeout(8_000),
+    });
+    if (!response.ok) throw new Error(`Official H2H page returned ${response.status}`);
+    const record = readOfficialH2HRecord(
+      await response.text(),
+      firstId,
+      first.name,
+      secondId,
+      second.name,
+    );
+    if (!record) throw new Error('Official H2H page did not match the requested players');
+    dmoH2hRecordCache.set(cacheKey, { at: Date.now(), result: record });
+    return record;
+  })();
+  dmoH2hRecordRequests.set(cacheKey, request);
+  try {
+    return await request;
+  } finally {
+    if (dmoH2hRecordRequests.get(cacheKey) === request) {
+      dmoH2hRecordRequests.delete(cacheKey);
+    }
   }
 }
 
@@ -432,6 +486,17 @@ export async function getDmoCommentaryContext(
       if (record.matches > 0) headToHead = record;
     } catch (error) {
       console.warn('[live-scores] commentary head-to-head unavailable', error instanceof Error ? error.message : 'Unknown error');
+    }
+  } else if (entry.tour === 'TE4_(F)') {
+    try {
+      const record = await officialDmoH2hRecord(
+        entry.tour,
+        entry.first,
+        entry.second,
+      );
+      if (record?.matches) headToHead = record;
+    } catch (error) {
+      console.warn('[live-scores] WTA commentary head-to-head unavailable', error instanceof Error ? error.message : 'Unknown error');
     }
   }
 
