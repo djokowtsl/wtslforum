@@ -19,20 +19,35 @@ const compiled = transformSync(source, {
 function harness(voices = [
   { voiceURI: 'us-female', name: 'Microsoft Aria Natural', lang: 'en-US' },
   { voiceURI: 'us-male', name: 'Microsoft Guy Natural', lang: 'en-US' },
-]) {
+], { localModel = null, loadModel = async () => localModel } = {}) {
   const originals = Object.fromEntries(['window', 'SpeechSynthesisUtterance', 'fetch',
     'setTimeout', 'clearTimeout', 'setInterval', 'clearInterval'].map((key) => [key, globalThis[key]]));
   const originalNow = Date.now;
-  const slots = [], spoken = [], requests = [], storage = new Map(), timers = new Map();
+  const slots = [], spoken = [], generated = [], requests = [], storage = new Map(), timers = new Map();
   let now = 100_000, cursor = 0, dirty = false, effects = [], output, id = 0;
   const playback = { frame: 1000, playing: true, rallyActive: false, rallyShotCount: 0 };
+  class FakeAudioContext {
+    state = 'running';
+    destination = {};
+    async resume() {}
+    createBuffer() { return { copyToChannel() {} }; }
+    createBufferSource() {
+      return {
+        buffer: null,
+        onended: null,
+        connect() {},
+        start() { this.onended?.(); },
+        stop() { this.onended?.(); },
+      };
+    }
+  }
   const synthesis = {
     speaking: false, pending: false, getVoices: () => voices,
     addEventListener() {}, removeEventListener() {},
     speak: (utterance) => { spoken.push(utterance); synthesis.speaking = true; },
     cancel: () => { synthesis.speaking = false; },
   };
-  globalThis.window = { speechSynthesis: synthesis,
+  globalThis.window = { speechSynthesis: synthesis, AudioContext: FakeAudioContext,
     localStorage: { getItem: (key) => storage.get(key), setItem: (key, value) => storage.set(key, value) } };
   globalThis.SpeechSynthesisUtterance = class { constructor(text) { this.text = text; } };
   globalThis.fetch = (url) => new Promise((resolve) => requests.push({ url, resolve }));
@@ -71,7 +86,8 @@ function harness(voices = [
   };
   const mod = new Module(import.meta.url);
   mod.require = (name) => name === 'react' ? hooks
-    : name === '@/lib/dmoCommentary.mjs' ? commentary : require(name);
+    : name === '@/lib/dmoCommentary.mjs' ? commentary
+      : name === '@/lib/dmoLocalVoice.mjs' ? { loadDmoLocalVoiceModel: loadModel } : require(name);
   mod._compile(compiled, 'useDmoCommentary.js');
   let options = { snapshot: { pointCount: 0, recentPoints: [] },
     commentaryNames: ['gifu', 'TheTinkerman_'], commentaryPoints: [], fullReplay: false,
@@ -109,15 +125,16 @@ function harness(voices = [
     for (const slot of slots) slot?.cleanup?.();
     Object.assign(globalThis, originals); Date.now = originalNow;
   };
+  const flush = () => new Promise((resolve) => originalSetImmediate(resolve));
   render();
-  return { render, advance, finish, cleanup, spoken, playback, requests, storage,
+  return { render, advance, finish, cleanup, spoken, generated, playback, requests, storage, flush,
     value: () => output, synthesis };
 }
 
-test('live reactions wait for the visible point end and finish after the next rally starts', () => {
+test('live reactions wait for the visible point end and finish after the next rally starts', async () => {
   const h = harness();
   try {
-    h.value().toggle(); h.render(); h.advance(0);
+    await h.value().toggle(); h.render(); h.advance(0);
     assert.match(h.spoken[0].text, /gifu against The Tinkerman/);
     assert.match(h.requests[0].url, /first=gifu&second=TheTinkerman_/);
     h.finish(); h.advance(12_000);
@@ -133,10 +150,10 @@ test('live reactions wait for the visible point end and finish after the next ra
   } finally { h.cleanup(); }
 });
 
-test('a point exchange alternates between the selected female and male voices', () => {
+test('a point exchange alternates between the selected female and male voices', async () => {
   const h = harness();
   try {
-    h.value().toggle(); h.render(); h.advance(0); h.finish(); h.advance(12_000);
+    await h.value().toggle(); h.render(); h.advance(0); h.finish(); h.advance(12_000);
     h.render({ snapshot: { pointCount: 2, recentPoints: [
       { number: 1, frame: 1100, winner: 1, server: 1, rallyHits: 5 },
       { number: 2, frame: 1200, winner: 2, server: 2, rallyHits: 6 },
@@ -150,20 +167,20 @@ test('a point exchange alternates between the selected female and male voices', 
   } finally { h.cleanup(); }
 });
 
-test('commentary opening starts directly from the commentary button gesture', () => {
+test('commentary opening starts directly from the commentary button gesture', async () => {
   const h = harness();
   try {
-    h.value().toggle();
+    await h.value().toggle();
     assert.equal(h.spoken.length, 2);
     assert.match(h.spoken[0].text, /gifu against The Tinkerman/);
     assert.ok(h.spoken[1].text.length > 0);
   } finally { h.cleanup(); }
 });
 
-test('opening points use a shorter voice cooldown so commentary starts sooner', () => {
+test('opening points use a shorter voice cooldown so commentary starts sooner', async () => {
   const h = harness();
   try {
-    h.value().toggle(); h.render(); h.finish(); h.advance(7_500);
+    await h.value().toggle(); h.render(); h.finish(); h.advance(7_500);
     h.render({ snapshot: { pointCount: 1,
       recentPoints: [{ number: 1, frame: 1000, winner: 1, server: 1, rallyHits: 5 }] } });
     h.advance(500);
@@ -171,10 +188,10 @@ test('opening points use a shorter voice cooldown so commentary starts sooner', 
   } finally { h.cleanup(); }
 });
 
-test('long rallies can receive a measured call before the point ends', () => {
+test('long rallies can receive a measured call before the point ends', async () => {
   const h = harness();
   try {
-    h.value().toggle(); h.render(); h.finish(); h.advance(8_000);
+    await h.value().toggle(); h.render(); h.finish(); h.advance(8_000);
     h.playback.rallyActive = true;
     h.playback.rallyShotCount = 8;
     h.advance(200);
@@ -184,19 +201,19 @@ test('long rallies can receive a measured call before the point ends', () => {
   } finally { h.cleanup(); }
 });
 
-test('commentary reports when the browser refuses to start speech', () => {
+test('commentary reports when the browser refuses to start speech', async () => {
   const h = harness();
   try {
     h.synthesis.speak = () => { throw new Error('speech blocked'); };
-    h.value().toggle(); h.render();
-    assert.match(h.value().error, /could not start the commentary booth/);
+    await h.value().toggle(); h.render();
+    assert.match(h.value().error, /commentary voice could not start/);
   } finally { h.cleanup(); }
 });
 
-test('point reactions are not dropped when the next rally starts', () => {
+test('point reactions are not dropped when the next rally starts', async () => {
   const h = harness();
   try {
-    h.value().toggle(); h.render(); h.advance(0); h.finish(); h.advance(12_000);
+    await h.value().toggle(); h.render(); h.advance(0); h.finish(); h.advance(12_000);
     h.render({ snapshot: { pointCount: 1,
       recentPoints: [{ number: 1, frame: 1000, winner: 1, server: 1, rallyHits: 12 }] } });
     h.playback.rallyActive = true; h.advance(2000);
@@ -208,7 +225,7 @@ test('point reactions are not dropped when the next rally starts', () => {
 test('longer WTSL facts require three continuous quiet seconds', async () => {
   const h = harness();
   try {
-    h.value().toggle(); h.render(); h.advance(0); h.finish();
+    await h.value().toggle(); h.render(); h.advance(0); h.finish();
     h.requests[0].resolve({ ok: true, json: async () => ({ context: {
       tour: 'ATP', players: [{ rank: 1 }, { rank: 2 }], headToHead: null,
     } }) });
@@ -225,16 +242,16 @@ test('longer WTSL facts require three continuous quiet seconds', async () => {
   } finally { h.cleanup(); }
 });
 
-test('pause cancels speech without reporting an intentional cancellation as failure', () => {
+test('pause cancels speech without reporting an intentional cancellation as failure', async () => {
   const h = harness();
   try {
-    h.value().toggle(); h.render(); h.advance(0);
+    await h.value().toggle(); h.render(); h.advance(0);
     const first = h.spoken[0];
     h.playback.playing = false; h.advance(200);
     assert.equal(h.synthesis.speaking, false);
     first.onerror({ error: 'interrupted' }); h.render();
     assert.equal(h.value().error, '');
-    h.value().previewVoice();
+    await h.value().previewVoice();
     h.spoken.at(-1).onerror({ error: 'synthesis-failed' }); h.render();
     assert.match(h.value().error, /could not play/);
   } finally { h.cleanup(); }
@@ -243,7 +260,7 @@ test('pause cancels speech without reporting an intentional cancellation as fail
 test('changing player pair rejects delayed facts from the previous match', async () => {
   const h = harness();
   try {
-    h.value().toggle(); h.render(); h.advance(0); h.finish();
+    await h.value().toggle(); h.render(); h.advance(0); h.finish();
     h.render({ commentaryNames: ['new first', 'new second'] });
     assert.equal(h.value().enabled, false);
     h.requests[0].resolve({ ok: true, json: async () => ({ context: {
@@ -257,10 +274,10 @@ test('changing player pair rejects delayed facts from the previous match', async
 
 const originalSetImmediate = globalThis.setImmediate;
 
-test('one English voice remains usable and missing WTSL names never use character names', () => {
+test('one English voice remains usable and missing WTSL names never use character names', async () => {
   const h = harness([{ voiceURI: 'basic', name: 'Basic UK', lang: 'en-GB' }]);
   try {
-    h.value().toggle(); h.render();
+    await h.value().toggle(); h.render();
     assert.equal(h.value().enabled, true);
     h.advance(0);
     assert.equal(h.spoken.length, 2);
@@ -273,12 +290,12 @@ test('one English voice remains usable and missing WTSL names never use characte
   } finally { h.cleanup(); }
 });
 
-test('voice preview uses two automatic voices and mute cancels commentary', () => {
+test('voice preview uses two automatic voices and mute cancels commentary', async () => {
   const voices = ['British Natural', 'Australian Natural'].map((name, i) =>
     ({ voiceURI: `voice${i}`, name, lang: i ? 'en-AU' : 'en-GB' }));
   const h = harness(voices);
   try {
-    h.value().previewVoice();
+    await h.value().previewVoice();
     assert.equal(h.spoken[0].voice.voiceURI, 'voice0');
     assert.equal(h.spoken[1].voice.voiceURI, 'voice1');
     assert.equal(h.spoken[0].rate, 1.03);
@@ -288,5 +305,74 @@ test('voice preview uses two automatic voices and mute cancels commentary', () =
     h.render({ soundEnabled: false });
     assert.equal(h.synthesis.speaking, false);
     assert.equal(h.value().enabled, false);
+  } finally { h.cleanup(); }
+});
+
+test('local Kokoro preview alternates its on-device voices', async () => {
+  const localModel = {
+    async generate(text, options) {
+      generated.push({ text, ...options });
+      return { audio: new Float32Array([0.1, -0.1]), sampling_rate: 24_000 };
+    },
+  };
+  const generated = [];
+  const h = harness(undefined, { localModel });
+  try {
+    await h.value().previewVoice();
+    await h.flush();
+    assert.deepEqual(generated.map(({ voice }) => voice), ['af_heart', 'am_michael']);
+    h.render();
+    assert.match(h.value().voiceStatus, /generated on this device/);
+    assert.equal(h.spoken.length, 0, 'local model audio does not use browser speech synthesis');
+  } finally { h.cleanup(); }
+});
+
+test('commentary opens with local Kokoro voices after loading the model', async () => {
+  const generated = [];
+  const localModel = {
+    async generate(text, options) {
+      generated.push({ text, ...options });
+      return { audio: new Float32Array([0.1, -0.1]), sampling_rate: 24_000 };
+    },
+  };
+  const h = harness(undefined, { localModel });
+  try {
+    await h.value().toggle();
+    await h.flush();
+    h.render();
+    assert.equal(h.value().enabled, true);
+    assert.deepEqual(generated.map(({ voice }) => voice), ['af_heart', 'am_michael']);
+    assert.equal(h.spoken.length, 0, 'commentary uses local audio rather than browser speech synthesis');
+  } finally { h.cleanup(); }
+});
+
+test('first-use voice download reports progress while commentary controls are busy', async () => {
+  let finishLoad;
+  const generated = [];
+  const localModel = {
+    async generate(text, options) {
+      generated.push({ text, ...options });
+      return { audio: new Float32Array([0.1, -0.1]), sampling_rate: 24_000 };
+    },
+  };
+  const h = harness(undefined, {
+    loadModel: (onProgress) => new Promise((resolve) => {
+      onProgress({ status: 'progress', progress: 42, total: 100 });
+      finishLoad = () => resolve(localModel);
+    }),
+  });
+  try {
+    const preview = h.value().previewVoice();
+    await h.flush();
+    h.render();
+    assert.equal(h.value().voiceLoading, true);
+    assert.match(h.value().voiceStatus, /42%/);
+    finishLoad();
+    await preview;
+    await h.flush();
+    h.render();
+    assert.equal(h.value().voiceLoading, false);
+    assert.match(h.value().voiceStatus, /generated on this device/);
+    assert.deepEqual(generated.map(({ voice }) => voice), ['af_heart', 'am_michael']);
   } finally { h.cleanup(); }
 });
