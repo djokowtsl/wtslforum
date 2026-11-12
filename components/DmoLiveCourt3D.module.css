@@ -327,6 +327,12 @@
   opacity: 0.55;
 }
 
+.localVoiceNotice {
+  flex: 1 0 100%;
+  color: #aab9cf;
+  font: 500 10px/1.35 system-ui, sans-serif;
+}
+
 .volumeControl {
   display: inline-flex;
   align-items: center;

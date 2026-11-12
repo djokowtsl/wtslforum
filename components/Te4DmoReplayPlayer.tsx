@@ -3,6 +3,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from 'react';
 import { embedTe4ViewerHtml } from '@/lib/te4ViewerEmbed';
 import { te4ViewerToLiveSnapshot } from '@/lib/te4DmoReplaySnapshot';
+import { normalizeDmoTournamentName } from '@/lib/dmoTournamentName.mjs';
 import type { Te4LiveSnapshot } from '@/lib/te4DmoLive';
 import { alignDmoReplayPlayerStyles, dmoReplayPlayerStyleOrder } from '@/lib/dmoReplayCharacterStyles';
 import {
@@ -91,10 +92,11 @@ export default function Te4DmoReplayPlayer({
   const commentaryPoints = useMemo(() => {
     if (!viewer || !Number.isInteger(viewer.match?.n)) return [];
     const lastFrame = Math.max(0, viewer.match.n - 1);
-    return viewer.pts.flatMap((point) => {
+    return viewer.pts.flatMap((point, index) => {
       if (!Number.isInteger(point.fc) || point.fc <= 0) return [];
       const frame = Math.min(lastFrame, point.mf + point.fc - 1);
       if (frame < 0) return [];
+      const nextPoint = viewer.pts[index + 1];
       return [{
         frame,
         number: point.k,
@@ -109,6 +111,7 @@ export default function Te4DmoReplayPlayer({
         shots: point.sh,
         shotEndTime: point.fc - 1,
         scoreBeforeLabel: point.pt,
+        scoreAfterLabel: nextPoint?.pt,
       }];
     });
   }, [viewer]);
@@ -261,7 +264,7 @@ export default function Te4DmoReplayPlayer({
             {isWta === undefined ? 'TOUR UNVERIFIED' : isWta ? 'WTA' : 'ATP'} · FULL REPLAY
           </span>
           <h3>{viewer.names[0]} <i>vs</i> {viewer.names[1]}</h3>
-          <p>{viewer.tournament || 'Tournament not recorded'} · {viewer.pts.length} points</p>
+          <p>{normalizeDmoTournamentName(viewer.tournament) ?? 'Tournament not verified'} · {viewer.pts.length} points</p>
         </div>
         <div className={styles.viewTabs} role="group" aria-label="Replay view">
           <button
@@ -295,7 +298,7 @@ export default function Te4DmoReplayPlayer({
               : null}
             playerGruntSettings={nativeMotion.playerGruntSettings}
             tournamentRound={tournamentRound}
-            tournamentName={viewer.tournament}
+            tournamentName={normalizeDmoTournamentName(viewer.tournament)}
             commentaryPoints={commentaryPoints}
             fullReplay
             playerOutfitSeed={replayUrl || broadcastId || snapshot.filename}

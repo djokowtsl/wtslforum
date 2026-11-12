@@ -3206,13 +3206,18 @@ function ThreeCourt({
               className={styles.soundButton}
               type="button"
               disabled={!soundEnabled || !soundReady || commentary.voiceLoading}
-              title={showVoiceDiagnostics
-                ? 'Preview the local Kokoro voices; first use downloads about 92 MB.'
-                : 'Preview the local commentary voice.'}
+              title={commentary.mobileLocalVoicePreview
+                ? 'Optional local Kokoro preview. Pause playback first; first use downloads about 92 MB and may use extra memory.'
+                : 'Preview the local Kokoro voices; first use downloads about 92 MB.'}
               onClick={commentary.previewVoice}
             >
-              <span>Preview local voices</span>
+              <span>{commentary.mobileLocalVoicePreview ? 'Preview Kokoro (92 MB)' : 'Preview local voices'}</span>
             </button>
+          )}
+          {commentary.mobileLocalVoicePreview && (
+            <span className={styles.localVoiceNotice} role="status">
+              {commentary.voiceStatus || 'Pause playback before the first Kokoro preview. It downloads about 92 MB and may use extra memory.'}
+            </span>
           )}
           <button
             className={styles.soundButton}

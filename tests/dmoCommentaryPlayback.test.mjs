@@ -26,6 +26,7 @@ function harness(voices = [
   localModel = null,
   loadModel = async () => localModel,
   localVoiceSupported = true,
+  mobileLocalVoicePreview = false,
 } = {}) {
   const originals = Object.fromEntries(['window', 'SpeechSynthesisUtterance', 'fetch',
     'setTimeout', 'clearTimeout', 'setInterval', 'clearInterval'].map((key) => [key, globalThis[key]]));
@@ -95,7 +96,11 @@ function harness(voices = [
   mod.require = (name) => name === 'react' ? hooks
     : name === '@/lib/dmoCommentary.mjs' ? commentary
       : name === '@/lib/dmoLocalVoice.mjs'
-        ? { canUseDmoLocalVoice: () => localVoiceSupported, loadDmoLocalVoiceModel: loadModel }
+        ? {
+          canUseDmoLocalVoice: () => localVoiceSupported,
+          isMobileDmoLocalVoiceDevice: () => mobileLocalVoicePreview,
+          loadDmoLocalVoiceModel: loadModel,
+        }
         : require(name);
   mod._compile(compiled, 'useDmoCommentary.js');
   let options = { snapshot: { pointCount: 0, recentPoints: [] },
@@ -159,20 +164,29 @@ test('live reactions wait for the visible point end and finish after the next ra
   } finally { h.cleanup(); }
 });
 
-test('a point exchange alternates between the selected female and male voices', async () => {
+test('score changes use one alternating booth voice without a point-by-point reply', async () => {
   const h = harness();
   try {
     await h.value().toggle(); h.render(); h.advance(0); h.finish(); h.advance(12_000);
     h.render({ snapshot: { pointCount: 2, recentPoints: [
-      { number: 1, frame: 1100, winner: 1, server: 1, rallyHits: 5 },
-      { number: 2, frame: 1200, winner: 2, server: 2, rallyHits: 6 },
+      { number: 1, frame: 1100, winner: 1, server: 1, rallyHits: 5, scoreLabel: '0-0(30-30)' },
+      { number: 2, frame: 1200, winner: 1, server: 1, rallyHits: 5, scoreLabel: '1-0(0-0)' },
     ] } });
     h.playback.frame = 1200; h.advance(500);
-    assert.equal(h.spoken.length, 4);
+    assert.equal(h.spoken.length, 3);
     assert.equal(h.spoken[2].voice.voiceURI, 'us-male');
+    assert.match(h.spoken[2].text, /A hold for gifu/);
+    assert.match(h.spoken[2].text, /one game to love/);
+    h.finish(); h.advance(10_000);
+    h.render({ snapshot: { pointCount: 3, recentPoints: [
+      { number: 1, frame: 1100, winner: 1, server: 1, rallyHits: 5, scoreLabel: '0-0(30-30)' },
+      { number: 2, frame: 1200, winner: 1, server: 1, rallyHits: 5, scoreLabel: '1-0(0-0)' },
+      { number: 3, frame: 1300, winner: 2, server: 1, rallyHits: 5, scoreLabel: '1-1(0-0)' },
+    ] } });
+    h.playback.frame = 1300; h.advance(500);
+    assert.equal(h.spoken.length, 4);
     assert.equal(h.spoken[3].voice.voiceURI, 'us-female');
-    assert.match(h.spoken[2].text, /The Tinkerman/);
-    assert.match(h.spoken[3].text, /The Tinkerman/);
+    assert.match(h.spoken[3].text, /A break for The Tinkerman/);
   } finally { h.cleanup(); }
 });
 
@@ -186,14 +200,14 @@ test('commentary opening starts directly from the commentary button gesture', as
   } finally { h.cleanup(); }
 });
 
-test('opening points use a shorter voice cooldown so commentary starts sooner', async () => {
+test('routine opening points remain quiet after the voice cooldown', async () => {
   const h = harness();
   try {
     await h.value().toggle(); h.render(); h.finish(); h.advance(7_500);
     h.render({ snapshot: { pointCount: 1,
       recentPoints: [{ number: 1, frame: 1000, winner: 1, server: 1, rallyHits: 5 }] } });
-    h.advance(500);
-    assert.equal(h.spoken.length, 3);
+    h.advance(10_000);
+    assert.equal(h.spoken.length, 2);
   } finally { h.cleanup(); }
 });
 
@@ -202,7 +216,7 @@ test('long rallies can receive a measured call before the point ends', async () 
   try {
     await h.value().toggle(); h.render(); h.finish(); h.advance(8_000);
     h.playback.rallyActive = true;
-    h.playback.rallyShotCount = 8;
+    h.playback.rallyShotCount = 10;
     h.advance(200);
     assert.equal(h.spoken.length, 3);
     assert.match(h.spoken[2].text, /rally|point/i);
@@ -375,23 +389,38 @@ test('commentary uses device speech without automatically loading Kokoro', async
   } finally { h.cleanup(); }
 });
 
-test('mobile devices skip Kokoro and preview with device speech', async () => {
+test('mobile Kokoro is an explicit paused-replay preview, never an automatic download', async () => {
+  const generated = [];
   let loads = 0;
+  const model = {
+    async generate(text, options) {
+      generated.push({ text, ...options });
+      return { audio: new Float32Array([0.1, -0.1]), sampling_rate: 24_000 };
+    },
+  };
   const h = harness(undefined, {
-    localVoiceSupported: false,
+    localVoiceSupported: true,
+    mobileLocalVoicePreview: true,
     loadModel: async () => {
       loads += 1;
-      throw new Error('Kokoro should not load on mobile');
+      return model;
     },
   });
   try {
     await h.value().previewVoice();
     await h.flush();
     h.render();
-    assert.equal(loads, 0);
+    assert.equal(loads, 0, 'the initial tap while playing does not load the model');
     assert.equal(h.value().voiceLoading, false);
-    assert.match(h.value().voiceStatus, /disabled on mobile/);
-    assert.equal(h.spoken.length, 2);
+    assert.match(h.value().voiceStatus, /Pause playback before loading Kokoro/);
+    assert.equal(h.spoken.length, 0);
+    h.playback.playing = false;
+    await h.value().previewVoice();
+    await h.flush();
+    h.render();
+    assert.equal(loads, 1, 'a user preview while paused loads Kokoro');
+    assert.equal(generated.length, 2);
+    assert.match(h.value().voiceStatus, /generated on this device/);
   } finally { h.cleanup(); }
 });
 
@@ -418,13 +447,25 @@ test('only Squeaky admins can see commentary diagnostics', () => {
   assert.equal(canViewDmoVoiceDiagnostics({ isAdmin: false, username: 'Squeaky' }), false);
 });
 
-test('local Kokoro is disabled for mobile and four-gigabyte devices', () => {
+test('local Kokoro requires an explicit mobile opt-in and excludes known low-memory devices', () => {
   assert.equal(
     isDmoLocalVoiceDeviceSupported({ userAgent: 'Mozilla/5.0 (iPhone)', maxTouchPoints: 5 }),
     false,
   );
   assert.equal(
-    isDmoLocalVoiceDeviceSupported({ userAgent: 'Mozilla/5.0 (Windows NT 10.0)', deviceMemory: 4 }),
+    isDmoLocalVoiceDeviceSupported({
+      userAgent: 'Mozilla/5.0 (iPhone)',
+      maxTouchPoints: 5,
+      allowMobile: true,
+    }),
+    true,
+  );
+  assert.equal(
+    isDmoLocalVoiceDeviceSupported({
+      userAgent: 'Mozilla/5.0 (iPhone)',
+      deviceMemory: 4,
+      allowMobile: true,
+    }),
     false,
   );
   assert.equal(

@@ -504,6 +504,7 @@ test('replay page server-renders the current submissions on first load', async (
     'next/link': { __esModule: true, default: Link },
     '@/components/PageHero': { __esModule: true, default: PageHero },
     '@/components/DmoReplayLibrary': { __esModule: true, default: DmoReplayLibrary },
+    '@/lib/dmoVoiceDiagnostics.mjs': { canViewDmoVoiceDiagnostics: () => false },
     '@/lib/dmoReplayLibrary': {
       listDmoReplaySubmissions: async (input) => {
         requestedPage = input;
@@ -535,6 +536,7 @@ test('public visitors see only the public replay catalog on the Match Replays pa
     'next/link': { __esModule: true, default: Link },
     '@/components/PageHero': { __esModule: true, default: PageHero },
     '@/components/DmoReplayLibrary': { __esModule: true, default: DmoReplayLibrary },
+    '@/lib/dmoVoiceDiagnostics.mjs': { canViewDmoVoiceDiagnostics: () => false },
     '@/lib/auth': { getSession: async () => null },
     '@/lib/dmoReplayLibrary': {
       listDmoReplaySubmissions: async () => {
