@@ -208,9 +208,12 @@ async function DashboardContent() {
       <main className="container">
         <p className="muted">Welcome back, {viewer.username}.</p>
         <div className="notice warn" style={{ marginBottom: 20, display: 'flex', gap: 10, alignItems: 'flex-start', fontWeight: 600 }}>
-          <span>🚧</span>
           <span>These stats are still under construction and may not be fully accurate yet. For the most reliable numbers, use <code>/mystats</code> in Discord.</span>
         </div>
+        <section className="scheduler-intro" style={{ marginBottom: 20 }}>
+          <div><strong>Official match scheduler</strong> Your current draw matches and active time proposals, in one place.</div>
+          <Link className="btn btn-primary btn-sm" href="/match-scheduler">Open scheduler</Link>
+        </section>
         <RatingMethodNote />
 
         <div className="kpi-grid">
