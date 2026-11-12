@@ -3187,20 +3187,26 @@ function ThreeCourt({
             className={styles.soundButton}
             type="button"
             aria-pressed={commentary.enabled}
-            aria-label={commentary.enabled ? 'Turn match commentary off' : 'Turn match commentary on'}
-            title="Prefers two modern-sounding U.S. English voices when available. Voice labels are only hints; age, gender and sound quality vary by device."
-            disabled={!soundEnabled || !soundReady}
+            aria-label={commentary.voiceLoading
+              ? 'Preparing local commentary voice'
+              : commentary.enabled ? 'Turn match commentary off' : 'Turn match commentary on'}
+            aria-busy={commentary.voiceLoading}
+            title="Uses Kokoro voices generated on this device; first use downloads about 92 MB."
+            disabled={!soundEnabled || !soundReady || commentary.voiceLoading}
             onClick={commentary.toggle}
           >
-            <span>Commentary {commentary.enabled ? 'on' : 'off'}</span>
+            <span>{commentary.voiceLoading
+              ? 'Preparing voice…'
+              : `Commentary ${commentary.enabled ? 'on' : 'off'}`}</span>
           </button>
           <button
             className={styles.soundButton}
             type="button"
-            disabled={!soundEnabled || !soundReady}
+            disabled={!soundEnabled || !soundReady || commentary.voiceLoading}
+            title="Preview the local Kokoro voices. The first use downloads about 92 MB."
             onClick={commentary.previewVoice}
           >
-            <span>Preview commentary voices</span>
+            <span>Preview local voices</span>
           </button>
           <button
             className={styles.soundButton}
@@ -3330,8 +3336,11 @@ function ThreeCourt({
           </label>
         </div>
       )}
-      {soundError && <p className={styles.soundError} role="status">{soundError}</p>}
-      {commentary.error && <p className={styles.soundError} role="status">{commentary.error}</p>}
+      {(soundError || commentary.error || commentary.voiceStatus) && (
+        <p className={styles.soundError} role="status" aria-live="polite">
+          {soundError || commentary.error || commentary.voiceStatus}
+        </p>
+      )}
     </section>
   );
 }
