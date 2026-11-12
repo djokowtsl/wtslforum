@@ -14,7 +14,7 @@ type CommentaryPoint = {
   server: 1 | 2;
   winner: 1 | 2;
   rallyHits: number;
-  scoreLabel?: string;
+  scoreBeforeLabel?: string;
 };
 
 type CommentaryContext = {
@@ -37,10 +37,6 @@ type Options = {
   soundReady: boolean;
 };
 
-function appendTranscript(current: string, line: string) {
-  return [...current.split('\n').filter(Boolean), line].slice(-8).join('\n');
-}
-
 export function useDmoCommentary({
   snapshot,
   playerCharacters,
@@ -55,7 +51,6 @@ export function useDmoCommentary({
   soundReady,
 }: Options) {
   const [enabled, setEnabled] = useState(false);
-  const [message, setMessage] = useState('');
   const [error, setError] = useState('');
   const enabledRef = useRef(false);
   const soundEnabledRef = useRef(soundEnabled);
@@ -98,12 +93,16 @@ export function useDmoCommentary({
     try {
       const utterance = new SpeechSynthesisUtterance(text);
       const voices = synthesis.getVoices();
-      utterance.voice = voices.find((voice) => /^en-(GB|AU)\b/i.test(voice.lang))
+      utterance.voice = voices.find(
+        (voice) => /^en-(GB|AU)\b/i.test(voice.lang)
+          && /natural|neural|enhanced|premium/i.test(voice.name),
+      )
+        ?? voices.find((voice) => /^en-(GB|AU)\b/i.test(voice.lang))
         ?? voices.find((voice) => /^en\b/i.test(voice.lang))
         ?? null;
       utterance.lang = 'en-GB';
-      utterance.rate = 0.94;
-      utterance.pitch = 0.88;
+      utterance.rate = 0.98;
+      utterance.pitch = 1;
       utterance.volume = 0.92;
       utterance.onend = () => {
         if (utteranceRef.current === utterance) utteranceRef.current = null;
@@ -126,13 +125,35 @@ export function useDmoCommentary({
     if (typeof window !== 'undefined') window.speechSynthesis?.cancel();
   }, []);
 
-  const schedulePointLine = useCallback((line: string) => {
+  const scheduleSpeech = useCallback((
+    line: string,
+    { delayMs, minimumGapMs, maxWaitMs }: {
+      delayMs: number;
+      minimumGapMs: number;
+      maxWaitMs: number;
+    },
+  ) => {
     clearPendingCommentary();
-    pendingTimerRef.current = setTimeout(() => {
+    const queuedAt = Date.now();
+    const attempt = () => {
       pendingTimerRef.current = null;
-      if (!enabledRef.current || Date.now() - lastSpeechAtRef.current < 3_800) return;
+      if (!enabledRef.current || !soundEnabledRef.current) return;
+      const waited = Date.now() - queuedAt;
+      if (waited > maxWaitMs) return;
+
+      const synthesis = typeof window !== 'undefined' ? window.speechSynthesis : null;
+      const voiceBusy = Boolean(synthesis?.speaking || synthesis?.pending);
+      const gapRemaining = minimumGapMs - (Date.now() - lastSpeechAtRef.current);
+      if (voiceBusy || gapRemaining > 0) {
+        const retryAfter = voiceBusy ? 500 : Math.min(gapRemaining, 1_000);
+        if (waited + retryAfter <= maxWaitMs) {
+          pendingTimerRef.current = setTimeout(attempt, retryAfter);
+        }
+        return;
+      }
       speak(line);
-    }, 1_400);
+    };
+    pendingTimerRef.current = setTimeout(attempt, delayMs);
   }, [clearPendingCommentary, speak]);
 
   const toggle = useCallback(() => {
@@ -175,7 +196,6 @@ export function useDmoCommentary({
       surface,
       round: tournamentRound ?? '',
     });
-    setMessage(introduction);
     speak(introduction);
 
     const query = new URLSearchParams({
@@ -192,12 +212,7 @@ export function useDmoCommentary({
         if (!enabledRef.current || !context) return;
         const facts = buildDmoCommentaryFacts({ names, context });
         if (!facts) return;
-        setMessage((current) => appendTranscript(current, facts));
-        clearPendingCommentary();
-        pendingTimerRef.current = setTimeout(() => {
-          pendingTimerRef.current = null;
-          if (enabledRef.current && Date.now() - lastSpeechAtRef.current >= 3_800) speak(facts);
-        }, 3_500);
+        scheduleSpeech(facts, { delayMs: 300, minimumGapMs: 2_500, maxWaitMs: 12_000 });
       })
       .catch(() => {
         if (enabledRef.current) setError('WTSL facts are unavailable; point commentary can still continue.');
@@ -208,6 +223,7 @@ export function useDmoCommentary({
     isWta,
     names,
     replayFrame,
+    scheduleSpeech,
     soundEnabled,
     soundReady,
     snapshot.pointCount,
@@ -257,10 +273,11 @@ export function useDmoCommentary({
       const point = duePoints.at(-1);
       if (point) {
         const line = buildDmoPointCommentary(point, names);
-        if (line) {
-          setMessage((current) => appendTranscript(current, line));
-          schedulePointLine(line);
-        }
+        if (line) scheduleSpeech(line, {
+          delayMs: 1_400,
+          minimumGapMs: 10_000,
+          maxWaitMs: 9_000,
+        });
       }
       return;
     }
@@ -270,19 +287,25 @@ export function useDmoCommentary({
     const point = newPoints.at(-1);
     if (!point) return;
     lastPointNumberRef.current = point.number;
-    const line = buildDmoPointCommentary(point, names);
-    if (line) {
-      setMessage((current) => appendTranscript(current, line));
-      schedulePointLine(line);
-    }
+    const previousPoint = snapshot.recentPoints.find(
+      (candidate) => candidate.number === point.number - 1,
+    );
+    const line = buildDmoPointCommentary({
+      ...point,
+      scoreBeforeLabel: previousPoint?.scoreLabel,
+    }, names);
+    if (line) scheduleSpeech(line, {
+      delayMs: 1_400,
+      minimumGapMs: 10_000,
+      maxWaitMs: 9_000,
+    });
   }, [
-    clearPendingCommentary,
     commentaryPoints,
     enabled,
     fullReplay,
     names,
     replayFrame,
-    schedulePointLine,
+    scheduleSpeech,
     snapshot.recentPoints,
   ]);
 
@@ -291,5 +314,5 @@ export function useDmoCommentary({
     cancelCommentarySpeech();
   }, [cancelCommentarySpeech, clearPendingCommentary]);
 
-  return { enabled, message, error, toggle };
+  return { enabled, error, toggle };
 }

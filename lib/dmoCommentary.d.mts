@@ -18,7 +18,7 @@ export type DmoCommentaryPoint = {
   server?: number | null;
   winner?: number | null;
   rallyHits?: number | null;
-  scoreLabel?: string | null;
+  scoreBeforeLabel?: string | null;
 };
 
 type DmoCommentaryIntroductionOptions = {
@@ -26,7 +26,6 @@ type DmoCommentaryIntroductionOptions = {
   tournament?: string | null;
   surface?: string | null;
   round?: string | null;
-  context?: DmoCommentaryContext | null;
 };
 
 type DmoCommentaryFactsOptions = {

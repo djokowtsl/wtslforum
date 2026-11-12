@@ -99,7 +99,7 @@ export default function Te4DmoReplayPlayer({
         server: point.s,
         winner: point.w,
         rallyHits: point.sh.length,
-        scoreLabel: point.pt,
+        scoreBeforeLabel: point.pt,
       }];
     });
   }, [viewer]);
