@@ -24,12 +24,14 @@ async function loadTs(path, overrides = {}) {
 }
 
 const architectureApi = await loadTs('../components/DmoStadiumArchitecture.ts');
+const liveCourtPlayerColorsApi = await loadTs('../lib/liveCourtPlayerColors.ts');
 const sceneApi = await loadTs('../components/DmoLiveCourt3DScene.ts', {
   './DmoStadiumArchitecture': architectureApi,
   '../lib/dmoVenue': await loadTs('../lib/dmoVenue.ts'),
   '@/lib/te4DmoSurface': await loadTs('../lib/te4DmoSurface.ts'),
   '@/lib/dmoCrowdDensity': await loadTs('../lib/dmoCrowdDensity.ts'),
   '@/lib/dmoCharacterAppearance.mjs': dmoCharacterAppearance,
+  '../lib/liveCourtPlayerColors': liveCourtPlayerColorsApi,
 });
 const clothingApi = await loadTs('../lib/dmoCrowdClothing.ts');
 

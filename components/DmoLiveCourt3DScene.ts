@@ -4,6 +4,7 @@ import { resolveDmoVenueProfile, type DmoVenueProfile } from '../lib/dmoVenue';
 import type { Te4CourtSurface } from '@/lib/te4DmoTypes';
 import { courtSurfaceVisualProfile } from '@/lib/te4DmoSurface';
 import { isCrowdSeatOccupied } from '@/lib/dmoCrowdDensity';
+import { LIVE_COURT_PLAYER_COLORS } from '../lib/liveCourtPlayerColors';
 import { addLowerBowlSectionStairs, buildStadiumArchitecture, isUpperBowlAccessGap } from './DmoStadiumArchitecture';
 
 export type PlayerRig = {
@@ -84,6 +85,8 @@ export const PALETTE = {
   stands: 0x263b43,
   trim: 0xc0b79e,
   yellow: 0xf0dc63,
+  playerOne: Number.parseInt(LIVE_COURT_PLAYER_COLORS.playerOne.slice(1), 16),
+  playerTwo: Number.parseInt(LIVE_COURT_PLAYER_COLORS.playerTwo.slice(1), 16),
   shirtOne: 0x31545a,
   shirtTwo: 0xc7baa2,
 };
