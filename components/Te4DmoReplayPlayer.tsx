@@ -32,6 +32,7 @@ type Props = {
   handedness: ['left' | 'right', 'left' | 'right'];
   strokeStyles?: PlayerStrokeStylePair;
   submissionPlayers?: readonly [string, string];
+  showVoiceDiagnostics?: boolean;
   fallback?: ReactNode;
 };
 
@@ -60,6 +61,7 @@ export default function Te4DmoReplayPlayer({
   handedness,
   strokeStyles,
   submissionPlayers,
+  showVoiceDiagnostics = false,
   fallback,
 }: Props) {
   const frameRef = useRef<HTMLIFrameElement>(null);
@@ -287,6 +289,7 @@ export default function Te4DmoReplayPlayer({
             playbackSpeed={initialSpeed}
             isWta={isWta ?? false}
             playerCharacters={nativeMotionNames}
+            showVoiceDiagnostics={showVoiceDiagnostics}
             commentaryNames={submissionPlayers && viewer
               ? alignDmoReplayPlayerStyles(submissionPlayers, viewer.names, submissionPlayers)
               : null}

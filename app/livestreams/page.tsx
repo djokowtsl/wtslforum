@@ -1,4 +1,5 @@
 import { getSession } from '@/lib/auth';
+import { canViewDmoVoiceDiagnostics } from '@/lib/dmoVoiceDiagnostics.mjs';
 import DmoLiveHost from '@/components/DmoLiveHost';
 import DmoLiveViewer from '@/components/DmoLiveViewer';
 import type { Metadata } from 'next';
@@ -11,7 +12,11 @@ export default async function LivestreamsPage() {
   return (
     <main className="live-broadcast-page">
       {user && <DmoLiveHost displayName={user.username} canPrepareFullReplay={user.isAdmin} />}
-      <DmoLiveViewer canWatch={Boolean(user)} voiceServer={process.env.NEXT_PUBLIC_VOICE_SERVER?.trim() ?? ''} />
+      <DmoLiveViewer
+        canWatch={Boolean(user)}
+        voiceServer={process.env.NEXT_PUBLIC_VOICE_SERVER?.trim() ?? ''}
+        showVoiceDiagnostics={canViewDmoVoiceDiagnostics(user)}
+      />
     </main>
   );
 }

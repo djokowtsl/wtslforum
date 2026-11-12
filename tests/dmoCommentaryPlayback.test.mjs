@@ -4,10 +4,13 @@ import { createRequire } from 'node:module';
 import Module from 'node:module';
 import test from 'node:test';
 import * as commentary from '../lib/dmoCommentary.mjs';
+import { isDmoLocalVoiceDeviceSupported } from '../lib/dmoLocalVoice.mjs';
+import { canViewDmoVoiceDiagnostics } from '../lib/dmoVoiceDiagnostics.mjs';
 
 const require = createRequire(import.meta.url);
 const { transformSync } = require('next/dist/build/swc');
 const source = await readFile(new URL('../components/useDmoCommentary.ts', import.meta.url), 'utf8');
+const courtSource = await readFile(new URL('../components/DmoLiveCourt3D.tsx', import.meta.url), 'utf8');
 const compiled = transformSync(source, {
   filename: 'useDmoCommentary.ts',
   jsc: { parser: { syntax: 'typescript' }, target: 'es2022' },
@@ -19,7 +22,11 @@ const compiled = transformSync(source, {
 function harness(voices = [
   { voiceURI: 'us-female', name: 'Microsoft Aria Natural', lang: 'en-US' },
   { voiceURI: 'us-male', name: 'Microsoft Guy Natural', lang: 'en-US' },
-], { localModel = null, loadModel = async () => localModel } = {}) {
+], {
+  localModel = null,
+  loadModel = async () => localModel,
+  localVoiceSupported = true,
+} = {}) {
   const originals = Object.fromEntries(['window', 'SpeechSynthesisUtterance', 'fetch',
     'setTimeout', 'clearTimeout', 'setInterval', 'clearInterval'].map((key) => [key, globalThis[key]]));
   const originalNow = Date.now;
@@ -87,7 +94,9 @@ function harness(voices = [
   const mod = new Module(import.meta.url);
   mod.require = (name) => name === 'react' ? hooks
     : name === '@/lib/dmoCommentary.mjs' ? commentary
-      : name === '@/lib/dmoLocalVoice.mjs' ? { loadDmoLocalVoiceModel: loadModel } : require(name);
+      : name === '@/lib/dmoLocalVoice.mjs'
+        ? { canUseDmoLocalVoice: () => localVoiceSupported, loadDmoLocalVoiceModel: loadModel }
+        : require(name);
   mod._compile(compiled, 'useDmoCommentary.js');
   let options = { snapshot: { pointCount: 0, recentPoints: [] },
     commentaryNames: ['gifu', 'TheTinkerman_'], commentaryPoints: [], fullReplay: false,
@@ -327,23 +336,101 @@ test('local Kokoro preview alternates its on-device voices', async () => {
   } finally { h.cleanup(); }
 });
 
-test('commentary opens with local Kokoro voices after loading the model', async () => {
+test('commentary starts without a public status message', () => {
+  const h = harness();
+  try {
+    assert.equal(h.value().voiceStatus, '');
+  } finally { h.cleanup(); }
+});
+
+test('voice diagnostics render only for the designated viewer', () => {
+  assert.match(courtSource, /showVoiceDiagnostics && \(soundError \|\| commentary\.error \|\| commentary\.voiceStatus\)/);
+  assert.equal(canViewDmoVoiceDiagnostics(null), false);
+});
+
+test('commentary uses device speech without automatically loading Kokoro', async () => {
   const generated = [];
+  let loads = 0;
   const localModel = {
     async generate(text, options) {
       generated.push({ text, ...options });
       return { audio: new Float32Array([0.1, -0.1]), sampling_rate: 24_000 };
     },
   };
-  const h = harness(undefined, { localModel });
+  const h = harness(undefined, {
+    localModel,
+    loadModel: async () => {
+      loads += 1;
+      return localModel;
+    },
+  });
   try {
     await h.value().toggle();
     await h.flush();
     h.render();
     assert.equal(h.value().enabled, true);
-    assert.deepEqual(generated.map(({ voice }) => voice), ['af_heart', 'am_michael']);
-    assert.equal(h.spoken.length, 0, 'commentary uses local audio rather than browser speech synthesis');
+    assert.equal(loads, 0, 'commentary does not download the large model automatically');
+    assert.deepEqual(generated, []);
+    assert.equal(h.spoken.length, 2, 'commentary starts with the device speech voices');
   } finally { h.cleanup(); }
+});
+
+test('mobile devices skip Kokoro and preview with device speech', async () => {
+  let loads = 0;
+  const h = harness(undefined, {
+    localVoiceSupported: false,
+    loadModel: async () => {
+      loads += 1;
+      throw new Error('Kokoro should not load on mobile');
+    },
+  });
+  try {
+    await h.value().previewVoice();
+    await h.flush();
+    h.render();
+    assert.equal(loads, 0);
+    assert.equal(h.value().voiceLoading, false);
+    assert.match(h.value().voiceStatus, /disabled on mobile/);
+    assert.equal(h.spoken.length, 2);
+  } finally { h.cleanup(); }
+});
+
+test('Kokoro generation failure falls back to device speech', async () => {
+  const localModel = {
+    async generate() {
+      throw new Error('WASM memory allocation failed');
+    },
+  };
+  const h = harness(undefined, { localModel });
+  try {
+    await h.value().previewVoice();
+    await h.flush();
+    h.render();
+    assert.equal(h.spoken.length, 2);
+    assert.match(h.value().voiceStatus, /Kokoro playback failed/);
+  } finally { h.cleanup(); }
+});
+
+test('only Squeaky admins can see commentary diagnostics', () => {
+  assert.equal(canViewDmoVoiceDiagnostics({ isAdmin: true, username: 'Squeaky' }), true);
+  assert.equal(canViewDmoVoiceDiagnostics({ isAdmin: true, username: 'squeaky94' }), true);
+  assert.equal(canViewDmoVoiceDiagnostics({ isAdmin: true, username: 'Other admin' }), false);
+  assert.equal(canViewDmoVoiceDiagnostics({ isAdmin: false, username: 'Squeaky' }), false);
+});
+
+test('local Kokoro is disabled for mobile and four-gigabyte devices', () => {
+  assert.equal(
+    isDmoLocalVoiceDeviceSupported({ userAgent: 'Mozilla/5.0 (iPhone)', maxTouchPoints: 5 }),
+    false,
+  );
+  assert.equal(
+    isDmoLocalVoiceDeviceSupported({ userAgent: 'Mozilla/5.0 (Windows NT 10.0)', deviceMemory: 4 }),
+    false,
+  );
+  assert.equal(
+    isDmoLocalVoiceDeviceSupported({ userAgent: 'Mozilla/5.0 (Windows NT 10.0)', deviceMemory: 8 }),
+    true,
+  );
 });
 
 test('first-use voice download reports progress while commentary controls are busy', async () => {

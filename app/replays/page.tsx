@@ -3,6 +3,7 @@ import Link from 'next/link';
 import PageHero from '@/components/PageHero';
 import DmoReplayLibrary from '@/components/DmoReplayLibrary';
 import { listDmoReplaySubmissions, listPublicDmoReplays } from '@/lib/dmoReplayLibrary';
+import { canViewDmoVoiceDiagnostics } from '@/lib/dmoVoiceDiagnostics.mjs';
 import { getSession } from '@/lib/auth';
 
 export const dynamic = 'force-dynamic';
@@ -43,6 +44,7 @@ export default async function ReplaysPage({
           initialMatchId={initialMatchId}
           initialPage={initialPage}
           publicOnly={!user}
+          showVoiceDiagnostics={canViewDmoVoiceDiagnostics(user)}
         />
       </main>
     </>

@@ -23,7 +23,11 @@ import VoiceRoom from './VoiceRoom';
 import { voiceRoomForBroadcast } from '@/lib/voiceRoomToken';
 import styles from './DmoLiveViewer.module.css';
 
-type Props = { canWatch: boolean; voiceServer?: string };
+type Props = {
+  canWatch: boolean;
+  voiceServer?: string;
+  showVoiceDiagnostics?: boolean;
+};
 
 type Broadcast = {
   id: string;
@@ -77,7 +81,11 @@ function mergePointLog(existing: Te4LivePoint[], incoming: Te4LivePoint[]) {
   return [...pointsByNumber.values()].sort((first, second) => first.number - second.number);
 }
 
-export default function DmoLiveViewer({ canWatch, voiceServer = '' }: Props) {
+export default function DmoLiveViewer({
+  canWatch,
+  voiceServer = '',
+  showVoiceDiagnostics = false,
+}: Props) {
   const [liveScores, setLiveScores] = useState<Record<string, ReceivedLiveScore>>({});
   const [broadcasts, setBroadcasts] = useState<Broadcast[]>([]);
   const [activeBroadcastIndex, setActiveBroadcastIndex] = useState(0);
@@ -651,6 +659,7 @@ export default function DmoLiveViewer({ canWatch, voiceServer = '' }: Props) {
                   broadcast.replay && broadcast.replayDataReady ? (
                     <Te4DmoReplayPlayer
                       broadcastId={broadcast.id}
+                      showVoiceDiagnostics={showVoiceDiagnostics}
                       characterNames={broadcast.playerCharacters ?? [broadcast.character ?? null, null]}
                       submissionPlayers={broadcast.players ?? undefined}
                       allowAutomaticFallback={broadcast.broadcastMode === 'auto'}
@@ -662,6 +671,7 @@ export default function DmoLiveViewer({ canWatch, voiceServer = '' }: Props) {
                       fallback={(
                         <DmoLiveDisplay
                           broadcastId={broadcast.id}
+                          showVoiceDiagnostics={showVoiceDiagnostics}
                           allowAutomaticFallback={broadcast.broadcastMode === 'auto'}
                           playerCharacters={broadcast.playerCharacters}
                           commentaryNames={broadcast.players}
@@ -687,6 +697,7 @@ export default function DmoLiveViewer({ canWatch, voiceServer = '' }: Props) {
                   ) : (
                     <DmoLiveDisplay
                       broadcastId={broadcast.id}
+                      showVoiceDiagnostics={showVoiceDiagnostics}
                       allowAutomaticFallback={broadcast.broadcastMode === 'auto'}
                       playerCharacters={broadcast.playerCharacters}
                       commentaryNames={broadcast.players}
