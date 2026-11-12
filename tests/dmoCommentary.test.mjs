@@ -159,14 +159,14 @@ test('speech uses readable WTSL handles and stays silent without player names', 
     ['gifu', 'TheTinkerman_']), '');
 });
 
-test('natural voice quality outranks accent and basic system voices are never selected', () => {
+test('natural voice quality outranks accent while English system voices remain available', () => {
   const basic = { voiceURI: 'uk', name: 'English UK', lang: 'en-GB' };
   const google = { voiceURI: 'google', name: 'Google UK English', lang: 'en-GB' };
   const natural = { voiceURI: 'natural', name: 'US Natural', lang: 'en-US' };
-  assert.equal(chooseDmoCommentaryVoice([basic]), null);
+  assert.equal(chooseDmoCommentaryVoice([basic]), basic);
   assert.equal(chooseDmoCommentaryVoice([basic, google, natural]), natural);
   assert.equal(chooseDmoCommentaryVoice([basic, google, natural], 'google'), google);
-  assert.equal(chooseDmoCommentaryVoice([basic, google, natural], 'uk'), natural);
+  assert.equal(chooseDmoCommentaryVoice([basic, google, natural], 'uk'), basic);
   assert.equal(chooseDmoCommentaryVoice([basic, natural], 'missing-device-voice'), natural);
   assert.equal(chooseDmoCommentaryVoice([{ ...natural, lang: 'fr-FR' }]), null);
 });
@@ -191,6 +191,15 @@ test('depth observations count only measured balls inside the singles court', ()
   const shots = [930, -1000, 1100].map((bx) => ({ p: 2, k: 'r', bx, by: 100 }));
   const line = buildDmoPointCommentary({ winner: 2, rallyHits: 9, shots }, ['gifu', 'TheTinkerman_']);
   assert.match(line, /The Tinkerman landed 3 balls in the last three metres/);
+});
+
+test('pressure-point reactions do not append longer tactical analysis', () => {
+  const line = buildDmoPointCommentary({
+    number: 3, winner: 2, server: 1, rallyHits: 12, scoreBeforeLabel: '30-40',
+    shots: [930, -1000, 1100].map((bx) => ({ p: 2, k: 'r', bx, by: 100 })),
+  }, ['gifu', 'TheTinkerman_']);
+  assert.equal(line, "And that's the break for The Tinkerman!");
+  assert.doesNotMatch(line, /landed|metres|depth/);
 });
 
 test('live serve speed is called only when a serve is actually unreturned', () => {
