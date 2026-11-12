@@ -3187,8 +3187,8 @@ function ThreeCourt({
             className={styles.soundButton}
             type="button"
             aria-pressed={commentary.enabled}
-            aria-label={commentary.enabled ? 'Turn match commentary off' : 'Turn original match commentary on'}
-            title="One English commentary voice is selected automatically from this device. Voice quality can differ across devices."
+            aria-label={commentary.enabled ? 'Turn match commentary off' : 'Turn match commentary on'}
+            title="Prefers two modern-sounding U.S. English voices when available. Voice labels are only hints; age, gender and sound quality vary by device."
             disabled={!soundEnabled || !soundReady}
             onClick={commentary.toggle}
           >
@@ -3200,7 +3200,7 @@ function ThreeCourt({
             disabled={!soundEnabled || !soundReady}
             onClick={commentary.previewVoice}
           >
-            <span>Preview commentary voice</span>
+            <span>Preview commentary voices</span>
           </button>
           <button
             className={styles.soundButton}
@@ -3284,8 +3284,8 @@ function ThreeCourt({
         </p>
       )}
       <div className={styles.legend}>
-        <span><i style={{ backgroundColor: colorToCss(PALETTE.shirtOne) }} />{snapshot.players[0]}</span>
-        <span><i style={{ backgroundColor: colorToCss(PALETTE.shirtTwo) }} />{snapshot.players[1]}</span>
+        <span><i style={{ backgroundColor: colorToCss(PALETTE.playerOne) }} />{snapshot.players[0]}</span>
+        <span><i style={{ backgroundColor: colorToCss(PALETTE.playerTwo) }} />{snapshot.players[1]}</span>
         <span><i className={styles.ball} style={{ backgroundColor: colorToCss(PALETTE.yellow) }} />Ball</span>
       </div>
       {fullReplay && hasCourtData && (

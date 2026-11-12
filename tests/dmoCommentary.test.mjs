@@ -5,10 +5,13 @@ import test from 'node:test';
 import {
   buildDmoCommentaryFacts,
   buildDmoCommentaryIntroduction,
+  buildDmoCommentaryOpeningReply,
+  buildDmoCommentaryResponse,
   buildDmoPointCommentary,
   buildDmoRallyCommentary,
   rankDmoBrowserVoices,
   chooseDmoCommentaryVoice,
+  chooseDmoCommentaryVoices,
   withDmoCommentaryHistory,
 } from '../lib/dmoCommentary.mjs';
 import {
@@ -165,8 +168,8 @@ test('browser commentary voice ranking filters to English and prefers natural vo
 
   assert.deepEqual(voices.map((voice) => voice.voiceURI), [
     'uk-neural',
-    'uk-basic',
     'us-basic',
+    'uk-basic',
   ]);
 });
 
@@ -179,7 +182,10 @@ test('commentary stays spoken-only with no court text bubble', async () => {
   assert.doesNotMatch(component, /commentary\.message|commentaryCaption/);
   assert.doesNotMatch(styles, /commentaryCaption/);
   assert.doesNotMatch(component, /Choose commentary voice|commentary\.browserVoices/);
-  assert.match(component, /Preview commentary voice/);
+  assert.match(component, /Preview commentary voices/);
+  assert.match(component, /styles\.legend[\s\S]*PALETTE\.playerOne/);
+  assert.match(component, /styles\.legend[\s\S]*PALETTE\.playerTwo/);
+  assert.match(component, /styles\.legend[\s\S]*PALETTE\.yellow[\s\S]*Ball/);
   assert.match(display, /tournamentName\?\.trim\(\)/);
   assert.doesNotMatch(display, /snapshot\.stadium\s*\|\|/);
 });
@@ -193,7 +199,7 @@ test('speech uses readable WTSL handles and stays silent without player names', 
     ['gifu', 'TheTinkerman_']), '');
 });
 
-test('commentary uses one highest-ranked English voice and ignores saved voice choices', () => {
+test('legacy voice selection still chooses the highest-ranked English voice', () => {
   const basic = { voiceURI: 'uk', name: 'English UK', lang: 'en-GB' };
   const google = { voiceURI: 'google', name: 'Google UK English', lang: 'en-GB' };
   const natural = { voiceURI: 'natural', name: 'US Natural', lang: 'en-US' };
@@ -203,6 +209,63 @@ test('commentary uses one highest-ranked English voice and ignores saved voice c
   assert.equal(chooseDmoCommentaryVoice([basic, google, natural], 'uk'), natural);
   assert.equal(chooseDmoCommentaryVoice([basic, natural], 'missing-device-voice'), natural);
   assert.equal(chooseDmoCommentaryVoice([{ ...natural, lang: 'fr-FR' }]), null);
+});
+
+test('the booth prefers distinct American voices and falls back transparently', () => {
+  const female = {
+    voiceURI: 'aria-us',
+    name: 'Microsoft Aria Natural Online',
+    lang: 'en-US',
+  };
+  const male = {
+    voiceURI: 'guy-us',
+    name: 'Microsoft Guy Natural Online',
+    lang: 'en-US',
+  };
+  const selected = chooseDmoCommentaryVoices([
+    { voiceURI: 'uk', name: 'English UK', lang: 'en-GB' },
+    male,
+    female,
+  ]);
+  assert.equal(selected.female, female);
+  assert.equal(selected.male, male);
+  assert.equal(selected.distinct, true);
+
+  const fallback = chooseDmoCommentaryVoices([female]);
+  assert.equal(fallback.female, female);
+  assert.equal(fallback.male, female);
+  assert.equal(fallback.distinct, false);
+  assert.deepEqual(chooseDmoCommentaryVoices([{ ...female, lang: 'fr-FR' }]), {
+    female: null,
+    male: null,
+    distinct: false,
+  });
+});
+
+test('co-host replies use player names and avoid recent commentary lines', () => {
+  const names = ['Naomi Osaka', 'Daniil Medvedev'];
+  const opening = buildDmoCommentaryOpeningReply({ names });
+  assert.ok(opening);
+  const pointLine = buildDmoPointCommentary(
+    { number: 2, winner: 1, server: 1, rallyHits: 6 },
+    names,
+  );
+  const freshPointLine = buildDmoPointCommentary(
+    { number: 2, winner: 1, server: 1, rallyHits: 6 },
+    names,
+    [pointLine],
+  );
+  assert.notEqual(freshPointLine, pointLine);
+  const reply = buildDmoCommentaryResponse({
+    names,
+    winner: 1,
+    pointNumber: 2,
+    recentLines: [pointLine],
+  });
+  assert.notEqual(reply, pointLine);
+  assert.match(reply, /Naomi Osaka/);
+  assert.match(reply, /Daniil Medvedev/);
+  assert.equal(buildDmoCommentaryResponse({ names, winner: 0 }), '');
 });
 
 test('replay placement commentary needs valid, in-point measured bounces', () => {

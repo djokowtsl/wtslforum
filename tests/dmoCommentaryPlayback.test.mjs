@@ -16,7 +16,10 @@ const compiled = transformSync(source, {
 
 // Run the real hook against deterministic speech, playback, fetch and timers.
 // No browser audio service, account, paid provider or match data is contacted.
-function harness(voices = [{ voiceURI: 'natural', name: 'English Natural', lang: 'en-GB' }]) {
+function harness(voices = [
+  { voiceURI: 'us-female', name: 'Microsoft Aria Natural', lang: 'en-US' },
+  { voiceURI: 'us-male', name: 'Microsoft Guy Natural', lang: 'en-US' },
+]) {
   const originals = Object.fromEntries(['window', 'SpeechSynthesisUtterance', 'fetch',
     'setTimeout', 'clearTimeout', 'setInterval', 'clearInterval'].map((key) => [key, globalThis[key]]));
   const originalNow = Date.now;
@@ -98,7 +101,10 @@ function harness(voices = [{ voiceURI: 'natural', name: 'English Natural', lang:
     }
     now = end; render();
   };
-  const finish = () => { synthesis.speaking = false; spoken.at(-1)?.onend?.(); };
+  const finish = () => {
+    for (const utterance of spoken) utterance.onend?.();
+    synthesis.speaking = false;
+  };
   const cleanup = () => {
     for (const slot of slots) slot?.cleanup?.();
     Object.assign(globalThis, originals); Date.now = originalNow;
@@ -118,12 +124,29 @@ test('live reactions wait for the visible point end and finish after the next ra
     h.render({ snapshot: { pointCount: 1,
       recentPoints: [{ number: 1, frame: 1200, winner: 2, server: 1, rallyHits: 10 }] } });
     h.advance(2000);
-    assert.equal(h.spoken.length, 1, 'does not announce the source result early');
+    assert.equal(h.spoken.length, 2, 'does not announce the source result early');
     h.playback.frame = 1200; h.advance(500);
-    assert.equal(h.spoken.length, 2);
+    assert.equal(h.spoken.length, 3);
     assert.equal(h.synthesis.speaking, true);
     h.playback.rallyActive = true; h.advance(200);
     assert.equal(h.synthesis.speaking, true);
+  } finally { h.cleanup(); }
+});
+
+test('a point exchange alternates between the selected female and male voices', () => {
+  const h = harness();
+  try {
+    h.value().toggle(); h.render(); h.advance(0); h.finish(); h.advance(12_000);
+    h.render({ snapshot: { pointCount: 2, recentPoints: [
+      { number: 1, frame: 1100, winner: 1, server: 1, rallyHits: 5 },
+      { number: 2, frame: 1200, winner: 2, server: 2, rallyHits: 6 },
+    ] } });
+    h.playback.frame = 1200; h.advance(500);
+    assert.equal(h.spoken.length, 4);
+    assert.equal(h.spoken[2].voice.voiceURI, 'us-male');
+    assert.equal(h.spoken[3].voice.voiceURI, 'us-female');
+    assert.match(h.spoken[2].text, /The Tinkerman/);
+    assert.match(h.spoken[3].text, /The Tinkerman/);
   } finally { h.cleanup(); }
 });
 
@@ -131,8 +154,9 @@ test('commentary opening starts directly from the commentary button gesture', ()
   const h = harness();
   try {
     h.value().toggle();
-    assert.equal(h.spoken.length, 1);
+    assert.equal(h.spoken.length, 2);
     assert.match(h.spoken[0].text, /gifu against The Tinkerman/);
+    assert.ok(h.spoken[1].text.length > 0);
   } finally { h.cleanup(); }
 });
 
@@ -143,7 +167,7 @@ test('opening points use a shorter voice cooldown so commentary starts sooner', 
     h.render({ snapshot: { pointCount: 1,
       recentPoints: [{ number: 1, frame: 1000, winner: 1, server: 1, rallyHits: 5 }] } });
     h.advance(500);
-    assert.equal(h.spoken.length, 2);
+    assert.equal(h.spoken.length, 3);
   } finally { h.cleanup(); }
 });
 
@@ -154,9 +178,9 @@ test('long rallies can receive a measured call before the point ends', () => {
     h.playback.rallyActive = true;
     h.playback.rallyShotCount = 8;
     h.advance(200);
-    assert.equal(h.spoken.length, 2);
-    assert.match(h.spoken[1].text, /rally|point/i);
-    assert.match(h.spoken[1].text, /gifu|The Tinkerman/);
+    assert.equal(h.spoken.length, 3);
+    assert.match(h.spoken[2].text, /rally|point/i);
+    assert.match(h.spoken[2].text, /gifu|The Tinkerman/);
   } finally { h.cleanup(); }
 });
 
@@ -165,7 +189,7 @@ test('commentary reports when the browser refuses to start speech', () => {
   try {
     h.synthesis.speak = () => { throw new Error('speech blocked'); };
     h.value().toggle(); h.render();
-    assert.match(h.value().error, /could not start the commentary voice/);
+    assert.match(h.value().error, /could not start the commentary booth/);
   } finally { h.cleanup(); }
 });
 
@@ -176,8 +200,8 @@ test('point reactions are not dropped when the next rally starts', () => {
     h.render({ snapshot: { pointCount: 1,
       recentPoints: [{ number: 1, frame: 1000, winner: 1, server: 1, rallyHits: 12 }] } });
     h.playback.rallyActive = true; h.advance(2000);
-    assert.equal(h.spoken.length, 2);
-    assert.match(h.spoken[1].text, /gifu|point/i);
+    assert.equal(h.spoken.length, 3);
+    assert.match(h.spoken[2].text, /gifu|point/i);
   } finally { h.cleanup(); }
 });
 
@@ -190,14 +214,14 @@ test('longer WTSL facts require three continuous quiet seconds', async () => {
     } }) });
     await new Promise((resolve) => originalSetImmediate(resolve));
     h.render(); h.advance(14_000);
-    assert.equal(h.spoken.length, 1, 'does not start facts in a short gap');
+    assert.equal(h.spoken.length, 2, 'does not start facts in a short gap');
     h.playback.rallyActive = true; h.advance(1000);
-    assert.equal(h.spoken.length, 1, 'never starts during a rally');
+    assert.equal(h.spoken.length, 2, 'never starts during a rally');
     h.playback.rallyActive = false; h.advance(2900);
-    assert.equal(h.spoken.length, 1, 'quiet timer resets after rally activity');
+    assert.equal(h.spoken.length, 2, 'quiet timer resets after rally activity');
     h.advance(500);
-    assert.equal(h.spoken.length, 2);
-    assert.match(h.spoken[1].text, /WTSL ATP rankings/);
+    assert.equal(h.spoken.length, 3);
+    assert.match(h.spoken[2].text, /WTSL ATP rankings/);
   } finally { h.cleanup(); }
 });
 
@@ -227,35 +251,38 @@ test('changing player pair rejects delayed facts from the previous match', async
     } }) });
     await new Promise((resolve) => originalSetImmediate(resolve));
     h.render(); h.advance(30_000);
-    assert.equal(h.spoken.length, 1);
+    assert.equal(h.spoken.length, 2);
   } finally { h.cleanup(); }
 });
 
 const originalSetImmediate = globalThis.setImmediate;
 
-test('basic English voices remain usable and missing WTSL names never use character names', () => {
+test('one English voice remains usable and missing WTSL names never use character names', () => {
   const h = harness([{ voiceURI: 'basic', name: 'Basic UK', lang: 'en-GB' }]);
   try {
     h.value().toggle(); h.render();
     assert.equal(h.value().enabled, true);
     h.advance(0);
-    assert.equal(h.spoken.length, 1);
+    assert.equal(h.spoken.length, 2);
     assert.match(h.spoken[0].text, /gifu against The Tinkerman/);
+    assert.equal(h.spoken[0].voice.voiceURI, h.spoken[1].voice.voiceURI);
+    assert.notEqual(h.spoken[0].pitch, h.spoken[1].pitch);
     h.render({ commentaryNames: null });
     h.value().toggle(); h.render();
     assert.match(h.value().error, /character names will not be used/);
   } finally { h.cleanup(); }
 });
 
-test('voice preview uses the single automatic voice and mute cancels commentary', () => {
+test('voice preview uses two automatic voices and mute cancels commentary', () => {
   const voices = ['British Natural', 'Australian Natural'].map((name, i) =>
     ({ voiceURI: `voice${i}`, name, lang: i ? 'en-AU' : 'en-GB' }));
   const h = harness(voices);
   try {
     h.value().previewVoice();
     assert.equal(h.spoken[0].voice.voiceURI, 'voice0');
-    assert.equal(h.spoken[0].rate, 1.15);
-    assert.equal(h.spoken[0].pitch, 1.08);
+    assert.equal(h.spoken[1].voice.voiceURI, 'voice1');
+    assert.equal(h.spoken[0].rate, 1.03);
+    assert.equal(h.spoken[0].pitch, 1);
     assert.equal(h.value().changeVoice, undefined);
     assert.equal(h.storage.get('wtsl-commentary-natural-voice'), undefined);
     h.render({ soundEnabled: false });

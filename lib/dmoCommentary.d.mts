@@ -50,8 +50,29 @@ type DmoCommentaryFactsOptions = {
   context?: DmoCommentaryContext | null;
 };
 
+type DmoCommentaryOpeningReplyOptions = {
+  names?: readonly (string | null | undefined)[];
+  pointNumber?: number;
+  recentLines?: readonly string[];
+};
+
+type DmoCommentaryResponseOptions = {
+  names?: readonly (string | null | undefined)[];
+  winner?: number | null;
+  pointNumber?: number;
+  recentLines?: readonly string[];
+};
+
 export function buildDmoCommentaryIntroduction(
   options?: DmoCommentaryIntroductionOptions,
+): string;
+
+export function buildDmoCommentaryOpeningReply(
+  options?: DmoCommentaryOpeningReplyOptions,
+): string;
+
+export function buildDmoCommentaryResponse(
+  options?: DmoCommentaryResponseOptions,
 ): string;
 
 export function buildDmoCommentaryFacts(
@@ -61,12 +82,14 @@ export function buildDmoCommentaryFacts(
 export function buildDmoPointCommentary(
   point: DmoCommentaryPoint,
   names?: readonly (string | null | undefined)[],
+  recentLines?: readonly string[],
 ): string;
 
 export function buildDmoRallyCommentary(options: {
   names?: readonly (string | null | undefined)[];
   rallyShotCount: number;
   pointNumber?: number;
+  recentLines?: readonly string[];
 }): string;
 
 export function rankDmoBrowserVoices<T extends DmoBrowserVoice>(
@@ -76,6 +99,10 @@ export function rankDmoBrowserVoices<T extends DmoBrowserVoice>(
 export function chooseDmoCommentaryVoice<T extends DmoBrowserVoice>(
   voices?: readonly T[],
 ): T | null;
+
+export function chooseDmoCommentaryVoices<T extends DmoBrowserVoice>(
+  voices?: readonly T[],
+): { female: T | null; male: T | null; distinct: boolean };
 
 export function withDmoCommentaryHistory<T extends DmoCommentaryPoint>(
   point: T, history?: readonly DmoCommentaryPoint[],

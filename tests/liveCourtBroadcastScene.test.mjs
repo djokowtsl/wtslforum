@@ -31,12 +31,14 @@ const venueApi = await loadTs('../lib/dmoVenue.ts');
 const crowdBrandingApi = await loadTs('../lib/dmoCrowdBranding.ts');
 const courtSurfaceApi = await loadTs('../lib/te4DmoSurface.ts');
 const crowdDensityApi = await loadTs('../lib/dmoCrowdDensity.ts');
+const liveCourtPlayerColorsApi = await loadTs('../lib/liveCourtPlayerColors.ts');
 const sceneApi = await loadTs('../components/DmoLiveCourt3DScene.ts', {
   './DmoStadiumArchitecture': stadiumArchitectureApi,
   '../lib/dmoVenue': venueApi,
   '@/lib/te4DmoSurface': courtSurfaceApi,
   '@/lib/dmoCrowdDensity': crowdDensityApi,
   '@/lib/dmoCharacterAppearance.mjs': dmoCharacterAppearance,
+  '../lib/liveCourtPlayerColors': liveCourtPlayerColorsApi,
 });
 const crowdLodApi = await loadTs('../lib/dmoCrowdLod.ts');
 const smashApi = await loadTs('../lib/dmoSmash.ts');
@@ -564,8 +566,8 @@ test('stadium and audience scale with recognized tournament capacities', async (
   assert.doesNotMatch(court, /player repair r19|RENDERER_BUILD|Renderer build|buildTag/);
   assert.doesNotMatch(court, /player repair r14|recorded volleys \+/);
   assert.doesNotMatch(court, /Drag to orbit · scroll to zoom|Use Look across court to pan laterally/);
-  assert.match(court, /backgroundColor: colorToCss\(PALETTE\.shirtOne\)/);
-  assert.match(court, /backgroundColor: colorToCss\(PALETTE\.shirtTwo\)/);
+  assert.match(court, /backgroundColor: colorToCss\(PALETTE\.playerOne\)/);
+  assert.match(court, /backgroundColor: colorToCss\(PALETTE\.playerTwo\)/);
   assert.match(court, /backgroundColor: colorToCss\(PALETTE\.yellow\)/);
   assert.match(fallback, /color: LIVE_COURT_COLORS\.playerOne/);
   assert.match(fallback, /color: LIVE_COURT_COLORS\.playerTwo/);

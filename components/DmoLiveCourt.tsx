@@ -75,6 +75,7 @@ import {
   type UmpireCallEvent,
 } from '@/lib/liveCourtUmpire';
 import type { StadiumScoreboardData } from './DmoStadiumArchitecture';
+import { LIVE_COURT_PLAYER_COLORS } from '@/lib/liveCourtPlayerColors';
 import styles from './DmoLiveCourt.module.css';
 
 type WorldPoint = LiveCourtWorldPoint;
@@ -104,8 +105,7 @@ type Props = {
 export type GruntControlProps = Pick<Props, 'gruntsEnabled' | 'onGruntsEnabledChange'>;
 
 const LIVE_COURT_COLORS = {
-  playerOne: '#eaa134',
-  playerTwo: '#e05d64',
+  ...LIVE_COURT_PLAYER_COLORS,
   ball: '#e8f84a',
 } as const;
 
