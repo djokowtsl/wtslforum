@@ -249,7 +249,7 @@ test('commentary stays spoken-only with no court text bubble', async () => {
   assert.doesNotMatch(component, /commentary\.message|commentaryCaption/);
   assert.doesNotMatch(styles, /commentaryCaption/);
   assert.doesNotMatch(component, /Choose commentary voice|commentary\.browserVoices/);
-  assert.match(component, /Preview local voices/);
+  assert.doesNotMatch(component, /Preview local voices|Preview Kokoro/);
   assert.match(component, /styles\.legend[\s\S]*PALETTE\.playerOne/);
   assert.match(component, /styles\.legend[\s\S]*PALETTE\.playerTwo/);
   assert.match(component, /styles\.legend[\s\S]*PALETTE\.yellow[\s\S]*Ball/);

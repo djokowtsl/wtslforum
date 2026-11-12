@@ -4,6 +4,7 @@ import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } fro
 import { embedTe4ViewerHtml } from '@/lib/te4ViewerEmbed';
 import { te4ViewerToLiveSnapshot } from '@/lib/te4DmoReplaySnapshot';
 import { normalizeDmoTournamentName } from '@/lib/dmoTournamentName.mjs';
+import { buildDmoReplayCommentaryPoints } from '@/lib/dmoReplayCommentary';
 import type { Te4LiveSnapshot } from '@/lib/te4DmoLive';
 import { alignDmoReplayPlayerStyles, dmoReplayPlayerStyleOrder } from '@/lib/dmoReplayCharacterStyles';
 import {
@@ -89,32 +90,10 @@ export default function Te4DmoReplayPlayer({
       strokeStyles: activeStrokeStyles ?? initialSnapshot.strokeStyles,
     }
     : null, [initialSnapshot, activeHandedness[0], activeHandedness[1], activeStrokeStyles]);
-  const commentaryPoints = useMemo(() => {
-    if (!viewer || !Number.isInteger(viewer.match?.n)) return [];
-    const lastFrame = Math.max(0, viewer.match.n - 1);
-    return viewer.pts.flatMap((point, index) => {
-      if (!Number.isInteger(point.fc) || point.fc <= 0) return [];
-      const frame = Math.min(lastFrame, point.mf + point.fc - 1);
-      if (frame < 0) return [];
-      const nextPoint = viewer.pts[index + 1];
-      return [{
-        frame,
-        number: point.k,
-        server: point.s,
-        winner: point.w,
-        rallyHits: point.n,
-        rallyShotCount: point.n,
-        highlightReasons: point.rs,
-        faults: point.f,
-        inferred: point.inferred,
-        isTiebreak: point.tb === 1,
-        shots: point.sh,
-        shotEndTime: point.fc - 1,
-        scoreBeforeLabel: point.pt,
-        scoreAfterLabel: nextPoint?.pt,
-      }];
-    });
-  }, [viewer]);
+  const commentaryPoints = useMemo(
+    () => viewer ? buildDmoReplayCommentaryPoints(viewer) : [],
+    [viewer],
+  );
   const scoreTimeline = useMemo(
     () => viewer ? buildTe4DmoReplayScoreTimeline(viewer) : [],
     [viewer],
