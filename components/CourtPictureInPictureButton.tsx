@@ -1,6 +1,7 @@
 'use client';
 
 import { useCallback, useEffect, useRef, useState } from 'react';
+import { createPortal } from 'react-dom';
 import { Minimize2, PictureInPicture2 } from 'lucide-react';
 
 type ElementRef<T extends HTMLElement> = { current: T | null };
@@ -125,6 +126,7 @@ export default function CourtPictureInPictureButton({
   const [videoReady, setVideoReady] = useState(false);
   const [isPreparingVideo, setIsPreparingVideo] = useState(false);
   const [error, setError] = useState('');
+  const [portalRoot, setPortalRoot] = useState<HTMLElement | null>(null);
 
   const setVideoElement = useCallback((video: PipVideo | null) => {
     videoRef.current = video;
@@ -135,6 +137,10 @@ export default function CourtPictureInPictureButton({
     modeRef.current = next;
     setMode(next);
   };
+
+  useEffect(() => {
+    setPortalRoot(document.body);
+  }, []);
 
   const startVideoPreparation = useCallback(() => {
     const video = videoRef.current;
@@ -206,7 +212,9 @@ export default function CourtPictureInPictureButton({
   };
 
   useEffect(() => {
+    if (!portalRoot) return;
     const video = videoRef.current;
+    if (!video) return;
     let disposed = false;
     let preparationStarted = false;
     let preparationFrame = 0;
@@ -279,7 +287,7 @@ export default function CourtPictureInPictureButton({
     };
     // This effect owns the captured canvas preview and its video element.
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [canvasRef, startVideoPreparation]);
+  }, [canvasRef, portalRoot, startVideoPreparation]);
 
   const togglePictureInPicture = () => {
     if (modeRef.current !== 'off') {
@@ -313,10 +321,9 @@ export default function CourtPictureInPictureButton({
 
     try {
       if (supportsWebkitPip) video.controls = true;
-      // Reassert playback in the user gesture so WebKit has a live video layer
-      // when it promotes the captured canvas into its native PiP window.
-      void video.play().catch(() => {});
-      // Keep the browser request in the click's user-activation window.
+      // The video is already playing before this button is enabled. Make the
+      // browser request the first operation in this click so Safari retains
+      // the transient user activation required to open its native PiP window.
       const pictureInPicture = supportsWebkitPip
         ? requestWebkitPictureInPicture(video)
         : video.requestPictureInPicture!();
@@ -364,14 +371,17 @@ export default function CourtPictureInPictureButton({
           : <PictureInPicture2 size={15} aria-hidden="true" />}
         <span>{isActive ? 'PiP on' : videoReady ? 'PiP' : isPreparingVideo ? 'Preparing PiP' : 'PiP unavailable'}</span>
       </button>
-      <video
-        ref={setVideoElement}
-        className={videoClassName}
-        muted
-        playsInline
-        autoPlay
-        aria-hidden="true"
-      />
+      {portalRoot && createPortal(
+        <video
+          ref={setVideoElement}
+          className={videoClassName}
+          muted
+          playsInline
+          autoPlay
+          aria-hidden="true"
+        />,
+        portalRoot,
+      )}
       {error && <span className={statusClassName} role="status">{error}</span>}
     </>
   );

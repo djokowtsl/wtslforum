@@ -23,17 +23,26 @@ const surfaceApi = await loadTs('../lib/te4DmoSurface.ts');
 const crowdDensityApi = await loadTs('../lib/dmoCrowdDensity.ts');
 const crowdClothingApi = await loadTs('../lib/dmoCrowdClothing.ts');
 const crowdBrandingApi = await loadTs('../lib/dmoCrowdBranding.ts');
+const characterAppearanceApi = await import('../lib/dmoCharacterAppearance.mjs');
 const sceneApi = await loadTs('../components/DmoLiveCourt3DScene.ts', {
   './DmoStadiumArchitecture': stadiumArchitectureApi,
   '../lib/dmoVenue': venueApi,
   '@/lib/te4DmoSurface': surfaceApi,
   '@/lib/dmoCrowdDensity': crowdDensityApi,
   '@/lib/dmoCrowdClothing': crowdClothingApi,
+  '@/lib/dmoCharacterAppearance.mjs': characterAppearanceApi,
 });
 const racketPose = await loadTs('../components/DmoRacketOrientation.ts');
 const articulated = await loadTs('../components/DmoArticulatedHands.ts', { './DmoRacketOrientation': racketPose });
 const nativeGrip = await loadTs('../components/DmoNativeGrip.ts');
-const capturedGroundstroke = await import('../components/DmoCapturedGroundstroke.ts');
+const bundledMotionApi = await import('../lib/dmoBundledMotion.mjs');
+const bundledGroundstroke = await loadTs('../components/DmoBundledGroundstroke.ts', {
+  '@/lib/dmoBundledMotion.mjs': bundledMotionApi,
+});
+const capturedGroundstroke = await loadTs('../components/DmoCapturedGroundstroke.ts', {
+  './DmoBundledGroundstroke': bundledGroundstroke,
+  'three/examples/jsm/loaders/BVHLoader.js': { BVHLoader },
+});
 const capturedLocomotion = await import('../components/DmoCapturedLocomotion.ts');
 const nativeKit = await loadTs('../components/DmoNativeKit.ts');
 const nativeFaceApi = await loadTs('../components/DmoNativeFaces.ts', {
@@ -66,6 +75,38 @@ const handAsset = await new GLTFLoader().parseAsync(
   handBytes.buffer.slice(handBytes.byteOffset, handBytes.byteOffset + handBytes.byteLength), '',
 );
 await npcHands.prepareCrowdHandGeometry(handAsset.scene);
+test('expanded tennis wardrobes keep gender-specific cuts and varied hair visible', async () => {
+  assert.equal(nativeKit.ATP_PLAYER_KITS.length, 16);
+  assert.equal(nativeKit.WTA_PLAYER_KITS.length, 16);
+  assert.equal(new Set(nativeKit.ATP_PLAYER_KITS.map(kit => kit.shirtColor)).size, 16);
+  assert.equal(new Set(nativeKit.WTA_PLAYER_KITS.map(kit => kit.shirtColor)).size, 16);
+  assert.ok(new Set(nativeKit.ATP_PLAYER_KITS.map(kit => kit.maleHairStyle)).size >= 5);
+  assert.ok(new Set(nativeKit.WTA_PLAYER_KITS.map(kit => kit.femaleHairStyle)).size >= 7);
+
+  const menKit = nativeKit.ATP_PLAYER_KITS[2];
+  const men = await nativePlayerTemplate('male');
+  nativeKit.dressNativePlayer(men, menKit.shirtColor, false, menKit, 0);
+  const menShirt = men.getObjectByName('native-tennis-shirt');
+  assert.equal(men.userData.tennisKit.id, menKit.id);
+  assert.equal(menShirt.material.color.getHex(), menKit.shirtColor);
+  assert.ok(men.getObjectByName('native-tennis-shorts'));
+  assert.equal(men.getObjectByName('native-tennis-skirt'), undefined);
+  assert.ok(men.getObjectByName('native-player-hair-curl-1-0'));
+  assert.ok(men.getObjectByName('native-tennis-shirt-yoke'));
+
+  const womenKit = nativeKit.WTA_PLAYER_KITS[5];
+  const women = await nativePlayerTemplate('female');
+  nativeKit.dressNativePlayer(women, womenKit.shirtColor, true, womenKit, 0);
+  const womenShirt = women.getObjectByName('native-tennis-shirt');
+  const skirt = women.getObjectByName('native-tennis-skirt');
+  assert.equal(women.userData.tennisKit.id, womenKit.id);
+  assert.equal(womenShirt.userData.topStyle, womenKit.femaleTopStyle);
+  assert.equal(skirt.geometry.parameters.height, womenKit.skirtLength);
+  assert.ok(women.getObjectByName('native-player-hair-braid-left-1'));
+  assert.ok(women.getObjectByName('native-player-hair-braid-right-1'));
+  assert.equal(women.getObjectByName('native-player-neat-beard-1'), undefined);
+  assert.ok(women.getObjectByName('native-tennis-shirt-yoke'));
+});
 const crowds = await loadTs('../components/DmoHumanCrowd.ts', {
   './DmoHumanModels': humans,
   './DmoLiveCourt3DScene': sceneApi,

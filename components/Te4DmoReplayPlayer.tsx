@@ -266,6 +266,7 @@ export default function Te4DmoReplayPlayer({
             playerGruntSettings={nativeMotion.playerGruntSettings}
             tournamentRound={tournamentRound}
             fullReplay
+            playerOutfitSeed={replayUrl || broadcastId || snapshot.filename}
             playerBundledMotions={nativeMotion.sources}
             scoreboard={replayScoreboard}
             onReplayFrameChange={handleReplayFrameChange}

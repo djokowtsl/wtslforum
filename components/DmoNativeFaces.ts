@@ -153,7 +153,7 @@ function makeFaceVariant(template: THREE.Group, female: boolean, kitIndex: 0 | 1
   if (hairCap instanceof THREE.SkinnedMesh) {
     hairParts.push(extractBoneSurface(hairCap, head, 0.2));
   }
-  const accessoryPattern = /swept-hair|ponytail|neat-beard|stubble/;
+  const accessoryPattern = /native-player-(?:swept-hair|ponytail|hair-|headband|visor|neat-beard|stubble)/;
   for (const child of head.children) {
     if (child instanceof THREE.Bone || !accessoryPattern.test(child.name)) continue;
     child.traverse((object) => {

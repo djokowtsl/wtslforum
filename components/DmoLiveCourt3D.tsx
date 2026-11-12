@@ -160,7 +160,8 @@ import { bundledCaptureTiming, type BundledMotionSource } from './DmoBundledGrou
 import { attachHumanCourtStaff, addCrowdAccessories } from './DmoHumanCrowd';
 import { attachSpectatorCrowd, loadSpectatorModel, loadDiverseSpectatorModel } from './DmoSpectatorCrowd';
 import { DIVERSE_SPECTATORS } from '../lib/dmoSpectatorRoster';
-import { BROADCAST_PLAYER_KITS } from './DmoNativeKit';
+import { ATP_PLAYER_KITS, WTA_PLAYER_KITS } from './DmoNativeKit';
+import { selectDmoPlayerKitIndices } from '@/lib/dmoPlayerWardrobe.mjs';
 import { racketCarryOrientation, racketContactOrientation, racketGripElbow, racketGripWrist } from './DmoRacketOrientation';
 import type { StadiumScoreboardData } from './DmoStadiumArchitecture';
 import densityStyles from './DmoCrowdDensityControl.module.css';
@@ -194,6 +195,7 @@ type Props = {
   playerBundledMotions?: readonly [BundledMotionSource | null, BundledMotionSource | null];
   playerCharacters?: readonly [string | null, string | null];
   playerGruntSettings?: readonly [DmoCharacterGruntSetting | null, DmoCharacterGruntSetting | null];
+  playerOutfitSeed?: string;
   snapshot: Te4LiveSnapshot;
   surface: Te4CourtSurface;
   playbackSpeed: Te4DmoReplaySpeed;
@@ -289,6 +291,7 @@ function ThreeCourt({
   playerBundledMotions,
   playerCharacters = [null, null],
   playerGruntSettings,
+  playerOutfitSeed,
   snapshot,
   surface,
   playbackSpeed,
@@ -764,8 +767,18 @@ function ThreeCourt({
         getDmoCharacterAppearance(playerCharacters[1]),
       ),
     ];
+    const playerKits = isWta ? WTA_PLAYER_KITS : ATP_PLAYER_KITS;
+    const playerKitIndices = selectDmoPlayerKitIndices(
+      playerOutfitSeed || snapshot.filename,
+      [
+        playerCharacters[0] ?? snapshot.players[0],
+        playerCharacters[1] ?? snapshot.players[1],
+      ],
+      playerKits.length,
+    );
     players.forEach(({ root }, index) => {
       root.userData.dominantHandedness = sceneDataRef.current.snapshot.handedness?.[index] ?? 'right';
+      root.userData.outfitKitId = playerKits[playerKitIndices[index]]?.id;
     });
     players.forEach(({ root }) => scene.add(root));
     const modelLoad = new AbortController();
@@ -787,9 +800,9 @@ function ThreeCourt({
         const [player, maleCrowd, femaleCrowd, maleStaff, femaleStaff, maleHighDetailCrowd, femaleHighDetailCrowd, ...diverseCrowd] = results;
         if (player.status === 'fulfilled') {
           attachHumanPlayer(player.value, players[0], PALETTE.shirtOne, undefined, undefined,
-            BROADCAST_PLAYER_KITS[0], 0, playerBundledMotions?.[0] ?? undefined);
+            playerKits[playerKitIndices[0]], 0, playerBundledMotions?.[0] ?? undefined);
           attachHumanPlayer(player.value, players[1], PALETTE.shirtTwo, undefined, undefined,
-            BROADCAST_PLAYER_KITS[1], 1, playerBundledMotions?.[1] ?? undefined);
+            playerKits[playerKitIndices[1]], 1, playerBundledMotions?.[1] ?? undefined);
           detailedPlayersReady = true;
         }
         if (maleCrowd.status === 'fulfilled' && femaleCrowd.status === 'fulfilled') {
@@ -2714,7 +2727,19 @@ function ThreeCourt({
       materials.forEach((item) => item.dispose());
       textures.forEach((texture) => texture.dispose());
     };
-  }, [fullReplay, isWta, modelAssetBase, playerBundledMotions, onUnsupported, playerCharacterKey, snapshot.filename, snapshot.stadium]);
+  }, [
+    fullReplay,
+    isWta,
+    modelAssetBase,
+    playerBundledMotions,
+    playerOutfitSeed,
+    onUnsupported,
+    playerCharacterKey,
+    snapshot.filename,
+    snapshot.players[0],
+    snapshot.players[1],
+    snapshot.stadium,
+  ]);
 
   const requestZoom = (factor: number) => {
     viewportRef.current?.dispatchEvent(new CustomEvent<number>('courtzoom', { detail: factor }));
