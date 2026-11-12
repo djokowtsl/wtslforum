@@ -9,10 +9,12 @@ import {
   buildDmoCommentaryIntroduction,
   buildDmoPointCommentary,
   buildDmoRallyCommentary,
+  isDmoGameEnding,
   withDmoCommentaryHistory,
 } from '@/lib/dmoCommentary.mjs';
 import {
   canUseDmoLocalVoice,
+  isMobileDmoLocalVoiceDevice,
   loadDmoLocalVoiceModel,
 } from '@/lib/dmoLocalVoice.mjs';
 import type { DmoCommentaryPoint } from '@/lib/dmoCommentary.mjs';
@@ -42,6 +44,10 @@ type CommentaryContext = {
 
 type CommentarySpeaker = 'female' | 'male';
 type CommentarySpeech = string | readonly [string, string];
+type GeneratedVoiceBuffer =
+  | { status: 'ready'; buffer: AudioBuffer }
+  | { status: 'cancelled' }
+  | { status: 'failed'; phase: string; cause: unknown };
 
 function withVoiceDeadline<T>(work: Promise<T>, milliseconds: number): Promise<T> {
   return new Promise((resolve, reject) => {
@@ -115,6 +121,11 @@ export function useDmoCommentary({
   const lastPointNumberRef = useRef(snapshot.pointCount);
   const lastReplayFrameRef = useRef(replayFrame);
   const pendingTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const gameCallsRef = useRef<Array<{
+    line: CommentarySpeech;
+    frame?: number;
+    speaker: CommentarySpeaker;
+  }>>([]);
   const lastSpeechAtRef = useRef(0);
   const matchKeyRef = useRef('');
   soundEnabledRef.current = soundEnabled && soundReady;
@@ -135,11 +146,12 @@ export function useDmoCommentary({
     }
   }, []);
 
-  const clearPendingCommentary = useCallback(() => {
+  const clearPendingCommentary = useCallback((includeGameCalls = true) => {
     if (pendingTimerRef.current !== null) {
       clearTimeout(pendingTimerRef.current);
       pendingTimerRef.current = null;
     }
+    if (includeGameCalls) gameCallsRef.current = [];
   }, []);
 
   const [kokoroReady, setKokoroReady] = useState(false);
@@ -174,6 +186,14 @@ export function useDmoCommentary({
     setVoiceLoading(true);
     setVoiceStatus('Loading the local voice model; first use downloads about 92 MB.');
     const pending = withVoiceDeadline(loadDmoLocalVoiceModel((progress) => {
+      if (progress.status === 'backend') {
+        setVoiceStatus(progress.backend === 'webgpu'
+          ? 'Preparing local Kokoro with GPU acceleration.'
+          : 'Preparing local Kokoro on this device.');
+      }
+      if (progress.status === 'backend-fallback') {
+        setVoiceStatus('GPU acceleration could not start; trying local Kokoro on the CPU.');
+      }
       if (progress.status === 'progress' && typeof progress.progress === 'number') {
         setVoiceStatus(
           `Loading local voice model: ${Math.round(progress.progress)}% (first use downloads about 92 MB).`,
@@ -224,30 +244,51 @@ export function useDmoCommentary({
       finishSpeech = resolve;
     });
     void (async () => {
+      let failurePhase = 'audio resumption';
       try {
         await withVoiceDeadline(audioContext.resume(), 3_000);
         if (audioContext.state !== 'running') throw new Error('Commentary audio is not running');
-        for (let index = 0; index < lines.length; index += 1) {
-          if (session !== localSpeechSessionRef.current || !soundEnabledRef.current) return;
+        const generateBuffer = async (index: number): Promise<GeneratedVoiceBuffer> => {
           const speaker = index === 0
             ? firstSpeaker
             : firstSpeaker === 'female' ? 'male' : 'female';
-          const audio = await withVoiceDeadline(model.generate(lines[index], {
-            voice: speaker === 'female' ? 'af_heart' : 'am_michael',
-            speed: 1.03,
-          }), 15_000);
-          if (session !== localSpeechSessionRef.current || !soundEnabledRef.current) return;
-          if (!audio.audio.length || !(audio.sampling_rate > 0)) {
-            throw new Error('Commentary generated no playable audio');
+          setVoiceStatus('Generating commentary locally; this can take longer on mobile.');
+          let phase = 'local speech generation';
+          try {
+            const audio = await withVoiceDeadline(model.generate(lines[index], {
+              voice: speaker === 'female' ? 'af_heart' : 'am_michael',
+              speed: 1.03,
+            }), isMobileDmoLocalVoiceDevice() ? 60_000 : 30_000);
+            if (session !== localSpeechSessionRef.current || !soundEnabledRef.current) {
+              return { status: 'cancelled' };
+            }
+            if (!audio.audio.length || !(audio.sampling_rate > 0)) {
+              throw new Error('Commentary generated no playable audio');
+            }
+            phase = 'audio output setup';
+            const buffer = audioContext.createBuffer(1, audio.audio.length, audio.sampling_rate);
+            buffer.copyToChannel(new Float32Array(audio.audio), 0);
+            return { status: 'ready', buffer };
+          } catch (cause) {
+            return { status: 'failed', phase, cause };
           }
-
-          const buffer = audioContext.createBuffer(1, audio.audio.length, audio.sampling_rate);
-          buffer.copyToChannel(new Float32Array(audio.audio), 0);
+        };
+        let generated = await generateBuffer(0);
+        for (let index = 0; index < lines.length; index += 1) {
+          if (generated.status === 'cancelled' || session !== localSpeechSessionRef.current
+            || !soundEnabledRef.current) return;
+          if (generated.status === 'failed') {
+            failurePhase = generated.phase;
+            throw generated.cause;
+          }
+          const buffer = generated.buffer;
+          failurePhase = 'audio output setup';
           const source = audioContext.createBufferSource();
           source.buffer = buffer;
           source.connect(audioContext.destination);
           localAudioSourceRef.current = source;
-          await withVoiceDeadline(new Promise<void>((resolve) => {
+          failurePhase = 'audio playback';
+          const playback = withVoiceDeadline(new Promise<void>((resolve) => {
             source.onended = () => {
               if (localAudioSourceRef.current === source) localAudioSourceRef.current = null;
               resolve();
@@ -261,15 +302,31 @@ export function useDmoCommentary({
               lastSpeechAtRef.current = Date.now();
             }
           }), Math.ceil(buffer.duration * 1_000 || 0) + 3_000);
+          // Prepare the reply while the current fully-buffered audio plays,
+          // rather than adding a complete inference delay between speakers.
+          const upcoming = index + 1 < lines.length ? generateBuffer(index + 1) : null;
+          await playback;
+          if (upcoming) generated = await upcoming;
         }
-      } catch {
+        if (session === localSpeechSessionRef.current && soundEnabledRef.current) {
+          setVoiceStatus('Local Kokoro voices are ready; speech is generated on this device.');
+        }
+      } catch (cause) {
         if (session === localSpeechSessionRef.current) {
           try { localAudioSourceRef.current?.stop(); } catch { /* Already stopped. */ }
           localModelRef.current = null;
           localModelPromiseRef.current = null;
           setKokoroReady(false);
-          setVoiceStatus('Kokoro playback failed; no device voice was used.');
-          setError('Kokoro could not play the commentary. No fallback voice was used.');
+          const detail = (cause instanceof Error
+            ? `${cause.name}: ${cause.message}`
+            : String(cause))
+            .replace(/\s+/g, ' ')
+            .slice(0, 120);
+          setVoiceStatus(`Kokoro playback failed during ${failurePhase}; no device voice was used.`);
+          setError(
+            `Kokoro could not play the commentary during ${failurePhase}`
+            + `${detail ? `: ${detail}` : ''}. No fallback voice was used.`,
+          );
         }
       } finally {
         localAudioSourceRef.current = null;
@@ -323,16 +380,22 @@ export function useDmoCommentary({
 
   const scheduleSpeech = useCallback((
     line: CommentarySpeech,
-    { delayMs, minimumGapMs, maxWaitMs, pointFrame, minimumQuietMs = 0, firstSpeaker = 'female' }: {
+    { delayMs, minimumGapMs, maxWaitMs, pointFrame, minimumQuietMs = 0, firstSpeaker = 'female', mustDeliver = false }: {
       delayMs: number;
       minimumGapMs: number;
       maxWaitMs: number;
       pointFrame?: number;
       minimumQuietMs?: number;
       firstSpeaker?: CommentarySpeaker;
+      mustDeliver?: boolean;
     },
   ) => {
-    clearPendingCommentary();
+    if (!mustDeliver && gameCallsRef.current.length) return;
+    clearPendingCommentary(false);
+    if (mustDeliver) {
+      gameCallsRef.current.push({ line, frame: pointFrame, speaker: firstSpeaker });
+      return;
+    }
     const queuedAt = Date.now();
     let quietSince: number | null = null;
     const attempt = () => {
@@ -566,6 +629,16 @@ export function useDmoCommentary({
         return;
       }
 
+      const gameCall = gameCallsRef.current[0];
+      if (gameCall) {
+        if ((gameCall.frame === undefined || playback.frame >= gameCall.frame)
+          && !isVoiceBusy() && Date.now() - lastSpeechAtRef.current >= 500
+          && speak(gameCall.line, gameCall.speaker)) {
+          gameCallsRef.current.shift();
+        }
+        return;
+      }
+
       if (!playback.rallyActive) {
         lastRallyCommentaryPointRef.current = null;
       } else {
@@ -637,6 +710,30 @@ export function useDmoCommentary({
 
   useEffect(() => {
     if (!enabled || !kokoroReady) return;
+    const submitPoint = (point: DmoCommentaryPoint, history: readonly DmoCommentaryPoint[]) => {
+      const pointNumber = point.number ?? 0;
+      const enriched = withDmoCommentaryHistory({
+        ...point,
+        suppressRallyCommentary: rallyCommentedPointsRef.current.delete(pointNumber),
+      }, history);
+      const mustDeliver = isDmoGameEnding(enriched);
+      const recentLines = recentCommentaryLinesRef.current;
+      const line = buildDmoPointCommentary(enriched, names, recentLines);
+      if (!line) return;
+      // Keep mandatory game wrap-ups short; the booth can converse on other calls.
+      const reply = mustDeliver ? '' : buildDmoCommentaryFollowUp({
+        names, point: enriched, leadLine: line, recentLines,
+      });
+      const priorityCall = isPriorityPointCall(line);
+      scheduleSpeech(reply ? [line, reply] as const : line, {
+        delayMs: 250,
+        minimumGapMs: priorityCall ? 2_000 : pointNumber <= 8 ? 8_000 : 10_000,
+        maxWaitMs: priorityCall ? 8_000 : 9_000,
+        pointFrame: point.frame,
+        firstSpeaker: pointNumber % 2 === 0 ? 'male' : 'female',
+        mustDeliver,
+      });
+    };
     if (fullReplay) {
       const previousFrame = lastReplayFrameRef.current;
       if (replayFrame < previousFrame) {
@@ -650,75 +747,32 @@ export function useDmoCommentary({
         (point) => point.frame > previousFrame && point.frame <= replayFrame,
       );
       lastReplayFrameRef.current = replayFrame;
-      const point = duePoints.at(-1);
-      if (point) {
-        const recentLines = recentCommentaryLinesRef.current;
-        const suppressRallyCommentary = rallyCommentedPointsRef.current.delete(point.number);
-        const line = buildDmoPointCommentary(
-          withDmoCommentaryHistory({
-            ...point,
-            suppressRallyCommentary,
-          }, commentaryPoints),
-          names,
-          recentLines,
-        );
-        if (line) {
-          const reply = buildDmoCommentaryFollowUp({
-            names,
-            point,
-            leadLine: line,
-            recentLines,
-          });
-          const exchange: CommentarySpeech = reply
-            ? [line, reply] as const : line;
-          const priorityCall = isPriorityPointCall(line);
-          scheduleSpeech(exchange, {
-            delayMs: 250,
-            minimumGapMs: priorityCall ? 2_000 : point.number <= 8 ? 8_000 : 10_000,
-            maxWaitMs: priorityCall ? 8_000 : 9_000,
-            pointFrame: point.frame,
-            firstSpeaker: point.number % 2 === 0 ? 'male' : 'female',
-          });
-        }
+      const gamePoints = duePoints.filter(isDmoGameEnding);
+      for (const point of gamePoints.length ? gamePoints : duePoints.slice(-1)) {
+        submitPoint(point, commentaryPoints);
       }
       return;
     }
 
     const lastSeen = lastPointNumberRef.current;
     const newPoints = snapshot.recentPoints.filter((point) => point.number > lastSeen);
-    const point = newPoints.at(-1);
-    if (!point) return;
-    lastPointNumberRef.current = point.number;
-    const previousPoint = snapshot.recentPoints.find(
-      (candidate) => candidate.number === point.number - 1,
-    );
-    const recentLines = recentCommentaryLinesRef.current;
-    const suppressRallyCommentary = rallyCommentedPointsRef.current.delete(point.number);
-    const line = buildDmoPointCommentary(withDmoCommentaryHistory({
-      ...point,
-      scoreBeforeLabel: previousPoint?.scoreLabel,
-      scoreAfterLabel: point.scoreLabel,
-      setBefore: previousPoint?.setNumber,
-      setAfter: point.setNumber,
-      suppressRallyCommentary,
-    }, snapshot.recentPoints), names, recentLines);
-    if (line) {
-      const reply = buildDmoCommentaryFollowUp({
-        names,
-        point,
-        leadLine: line,
-        recentLines,
-      });
-      const exchange: CommentarySpeech = reply
-        ? [line, reply] as const : line;
-      const priorityCall = isPriorityPointCall(line);
-      scheduleSpeech(exchange, {
-        delayMs: 250,
-        minimumGapMs: priorityCall ? 2_000 : point.number <= 8 ? 8_000 : 10_000,
-        maxWaitMs: priorityCall ? 8_000 : 9_000,
-        pointFrame: point.frame,
-        firstSpeaker: point.number % 2 === 0 ? 'male' : 'female',
-      });
+    if (!newPoints.length) return;
+    lastPointNumberRef.current = newPoints.at(-1)!.number;
+    const enrichedPoints = newPoints.map((point) => {
+      const previousPoint = snapshot.recentPoints.find(
+        (candidate) => candidate.number === point.number - 1,
+      );
+      return {
+        ...point,
+        scoreBeforeLabel: previousPoint?.scoreLabel,
+        scoreAfterLabel: point.scoreLabel,
+        setBefore: previousPoint?.setNumber,
+        setAfter: point.setNumber,
+      };
+    });
+    const gamePoints = enrichedPoints.filter(isDmoGameEnding);
+    for (const point of gamePoints.length ? gamePoints : enrichedPoints.slice(-1)) {
+      submitPoint(point, snapshot.recentPoints);
     }
   }, [
     commentaryPoints,
