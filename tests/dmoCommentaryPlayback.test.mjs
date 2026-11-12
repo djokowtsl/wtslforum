@@ -727,16 +727,34 @@ test('commentary reuses the court audio context instead of creating a separate i
   } finally { h.cleanup(); }
 });
 
-test('stalled Kokoro generation reports failure without a device-speech fallback', async () => {
-  const h = harness(undefined, { localModel: { generate: () => new Promise(() => {}) } });
+test('slow desktop Kokoro generation is not abandoned or duplicated after 30 seconds', async () => {
+  const pending = [];
+  const audio = { audio: new Float32Array([0.1]), sampling_rate: 24_000 };
+  const h = harness(undefined, {
+    loadModel: (onProgress) => {
+      onProgress({ status: 'backend', backend: 'wasm' });
+      return Promise.resolve({
+        generate: () => new Promise((resolve) => pending.push(resolve)),
+      });
+    },
+  });
   try {
     await enableLoadedKokoro(h);
-    assert.equal(h.spoken.length, 0);
+    assert.equal(pending.length, 1);
     h.advance(30_001); await h.flush(); h.render();
     assert.equal(h.spoken.length, 0);
     assert.equal(h.nativeSpoken.length, 0);
-    assert.match(h.value().voiceStatus, /Kokoro playback failed during local speech generation/);
-    assert.match(h.value().error, /Commentary voice timed out/);
+    assert.match(h.value().voiceStatus, /still generating locally on the CPU/);
+    assert.equal(h.value().error, '', 'a slow generation remains active instead of being discarded');
+
+    pending[0](audio);
+    await h.flush(); h.render();
+    assert.equal(pending.length, 2, 'the reply starts after the first generated call');
+    pending[1](audio);
+    await h.flush(); h.render();
+    assert.equal(h.value().error, '');
+    assert.equal(h.nativeSpoken.length, 0);
+    assert.match(h.value().voiceStatus, /Local Kokoro voices are ready/);
   } finally { h.cleanup(); }
 });
 
