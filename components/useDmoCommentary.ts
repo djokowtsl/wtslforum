@@ -145,7 +145,7 @@ export function useDmoCommentary({
   const soundEnabledRef = useRef(soundEnabled);
   const localModelRef = useRef<LocalVoiceModel | null>(null);
   const localModelPromiseRef = useRef<Promise<LocalVoiceModel | null> | null>(null);
-  const localVoiceBackendRef = useRef<'webgpu' | 'wasm' | 'unknown'>('unknown');
+  const localVoiceBackendRef = useRef<'wasm' | 'unknown'>('unknown');
   const localVoiceLoadingRef = useRef(false);
   const localAudioContextRef = useRef<AudioContext | null>(null);
   const localSpeechSessionRef = useRef(0);
@@ -243,14 +243,10 @@ export function useDmoCommentary({
       : 'Loading the local voice model; first use downloads about 92 MB.');
     const pending = withVoiceDeadline(loadDmoLocalVoiceModel((progress) => {
       if (progress.status === 'backend') {
-        localVoiceBackendRef.current = progress.backend === 'webgpu' || progress.backend === 'wasm'
-          ? progress.backend
-          : 'unknown';
+        localVoiceBackendRef.current = progress.backend === 'wasm' ? 'wasm' : 'unknown';
         setVoiceStatus(progress.backend === 'server'
           ? 'Connecting to the WTSL commentary voice.'
-          : progress.backend === 'webgpu'
-            ? 'Preparing local Kokoro with GPU acceleration.'
-            : 'Preparing local Kokoro on this device.');
+          : 'Preparing local Kokoro on this device.');
       }
       if (progress.status === 'backend-fallback') {
         localVoiceBackendRef.current = progress.backend === 'wasm' ? 'wasm' : 'unknown';
@@ -330,8 +326,6 @@ export function useDmoCommentary({
             : firstSpeaker === 'female' ? 'male' : 'female';
           const backendSuffix = model.dmoVoiceSource === 'server'
             ? ''
-            : localVoiceBackendRef.current === 'webgpu'
-            ? ' with GPU acceleration'
             : localVoiceBackendRef.current === 'wasm' ? ' on the CPU' : '';
           setVoiceStatus(model.dmoVoiceSource === 'server'
             ? 'Generating commentary with the WTSL Kokoro voice.'
