@@ -24,15 +24,31 @@ function harness(voices = [
   { voiceURI: 'us-male', name: 'Microsoft Guy Natural', lang: 'en-US' },
 ], {
   localModel = null,
-  loadModel = async () => localModel,
+  loadModel = null,
   localVoiceSupported = true,
   mobileLocalVoicePreview = false,
+  audioContextAvailable = true,
 } = {}) {
   const originals = Object.fromEntries(['window', 'SpeechSynthesisUtterance', 'fetch',
     'setTimeout', 'clearTimeout', 'setInterval', 'clearInterval'].map((key) => [key, globalThis[key]]));
   const originalNow = Date.now;
   const slots = [], spoken = [], generated = [], requests = [], storage = new Map(), timers = new Map();
+  const defaultModel = {
+    async generate(text, options) {
+      generated.push({ text, ...options });
+      return { audio: new Float32Array([0.1, -0.1]), sampling_rate: 24_000 };
+    },
+  };
+  const loadKokoro = loadModel ?? (async () => localModel ?? defaultModel);
   let now = 100_000, cursor = 0, dirty = false, effects = [], output, id = 0;
+  let pointCommentaryCalls = 0;
+  const hookCommentary = {
+    ...commentary,
+    buildDmoPointCommentary(...args) {
+      pointCommentaryCalls += 1;
+      return commentary.buildDmoPointCommentary(...args);
+    },
+  };
   const playback = { frame: 1000, playing: true, rallyActive: false, rallyShotCount: 0 };
   class FakeAudioContext {
     state = 'running';
@@ -55,7 +71,8 @@ function harness(voices = [
     speak: (utterance) => { spoken.push(utterance); synthesis.speaking = true; },
     cancel: () => { synthesis.speaking = false; },
   };
-  globalThis.window = { speechSynthesis: synthesis, AudioContext: FakeAudioContext,
+  globalThis.window = { speechSynthesis: synthesis,
+    AudioContext: audioContextAvailable ? FakeAudioContext : undefined,
     localStorage: { getItem: (key) => storage.get(key), setItem: (key, value) => storage.set(key, value) } };
   globalThis.SpeechSynthesisUtterance = class { constructor(text) { this.text = text; } };
   globalThis.fetch = (url) => new Promise((resolve) => requests.push({ url, resolve }));
@@ -94,12 +111,12 @@ function harness(voices = [
   };
   const mod = new Module(import.meta.url);
   mod.require = (name) => name === 'react' ? hooks
-    : name === '@/lib/dmoCommentary.mjs' ? commentary
+    : name === '@/lib/dmoCommentary.mjs' ? hookCommentary
       : name === '@/lib/dmoLocalVoice.mjs'
         ? {
           canUseDmoLocalVoice: () => localVoiceSupported,
           isMobileDmoLocalVoiceDevice: () => mobileLocalVoicePreview,
-          loadDmoLocalVoiceModel: loadModel,
+          loadDmoLocalVoiceModel: loadKokoro,
         }
         : require(name);
   mod._compile(compiled, 'useDmoCommentary.js');
@@ -139,17 +156,24 @@ function harness(voices = [
     for (const slot of slots) slot?.cleanup?.();
     Object.assign(globalThis, originals); Date.now = originalNow;
   };
-  const flush = () => new Promise((resolve) => originalSetImmediate(resolve));
+  const flush = async () => {
+    for (let turn = 0; turn < 3; turn += 1) {
+      await new Promise((resolve) => originalSetImmediate(resolve));
+    }
+  };
+  const value = () => Object.assign(Object.create(output), {
+    toggle: async (...args) => {
+      output.toggle(...args);
+      await flush();
+    },
+  });
   render();
-  return { render, advance, finish, cleanup, spoken, generated, playback, requests, storage, flush,
-    value: () => output, synthesis };
+  return { render, advance, finish, cleanup, spoken: generated, nativeSpoken: spoken,
+    generated, playback, requests, storage, flush, value, synthesis,
+    get pointCommentaryCalls() { return pointCommentaryCalls; } };
 }
 
 async function enableLoadedKokoro(h) {
-  h.value().toggle(); h.render();
-  await h.flush(); h.render(); h.finish();
-  h.value().toggle(); h.render();
-  h.spoken.length = 0;
   h.value().toggle(); h.render();
   await h.flush(); h.render();
 }
@@ -163,13 +187,17 @@ test('live reactions wait for the visible point end and finish after the next ra
     h.finish(); h.advance(12_000);
     h.render({ snapshot: { pointCount: 1,
       recentPoints: [{ number: 1, frame: 1200, winner: 2, server: 1, rallyHits: 10 }] } });
+    await h.flush(); h.render();
+    assert.equal(h.pointCommentaryCalls, 1, 'the completed point reaches the commentary builder');
     h.advance(2000);
     assert.equal(h.spoken.length, 2, 'does not announce the source result early');
     h.playback.frame = 1200; h.advance(500);
-    assert.equal(h.spoken.length, 3);
-    assert.equal(h.synthesis.speaking, true);
+    await h.flush(); h.render();
+    assert.equal(h.spoken.length, 4);
+    assert.match(h.spoken[3].text, /Exactly|Absolutely|right/i);
+    assert.equal(h.nativeSpoken.length, 0);
     h.playback.rallyActive = true; h.advance(200);
-    assert.equal(h.synthesis.speaking, true);
+    assert.equal(h.spoken.length, 4);
   } finally { h.cleanup(); }
 });
 
@@ -189,9 +217,13 @@ test('routine holds stay quiet and a verified break gets a short call', async ()
       { number: 2, frame: 1200, winner: 1, server: 1, rallyHits: 5, scoreLabel: '1-0(30-40)' },
       { number: 3, frame: 1300, winner: 2, server: 1, rallyHits: 5, scoreLabel: '1-1(0-0)' },
     ] } });
+    await h.flush(); h.render();
     h.playback.frame = 1300; h.advance(500);
-    assert.equal(h.spoken.length, 3);
-    assert.equal(h.spoken[2].voice.voiceURI, 'us-female');
+    await h.flush(); h.render();
+    assert.equal(h.spoken.length, 4);
+    assert.equal(h.spoken[2].voice, 'af_heart');
+    assert.equal(h.spoken[3].voice, 'am_michael');
+    assert.equal(h.spoken[2].voice, 'af_heart');
     assert.match(h.spoken[2].text, /break/i);
   } finally { h.cleanup(); }
 });
@@ -237,18 +269,29 @@ test('long rallies can receive a measured call before the point ends', async () 
     h.playback.rallyActive = true;
     h.playback.rallyShotCount = 10;
     h.advance(200);
+    await h.flush(); h.render();
     assert.equal(h.spoken.length, 3);
     assert.match(h.spoken[2].text, /rally|point/i);
     assert.match(h.spoken[2].text, /gifu|The Tinkerman/);
   } finally { h.cleanup(); }
 });
 
-test('commentary reports when the browser refuses to start speech', async () => {
-  const h = harness();
+test('commentary never invokes device speech when Kokoro is unavailable', async () => {
+  let loads = 0;
+  const h = harness(undefined, {
+    audioContextAvailable: false,
+    loadModel: async () => {
+      loads += 1;
+      return { async generate() {
+        return { audio: new Float32Array([0.1]), sampling_rate: 24_000 };
+      } };
+    },
+  });
   try {
-    h.synthesis.speak = () => { throw new Error('speech blocked'); };
     await h.value().toggle(); await h.flush(); h.render();
-    assert.match(h.value().error, /Commentary could not start/);
+    assert.equal(loads, 1, 'Kokoro loads without a shared Web Audio context');
+    assert.equal(h.nativeSpoken.length, 0);
+    assert.equal(h.spoken.length, 0);
   } finally { h.cleanup(); }
 });
 
@@ -259,7 +302,8 @@ test('point reactions are not dropped when the next rally starts', async () => {
     h.render({ snapshot: { pointCount: 1,
       recentPoints: [{ number: 1, frame: 1000, winner: 1, server: 1, rallyHits: 12 }] } });
     h.playback.rallyActive = true; h.advance(2000);
-    assert.equal(h.spoken.length, 3);
+    await h.flush(); h.render();
+    assert.equal(h.spoken.length, 4);
     assert.match(h.spoken[2].text, /gifu|point/i);
   } finally { h.cleanup(); }
 });
@@ -279,24 +323,20 @@ test('longer WTSL facts require three continuous quiet seconds', async () => {
     h.playback.rallyActive = false; h.advance(2900);
     assert.equal(h.spoken.length, 2, 'quiet timer resets after rally activity');
     h.advance(500);
+    await h.flush(); h.render();
     assert.equal(h.spoken.length, 3);
     assert.match(h.spoken[2].text, /WTSL ATP rankings/);
   } finally { h.cleanup(); }
 });
 
-test('pause cancels speech without reporting an intentional cancellation as failure', async () => {
+test('pause cancels Kokoro playback without using another voice', async () => {
   const h = harness();
   try {
     await h.value().toggle(); h.render(); h.advance(0);
-    const first = h.spoken[0];
     h.playback.playing = false; h.advance(200);
-    assert.equal(h.synthesis.speaking, false);
-    first.onerror({ error: 'interrupted' }); h.render();
     assert.equal(h.value().error, '');
-    await h.value().toggle();
-    await h.value().toggle();
-    h.spoken.at(-1).onerror({ error: 'synthesis-failed' }); h.render();
-    assert.match(h.value().error, /could not play/);
+    assert.equal(h.nativeSpoken.length, 0);
+    assert.ok(h.spoken.length >= 2);
   } finally { h.cleanup(); }
 });
 
@@ -325,24 +365,21 @@ test('one English voice remains usable and missing WTSL names never use characte
     h.advance(0);
     assert.equal(h.spoken.length, 2);
     assert.match(h.spoken[0].text, /gifu against The Tinkerman/);
-    assert.equal(h.spoken[0].voice.voiceURI, h.spoken[1].voice.voiceURI);
-    assert.notEqual(h.spoken[0].pitch, h.spoken[1].pitch);
+    assert.notEqual(h.spoken[0].voice, h.spoken[1].voice);
     h.render({ commentaryNames: null });
     h.value().toggle(); h.render();
     assert.match(h.value().error, /character names will not be used/);
   } finally { h.cleanup(); }
 });
 
-test('native fallback uses two automatic voices and mute cancels commentary', async () => {
+test('Kokoro uses two local voices and mute cancels commentary', async () => {
   const voices = ['British Natural', 'Australian Natural'].map((name, i) =>
     ({ voiceURI: `voice${i}`, name, lang: i ? 'en-AU' : 'en-GB' }));
   const h = harness(voices);
   try {
     await h.value().toggle();
-    assert.equal(h.spoken[0].voice.voiceURI, 'voice0');
-    assert.equal(h.spoken[1].voice.voiceURI, 'voice1');
-    assert.equal(h.spoken[0].rate, 1.03);
-    assert.equal(h.spoken[0].pitch, 1);
+    assert.equal(h.spoken[0].voice, 'af_heart');
+    assert.equal(h.spoken[1].voice, 'am_michael');
     assert.equal(h.value().changeVoice, undefined);
     assert.equal(h.storage.get('wtsl-commentary-natural-voice'), undefined);
     h.render({ soundEnabled: false });
@@ -365,7 +402,7 @@ test('turning on commentary automatically loads Kokoro and alternates its voices
     assert.deepEqual(generated.map(({ voice }) => voice), ['af_heart', 'am_michael']);
     h.render();
     assert.match(h.value().voiceStatus, /generated on this device/);
-    assert.equal(h.spoken.length, 0, 'local model audio does not use browser speech synthesis');
+    assert.equal(h.nativeSpoken.length, 0, 'local model audio does not use browser speech synthesis');
   } finally { h.cleanup(); }
 });
 
@@ -403,8 +440,8 @@ test('commentary automatically loads Kokoro without a separate download action',
     h.render();
     assert.equal(h.value().enabled, true);
     assert.equal(loads, 1, 'the commentary tap automatically prepares Kokoro');
-    assert.equal(generated.length, 0);
-    assert.equal(h.spoken.length, 2, 'native opening starts without waiting for the download');
+    assert.equal(generated.length, 2);
+    assert.equal(h.nativeSpoken.length, 0);
     assert.doesNotMatch(courtSource, /Preview Kokoro|Preview local voices|commentary\.previewVoice/);
   } finally { h.cleanup(); }
 });
@@ -432,8 +469,26 @@ test('mobile Kokoro loads automatically during playback without a pause gate', a
     h.render();
     assert.equal(loads, 1, 'the commentary tap while playing loads the model');
     assert.equal(h.value().voiceLoading, false);
-    assert.equal(h.spoken.length, 2);
-    assert.equal(generated.length, 0);
+    assert.equal(h.nativeSpoken.length, 0);
+    assert.match(h.value().voiceStatus, /generated on this device/);
+  } finally { h.cleanup(); }
+});
+
+test('Kokoro download does not depend on an available shared audio context', async () => {
+  let loads = 0;
+  const model = { async generate() {
+    return { audio: new Float32Array([0.1]), sampling_rate: 24_000 };
+  } };
+  const h = harness(undefined, {
+    audioContextAvailable: false,
+    loadModel: async () => { loads += 1; return model; },
+  });
+  try {
+    h.value().toggle();
+    assert.equal(h.spoken.length, 0, 'without Web Audio, wait and do not use a native voice');
+    assert.equal(h.nativeSpoken.length, 0);
+    await h.flush(); h.render();
+    assert.equal(loads, 1, 'Kokoro still downloads when Web Audio is unavailable');
     assert.match(h.value().voiceStatus, /generated on this device/);
   } finally { h.cleanup(); }
 });
@@ -448,7 +503,8 @@ test('Kokoro generation failure falls back to device speech', async () => {
   try {
     await enableLoadedKokoro(h);
     h.render();
-    assert.equal(h.spoken.length, 2);
+    assert.equal(h.spoken.length, 0);
+    assert.equal(h.nativeSpoken.length, 0);
     assert.match(h.value().voiceStatus, /Kokoro playback failed/);
   } finally { h.cleanup(); }
 });
@@ -504,7 +560,7 @@ test('first-use voice download reports progress while commentary controls are bu
   });
   try {
     const preview = h.value().toggle();
-    assert.equal(h.spoken.length, 2, 'speech starts synchronously in the tap, while download is pending');
+    assert.equal(h.spoken.length, 0, 'no speech starts before Kokoro is ready');
     await h.flush();
     h.render();
     assert.equal(h.value().voiceLoading, true);
@@ -515,7 +571,7 @@ test('first-use voice download reports progress while commentary controls are bu
     h.render();
     assert.equal(h.value().voiceLoading, false);
     assert.match(h.value().voiceStatus, /generated on this device/);
-    assert.deepEqual(generated, [], 'finishing the download does not repeat the opening');
+    assert.equal(generated.length, 2, 'the opening is generated once Kokoro finishes loading');
   } finally { h.cleanup(); }
 });
 
@@ -544,11 +600,9 @@ test('commentary reuses the court audio context instead of creating a separate i
     const start = h.value().toggle();
     assert.ok(resumed > 0, 'audio is resumed inside the tap, before the download');
     await start; await h.flush(); h.render();
-    h.finish(); h.value().toggle(); h.render(); h.spoken.length = 0;
-    h.value().toggle(); await h.flush(); h.render();
     assert.equal(generated, 2);
     assert.equal(started, 2);
-    assert.equal(h.spoken.length, 0);
+    assert.equal(h.nativeSpoken.length, 0);
     assert.match(courtSource, /getAudioContext: getCommentaryAudioContext/);
   } finally { h.cleanup(); }
 });
@@ -559,17 +613,19 @@ test('stalled Kokoro generation falls back instead of keeping commentary silentl
     await enableLoadedKokoro(h);
     assert.equal(h.spoken.length, 0);
     h.advance(15_001); await h.flush(); h.render();
-    assert.equal(h.spoken.length, 2);
+    assert.equal(h.spoken.length, 0);
+    assert.equal(h.nativeSpoken.length, 0);
     assert.match(h.value().voiceStatus, /Kokoro playback failed/);
   } finally { h.cleanup(); }
 });
 
-test('a failed automatic model download still starts native commentary', async () => {
+test('a failed automatic model download keeps commentary silent', async () => {
   const h = harness(undefined, { loadModel: async () => { throw new Error('offline'); } });
   try {
     await h.value().toggle(); await h.flush(); h.render();
     assert.equal(h.value().enabled, true);
-    assert.equal(h.spoken.length, 2);
+    assert.equal(h.spoken.length, 0);
+    assert.equal(h.nativeSpoken.length, 0);
     assert.match(h.value().voiceStatus, /could not load/);
   } finally { h.cleanup(); }
 });

@@ -79,9 +79,25 @@ export function buildDmoCommentaryResponse(
   options?: DmoCommentaryResponseOptions,
 ): string;
 
+export function buildDmoCommentaryFollowUp(options: {
+  names?: readonly (string | null | undefined)[];
+  point?: DmoCommentaryPoint | null;
+  leadLine?: string;
+  recentLines?: readonly string[];
+}): string;
+
 export function buildDmoCommentaryFacts(
   options?: DmoCommentaryFactsOptions,
 ): string;
+
+export function buildDmoMatchCommentary(options: {
+  names?: readonly (string | null | undefined)[];
+  stats?: readonly {
+    pointsWon: number;
+    servicePoints: number;
+    servicePointsWon: number;
+  }[];
+}): string;
 
 export function buildDmoPointCommentary(
   point: DmoCommentaryPoint,

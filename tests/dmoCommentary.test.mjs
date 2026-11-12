@@ -7,6 +7,7 @@ import {
   buildDmoCommentaryIntroduction,
   buildDmoCommentaryOpeningReply,
   buildDmoCommentaryResponse,
+  buildDmoCommentaryFollowUp,
   buildDmoPointCommentary,
   buildDmoRallyCommentary,
   rankDmoBrowserVoices,
@@ -118,14 +119,14 @@ test('routine points stay quiet while long rallies get a single stronger reactio
       { number: 1, winner: 1, server: 1, rallyHits: 12, scoreBeforeLabel: '15-30' },
       ['Player One', 'Player Two'],
     ),
-    'Player One, at last!',
+    'Magnificent rally! Player One hangs on.',
   );
   assert.equal(
     buildDmoPointCommentary(
       { number: 2, winner: 2, server: 1, rallyHits: 12 },
       ['Player One', 'Player Two'],
     ),
-    'A marathon point for Player Two.',
+    'They keep coming—and Player Two has the last word!',
   );
   assert.equal(buildDmoPointCommentary({ winner: 0 }, ['Player One', 'Player Two']), '');
 });
@@ -213,7 +214,7 @@ test('routine games stay quiet while verified set wins are called once', () => {
       setBefore: 1,
       setAfter: 2,
     }, ['Player One', 'Player Two']),
-    'That wins the set for Player One.',
+    "Oh, that's the set for Player One!",
   );
   assert.equal(
     buildDmoPointCommentary({
@@ -326,13 +327,33 @@ test('one-time booth replies use verified player names', () => {
   assert.equal(buildDmoCommentaryResponse({ names, winner: 0 }), '');
 });
 
+test('the second commentator builds on calls and sometimes offers a grounded counter-read', () => {
+  const names = ['gifu', 'TheTinkerman_'];
+  const point = { number: 8, winner: 1, server: 2, rallyHits: 12 };
+  const disagreement = buildDmoCommentaryFollowUp({
+    names, point, leadLine: 'What a point! gifu takes it.',
+  });
+  assert.match(disagreement, /Hang on|I see it a little differently|don't forget/);
+  assert.match(disagreement, /The Tinkerman/);
+  assert.match(disagreement, /12-shot|12 shots/);
+
+  const followUp = buildDmoCommentaryFollowUp({
+    names,
+    point: { number: 3, winner: 1, server: 1, rallyHits: 0 },
+    leadLine: 'What a serve from gifu!',
+  });
+  assert.match(followUp, /Exactly|Yes|That's the value/);
+  assert.match(followUp, /gifu/);
+  assert.equal(buildDmoCommentaryFollowUp({ names, point, leadLine: '' }), '');
+});
+
 test('replay placement commentary needs valid, in-point measured bounces', () => {
   const point = { winner: 1, server: 1, rallyHits: 12, shotEndTime: 100,
     shots: [
       { p: 1, k: 'r', bx: 800, by: 330, bt: 20 },
       { p: 1, k: 'r', bx: -1000, by: -320, bt: 60 },
     ] };
-  assert.match(buildDmoPointCommentary(point, ['gifu', 'TheTinkerman_']), /wide targets on both sides/);
+  assert.match(buildDmoPointCommentary(point, ['gifu', 'TheTinkerman_']), /What a point!.*dragged the other player from side to side/);
   for (const replacement of [
     { by: 600 }, { bx: 1400 }, { bt: 120 }, { bx: null }, { k: 's' }, { p: 2 },
   ]) {
@@ -345,7 +366,7 @@ test('replay placement commentary needs valid, in-point measured bounces', () =>
 test('depth observations count only measured balls inside the singles court', () => {
   const shots = [930, -1000, 1100].map((bx) => ({ p: 2, k: 'r', bx, by: 100 }));
   const line = buildDmoPointCommentary({ winner: 2, rallyHits: 12, shots }, ['gifu', 'TheTinkerman_']);
-  assert.match(line, /The Tinkerman landed 3 balls in the last three metres/);
+  assert.match(line, /Brilliant pressure from The Tinkerman: three deep balls/);
 });
 
 test('pressure-point reactions do not append longer tactical analysis', () => {
@@ -359,7 +380,7 @@ test('pressure-point reactions do not append longer tactical analysis', () => {
 
 test('live serve speed is called only when a serve is actually unreturned', () => {
   const point = { winner: 1, server: 1, rallyHits: 0, serveSpeedKmh: 202 };
-  assert.match(buildDmoPointCommentary(point, ['gifu', 'TheTinkerman_']), /202 kilometres an hour/);
+  assert.match(buildDmoPointCommentary(point, ['gifu', 'TheTinkerman_']), /What a serve/);
   assert.doesNotMatch(
     buildDmoPointCommentary({ ...point, rallyHits: 3 }, ['gifu', 'TheTinkerman_']),
     /202 kilometres an hour/,
@@ -374,7 +395,7 @@ test('tie-break scores cannot produce normal-game break-point commentary', () =>
   const line = buildDmoPointCommentary({
     winner: 2, server: 1, rallyHits: 10, isTiebreak: true, scoreBeforeLabel: '30-40',
   }, ['gifu', 'TheTinkerman_']);
-  assert.match(line, /Tie-break pressure/);
+  assert.match(line, /What a point/);
   assert.doesNotMatch(line, /takes the break|service game|break point converted/i);
 });
 
@@ -384,7 +405,7 @@ test('double faults and lengthy second-serve points use recorded evidence', () =
   }, ['gifu', 'TheTinkerman_']), /double fault.*takes the break/);
   assert.match(buildDmoPointCommentary({
     winner: 2, server: 1, rallyHits: 10, faults: 1,
-  }, ['gifu', 'TheTinkerman_']), /second-serve point after 10 rally shots/);
+  }, ['gifu', 'TheTinkerman_']), /What a point/);
 });
 
 test('momentum uses only contiguous, earlier, non-inferred points', () => {
@@ -392,7 +413,7 @@ test('momentum uses only contiguous, earlier, non-inferred points', () => {
   const history = [1, 2, 3, 4, 5].map((number) => ({ number, winner: 1 }));
   const enriched = withDmoCommentaryHistory(point, history);
   assert.equal(enriched.winningStreak, 4);
-  assert.match(buildDmoPointCommentary(enriched, ['gifu', 'TheTinkerman_']), /gifu has taken 4 straight points/);
+  assert.match(buildDmoPointCommentary(enriched, ['gifu', 'TheTinkerman_']), /gifu has the last 4/);
   assert.equal(withDmoCommentaryHistory(point, history.filter((p) => p.number !== 2)).winningStreak, 2);
   assert.equal(withDmoCommentaryHistory(point, [{ number: 3, winner: 1, inferred: true }]).winningStreak, 1);
   assert.equal(withDmoCommentaryHistory(point, [{ number: 3, winner: 2 }]).winningStreak, 1);

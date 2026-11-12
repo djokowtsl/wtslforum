@@ -3201,9 +3201,9 @@ function ThreeCourt({
           >
             <span>{`Commentary ${commentary.enabled ? 'on' : 'off'}`}</span>
           </button>
-          {commentary.voiceLoading && (
+          {commentary.enabled && commentary.voiceStatus && (
             <span className={styles.localVoiceNotice} role="status">
-              {commentary.voiceStatus || 'Preparing commentary…'}
+              {commentary.voiceStatus}
             </span>
           )}
           {commentary.error && (
