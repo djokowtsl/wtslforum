@@ -493,6 +493,7 @@ function ThreeCourt({
       rallyShotCount,
     };
   }, [fullReplay]);
+  const getCommentaryAudioContext = useCallback(() => audioContextRef.current, []);
   const commentary = useDmoCommentary({
     snapshot,
     commentaryNames,
@@ -505,6 +506,7 @@ function ThreeCourt({
     isWta,
     soundEnabled,
     soundReady: soundEnabled && soundReady,
+    getAudioContext: getCommentaryAudioContext,
     playbackState: commentaryPlaybackState,
   });
   const [crowdVolume, setCrowdVolume] = useState(0.24);
@@ -3201,23 +3203,13 @@ function ThreeCourt({
               ? 'Preparing voice…'
               : `Commentary ${commentary.enabled ? 'on' : 'off'}`}</span>
           </button>
-          {commentary.localVoiceSupported && (
-            <button
-              className={styles.soundButton}
-              type="button"
-              disabled={!soundEnabled || !soundReady || commentary.voiceLoading}
-              title={commentary.mobileLocalVoicePreview
-                ? 'Optional local Kokoro preview. Pause playback first; first use downloads about 92 MB and may use extra memory.'
-                : 'Preview the local Kokoro voices; first use downloads about 92 MB.'}
-              onClick={commentary.previewVoice}
-            >
-              <span>{commentary.mobileLocalVoicePreview ? 'Preview Kokoro (92 MB)' : 'Preview local voices'}</span>
-            </button>
-          )}
-          {commentary.mobileLocalVoicePreview && (
+          {commentary.voiceLoading && (
             <span className={styles.localVoiceNotice} role="status">
-              {commentary.voiceStatus || 'Pause playback before the first Kokoro preview. It downloads about 92 MB and may use extra memory.'}
+              {commentary.voiceStatus || 'Preparing commentary…'}
             </span>
+          )}
+          {commentary.error && (
+            <span className={styles.localVoiceNotice} role="status">{commentary.error}</span>
           )}
           <button
             className={styles.soundButton}
