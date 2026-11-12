@@ -75,6 +75,8 @@ test('full TE4 replay court frames and sound events become a live court snapshot
   assert.deepEqual(snapshot.players, ['Replay Player One', 'Replay Player Two']);
   assert.deepEqual(snapshot.handedness, ['left', 'right']);
   assert.equal(snapshot.pointCount, 1);
+  assert.equal(snapshot.recentPoints[0].scoreLabel, '6-4(0-0)');
+  assert.equal(snapshot.recentPoints[0].setNumber, 1);
   assert.equal(snapshot.winChance[0], 0.75);
   assert.deepEqual(
     snapshot.trajectoryEvents.map(({ frame, kind, shotType }) => ({ frame, kind, shotType })),

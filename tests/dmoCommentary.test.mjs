@@ -118,14 +118,14 @@ test('routine points stay quiet while long rallies get a single stronger reactio
       { number: 1, winner: 1, server: 1, rallyHits: 12, scoreBeforeLabel: '15-30' },
       ['Player One', 'Player Two'],
     ),
-    'Shot after shot, and Player One comes through.',
+    'Player One, at last!',
   );
   assert.equal(
     buildDmoPointCommentary(
       { number: 2, winner: 2, server: 1, rallyHits: 12 },
       ['Player One', 'Player Two'],
     ),
-    'A real test of legs and nerve — Player Two takes it.',
+    'A marathon point for Player Two.',
   );
   assert.equal(buildDmoPointCommentary({ winner: 0 }, ['Player One', 'Player Two']), '');
 });
@@ -193,8 +193,8 @@ test('pressure-point calls distinguish a break, a save, and a game point', () =>
   );
 });
 
-test('game and set changes speak the score instead of a routine point', () => {
-  assert.equal(
+test('routine games stay quiet while verified set wins are called once', () => {
+  assert.match(
     buildDmoPointCommentary({
       winner: 2,
       server: 1,
@@ -202,7 +202,7 @@ test('game and set changes speak the score instead of a routine point', () => {
       scoreBeforeLabel: '4-3(30-40)',
       scoreAfterLabel: '4-4(0-0)',
     }, ['Player One', 'Player Two']),
-    'A break for Player Two; the games now stand four games to four.',
+    /break/,
   );
   assert.equal(
     buildDmoPointCommentary({
@@ -210,6 +210,8 @@ test('game and set changes speak the score instead of a routine point', () => {
       server: 1,
       scoreBeforeLabel: '5-4(40-30)',
       scoreAfterLabel: '6-4(0-0)',
+      setBefore: 1,
+      setAfter: 2,
     }, ['Player One', 'Player Two']),
     'That wins the set for Player One.',
   );

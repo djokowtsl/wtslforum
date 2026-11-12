@@ -164,10 +164,20 @@ export function changeoversAfterPoints(points: ScorePoint[]): boolean[] {
   return result;
 }
 
-function replayPoint(point: Te4ViewerPoint): Te4LiveSnapshot['recentPoints'][number] {
+function replayPoint(
+  point: Te4ViewerPoint,
+  next: Te4ViewerPoint | undefined,
+  finalSetNumber: number,
+  finalSetScore?: [number, number],
+): Te4LiveSnapshot['recentPoints'][number] {
   return {
     number: point.k,
-    scoreLabel: point.pt,
+    // Live point labels represent the score after the point. Viewer pt/g are
+    // the score before that point, so use the next point's opening score.
+    scoreLabel: next
+      ? `${next.g}(${next.pt})`
+      : finalSetScore ? `${finalSetScore[0]}-${finalSetScore[1]}(0-0)` : undefined,
+    setNumber: next?.set ?? finalSetNumber,
     server: point.s,
     winner: point.w,
     rallyHits: point.sh.length,
@@ -278,7 +288,11 @@ export function te4ViewerToLiveSnapshot(
   const sets = viewer.final.ss.map(([first, second]) => [first, second] as [number, number]);
   const games = gameScore(lastPoint);
   const playerOneChance = Math.max(0, Math.min(1, Number(viewer.final.wp)));
-  const recentPoints = viewer.pts.slice(-12).map(replayPoint);
+  const finalSetNumber = Math.max(viewer.final.ss.length, viewer.pts.at(-1)?.set ?? 1);
+  const finalSetScore = viewer.final.ss.at(-1);
+  const recentStart = Math.max(0, viewer.pts.length - 12);
+  const recentPoints = viewer.pts.slice(recentStart).map((point, index) =>
+    replayPoint(point, viewer.pts[recentStart + index + 1], finalSetNumber, finalSetScore));
   const points = [
     Number(lastPoint?.pt.match(/\d+/)?.[0] ?? 0),
     Number(lastPoint?.pt.match(/\d+$/)?.[0] ?? 0),

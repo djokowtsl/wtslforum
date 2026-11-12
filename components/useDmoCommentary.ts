@@ -258,7 +258,7 @@ export function useDmoCommentary({
       recentCommentaryLinesRef.current = [
         ...lines,
         ...recentCommentaryLinesRef.current,
-      ].slice(0, 16);
+      ].slice(0, 512);
       lastSpeechAtRef.current = Date.now();
       return true;
     } catch {
@@ -315,7 +315,7 @@ export function useDmoCommentary({
               recentCommentaryLinesRef.current = [
                 ...lines,
                 ...recentCommentaryLinesRef.current,
-              ].slice(0, 16);
+              ].slice(0, 512);
               lastSpeechAtRef.current = Date.now();
             }
           }), Math.ceil(buffer.duration * 1_000 || 0) + 3_000);
@@ -443,7 +443,7 @@ export function useDmoCommentary({
     pendingTimerRef.current = setTimeout(attempt, delayMs);
   }, [clearPendingCommentary, isVoiceBusy, speak, playbackState]);
 
-  const toggle = useCallback(async () => {
+  const toggle = useCallback(() => {
     // Unlock audio synchronously in the user's tap, before cancellation or the
     // first model download crosses an async boundary (especially on iOS).
     const preparedAudioContext = !enabledRef.current && soundEnabled && soundReady
@@ -460,7 +460,6 @@ export function useDmoCommentary({
       setError('');
       return;
     }
-    if (localVoiceLoadingRef.current) return;
     if (!soundEnabled || !soundReady) {
       setError('Enable broadcast sound first, then turn on commentary.');
       return;
@@ -473,7 +472,7 @@ export function useDmoCommentary({
       setError('Spoken commentary is not supported by this browser.');
       return;
     }
-    await cancelCommentarySpeech();
+    void cancelCommentarySpeech();
     if (request !== requestRef.current || !soundEnabledRef.current) return;
     const audioContext = preparedAudioContext;
     const nativeSpeechAvailable = typeof window.speechSynthesis?.speak === 'function'
@@ -484,14 +483,13 @@ export function useDmoCommentary({
     }
 
     setError('');
-    if (audioContext && localVoiceSupported) await ensureLocalVoiceModel();
-    if (request !== requestRef.current || !soundEnabledRef.current) return;
+    const willPrepareLocalVoice = Boolean(audioContext && localVoiceSupported && !localModelRef.current);
 
     const voices = browserVoices.length
       ? browserVoices
       : nativeSpeechAvailable ? rankDmoBrowserVoices(window.speechSynthesis.getVoices()) : [];
     const selectedVoices = chooseDmoCommentaryVoices(voices);
-    if (!localModelRef.current && !selectedVoices.female) {
+    if (!localModelRef.current && !selectedVoices.female && !willPrepareLocalVoice) {
       setError('No English speech voice is available in this browser.');
       return;
     }
@@ -519,14 +517,30 @@ export function useDmoCommentary({
       names,
       recentLines: recentCommentaryLinesRef.current,
     });
-    // Speak from the button gesture itself; some browsers block speech queued
-    // by a timer until the user interacts with a voice picker or preview.
-    const opened = coHostOpening
-      ? speak([introduction, coHostOpening] as const, 'female')
-      : speak(introduction, 'female');
-    if (!opened) setError('Commentary could not start. Turn commentary off and on to retry.');
+    // Native speech MUST start in this synchronous tap. Awaiting the model
+    // download first loses iOS speech permission, including later fallbacks.
+    const opening: CommentarySpeech = coHostOpening
+      ? [introduction, coHostOpening] as const : introduction;
+    const opened = localSpeechBusyRef.current
+      ? speakWithBrowser(typeof opening === 'string' ? [opening] : opening, 'female')
+      : speak(opening, 'female');
+    if (!opened && !willPrepareLocalVoice) {
+      setError('Commentary could not start. Turn commentary off and on to retry.');
+    }
     else if (!localModelRef.current && !selectedVoices.distinct) {
       setError('This browser has one English voice; the co-host will use a different pitch.');
+    }
+    if (willPrepareLocalVoice) {
+      void ensureLocalVoiceModel().then((model) => {
+        if (request !== requestRef.current || !enabledRef.current || !soundEnabledRef.current) return;
+        if (!opened) {
+          if (!model || !speak(opening, 'female')) {
+            setError('Commentary could not start. Turn commentary off and on to retry.');
+          } else {
+            setError('');
+          }
+        }
+      });
     }
 
     const query = new URLSearchParams({
@@ -568,6 +582,7 @@ export function useDmoCommentary({
     snapshot.recentPoints,
     surface,
     speak,
+    speakWithBrowser,
     tournamentName,
     tournamentRound,
   ]);
@@ -595,6 +610,7 @@ export function useDmoCommentary({
     contextFactsRef.current = '';
     matchKeyRef.current = matchKey;
     lastPointNumberRef.current = snapshot.pointCount;
+    recentCommentaryLinesRef.current = [];
     lastReplayFrameRef.current = replayFrame;
     rallyCommentedPointsRef.current.clear();
     clearPendingCommentary();
@@ -738,6 +754,8 @@ export function useDmoCommentary({
       ...point,
       scoreBeforeLabel: previousPoint?.scoreLabel,
       scoreAfterLabel: point.scoreLabel,
+      setBefore: previousPoint?.setNumber,
+      setAfter: point.setNumber,
       suppressRallyCommentary,
     }, snapshot.recentPoints), names, recentLines);
     if (line) {

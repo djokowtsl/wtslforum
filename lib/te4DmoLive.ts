@@ -148,6 +148,8 @@ export type Te4LivePoint = {
   number: number;
   frame?: number;
   isTiebreak?: boolean;
+  /** One-based set number after this completed point. */
+  setNumber?: number;
   serveSpeedKmh?: number | null;
   scoreLabel?: string;
   server: Te4LivePlayer;
@@ -801,6 +803,7 @@ export class Te4DmoLiveParser {
         number: pointIndex + 1,
         frame: point.end,
         isTiebreak: Boolean(score.rows[pointIndex]?.tiebreak),
+        setNumber: scoreAfterPoint.sets.length + 1,
         serveSpeedKmh: this.shotSpeedKmh(point.serveFrame, true),
         scoreLabel: formatLivePointScore(scoreAfterPoint),
         server: point.server,

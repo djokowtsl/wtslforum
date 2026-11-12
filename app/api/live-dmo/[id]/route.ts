@@ -63,6 +63,7 @@ const snapshotSchema = z.object({
   recentPoints: z.array(z.object({
     number: z.number().int().min(1).max(20_000),
     scoreLabel: z.string().max(40).optional(),
+    setNumber: z.number().int().min(1).max(10).optional(),
     server: player,
     winner: player,
     rallyHits: z.number().int().min(0).max(200),
