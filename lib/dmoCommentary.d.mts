@@ -1,0 +1,48 @@
+export type DmoCommentaryContext = {
+  tour: 'ATP' | 'WTA';
+  players: Array<{
+    name: string;
+    rank: number | null;
+    tourElo: number | null;
+  }>;
+  headToHead: {
+    firstWins: number;
+    secondWins: number;
+    matches: number;
+  } | null;
+};
+
+export type DmoCommentaryPoint = {
+  number?: number;
+  frame?: number;
+  server?: number | null;
+  winner?: number | null;
+  rallyHits?: number | null;
+  scoreLabel?: string | null;
+};
+
+type DmoCommentaryIntroductionOptions = {
+  names?: readonly (string | null | undefined)[];
+  tournament?: string | null;
+  surface?: string | null;
+  round?: string | null;
+  context?: DmoCommentaryContext | null;
+};
+
+type DmoCommentaryFactsOptions = {
+  names?: readonly (string | null | undefined)[];
+  context?: DmoCommentaryContext | null;
+};
+
+export function buildDmoCommentaryIntroduction(
+  options?: DmoCommentaryIntroductionOptions,
+): string;
+
+export function buildDmoCommentaryFacts(
+  options?: DmoCommentaryFactsOptions,
+): string;
+
+export function buildDmoPointCommentary(
+  point: DmoCommentaryPoint,
+  names?: readonly (string | null | undefined)[],
+): string;

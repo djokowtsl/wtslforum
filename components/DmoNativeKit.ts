@@ -100,6 +100,7 @@ export type NativePlayerKit = {
   id: string;
   shirtColor: number;
   shortsColor: number;
+  skinColor?: number | null;
   accentColor: number;
   hairColor: number;
   maleHairStyle: MaleHairStyle;
@@ -537,7 +538,10 @@ export function dressNativePlayer(
     body.geometry = body.geometry.clone();
     if (female) shapeWtaBody(body, model);
     const original = body.geometry;
-    body.material = new THREE.MeshStandardMaterial({ color: 0xcda080, roughness: 0.76 });
+    body.material = new THREE.MeshStandardMaterial({
+      color: kit.skinColor ?? 0xcda080,
+      roughness: 0.76,
+    });
     const positions = original.getAttribute('position'), normals = original.getAttribute('normal');
     const indices = original.index;
     if (!indices) throw new Error('Native body requires indexed skin geometry.');

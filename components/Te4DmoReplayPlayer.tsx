@@ -86,6 +86,23 @@ export default function Te4DmoReplayPlayer({
       strokeStyles: activeStrokeStyles ?? initialSnapshot.strokeStyles,
     }
     : null, [initialSnapshot, activeHandedness[0], activeHandedness[1], activeStrokeStyles]);
+  const commentaryPoints = useMemo(() => {
+    if (!viewer || !Number.isInteger(viewer.match?.n)) return [];
+    const lastFrame = Math.max(0, viewer.match.n - 1);
+    return viewer.pts.flatMap((point) => {
+      if (!Number.isInteger(point.fc) || point.fc <= 0) return [];
+      const frame = Math.min(lastFrame, point.mf + point.fc - 1);
+      if (frame < 0) return [];
+      return [{
+        frame,
+        number: point.k,
+        server: point.s,
+        winner: point.w,
+        rallyHits: point.sh.length,
+        scoreLabel: point.pt,
+      }];
+    });
+  }, [viewer]);
   const scoreTimeline = useMemo(
     () => viewer ? buildTe4DmoReplayScoreTimeline(viewer) : [],
     [viewer],
@@ -265,6 +282,8 @@ export default function Te4DmoReplayPlayer({
             playerCharacters={nativeMotionNames}
             playerGruntSettings={nativeMotion.playerGruntSettings}
             tournamentRound={tournamentRound}
+            tournamentName={viewer.tournament}
+            commentaryPoints={commentaryPoints}
             fullReplay
             playerOutfitSeed={replayUrl || broadcastId || snapshot.filename}
             playerBundledMotions={nativeMotion.sources}

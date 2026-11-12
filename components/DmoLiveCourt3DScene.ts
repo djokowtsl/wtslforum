@@ -1809,12 +1809,18 @@ export function makePlayer(
   shirtColor: number,
   shortsColor: number,
   isWta = false,
-  appearance?: { heightCm: number | null; weightKg: number | null } | null,
+  appearance?: {
+    heightCm: number | null;
+    weightKg: number | null;
+    complexionColor?: number | null;
+  } | null,
 ): PlayerRig {
   const root = new THREE.Group();
   const skin = new THREE.MeshPhysicalMaterial({
-    color: 0xc89574, roughness: 0.72, metalness: 0, clearcoat: 0.035, clearcoatRoughness: 0.82,
+    color: appearance?.complexionColor ?? 0xc89574,
+    roughness: 0.72, metalness: 0, clearcoat: 0.035, clearcoatRoughness: 0.82,
   });
+  root.userData.complexionColor = appearance?.complexionColor ?? null;
   const shirt = new THREE.MeshPhysicalMaterial({
     color: shirtColor, roughness: 0.82, metalness: 0, sheen: 0.18, sheenRoughness: 0.9,
   });

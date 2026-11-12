@@ -35,6 +35,7 @@ type PlayerRow = {
   wtsl_player_id: string | number;
   tour: string;
   name: string;
+  rank: number | null;
   tour_elo: number | null;
   avatar_url: string | null;
   flag_url: string | null;
@@ -108,7 +109,7 @@ async function getRankedPlayerRows(): Promise<PlayerRow[]> {
   const request = (async () => {
     try {
       const rows = await sql`
-        SELECT wtsl_player_id, tour, name, tour_elo, avatar_url, flag_url, country
+        SELECT wtsl_player_id, tour, name, rank, tour_elo, avatar_url, flag_url, country
         FROM wtsl_players
         WHERE tour IN ('TE4','TE4_(F)')
         ORDER BY synced_at DESC
@@ -398,6 +399,50 @@ export async function getRankedPairPreMatchProbability(
     probability,
     source: h2h.source,
     tour: entry.tour,
+  };
+}
+
+export async function getDmoCommentaryContext(
+  players: [string, string],
+  isWta: boolean,
+) {
+  const match: ParsedLiveMatch = {
+    name: `${players[0]} vs ${players[1]}`,
+    tagline: '',
+    score: '',
+    court: '',
+    mode: 'Singles',
+    bestOf: 3,
+    tourHint: isWta ? 'TE4_(F)' : 'TE4',
+    inGameElo1: null,
+    inGameElo2: null,
+  };
+  const rows = await getRankedPlayerRows();
+  const entry = findPlayers(match, createPlayersByTour(rows));
+  if (!entry) return null;
+
+  let headToHead: { firstWins: number; secondWins: number; matches: number } | null = null;
+  if (entry.tour === 'TE4') {
+    try {
+      const record = computeOfficialHeadToHeadRecord(
+        await getAllResults(),
+        entry.first.wtsl_player_id,
+        entry.second.wtsl_player_id,
+      );
+      if (record.matches > 0) headToHead = record;
+    } catch (error) {
+      console.warn('[live-scores] commentary head-to-head unavailable', error instanceof Error ? error.message : 'Unknown error');
+    }
+  }
+
+  return {
+    tour: entry.tour === 'TE4_(F)' ? 'WTA' as const : 'ATP' as const,
+    players: [entry.first, entry.second].map((player) => ({
+      name: player.name,
+      rank: player.rank,
+      tourElo: player.tour_elo,
+    })),
+    headToHead,
   };
 }
 

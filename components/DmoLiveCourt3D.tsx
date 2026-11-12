@@ -118,6 +118,7 @@ import {
 } from '@/lib/liveCourtPerformance';
 import { loadLiveCharacterGruntSamples } from '@/lib/liveGruntAudio';
 import { getDmoCharacterAppearance } from '@/lib/dmoCharacterAppearance.mjs';
+import { useDmoCommentary } from './useDmoCommentary';
 import type { DmoCharacterGruntSetting } from '@/lib/dmoCharacterAppearance.mjs';
 import DmoLiveCourt, { type GruntControlProps } from './DmoLiveCourt';
 import {
@@ -196,6 +197,7 @@ type Props = {
   playerCharacters?: readonly [string | null, string | null];
   playerGruntSettings?: readonly [DmoCharacterGruntSetting | null, DmoCharacterGruntSetting | null];
   playerOutfitSeed?: string;
+  commentaryPoints?: readonly CommentaryReplayPoint[];
   snapshot: Te4LiveSnapshot;
   surface: Te4CourtSurface;
   playbackSpeed: Te4DmoReplaySpeed;
@@ -206,7 +208,17 @@ type Props = {
   scoreboard?: StadiumScoreboardData;
   crowdDensity?: number;
   tournamentRound?: string | null;
+  tournamentName?: string | null;
   onReplayFrameChange?: (frame: number) => void;
+};
+
+type CommentaryReplayPoint = {
+  frame: number;
+  number: number;
+  server: 1 | 2;
+  winner: 1 | 2;
+  rallyHits: number;
+  scoreLabel?: string;
 };
 
 type CameraView =
@@ -292,6 +304,7 @@ function ThreeCourt({
   playerCharacters = [null, null],
   playerGruntSettings,
   playerOutfitSeed,
+  commentaryPoints = [],
   snapshot,
   surface,
   playbackSpeed,
@@ -301,6 +314,8 @@ function ThreeCourt({
   isWta = false,
   buffering = false,
   scoreboard,
+  tournamentName,
+  tournamentRound,
   onReplayFrameChange,
   gruntsEnabled,
   onGruntsEnabledChange,
@@ -452,6 +467,19 @@ function ThreeCourt({
   const umpireCallsEnabled = soundEnabled;
   const [umpireSpeechReady, setUmpireSpeechReady] = useState(false);
   const [soundError, setSoundError] = useState('');
+  const commentary = useDmoCommentary({
+    snapshot,
+    playerCharacters,
+    fullReplay,
+    commentaryPoints,
+    replayFrame,
+    tournamentName,
+    surface,
+    tournamentRound,
+    isWta,
+    soundEnabled,
+    soundReady: soundEnabled && soundReady,
+  });
   const [crowdVolume, setCrowdVolume] = useState(0.24);
   const [effectsVolume, setEffectsVolume] = useState(0.9);
   const [hasCourtData, setHasCourtData] = useState(snapshot.court.length > 0);
@@ -753,18 +781,26 @@ function ThreeCourt({
     const fixtureRig = buildCourtFixtures(scene);
     const crowdRig = buildCrowd(scene, sceneDataRef.current.snapshot.stadium, crowdDensity);
     crowdRigRef.current = crowdRig;
+    const playerAppearanceNames = [
+      playerCharacters[0] ?? snapshot.players[0],
+      playerCharacters[1] ?? snapshot.players[1],
+    ] as const;
+    const playerAppearances = [
+      getDmoCharacterAppearance(playerAppearanceNames[0]),
+      getDmoCharacterAppearance(playerAppearanceNames[1]),
+    ] as const;
     const players = [
       makePlayer(
         PALETTE.shirtOne,
         0x335d58,
         isWta,
-        getDmoCharacterAppearance(playerCharacters[0]),
+        playerAppearances[0],
       ),
       makePlayer(
         PALETTE.shirtTwo,
         0x514b61,
         isWta,
-        getDmoCharacterAppearance(playerCharacters[1]),
+        playerAppearances[1],
       ),
     ];
     const playerKits = isWta ? WTA_PLAYER_KITS : ATP_PLAYER_KITS;
@@ -776,9 +812,13 @@ function ThreeCourt({
       ],
       playerKits.length,
     );
+    const selectedPlayerKits = playerKitIndices.map((kitIndex, index) => ({
+      ...playerKits[kitIndex],
+      skinColor: playerAppearances[index]?.complexionColor ?? null,
+    })) as [typeof playerKits[number], typeof playerKits[number]];
     players.forEach(({ root }, index) => {
       root.userData.dominantHandedness = sceneDataRef.current.snapshot.handedness?.[index] ?? 'right';
-      root.userData.outfitKitId = playerKits[playerKitIndices[index]]?.id;
+      root.userData.outfitKitId = selectedPlayerKits[index].id;
     });
     players.forEach(({ root }) => scene.add(root));
     const modelLoad = new AbortController();
@@ -800,9 +840,9 @@ function ThreeCourt({
         const [player, maleCrowd, femaleCrowd, maleStaff, femaleStaff, maleHighDetailCrowd, femaleHighDetailCrowd, ...diverseCrowd] = results;
         if (player.status === 'fulfilled') {
           attachHumanPlayer(player.value, players[0], PALETTE.shirtOne, undefined, undefined,
-            playerKits[playerKitIndices[0]], 0, playerBundledMotions?.[0] ?? undefined);
+            selectedPlayerKits[0], 0, playerBundledMotions?.[0] ?? undefined);
           attachHumanPlayer(player.value, players[1], PALETTE.shirtTwo, undefined, undefined,
-            playerKits[playerKitIndices[1]], 1, playerBundledMotions?.[1] ?? undefined);
+            selectedPlayerKits[1], 1, playerBundledMotions?.[1] ?? undefined);
           detailedPlayersReady = true;
         }
         if (maleCrowd.status === 'fulfilled' && femaleCrowd.status === 'fulfilled') {
@@ -3121,6 +3161,17 @@ function ThreeCourt({
           <button
             className={styles.soundButton}
             type="button"
+            aria-pressed={commentary.enabled}
+            aria-label={commentary.enabled ? 'Turn match commentary off' : 'Turn original match commentary on'}
+            title="Original spoken commentary uses this device’s English speech voice and verified point events."
+            disabled={!soundEnabled || !soundReady}
+            onClick={commentary.toggle}
+          >
+            <span>Commentary {commentary.enabled ? 'on' : 'off'}</span>
+          </button>
+          <button
+            className={styles.soundButton}
+            type="button"
             aria-label={gruntsEnabled ? 'Turn player grunts off' : 'Turn player grunts on'}
             aria-pressed={gruntsEnabled}
             title={gruntsEnabled ? 'Turn player grunts off' : 'Turn player grunts on'}
@@ -3247,6 +3298,10 @@ function ThreeCourt({
         </div>
       )}
       {soundError && <p className={styles.soundError} role="status">{soundError}</p>}
+      {commentary.message && (
+        <p className={styles.commentaryCaption} aria-live="polite">{commentary.message}</p>
+      )}
+      {commentary.error && <p className={styles.soundError} role="status">{commentary.error}</p>}
     </section>
   );
 }

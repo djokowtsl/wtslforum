@@ -560,7 +560,7 @@ test('stadium and audience scale with recognized tournament capacities', async (
   const fallback = await readFile(new URL('../components/DmoLiveCourt.tsx', import.meta.url), 'utf8');
   const viewer = await readFile(new URL('../components/DmoLiveViewer.tsx', import.meta.url), 'utf8');
   assert.match(court, /sceneDataRef\.current\.snapshot\.stadium/);
-  assert.match(court, /snapshot\.stadium\]\)/);
+  assert.match(court, /snapshot\.stadium,\s*\]\)/);
   assert.doesNotMatch(court, /player repair r19|RENDERER_BUILD|Renderer build|buildTag/);
   assert.doesNotMatch(court, /player repair r14|recorded volleys \+/);
   assert.doesNotMatch(court, /Drag to orbit · scroll to zoom|Use Look across court to pan laterally/);
