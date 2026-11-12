@@ -218,7 +218,7 @@ type CommentaryReplayPoint = {
   server: 1 | 2;
   winner: 1 | 2;
   rallyHits: number;
-  scoreLabel?: string;
+  scoreBeforeLabel?: string;
 };
 
 type CameraView =
@@ -3298,9 +3298,6 @@ function ThreeCourt({
         </div>
       )}
       {soundError && <p className={styles.soundError} role="status">{soundError}</p>}
-      {commentary.message && (
-        <p className={styles.commentaryCaption} aria-live="polite">{commentary.message}</p>
-      )}
       {commentary.error && <p className={styles.soundError} role="status">{commentary.error}</p>}
     </section>
   );

@@ -1,4 +1,5 @@
 import assert from 'node:assert/strict';
+import { readFile } from 'node:fs/promises';
 import test from 'node:test';
 
 import {
@@ -19,44 +20,114 @@ test('curated complexion colors follow the character name and keep unknowns at t
   assert.equal(getDmoCharacterComplexionColor('Unknown Player'), null);
 });
 
-test('introduction uses only supplied tournament and verified WTSL facts', () => {
+test('introduction sounds like a broadcast and uses verified WTSL context', () => {
   const intro = buildDmoCommentaryIntroduction({
     names: ['Naomi Osaka', 'Daniil Medvedev'],
     tournament: 'Shanghai Masters',
     surface: 'Hard',
     round: 'Quarter-final',
-    context: {
-      tour: 'ATP',
-      players: [{ rank: 3, tourElo: 1920 }, { rank: null, tourElo: null }],
-      headToHead: { firstWins: 2, secondWins: 1, matches: 3 },
-    },
   });
 
-  assert.match(intro, /at Shanghai Masters on hard court, Quarter-final/);
-  assert.match(intro, /ranked No\. 3 in the WTSL ATP/);
-  assert.match(intro, /has a WTSL Tour Elo of 1920/);
-  assert.match(intro, /official WTSL head-to-head stands at Naomi Osaka 2, Daniil Medvedev 1/);
-  assert.doesNotMatch(intro, /Daniil Medvedev comes in with/);
+  assert.equal(
+    intro,
+    'At Shanghai Masters, Naomi Osaka takes on Daniil Medvedev on the hard courts in the quarter-final.',
+  );
+  assert.equal(
+    buildDmoCommentaryFacts({
+      names: ['Naomi Osaka', 'Daniil Medvedev'],
+      context: {
+        tour: 'ATP',
+        players: [{ rank: 3, tourElo: 1920 }, { rank: 9, tourElo: 1870 }],
+        headToHead: { firstWins: 2, secondWins: 1, matches: 3 },
+      },
+    }),
+    'The WTSL ATP rankings have Naomi Osaka at No. 3 and Daniil Medvedev at No. 9. Naomi Osaka leads their WTSL meetings, 2–1.',
+  );
   assert.match(
     buildDmoCommentaryFacts({
       names: ['Naomi Osaka', 'Daniil Medvedev'],
-      context: { tour: 'ATP', players: [{ rank: 3 }, { rank: 9 }] },
+      context: { tour: 'ATP', players: [{ rank: null, tourElo: 1920 }, { rank: null, tourElo: 1870 }] },
     }),
-    /Naomi Osaka is ranked No\. 3 in the WTSL ATP/,
+    /Tour Elo ratings are 1,920 and 1,870/,
+  );
+  assert.equal(
+    buildDmoCommentaryFacts({
+      names: ['Player One', 'Player Two'],
+      context: { tour: 'ATP', players: [], headToHead: { firstWins: 2, secondWins: 2, matches: 4 } },
+    }),
+    'Their WTSL meetings are level at 2 apiece.',
   );
 });
 
-test('point commentary reacts to the confirmed server, winner, and shot count', () => {
+test('routine points stay silent and longer rallies get varied, natural calls', () => {
   assert.equal(
     buildDmoPointCommentary(
-      { winner: 2, server: 1, rallyHits: 5, scoreLabel: '15-30' },
+      { winner: 2, server: 1, rallyHits: 5 },
       ['Player One', 'Player Two'],
     ),
-    'A strong return point from Player Two. The point began at 15-30.',
+    '',
   );
   assert.equal(
-    buildDmoPointCommentary({ winner: 1, server: 1, rallyHits: 12 }, ['Player One', 'Player Two']),
-    'An extended 12-shot point, and Player One wins the exchange.',
+    buildDmoPointCommentary(
+      { number: 1, winner: 1, server: 1, rallyHits: 12, scoreBeforeLabel: '15-30' },
+      ['Player One', 'Player Two'],
+    ),
+    'What a rally! Player One comes away with it.',
+  );
+  assert.equal(
+    buildDmoPointCommentary(
+      { number: 2, winner: 2, server: 1, rallyHits: 9 },
+      ['Player One', 'Player Two'],
+    ),
+    'A wonderful rally, finished off by Player Two.',
   );
   assert.equal(buildDmoPointCommentary({ winner: 0 }, ['Player One', 'Player Two']), '');
+});
+
+test('pressure-point calls distinguish a break, a save, and a game point', () => {
+  assert.equal(
+    buildDmoPointCommentary({
+      winner: 2,
+      server: 1,
+      rallyHits: 3,
+      scoreBeforeLabel: '2-3(30-40)',
+    }, ['Player One', 'Player Two']),
+    "And that's the break for Player Two.",
+  );
+  assert.equal(
+    buildDmoPointCommentary({
+      winner: 1,
+      server: 1,
+      rallyHits: 2,
+      scoreBeforeLabel: '40-AD',
+    }, ['Player One', 'Player Two']),
+    'Player One saves the break point.',
+  );
+  assert.equal(
+    buildDmoPointCommentary({
+      winner: 1,
+      server: 1,
+      rallyHits: 3,
+      scoreBeforeLabel: '0-0(40-30)',
+    }, ['Player One', 'Player Two']),
+    "That's the game for Player One.",
+  );
+  assert.equal(
+    buildDmoPointCommentary({
+      winner: 1,
+      server: 2,
+      rallyHits: 3,
+      scoreBeforeLabel: '40-30',
+    }, ['Player One', 'Player Two']),
+    "And that's the break for Player One.",
+  );
+});
+
+test('commentary stays spoken-only with no court text bubble', async () => {
+  const [component, styles] = await Promise.all([
+    readFile(new URL('../components/DmoLiveCourt3D.tsx', import.meta.url), 'utf8'),
+    readFile(new URL('../components/DmoLiveCourt3D.module.css', import.meta.url), 'utf8'),
+  ]);
+  assert.doesNotMatch(component, /commentary\.message|commentaryCaption/);
+  assert.doesNotMatch(styles, /commentaryCaption/);
 });
