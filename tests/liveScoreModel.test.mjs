@@ -1,6 +1,11 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
-import { formatLivePlayerElos, parseLiveWtslMatches, resolveLivePlayer } from '../lib/liveScoreModel.ts';
+import {
+  formatLivePlayerElos,
+  parseLiveWtslMatches,
+  readOfficialH2HRecord,
+  resolveLivePlayer,
+} from '../lib/liveScoreModel.ts';
 
 test('live player resolution keeps exact normalized ranked names', () => {
   const franky = { id: '917', name: 'Franky Franchicha' };
@@ -65,4 +70,58 @@ test('live Elo labels match the Discord embed and omit unavailable ratings', () 
   assert.equal(formatLivePlayerElos(1500, null), '[Game: 1500]');
   assert.equal(formatLivePlayerElos(null, 1638), '[Tour: 1638]');
   assert.equal(formatLivePlayerElos(0, 0), null);
+});
+
+const officialWtaH2hHtml = `
+  <select><option selected value="939">First Player</option></select>
+  <select><option selected value="944">Second Player</option></select>
+  <table class="table table-hover results-table">
+    <tr><th>Date</th><th>Tour</th><th>Tournament</th><th>Competition</th><th>Round</th><th>Winner</th><th>Score</th></tr>
+    <tr><td>30.11.2025</td><td></td><td>WTA Final</td><td>Singles</td><td>Final</td>
+      <td><a href="player_page.php?player=939">First Player</a></td><td>6-4,3-6,6-2</td></tr>
+    <tr><td>08.06.2025</td><td></td><td>WTA Open</td><td>Singles</td><td>Semifinal</td>
+      <td><a href="player_page.php?player=944">Second Player</a></td><td>7-5,6-3</td></tr>
+    <tr><td>01.06.2025</td><td></td><td>WTA Open</td><td>Singles</td><td>Quarterfinal</td>
+      <td><a href="player_page.php?player=939">First Player</a></td><td>Walkover</td></tr>
+    <tr><td>01.05.2025</td><td></td><td>WTA Open</td><td>Singles</td><td>Quarterfinal</td>
+      <td><a href="player_page.php?player=999">Other Player</a></td><td>6-1,6-0</td></tr>
+  </table>`;
+
+test('official pair-specific WTA H2H counts only completed wins by the selected players', () => {
+  assert.deepEqual(
+    readOfficialH2HRecord(
+      officialWtaH2hHtml,
+      939,
+      'First Player',
+      944,
+      'Second Player',
+    ),
+    { firstWins: 1, secondWins: 1, matches: 2 },
+  );
+});
+
+test('official H2H refuses a page that did not select the requested player pair', () => {
+  assert.equal(
+    readOfficialH2HRecord(
+      officialWtaH2hHtml,
+      939,
+      'First Player',
+      945,
+      'Different Player',
+    ),
+    null,
+  );
+});
+
+test('an exact selected official pair with no results produces no fabricated meetings', () => {
+  assert.deepEqual(
+    readOfficialH2HRecord(
+      '<option selected value="939">First</option><option selected value="944">Second</option>',
+      939,
+      'First Player',
+      944,
+      'Second Player',
+    ),
+    { firstWins: 0, secondWins: 0, matches: 0 },
+  );
 });

@@ -64,6 +64,17 @@ test('introduction sounds like a broadcast and uses verified WTSL context', () =
     }),
     "There's nothing between them in WTSL play: 2 wins apiece.",
   );
+  assert.match(
+    buildDmoCommentaryFacts({
+      names: ['Player One', 'Player Two'],
+      context: {
+        tour: 'WTA',
+        players: [],
+        headToHead: { firstWins: 6, secondWins: 1, matches: 7 },
+      },
+    }),
+    /Player One leads their WTSL WTA head-to-head, 6 to 1/,
+  );
 });
 
 test('routine points get varied calls and longer rallies keep stronger reactions', () => {

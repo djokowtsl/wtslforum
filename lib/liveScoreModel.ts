@@ -210,6 +210,101 @@ export function h2hRecordWinPercent(record: { firstWins: number; secondWins: num
   return total > 0 ? (record.firstWins / total) * 100 : 50;
 }
 
+function h2hCellText(value: string): string {
+  return value
+    .replace(/<(script|style)\b[\s\S]*?<\/\1>/gi, ' ')
+    .replace(/<[^>]*>/g, ' ')
+    .replace(/&nbsp;|&#160;/gi, ' ')
+    .replace(/&amp;/gi, '&')
+    .replace(/&quot;/gi, '"')
+    .replace(/&#39;|&apos;/gi, "'")
+    .replace(/&#(\d+);/g, (_match, code: string) => {
+      const point = Number(code);
+      return point >= 0 && point <= 0x10ffff ? String.fromCodePoint(point) : ' ';
+    })
+    .replace(/&#x([0-9a-f]+);/gi, (_match, code: string) => {
+      const point = Number.parseInt(code, 16);
+      return point >= 0 && point <= 0x10ffff ? String.fromCodePoint(point) : ' ';
+    })
+    .replace(/\s+/g, ' ')
+    .trim();
+}
+
+/**
+ * Read completed pair-specific meetings from the official WTSL H2H page.
+ * A page that did not select both requested player IDs is not trusted.
+ */
+export function readOfficialH2HRecord(
+  html: string,
+  firstPlayerId: string | number,
+  firstPlayerName: string,
+  secondPlayerId: string | number,
+  secondPlayerName: string,
+): { firstWins: number; secondWins: number; matches: number } | null {
+  const firstId = String(firstPlayerId).trim();
+  const secondId = String(secondPlayerId).trim();
+  if (!firstId || !secondId || firstId === secondId) return null;
+
+  const selectedIds = new Set<string>();
+  for (const [, attributes] of html.matchAll(/<option\b([^>]*)>/gi)) {
+    if (!/\bselected(?:\s|=|\/|$)/i.test(attributes)) continue;
+    const value = attributes.match(/\bvalue\s*=\s*(["'])(.*?)\1/i)?.[2];
+    if (value) selectedIds.add(h2hCellText(value));
+  }
+  if (!selectedIds.has(firstId) || !selectedIds.has(secondId)) return null;
+
+  const resultsTable = [...html.matchAll(/<table\b([^>]*)>([\s\S]*?)<\/table>/gi)]
+    .find(([, attributes]) => {
+      const className = attributes.match(/\bclass\s*=\s*(["'])(.*?)\1/i)?.[2] ?? '';
+      return className.split(/\s+/).includes('results-table');
+    })?.[2];
+  if (!resultsTable) return { firstWins: 0, secondWins: 0, matches: 0 };
+
+  const firstName = h2hCellText(firstPlayerName).toLocaleLowerCase();
+  const secondName = h2hCellText(secondPlayerName).toLocaleLowerCase();
+  let firstWins = 0;
+  let secondWins = 0;
+  for (const [row] of resultsTable.matchAll(/<tr\b[^>]*>([\s\S]*?)<\/tr>/gi)) {
+    const cells = [...row.matchAll(/<td\b[^>]*>([\s\S]*?)<\/td>/gi)]
+      .map(([, cell]) => cell);
+    const winnerCell = cells.length >= 7 ? cells[5] : cells.length >= 6 ? cells[4] : null;
+    const scoreCell = cells.length >= 7 ? cells[6] : cells.length >= 6 ? cells[5] : null;
+    if (!winnerCell || !scoreCell) continue;
+
+    const score = h2hCellText(scoreCell);
+    if (
+      !/\d+\s*[-–]\s*\d+/.test(score)
+      || /\b(?:scheduled|pending|live|tbd|to be played|walkover|walk-over|w\/o|default|cancelled|canceled|abandoned)\b/i.test(score)
+    ) {
+      continue;
+    }
+
+    const winnerLink = winnerCell.match(/<a\b[^>]*href\s*=\s*(["'])(.*?)\1/i)?.[2]
+      ?.replace(/&amp;/gi, '&');
+    let winnerId: string | null = null;
+    if (winnerLink) {
+      try {
+        winnerId = new URL(winnerLink, 'https://www.playwtsl.com/TE4/pages/h2h.php')
+          .searchParams.get('player');
+      } catch {
+        winnerId = null;
+      }
+    }
+
+    if (winnerId) {
+      if (winnerId === firstId) firstWins++;
+      else if (winnerId === secondId) secondWins++;
+      continue;
+    }
+
+    const winnerName = h2hCellText(winnerCell).toLocaleLowerCase();
+    if (winnerName === firstName) firstWins++;
+    else if (winnerName === secondName) secondWins++;
+  }
+
+  return { firstWins, secondWins, matches: firstWins + secondWins };
+}
+
 export function readOfficialH2HPercent(html: string): number | null {
   const element = html.match(/<div\b(?=[^>]*\bclass\s*=\s*["'][^"']*\bh2h-winfill\b[^"']*["'])[^>]*>/i);
   if (!element) return null;
