@@ -63,13 +63,18 @@ export function buildDmoPointCommentary(
   names?: readonly (string | null | undefined)[],
 ): string;
 
+export function buildDmoRallyCommentary(options: {
+  names?: readonly (string | null | undefined)[];
+  rallyShotCount: number;
+  pointNumber?: number;
+}): string;
+
 export function rankDmoBrowserVoices<T extends DmoBrowserVoice>(
   voices?: readonly T[],
 ): T[];
 
 export function chooseDmoCommentaryVoice<T extends DmoBrowserVoice>(
   voices?: readonly T[],
-  selectedURI?: string,
 ): T | null;
 
 export function withDmoCommentaryHistory<T extends DmoCommentaryPoint>(

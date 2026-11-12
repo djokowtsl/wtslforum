@@ -473,15 +473,23 @@ function ThreeCourt({
     const frame = playheadRef.current ?? -1;
     const events = trajectoryEventsRef.current;
     let rallyActive = true;
+    let rallyShotCount = 0;
     for (let index = events.length - 1; index >= 0; index -= 1) {
       const event = events[index];
       if (event.frame > frame) continue;
-      if (event.kind === 'shot' || event.kind === 'point-end') {
-        rallyActive = event.kind === 'shot';
+      if (event.kind === 'point-end') {
+        rallyActive = false;
         break;
       }
+      rallyActive = true;
+      if (event.shotType === 'rally') rallyShotCount = Math.min(20, rallyShotCount + 1);
     }
-    return { frame, playing: !fullReplay || replayPlayingRef.current, rallyActive };
+    return {
+      frame,
+      playing: !fullReplay || replayPlayingRef.current,
+      rallyActive,
+      rallyShotCount,
+    };
   }, [fullReplay]);
   const commentary = useDmoCommentary({
     snapshot,
@@ -3180,38 +3188,20 @@ function ThreeCourt({
             type="button"
             aria-pressed={commentary.enabled}
             aria-label={commentary.enabled ? 'Turn match commentary off' : 'Turn original match commentary on'}
-            title="Original commentary uses WTSL player names and prioritises natural English voices where available. Voice quality depends on your browser."
+            title="One English commentary voice is selected automatically from this device. Voice quality can differ across devices."
             disabled={!soundEnabled || !soundReady}
             onClick={commentary.toggle}
           >
             <span>Commentary {commentary.enabled ? 'on' : 'off'}</span>
           </button>
-          {commentary.browserVoices.length > 0 && (
-            <>
-              <label className={styles.playerCameraControl}>
-                <span>Commentary voice</span>
-                <select
-                  aria-label="Choose commentary voice"
-                  value={commentary.selectedVoiceURI}
-                  onChange={(event) => commentary.changeVoice(event.currentTarget.value)}
-                >
-                  {commentary.browserVoices.map((voice) => (
-                    <option key={voice.voiceURI || `${voice.name}-${voice.lang}`} value={voice.voiceURI}>
-                      {voice.name} ({voice.lang})
-                    </option>
-                  ))}
-                </select>
-              </label>
-              <button
-                className={styles.soundButton}
-                type="button"
-                disabled={!soundEnabled || !soundReady}
-                onClick={commentary.previewVoice}
-              >
-                <span>Preview voice</span>
-              </button>
-            </>
-          )}
+          <button
+            className={styles.soundButton}
+            type="button"
+            disabled={!soundEnabled || !soundReady}
+            onClick={commentary.previewVoice}
+          >
+            <span>Preview commentary voice</span>
+          </button>
           <button
             className={styles.soundButton}
             type="button"

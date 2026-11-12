@@ -26,6 +26,7 @@ type Props = {
   commentaryNames?: readonly [string, string] | null;
   snapshot: Te4LiveSnapshot;
   isWta?: boolean;
+  tournamentName?: string;
   state: 'live' | 'ended';
   playbackSpeed?: Te4DmoReplaySpeed;
   stale?: boolean;
@@ -143,6 +144,7 @@ export default function DmoLiveDisplay({
   commentaryNames,
   snapshot,
   isWta = false,
+  tournamentName,
   state,
   playbackSpeed = 1,
   stale = false,
@@ -226,7 +228,7 @@ export default function DmoLiveDisplay({
             {updatedAt && <small>{timeAgo(updatedAt)}</small>}
           </div>
           <h2>{snapshot.players[0]} <i>vs</i> {snapshot.players[1]}</h2>
-          <p>{snapshot.stadium || 'TE4 match'}</p>
+          {tournamentName?.trim() && <p>{tournamentName.trim()}</p>}
         </div>
       </header>
 
@@ -234,6 +236,7 @@ export default function DmoLiveDisplay({
         <DmoLiveCourt
           key={`${broadcastId ?? snapshot.filename}:${characterKey}`}
           snapshot={snapshot}
+          tournamentName={tournamentName}
           playerBundledMotions={nativeMotion.sources}
           surface={surface}
           playbackSpeed={playbackSpeed}

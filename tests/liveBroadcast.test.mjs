@@ -39,6 +39,7 @@ new Function('require', 'module', 'exports', tournamentCode)((name) => {
   throw new Error(`Unexpected tournament-match dependency: ${name}`);
 }, tournamentModule, tournamentModule.exports);
 const {
+  findOngoingTournamentMatch,
   findOngoingTournamentMatchInText,
   isFreshTournamentMatchSnapshot,
   loadOngoingTournamentMatches,
@@ -182,6 +183,11 @@ test('only open matches in an ongoing Challonge draw can establish tournament id
   }]);
   assert.equal(matchesOngoingTournament(['Beta', 'Alpha'], matches), true);
   assert.equal(matchesOngoingTournament(['Gamma', 'Delta'], matches), false);
+  assert.equal(findOngoingTournamentMatch(
+    ['Beta', 'Alpha'],
+    [{ ...matches[0], tournamentName: 'Roland Garros' }],
+    'TE4',
+  )?.tournamentName, 'Roland Garros');
   assert.equal(
     findOngoingTournamentMatchInText('Alpha vs Beta — live now', matches)?.tournamentId,
     'event-2026',
@@ -227,6 +233,7 @@ test('ongoing tournament snapshots combine official open fixtures and Challonge 
       {
         tour: 'TE4',
         status: 'ongoing',
+        name: 'Guangzhou Open',
         officialUrl: 'https://www.playwtsl.com/TE4/pages/tournament_page.php?tournament=guangzhou-2026',
       },
       {
@@ -259,12 +266,14 @@ test('ongoing tournament snapshots combine official open fixtures and Challonge 
       tour: 'TE4',
       first_name: 'Core Alpha',
       second_name: 'Core Beta',
+      tournamentName: 'Guangzhou Open',
     },
     {
       tournamentId: 'guangzhou-2026',
       tour: 'TE4',
       first_name: 'Draw Alpha',
       second_name: 'Draw Beta',
+      tournamentName: 'Guangzhou Open',
     },
   ]);
 });

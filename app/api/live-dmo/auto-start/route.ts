@@ -137,6 +137,7 @@ export async function POST(request: Request) {
       ...(tournamentMatch
         ? { players: [tournamentMatch.first_name, tournamentMatch.second_name] as [string, string] }
         : {}),
+      ...(tournamentMatch?.tournamentName ? { tournamentName: tournamentMatch.tournamentName } : {}),
       isWta: tournamentMatch?.tour === 'TE4_(F)',
       officialByTournament: Boolean(tournamentMatch),
     });

@@ -4,6 +4,12 @@ import { sql } from '@/lib/db';
 import { hasCompletedDmoPoints } from '@/lib/te4DmoLive';
 import { cleanupExpiredLiveDmoBroadcasts, isLiveDmoReplayPath } from '@/lib/liveDmoStorage';
 import { isSameSiteMutation } from '@/lib/liveRequestSecurity';
+import { readSiteSnapshot } from '@/lib/siteSnapshots';
+import type { PublicFixturePayload } from '@/lib/liveFeedTypes';
+import {
+  findOngoingTournamentMatch,
+  isFreshTournamentMatchSnapshot,
+} from '@/lib/liveBroadcastTournamentMatches';
 import { z } from 'zod';
 
 export const dynamic = 'force-dynamic';
@@ -49,6 +55,20 @@ export async function GET() {
       ORDER BY (b.status='live') DESC, b.started_at DESC
       LIMIT 50
     `;
+    const hasUnlabeledLiveBroadcast = rows.some((row: any) => {
+      if (row.status !== 'live') return false;
+      const payload = row.payload && typeof row.payload === 'object' && !Array.isArray(row.payload)
+        ? row.payload
+        : {};
+      return typeof payload.tournamentName !== 'string' || !payload.tournamentName.trim();
+    });
+    const fixtureSnapshot = hasUnlabeledLiveBroadcast
+      ? await readSiteSnapshot<PublicFixturePayload>('live-fixtures').catch(() => null)
+      : null;
+    const ongoingTournamentMatches = fixtureSnapshot
+      && isFreshTournamentMatchSnapshot(fixtureSnapshot.checkedAt)
+      ? fixtureSnapshot.payload.ongoingTournamentMatches ?? []
+      : [];
     const orderedRows = [...rows].sort((first: any, second: any) =>
       Number(second.status === 'live') - Number(first.status === 'live')
       || Date.parse(second.started_at) - Date.parse(first.started_at)
@@ -88,6 +108,16 @@ export async function GET() {
         : Array.isArray(snapshot?.players) && snapshot.players.length === 2
           ? snapshot.players
           : null;
+      const tournamentName = typeof stored.tournamentName === 'string'
+        && stored.tournamentName.trim().length <= 120
+        ? stored.tournamentName.trim()
+        : rawPlayers?.every((name: unknown) => typeof name === 'string')
+          ? findOngoingTournamentMatch(
+            rawPlayers as [string, string],
+            ongoingTournamentMatches,
+            stored.isWta === true ? 'TE4_(F)' : 'TE4',
+          )?.tournamentName
+          : undefined;
       const rawPlayerCharacters = Array.isArray(stored.playerCharacters)
         && stored.playerCharacters.length === 2
         && stored.playerCharacters.every((name: unknown) => name === null
@@ -129,6 +159,7 @@ export async function GET() {
           ? stored.tournamentRound
           : 'auto',
         isWta: stored.isWta === true,
+        ...(tournamentName ? { tournamentName } : {}),
         officialByBroadcaster: stored.officialByBroadcaster === true,
         officialByTournament: stored.officialByTournament === true,
         likelyOfficial: stored.likelyOfficial === true,

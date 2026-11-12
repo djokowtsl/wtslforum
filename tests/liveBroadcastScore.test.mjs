@@ -23,6 +23,13 @@ function load(path, mocks = {}) {
       return { useNativePlayerMotions: () => ({ sources: [], error: null }) };
     }
     if (name === '@/lib/liveDmoUmpireScoreSource') return load('lib/liveDmoUmpireScoreSource.ts');
+    if (name === '@/lib/siteSnapshots') return { readSiteSnapshot: async () => null };
+    if (name === '@/lib/liveBroadcastTournamentMatches') {
+      return {
+        findOngoingTournamentMatch: () => null,
+        isFreshTournamentMatchSnapshot: () => false,
+      };
+    }
     if (name === 'zod') return require('zod');
     return require(name);
   }, module, module.exports);
