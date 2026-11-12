@@ -60,7 +60,10 @@ async function core<T>(
     status = res.status;
 
     if (!res.ok) {
-      const error = new Error(`WTSL core API ${res.status}`) as Error & {
+      const body = await res.json().catch(() => null) as { error?: string } | null;
+      const error = new Error(
+        body?.error || `WTSL core API ${res.status}`,
+      ) as Error & {
         statusCode: number;
       };
       error.statusCode = res.status;
@@ -187,6 +190,122 @@ export type CoreCharacterRecommendationMetric = {
   value: number;
   percentile: number;
   players: number;
+};
+
+export type CoreMatchSchedulerExtensionState = {
+  status:
+    | 'none'
+    | 'negotiating'
+    | 'renegotiating'
+    | 'agreed'
+    | 'rejected'
+    | 'withdrawn';
+  requested_by_user_id: string | null;
+  requested_by_name: string;
+  requested_at: string;
+  reason: string;
+  latest_allowed_utc: string;
+  agreed_slot_utc: string;
+  agreed_by_user_id: string | null;
+  agreed_by_name: string;
+  agreed_at: string;
+  rejected_at: string;
+  rejected_by_user_id: string | null;
+  rejected_by_name: string;
+  rejection_note: string;
+  revision: number;
+};
+
+export type CoreMatchSchedulerWebState = {
+  status: 'pending' | 'confirmed';
+  proposed_by_user_id: string | null;
+  proposed_by_name: string;
+  proposed_at: string;
+  timezone: string;
+  slots_utc: string[];
+  confirmed_slot_utc: string;
+  confirmed_by_user_id: string | null;
+  confirmed_by_name: string;
+  confirmed_at: string;
+  revision: number;
+  extension: CoreMatchSchedulerExtensionState;
+};
+
+export type CoreMatchSchedulerAvailabilityWindow = {
+  start_utc: string;
+  end_utc: string;
+};
+
+export type CoreMatchSchedulerAvailability = {
+  submitted_by_name: string;
+  timezone: string;
+  windows: CoreMatchSchedulerAvailabilityWindow[];
+};
+
+export type CoreMatchSchedulerRecord = {
+  schedule_id: string;
+  tournament_id: string;
+  tournament: string;
+  round: string;
+  match_id: string;
+  players: string[];
+  status: string;
+  deadline: string;
+  draw_url: string;
+  thread_url: string;
+  web_url: string;
+  created_at: string;
+  availability: CoreMatchSchedulerAvailability;
+  web_scheduler: CoreMatchSchedulerWebState;
+};
+
+export type CoreMatchSchedulerOpenMatch = {
+  tournament_id: string;
+  tournament: string;
+  match_id: string;
+  round: string;
+  players: string[];
+  deadline: string;
+  draw_url: string;
+  opponent_verified: boolean;
+  schedule: CoreMatchSchedulerRecord | null;
+};
+
+export type CoreMatchSchedulerState = {
+  verified: boolean;
+  matches: CoreMatchSchedulerOpenMatch[];
+  schedules: CoreMatchSchedulerRecord[];
+};
+
+export type CoreMatchSchedulerAction =
+  | {
+      action: 'create';
+      tournament_id: string;
+      match_id: string;
+      availability_timezone?: string;
+      availability_windows?: CoreMatchSchedulerAvailabilityWindow[];
+    }
+  | {
+      action: 'propose';
+      schedule_id: string;
+      slots: string[];
+      timezone: string;
+    }
+  | {
+      action: 'confirm';
+      schedule_id: string;
+      slot_utc: string;
+    }
+  | {
+      action: 'request_extension';
+      schedule_id: string;
+      reason: string;
+    };
+
+export type CoreMatchSchedulerActionResult = {
+  ok: boolean;
+  message?: string;
+  schedule?: CoreMatchSchedulerRecord;
 };
 
 export const WTSL_CORE_CHARACTER_RECOMMENDATION_TIMEOUT_MS = 12_000;
@@ -347,6 +466,46 @@ export const wtslCore = {
     ),
 
   matchSchedules: () => core<unknown[]>('/api/core/match-schedules'),
+
+  matchSchedulerState: (discordId: string) =>
+    core<CoreMatchSchedulerState>(
+      `/api/core/match-scheduler?discord_user_id=${encodeURIComponent(discordId)}`,
+      {},
+      {
+        timeoutMs: WTSL_CORE_FIXTURES_TIMEOUT_MS,
+        logLabel: 'match-scheduler',
+      },
+    ),
+
+  matchSchedulerDetail: (discordId: string, scheduleId: string) =>
+    core<{ schedule: CoreMatchSchedulerRecord }>(
+      `/api/core/match-scheduler/${encodeURIComponent(scheduleId)}?discord_user_id=${encodeURIComponent(discordId)}`,
+      {},
+      {
+        timeoutMs: WTSL_CORE_PUBLIC_TIMEOUT_MS,
+        logLabel: 'match-scheduler-detail',
+      },
+    ),
+
+  matchSchedulerAction: (
+    discordId: string,
+    action: CoreMatchSchedulerAction,
+  ) =>
+    core<CoreMatchSchedulerActionResult>(
+      '/api/core/match-scheduler',
+      {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({
+          ...action,
+          discord_user_id: discordId,
+        }),
+      },
+      {
+        timeoutMs: 90_000,
+        logLabel: 'match-scheduler-action',
+      },
+    ),
 
   // Intentionally unavailable until the Replit API exposes an authenticated
   // write endpoint. This prevents the Forum from creating a second ledger.
