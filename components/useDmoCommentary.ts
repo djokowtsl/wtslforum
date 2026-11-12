@@ -505,7 +505,7 @@ export function useDmoCommentary({
       snapshot.pointCount,
       ...snapshot.recentPoints.map((point) => point.number),
     );
-    lastReplayFrameRef.current = replayFrame;
+    lastReplayFrameRef.current = playbackState().frame;
     const matchKey = names.join('\u0000');
     matchKeyRef.current = matchKey;
 
@@ -558,6 +558,7 @@ export function useDmoCommentary({
     isWta,
     names,
     prepareLocalAudioContext,
+    playbackState,
     replayFrame,
     soundEnabled,
     soundReady,
