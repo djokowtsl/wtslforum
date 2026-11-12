@@ -211,6 +211,7 @@ type Props = {
   tournamentRound?: string | null;
   tournamentName?: string | null;
   onReplayFrameChange?: (frame: number) => void;
+  showVoiceDiagnostics?: boolean;
 };
 
 type CommentaryReplayPoint = {
@@ -319,6 +320,7 @@ function ThreeCourt({
   tournamentName,
   tournamentRound,
   onReplayFrameChange,
+  showVoiceDiagnostics = false,
   gruntsEnabled,
   onGruntsEnabledChange,
   onUnsupported,
@@ -3191,7 +3193,7 @@ function ThreeCourt({
               ? 'Preparing local commentary voice'
               : commentary.enabled ? 'Turn match commentary off' : 'Turn match commentary on'}
             aria-busy={commentary.voiceLoading}
-            title="Uses Kokoro voices generated on this device; first use downloads about 92 MB."
+            title="Turn match commentary on or off."
             disabled={!soundEnabled || !soundReady || commentary.voiceLoading}
             onClick={commentary.toggle}
           >
@@ -3199,15 +3201,19 @@ function ThreeCourt({
               ? 'Preparing voice…'
               : `Commentary ${commentary.enabled ? 'on' : 'off'}`}</span>
           </button>
-          <button
-            className={styles.soundButton}
-            type="button"
-            disabled={!soundEnabled || !soundReady || commentary.voiceLoading}
-            title="Preview the local Kokoro voices. The first use downloads about 92 MB."
-            onClick={commentary.previewVoice}
-          >
-            <span>Preview local voices</span>
-          </button>
+          {commentary.localVoiceSupported && (
+            <button
+              className={styles.soundButton}
+              type="button"
+              disabled={!soundEnabled || !soundReady || commentary.voiceLoading}
+              title={showVoiceDiagnostics
+                ? 'Preview the local Kokoro voices; first use downloads about 92 MB.'
+                : 'Preview the local commentary voice.'}
+              onClick={commentary.previewVoice}
+            >
+              <span>Preview local voices</span>
+            </button>
+          )}
           <button
             className={styles.soundButton}
             type="button"
@@ -3336,7 +3342,7 @@ function ThreeCourt({
           </label>
         </div>
       )}
-      {(soundError || commentary.error || commentary.voiceStatus) && (
+      {showVoiceDiagnostics && (soundError || commentary.error || commentary.voiceStatus) && (
         <p className={styles.soundError} role="status" aria-live="polite">
           {soundError || commentary.error || commentary.voiceStatus}
         </p>

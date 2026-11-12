@@ -12,7 +12,7 @@ import {
   rankDmoBrowserVoices,
   withDmoCommentaryHistory,
 } from '@/lib/dmoCommentary.mjs';
-import { loadDmoLocalVoiceModel } from '@/lib/dmoLocalVoice.mjs';
+import { canUseDmoLocalVoice, loadDmoLocalVoiceModel } from '@/lib/dmoLocalVoice.mjs';
 import type { DmoCommentaryPoint } from '@/lib/dmoCommentary.mjs';
 import type { Te4LiveSnapshot } from '@/lib/te4DmoLive';
 
@@ -78,9 +78,8 @@ export function useDmoCommentary({
   const [enabled, setEnabled] = useState(false);
   const [error, setError] = useState('');
   const [voiceLoading, setVoiceLoading] = useState(false);
-  const [voiceStatus, setVoiceStatus] = useState(
-    'Kokoro local voices; first use downloads about 92 MB to this device.',
-  );
+  const [voiceStatus, setVoiceStatus] = useState('');
+  const [localVoiceSupported, setLocalVoiceSupported] = useState(false);
   const [browserVoices, setBrowserVoices] = useState<SpeechSynthesisVoice[]>([]);
   const requestRef = useRef(0);
   const previewRequestRef = useRef(0);
@@ -124,6 +123,14 @@ export function useDmoCommentary({
     return () => synthesis.removeEventListener('voiceschanged', refreshVoices);
   }, []);
 
+  useEffect(() => {
+    const supported = canUseDmoLocalVoice();
+    setLocalVoiceSupported(supported);
+    if (!supported) {
+      setVoiceStatus('Kokoro is disabled on mobile or low-memory devices; using this device’s speech voice.');
+    }
+  }, []);
+
   const clearPendingCommentary = useCallback(() => {
     if (pendingTimerRef.current !== null) {
       clearTimeout(pendingTimerRef.current);
@@ -147,6 +154,10 @@ export function useDmoCommentary({
   const ensureLocalVoiceModel = useCallback(() => {
     if (localModelRef.current) return Promise.resolve(localModelRef.current);
     if (localModelPromiseRef.current) return localModelPromiseRef.current;
+    if (!localVoiceSupported) {
+      setVoiceStatus('Kokoro is disabled on mobile or low-memory devices; using this device’s speech voice.');
+      return Promise.resolve(null);
+    }
 
     localVoiceLoadingRef.current = true;
     setVoiceLoading(true);
@@ -179,7 +190,64 @@ export function useDmoCommentary({
       });
     localModelPromiseRef.current = pending;
     return pending;
-  }, []);
+  }, [localVoiceSupported]);
+
+  const speakWithBrowser = useCallback((
+    lines: readonly string[],
+    firstSpeaker: CommentarySpeaker,
+  ) => {
+    if (
+      typeof window === 'undefined'
+      || typeof window.speechSynthesis?.speak !== 'function'
+      || typeof SpeechSynthesisUtterance === 'undefined'
+    ) return false;
+
+    const synthesis = window.speechSynthesis;
+    if (synthesis.paused) synthesis.resume();
+    if (synthesis.speaking || synthesis.pending) return false;
+
+    try {
+      const voices = browserVoices.length
+        ? browserVoices
+        : rankDmoBrowserVoices(synthesis.getVoices());
+      const selectedVoices = chooseDmoCommentaryVoices(voices);
+      const femaleVoice = selectedVoices.female;
+      const maleVoice = selectedVoices.male;
+      if (!femaleVoice || !maleVoice) return false;
+      const utterances = lines.map((line, index) => {
+        const speaker = index === 0
+          ? firstSpeaker
+          : firstSpeaker === 'female' ? 'male' : 'female';
+        const voice = speaker === 'female' ? femaleVoice : maleVoice;
+        const utterance = new SpeechSynthesisUtterance(line);
+        utterance.voice = voice;
+        utterance.lang = voice.lang || 'en-US';
+        utterance.rate = 1.03;
+        utterance.pitch = selectedVoices.distinct ? 1 : speaker === 'female' ? 1.06 : 0.94;
+        utterance.volume = 1;
+        utterance.onend = () => {
+          utteranceRef.current = utteranceRef.current.filter((item) => item !== utterance);
+        };
+        utterance.onerror = () => {
+          if (!utteranceRef.current.includes(utterance)) return;
+          utteranceRef.current = utteranceRef.current.filter((item) => item !== utterance);
+          setError('The browser could not play the commentary booth. Try Preview commentary voice again.');
+        };
+        return utterance;
+      });
+      utteranceRef.current = utterances;
+      for (const utterance of utterances) synthesis.speak(utterance);
+      recentCommentaryLinesRef.current = [
+        ...lines,
+        ...recentCommentaryLinesRef.current,
+      ].slice(0, 16);
+      lastSpeechAtRef.current = Date.now();
+      return true;
+    } catch {
+      utteranceRef.current = [];
+      return false;
+    }
+  }, [browserVoices]);
 
   const playLocalSpeech = useCallback((
     lines: readonly string[],
@@ -221,11 +289,23 @@ export function useDmoCommentary({
               resolve();
             };
             source.start();
+          if (index === 0) {
+            recentCommentaryLinesRef.current = [
+              ...lines,
+              ...recentCommentaryLinesRef.current,
+            ].slice(0, 16);
+            lastSpeechAtRef.current = Date.now();
+          }
           });
         }
       } catch {
         if (session === localSpeechSessionRef.current) {
-          setError('The local commentary voice could not finish playback. Try Preview local voices again.');
+        localModelRef.current = null;
+        localModelPromiseRef.current = null;
+        setVoiceStatus('Kokoro playback failed; switched to this device’s speech voice.');
+        if (!speakWithBrowser(lines, firstSpeaker)) {
+          setError('Kokoro playback failed and the device speech voice could not start.');
+        }
         }
       } finally {
         localAudioSourceRef.current = null;
@@ -234,13 +314,8 @@ export function useDmoCommentary({
       }
     })();
 
-    recentCommentaryLinesRef.current = [
-      ...lines,
-      ...recentCommentaryLinesRef.current,
-    ].slice(0, 16);
-    lastSpeechAtRef.current = Date.now();
     return true;
-  }, [prepareLocalAudioContext]);
+  }, [prepareLocalAudioContext, speakWithBrowser]);
 
   const speak = useCallback((content: CommentarySpeech, firstSpeaker: CommentarySpeaker = 'female') => {
     const lines = typeof content === 'string' ? [content] : content;
@@ -252,63 +327,16 @@ export function useDmoCommentary({
 
     if (localModelRef.current) {
       const audioContext = prepareLocalAudioContext();
-      if (audioContext) return playLocalSpeech(lines, firstSpeaker);
-      setVoiceStatus('Local audio is unavailable; using this device’s speech voice.');
+      if (audioContext) {
+        if (playLocalSpeech(lines, firstSpeaker)) return true;
+        if (localSpeechBusyRef.current) return false;
+      } else {
+        setVoiceStatus('Local audio is unavailable; using this device’s speech voice.');
+      }
     }
 
-    if (
-      typeof window.speechSynthesis?.speak !== 'function'
-      || typeof SpeechSynthesisUtterance === 'undefined'
-    ) return false;
-
-    const synthesis = window.speechSynthesis;
-    if (synthesis.paused) synthesis.resume();
-    // Yield to any in-progress browser speech, including the umpire fallback.
-    if (synthesis.speaking || synthesis.pending) return false;
-
-    try {
-      const voices = browserVoices.length
-        ? browserVoices
-        : rankDmoBrowserVoices(synthesis.getVoices());
-      const selectedVoices = chooseDmoCommentaryVoices(voices);
-      const femaleVoice = selectedVoices.female;
-      const maleVoice = selectedVoices.male;
-      if (!femaleVoice || !maleVoice) return false;
-      const utterances = lines.map((line, index) => {
-        const speaker = index === 0
-          ? firstSpeaker
-          : firstSpeaker === 'female' ? 'male' : 'female';
-        const voice = speaker === 'female' ? femaleVoice : maleVoice;
-        const utterance = new SpeechSynthesisUtterance(line);
-        utterance.voice = voice;
-        utterance.lang = voice.lang || 'en-US';
-        utterance.rate = 1.03;
-        utterance.pitch = selectedVoices.distinct ? 1 : speaker === 'female' ? 1.06 : 0.94;
-        utterance.volume = 1;
-        utterance.onend = () => {
-          utteranceRef.current = utteranceRef.current.filter((item) => item !== utterance);
-        };
-        utterance.onerror = () => {
-          // Intentional cancellation must not report an audio failure.
-          if (!utteranceRef.current.includes(utterance)) return;
-          utteranceRef.current = utteranceRef.current.filter((item) => item !== utterance);
-          setError('The browser could not play the commentary booth. Try Preview commentary voice again.');
-        };
-        return utterance;
-      });
-      utteranceRef.current = utterances;
-      for (const utterance of utterances) synthesis.speak(utterance);
-      recentCommentaryLinesRef.current = [
-        ...lines,
-        ...recentCommentaryLinesRef.current,
-      ].slice(0, 16);
-      lastSpeechAtRef.current = Date.now();
-      return true;
-    } catch {
-      utteranceRef.current = [];
-      return false;
-    }
-  }, [browserVoices, playLocalSpeech, prepareLocalAudioContext]);
+    return speakWithBrowser(lines, firstSpeaker);
+  }, [playLocalSpeech, prepareLocalAudioContext, speakWithBrowser]);
 
   const isVoiceBusy = useCallback(() => {
     const synthesis = typeof window !== 'undefined' ? window.speechSynthesis : null;
@@ -400,6 +428,16 @@ export function useDmoCommentary({
     const request = ++previewRequestRef.current;
     await cancelCommentarySpeech();
     setError('');
+    if (!localVoiceSupported) {
+      setVoiceStatus('Kokoro is disabled on mobile or low-memory devices; using this device’s speech voice.');
+      if (!speak([
+        'Welcome to WTSL tennis. A big point coming up.',
+        'Let us see who takes the initiative.',
+      ] as const, 'female')) {
+        setError('The device speech voice could not start. Try again when the audio is quiet.');
+      }
+      return;
+    }
     const audioContext = prepareLocalAudioContext();
     if (audioContext) {
       await ensureLocalVoiceModel();
@@ -418,6 +456,7 @@ export function useDmoCommentary({
     soundReady,
     cancelCommentarySpeech,
     ensureLocalVoiceModel,
+    localVoiceSupported,
     prepareLocalAudioContext,
     speak,
   ]);
@@ -450,7 +489,9 @@ export function useDmoCommentary({
     }
     await cancelCommentarySpeech();
     if (request !== requestRef.current || !soundEnabledRef.current) return;
-    const audioContext = prepareLocalAudioContext();
+    const audioContext = localModelRef.current
+      ? prepareLocalAudioContext()
+      : null;
     const nativeSpeechAvailable = typeof window.speechSynthesis?.speak === 'function'
       && typeof SpeechSynthesisUtterance !== 'undefined';
     if (!audioContext && !nativeSpeechAvailable) {
@@ -460,7 +501,6 @@ export function useDmoCommentary({
 
     setError('');
     if (audioContext) await ensureLocalVoiceModel();
-    else setVoiceStatus('Local audio is unavailable; using this device’s speech voice.');
     if (request !== requestRef.current || !soundEnabledRef.current) return;
 
     const voices = browserVoices.length
@@ -740,6 +780,6 @@ export function useDmoCommentary({
 
   return {
     enabled, error, voiceLoading, voiceStatus, toggle,
-    previewVoice,
+    previewVoice, localVoiceSupported,
   };
 }

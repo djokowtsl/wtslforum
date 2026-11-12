@@ -24,6 +24,7 @@ type Props = {
   allowAutomaticFallback?: boolean;
   playerCharacters?: readonly [string | null, string | null];
   commentaryNames?: readonly [string, string] | null;
+  showVoiceDiagnostics?: boolean;
   snapshot: Te4LiveSnapshot;
   isWta?: boolean;
   tournamentName?: string;
@@ -142,6 +143,7 @@ export default function DmoLiveDisplay({
   allowAutomaticFallback = false,
   playerCharacters,
   commentaryNames,
+  showVoiceDiagnostics = false,
   snapshot,
   isWta = false,
   tournamentName,
@@ -243,6 +245,7 @@ export default function DmoLiveDisplay({
           isWta={isWta}
           playerCharacters={motionNames}
           commentaryNames={commentaryNames}
+          showVoiceDiagnostics={showVoiceDiagnostics}
           playerGruntSettings={nativeMotion.playerGruntSettings}
           buffering={buffering}
           scoreboard={stadiumScoreboard}

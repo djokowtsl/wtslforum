@@ -40,10 +40,12 @@ export default function DmoReplayLibrary({
   initialMatchId = '',
   initialPage = null,
   publicOnly = false,
+  showVoiceDiagnostics = false,
 }: {
   initialMatchId?: string;
   initialPage?: ReplayPage | null;
   publicOnly?: boolean;
+  showVoiceDiagnostics?: boolean;
 }) {
   const [matches, setMatches] = useState<DmoReplayCatalogEntry[]>(initialPage?.matches ?? []);
   const [selected, setSelected] = useState<DmoReplayCatalogEntry | null>(null);
@@ -415,6 +417,7 @@ export default function DmoReplayLibrary({
                     replayUrl={replayUrl}
                     replaySubmissionId={selected.id}
                     characterNames={characterNames}
+                    showVoiceDiagnostics={showVoiceDiagnostics}
                     initialSpeed={1}
                     isWta={dmoReplayIsWta(selected.tournament)}
                     handedness={characterPresentation?.handedness ?? ['right', 'right']}
