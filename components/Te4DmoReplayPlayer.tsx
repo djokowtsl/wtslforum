@@ -91,8 +91,10 @@ export default function Te4DmoReplayPlayer({
     }
     : null, [initialSnapshot, activeHandedness[0], activeHandedness[1], activeStrokeStyles]);
   const commentaryPoints = useMemo(
-    () => viewer ? buildDmoReplayCommentaryPoints(viewer) : [],
-    [viewer],
+    () => viewer
+      ? buildDmoReplayCommentaryPoints(viewer, { bestOf: initialSnapshot?.bestOf ?? null })
+      : [],
+    [viewer, initialSnapshot?.bestOf],
   );
   const scoreTimeline = useMemo(
     () => viewer ? buildTe4DmoReplayScoreTimeline(viewer) : [],

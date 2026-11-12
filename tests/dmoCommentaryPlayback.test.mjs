@@ -293,7 +293,7 @@ test('batched replay updates preserve every completed game', async () => {
     h.advance(200); await h.flush(); h.render();
     h.advance(600); await h.flush(); h.render();
     assert.equal(h.generated.length, 4, 'opening plus one short call for each game');
-    assert.ok(h.generated.slice(2).every((line) => /game/i.test(line.text)));
+    assert.ok(h.generated.slice(2).every((line) => /game|break|set|match/i.test(line.text)));
   } finally { h.cleanup(); }
 });
 
@@ -462,10 +462,13 @@ test('turning on commentary automatically loads Kokoro and alternates its voices
   } finally { h.cleanup(); }
 });
 
-test('commentary starts without a public status message', () => {
+test('background voice status stays behind the player diagnostics gate', () => {
   const h = harness();
   try {
-    assert.equal(h.value().voiceStatus, '');
+    assert.notEqual(h.value().voiceStatus, '');
+    assert.match(courtSource, /showVoiceDiagnostics && \(soundError \|\| commentary\.error \|\| commentary\.voiceStatus\)/);
+    assert.doesNotMatch(courtSource, /commentary\.enabled && commentary\.voiceStatus/);
+    assert.doesNotMatch(courtSource, /\{commentary\.error &&/);
   } finally { h.cleanup(); }
 });
 
@@ -499,6 +502,25 @@ test('commentary automatically loads Kokoro without a separate download action',
     assert.equal(generated.length, 2);
     assert.equal(h.nativeSpoken.length, 0);
     assert.doesNotMatch(courtSource, /Preview Kokoro|Preview local voices|commentary\.previewVoice/);
+  } finally { h.cleanup(); }
+});
+
+test('full replay preloads the commentary voice before it is enabled', async () => {
+  let loads = 0;
+  const h = harness(undefined, {
+    loadModel: async () => {
+      loads += 1;
+      return { async generate() {
+        return { audio: new Float32Array([0.1, -0.1]), sampling_rate: 24_000 };
+      } };
+    },
+  });
+  try {
+    h.render({ fullReplay: true });
+    await h.flush();
+    assert.equal(loads, 1, 'opening a replay prepares the voice in the background');
+    assert.equal(h.value().enabled, false, 'preloading does not turn commentary on');
+    assert.equal(h.nativeSpoken.length, 0, 'preloading does not speak before opt-in');
   } finally { h.cleanup(); }
 });
 
@@ -566,7 +588,7 @@ test('Kokoro generation failures report the cause without device-speech fallback
   } finally { h.cleanup(); }
 });
 
-test('mobile Kokoro gives slower local speech generation more time', async () => {
+test('slow Kokoro generation stays active without a device-speech fallback', async () => {
   const finishGeneration = [];
   const h = harness(undefined, {
     mobileLocalVoicePreview: true,
@@ -636,7 +658,7 @@ test('only Squeaky admins can see commentary diagnostics', () => {
   assert.equal(canViewDmoVoiceDiagnostics({ isAdmin: false, username: 'Squeaky' }), false);
 });
 
-test('mobile and low-memory devices remain eligible for local Kokoro', () => {
+test('mobile and low-memory devices remain eligible for Kokoro commentary', () => {
   assert.equal(
     isDmoLocalVoiceDeviceSupported({ userAgent: 'Mozilla/5.0 (iPhone)', maxTouchPoints: 5 }),
     true,
@@ -746,6 +768,7 @@ test('slow desktop Kokoro generation is not abandoned or duplicated after 30 sec
     assert.equal(h.nativeSpoken.length, 0);
     assert.match(h.value().voiceStatus, /still generating locally on the CPU/);
     assert.equal(h.value().error, '', 'a slow generation remains active instead of being discarded');
+    assert.equal(pending.length, 1, 'a slow generation is not retried in parallel');
 
     pending[0](audio);
     await h.flush(); h.render();

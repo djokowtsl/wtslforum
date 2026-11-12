@@ -3191,9 +3191,7 @@ function ThreeCourt({
             className={styles.soundButton}
             type="button"
             aria-pressed={commentary.enabled}
-            aria-label={commentary.voiceLoading
-              ? 'Preparing local commentary voice'
-              : commentary.enabled ? 'Turn match commentary off' : 'Turn match commentary on'}
+            aria-label={commentary.enabled ? 'Turn match commentary off' : 'Turn match commentary on'}
             aria-busy={commentary.voiceLoading}
             title="Turn match commentary on or off."
             disabled={!soundEnabled || !soundReady}
@@ -3201,14 +3199,6 @@ function ThreeCourt({
           >
             <span>{`Commentary ${commentary.enabled ? 'on' : 'off'}`}</span>
           </button>
-          {commentary.enabled && commentary.voiceStatus && (
-            <span className={styles.localVoiceNotice} role="status">
-              {commentary.voiceStatus}
-            </span>
-          )}
-          {commentary.error && (
-            <span className={styles.localVoiceNotice} role="status">{commentary.error}</span>
-          )}
           <button
             className={styles.soundButton}
             type="button"

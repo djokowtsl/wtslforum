@@ -21,6 +21,6 @@ export function loadDmoLocalVoiceModel(
     status?: string;
     progress?: number;
     total?: number;
-    backend?: 'webgpu' | 'wasm';
+    backend?: 'wasm' | 'server';
   }) => void,
 ): Promise<KokoroTTS>;
