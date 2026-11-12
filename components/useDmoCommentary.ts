@@ -5,6 +5,7 @@ import {
   buildDmoCommentaryFacts,
   buildDmoCommentaryIntroduction,
   buildDmoPointCommentary,
+  rankDmoBrowserVoices,
 } from '@/lib/dmoCommentary.mjs';
 import type { Te4LiveSnapshot } from '@/lib/te4DmoLive';
 
@@ -52,6 +53,8 @@ export function useDmoCommentary({
 }: Options) {
   const [enabled, setEnabled] = useState(false);
   const [error, setError] = useState('');
+  const [browserVoices, setBrowserVoices] = useState<SpeechSynthesisVoice[]>([]);
+  const [selectedVoiceURI, setSelectedVoiceURI] = useState('');
   const enabledRef = useRef(false);
   const soundEnabledRef = useRef(soundEnabled);
   const utteranceRef = useRef<SpeechSynthesisUtterance | null>(null);
@@ -69,6 +72,17 @@ export function useDmoCommentary({
     ] as const,
     [playerCharacters, snapshot.players],
   );
+
+  useEffect(() => {
+    if (typeof window === 'undefined' || !window.speechSynthesis) return;
+    const synthesis = window.speechSynthesis;
+    const refreshVoices = () => {
+      setBrowserVoices(rankDmoBrowserVoices(synthesis.getVoices()));
+    };
+    refreshVoices();
+    synthesis.addEventListener('voiceschanged', refreshVoices);
+    return () => synthesis.removeEventListener('voiceschanged', refreshVoices);
+  }, []);
 
   const clearPendingCommentary = useCallback(() => {
     if (pendingTimerRef.current !== null) {
@@ -92,18 +106,16 @@ export function useDmoCommentary({
 
     try {
       const utterance = new SpeechSynthesisUtterance(text);
-      const voices = synthesis.getVoices();
-      utterance.voice = voices.find(
-        (voice) => /^en-(GB|AU)\b/i.test(voice.lang)
-          && /natural|neural|enhanced|premium/i.test(voice.name),
-      )
-        ?? voices.find((voice) => /^en-(GB|AU)\b/i.test(voice.lang))
-        ?? voices.find((voice) => /^en\b/i.test(voice.lang))
+      const voices = browserVoices.length
+        ? browserVoices
+        : rankDmoBrowserVoices(synthesis.getVoices());
+      utterance.voice = voices.find((voice) => voice.voiceURI === selectedVoiceURI)
+        ?? voices[0]
         ?? null;
-      utterance.lang = 'en-GB';
-      utterance.rate = 0.98;
-      utterance.pitch = 1;
-      utterance.volume = 0.92;
+      utterance.lang = utterance.voice?.lang || 'en-GB';
+      utterance.rate = 1.06;
+      utterance.pitch = 1.02;
+      utterance.volume = 1;
       utterance.onend = () => {
         if (utteranceRef.current === utterance) utteranceRef.current = null;
       };
@@ -117,7 +129,12 @@ export function useDmoCommentary({
     } catch {
       return false;
     }
-  }, []);
+  }, [browserVoices, selectedVoiceURI]);
+
+  const previewVoice = useCallback(() => {
+    const started = speak(`What a rally! ${names[0]} wins the exchange.`);
+    setError(started ? '' : 'Wait for the current speech to finish, then preview the voice again.');
+  }, [names, speak]);
 
   const cancelCommentarySpeech = useCallback(() => {
     if (!utteranceRef.current) return;
@@ -240,7 +257,7 @@ export function useDmoCommentary({
   }, [clearPendingCommentary, enabled]);
 
   useEffect(() => {
-    if ((soundEnabled && soundReady) || !enabledRef.current) return;
+    if (soundEnabled && soundReady) return;
     enabledRef.current = false;
     setEnabled(false);
     clearPendingCommentary();
@@ -314,5 +331,13 @@ export function useDmoCommentary({
     cancelCommentarySpeech();
   }, [cancelCommentarySpeech, clearPendingCommentary]);
 
-  return { enabled, error, toggle };
+  return {
+    enabled,
+    error,
+    toggle,
+    browserVoices,
+    selectedVoiceURI,
+    setSelectedVoiceURI,
+    previewVoice,
+  };
 }

@@ -3163,12 +3163,42 @@ function ThreeCourt({
             type="button"
             aria-pressed={commentary.enabled}
             aria-label={commentary.enabled ? 'Turn match commentary off' : 'Turn original match commentary on'}
-            title="Original spoken commentary uses this device’s English speech voice and verified point events."
+            title="Original spoken commentary uses an English voice available in this browser."
             disabled={!soundEnabled || !soundReady}
             onClick={commentary.toggle}
           >
             <span>Commentary {commentary.enabled ? 'on' : 'off'}</span>
           </button>
+          {commentary.browserVoices.length > 0 && (
+            <>
+              <label className={styles.playerCameraControl}>
+                <span>Commentary voice</span>
+                <select
+                  aria-label="Choose commentary voice"
+                  value={commentary.selectedVoiceURI}
+                  onChange={(event) => commentary.setSelectedVoiceURI(event.currentTarget.value)}
+                >
+                  <option value="">Best available</option>
+                  {commentary.browserVoices.map((voice) => (
+                    <option
+                      key={voice.voiceURI || `${voice.name}-${voice.lang}`}
+                      value={voice.voiceURI}
+                    >
+                      {voice.name} ({voice.lang})
+                    </option>
+                  ))}
+                </select>
+              </label>
+              <button
+                className={styles.soundButton}
+                type="button"
+                disabled={!soundEnabled || !soundReady}
+                onClick={commentary.previewVoice}
+              >
+                <span>Preview voice</span>
+              </button>
+            </>
+          )}
           <button
             className={styles.soundButton}
             type="button"
