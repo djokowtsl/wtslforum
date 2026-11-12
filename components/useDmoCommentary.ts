@@ -5,6 +5,7 @@ import {
   buildDmoCommentaryFacts,
   buildDmoCommentaryIntroduction,
   buildDmoPointCommentary,
+  buildDmoRallyCommentary,
   chooseDmoCommentaryVoice,
   rankDmoBrowserVoices,
   withDmoCommentaryHistory,
@@ -44,7 +45,12 @@ type Options = {
   isWta: boolean;
   soundEnabled: boolean;
   soundReady: boolean;
-  playbackState: () => { frame: number; playing: boolean; rallyActive: boolean };
+  playbackState: () => {
+    frame: number;
+    playing: boolean;
+    rallyActive: boolean;
+    rallyShotCount?: number;
+  };
 };
 
 export function useDmoCommentary({
@@ -64,8 +70,8 @@ export function useDmoCommentary({
   const [enabled, setEnabled] = useState(false);
   const [error, setError] = useState('');
   const [browserVoices, setBrowserVoices] = useState<SpeechSynthesisVoice[]>([]);
-  const [selectedVoiceURI, setSelectedVoiceURI] = useState('');
   const requestRef = useRef(0);
+  const lastRallyCommentaryPointRef = useRef<number | null>(null);
   const contextFactsRef = useRef('');
   const enabledRef = useRef(false);
   const soundEnabledRef = useRef(soundEnabled);
@@ -91,7 +97,6 @@ export function useDmoCommentary({
     const refreshVoices = () => {
       setBrowserVoices(rankDmoBrowserVoices(synthesis.getVoices()));
     };
-    try { setSelectedVoiceURI(window.localStorage.getItem('wtsl-commentary-natural-voice') ?? ''); } catch {}
     refreshVoices();
     synthesis.addEventListener('voiceschanged', refreshVoices);
     return () => synthesis.removeEventListener('voiceschanged', refreshVoices);
@@ -114,6 +119,7 @@ export function useDmoCommentary({
     ) return false;
 
     const synthesis = window.speechSynthesis;
+    if (synthesis.paused) synthesis.resume();
     // Yield to any in-progress browser speech, including the umpire fallback.
     if (synthesis.speaking || synthesis.pending) return false;
 
@@ -122,11 +128,11 @@ export function useDmoCommentary({
       const voices = browserVoices.length
         ? browserVoices
         : rankDmoBrowserVoices(synthesis.getVoices());
-      utterance.voice = chooseDmoCommentaryVoice(voices, selectedVoiceURI);
+      utterance.voice = chooseDmoCommentaryVoice(voices);
       if (!utterance.voice) return false;
       utterance.lang = utterance.voice?.lang || 'en-GB';
-      utterance.rate = 1;
-      utterance.pitch = 1;
+      utterance.rate = 1.15;
+      utterance.pitch = 1.08;
       utterance.volume = 1;
       utterance.onend = () => {
         if (utteranceRef.current === utterance) utteranceRef.current = null;
@@ -136,7 +142,7 @@ export function useDmoCommentary({
         // an audio failure, and an old callback must not affect a newer call.
         if (utteranceRef.current !== utterance) return;
         utteranceRef.current = null;
-        setError('The browser could not play the commentary voice. Try another voice or preview it again.');
+        setError('The browser could not play the commentary voice. Try Preview commentary voice again.');
       };
       utteranceRef.current = utterance;
       synthesis.speak(utterance);
@@ -145,7 +151,7 @@ export function useDmoCommentary({
     } catch {
       return false;
     }
-  }, [browserVoices, selectedVoiceURI]);
+  }, [browserVoices]);
 
   const cancelCommentarySpeech = useCallback(() => {
     if (!utteranceRef.current) return;
@@ -180,10 +186,13 @@ export function useDmoCommentary({
       }
       if (playback.rallyActive) {
         quietSince = null;
-        // A point reaction is stale once the next rally starts.
-        if (pointFrame !== undefined) return;
-        pendingTimerRef.current = setTimeout(attempt, 250);
-        return;
+        // Point reactions describe the completed point and must not vanish
+        // just because the next serve has started. Longer facts still wait
+        // for a quiet gap.
+        if (pointFrame === undefined) {
+          pendingTimerRef.current = setTimeout(attempt, 250);
+          return;
+        }
       }
 
       quietSince ??= Date.now();
@@ -202,18 +211,12 @@ export function useDmoCommentary({
         }
         return;
       }
-      speak(line);
+      if (!speak(line)) {
+        setError('The browser could not start the commentary voice. Try Preview commentary voice.');
+      }
     };
     pendingTimerRef.current = setTimeout(attempt, delayMs);
   }, [clearPendingCommentary, speak, playbackState]);
-
-  const changeVoice = useCallback((uri: string) => {
-    cancelCommentarySpeech();
-    clearPendingCommentary();
-    setSelectedVoiceURI(uri);
-    setError('');
-    try { window.localStorage.setItem('wtsl-commentary-natural-voice', uri); } catch {}
-  }, [cancelCommentarySpeech, clearPendingCommentary]);
 
   const previewVoice = useCallback(() => {
     if (!soundEnabled || !soundReady) {
@@ -222,7 +225,7 @@ export function useDmoCommentary({
     }
     cancelCommentarySpeech();
     if (!speak('Welcome to WTSL tennis. A big point coming up. Let us see who takes the initiative.')) {
-      setError('No suitable English voice is ready, or the browser is already speaking. Try again when it is quiet.');
+      setError('The browser could not start the commentary voice. Try again when it is quiet.');
     } else setError('');
   }, [soundEnabled, soundReady, cancelCommentarySpeech, speak]);
 
@@ -234,6 +237,7 @@ export function useDmoCommentary({
       setEnabled(false);
       clearPendingCommentary();
       cancelCommentarySpeech();
+      lastRallyCommentaryPointRef.current = null;
       setError('');
       return;
     }
@@ -264,6 +268,7 @@ export function useDmoCommentary({
     enabledRef.current = true;
     setEnabled(true);
     setError('');
+    lastRallyCommentaryPointRef.current = null;
     clearPendingCommentary();
     lastPointNumberRef.current = Math.max(
       snapshot.pointCount,
@@ -279,7 +284,11 @@ export function useDmoCommentary({
       surface,
       round: tournamentRound ?? '',
     });
-    scheduleSpeech(introduction, { delayMs: 0, minimumGapMs: 0, maxWaitMs: 15_000 });
+    // Speak from the button gesture itself; some browsers block speech queued
+    // by a timer until the user interacts with a voice picker or preview.
+    if (!speak(introduction)) {
+      setError('The browser could not start the commentary voice. Try Preview commentary voice.');
+    }
 
     const query = new URLSearchParams({
       first: names[0],
@@ -308,7 +317,6 @@ export function useDmoCommentary({
     isWta,
     names,
     replayFrame,
-    scheduleSpeech,
     soundEnabled,
     soundReady,
     hasVerifiedNames,
@@ -357,8 +365,47 @@ export function useDmoCommentary({
       const playback = playbackState();
       // Pause stops speech, but a call that has already begun may finish when
       // the next rally starts. Otherwise ordinary gaps cut every sentence off.
-      if (!playback.playing) cancelCommentarySpeech();
-      else if (contextFactsRef.current && pendingTimerRef.current === null
+      if (!playback.playing) {
+        cancelCommentarySpeech();
+        lastRallyCommentaryPointRef.current = null;
+        return;
+      }
+
+      if (!playback.rallyActive) {
+        lastRallyCommentaryPointRef.current = null;
+      } else {
+        let pointNumber = snapshot.pointCount;
+        if (fullReplay) {
+          pointNumber = 0;
+          for (const point of commentaryPoints) {
+            if (point.frame > playback.frame) break;
+            pointNumber = point.number;
+          }
+        }
+        const minimumGapMs = pointNumber <= 8 ? 8_000 : 10_000;
+        const voiceBusy = window.speechSynthesis.speaking || window.speechSynthesis.pending;
+        if (
+          (playback.rallyShotCount ?? 0) >= 8
+          && lastRallyCommentaryPointRef.current !== pointNumber
+          && pendingTimerRef.current === null
+          && !voiceBusy
+          && Date.now() - lastSpeechAtRef.current >= minimumGapMs
+        ) {
+          const line = buildDmoRallyCommentary({
+            names,
+            rallyShotCount: playback.rallyShotCount ?? 0,
+            pointNumber,
+          });
+          if (line) {
+            if (!speak(line)) {
+              setError('The browser could not start the commentary voice. Try Preview commentary voice.');
+            }
+            lastRallyCommentaryPointRef.current = pointNumber;
+          }
+        }
+      }
+
+      if (!playback.rallyActive && contextFactsRef.current && pendingTimerRef.current === null
         && !window.speechSynthesis.speaking && Date.now() - lastSpeechAtRef.current >= 12_000) {
         const facts = contextFactsRef.current;
         contextFactsRef.current = '';
@@ -371,7 +418,17 @@ export function useDmoCommentary({
       }
     }, 200);
     return () => clearInterval(timer);
-  }, [enabled, playbackState, cancelCommentarySpeech, scheduleSpeech]);
+  }, [
+    enabled,
+    playbackState,
+    cancelCommentarySpeech,
+    scheduleSpeech,
+    commentaryPoints,
+    fullReplay,
+    names,
+    snapshot.pointCount,
+    speak,
+  ]);
 
   useEffect(() => {
     if (!enabled) return;
@@ -391,8 +448,8 @@ export function useDmoCommentary({
       if (point) {
         const line = buildDmoPointCommentary(withDmoCommentaryHistory(point, commentaryPoints), names);
         if (line) scheduleSpeech(line, {
-          delayMs: 1_400,
-          minimumGapMs: 10_000,
+          delayMs: 250,
+          minimumGapMs: point.number <= 8 ? 8_000 : 10_000,
           maxWaitMs: 9_000,
           pointFrame: point.frame,
         });
@@ -413,8 +470,8 @@ export function useDmoCommentary({
       scoreBeforeLabel: previousPoint?.scoreLabel,
     }, snapshot.recentPoints), names);
     if (line) scheduleSpeech(line, {
-      delayMs: 1_400,
-      minimumGapMs: 10_000,
+      delayMs: 250,
+      minimumGapMs: point.number <= 8 ? 8_000 : 10_000,
       maxWaitMs: 9_000,
       pointFrame: point.frame,
     });
@@ -435,10 +492,8 @@ export function useDmoCommentary({
     cancelCommentarySpeech();
   }, [cancelCommentarySpeech, clearPendingCommentary]);
 
-  const selectedVoice = chooseDmoCommentaryVoice(browserVoices, selectedVoiceURI);
   return {
-    enabled, error, toggle, browserVoices,
-    selectedVoiceURI: selectedVoice?.voiceURI ?? '',
-    changeVoice, previewVoice,
+    enabled, error, toggle,
+    previewVoice,
   };
 }

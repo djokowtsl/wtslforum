@@ -6,6 +6,7 @@ import {
   buildDmoCommentaryFacts,
   buildDmoCommentaryIntroduction,
   buildDmoPointCommentary,
+  buildDmoRallyCommentary,
   rankDmoBrowserVoices,
   chooseDmoCommentaryVoice,
   withDmoCommentaryHistory,
@@ -62,14 +63,18 @@ test('introduction sounds like a broadcast and uses verified WTSL context', () =
   );
 });
 
-test('routine points stay silent and longer rallies get varied, natural calls', () => {
-  assert.equal(
-    buildDmoPointCommentary(
-      { winner: 2, server: 1, rallyHits: 5 },
-      ['Player One', 'Player Two'],
-    ),
-    '',
+test('routine points get varied calls and longer rallies keep stronger reactions', () => {
+  const routine = buildDmoPointCommentary(
+    { number: 1, winner: 2, server: 1, rallyHits: 5 },
+    ['Player One', 'Player Two'],
   );
+  const alternateRoutine = buildDmoPointCommentary(
+    { number: 2, winner: 1, server: 1, rallyHits: 5 },
+    ['Player One', 'Player Two'],
+  );
+  assert.match(routine, /Player Two/);
+  assert.match(alternateRoutine, /Player One/);
+  assert.notEqual(routine, alternateRoutine);
   assert.equal(
     buildDmoPointCommentary(
       { number: 1, winner: 1, server: 1, rallyHits: 12, scoreBeforeLabel: '15-30' },
@@ -87,15 +92,39 @@ test('routine points stay silent and longer rallies get varied, natural calls', 
   assert.equal(buildDmoPointCommentary({ winner: 0 }, ['Player One', 'Player Two']), '');
 });
 
+test('mid-rally calls use shot count and vary without claiming a winner', () => {
+  assert.equal(buildDmoRallyCommentary({
+    names: ['gifu', 'TheTinkerman_'],
+    rallyShotCount: 7,
+  }), '');
+  const first = buildDmoRallyCommentary({
+    names: ['gifu', 'TheTinkerman_'],
+    rallyShotCount: 8,
+    pointNumber: 0,
+  });
+  const second = buildDmoRallyCommentary({
+    names: ['gifu', 'TheTinkerman_'],
+    rallyShotCount: 8,
+    pointNumber: 1,
+  });
+  assert.match(first, /rally|point/);
+  assert.match(second, /gifu|The Tinkerman/);
+  assert.notEqual(first, second);
+  assert.equal(buildDmoRallyCommentary({
+    names: ['gifu', ''],
+    rallyShotCount: 12,
+  }), '');
+});
+
 test('pressure-point calls distinguish a break, a save, and a game point', () => {
-  assert.equal(
+  assert.match(
     buildDmoPointCommentary({
       winner: 2,
       server: 1,
       rallyHits: 3,
       scoreBeforeLabel: '2-3(30-40)',
     }, ['Player One', 'Player Two']),
-    "And that's the break for Player Two!",
+    /takes the break/,
   );
   assert.equal(
     buildDmoPointCommentary({
@@ -106,23 +135,23 @@ test('pressure-point calls distinguish a break, a save, and a game point', () =>
     }, ['Player One', 'Player Two']),
     'The pressure stays on, but Player One saves the break point.',
   );
-  assert.equal(
+  assert.match(
     buildDmoPointCommentary({
       winner: 1,
       server: 1,
       rallyHits: 3,
       scoreBeforeLabel: '0-0(40-30)',
     }, ['Player One', 'Player Two']),
-    'Game point converted — Player One closes it out.',
+    /game/,
   );
-  assert.equal(
+  assert.match(
     buildDmoPointCommentary({
       winner: 1,
       server: 2,
       rallyHits: 3,
       scoreBeforeLabel: '40-30',
     }, ['Player One', 'Player Two']),
-    "And that's the break for Player One!",
+    /takes the break/,
   );
 });
 
@@ -142,12 +171,17 @@ test('browser commentary voice ranking filters to English and prefers natural vo
 });
 
 test('commentary stays spoken-only with no court text bubble', async () => {
-  const [component, styles] = await Promise.all([
+  const [component, styles, display] = await Promise.all([
     readFile(new URL('../components/DmoLiveCourt3D.tsx', import.meta.url), 'utf8'),
     readFile(new URL('../components/DmoLiveCourt3D.module.css', import.meta.url), 'utf8'),
+    readFile(new URL('../components/DmoLiveDisplay.tsx', import.meta.url), 'utf8'),
   ]);
   assert.doesNotMatch(component, /commentary\.message|commentaryCaption/);
   assert.doesNotMatch(styles, /commentaryCaption/);
+  assert.doesNotMatch(component, /Choose commentary voice|commentary\.browserVoices/);
+  assert.match(component, /Preview commentary voice/);
+  assert.match(display, /tournamentName\?\.trim\(\)/);
+  assert.doesNotMatch(display, /snapshot\.stadium\s*\|\|/);
 });
 
 test('speech uses readable WTSL handles and stays silent without player names', () => {
@@ -159,14 +193,14 @@ test('speech uses readable WTSL handles and stays silent without player names', 
     ['gifu', 'TheTinkerman_']), '');
 });
 
-test('natural voice quality outranks accent while English system voices remain available', () => {
+test('commentary uses one highest-ranked English voice and ignores saved voice choices', () => {
   const basic = { voiceURI: 'uk', name: 'English UK', lang: 'en-GB' };
   const google = { voiceURI: 'google', name: 'Google UK English', lang: 'en-GB' };
   const natural = { voiceURI: 'natural', name: 'US Natural', lang: 'en-US' };
   assert.equal(chooseDmoCommentaryVoice([basic]), basic);
   assert.equal(chooseDmoCommentaryVoice([basic, google, natural]), natural);
-  assert.equal(chooseDmoCommentaryVoice([basic, google, natural], 'google'), google);
-  assert.equal(chooseDmoCommentaryVoice([basic, google, natural], 'uk'), basic);
+  assert.equal(chooseDmoCommentaryVoice([basic, google, natural], 'google'), natural);
+  assert.equal(chooseDmoCommentaryVoice([basic, google, natural], 'uk'), natural);
   assert.equal(chooseDmoCommentaryVoice([basic, natural], 'missing-device-voice'), natural);
   assert.equal(chooseDmoCommentaryVoice([{ ...natural, lang: 'fr-FR' }]), null);
 });
@@ -198,15 +232,21 @@ test('pressure-point reactions do not append longer tactical analysis', () => {
     number: 3, winner: 2, server: 1, rallyHits: 12, scoreBeforeLabel: '30-40',
     shots: [930, -1000, 1100].map((bx) => ({ p: 2, k: 'r', bx, by: 100 })),
   }, ['gifu', 'TheTinkerman_']);
-  assert.equal(line, "And that's the break for The Tinkerman!");
+  assert.match(line, /The Tinkerman.*takes the break/);
   assert.doesNotMatch(line, /landed|metres|depth/);
 });
 
 test('live serve speed is called only when a serve is actually unreturned', () => {
   const point = { winner: 1, server: 1, rallyHits: 0, serveSpeedKmh: 202 };
   assert.match(buildDmoPointCommentary(point, ['gifu', 'TheTinkerman_']), /202 kilometres an hour/);
-  assert.equal(buildDmoPointCommentary({ ...point, rallyHits: 3 }, ['gifu', 'TheTinkerman_']), '');
-  assert.equal(buildDmoPointCommentary({ ...point, serveSpeedKmh: 800 }, ['gifu', 'TheTinkerman_']), '');
+  assert.doesNotMatch(
+    buildDmoPointCommentary({ ...point, rallyHits: 3 }, ['gifu', 'TheTinkerman_']),
+    /202 kilometres an hour/,
+  );
+  assert.doesNotMatch(
+    buildDmoPointCommentary({ ...point, serveSpeedKmh: 800 }, ['gifu', 'TheTinkerman_']),
+    /800 kilometres an hour/,
+  );
 });
 
 test('tie-break scores cannot produce normal-game break-point commentary', () => {

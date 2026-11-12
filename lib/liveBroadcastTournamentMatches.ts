@@ -5,6 +5,7 @@ export type OngoingTournamentMatch = {
   tour: string;
   first_name: string;
   second_name: string;
+  tournamentName?: string;
 };
 
 export function isFreshTournamentMatchSnapshot(
@@ -27,6 +28,7 @@ type Tournament = {
   tour: string;
   status: string;
   officialUrl: string;
+  name?: string | null;
 };
 
 function tournamentIdFromOfficialUrl(value: string) {
@@ -172,6 +174,10 @@ export async function loadOngoingTournamentMatches(
   const ongoingIds = new Set(
     ongoing.map(({ tournament, tournamentId }) => `${tournament.tour}|${tournamentId}`),
   );
+  const tournamentNames = new Map(ongoing.map(({ tournament, tournamentId }) => [
+    `${tournament.tour}|${tournamentId}`,
+    tournament.name?.trim() || '',
+  ]));
   const fixtureMatches = fixtures.flatMap((fixture) => {
     const tour = String(fixture.tour ?? '').trim();
     const tournamentId = String(fixture.tournament_id ?? '').trim();
@@ -185,11 +191,24 @@ export async function loadOngoingTournamentMatches(
     ) {
       return [];
     }
-    return [{ tournamentId, tour, first_name: firstName, second_name: secondName }];
+    const tournamentName = tournamentNames.get(`${tour}|${tournamentId}`);
+    return [{
+      tournamentId,
+      tour,
+      first_name: firstName,
+      second_name: secondName,
+      ...(tournamentName ? { tournamentName } : {}),
+    }];
   });
-  const drawMatches = await Promise.all(ongoing.map(({ tournament, tournamentId }) =>
+  const drawMatches = (await Promise.all(ongoing.map(({ tournament, tournamentId }) =>
     loadTournamentDrawMatches(tournament, tournamentId, fetcher),
-  ));
+  ))).flatMap((matches, index) => {
+    const tournamentName = ongoing[index].tournament.name?.trim();
+    return matches.map((match) => ({
+      ...match,
+      ...(tournamentName ? { tournamentName } : {}),
+    }));
+  });
   const unique = new Map<string, OngoingTournamentMatch>();
   for (const match of [...fixtureMatches, ...drawMatches.flat()]) {
     const pair = [match.first_name, match.second_name].sort();
@@ -206,6 +225,32 @@ export function matchesOngoingTournament(
     ['TE4', 'TE4_(F)'].includes(match.tour)
     && sameLiveMatch(players, [match.first_name, match.second_name]),
   );
+}
+
+export function findOngoingTournamentMatch(
+  players: [string, string],
+  matches: OngoingTournamentMatch[],
+  tour?: string,
+) {
+  const matching = new Map<string, OngoingTournamentMatch>();
+  for (const match of matches) {
+    if (
+      !['TE4', 'TE4_(F)'].includes(match.tour)
+      || (tour && match.tour !== tour)
+      || !sameLiveMatch(players, [match.first_name, match.second_name])
+    ) {
+      continue;
+    }
+    const key = `${match.tour}|${match.tournamentId}`;
+    const existing = matching.get(key);
+    const tournamentName = match.tournamentName || existing?.tournamentName;
+    matching.set(key, {
+      ...existing,
+      ...match,
+      ...(tournamentName ? { tournamentName } : {}),
+    });
+  }
+  return matching.size === 1 ? [...matching.values()][0] : null;
 }
 
 export function findOngoingTournamentMatchInText(
@@ -227,7 +272,7 @@ export function findOngoingTournamentMatchInText(
       normalizeLivePlayerName(match.first_name),
       normalizeLivePlayerName(match.second_name),
     ].sort();
-    uniquePairs.set(`${match.tour}|${pair.join('|')}`, match);
+    uniquePairs.set(`${match.tour}|${match.tournamentId}|${pair.join('|')}`, match);
   }
   return uniquePairs.size === 1 ? [...uniquePairs.values()][0] : null;
 }

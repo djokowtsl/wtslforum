@@ -22,7 +22,7 @@ function harness(voices = [{ voiceURI: 'natural', name: 'English Natural', lang:
   const originalNow = Date.now;
   const slots = [], spoken = [], requests = [], storage = new Map(), timers = new Map();
   let now = 100_000, cursor = 0, dirty = false, effects = [], output, id = 0;
-  const playback = { frame: 1000, playing: true, rallyActive: false };
+  const playback = { frame: 1000, playing: true, rallyActive: false, rallyShotCount: 0 };
   const synthesis = {
     speaking: false, pending: false, getVoices: () => voices,
     addEventListener() {}, removeEventListener() {},
@@ -127,15 +127,57 @@ test('live reactions wait for the visible point end and finish after the next ra
   } finally { h.cleanup(); }
 });
 
-test('queued point calls expire when a new rally starts', () => {
+test('commentary opening starts directly from the commentary button gesture', () => {
+  const h = harness();
+  try {
+    h.value().toggle();
+    assert.equal(h.spoken.length, 1);
+    assert.match(h.spoken[0].text, /gifu against The Tinkerman/);
+  } finally { h.cleanup(); }
+});
+
+test('opening points use a shorter voice cooldown so commentary starts sooner', () => {
+  const h = harness();
+  try {
+    h.value().toggle(); h.render(); h.finish(); h.advance(7_500);
+    h.render({ snapshot: { pointCount: 1,
+      recentPoints: [{ number: 1, frame: 1000, winner: 1, server: 1, rallyHits: 5 }] } });
+    h.advance(500);
+    assert.equal(h.spoken.length, 2);
+  } finally { h.cleanup(); }
+});
+
+test('long rallies can receive a measured call before the point ends', () => {
+  const h = harness();
+  try {
+    h.value().toggle(); h.render(); h.finish(); h.advance(8_000);
+    h.playback.rallyActive = true;
+    h.playback.rallyShotCount = 8;
+    h.advance(200);
+    assert.equal(h.spoken.length, 2);
+    assert.match(h.spoken[1].text, /rally|point/i);
+    assert.match(h.spoken[1].text, /gifu|The Tinkerman/);
+  } finally { h.cleanup(); }
+});
+
+test('commentary reports when the browser refuses to start speech', () => {
+  const h = harness();
+  try {
+    h.synthesis.speak = () => { throw new Error('speech blocked'); };
+    h.value().toggle(); h.render();
+    assert.match(h.value().error, /could not start the commentary voice/);
+  } finally { h.cleanup(); }
+});
+
+test('point reactions are not dropped when the next rally starts', () => {
   const h = harness();
   try {
     h.value().toggle(); h.render(); h.advance(0); h.finish(); h.advance(12_000);
     h.render({ snapshot: { pointCount: 1,
       recentPoints: [{ number: 1, frame: 1000, winner: 1, server: 1, rallyHits: 12 }] } });
     h.playback.rallyActive = true; h.advance(2000);
-    h.playback.rallyActive = false; h.advance(10_000);
-    assert.equal(h.spoken.length, 1);
+    assert.equal(h.spoken.length, 2);
+    assert.match(h.spoken[1].text, /gifu|point/i);
   } finally { h.cleanup(); }
 });
 
@@ -205,16 +247,17 @@ test('basic English voices remain usable and missing WTSL names never use charac
   } finally { h.cleanup(); }
 });
 
-test('voice preview uses the selected voice and mute cancels commentary', () => {
+test('voice preview uses the single automatic voice and mute cancels commentary', () => {
   const voices = ['British Natural', 'Australian Natural'].map((name, i) =>
     ({ voiceURI: `voice${i}`, name, lang: i ? 'en-AU' : 'en-GB' }));
   const h = harness(voices);
   try {
-    h.value().changeVoice('voice1'); h.render();
     h.value().previewVoice();
-    assert.equal(h.spoken[0].voice.voiceURI, 'voice1');
-    assert.equal(h.spoken[0].rate, 1);
-    assert.equal(h.storage.get('wtsl-commentary-natural-voice'), 'voice1');
+    assert.equal(h.spoken[0].voice.voiceURI, 'voice0');
+    assert.equal(h.spoken[0].rate, 1.15);
+    assert.equal(h.spoken[0].pitch, 1.08);
+    assert.equal(h.value().changeVoice, undefined);
+    assert.equal(h.storage.get('wtsl-commentary-natural-voice'), undefined);
     h.render({ soundEnabled: false });
     assert.equal(h.synthesis.speaking, false);
     assert.equal(h.value().enabled, false);

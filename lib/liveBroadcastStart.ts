@@ -17,6 +17,7 @@ export async function startExternalLiveBroadcast(input: {
   officialByBroadcaster?: boolean;
   officialByTournament?: boolean;
   likelyOfficial?: boolean;
+  tournamentName?: string | null;
 }) {
   await cleanupExpiredLiveDmoBroadcasts();
 
@@ -37,6 +38,9 @@ export async function startExternalLiveBroadcast(input: {
     officialByBroadcaster,
     officialByTournament,
     likelyOfficial,
+    ...(typeof input.tournamentName === 'string' && input.tournamentName.trim()
+      ? { tournamentName: input.tournamentName.trim().slice(0, 120) }
+      : {}),
     stream: input.stream,
     ...(input.character ? { character: input.character } : {}),
     ...(input.sourceMessageUrl ? { sourceMessageUrl: input.sourceMessageUrl } : {}),

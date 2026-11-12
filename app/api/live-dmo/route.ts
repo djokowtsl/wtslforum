@@ -9,8 +9,8 @@ import { readSiteSnapshot } from '@/lib/siteSnapshots';
 import { cleanupExpiredLiveDmoBroadcasts } from '@/lib/liveDmoStorage';
 import type { PublicFixturePayload } from '@/lib/liveFeedTypes';
 import {
+  findOngoingTournamentMatch,
   isFreshTournamentMatchSnapshot,
-  matchesOngoingTournament,
 } from '@/lib/liveBroadcastTournamentMatches';
 import { announceLiveBroadcast } from '@/lib/discord';
 import { finishLiveBroadcastAnnouncement } from '@/lib/liveBroadcastAnnouncements';
@@ -219,9 +219,11 @@ export async function POST(request: Request) {
     verifiedMessageUrl = `https://discord.com/channels/${reference.guildId}/${reference.channelId}/${reference.messageId}`;
   }
 
-  const officialByTournament = await officialByTournamentFromSnapshot(
+  const officialTournamentMatch = await ongoingTournamentMatchFromSnapshot(
     broadcastPlayers,
+    isWta ? 'TE4_(F)' : 'TE4',
   );
+  const officialByTournament = Boolean(officialTournamentMatch);
   const playerCharacters = (body.playerCharacters ?? [body.character ?? null, null])
     .map((name) => (typeof name === 'string' && name.trim() ? name.trim() : null)) as [string | null, string | null];
   const payload = {
@@ -235,6 +237,9 @@ export async function POST(request: Request) {
     isWta,
     officialByBroadcaster: body.officialByBroadcaster,
     officialByTournament,
+    ...(officialTournamentMatch?.tournamentName
+      ? { tournamentName: officialTournamentMatch.tournamentName }
+      : {}),
     likelyOfficial: await likelyOfficialFromSnapshot(broadcastPlayers, broadcastBestOf),
     stream,
     sourceMessageUrl: verifiedMessageUrl,
@@ -254,6 +259,7 @@ export async function POST(request: Request) {
         isWta,
         officialByBroadcaster: body.officialByBroadcaster,
         officialByTournament: payload.officialByTournament,
+        tournamentName: officialTournamentMatch?.tournamentName,
         likelyOfficial: payload.likelyOfficial,
       });
       return NextResponse.json({
@@ -357,18 +363,20 @@ async function likelyOfficialFromSnapshot(
   }
 }
 
-async function officialByTournamentFromSnapshot(
+async function ongoingTournamentMatchFromSnapshot(
   players: [string, string] | undefined,
+  tour: 'TE4' | 'TE4_(F)',
 ) {
-  if (!players) return false;
+  if (!players) return null;
   try {
     const snapshot = await readSiteSnapshot<PublicFixturePayload>('live-fixtures');
-    if (!snapshot || !isFreshTournamentMatchSnapshot(snapshot.checkedAt)) return false;
-    return matchesOngoingTournament(
+    if (!snapshot || !isFreshTournamentMatchSnapshot(snapshot.checkedAt)) return null;
+    return findOngoingTournamentMatch(
       players,
       snapshot.payload.ongoingTournamentMatches ?? [],
+      tour,
     );
   } catch {
-    return false;
+    return null;
   }
 }
