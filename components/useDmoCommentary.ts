@@ -14,7 +14,6 @@ import {
 } from '@/lib/dmoCommentary.mjs';
 import {
   canUseDmoLocalVoice,
-  isMobileDmoLocalVoiceDevice,
   loadDmoLocalVoiceModel,
 } from '@/lib/dmoLocalVoice.mjs';
 import type { DmoCommentaryPoint } from '@/lib/dmoCommentary.mjs';
@@ -53,6 +52,26 @@ function withVoiceDeadline<T>(work: Promise<T>, milliseconds: number): Promise<T
   return new Promise((resolve, reject) => {
     const timer = setTimeout(() => reject(new Error('Commentary voice timed out')), milliseconds);
     work.then(resolve, reject).finally(() => clearTimeout(timer));
+  });
+}
+
+function withVoiceSlowNotice<T>(
+  work: Promise<T>,
+  milliseconds: number,
+  onSlow: () => void,
+): Promise<T> {
+  return new Promise((resolve, reject) => {
+    const timer = setTimeout(onSlow, milliseconds);
+    work.then(
+      (value) => {
+        clearTimeout(timer);
+        resolve(value);
+      },
+      (cause) => {
+        clearTimeout(timer);
+        reject(cause);
+      },
+    );
   });
 }
 
@@ -112,6 +131,7 @@ export function useDmoCommentary({
   const soundEnabledRef = useRef(soundEnabled);
   const localModelRef = useRef<LocalVoiceModel | null>(null);
   const localModelPromiseRef = useRef<Promise<LocalVoiceModel | null> | null>(null);
+  const localVoiceBackendRef = useRef<'webgpu' | 'wasm' | 'unknown'>('unknown');
   const localVoiceLoadingRef = useRef(false);
   const localAudioContextRef = useRef<AudioContext | null>(null);
   const localSpeechSessionRef = useRef(0);
@@ -183,15 +203,18 @@ export function useDmoCommentary({
     }
 
     localVoiceLoadingRef.current = true;
+    localVoiceBackendRef.current = 'unknown';
     setVoiceLoading(true);
     setVoiceStatus('Loading the local voice model; first use downloads about 92 MB.');
     const pending = withVoiceDeadline(loadDmoLocalVoiceModel((progress) => {
       if (progress.status === 'backend') {
+        localVoiceBackendRef.current = progress.backend ?? 'unknown';
         setVoiceStatus(progress.backend === 'webgpu'
           ? 'Preparing local Kokoro with GPU acceleration.'
           : 'Preparing local Kokoro on this device.');
       }
       if (progress.status === 'backend-fallback') {
+        localVoiceBackendRef.current = 'wasm';
         setVoiceStatus('GPU acceleration could not start; trying local Kokoro on the CPU.');
       }
       if (progress.status === 'progress' && typeof progress.progress === 'number') {
@@ -207,9 +230,15 @@ export function useDmoCommentary({
         localModelRef.current = model;
         if (model) {
           setKokoroReady(true);
-          setVoiceStatus('Local Kokoro voices are ready; speech is generated on this device.');
+          const backend = localVoiceBackendRef.current === 'webgpu'
+            ? ' using GPU acceleration'
+            : localVoiceBackendRef.current === 'wasm' ? ' on the CPU' : '';
+          setVoiceStatus(
+            `Local Kokoro voices are ready; speech is generated on this device${backend}.`,
+          );
         } else {
           setKokoroReady(false);
+          localVoiceBackendRef.current = 'unknown';
           setVoiceStatus('Local Kokoro voices are unavailable. No device voice was used.');
         }
         return model;
@@ -252,13 +281,28 @@ export function useDmoCommentary({
           const speaker = index === 0
             ? firstSpeaker
             : firstSpeaker === 'female' ? 'male' : 'female';
-          setVoiceStatus('Generating commentary locally; this can take longer on mobile.');
+          const backendSuffix = localVoiceBackendRef.current === 'webgpu'
+            ? ' with GPU acceleration'
+            : localVoiceBackendRef.current === 'wasm' ? ' on the CPU' : '';
+          setVoiceStatus(`Generating commentary locally${backendSuffix}.`);
           let phase = 'local speech generation';
           try {
-            const audio = await withVoiceDeadline(model.generate(lines[index], {
-              voice: speaker === 'female' ? 'af_heart' : 'am_michael',
-              speed: 1.03,
-            }), isMobileDmoLocalVoiceDevice() ? 60_000 : 30_000);
+            // Kokoro's generate() has no abort signal. A hard timeout abandons
+            // still-running inference and can let retries pile up behind it.
+            const audio = await withVoiceSlowNotice(
+              model.generate(lines[index], {
+                voice: speaker === 'female' ? 'af_heart' : 'am_michael',
+                speed: 1.03,
+              }),
+              30_000,
+              () => {
+                if (session === localSpeechSessionRef.current && soundEnabledRef.current) {
+                  setVoiceStatus(
+                    `Kokoro is still generating locally${backendSuffix}; waiting instead of cancelling the request.`,
+                  );
+                }
+              },
+            );
             if (session !== localSpeechSessionRef.current || !soundEnabledRef.current) {
               return { status: 'cancelled' };
             }
