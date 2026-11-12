@@ -98,7 +98,14 @@ export default function Te4DmoReplayPlayer({
         number: point.k,
         server: point.s,
         winner: point.w,
-        rallyHits: point.sh.length,
+        rallyHits: point.n,
+        rallyShotCount: point.n,
+        highlightReasons: point.rs,
+        faults: point.f,
+        inferred: point.inferred,
+        isTiebreak: point.tb === 1,
+        shots: point.sh,
+        shotEndTime: point.fc - 1,
         scoreBeforeLabel: point.pt,
       }];
     });
@@ -280,6 +287,9 @@ export default function Te4DmoReplayPlayer({
             playbackSpeed={initialSpeed}
             isWta={isWta ?? false}
             playerCharacters={nativeMotionNames}
+            commentaryNames={submissionPlayers && viewer
+              ? alignDmoReplayPlayerStyles(submissionPlayers, viewer.names, submissionPlayers)
+              : null}
             playerGruntSettings={nativeMotion.playerGruntSettings}
             tournamentRound={tournamentRound}
             tournamentName={viewer.tournament}

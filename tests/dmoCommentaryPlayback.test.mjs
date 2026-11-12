@@ -1,0 +1,186 @@
+import assert from 'node:assert/strict';
+import { readFile } from 'node:fs/promises';
+import { createRequire } from 'node:module';
+import Module from 'node:module';
+import test from 'node:test';
+import * as commentary from '../lib/dmoCommentary.mjs';
+
+const require = createRequire(import.meta.url);
+const { transformSync } = require('next/dist/build/swc');
+const source = await readFile(new URL('../components/useDmoCommentary.ts', import.meta.url), 'utf8');
+const compiled = transformSync(source, {
+  filename: 'useDmoCommentary.ts',
+  jsc: { parser: { syntax: 'typescript' }, target: 'es2022' },
+  module: { type: 'commonjs' },
+}).code;
+
+// Run the real hook against deterministic speech, playback, fetch and timers.
+// No browser audio service, account, paid provider or match data is contacted.
+function harness(voices = [{ voiceURI: 'natural', name: 'English Natural', lang: 'en-GB' }]) {
+  const originals = Object.fromEntries(['window', 'SpeechSynthesisUtterance', 'fetch',
+    'setTimeout', 'clearTimeout', 'setInterval', 'clearInterval'].map((key) => [key, globalThis[key]]));
+  const originalNow = Date.now;
+  const slots = [], spoken = [], requests = [], storage = new Map(), timers = new Map();
+  let now = 100_000, cursor = 0, dirty = false, effects = [], output, id = 0;
+  const playback = { frame: 1000, playing: true, rallyActive: false };
+  const synthesis = {
+    speaking: false, pending: false, getVoices: () => voices,
+    addEventListener() {}, removeEventListener() {},
+    speak: (utterance) => { spoken.push(utterance); synthesis.speaking = true; },
+    cancel: () => { synthesis.speaking = false; },
+  };
+  globalThis.window = { speechSynthesis: synthesis,
+    localStorage: { getItem: (key) => storage.get(key), setItem: (key, value) => storage.set(key, value) } };
+  globalThis.SpeechSynthesisUtterance = class { constructor(text) { this.text = text; } };
+  globalThis.fetch = (url) => new Promise((resolve) => requests.push({ url, resolve }));
+  Date.now = () => now;
+  const timer = (fn, delay, interval = false) => {
+    const key = ++id; timers.set(key, { fn, at: now + delay, interval: interval ? delay : 0 }); return key;
+  };
+  globalThis.setTimeout = (fn, delay = 0) => timer(fn, delay);
+  globalThis.setInterval = (fn, delay) => timer(fn, delay, true);
+  globalThis.clearTimeout = globalThis.clearInterval = (key) => timers.delete(key);
+  const changed = (previous, deps) => !previous || deps.some((dep, i) => !Object.is(dep, previous.deps[i]));
+  const hooks = {
+    useState: (initial) => {
+      const i = cursor++;
+      if (!(i in slots)) slots[i] = typeof initial === 'function' ? initial() : initial;
+      return [slots[i], (value) => {
+        const next = typeof value === 'function' ? value(slots[i]) : value;
+        if (!Object.is(next, slots[i])) { slots[i] = next; dirty = true; }
+      }];
+    },
+    useRef: (initial) => { const i = cursor++; return slots[i] ??= { current: initial }; },
+    useMemo: (fn, deps) => {
+      const i = cursor++;
+      if (changed(slots[i], deps)) slots[i] = { deps, value: fn() };
+      return slots[i].value;
+    },
+    useCallback: (fn, deps) => hooks.useMemo(() => fn, deps),
+    useEffect: (fn, deps) => {
+      const i = cursor++;
+      if (changed(slots[i], deps)) {
+        const cleanup = slots[i]?.cleanup;
+        slots[i] = { deps };
+        effects.push(() => { cleanup?.(); slots[i].cleanup = fn(); });
+      }
+    },
+  };
+  const mod = new Module(import.meta.url);
+  mod.require = (name) => name === 'react' ? hooks
+    : name === '@/lib/dmoCommentary.mjs' ? commentary : require(name);
+  mod._compile(compiled, 'useDmoCommentary.js');
+  let options = { snapshot: { pointCount: 0, recentPoints: [] },
+    commentaryNames: ['gifu', 'TheTinkerman_'], commentaryPoints: [], fullReplay: false,
+    replayFrame: 0, surface: 'Hard', isWta: false, soundEnabled: true, soundReady: true,
+    playbackState: () => playback };
+  const render = (patch = {}) => {
+    options = { ...options, ...patch };
+    let attempts = 0;
+    do {
+      dirty = false; cursor = 0; effects = [];
+      output = mod.exports.useDmoCommentary(options);
+      effects.forEach((fn) => fn());
+      assert.ok(++attempts < 12, 'hook settles');
+    } while (dirty);
+    return output;
+  };
+  const advance = (milliseconds) => {
+    const end = now + milliseconds;
+    let attempts = 0;
+    while (true) {
+      const entry = [...timers].sort((a, b) => a[1].at - b[1].at).find(([, value]) => value.at <= end);
+      if (!entry) break;
+      const [key, value] = entry; now = value.at;
+      if (value.interval) value.at += value.interval; else timers.delete(key);
+      value.fn(); render();
+      assert.ok(++attempts < 10_000, 'timers settle');
+    }
+    now = end; render();
+  };
+  const finish = () => { synthesis.speaking = false; spoken.at(-1)?.onend?.(); };
+  const cleanup = () => {
+    for (const slot of slots) slot?.cleanup?.();
+    Object.assign(globalThis, originals); Date.now = originalNow;
+  };
+  render();
+  return { render, advance, finish, cleanup, spoken, playback, requests, storage,
+    value: () => output, synthesis };
+}
+
+test('live reactions wait for the visible point end, then stop at the next rally', () => {
+  const h = harness();
+  try {
+    h.value().toggle(); h.render(); h.advance(0);
+    assert.match(h.spoken[0].text, /gifu against The Tinkerman/);
+    assert.match(h.requests[0].url, /first=gifu&second=TheTinkerman_/);
+    h.finish(); h.advance(12_000);
+    h.render({ snapshot: { pointCount: 1,
+      recentPoints: [{ number: 1, frame: 1200, winner: 2, server: 1, rallyHits: 10 }] } });
+    h.advance(2000);
+    assert.equal(h.spoken.length, 1, 'does not announce the source result early');
+    h.playback.frame = 1200; h.advance(500);
+    assert.equal(h.spoken.length, 2);
+    assert.equal(h.synthesis.speaking, true);
+    h.playback.rallyActive = true; h.advance(200);
+    assert.equal(h.synthesis.speaking, false);
+  } finally { h.cleanup(); }
+});
+
+test('queued point calls expire when a new rally starts', () => {
+  const h = harness();
+  try {
+    h.value().toggle(); h.render(); h.advance(0); h.finish(); h.advance(12_000);
+    h.render({ snapshot: { pointCount: 1,
+      recentPoints: [{ number: 1, frame: 1000, winner: 1, server: 1, rallyHits: 12 }] } });
+    h.playback.rallyActive = true; h.advance(2000);
+    h.playback.rallyActive = false; h.advance(10_000);
+    assert.equal(h.spoken.length, 1);
+  } finally { h.cleanup(); }
+});
+
+test('changing player pair rejects delayed facts from the previous match', async () => {
+  const h = harness();
+  try {
+    h.value().toggle(); h.render(); h.advance(0); h.finish();
+    h.render({ commentaryNames: ['new first', 'new second'] });
+    assert.equal(h.value().enabled, false);
+    h.requests[0].resolve({ ok: true, json: async () => ({ context: {
+      tour: 'ATP', players: [{ rank: 1 }, { rank: 2 }], headToHead: null,
+    } }) });
+    await new Promise((resolve) => originalSetImmediate(resolve));
+    h.render(); h.advance(30_000);
+    assert.equal(h.spoken.length, 1);
+  } finally { h.cleanup(); }
+});
+
+const originalSetImmediate = globalThis.setImmediate;
+
+test('basic-only devices fail explicitly and missing WTSL names never use character names', () => {
+  const h = harness([{ voiceURI: 'basic', name: 'Basic UK', lang: 'en-GB' }]);
+  try {
+    h.value().toggle(); h.render();
+    assert.equal(h.value().enabled, false);
+    assert.match(h.value().error, /basic system voice/);
+    assert.equal(h.spoken.length, 0);
+    h.render({ commentaryNames: null });
+    h.value().toggle(); h.render();
+    assert.match(h.value().error, /character names will not be used/);
+  } finally { h.cleanup(); }
+});
+
+test('voice preview uses the selected voice and mute cancels commentary', () => {
+  const voices = ['British Natural', 'Australian Natural'].map((name, i) =>
+    ({ voiceURI: `voice${i}`, name, lang: i ? 'en-AU' : 'en-GB' }));
+  const h = harness(voices);
+  try {
+    h.value().changeVoice('voice1'); h.render();
+    h.value().previewVoice();
+    assert.equal(h.spoken[0].voice.voiceURI, 'voice1');
+    assert.equal(h.spoken[0].rate, 1);
+    assert.equal(h.storage.get('wtsl-commentary-natural-voice'), 'voice1');
+    h.render({ soundEnabled: false });
+    assert.equal(h.synthesis.speaking, false);
+    assert.equal(h.value().enabled, false);
+  } finally { h.cleanup(); }
+});
