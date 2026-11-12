@@ -146,6 +146,9 @@ export type Te4LiveSnapshot = {
 
 export type Te4LivePoint = {
   number: number;
+  frame?: number;
+  isTiebreak?: boolean;
+  serveSpeedKmh?: number | null;
   scoreLabel?: string;
   server: Te4LivePlayer;
   winner: Te4LivePlayer;
@@ -796,6 +799,9 @@ export class Te4DmoLiveParser {
       const scoreAfterPoint = score.rows[pointIndex + 1] ?? score.current;
       return {
         number: pointIndex + 1,
+        frame: point.end,
+        isTiebreak: Boolean(score.rows[pointIndex]?.tiebreak),
+        serveSpeedKmh: this.shotSpeedKmh(point.serveFrame, true),
         scoreLabel: formatLivePointScore(scoreAfterPoint),
         server: point.server,
         winner: point.winner as Te4LivePlayer,

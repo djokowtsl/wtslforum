@@ -195,6 +195,7 @@ type Props = {
   modelAssetBase?: string;
   playerBundledMotions?: readonly [BundledMotionSource | null, BundledMotionSource | null];
   playerCharacters?: readonly [string | null, string | null];
+  commentaryNames?: readonly [string, string] | null;
   playerGruntSettings?: readonly [DmoCharacterGruntSetting | null, DmoCharacterGruntSetting | null];
   playerOutfitSeed?: string;
   commentaryPoints?: readonly CommentaryReplayPoint[];
@@ -302,6 +303,7 @@ function ThreeCourt({
   modelAssetBase,
   playerBundledMotions,
   playerCharacters = [null, null],
+  commentaryNames = null,
   playerGruntSettings,
   playerOutfitSeed,
   commentaryPoints = [],
@@ -467,9 +469,23 @@ function ThreeCourt({
   const umpireCallsEnabled = soundEnabled;
   const [umpireSpeechReady, setUmpireSpeechReady] = useState(false);
   const [soundError, setSoundError] = useState('');
+  const commentaryPlaybackState = useCallback(() => {
+    const frame = playheadRef.current ?? -1;
+    const events = trajectoryEventsRef.current;
+    let rallyActive = true;
+    for (let index = events.length - 1; index >= 0; index -= 1) {
+      const event = events[index];
+      if (event.frame > frame) continue;
+      if (event.kind === 'shot' || event.kind === 'point-end') {
+        rallyActive = event.kind === 'shot';
+        break;
+      }
+    }
+    return { frame, playing: !fullReplay || replayPlayingRef.current, rallyActive };
+  }, [fullReplay]);
   const commentary = useDmoCommentary({
     snapshot,
-    playerCharacters,
+    commentaryNames,
     fullReplay,
     commentaryPoints,
     replayFrame,
@@ -479,6 +495,7 @@ function ThreeCourt({
     isWta,
     soundEnabled,
     soundReady: soundEnabled && soundReady,
+    playbackState: commentaryPlaybackState,
   });
   const [crowdVolume, setCrowdVolume] = useState(0.24);
   const [effectsVolume, setEffectsVolume] = useState(0.9);
@@ -3163,7 +3180,7 @@ function ThreeCourt({
             type="button"
             aria-pressed={commentary.enabled}
             aria-label={commentary.enabled ? 'Turn match commentary off' : 'Turn original match commentary on'}
-            title="Original spoken commentary uses an English voice available in this browser."
+            title="Original commentary uses WTSL player names and prioritises natural English voices where available. Voice quality depends on your browser."
             disabled={!soundEnabled || !soundReady}
             onClick={commentary.toggle}
           >
@@ -3176,14 +3193,10 @@ function ThreeCourt({
                 <select
                   aria-label="Choose commentary voice"
                   value={commentary.selectedVoiceURI}
-                  onChange={(event) => commentary.setSelectedVoiceURI(event.currentTarget.value)}
+                  onChange={(event) => commentary.changeVoice(event.currentTarget.value)}
                 >
-                  <option value="">Best available</option>
                   {commentary.browserVoices.map((voice) => (
-                    <option
-                      key={voice.voiceURI || `${voice.name}-${voice.lang}`}
-                      value={voice.voiceURI}
-                    >
+                    <option key={voice.voiceURI || `${voice.name}-${voice.lang}`} value={voice.voiceURI}>
                       {voice.name} ({voice.lang})
                     </option>
                   ))}

@@ -18,6 +18,15 @@ export type DmoCommentaryPoint = {
   server?: number | null;
   winner?: number | null;
   rallyHits?: number | null;
+  rallyShotCount?: number | null;
+  highlightReasons?: string | null;
+  faults?: number | null;
+  inferred?: boolean;
+  isTiebreak?: boolean;
+  winningStreak?: number;
+  serveSpeedKmh?: number | null;
+  shots?: readonly { p: number; k: string; bx: number | null; by: number | null; bt?: number | null }[];
+  shotEndTime?: number;
   scoreBeforeLabel?: string | null;
 };
 
@@ -57,3 +66,12 @@ export function buildDmoPointCommentary(
 export function rankDmoBrowserVoices<T extends DmoBrowserVoice>(
   voices?: readonly T[],
 ): T[];
+
+export function chooseDmoCommentaryVoice<T extends DmoBrowserVoice>(
+  voices?: readonly T[],
+  selectedURI?: string,
+): T | null;
+
+export function withDmoCommentaryHistory<T extends DmoCommentaryPoint>(
+  point: T, history?: readonly DmoCommentaryPoint[],
+): T & { winningStreak: number };

@@ -23,6 +23,7 @@ type Props = {
   broadcastId?: string;
   allowAutomaticFallback?: boolean;
   playerCharacters?: readonly [string | null, string | null];
+  commentaryNames?: readonly [string, string] | null;
   snapshot: Te4LiveSnapshot;
   isWta?: boolean;
   state: 'live' | 'ended';
@@ -139,6 +140,7 @@ export default function DmoLiveDisplay({
   broadcastId,
   allowAutomaticFallback = false,
   playerCharacters,
+  commentaryNames,
   snapshot,
   isWta = false,
   state,
@@ -237,6 +239,7 @@ export default function DmoLiveDisplay({
           playbackSpeed={playbackSpeed}
           isWta={isWta}
           playerCharacters={motionNames}
+          commentaryNames={commentaryNames}
           playerGruntSettings={nativeMotion.playerGruntSettings}
           buffering={buffering}
           scoreboard={stadiumScoreboard}
