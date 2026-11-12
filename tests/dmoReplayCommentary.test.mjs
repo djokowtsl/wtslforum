@@ -69,3 +69,29 @@ test('set announcements require an explicit set-number transition', () => {
 test('inferred final replay points remain silent', () => {
   assert.equal(call({ g: '6-5', pt: '40-0', inferred: true }, { g: '7-5', pt: '0-0' }), '');
 });
+
+test('replay points carry set counts and only a verified match end', () => {
+  const base = { mf: 0, fc: 30, n: 2, f: 0, sh: [], tb: 0, s: 1 };
+  const viewer = {
+    match: { n: 900 },
+    final: { ss: [[6, 4], [7, 5]], wp: 1 },
+    pts: [
+      { ...base, k: 1, w: 1, set: 2, ss: [[6, 4]], g: '5-5', pt: '40-0' },
+      { ...base, k: 2, w: 1, set: 2, ss: [[6, 4]], g: '6-5', pt: '40-30', mf: 100 },
+    ],
+  };
+  const points = buildDmoReplayCommentaryPoints(viewer, { bestOf: 3 });
+  assert.deepEqual(points[0].setsWonBefore, [1, 0]);
+  assert.equal(points[0].setsToWin, 2);
+  assert.equal(points[0].matchOver, undefined);
+  assert.equal(points[1].matchOver, true);
+  assert.deepEqual(points[1].finalSets, [[6, 4], [7, 5]]);
+  assert.match(buildDmoPointCommentary(points[1], names), /barboza/);
+
+  const abandoned = buildDmoReplayCommentaryPoints({
+    ...viewer,
+    final: { ss: [[6, 4]], wp: 1 },
+    pts: [{ ...base, k: 1, w: 1, set: 1, ss: [], g: '5-4', pt: '40-0' }],
+  }, { bestOf: 3 });
+  assert.equal(abandoned[0].matchOver, undefined);
+});

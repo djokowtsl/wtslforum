@@ -32,6 +32,12 @@ export type DmoCommentaryPoint = {
   scoreAfterLabel?: string | null;
   setBefore?: number;
   setAfter?: number;
+  setsWonBefore?: readonly [number, number];
+  setsToWin?: number;
+  matchOver?: boolean;
+  finalSets?: readonly (readonly [number, number])[];
+  gameStreak?: number | null;
+  previousGame?: { winner: number; server: number; broken: boolean } | null;
 };
 
 export type DmoBrowserVoice = {
@@ -105,6 +111,22 @@ export function buildDmoPointCommentary(
   recentLines?: readonly string[],
 ): string;
 
+export function buildDmoCommentaryScoreReply(options?: {
+  names?: readonly (string | null | undefined)[];
+  point?: DmoCommentaryPoint | null;
+  recentLines?: readonly string[];
+}): string;
+
+export function dmoPressureAfterPoint(point: DmoCommentaryPoint): {
+  kind: 'break' | 'set' | 'match';
+  player: 0 | 1;
+  count: number;
+} | null;
+
+export function summarizeDmoCommentaryStats(
+  points?: readonly DmoCommentaryPoint[],
+): Array<{ pointsWon: number; servicePoints: number; servicePointsWon: number }>;
+
 export function isDmoGameEnding(point: DmoCommentaryPoint): boolean;
 
 export function buildDmoRallyCommentary(options: {
@@ -127,5 +149,10 @@ export function chooseDmoCommentaryVoices<T extends DmoBrowserVoice>(
 ): { female: T | null; male: T | null; distinct: boolean };
 
 export function withDmoCommentaryHistory<T extends DmoCommentaryPoint>(
-  point: T, history?: readonly DmoCommentaryPoint[],
-): T & { winningStreak: number };
+  point: T,
+  history?: readonly DmoCommentaryPoint[],
+): T & {
+  winningStreak: number;
+  previousGame: { winner: number; server: number; broken: boolean } | null;
+  gameStreak: number | null;
+};
