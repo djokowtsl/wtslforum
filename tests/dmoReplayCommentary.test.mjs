@@ -47,8 +47,8 @@ test('routine game transitions stay quiet and break-point conversions remain gro
 });
 
 test('viewer set resets and tie-break endings announce the correct set winner', () => {
-  assert.match(call({ g: '5-4', pt: '40-0' }, { g: '0-0', pt: '0-0', set: 2 }), /barboza takes the first set, six-four/);
-  assert.match(call({ g: '6-6', pt: '6-5', tb: 1 }, { g: '0-0', pt: '0-0', set: 2 }), /barboza takes the first set, seven-six/);
+  assert.match(call({ g: '5-4', pt: '40-0' }, { g: '0-0', pt: '0-0', set: 2 }), /barboza takes the set, six-four/);
+  assert.match(call({ g: '6-6', pt: '6-5', tb: 1 }, { g: '0-0', pt: '0-0', set: 2 }), /barboza takes the set, seven-six/);
   assert.equal(call({ g: '6-6', pt: '6-5', tb: 1 }, { g: '6-6', pt: '6-6' }), '');
 });
 
@@ -62,7 +62,7 @@ test('set announcements require an explicit set-number transition', () => {
       winner: 1, server: 1, scoreBeforeLabel: '5-4(40-0)', scoreAfterLabel: '0-0(0-0)',
       setBefore: 1, setAfter: 2,
     }, names),
-    'That wins the set for barboza.',
+    "Oh, that's the set for barboza!",
   );
 });
 
