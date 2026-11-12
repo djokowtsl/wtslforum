@@ -21,6 +21,14 @@ export type DmoCommentaryPoint = {
   scoreBeforeLabel?: string | null;
 };
 
+export type DmoBrowserVoice = {
+  voiceURI: string;
+  name: string;
+  lang: string;
+  localService?: boolean;
+  default?: boolean;
+};
+
 type DmoCommentaryIntroductionOptions = {
   names?: readonly (string | null | undefined)[];
   tournament?: string | null;
@@ -45,3 +53,7 @@ export function buildDmoPointCommentary(
   point: DmoCommentaryPoint,
   names?: readonly (string | null | undefined)[],
 ): string;
+
+export function rankDmoBrowserVoices<T extends DmoBrowserVoice>(
+  voices?: readonly T[],
+): T[];

@@ -6,6 +6,7 @@ import {
   buildDmoCommentaryFacts,
   buildDmoCommentaryIntroduction,
   buildDmoPointCommentary,
+  rankDmoBrowserVoices,
 } from '../lib/dmoCommentary.mjs';
 import {
   getDmoCharacterAppearance,
@@ -30,7 +31,7 @@ test('introduction sounds like a broadcast and uses verified WTSL context', () =
 
   assert.equal(
     intro,
-    'At Shanghai Masters, Naomi Osaka takes on Daniil Medvedev on the hard courts in the quarter-final.',
+    "We're at Shanghai Masters. Quarter-final action: Naomi Osaka against Daniil Medvedev on the hard courts.",
   );
   assert.equal(
     buildDmoCommentaryFacts({
@@ -41,7 +42,7 @@ test('introduction sounds like a broadcast and uses verified WTSL context', () =
         headToHead: { firstWins: 2, secondWins: 1, matches: 3 },
       },
     }),
-    'The WTSL ATP rankings have Naomi Osaka at No. 3 and Daniil Medvedev at No. 9. Naomi Osaka leads their WTSL meetings, 2–1.',
+    "In the WTSL ATP rankings, Naomi Osaka is number 3, with Daniil Medvedev at number 9. There's a little history here: Naomi Osaka leads their WTSL head-to-head, 2 to 1.",
   );
   assert.match(
     buildDmoCommentaryFacts({
@@ -55,7 +56,7 @@ test('introduction sounds like a broadcast and uses verified WTSL context', () =
       names: ['Player One', 'Player Two'],
       context: { tour: 'ATP', players: [], headToHead: { firstWins: 2, secondWins: 2, matches: 4 } },
     }),
-    'Their WTSL meetings are level at 2 apiece.',
+    "There's nothing between them in WTSL play: 2 wins apiece.",
   );
 });
 
@@ -72,14 +73,14 @@ test('routine points stay silent and longer rallies get varied, natural calls', 
       { number: 1, winner: 1, server: 1, rallyHits: 12, scoreBeforeLabel: '15-30' },
       ['Player One', 'Player Two'],
     ),
-    'What a rally! Player One comes away with it.',
+    'Shot after shot, and Player One comes through.',
   );
   assert.equal(
     buildDmoPointCommentary(
       { number: 2, winner: 2, server: 1, rallyHits: 9 },
       ['Player One', 'Player Two'],
     ),
-    'A wonderful rally, finished off by Player Two.',
+    'A real test of legs and nerve — Player Two takes it.',
   );
   assert.equal(buildDmoPointCommentary({ winner: 0 }, ['Player One', 'Player Two']), '');
 });
@@ -92,7 +93,7 @@ test('pressure-point calls distinguish a break, a save, and a game point', () =>
       rallyHits: 3,
       scoreBeforeLabel: '2-3(30-40)',
     }, ['Player One', 'Player Two']),
-    "And that's the break for Player Two.",
+    "And that's the break for Player Two!",
   );
   assert.equal(
     buildDmoPointCommentary({
@@ -101,7 +102,7 @@ test('pressure-point calls distinguish a break, a save, and a game point', () =>
       rallyHits: 2,
       scoreBeforeLabel: '40-AD',
     }, ['Player One', 'Player Two']),
-    'Player One saves the break point.',
+    'The pressure stays on, but Player One saves the break point.',
   );
   assert.equal(
     buildDmoPointCommentary({
@@ -110,7 +111,7 @@ test('pressure-point calls distinguish a break, a save, and a game point', () =>
       rallyHits: 3,
       scoreBeforeLabel: '0-0(40-30)',
     }, ['Player One', 'Player Two']),
-    "That's the game for Player One.",
+    'Game point converted — Player One closes it out.',
   );
   assert.equal(
     buildDmoPointCommentary({
@@ -119,8 +120,23 @@ test('pressure-point calls distinguish a break, a save, and a game point', () =>
       rallyHits: 3,
       scoreBeforeLabel: '40-30',
     }, ['Player One', 'Player Two']),
-    "And that's the break for Player One.",
+    "And that's the break for Player One!",
   );
+});
+
+test('browser commentary voice ranking filters to English and prefers natural voices', () => {
+  const voices = rankDmoBrowserVoices([
+    { voiceURI: 'us-basic', name: 'English US', lang: 'en-US', localService: true },
+    { voiceURI: 'uk-basic', name: 'English UK', lang: 'en-GB', localService: true },
+    { voiceURI: 'uk-neural', name: 'English UK Neural', lang: 'en-GB', localService: false },
+    { voiceURI: 'french', name: 'French', lang: 'fr-FR', localService: true },
+  ]);
+
+  assert.deepEqual(voices.map((voice) => voice.voiceURI), [
+    'uk-neural',
+    'uk-basic',
+    'us-basic',
+  ]);
 });
 
 test('commentary stays spoken-only with no court text bubble', async () => {
