@@ -3,7 +3,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
   buildDmoCommentaryOpeningReply,
-  buildDmoCommentaryResponse,
   buildDmoCommentaryFacts,
   buildDmoCommentaryIntroduction,
   buildDmoPointCommentary,
@@ -12,7 +11,11 @@ import {
   rankDmoBrowserVoices,
   withDmoCommentaryHistory,
 } from '@/lib/dmoCommentary.mjs';
-import { canUseDmoLocalVoice, loadDmoLocalVoiceModel } from '@/lib/dmoLocalVoice.mjs';
+import {
+  canUseDmoLocalVoice,
+  isMobileDmoLocalVoiceDevice,
+  loadDmoLocalVoiceModel,
+} from '@/lib/dmoLocalVoice.mjs';
 import type { DmoCommentaryPoint } from '@/lib/dmoCommentary.mjs';
 import type { Te4LiveSnapshot } from '@/lib/te4DmoLive';
 
@@ -40,6 +43,10 @@ type CommentaryContext = {
 
 type CommentarySpeaker = 'female' | 'male';
 type CommentarySpeech = string | readonly [string, string];
+
+function isPriorityPointCall(line: string) {
+  return /\b(?:break|game|set|momentum|match-win)\b/i.test(line);
+}
 
 type Options = {
   snapshot: Te4LiveSnapshot;
@@ -80,10 +87,12 @@ export function useDmoCommentary({
   const [voiceLoading, setVoiceLoading] = useState(false);
   const [voiceStatus, setVoiceStatus] = useState('');
   const [localVoiceSupported, setLocalVoiceSupported] = useState(false);
+  const [mobileLocalVoicePreview, setMobileLocalVoicePreview] = useState(false);
   const [browserVoices, setBrowserVoices] = useState<SpeechSynthesisVoice[]>([]);
   const requestRef = useRef(0);
   const previewRequestRef = useRef(0);
   const lastRallyCommentaryPointRef = useRef<number | null>(null);
+  const rallyCommentedPointsRef = useRef(new Set<number>());
   const recentCommentaryLinesRef = useRef<string[]>([]);
   const contextFactsRef = useRef('');
   const enabledRef = useRef(false);
@@ -124,10 +133,14 @@ export function useDmoCommentary({
   }, []);
 
   useEffect(() => {
-    const supported = canUseDmoLocalVoice();
+    const mobile = isMobileDmoLocalVoiceDevice();
+    const supported = canUseDmoLocalVoice({ allowMobile: true });
+    setMobileLocalVoicePreview(mobile);
     setLocalVoiceSupported(supported);
     if (!supported) {
-      setVoiceStatus('Kokoro is disabled on mobile or low-memory devices; using this device’s speech voice.');
+      setVoiceStatus('Kokoro is unavailable on this low-memory device; using this device’s speech voice.');
+    } else if (mobile) {
+      setVoiceStatus('Optional local Kokoro: pause playback before first use. The first preview downloads about 92 MB and may use extra memory.');
     }
   }, []);
 
@@ -155,7 +168,7 @@ export function useDmoCommentary({
     if (localModelRef.current) return Promise.resolve(localModelRef.current);
     if (localModelPromiseRef.current) return localModelPromiseRef.current;
     if (!localVoiceSupported) {
-      setVoiceStatus('Kokoro is disabled on mobile or low-memory devices; using this device’s speech voice.');
+      setVoiceStatus('Kokoro is unavailable on this low-memory device; using this device’s speech voice.');
       return Promise.resolve(null);
     }
 
@@ -425,11 +438,16 @@ export function useDmoCommentary({
       setError('Enable broadcast sound before previewing the voice.');
       return;
     }
+    if (mobileLocalVoicePreview && !localModelRef.current && playbackState().playing) {
+      setVoiceStatus('Pause playback before loading Kokoro. First use downloads about 92 MB and may use extra memory.');
+      setError('Pause the replay before loading the local voice.');
+      return;
+    }
     const request = ++previewRequestRef.current;
     await cancelCommentarySpeech();
     setError('');
     if (!localVoiceSupported) {
-      setVoiceStatus('Kokoro is disabled on mobile or low-memory devices; using this device’s speech voice.');
+      setVoiceStatus('Kokoro is unavailable on this low-memory device; using this device’s speech voice.');
       if (!speak([
         'Welcome to WTSL tennis. A big point coming up.',
         'Let us see who takes the initiative.',
@@ -457,7 +475,9 @@ export function useDmoCommentary({
     cancelCommentarySpeech,
     ensureLocalVoiceModel,
     localVoiceSupported,
+    mobileLocalVoicePreview,
     prepareLocalAudioContext,
+    playbackState,
     speak,
   ]);
 
@@ -471,6 +491,7 @@ export function useDmoCommentary({
       clearPendingCommentary();
       cancelCommentarySpeech();
       lastRallyCommentaryPointRef.current = null;
+      rallyCommentedPointsRef.current.clear();
       setError('');
       return;
     }
@@ -515,6 +536,7 @@ export function useDmoCommentary({
     enabledRef.current = true;
     setEnabled(true);
     lastRallyCommentaryPointRef.current = null;
+    rallyCommentedPointsRef.current.clear();
     clearPendingCommentary();
     lastPointNumberRef.current = Math.max(
       snapshot.pointCount,
@@ -536,7 +558,9 @@ export function useDmoCommentary({
     });
     // Speak from the button gesture itself; some browsers block speech queued
     // by a timer until the user interacts with a voice picker or preview.
-    const opened = speak([introduction, coHostOpening] as const, 'female');
+    const opened = coHostOpening
+      ? speak([introduction, coHostOpening] as const, 'female')
+      : speak(introduction, 'female');
     if (!opened) setError('The commentary voice could not start. Try Preview local voices.');
     else if (!localModelRef.current && !selectedVoices.distinct) {
       setError('This browser has one English voice; the co-host will use a different pitch.');
@@ -608,6 +632,7 @@ export function useDmoCommentary({
     matchKeyRef.current = matchKey;
     lastPointNumberRef.current = snapshot.pointCount;
     lastReplayFrameRef.current = replayFrame;
+    rallyCommentedPointsRef.current.clear();
     clearPendingCommentary();
     cancelCommentarySpeech();
     enabledRef.current = false;
@@ -656,6 +681,12 @@ export function useDmoCommentary({
             const speaker = pointNumber % 2 === 0 ? 'male' : 'female';
             if (!speak(line, speaker)) {
               setError('The browser could not start the commentary booth. Try Preview commentary voice.');
+            } else {
+              rallyCommentedPointsRef.current.add(pointNumber);
+              if (rallyCommentedPointsRef.current.size > 12) {
+                const oldest = rallyCommentedPointsRef.current.values().next().value;
+                if (oldest !== undefined) rallyCommentedPointsRef.current.delete(oldest);
+              }
             }
             lastRallyCommentaryPointRef.current = pointNumber;
           }
@@ -694,6 +725,7 @@ export function useDmoCommentary({
       const previousFrame = lastReplayFrameRef.current;
       if (replayFrame < previousFrame) {
         lastReplayFrameRef.current = replayFrame;
+        rallyCommentedPointsRef.current.clear();
         clearPendingCommentary();
         cancelCommentarySpeech();
         return;
@@ -705,24 +737,21 @@ export function useDmoCommentary({
       const point = duePoints.at(-1);
       if (point) {
         const recentLines = recentCommentaryLinesRef.current;
+        const suppressRallyCommentary = rallyCommentedPointsRef.current.delete(point.number);
         const line = buildDmoPointCommentary(
-          withDmoCommentaryHistory(point, commentaryPoints),
+          withDmoCommentaryHistory({
+            ...point,
+            suppressRallyCommentary,
+          }, commentaryPoints),
           names,
           recentLines,
         );
         if (line) {
-          const response = point.number % 2 === 0
-            ? buildDmoCommentaryResponse({
-              names,
-              winner: point.winner,
-              pointNumber: point.number,
-              recentLines: [line, ...recentLines],
-            })
-            : '';
-          scheduleSpeech(response ? [line, response] as const : line, {
+          const priorityCall = isPriorityPointCall(line);
+          scheduleSpeech(line, {
             delayMs: 250,
-            minimumGapMs: point.number <= 8 ? 8_000 : 10_000,
-            maxWaitMs: 9_000,
+            minimumGapMs: priorityCall ? 2_000 : point.number <= 8 ? 8_000 : 10_000,
+            maxWaitMs: priorityCall ? 8_000 : 9_000,
             pointFrame: point.frame,
             firstSpeaker: point.number % 2 === 0 ? 'male' : 'female',
           });
@@ -740,23 +769,19 @@ export function useDmoCommentary({
       (candidate) => candidate.number === point.number - 1,
     );
     const recentLines = recentCommentaryLinesRef.current;
+    const suppressRallyCommentary = rallyCommentedPointsRef.current.delete(point.number);
     const line = buildDmoPointCommentary(withDmoCommentaryHistory({
       ...point,
       scoreBeforeLabel: previousPoint?.scoreLabel,
+      scoreAfterLabel: point.scoreLabel,
+      suppressRallyCommentary,
     }, snapshot.recentPoints), names, recentLines);
     if (line) {
-      const response = point.number % 2 === 0
-        ? buildDmoCommentaryResponse({
-          names,
-          winner: point.winner,
-          pointNumber: point.number,
-          recentLines: [line, ...recentLines],
-        })
-        : '';
-      scheduleSpeech(response ? [line, response] as const : line, {
+      const priorityCall = isPriorityPointCall(line);
+      scheduleSpeech(line, {
         delayMs: 250,
-        minimumGapMs: point.number <= 8 ? 8_000 : 10_000,
-        maxWaitMs: 9_000,
+        minimumGapMs: priorityCall ? 2_000 : point.number <= 8 ? 8_000 : 10_000,
+        maxWaitMs: priorityCall ? 8_000 : 9_000,
         pointFrame: point.frame,
         firstSpeaker: point.number % 2 === 0 ? 'male' : 'female',
       });
@@ -780,6 +805,6 @@ export function useDmoCommentary({
 
   return {
     enabled, error, voiceLoading, voiceStatus, toggle,
-    previewVoice, localVoiceSupported,
+    previewVoice, localVoiceSupported, mobileLocalVoicePreview,
   };
 }

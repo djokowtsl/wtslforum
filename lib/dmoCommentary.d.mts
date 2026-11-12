@@ -25,9 +25,11 @@ export type DmoCommentaryPoint = {
   isTiebreak?: boolean;
   winningStreak?: number;
   serveSpeedKmh?: number | null;
+  suppressRallyCommentary?: boolean;
   shots?: readonly { p: number; k: string; bx: number | null; by: number | null; bt?: number | null }[];
   shotEndTime?: number;
   scoreBeforeLabel?: string | null;
+  scoreAfterLabel?: string | null;
 };
 
 export type DmoBrowserVoice = {

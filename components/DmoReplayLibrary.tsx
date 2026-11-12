@@ -11,6 +11,7 @@ import {
   resolveDmoReplayCharacterPresentation,
 } from '@/lib/dmoReplayCharacterStyles';
 import { dmoReplayIsWta } from '@/lib/dmoReplayTour';
+import { normalizeDmoTournamentName } from '@/lib/dmoTournamentName.mjs';
 import {
   buildTe4CoachAnalysisUrl,
   buildTe4CoachEmbedUrl,
@@ -301,7 +302,9 @@ export default function DmoReplayLibrary({
                 onClick={() => selectMatch(match)}
               >
                 <span className={styles.matchPlayers}>{match.player1} <i>vs</i> {match.player2}</span>
-                <span className={styles.matchMeta}>{match.tournament} · {match.roundName}</span>
+                <span className={styles.matchMeta}>
+                  {normalizeDmoTournamentName(match.tournament) ?? 'Tournament not verified'} · {match.roundName}
+                </span>
                 <span className={styles.matchDate}>{formatDate(match.submissionDate)}</span>
                 <span className={styles.matchBadges}>
                   {match.hasDmoFile && <span className={`${styles.matchBadge} replay-library-badge`}>DMO replay</span>}
@@ -333,7 +336,9 @@ export default function DmoReplayLibrary({
         {selected ? (
           <>
             <div className={styles.viewerHeading}>
-              <span className={styles.eyebrow}>{selected.tournament} · {selected.roundName}</span>
+              <span className={styles.eyebrow}>
+                {normalizeDmoTournamentName(selected.tournament) ?? 'Tournament not verified'} · {selected.roundName}
+              </span>
               <h1>{selected.player1} <i>vs</i> {selected.player2}</h1>
               <p>{formatDate(selected.submissionDate)} <span aria-hidden="true">·</span> Match submission</p>
             </div>
