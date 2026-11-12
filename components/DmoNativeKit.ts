@@ -23,6 +23,7 @@ type Vertex = {
 
 const smooth = THREE.MathUtils.smoothstep;
 const WTA_TANK_TOP_END_FRACTION = 0.06;
+const WTA_CAP_SLEEVE_END_FRACTION = 0.24;
 const STANDARD_SHORT_SLEEVE_END_FRACTION = 0.46;
 const WTA_TENNIS_SKIRT_HEIGHT = 0.16;
 const WTA_UNDER_SKIRT_SHORTS_HEM_Y = 0.74;
@@ -88,16 +89,102 @@ function shapeWtaBody(body: THREE.SkinnedMesh, model: THREE.Group) {
   positions.needsUpdate = true;
 }
 
+type MaleHairStyle = 'short-crop' | 'textured-crop' | 'curly-top' | 'side-part' | 'swept-back' | 'buzz-cut';
+type FemaleHairStyle = 'swept' | 'ponytail' | 'high-ponytail' | 'low-ponytail' | 'braid' | 'double-braid' | 'bun' | 'bob';
+type TennisTopStyle = 'sleeveless' | 'cap-sleeve' | 'short-sleeve';
+type ShirtPattern = 'solid' | 'chest-band' | 'side-panels' | 'yoke';
+type Headwear = 'none' | 'headband' | 'visor';
+type FacialHair = 'none' | 'stubble' | 'short-beard';
+
 export type NativePlayerKit = {
+  id: string;
+  shirtColor: number;
   shortsColor: number;
   accentColor: number;
   hairColor: number;
-  grooming: 'headband-swept' | 'short-beard';
+  maleHairStyle: MaleHairStyle;
+  femaleHairStyle: FemaleHairStyle;
+  maleTopStyle: TennisTopStyle;
+  femaleTopStyle: TennisTopStyle;
+  shirtPattern: ShirtPattern;
+  headwear: Headwear;
+  facialHair: FacialHair;
+  skirtLength: number;
 };
 
+function createTennisKit(
+  id: string,
+  shirtColor: number,
+  shortsColor: number,
+  accentColor: number,
+  hairColor: number,
+  maleHairStyle: MaleHairStyle,
+  femaleHairStyle: FemaleHairStyle,
+  maleTopStyle: TennisTopStyle,
+  femaleTopStyle: TennisTopStyle,
+  shirtPattern: ShirtPattern,
+  headwear: Headwear,
+  facialHair: FacialHair = 'none',
+  skirtLength = WTA_TENNIS_SKIRT_HEIGHT,
+): NativePlayerKit {
+  return {
+    id,
+    shirtColor,
+    shortsColor,
+    accentColor,
+    hairColor,
+    maleHairStyle,
+    femaleHairStyle,
+    maleTopStyle,
+    femaleTopStyle,
+    shirtPattern,
+    headwear,
+    facialHair,
+    skirtLength,
+  };
+}
+
+export const ATP_PLAYER_KITS: NativePlayerKit[] = [
+  createTennisKit('men-classic-white', 0xf0eee7, 0x26343a, 0xc9433a, 0x2b2522, 'side-part', 'swept', 'short-sleeve', 'sleeveless', 'side-panels', 'headband'),
+  createTennisKit('men-royal-court', 0x245ca8, 0xf1eee7, 0xe8c844, 0x493429, 'textured-crop', 'ponytail', 'sleeveless', 'short-sleeve', 'chest-band', 'visor', 'short-beard', 0.17),
+  createTennisKit('men-deep-teal', 0x167a77, 0x202b35, 0xb4d65a, 0x211d1b, 'curly-top', 'high-ponytail', 'short-sleeve', 'cap-sleeve', 'yoke', 'none'),
+  createTennisKit('men-forest-green', 0x35614d, 0xe9e1cd, 0xb6be7a, 0x604636, 'swept-back', 'low-ponytail', 'short-sleeve', 'short-sleeve', 'side-panels', 'headband', 'stubble'),
+  createTennisKit('men-burgundy', 0x762e47, 0x202b35, 0xd0ad79, 0x241b1a, 'buzz-cut', 'bun', 'sleeveless', 'sleeveless', 'yoke', 'none'),
+  createTennisKit('men-sky-blue', 0x66b4d4, 0x253957, 0xf2eee1, 0x9a6843, 'side-part', 'braid', 'short-sleeve', 'cap-sleeve', 'chest-band', 'visor'),
+  createTennisKit('men-black-coral', 0x282d35, 0x282d35, 0xe57f72, 0x302720, 'textured-crop', 'double-braid', 'sleeveless', 'short-sleeve', 'side-panels', 'headband', 'short-beard'),
+  createTennisKit('men-orange-white', 0xe67635, 0xf0eee7, 0x363c49, 0x5b3d2a, 'curly-top', 'bob', 'short-sleeve', 'sleeveless', 'yoke', 'none'),
+  createTennisKit('men-lavender', 0x8175ad, 0x29313e, 0xe6d9c7, 0x332a27, 'swept-back', 'swept', 'short-sleeve', 'cap-sleeve', 'chest-band', 'visor'),
+  createTennisKit('men-mint-white', 0x9dcdb9, 0x26343a, 0x477563, 0x72503b, 'buzz-cut', 'ponytail', 'sleeveless', 'short-sleeve', 'side-panels', 'none'),
+  createTennisKit('men-navy-gold', 0x1e2b4c, 0xe5dfd2, 0xd1b06d, 0x30231e, 'side-part', 'low-ponytail', 'short-sleeve', 'sleeveless', 'yoke', 'headband', 'short-beard'),
+  createTennisKit('men-red-white', 0xc63b43, 0x2e3845, 0xf2eee7, 0x86553b, 'textured-crop', 'high-ponytail', 'short-sleeve', 'cap-sleeve', 'chest-band', 'visor'),
+  createTennisKit('men-stone-lime', 0xbab9ad, 0x343a36, 0x9ebc46, 0x28211f, 'curly-top', 'bun', 'sleeveless', 'short-sleeve', 'side-panels', 'none'),
+  createTennisKit('men-white-lime', 0xf2efe3, 0x61704a, 0xc7d95c, 0x523b2d, 'swept-back', 'braid', 'short-sleeve', 'sleeveless', 'yoke', 'headband'),
+  createTennisKit('men-teal-white', 0x195f69, 0xf1eee7, 0x80c2bc, 0x392b25, 'buzz-cut', 'double-braid', 'short-sleeve', 'cap-sleeve', 'chest-band', 'visor'),
+  createTennisKit('men-charcoal-gold', 0x41444a, 0x282c34, 0xc5a25e, 0x7a553b, 'side-part', 'bob', 'sleeveless', 'short-sleeve', 'side-panels', 'none', 'stubble'),
+];
+
+export const WTA_PLAYER_KITS: NativePlayerKit[] = [
+  createTennisKit('women-coral-classic', 0xd95f66, 0x273b54, 0xf4eee2, 0x38231f, 'side-part', 'swept', 'short-sleeve', 'sleeveless', 'side-panels', 'headband', 'none', 0.16),
+  createTennisKit('women-royal-pleats', 0x245ca8, 0xf1eee7, 0xe9cc54, 0x573a2b, 'textured-crop', 'high-ponytail', 'sleeveless', 'cap-sleeve', 'chest-band', 'visor', 'none', 0.17),
+  createTennisKit('women-mint-court', 0x91cbb5, 0x26343a, 0xe2d6b6, 0x251d19, 'curly-top', 'low-ponytail', 'short-sleeve', 'short-sleeve', 'yoke', 'none', 'none', 0.15),
+  createTennisKit('women-teal-stripe', 0x1e7777, 0x173d47, 0xd7e7d2, 0x8a5b3d, 'swept-back', 'braid', 'short-sleeve', 'cap-sleeve', 'chest-band', 'headband', 'none', 0.18),
+  createTennisKit('women-plum-skirt', 0x653c74, 0x30233e, 0xd7b79b, 0x2d211e, 'buzz-cut', 'bun', 'sleeveless', 'sleeveless', 'side-panels', 'none', 'none', 0.16),
+  createTennisKit('women-sky-court', 0x70b9dc, 0x243955, 0xf4eee2, 0x9a6645, 'side-part', 'double-braid', 'short-sleeve', 'sleeveless', 'yoke', 'visor', 'none', 0.17),
+  createTennisKit('women-lemon-dress', 0xe6d45d, 0x4a513c, 0xf5f0df, 0x4f3527, 'textured-crop', 'bob', 'sleeveless', 'sleeveless', 'solid', 'headband', 'none', 0.15),
+  createTennisKit('women-black-rose', 0x30313a, 0x292d37, 0xd87991, 0x211b1a, 'curly-top', 'high-ponytail', 'short-sleeve', 'short-sleeve', 'side-panels', 'visor', 'none', 0.18),
+  createTennisKit('women-red-white', 0xc4414d, 0xf1eee7, 0x344866, 0x7f4c32, 'swept-back', 'ponytail', 'short-sleeve', 'cap-sleeve', 'chest-band', 'none', 'none', 0.16),
+  createTennisKit('women-lilac-white', 0xb4a8d2, 0xf1eee7, 0x50466f, 0x362522, 'buzz-cut', 'low-ponytail', 'sleeveless', 'sleeveless', 'yoke', 'headband', 'none', 0.15),
+  createTennisKit('women-forest-gold', 0x355b4e, 0x233a34, 0xd8c479, 0x573d2b, 'side-part', 'braid', 'short-sleeve', 'short-sleeve', 'side-panels', 'visor', 'none', 0.18),
+  createTennisKit('women-orange-navy', 0xe77b42, 0x273b54, 0xf2ead8, 0x2d201c, 'textured-crop', 'bun', 'sleeveless', 'cap-sleeve', 'chest-band', 'none', 'none', 0.16),
+  createTennisKit('women-white-lime', 0xf1eee5, 0x66734b, 0xc7d95c, 0x86563c, 'curly-top', 'double-braid', 'short-sleeve', 'sleeveless', 'side-panels', 'headband', 'none', 0.17),
+  createTennisKit('women-navy-teal', 0x243753, 0x1c6463, 0x8ec9be, 0x34231e, 'swept-back', 'swept', 'short-sleeve', 'short-sleeve', 'yoke', 'visor', 'none', 0.16),
+  createTennisKit('women-peach-skirt', 0xe8ae91, 0x984b55, 0xf4eee2, 0x583a2b, 'buzz-cut', 'ponytail', 'sleeveless', 'cap-sleeve', 'chest-band', 'none', 'none', 0.15),
+  createTennisKit('women-graphite-pink', 0x55545d, 0x303039, 0xe28ca0, 0x241d1a, 'side-part', 'high-ponytail', 'short-sleeve', 'sleeveless', 'side-panels', 'headband', 'none', 0.18),
+];
+
 export const BROADCAST_PLAYER_KITS: [NativePlayerKit, NativePlayerKit] = [
-  { shortsColor: 0x26343a, accentColor: 0xc2ad7e, hairColor: 0x2b2522, grooming: 'headband-swept' },
-  { shortsColor: 0x35413d, accentColor: 0x9c6655, hairColor: 0x46352d, grooming: 'short-beard' },
+  ATP_PLAYER_KITS[0],
+  ATP_PLAYER_KITS[1],
 ];
 
 function addTourMark(model: THREE.Group, kit: NativePlayerKit, index: number) {
@@ -164,98 +251,181 @@ function addTourMark(model: THREE.Group, kit: NativePlayerKit, index: number) {
 function addGrooming(model: THREE.Group, kit: NativePlayerKit, index: number, female: boolean) {
   const head = model.getObjectByName('head');
   if (!(head instanceof THREE.Bone)) return;
-  const style = female ? (index === 1 ? 'ponytail' : 'headband-swept') : kit.grooming;
-  if (female) {
-    if (style === 'headband-swept') {
-      const band = new THREE.Mesh(
-        new THREE.TorusGeometry(0.084, 0.008, 6, 28),
-        new THREE.MeshStandardMaterial({ color: kit.accentColor, roughness: 0.8 }),
-      );
-      band.name = `native-player-headband-${index + 1}`;
-      band.rotation.x = Math.PI / 2;
-      band.position.set(0, 0.062, 0);
-      band.scale.set(0.88, 1, 0.82);
-      head.add(band);
-      const sweptHair = new THREE.Mesh(
-        new THREE.SphereGeometry(1, 18, 12),
-        new THREE.MeshStandardMaterial({ color: kit.hairColor, roughness: 0.78 }),
-      );
-      sweptHair.name = `native-player-swept-hair-${index + 1}`;
-      sweptHair.scale.set(0.061, 0.031, 0.079);
-      sweptHair.position.set(0.018, 0.111, -0.018);
-      sweptHair.rotation.z = -0.18;
-      sweptHair.rotation.x = -0.15;
-      sweptHair.castShadow = true;
-      head.add(sweptHair);
-    }
+  const hairMaterial = new THREE.MeshStandardMaterial({ color: kit.hairColor, roughness: 0.78 });
+  const accessoryMaterial = new THREE.MeshStandardMaterial({
+    color: kit.accentColor,
+    roughness: 0.8,
+    side: THREE.DoubleSide,
+  });
+  const playerNumber = index + 1;
 
-    const tie = new THREE.Mesh(
-      new THREE.TorusGeometry(0.021, 0.005, 6, 16),
-      new THREE.MeshStandardMaterial({ color: kit.accentColor, roughness: 0.78 }),
-    );
-    tie.name = `native-player-hair-tie-${index + 1}`;
-    tie.position.set(-0.008, -0.058, -0.066);
-    tie.rotation.x = Math.PI / 2;
-    head.add(tie);
-    const side = index === 0 ? -1 : 1;
-    const tailLength = index === 0 ? 0.31 : 0.36;
-    const ponytailPath = new THREE.CatmullRomCurve3([
-      new THREE.Vector3(-0.008, -0.058, -0.066),
-      new THREE.Vector3(side * 0.01, -0.13, -0.105),
-      new THREE.Vector3(side * 0.022, -0.22, -0.13),
-      new THREE.Vector3(side * 0.015, -0.058 - tailLength, -0.12),
-    ]);
-    const ponytail = new THREE.Mesh(
-      taperedHairGeometry(ponytailPath, 0.019),
-      new THREE.MeshStandardMaterial({ color: kit.hairColor, roughness: 0.78 }),
-    );
-    ponytail.name = `native-player-ponytail-${index + 1}`;
-    ponytail.castShadow = true;
-    head.add(ponytail);
-  } else if (style === 'headband-swept') {
+  if (kit.headwear === 'headband' || kit.headwear === 'visor') {
     const band = new THREE.Mesh(
-      new THREE.TorusGeometry(0.084, 0.008, 6, 28),
-      new THREE.MeshStandardMaterial({ color: kit.accentColor, roughness: 0.8 }),
+      new THREE.TorusGeometry(0.084, 0.007, 6, 28),
+      accessoryMaterial,
     );
-    band.name = `native-player-headband-${index + 1}`;
+    band.name = `native-player-headband-${playerNumber}`;
     band.rotation.x = Math.PI / 2;
     band.position.set(0, 0.062, 0);
     band.scale.set(0.88, 1, 0.82);
     head.add(band);
-    const sweptHair = new THREE.Mesh(
-      new THREE.SphereGeometry(1, 18, 12),
-      new THREE.MeshStandardMaterial({ color: kit.hairColor, roughness: 0.78 }),
-    );
-    sweptHair.name = `native-player-swept-hair-${index + 1}`;
+  }
+  if (kit.headwear === 'visor') {
+    const brimShape = new THREE.Shape();
+    brimShape.moveTo(-0.08, 0);
+    brimShape.quadraticCurveTo(0, 0.045, 0.08, 0);
+    brimShape.quadraticCurveTo(0, -0.018, -0.08, 0);
+    const brim = new THREE.Mesh(new THREE.ShapeGeometry(brimShape, 16), accessoryMaterial);
+    brim.name = `native-player-visor-brim-${playerNumber}`;
+    brim.geometry.rotateX(Math.PI / 2);
+    brim.position.set(0, 0.041, 0.035);
+    head.add(brim);
+  }
+
+  const addSweptHair = () => {
+    const sweptHair = new THREE.Mesh(new THREE.SphereGeometry(1, 18, 12), hairMaterial);
+    sweptHair.name = `native-player-swept-hair-${playerNumber}`;
     sweptHair.scale.set(0.061, 0.031, 0.079);
     sweptHair.position.set(0.018, 0.111, -0.018);
     sweptHair.rotation.z = -0.18;
     sweptHair.rotation.x = -0.15;
     sweptHair.castShadow = true;
     head.add(sweptHair);
+  };
+
+  const addBraid = (side: -1 | 1, tailLength: number, suffix: string) => {
+    const path = new THREE.CatmullRomCurve3([
+      new THREE.Vector3(side * 0.026, 0.046, -0.062),
+      new THREE.Vector3(side * 0.042, -0.07, -0.096),
+      new THREE.Vector3(side * 0.052, -0.17, -0.12),
+      new THREE.Vector3(side * 0.045, 0.046 - tailLength, -0.11),
+    ]);
+    const braid = new THREE.Mesh(taperedHairGeometry(path, 0.013), hairMaterial);
+    braid.name = `native-player-hair-braid-${suffix}-${playerNumber}`;
+    braid.castShadow = true;
+    head.add(braid);
+    for (let segment = 1; segment <= 6; segment++) {
+      const bead = new THREE.Mesh(new THREE.SphereGeometry(0.011, 8, 6), hairMaterial);
+      bead.name = `native-player-hair-braid-bead-${suffix}-${playerNumber}-${segment}`;
+      bead.position.copy(path.getPointAt(segment / 7));
+      bead.scale.set(0.86, 1.2, 0.86);
+      head.add(bead);
+    }
+  };
+
+  const addPonytail = (hairStyle: 'ponytail' | 'high-ponytail' | 'low-ponytail') => {
+    const startY = hairStyle === 'high-ponytail' ? 0.086 : hairStyle === 'low-ponytail' ? 0.025 : -0.012;
+    const tailLength = hairStyle === 'low-ponytail' ? 0.32 : 0.36;
+    const side = index === 0 ? -1 : 1;
+    const tie = new THREE.Mesh(new THREE.TorusGeometry(0.021, 0.005, 6, 16), accessoryMaterial);
+    tie.name = `native-player-hair-tie-${playerNumber}`;
+    tie.position.set(-0.008, startY - 0.014, -0.066);
+    tie.rotation.x = Math.PI / 2;
+    head.add(tie);
+    const path = new THREE.CatmullRomCurve3([
+      new THREE.Vector3(-0.008, startY, -0.066),
+      new THREE.Vector3(side * 0.01, startY - 0.09, -0.105),
+      new THREE.Vector3(side * 0.022, startY - 0.19, -0.13),
+      new THREE.Vector3(side * 0.015, startY - tailLength, -0.12),
+    ]);
+    const ponytail = new THREE.Mesh(taperedHairGeometry(path, 0.019), hairMaterial);
+    ponytail.name = `native-player-ponytail-${playerNumber}`;
+    ponytail.userData.hairStyle = hairStyle;
+    ponytail.castShadow = true;
+    head.add(ponytail);
+  };
+
+  if (female) {
+    const style = kit.femaleHairStyle;
+    if (style === 'swept') {
+      addSweptHair();
+      addPonytail('ponytail');
+    } else if (style === 'bob') {
+      const bob = new THREE.Mesh(new THREE.SphereGeometry(1, 22, 16), hairMaterial);
+      bob.name = `native-player-hair-bob-${playerNumber}`;
+      bob.scale.set(0.079, 0.089, 0.065);
+      bob.position.set(0, 0.015, -0.03);
+      bob.castShadow = true;
+      head.add(bob);
+      for (const side of [-1, 1]) {
+        const panel = new THREE.Mesh(new THREE.SphereGeometry(1, 14, 10), hairMaterial);
+        panel.name = `native-player-hair-bob-side-${side < 0 ? 'left' : 'right'}-${playerNumber}`;
+        panel.scale.set(0.023, 0.061, 0.04);
+        panel.position.set(side * 0.068, -0.005, -0.004);
+        head.add(panel);
+      }
+    } else if (style === 'bun') {
+      const bun = new THREE.Mesh(new THREE.SphereGeometry(0.043, 18, 12), hairMaterial);
+      bun.name = `native-player-hair-bun-${playerNumber}`;
+      bun.position.set(0, 0.028, -0.083);
+      bun.castShadow = true;
+      head.add(bun);
+    } else if (style === 'double-braid') {
+      addBraid(-1, 0.33, 'left');
+      addBraid(1, 0.33, 'right');
+    } else if (style === 'braid') {
+      addBraid(index === 0 ? -1 : 1, 0.34, 'single');
+    } else {
+      addPonytail(style);
+    }
   } else {
-    const beardMaterial = new THREE.MeshStandardMaterial({ color: kit.hairColor, roughness: 0.94 });
-    const beard = new THREE.Mesh(
-      new THREE.SphereGeometry(1, 16, 10),
-      beardMaterial,
+    const style = kit.maleHairStyle;
+    if (style === 'side-part') {
+      addSweptHair();
+    } else if (style === 'swept-back') {
+      const sweep = new THREE.Mesh(new THREE.SphereGeometry(1, 18, 12), hairMaterial);
+      sweep.name = `native-player-hair-swept-back-${playerNumber}`;
+      sweep.scale.set(0.064, 0.033, 0.081);
+      sweep.position.set(-0.004, 0.094, -0.035);
+      sweep.rotation.x = -0.18;
+      head.add(sweep);
+    } else if (style === 'textured-crop') {
+      for (let tuft = 0; tuft < 9; tuft++) {
+        const angle = tuft * Math.PI * 2 / 9;
+        const spike = new THREE.Mesh(new THREE.ConeGeometry(0.012, 0.034, 6), hairMaterial);
+        spike.name = `native-player-hair-texture-${playerNumber}-${tuft}`;
+        spike.position.set(Math.cos(angle) * 0.045, 0.093 + (tuft % 3) * 0.004, Math.sin(angle) * 0.034 - 0.012);
+        spike.rotation.z = Math.cos(angle) * 0.24;
+        spike.rotation.x = Math.sin(angle) * 0.22;
+        head.add(spike);
+      }
+    } else if (style === 'curly-top') {
+      for (let curl = 0; curl < 13; curl++) {
+        const angle = curl * Math.PI * (3 - Math.sqrt(5));
+        const radius = 0.045 * Math.sqrt((curl + 0.5) / 13);
+        const coil = new THREE.Mesh(new THREE.SphereGeometry(0.016, 10, 8), hairMaterial);
+        coil.name = `native-player-hair-curl-${playerNumber}-${curl}`;
+        coil.position.set(Math.cos(angle) * radius, 0.09 + (curl % 3) * 0.004, Math.sin(angle) * radius - 0.01);
+        head.add(coil);
+      }
+    }
+  }
+
+  if (!female && kit.facialHair !== 'none') {
+    const beardMaterial = new THREE.MeshStandardMaterial({
+      color: kit.hairColor,
+      roughness: 0.94,
+      transparent: kit.facialHair === 'stubble',
+      opacity: kit.facialHair === 'stubble' ? 0.48 : 1,
+    });
+    const beard = new THREE.Mesh(new THREE.SphereGeometry(1, 16, 10), beardMaterial);
+    beard.name = `native-player-neat-beard-${playerNumber}`;
+    beard.scale.set(
+      kit.facialHair === 'stubble' ? 0.062 : 0.066,
+      kit.facialHair === 'stubble' ? 0.023 : 0.032,
+      kit.facialHair === 'stubble' ? 0.012 : 0.019,
     );
-    beard.name = `native-player-neat-beard-${index + 1}`;
-    beard.scale.set(0.066, 0.032, 0.019);
     beard.position.set(0, -0.086, 0.075);
-    beard.castShadow = true;
-    const grooming = new THREE.Group();
-    grooming.name = `native-player-stubble-${index + 1}`;
-    grooming.add(beard);
+    const facialHair = new THREE.Group();
+    facialHair.name = `native-player-stubble-${playerNumber}`;
+    facialHair.add(beard);
     for (const side of [-1, 1]) {
-      const sideburn = new THREE.Mesh(
-        new THREE.SphereGeometry(1, 12, 8),
-        beardMaterial,
-      );
+      const sideburn = new THREE.Mesh(new THREE.SphereGeometry(1, 12, 8), beardMaterial);
       sideburn.scale.set(0.012, 0.035, 0.014);
       sideburn.position.set(side * 0.064, -0.042, 0.045);
-      grooming.add(sideburn);
+      facialHair.add(sideburn);
     }
-    head.add(grooming);
+    head.add(facialHair);
   }
 }
 
@@ -354,6 +524,12 @@ export function dressNativePlayer(
   kit: NativePlayerKit = BROADCAST_PLAYER_KITS[0],
   kitIndex = 0,
 ) {
+  model.userData.tennisKit = {
+    id: kit.id,
+    tour: female ? 'WTA' : 'ATP',
+    hairStyle: female ? kit.femaleHairStyle : kit.maleHairStyle,
+    shirtPattern: kit.shirtPattern,
+  };
   model.updateMatrixWorld(true);
   const bodies: THREE.SkinnedMesh[] = [];
   model.traverse(o => { if (o instanceof THREE.SkinnedMesh) bodies.push(o); });
@@ -414,9 +590,12 @@ export function dressNativePlayer(
       const armness = smooth(weightOf(i, arm.test), 0.25, 0.75);
       return (fraction - along) * armness + 0.3 * (1 - armness);
     };
-    const sleeveEndFraction = female
+    const topStyle = female ? kit.femaleTopStyle : kit.maleTopStyle;
+    const sleeveEndFraction = topStyle === 'sleeveless'
       ? WTA_TANK_TOP_END_FRACTION
-      : STANDARD_SHORT_SLEEVE_END_FRACTION;
+      : topStyle === 'cap-sleeve'
+        ? WTA_CAP_SLEEVE_END_FRACTION
+        : STANDARD_SHORT_SLEEVE_END_FRACTION;
     const shirtFields: Field[] = [
       i => points[i].y - 0.86,
       neckline,
@@ -503,6 +682,8 @@ export function dressNativePlayer(
       mesh.name = name;
       if (name === 'native-tennis-shirt') {
         mesh.userData.sleeveEndFraction = sleeveEndFraction;
+        mesh.userData.topStyle = topStyle;
+        mesh.userData.pattern = kit.shirtPattern;
       }
       mesh.position.copy(body.position); mesh.quaternion.copy(body.quaternion); mesh.scale.copy(body.scale);
       mesh.bind(body.skeleton, body.bindMatrix);
@@ -511,11 +692,27 @@ export function dressNativePlayer(
     };
     // Shirt sits outside the shorts' waistband (shirt worn untucked): a larger
     // offset where they overlap, a closer fit at the collar and sleeve hems.
-    addShell('native-tennis-shirt', shirtColor, v => {
+    addShell('native-tennis-shirt', kit.shirtColor, v => {
       const hemFlare = 0.004 * (1 - smooth(v.point.y, 0.88, 1.0));
       const collarFit = 0.003 * (1 - smooth(v.fields[1], 0, 0.02));
       return 0.011 + hemFlare - collarFit;
     }, shirtFields);
+    if (kit.shirtPattern === 'chest-band') {
+      const band: Field = i => 0.035 - Math.abs(points[i].y - 1.2);
+      addShell('native-tennis-shirt-chest-band', kit.accentColor, () => 0.016,
+        [...shirtFields, band], undefined, false);
+    } else if (kit.shirtPattern === 'side-panels') {
+      const panels: Field = i => Math.max(
+        0.028 - Math.abs(points[i].x - 0.145),
+        0.028 - Math.abs(points[i].x + 0.145),
+      );
+      addShell('native-tennis-shirt-side-panels', kit.accentColor, () => 0.016,
+        [...shirtFields, panels], undefined, false);
+    } else if (kit.shirtPattern === 'yoke') {
+      const yoke: Field = i => points[i].y - 1.31;
+      addShell('native-tennis-shirt-yoke', kit.accentColor, () => 0.016,
+        [...shirtFields, yoke], undefined, false);
+    }
     addShell('native-tennis-shorts', kit.shortsColor, () => 0.007, shortsFields, triangle => triangle.every(isTrunk));
     addShell('native-cropped-hair', kit.hairColor, () => 0.004, [i => points[i].y - 1.56],
       triangle => triangle.some(v => {
@@ -533,14 +730,14 @@ export function dressNativePlayer(
   }
   if (female) {
     const pelvis = model.getObjectByName('pelvis')!;
-    const skirt = new THREE.Mesh(new THREE.CylinderGeometry(0.17, 0.27, WTA_TENNIS_SKIRT_HEIGHT, 40, 1, true),
+    const skirt = new THREE.Mesh(new THREE.CylinderGeometry(0.17, 0.27, kit.skirtLength, 40, 1, true),
       new THREE.MeshStandardMaterial({ color: kit.shortsColor, roughness: 0.9, side: THREE.DoubleSide }));
     skirt.name = 'native-tennis-skirt';
-    skirt.userData.skirtLength = WTA_TENNIS_SKIRT_HEIGHT;
+    skirt.userData.skirtLength = kit.skirtLength;
     model.updateMatrixWorld(true);
     const pelvisWorld = pelvis.getWorldPosition(new THREE.Vector3());
     const world = pelvisWorld.clone()
-      .add(new THREE.Vector3(0, -WTA_TENNIS_SKIRT_HEIGHT / 2 + 0.005, 0));
+      .add(new THREE.Vector3(0, -kit.skirtLength / 2 + 0.005, 0));
     model.add(skirt); skirt.position.copy(model.worldToLocal(world));
     skirt.quaternion.copy(model.getWorldQuaternion(new THREE.Quaternion()).invert());
     pelvis.attach(skirt);

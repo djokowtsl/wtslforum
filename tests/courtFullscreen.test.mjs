@@ -99,6 +99,9 @@ test('mobile fullscreen keeps the court controls instead of entering video-only 
 });
 
 test('court picture-in-picture opens a native system window or reports unsupported browsers', () => {
+  assert.match(pictureInPictureButton, /createPortal/);
+  assert.match(pictureInPictureButton, /setPortalRoot\(document\.body\)/);
+  assert.match(pictureInPictureButton, /portalRoot && createPortal/);
   assert.match(pictureInPictureButton, /captureStream/);
   assert.match(pictureInPictureButton, /requestPictureInPicture/);
   assert.match(pictureInPictureButton, /isIOSHomeScreenApp/);
@@ -117,7 +120,7 @@ test('court picture-in-picture opens a native system window or reports unsupport
   const requestCall = pictureInPictureButton.indexOf('video.requestPictureInPicture!()', toggleStart);
   assert.ok(toggleStart >= 0 && requestCall > toggleStart);
   assert.doesNotMatch(pictureInPictureButton.slice(toggleStart, requestCall), /\bawait\b/);
-  assert.match(pictureInPictureButton.slice(toggleStart, requestCall), /void video\.play\(\)\.catch/);
+  assert.doesNotMatch(pictureInPictureButton.slice(toggleStart, requestCall), /video\.play\(/);
   for (const court of [liveCourt, fallbackCourt]) {
     assert.match(court, /target\.closest\('\[data-sound-toggle\]'\)/);
     assert.match(court, /target\.closest\('\[data-pip-toggle\]'\)/);
