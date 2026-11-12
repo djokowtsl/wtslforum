@@ -153,6 +153,12 @@ export default async function PlayerDashboard({ params, searchParams }: Props) {
             )}
           </div>
         </div>
+        {viewer && verifiedOwner && Number(verifiedOwner.id) === Number(viewer.id) && (
+          <section className="scheduler-intro" style={{ marginBottom: 18 }}>
+            <div><strong>Official match scheduler</strong> Schedule your WTSL draw matches with verified opponents while keeping the private Discord thread in the loop.</div>
+            <Link className="btn btn-primary btn-sm" href="/match-scheduler">View my matches</Link>
+          </section>
+        )}
         <div className="dashboard-grid">
           <section className="panel">
             <div className="panel-head"><h2 className="display">Win / loss record</h2></div>
