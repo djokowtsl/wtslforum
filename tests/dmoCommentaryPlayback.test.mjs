@@ -108,7 +108,7 @@ function harness(voices = [{ voiceURI: 'natural', name: 'English Natural', lang:
     value: () => output, synthesis };
 }
 
-test('live reactions wait for the visible point end, then stop at the next rally', () => {
+test('live reactions wait for the visible point end and finish after the next rally starts', () => {
   const h = harness();
   try {
     h.value().toggle(); h.render(); h.advance(0);
@@ -123,7 +123,7 @@ test('live reactions wait for the visible point end, then stop at the next rally
     assert.equal(h.spoken.length, 2);
     assert.equal(h.synthesis.speaking, true);
     h.playback.rallyActive = true; h.advance(200);
-    assert.equal(h.synthesis.speaking, false);
+    assert.equal(h.synthesis.speaking, true);
   } finally { h.cleanup(); }
 });
 
@@ -136,6 +136,41 @@ test('queued point calls expire when a new rally starts', () => {
     h.playback.rallyActive = true; h.advance(2000);
     h.playback.rallyActive = false; h.advance(10_000);
     assert.equal(h.spoken.length, 1);
+  } finally { h.cleanup(); }
+});
+
+test('longer WTSL facts require three continuous quiet seconds', async () => {
+  const h = harness();
+  try {
+    h.value().toggle(); h.render(); h.advance(0); h.finish();
+    h.requests[0].resolve({ ok: true, json: async () => ({ context: {
+      tour: 'ATP', players: [{ rank: 1 }, { rank: 2 }], headToHead: null,
+    } }) });
+    await new Promise((resolve) => originalSetImmediate(resolve));
+    h.render(); h.advance(14_000);
+    assert.equal(h.spoken.length, 1, 'does not start facts in a short gap');
+    h.playback.rallyActive = true; h.advance(1000);
+    assert.equal(h.spoken.length, 1, 'never starts during a rally');
+    h.playback.rallyActive = false; h.advance(2900);
+    assert.equal(h.spoken.length, 1, 'quiet timer resets after rally activity');
+    h.advance(500);
+    assert.equal(h.spoken.length, 2);
+    assert.match(h.spoken[1].text, /WTSL ATP rankings/);
+  } finally { h.cleanup(); }
+});
+
+test('pause cancels speech without reporting an intentional cancellation as failure', () => {
+  const h = harness();
+  try {
+    h.value().toggle(); h.render(); h.advance(0);
+    const first = h.spoken[0];
+    h.playback.playing = false; h.advance(200);
+    assert.equal(h.synthesis.speaking, false);
+    first.onerror({ error: 'interrupted' }); h.render();
+    assert.equal(h.value().error, '');
+    h.value().previewVoice();
+    h.spoken.at(-1).onerror({ error: 'synthesis-failed' }); h.render();
+    assert.match(h.value().error, /could not play/);
   } finally { h.cleanup(); }
 });
 
@@ -156,13 +191,14 @@ test('changing player pair rejects delayed facts from the previous match', async
 
 const originalSetImmediate = globalThis.setImmediate;
 
-test('basic-only devices fail explicitly and missing WTSL names never use character names', () => {
+test('basic English voices remain usable and missing WTSL names never use character names', () => {
   const h = harness([{ voiceURI: 'basic', name: 'Basic UK', lang: 'en-GB' }]);
   try {
     h.value().toggle(); h.render();
-    assert.equal(h.value().enabled, false);
-    assert.match(h.value().error, /basic system voice/);
-    assert.equal(h.spoken.length, 0);
+    assert.equal(h.value().enabled, true);
+    h.advance(0);
+    assert.equal(h.spoken.length, 1);
+    assert.match(h.spoken[0].text, /gifu against The Tinkerman/);
     h.render({ commentaryNames: null });
     h.value().toggle(); h.render();
     assert.match(h.value().error, /character names will not be used/);

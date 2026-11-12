@@ -89,8 +89,7 @@ export function useDmoCommentary({
     if (typeof window === 'undefined' || !window.speechSynthesis) return;
     const synthesis = window.speechSynthesis;
     const refreshVoices = () => {
-      setBrowserVoices(rankDmoBrowserVoices(synthesis.getVoices())
-        .filter((voice) => chooseDmoCommentaryVoice([voice]) !== null));
+      setBrowserVoices(rankDmoBrowserVoices(synthesis.getVoices()));
     };
     try { setSelectedVoiceURI(window.localStorage.getItem('wtsl-commentary-natural-voice') ?? ''); } catch {}
     refreshVoices();
@@ -133,7 +132,10 @@ export function useDmoCommentary({
         if (utteranceRef.current === utterance) utteranceRef.current = null;
       };
       utterance.onerror = () => {
-        if (utteranceRef.current === utterance) utteranceRef.current = null;
+        // Intentional cancellation (pause, mute, seek or voice change) is not
+        // an audio failure, and an old callback must not affect a newer call.
+        if (utteranceRef.current !== utterance) return;
+        utteranceRef.current = null;
         setError('The browser could not play the commentary voice. Try another voice or preview it again.');
       };
       utteranceRef.current = utterance;
@@ -153,15 +155,17 @@ export function useDmoCommentary({
 
   const scheduleSpeech = useCallback((
     line: string,
-    { delayMs, minimumGapMs, maxWaitMs, pointFrame }: {
+    { delayMs, minimumGapMs, maxWaitMs, pointFrame, minimumQuietMs = 0 }: {
       delayMs: number;
       minimumGapMs: number;
       maxWaitMs: number;
       pointFrame?: number;
+      minimumQuietMs?: number;
     },
   ) => {
     clearPendingCommentary();
     const queuedAt = Date.now();
+    let quietSince: number | null = null;
     const attempt = () => {
       pendingTimerRef.current = null;
       if (!enabledRef.current || !soundEnabledRef.current) return;
@@ -170,12 +174,20 @@ export function useDmoCommentary({
       const playback = playbackState();
       // Never announce a live result before its recorded end reaches the court.
       if (!playback.playing || (pointFrame !== undefined && playback.frame < pointFrame)) {
+        quietSince = null;
         pendingTimerRef.current = setTimeout(attempt, 250);
         return;
       }
       if (playback.rallyActive) {
+        quietSince = null;
         // A point reaction is stale once the next rally starts.
         if (pointFrame !== undefined) return;
+        pendingTimerRef.current = setTimeout(attempt, 250);
+        return;
+      }
+
+      quietSince ??= Date.now();
+      if (Date.now() - quietSince < minimumQuietMs) {
         pendingTimerRef.current = setTimeout(attempt, 250);
         return;
       }
@@ -245,7 +257,7 @@ export function useDmoCommentary({
       ? browserVoices
       : rankDmoBrowserVoices(window.speechSynthesis.getVoices());
     if (!chooseDmoCommentaryVoice(voices)) {
-      setError('No natural, enhanced or Google English voice is available. Commentary stays off rather than use a basic system voice.');
+      setError('No English speech voice is available in this browser.');
       return;
     }
 
@@ -343,12 +355,19 @@ export function useDmoCommentary({
     if (!enabled) return;
     const timer = setInterval(() => {
       const playback = playbackState();
-      if (!playback.playing || playback.rallyActive) cancelCommentarySpeech();
+      // Pause stops speech, but a call that has already begun may finish when
+      // the next rally starts. Otherwise ordinary gaps cut every sentence off.
+      if (!playback.playing) cancelCommentarySpeech();
       else if (contextFactsRef.current && pendingTimerRef.current === null
         && !window.speechSynthesis.speaking && Date.now() - lastSpeechAtRef.current >= 12_000) {
         const facts = contextFactsRef.current;
         contextFactsRef.current = '';
-        scheduleSpeech(facts, { delayMs: 0, minimumGapMs: 12_000, maxWaitMs: 15_000 });
+        scheduleSpeech(facts, {
+          delayMs: 0,
+          minimumGapMs: 12_000,
+          minimumQuietMs: 3_000,
+          maxWaitMs: 15_000,
+        });
       }
     }, 200);
     return () => clearInterval(timer);
