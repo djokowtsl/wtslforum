@@ -1,6 +1,11 @@
 'use client';
 
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { loadDmoLiveClipVoice } from '@/lib/dmoLiveClipVoice.mjs';
+import {
+  createDmoCommentaryTrackPlayer,
+  type DmoCommentaryTrackState,
+} from '@/lib/dmoCommentaryTrackPlayer.mjs';
 import {
   buildDmoCommentaryOpeningReply,
   buildDmoCommentaryFacts,
@@ -70,6 +75,9 @@ function withVoiceDeadline<T>(work: Promise<T>, milliseconds: number): Promise<T
   });
 }
 
+/** What the player's Commentary button shows. */
+export type DmoCommentaryStatus = 'off' | 'starting' | 'on' | 'sign-in' | 'unavailable';
+
 /** Longest a single commentary line may take to prepare before it is skipped. */
 const LINE_DEADLINE_MS = 20_000;
 
@@ -96,6 +104,10 @@ type Options = {
   soundEnabled: boolean;
   soundReady: boolean;
   getAudioContext?: () => AudioContext | null;
+  /** A stored replay: its commentary is played from pre-made clips. */
+  replayId?: string | null;
+  /** A live broadcast: its commentary is played from the broadcast's clips. */
+  broadcastId?: string | null;
   playbackState: () => {
     frame: number;
     playing: boolean;
@@ -117,6 +129,8 @@ export function useDmoCommentary({
   soundEnabled,
   soundReady,
   getAudioContext,
+  replayId = null,
+  broadcastId = null,
   playbackState,
 }: Options) {
   const [enabled, setEnabled] = useState(false);
@@ -198,6 +212,16 @@ export function useDmoCommentary({
   }, []);
 
   const [kokoroReady, setKokoroReady] = useState(false);
+  // Stored replay commentary (pre-made clips) replaces live speech generation.
+  const [trackState, setTrackState] = useState<'' | DmoCommentaryTrackState>('');
+  const trackPlayerRef = useRef<ReturnType<typeof createDmoCommentaryTrackPlayer<AudioBuffer>> | null>(null);
+  // Why commentary cannot be heard, in terms a viewer can act on.
+  const [voiceFailure, setVoiceFailure] = useState<'' | 'sign-in' | 'unavailable'>('');
+  const voiceFailureRef = useRef<'' | 'sign-in' | 'unavailable'>('');
+  const reportVoiceFailure = useCallback((failure: '' | 'sign-in' | 'unavailable') => {
+    voiceFailureRef.current = failure;
+    setVoiceFailure(failure);
+  }, []);
 
   const prepareLocalAudioContext = useCallback(() => {
     if (typeof window === 'undefined') return null;
@@ -211,6 +235,17 @@ export function useDmoCommentary({
     }
     if (audioContext.state !== 'running') {
       void audioContext.resume().catch(() => {});
+      // iPhone Safari can keep Web Audio locked until a sound actually starts
+      // inside the tap. Start one silent sample now, while still in the
+      // gesture, so commentary generated seconds later is allowed to play.
+      try {
+        const silence = audioContext.createBufferSource();
+        silence.buffer = audioContext.createBuffer(1, 1, 22_050);
+        silence.connect(audioContext.destination);
+        silence.start(0);
+      } catch {
+        // Unlocking is best effort; resume() above still applies.
+      }
     }
     return audioContext;
   }, [getAudioContext]);
@@ -232,7 +267,21 @@ export function useDmoCommentary({
     setVoiceStatus(serverVoice
       ? 'Connecting to the WTSL commentary voice.'
       : 'Preparing the commentary voice; local Kokoro loads in the background.');
-    const pending = loadDmoLocalVoiceModel((progress) => {
+    // Live broadcasts play stored clips: no speech model on this device.
+    const loadVoice = broadcastId
+      ? (onProgress: (progress: { status?: string; progress?: number; backend?: string }) => void) => {
+        onProgress({ status: 'backend', backend: 'server' });
+        return loadDmoLiveClipVoice({
+          broadcastId,
+          decode: (bytes) => {
+            const audioContext = prepareLocalAudioContext();
+            if (!audioContext) return Promise.reject(new Error('Web Audio is unavailable'));
+            return audioContext.decodeAudioData(bytes);
+          },
+        });
+      }
+      : loadDmoLocalVoiceModel;
+    const pending = withVoiceDeadline(loadVoice((progress) => {
       if (progress.status === 'backend') {
         localVoiceBackendRef.current = progress.backend === 'wasm' ? 'wasm' : 'unknown';
         setVoiceStatus(progress.backend === 'server'
@@ -254,7 +303,10 @@ export function useDmoCommentary({
           `Loading local voice model: ${Math.round(progress.progress)}% (first use downloads about 92 MB).`,
         );
       }
-    })
+    // A quantized first-use model is about 92 MB. Slow connections can
+    // legitimately need more than 60 seconds; show progress instead of
+    // silently timing out before the download can finish.
+    }), 300_000)
       .then((model) => {
         localModelRef.current = model;
         if (model) {
@@ -267,9 +319,10 @@ export function useDmoCommentary({
         }
         return model;
       })
-      .catch(() => {
+      .catch((cause: unknown) => {
         localModelPromiseRef.current = null;
         setKokoroReady(false);
+        reportVoiceFailure((cause as { status?: number } | null)?.status === 401 ? 'sign-in' : 'unavailable');
         setVoiceStatus('Kokoro could not load. No commentary was played.');
         setError('Kokoro could not load. No commentary was played; turn commentary off and on to retry.');
         return null;
@@ -280,10 +333,36 @@ export function useDmoCommentary({
       });
     localModelPromiseRef.current = pending;
     return pending;
-  }, [localVoiceSupported]);
+  }, [broadcastId, localVoiceSupported, prepareLocalAudioContext, reportVoiceFailure]);
 
-  // Voice preparation starts only when commentary is enabled. The replay page
-  // should not download the local model or spend CPU for viewers who opt out.
+  // While a live broadcast is open, check in every minute: each check lets the
+  // server store more of the broadcast's pre-made commentary, so it is ready
+  // before play starts. Stops once everything is stored.
+  useEffect(() => {
+    if (!broadcastId || typeof fetch !== 'function') return;
+    let stopped = false;
+    let timer: ReturnType<typeof setTimeout> | null = null;
+    const checkIn = () => {
+      void fetch(`/api/live-dmo/${encodeURIComponent(broadcastId)}/commentary`)
+        .then((response) => (response.ok ? response.json() : null))
+        .then((body: { complete?: boolean } | null) => {
+          if (!stopped && !body?.complete) timer = setTimeout(checkIn, 60_000);
+        })
+        .catch(() => {
+          if (!stopped) timer = setTimeout(checkIn, 60_000);
+        });
+    };
+    checkIn();
+    return () => {
+      stopped = true;
+      if (timer) clearTimeout(timer);
+    };
+  }, [broadcastId]);
+
+  // The voice is prepared when the viewer turns commentary on, never when the
+  // page opens: preparing it downloads a model and uses CPU, which would slow
+  // the replay's own loading for viewers who never use commentary. The server
+  // voice is usually ready within seconds of the tap.
 
   const playLocalSpeech = useCallback((
     lines: readonly string[],
@@ -316,8 +395,10 @@ export function useDmoCommentary({
             : `Generating commentary locally${backendSuffix}.`);
           let phase = 'local speech generation';
           try {
-            // Skip a stale point call after the deadline, but let the worker
-            // finish and cache it without blocking replay rendering.
+        // A call that is not ready within the limit is about a point the
+        // viewer has already moved past: skip it rather than hold up every
+        // later call behind it. Generation runs off the render thread and
+        // its result is cached, so nothing is wasted if it finishes late.
             const audio = await withVoiceDeadline(
               model.generate(lines[index], {
                 voice: speaker === 'female' ? 'af_heart' : 'am_michael',
@@ -377,6 +458,7 @@ export function useDmoCommentary({
         }
         if (session === localSpeechSessionRef.current && soundEnabledRef.current) {
           generationFailuresRef.current = 0;
+          if (voiceFailureRef.current) reportVoiceFailure('');
           setError('');
           setVoiceStatus(readyVoiceStatus(model));
         }
@@ -391,6 +473,7 @@ export function useDmoCommentary({
             localModelRef.current = null;
             localModelPromiseRef.current = null;
             setKokoroReady(false);
+            reportVoiceFailure((cause as { status?: number } | null)?.status === 401 ? 'sign-in' : 'unavailable');
           }
           const detail = (cause instanceof Error
             ? `${cause.name}: ${cause.message}`
@@ -412,7 +495,7 @@ export function useDmoCommentary({
     })();
 
     return true;
-  }, [prepareLocalAudioContext]);
+  }, [prepareLocalAudioContext, reportVoiceFailure]);
 
   const speak = useCallback((content: CommentarySpeech, firstSpeaker: CommentarySpeaker = 'female') => {
     const lines = typeof content === 'string' ? [content] : content;
@@ -453,6 +536,96 @@ export function useDmoCommentary({
     }
     return localSpeechIdleRef.current;
   }, []);
+
+  const stopStoredCommentary = useCallback(() => {
+    trackPlayerRef.current?.stop();
+    trackPlayerRef.current = null;
+    setTrackState('');
+  }, []);
+
+  /**
+   * Play the replay's stored commentary: the server keeps every line as an
+   * MP3, so this only downloads clips a little ahead and plays them on cue.
+   * Resolves false if the replay has no stored track, so live voice is used.
+   */
+  const startStoredCommentary = useCallback(async (request: number, id: string) => {
+    try {
+      const response = await fetch(`/api/dmo-replays/${encodeURIComponent(id)}/commentary`);
+      if (!response.ok) return false;
+      const track = await response.json() as {
+        fps?: number;
+        cues?: Array<{ at: number | null; clip: string; group: number; mustPlay?: boolean }>;
+      };
+      if (request !== requestRef.current || !enabledRef.current) return true;
+      if (!Array.isArray(track.cues) || !track.cues.length) return false;
+      const player = createDmoCommentaryTrackPlayer<AudioBuffer>({
+        cues: track.cues,
+        fps: track.fps,
+        loadClip: async (clip) => {
+          const audioContext = prepareLocalAudioContext();
+          if (!audioContext) throw new Error('Web Audio is unavailable');
+          const clipResponse = await fetch(
+            `/api/dmo-replays/${encodeURIComponent(id)}/commentary/${clip}`,
+          );
+          if (!clipResponse.ok) throw new Error(`Commentary clip returned ${clipResponse.status}`);
+          return audioContext.decodeAudioData(await clipResponse.arrayBuffer());
+        },
+        playClip: (buffer) => new Promise<void>((resolve, reject) => {
+          const audioContext = prepareLocalAudioContext();
+          if (!audioContext) {
+            reject(new Error('Web Audio is unavailable'));
+            return;
+          }
+          const source = audioContext.createBufferSource();
+          source.buffer = buffer;
+          source.connect(audioContext.destination);
+          localAudioSourceRef.current = source;
+          localSpeechBusyRef.current = true;
+          lastSpeechAtRef.current = Date.now();
+          source.onended = () => {
+            if (localAudioSourceRef.current === source) localAudioSourceRef.current = null;
+            localSpeechBusyRef.current = false;
+            lastSpeechAtRef.current = Date.now();
+            resolve();
+          };
+          source.start();
+        }),
+        onState: (state) => {
+          if (request !== requestRef.current) return;
+          setTrackState(state);
+          if (state === 'unavailable') {
+            reportVoiceFailure('unavailable');
+            setVoiceStatus('Stored commentary clips could not be downloaded.');
+          } else if (state === 'on') {
+            setVoiceStatus('Playing stored replay commentary.');
+          }
+        },
+      });
+      trackPlayerRef.current = player;
+      const playback = playbackState();
+      player.start(playback.frame, playback.playing);
+      return true;
+    } catch {
+      return false;
+    }
+  }, [playbackState, prepareLocalAudioContext, reportVoiceFailure]);
+
+  // Stored commentary follows the replay four times a second: cues fire at
+  // their frames, and pausing silences the line being spoken.
+  const trackActive = trackState !== '';
+  useEffect(() => {
+    if (!enabled || !trackActive) return;
+    const timer = setInterval(() => {
+      const player = trackPlayerRef.current;
+      if (!player) return;
+      const playback = playbackState();
+      if (!playback.playing && localAudioSourceRef.current) cancelCommentarySpeech();
+      player.update(playback.frame, playback.playing);
+    }, 250);
+    return () => clearInterval(timer);
+  }, [enabled, trackActive, cancelCommentarySpeech, playbackState]);
+
+  useEffect(() => () => trackPlayerRef.current?.stop(), []);
 
   const scheduleSpeech = useCallback((
     line: CommentarySpeech,
@@ -522,7 +695,10 @@ export function useDmoCommentary({
   const toggle = useCallback(() => {
     // Unlock audio synchronously in the user's tap, before cancellation or the
     // first model download crosses an async boundary (especially on iOS).
-    const preparedAudioContext = !enabledRef.current && soundEnabled && soundReady
+    // Tapping a button that says commentary is unavailable retries at once,
+    // rather than first turning commentary off.
+    const retrying = enabledRef.current && voiceFailureRef.current !== '';
+    const preparedAudioContext = (!enabledRef.current || retrying) && soundEnabled && soundReady
       ? prepareLocalAudioContext() : null;
     const request = ++requestRef.current;
     contextFactsRef.current = '';
@@ -534,7 +710,9 @@ export function useDmoCommentary({
       lastRallyCommentaryPointRef.current = null;
       rallyCommentedPointsRef.current.clear();
       setError('');
-      return;
+      reportVoiceFailure('');
+      stopStoredCommentary();
+      if (!retrying) return;
     }
     if (!soundEnabled || !soundReady) {
       setError('Enable broadcast sound first, then turn on commentary.');
@@ -590,59 +768,88 @@ export function useDmoCommentary({
     });
     const opening: CommentarySpeech = coHostOpening
       ? [introduction, coHostOpening] as const : introduction;
-    if (localModelRef.current) {
-      setKokoroReady(true);
-      if (!audioContext || !speak(opening, 'female')) {
-        setError('Kokoro could not start audio. No other voice was used.');
-      }
-    } else {
-      if (!localVoiceLoadingRef.current) {
-        setVoiceStatus('Preparing Kokoro; commentary will start when a voice is ready.');
-      }
-      void ensureLocalVoiceModel().then((model) => {
-        if (request !== requestRef.current || !enabledRef.current || !soundEnabledRef.current) return;
-        const latest = snapshotRef.current;
-        lastPointNumberRef.current = Math.max(
-          latest.pointCount,
-          ...latest.recentPoints.map((point) => point.number),
-        );
-        lastReplayFrameRef.current = playbackState().frame;
-        if (!model) {
-          setError('Kokoro could not load. No commentary was played; turn commentary off and on to retry.');
-          return;
+    const startLiveVoice = () => {
+      if (localModelRef.current) {
+        setKokoroReady(true);
+        if (!audioContext || !speak(opening, 'female')) {
+          setError('Kokoro could not start audio. No other voice was used.');
+          reportVoiceFailure('unavailable');
         }
-        if (!prepareLocalAudioContext() || !speak(opening, 'female')) {
-          setError('Kokoro loaded, but could not start audio. No other voice was used.');
+      } else {
+        if (!localVoiceLoadingRef.current) {
+          setVoiceStatus('Preparing Kokoro; commentary will start when it is ready.');
         }
-      });
-    }
-
-    const query = new URLSearchParams({
-      first: names[0],
-      second: names[1],
-      tour: isWta ? 'WTA' : 'ATP',
-    });
-    void fetch(`/api/dmo-commentary/context?${query.toString()}`)
-      .then(async (response) => {
-        if (!response.ok) throw new Error('WTSL context request failed');
-        return response.json() as Promise<{ context?: CommentaryContext | null }>;
-      })
-      .then(({ context }) => {
-        if (!enabledRef.current || requestRef.current !== request || !context) return;
-        const facts = buildDmoCommentaryFacts({ names, context });
-        const matchFacts = buildDmoMatchCommentary({
-          names,
-          stats: statsSoFar(playbackState().frame),
+        void ensureLocalVoiceModel().then((model) => {
+          if (request !== requestRef.current || !enabledRef.current || !soundEnabledRef.current) return;
+          const latest = snapshotRef.current;
+          lastPointNumberRef.current = Math.max(
+            latest.pointCount,
+            ...latest.recentPoints.map((point) => point.number),
+          );
+          lastReplayFrameRef.current = playbackState().frame;
+          if (!model) {
+            setError('Kokoro could not load. No commentary was played; turn commentary off and on to retry.');
+            if (!voiceFailureRef.current) reportVoiceFailure('unavailable');
+            return;
+          }
+          if (!prepareLocalAudioContext() || !speak(opening, 'female')) {
+            setError('Kokoro loaded, but could not start audio. No other voice was used.');
+            reportVoiceFailure('unavailable');
+          }
         });
-        const combinedFacts = [facts, matchFacts].filter(Boolean).join(' ');
-        if (!combinedFacts) return;
-        // The playback observer delivers this in a later quiet interval.
-        // Fetch completion must not overwrite the opening or a point reaction.
-        contextFactsRef.current = combinedFacts;
-      })
-      .catch(() => {
-        if (enabledRef.current && requestRef.current === request) setError('WTSL facts are unavailable; point commentary can still continue.');
+      }
+
+      const query = new URLSearchParams({
+        first: names[0],
+        second: names[1],
+        tour: isWta ? 'WTA' : 'ATP',
       });
+      void fetch(`/api/dmo-commentary/context?${query.toString()}`)
+        .then(async (response) => {
+          if (!response.ok) throw new Error('WTSL context request failed');
+          return response.json() as Promise<{ context?: CommentaryContext | null }>;
+        })
+        .then(({ context }) => {
+          if (!enabledRef.current || requestRef.current !== request || !context) return;
+          const facts = buildDmoCommentaryFacts({ names, context });
+          const matchFacts = buildDmoMatchCommentary({
+            names,
+            stats: statsSoFar(playbackState().frame),
+          });
+          const combinedFacts = [facts, matchFacts].filter(Boolean).join(' ');
+          if (!combinedFacts) return;
+          // The playback observer delivers this in a later quiet interval.
+          // Fetch completion must not overwrite the opening or a point reaction.
+          contextFactsRef.current = combinedFacts;
+        })
+        .catch(() => {
+          if (enabledRef.current && requestRef.current === request) setError('WTSL facts are unavailable; point commentary can still continue.');
+        });
+    };
+
+    // Full replays and broadcasts use server-stored clips only. If a replay
+    // has no stored track or the server cannot be reached, report unavailable
+    // and let the viewer retry; never generate speech on the device.
+    if (fullReplay) {
+      if (replayId) {
+        setTrackState('starting');
+        setVoiceStatus('Loading the stored replay commentary.');
+        void startStoredCommentary(request, replayId).then((started) => {
+          if (started || request !== requestRef.current || !enabledRef.current) return;
+          setTrackState('unavailable');
+          reportVoiceFailure('unavailable');
+          setVoiceStatus('Stored replay commentary is unavailable; turn it off and on to retry.');
+        });
+      } else if (broadcastId) {
+        startLiveVoice();
+      } else {
+        setTrackState('unavailable');
+        reportVoiceFailure('unavailable');
+        setVoiceStatus('Stored commentary is unavailable for this replay.');
+      }
+      return;
+    }
+    startLiveVoice();
   }, [
     clearPendingCommentary,
     cancelCommentarySpeech,
@@ -651,8 +858,13 @@ export function useDmoCommentary({
     isWta,
     names,
     prepareLocalAudioContext,
+    reportVoiceFailure,
     playbackState,
     replayFrame,
+    fullReplay,
+    replayId,
+    startStoredCommentary,
+    stopStoredCommentary,
     soundEnabled,
     soundReady,
     hasVerifiedNames,
@@ -694,7 +906,6 @@ export function useDmoCommentary({
     recentCommentaryLinesRef.current = [];
     lastReplayFrameRef.current = replayFrame;
     rallyCommentedPointsRef.current.clear();
-    prefetchedPointsRef.current.clear();
     clearPendingCommentary();
     cancelCommentarySpeech();
     enabledRef.current = false;
@@ -807,6 +1018,7 @@ export function useDmoCommentary({
 
   useEffect(() => {
     if (!enabled || !kokoroReady) return;
+    /** What the booth would say about this point, given what has been said so far. */
     const planPointSpeech = (
       point: DmoCommentaryPoint,
       history: readonly DmoCommentaryPoint[],
@@ -848,7 +1060,9 @@ export function useDmoCommentary({
     };
     /**
      * Replays know what comes next: prepare the next point's call while the
-     * current one plays, so it can be heard the moment that point ends.
+     * current one plays, so it can be heard the moment that point ends. If
+     * the call changes by then (another line was spoken in between), the new
+     * line is prepared as usual.
      */
     const prefetchNextPoint = () => {
       const model = localModelRef.current;
@@ -960,8 +1174,13 @@ export function useDmoCommentary({
     cancelCommentarySpeech();
   }, [cancelCommentarySpeech, clearPendingCommentary]);
 
+  // A plain state for the player's button: never silently broken.
+  const status: DmoCommentaryStatus = !enabled
+    ? 'off'
+    : voiceFailure || ((trackState ? trackState === 'on' : kokoroReady) ? 'on' : 'starting');
+
   return {
-    enabled, error, voiceLoading, voiceStatus, toggle,
+    enabled, error, voiceLoading, voiceStatus, toggle, status,
     localVoiceSupported,
   };
 }

@@ -1,4 +1,6 @@
 import assert from 'node:assert/strict';
+import * as trackPlayerModule from '../lib/dmoCommentaryTrackPlayer.mjs';
+import * as liveClipVoiceModule from '../lib/dmoLiveClipVoice.mjs';
 import { readFile } from 'node:fs/promises';
 import { createRequire } from 'node:module';
 import Module from 'node:module';
@@ -30,6 +32,7 @@ function harness(voices = [
   audioContextAvailable = true,
   holdAudioPlayback = false,
   audioDuration = 0,
+  liveClipVoice = null,
 } = {}) {
   const originals = Object.fromEntries(['window', 'SpeechSynthesisUtterance', 'fetch',
     'setTimeout', 'clearTimeout', 'setInterval', 'clearInterval'].map((key) => [key, globalThis[key]]));
@@ -118,6 +121,8 @@ function harness(voices = [
   const mod = new Module(import.meta.url);
   mod.require = (name) => name === 'react' ? hooks
     : name === '@/lib/dmoCommentary.mjs' ? hookCommentary
+    : name === '@/lib/dmoCommentaryTrackPlayer.mjs' ? trackPlayerModule
+    : name === '@/lib/dmoLiveClipVoice.mjs' ? (liveClipVoice ?? liveClipVoiceModule)
       : name === '@/lib/dmoLocalVoice.mjs'
         ? {
           canUseDmoLocalVoice: () => localVoiceSupported,
@@ -273,27 +278,6 @@ test('game-ending calls survive a busy voice and later point updates', async () 
     assert.equal(h.generated.length, 3);
     assert.match(h.generated[2].text, /game/i, 'a later point cannot replace the queued game ending');
     h.finishAudio(); await h.flush();
-  } finally { h.cleanup(); }
-});
-
-test('batched replay updates preserve every completed game', async () => {
-  const h = harness();
-  try {
-    h.playback.frame = 0;
-    h.render({ fullReplay: true, replayFrame: 0, commentaryPoints: [
-      { number: 4, frame: 100, winner: 1, server: 1, rallyHits: 4,
-        scoreBeforeLabel: '0-0(40-30)', scoreAfterLabel: '1-0(0-0)' },
-      { number: 8, frame: 200, winner: 2, server: 2, rallyHits: 4,
-        scoreBeforeLabel: '1-0(30-40)', scoreAfterLabel: '1-1(0-0)' },
-    ] });
-    await enableLoadedKokoro(h);
-    h.advance(1000);
-    h.playback.frame = 300;
-    h.render({ replayFrame: 300 });
-    h.advance(200); await h.flush(); h.render();
-    h.advance(600); await h.flush(); h.render();
-    assert.equal(h.generated.length, 4, 'opening plus one short call for each game');
-    assert.ok(h.generated.slice(2).every((line) => /game|break|set|match/i.test(line.text)));
   } finally { h.cleanup(); }
 });
 
@@ -506,7 +490,7 @@ test('commentary automatically loads Kokoro without a separate download action',
   } finally { h.cleanup(); }
 });
 
-test('opening a full replay does not load the voice until commentary is turned on', async () => {
+test('opening a full replay does not fetch or generate speech until commentary is turned on', async () => {
   let loads = 0;
   const h = harness(undefined, {
     loadModel: async () => {
@@ -517,12 +501,17 @@ test('opening a full replay does not load the voice until commentary is turned o
     },
   });
   try {
-    h.render({ fullReplay: true });
+    h.render({ fullReplay: true, replayId: '21' });
     await h.flush();
-    assert.equal(loads, 0, 'viewers who never use commentary pay nothing for it');
+    assert.equal(loads, 0, 'viewers who never use commentary do not download a model');
     assert.equal(h.value().enabled, false);
-    await h.value().toggle(); await h.flush(); h.render();
-    assert.equal(loads, 1, 'turning commentary on prepares the voice');
+    assert.equal(h.requests.length, 0, 'the track is not requested until commentary is enabled');
+    await h.value().toggle(); h.render();
+    assert.match(h.requests[0].url, /\/api\/dmo-replays\/21\/commentary$/);
+    h.requests[0].resolve({ ok: false, status: 503, json: async () => ({}) });
+    await h.flush(); h.render();
+    assert.equal(loads, 0, 'a missing stored track does not generate speech on the device');
+    assert.equal(h.value().status, 'unavailable');
     assert.equal(h.nativeSpoken.length, 0);
   } finally { h.cleanup(); }
 });
@@ -746,7 +735,7 @@ test('commentary reuses the court audio context instead of creating a separate i
     assert.ok(resumed > 0, 'audio is resumed inside the tap, before the download');
     await start; await h.flush(); h.render();
     assert.equal(generated, 2);
-    assert.equal(started, 2);
+    assert.equal(started, 3, 'two commentary lines, plus the silent unlock in the tap');
     assert.equal(h.nativeSpoken.length, 0);
     assert.match(courtSource, /getAudioContext: getCommentaryAudioContext/);
   } finally { h.cleanup(); }
@@ -804,42 +793,230 @@ test('muting while Kokoro generates prevents delayed speech from escaping', asyn
   } finally { h.cleanup(); }
 });
 
-test('a replay prepares the next point\'s call while the current point plays', async () => {
-  const prefetched = [];
-  const audio = { audio: new Float32Array([0.1]), sampling_rate: 24_000 };
-  const localModel = {
-    generated: [],
-    async generate(text, options) {
-      localModel.generated.push({ text, ...options });
-      return audio;
+test('the Commentary button shows starting, then on, so it is never silently waiting', async () => {
+  let finishLoad;
+  const h = harness(undefined, { loadModel: () => new Promise((resolve) => { finishLoad = resolve; }) });
+  try {
+    assert.equal(h.value().status, 'off');
+    await h.value().toggle(); await h.flush(); h.render();
+    assert.equal(h.value().status, 'starting');
+    finishLoad({ async generate() { return { audio: new Float32Array([0.1]), sampling_rate: 24_000 }; } });
+    await h.flush(); h.render();
+    assert.equal(h.value().status, 'on');
+    await h.value().toggle(); h.render();
+    assert.equal(h.value().status, 'off');
+  } finally { h.cleanup(); }
+});
+
+test('a refused server voice asks the viewer to sign in, and a tap retries straight away', async () => {
+  let loads = 0;
+  const h = harness(undefined, {
+    mobileLocalVoicePreview: true,
+    loadModel: async () => {
+      loads += 1;
+      if (loads === 1) throw Object.assign(new Error('Commentary voice server returned 401'), { status: 401 });
+      return { async generate() { return { audio: new Float32Array([0.1]), sampling_rate: 24_000 }; } };
     },
-    prefetch(text, options) { prefetched.push({ text, ...options }); },
+  });
+  try {
+    await h.value().toggle(); await h.flush(); h.render();
+    assert.equal(h.value().status, 'sign-in');
+    assert.equal(h.value().enabled, true);
+    await h.value().toggle(); await h.flush(); h.render();
+    assert.equal(loads, 2, 'one tap retries instead of only turning commentary off');
+    assert.equal(h.value().status, 'on');
+  } finally { h.cleanup(); }
+});
+
+test('any other voice failure says unavailable instead of staying silent', async () => {
+  const h = harness(undefined, { loadModel: async () => { throw new Error('Commentary voice server returned 404'); } });
+  try {
+    await h.value().toggle(); await h.flush(); h.render();
+    assert.equal(h.value().status, 'unavailable');
+    assert.equal(h.nativeSpoken.length, 0, 'still no device-voice fallback');
+  } finally { h.cleanup(); }
+});
+
+test('a locked iPhone audio context is unlocked with a silent sound inside the tap', async () => {
+  const started = [];
+  const locked = {
+    state: 'suspended', destination: {},
+    resume() { this.state = 'running'; return Promise.resolve(); },
+    createBuffer(channels, length) { return { channels, length, duration: 0, copyToChannel() {} }; },
+    createBufferSource() {
+      return { buffer: null, onended: null, connect() {}, start() { started.push(this.buffer); this.onended?.(); }, stop() {} };
+    },
   };
-  const h = harness(undefined, { localModel });
+  const h = harness();
+  try {
+    h.render({ getAudioContext: () => locked });
+    const tap = h.value().toggle();
+    assert.equal(started.length, 1, 'a sound starts synchronously in the gesture');
+    assert.equal(started[0].length, 1, 'it is a single silent sample');
+    await tap; await h.flush(); h.render();
+  } finally { h.cleanup(); }
+});
+
+function storedAudioContext() {
+  const started = [];
+  const context = {
+    state: 'running', destination: {}, started,
+    resume: async () => {},
+    createBuffer: () => ({ duration: 0, copyToChannel() {} }),
+    decodeAudioData: async (bytes) => ({ decoded: new TextDecoder().decode(bytes) }),
+    createBufferSource() {
+      const source = {
+        buffer: null, onended: null, connect() {},
+        start() { started.push(source); },
+        stop() { source.stopped = true; source.onended?.(); },
+        end() { source.onended?.(); },
+      };
+      return source;
+    },
+  };
+  return context;
+}
+
+const clipResponse = (name) => ({ ok: true, arrayBuffer: async () => new TextEncoder().encode(name).buffer });
+
+async function settle(h, times = 4) {
+  for (let i = 0; i < times; i += 1) { await h.flush(); h.render(); }
+}
+
+test('a stored replay plays its pre-made clips and never loads a voice model', async () => {
+  let loads = 0;
+  const audio = storedAudioContext();
+  const h = harness(undefined, { loadModel: async () => { loads += 1; return null; } });
   try {
     h.playback.frame = 0;
-    h.render({ fullReplay: true, replayFrame: 0, commentaryPoints: [
-      { number: 4, frame: 100, winner: 1, server: 1, rallyHits: 4,
-        scoreBeforeLabel: '0-0(40-30)', scoreAfterLabel: '1-0(0-0)' },
-      { number: 8, frame: 2000, winner: 2, server: 2, rallyHits: 4,
-        scoreBeforeLabel: '1-0(30-40)', scoreAfterLabel: '1-1(0-0)' },
-    ] });
-    await enableLoadedKokoro(h);
-    h.advance(1000);
-    h.playback.frame = 150;
-    h.render({ replayFrame: 150 });
-    await h.flush();
-    const nextCall = prefetched.find((entry) => /game/i.test(entry.text));
-    assert.ok(nextCall, 'the next game call is prepared before that point ends');
-    assert.equal(prefetched.filter((entry) => entry.text === nextCall.text).length, 1, 'prepared once');
+    h.render({ fullReplay: true, replayId: '21', getAudioContext: () => audio });
+    await h.value().toggle(); h.render();
+    assert.equal(h.value().status, 'starting');
+    assert.match(h.requests[0].url, /\/api\/dmo-replays\/21\/commentary$/);
+    h.requests[0].resolve({ ok: true, json: async () => ({ fps: 30, cues: [
+      { at: null, clip: 'a'.repeat(32), group: 1 },
+      { at: 300, clip: 'b'.repeat(32), group: 2, mustPlay: true },
+    ] }) });
+    await settle(h);
+    const clipRequests = h.requests.slice(1).map((request) => request.url);
+    assert.ok(clipRequests.some((url) => url.endsWith(`/commentary/${'a'.repeat(32)}`)), 'the opening clip is fetched');
+    assert.ok(clipRequests.some((url) => url.endsWith(`/commentary/${'b'.repeat(32)}`)), 'the next call is fetched ahead');
+    for (const request of h.requests.slice(1)) request.resolve(clipResponse(request.url.slice(-1)));
+    await settle(h);
+    assert.equal(audio.started[0].buffer.decoded, 'a', 'the opening plays straight away');
+    assert.equal(h.value().status, 'on');
+    audio.started[0].end();
+    await settle(h);
+    h.playback.frame = 310; h.advance(300); await settle(h);
+    assert.equal(audio.started.at(-1).buffer.decoded, 'b', 'the game call plays at its frame');
+    assert.equal(loads, 0, 'no voice model is downloaded or run');
+    assert.equal(h.nativeSpoken.length, 0);
+  } finally { h.cleanup(); }
+});
 
-    for (let step = 0; step < 6; step += 1) {
-      h.finishAudio(); await h.flush(); h.advance(1000); await h.flush(); h.render();
+test('pausing a stored replay stops the line being spoken', async () => {
+  const audio = storedAudioContext();
+  const h = harness();
+  try {
+    h.playback.frame = 0;
+    h.render({ fullReplay: true, replayId: '21', getAudioContext: () => audio });
+    await h.value().toggle(); h.render();
+    h.requests[0].resolve({ ok: true, json: async () => ({ fps: 30, cues: [{ at: null, clip: 'a'.repeat(32), group: 1 }] }) });
+    await settle(h);
+    h.requests[1].resolve(clipResponse('a'));
+    await settle(h);
+    assert.equal(audio.started.length, 1);
+    h.playback.playing = false; h.advance(300); await settle(h);
+    assert.equal(audio.started[0].stopped, true);
+  } finally { h.cleanup(); }
+});
+
+test('a replay without a stored track reports unavailable without generating speech on the device', async () => {
+  let loads = 0;
+  const h = harness(undefined, { loadModel: async () => {
+    loads += 1;
+    return { async generate() { return { audio: new Float32Array([0.1]), sampling_rate: 24_000 }; } };
+  } });
+  try {
+    h.render({ fullReplay: true, replayId: '21' });
+    await h.value().toggle(); h.render();
+    h.requests[0].resolve({ ok: false, status: 503, json: async () => ({}) });
+    await settle(h);
+    assert.equal(loads, 0, 'no local speech model is loaded');
+    assert.equal(h.value().status, 'unavailable');
+    assert.equal(h.nativeSpoken.length, 0);
+  } finally { h.cleanup(); }
+});
+
+test('stored clips that cannot be downloaded show unavailable, and a tap retries', async () => {
+  const audio = storedAudioContext();
+  const h = harness();
+  try {
+    h.playback.frame = 0;
+    h.render({ fullReplay: true, replayId: '21', getAudioContext: () => audio });
+    await h.value().toggle(); h.render();
+    h.requests[0].resolve({ ok: true, json: async () => ({ fps: 30, cues: [
+      { at: null, clip: 'a'.repeat(32), group: 1 },
+      { at: 30, clip: 'b'.repeat(32), group: 2 },
+      { at: 60, clip: 'c'.repeat(32), group: 3 },
+    ] }) });
+    await settle(h);
+    for (let round = 0; round < 4; round += 1) {
+      for (const request of h.requests.slice(1)) request.resolve({ ok: false, status: 503 });
+      h.playback.frame += 31; h.advance(300); await settle(h);
     }
-    h.playback.frame = 2100;
-    h.render({ replayFrame: 2100 });
-    h.advance(300); await h.flush(); h.render();
-    assert.ok(localModel.generated.some((entry) => entry.text === nextCall.text && entry.voice === nextCall.voice),
-      'the prepared line is the one requested when the point ends');
+    assert.equal(h.value().status, 'unavailable');
+    const before = h.requests.length;
+    await h.value().toggle(); h.render();
+    assert.ok(h.requests.length > before, 'tapping fetches the commentary again');
+    assert.equal(h.value().status, 'starting');
+  } finally { h.cleanup(); }
+});
+
+test('a live broadcast plays its stored clips and never loads a voice model', async () => {
+  let kokoroLoads = 0;
+  const liveLoads = [];
+  const generated = [];
+  const h = harness(undefined, {
+    loadModel: async () => { kokoroLoads += 1; return null; },
+    liveClipVoice: {
+      loadDmoLiveClipVoice: async (options) => {
+        liveLoads.push(options.broadcastId);
+        return {
+          dmoVoiceSource: 'server',
+          async generate(text, opts) {
+            generated.push({ text, ...opts });
+            return { audio: new Float32Array([0.1]), sampling_rate: 24_000 };
+          },
+          prefetch() {},
+        };
+      },
+    },
+  });
+  try {
+    h.render({ broadcastId: '3f1c2a5e-8b8e-4b6f-9a51-6f2b0c9d1e77' });
+    assert.match(h.requests[0].url, /\/api\/live-dmo\/3f1c2a5e-8b8e-4b6f-9a51-6f2b0c9d1e77\/commentary$/,
+      'opening the broadcast lets the server prepare its commentary');
+    await h.value().toggle(); await h.flush(); h.render(); await h.flush(); h.render();
+    assert.deepEqual(liveLoads, ['3f1c2a5e-8b8e-4b6f-9a51-6f2b0c9d1e77']);
+    assert.equal(kokoroLoads, 0, 'no model download on any device');
+    assert.equal(generated.length, 2, 'the opening is spoken from clips');
+    assert.equal(h.value().status, 'on');
+    assert.equal(h.nativeSpoken.length, 0);
+  } finally { h.cleanup(); }
+});
+
+test('the live check-in repeats every minute until the commentary is fully prepared', async () => {
+  const h = harness();
+  try {
+    h.render({ broadcastId: '3f1c2a5e-8b8e-4b6f-9a51-6f2b0c9d1e77' });
+    h.requests[0].resolve({ ok: true, json: async () => ({ complete: false }) });
+    await h.flush();
+    h.advance(60_000); await h.flush();
+    assert.equal(h.requests.length, 2);
+    h.requests[1].resolve({ ok: true, json: async () => ({ complete: true }) });
+    await h.flush();
+    h.advance(180_000); await h.flush();
+    assert.equal(h.requests.length, 2, 'no more check-ins once everything is stored');
   } finally { h.cleanup(); }
 });

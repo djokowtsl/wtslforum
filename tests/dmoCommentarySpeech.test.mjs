@@ -63,3 +63,8 @@ test('server model requests cacheable URLs and reports upstream failures', async
   const failing = createDmoServerVoiceModel({ fetchImpl: async () => ({ ok: false, status: 503 }) });
   await assert.rejects(failing.generate('Deuce.', { voice: 'af_heart' }), /returned 503/);
 });
+
+test('a refused speech request keeps its HTTP status so the button can ask the viewer to sign in', async () => {
+  const model = createDmoServerVoiceModel({ fetchImpl: async () => ({ ok: false, status: 401 }) });
+  await assert.rejects(model.generate('Deuce.', { voice: 'af_heart' }), (error) => error.status === 401);
+});

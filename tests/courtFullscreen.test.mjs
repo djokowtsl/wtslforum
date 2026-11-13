@@ -112,7 +112,10 @@ test('court picture-in-picture opens a native system window or reports unsupport
   assert.match(pictureInPictureButton, /frameCount >= 2/);
   assert.match(pictureInPictureButton, /video\.controls = true/);
   assert.match(pictureInPictureButton, /setVideoReady\(true\)/);
-  assert.match(pictureInPictureButton, /disabled=\{!videoReady\}/);
+  assert.match(pictureInPictureButton, /disabled=\{pictureInPictureButtonDisabled \|\| isPreparingVideo\}/);
+  assert.match(pictureInPictureButton, /canRetryPreparation/);
+  assert.match(pictureInPictureButton, /Retry PiP setup/);
+  assert.match(pictureInPictureButton, /startVideoPreparation\(\)/);
   assert.match(pictureInPictureButton, /mediaVideoRef/);
   assert.match(pictureInPictureButton, /data-pip-toggle/);
   assert.match(pictureInPictureButton, /This browser cannot open a system Picture in Picture window/);
