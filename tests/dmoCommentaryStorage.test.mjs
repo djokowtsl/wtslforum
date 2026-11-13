@@ -7,7 +7,14 @@ import * as script from '../lib/dmoCommentaryScript.mjs';
 const require = createRequire(import.meta.url);
 const { transformSync } = require('next/dist/build/swc');
 
-function loadTrackModule({ blobs, botCalls, contextCalls }) {
+function loadTrackModule({
+  blobs,
+  botCalls,
+  contextCalls,
+  fetchResponse = () => new Response(new Uint8Array([0xff, 0xfb, 1, 2]), {
+    headers: { 'content-type': 'audio/mpeg' },
+  }),
+}) {
   const source = readFileSync(new URL('../lib/dmoCommentaryTrack.ts', import.meta.url), 'utf8');
   const { code } = transformSync(source, {
     jsc: { parser: { syntax: 'typescript' }, target: 'es2022' },
@@ -40,7 +47,7 @@ function loadTrackModule({ blobs, botCalls, contextCalls }) {
   }, module, module.exports);
   globalThis.fetch = async (url, init) => {
     botCalls.push(JSON.parse(init.body));
-    return new Response(new Uint8Array([0xff, 0xfb, 1, 2]), { headers: { 'content-type': 'audio/mpeg' } });
+    return fetchResponse(url, init);
   };
   process.env.WTSL_CORE_API_URL = 'https://bot.test';
   process.env.WTSL_CORE_API_KEY = 'secret';
@@ -78,6 +85,25 @@ test('clips are generated once as MP3, stored, and then served from storage', as
   await track.getDmoCommentaryClip(built, cue.clip, 'store');
   assert.equal(botCalls.length, 1, 'the second request is served from storage');
   assert.ok(blobs.has(`dmo-commentary/clips/${cue.clip}.mp3`));
+});
+
+test('bot backpressure is marked as busy and carries its retry delay', async () => {
+  const blobs = new Map(); const botCalls = [];
+  const track = loadTrackModule({
+    blobs,
+    botCalls,
+    contextCalls: [],
+    fetchResponse: () => new Response(JSON.stringify({ error: 'speech_busy' }), {
+      status: 503,
+      headers: { 'content-type': 'application/json', 'retry-after': '3' },
+    }),
+  });
+  const built = await track.getDmoCommentaryTrack(replay, async () => viewer, 'store');
+  await assert.rejects(
+    track.getDmoCommentaryClip(built, built.cues[0].clip, 'store'),
+    (error) => error.busy === true && error.retryAfter === '3',
+  );
+  assert.equal(botCalls.length, 1);
 });
 
 test('only lines in the replay\'s own script can ever be turned into audio', async () => {

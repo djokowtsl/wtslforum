@@ -25,6 +25,12 @@ import {
   isMobileDmoLocalVoiceDevice,
   loadDmoLocalVoiceModel,
 } from '@/lib/dmoLocalVoice.mjs';
+import {
+  COMMENTARY_MAINTENANCE_MESSAGE,
+  COMMENTARY_RESTRICTION_END_UTC,
+  isAllowedCommentaryMatch,
+  isCommentaryRestrictionActive,
+} from '@/lib/dmoCommentaryMaintenance.mjs';
 import type { DmoCommentaryPoint } from '@/lib/dmoCommentary.mjs';
 import type { Te4LiveSnapshot } from '@/lib/te4DmoLive';
 
@@ -76,7 +82,7 @@ function withVoiceDeadline<T>(work: Promise<T>, milliseconds: number): Promise<T
 }
 
 /** What the player's Commentary button shows. */
-export type DmoCommentaryStatus = 'off' | 'starting' | 'on' | 'sign-in' | 'unavailable';
+export type DmoCommentaryStatus = 'off' | 'starting' | 'on' | 'sign-in' | 'unavailable' | 'maintenance';
 
 /** Longest a single commentary line may take to prepare before it is skipped. */
 const LINE_DEADLINE_MS = 20_000;
@@ -134,6 +140,7 @@ export function useDmoCommentary({
   playbackState,
 }: Options) {
   const [enabled, setEnabled] = useState(false);
+  const [maintenanceNow, setMaintenanceNow] = useState(0);
   const [error, setError] = useState('');
   const [voiceLoading, setVoiceLoading] = useState(false);
   const [voiceStatus, setVoiceStatus] = useState('');
@@ -178,6 +185,21 @@ export function useDmoCommentary({
     [commentaryNames],
   );
   const hasVerifiedNames = Boolean(names[0] && names[1]);
+  const commentaryAllowed = !isCommentaryRestrictionActive(maintenanceNow)
+    || isAllowedCommentaryMatch({
+      replayId,
+      names,
+      tournament: tournamentName,
+    });
+
+  useEffect(() => {
+    const updateTime = () => setMaintenanceNow(Date.now());
+    updateTime();
+    const untilReopen = COMMENTARY_RESTRICTION_END_UTC - Date.now();
+    if (untilReopen <= 0) return;
+    const timer = setTimeout(updateTime, untilReopen + 50);
+    return () => clearTimeout(timer);
+  }, []);
 
   /** The point the viewer has reached: replay position, or the live count. */
   const currentPointNumber = useCallback((frame: number) => {
@@ -573,7 +595,13 @@ export function useDmoCommentary({
           const clipResponse = await fetch(
             `/api/dmo-replays/${encodeURIComponent(id)}/commentary/${clip}`,
           );
-          if (!clipResponse.ok) throw new Error(`Commentary clip returned ${clipResponse.status}`);
+          if (!clipResponse.ok) {
+            const error = new Error(
+              `Commentary clip returned ${clipResponse.status}`,
+            ) as Error & { busy?: boolean };
+            error.busy = clipResponse.headers.get('X-WTSL-Commentary-Busy') === 'true';
+            throw error;
+          }
           return audioContext.decodeAudioData(await clipResponse.arrayBuffer());
         },
         playClip: (buffer) => new Promise<void>((resolve, reject) => {
@@ -718,6 +746,10 @@ export function useDmoCommentary({
   }, [clearPendingCommentary, isVoiceBusy, speak, playbackState]);
 
   const toggle = useCallback(() => {
+    if (!commentaryAllowed) {
+      setError(COMMENTARY_MAINTENANCE_MESSAGE);
+      return;
+    }
     // Unlock audio synchronously in the user's tap, before cancellation or the
     // first model download crosses an async boundary (especially on iOS).
     // Tapping a button that says commentary is unavailable retries at once,
@@ -903,6 +935,7 @@ export function useDmoCommentary({
     kokoroReady,
     tournamentName,
     tournamentRound,
+    commentaryAllowed,
   ]);
 
   useEffect(() => {
@@ -1200,12 +1233,14 @@ export function useDmoCommentary({
   }, [cancelCommentarySpeech, clearPendingCommentary]);
 
   // A plain state for the player's button: never silently broken.
-  const status: DmoCommentaryStatus = !enabled
+  const status: DmoCommentaryStatus = !commentaryAllowed
+    ? 'maintenance'
+    : !enabled
     ? 'off'
     : voiceFailure || ((trackState ? trackState === 'on' : kokoroReady) ? 'on' : 'starting');
 
   return {
     enabled, error, voiceLoading, voiceStatus, toggle, status,
-    localVoiceSupported,
+    localVoiceSupported, maintenanceBlocked: !commentaryAllowed,
   };
 }

@@ -6,6 +6,8 @@ import { Suspense } from 'react';
 import { ForumHeader } from '@/components/ForumHeader';
 import { ForumFooter } from '@/components/ForumFooter';
 import { ThemeBootstrapScript } from '@/components/ThemeToggle';
+import { ForumMaintenanceNotice } from '@/components/ForumMaintenanceNotice';
+import { isForumMaintenanceActive } from '@/lib/dmoCommentaryMaintenance.mjs';
 
 const display = Barlow_Condensed({ subsets: ['latin'], weight: ['700', '800'], style: ['normal', 'italic'], variable: '--font-display-loaded', display: 'swap' });
 const body = Inter({ subsets: ['latin'], variable: '--font-body-loaded', display: 'swap' });
@@ -24,15 +26,22 @@ export const metadata: Metadata = {
 export const viewport: Viewport = { themeColor: '#030a18' };
 
 export default function RootLayout({ children }: { children: React.ReactNode }) {
+  const maintenanceActive = isForumMaintenanceActive();
   return (
     <html lang="en" className={`${display.variable} ${body.variable}`}>
       <head>
         <ThemeBootstrapScript />
       </head>
       <body>
-        <ForumHeader />
-        <Suspense fallback={null}>{children}</Suspense>
-        <ForumFooter />
+        {maintenanceActive ? (
+          <ForumMaintenanceNotice />
+        ) : (
+          <>
+            <ForumHeader />
+            <Suspense fallback={null}>{children}</Suspense>
+            <ForumFooter />
+          </>
+        )}
       </body>
     </html>
   );

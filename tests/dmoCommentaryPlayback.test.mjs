@@ -33,6 +33,8 @@ function harness(voices = [
   holdAudioPlayback = false,
   audioDuration = 0,
   liveClipVoice = null,
+  commentaryRestricted = false,
+  maintenanceAllowed = false,
 } = {}) {
   const originals = Object.fromEntries(['window', 'SpeechSynthesisUtterance', 'fetch',
     'setTimeout', 'clearTimeout', 'setInterval', 'clearInterval'].map((key) => [key, globalThis[key]]));
@@ -129,6 +131,13 @@ function harness(voices = [
           isMobileDmoLocalVoiceDevice: () => mobileLocalVoicePreview,
           loadDmoLocalVoiceModel: loadKokoro,
         }
+        : name === '@/lib/dmoCommentaryMaintenance.mjs'
+          ? {
+            COMMENTARY_MAINTENANCE_MESSAGE: 'Match commentary is unavailable until 08:00 GMT.',
+            COMMENTARY_RESTRICTION_END_UTC: 0,
+            isAllowedCommentaryMatch: () => maintenanceAllowed,
+            isCommentaryRestrictionActive: () => commentaryRestricted,
+          }
         : require(name);
   mod._compile(compiled, 'useDmoCommentary.js');
   let options = { snapshot: { pointCount: 0, recentPoints: [] },
@@ -1019,4 +1028,34 @@ test('the live check-in repeats every minute until the commentary is fully prepa
     h.advance(180_000); await h.flush();
     assert.equal(h.requests.length, 2, 'no more check-ins once everything is stored');
   } finally { h.cleanup(); }
+});
+
+test('maintenance blocks commentary for non-exempt matches', async () => {
+  const h = harness([], { commentaryRestricted: true });
+  try {
+    h.render({ commentaryNames: ['Player One', 'Player Two'], tournamentName: 'Wimbledon' });
+    await h.value().toggle();
+    h.render();
+    assert.equal(h.value().status, 'maintenance');
+    assert.equal(h.value().enabled, false);
+    assert.equal(h.requests.length, 0);
+    assert.match(h.value().error, /08:00 GMT/);
+  } finally {
+    h.cleanup();
+  }
+});
+
+test('the approved match remains available during commentary restrictions', () => {
+  const h = harness([], { commentaryRestricted: true, maintenanceAllowed: true });
+  try {
+    h.render({
+      replayId: '23',
+      commentaryNames: ['gifuko', 'TheTinkerman_'],
+      tournamentName: 'Roland Garros (WTA)',
+    });
+    assert.notEqual(h.value().status, 'maintenance');
+    assert.equal(h.value().maintenanceBlocked, false);
+  } finally {
+    h.cleanup();
+  }
 });

@@ -198,6 +198,7 @@ const COMMENTARY_BUTTON_LABELS = {
   on: 'Commentary on',
   'sign-in': 'Sign in for commentary',
   unavailable: 'Commentary unavailable · tap to retry',
+  maintenance: 'Commentary paused for maintenance',
 } as const;
 
 const COMMENTARY_BUTTON_ACTIONS = {
@@ -206,6 +207,7 @@ const COMMENTARY_BUTTON_ACTIONS = {
   on: 'Turn match commentary off',
   'sign-in': 'Sign in to the Forum to hear commentary; tap to try again',
   unavailable: 'Commentary could not start; tap to try again',
+  maintenance: 'Match commentary is unavailable until 08:00 GMT on Saturday 14 November',
 } as const;
 
 type Props = {
@@ -3219,7 +3221,7 @@ function ThreeCourt({
             aria-label={COMMENTARY_BUTTON_ACTIONS[commentary.status]}
             aria-busy={commentary.status === 'starting'}
             title={COMMENTARY_BUTTON_ACTIONS[commentary.status]}
-            disabled={!soundEnabled || !soundReady}
+            disabled={!soundEnabled || !soundReady || commentary.maintenanceBlocked}
             onClick={commentary.toggle}
           >
             <span>{COMMENTARY_BUTTON_LABELS[commentary.status]}</span>

@@ -19,7 +19,7 @@
     "test:coaching-reports": "node --test tests/coachingReportPrivacy.test.mjs",
     "test:live-umpire-delivery": "node --test tests/liveUmpireDelivery.test.mjs tests/leftHandedNativeMotion.test.mjs",
     "test:native-motion-grunts": "node --test tests/dmoCharacterAppearance.test.mjs tests/liveCharacterGruntAudio.test.mjs tests/nativeCharacterGruntProfiles.test.mjs tests/nativeMotionLiveGruntOverrides.test.mjs tests/nativeMotionPlayerOverrides.test.mjs tests/dmoCommentary.test.mjs",
-    "test:dmo-commentary": "node --test tests/dmoCommentary.test.mjs tests/dmoCommentaryPlayback.test.mjs tests/dmoReplayCommentary.test.mjs tests/dmoLocalVoice.test.mjs tests/dmoCommentarySpeech.test.mjs tests/dmoCommentaryScore.test.mjs tests/dmoCommentaryVariety.test.mjs tests/dmoCommentaryTrack.test.mjs tests/dmoCommentaryStorage.test.mjs tests/dmoCommentaryPhrasebook.test.mjs tests/dmoLiveCommentary.test.mjs",
+    "test:dmo-commentary": "node --test tests/dmoCommentary.test.mjs tests/dmoCommentaryPlayback.test.mjs tests/dmoReplayCommentary.test.mjs tests/dmoLocalVoice.test.mjs tests/dmoCommentarySpeech.test.mjs tests/dmoCommentaryScore.test.mjs tests/dmoCommentaryVariety.test.mjs tests/dmoCommentaryTrack.test.mjs tests/dmoCommentaryStorage.test.mjs tests/dmoCommentaryPhrasebook.test.mjs tests/dmoLiveCommentary.test.mjs tests/dmoCommentaryMaintenance.test.mjs",
     "test:dmo-crowd-appearance": "node --test tests/crowdClothing.test.mjs && node --test --test-name-pattern='seated spectator leg bones' tests/dmoHumanModels.test.mjs"
   },
   "dependencies": {

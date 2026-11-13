@@ -156,7 +156,16 @@ export async function generateDmoCommentaryClip(
     signal: AbortSignal.timeout(50_000),
   });
   if (!response.ok || !response.headers.get('content-type')?.startsWith('audio/mpeg')) {
-    throw new Error(`The commentary voice returned ${response.status}.`);
+    const problem = response.headers.get('content-type')?.includes('application/json')
+      ? await response.json().catch(() => null) as { error?: string } | null
+      : null;
+    const error = new Error(`The commentary voice returned ${response.status}.`) as Error & {
+      busy?: boolean;
+      retryAfter?: string;
+    };
+    error.busy = response.status === 503 && problem?.error === 'speech_busy';
+    error.retryAfter = response.headers.get('Retry-After') ?? undefined;
+    throw error;
   }
   const audio = new Uint8Array(await response.arrayBuffer());
   await put(clipPath(cue.clip), Buffer.from(audio), {

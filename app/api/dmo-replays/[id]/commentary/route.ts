@@ -3,6 +3,12 @@ import { getSession } from '@/lib/auth';
 import { isDmoReplayId } from '@/lib/dmoReplayLibrary';
 import { findViewableDmoReplay, loadDmoReplayViewer } from '@/lib/dmoReplayViewerData';
 import { getDmoCommentaryTrack, prepareDmoCommentaryClips } from '@/lib/dmoCommentaryTrack';
+import { isWtslSyncAuthorized } from '@/lib/wtslSyncAuth';
+import {
+  COMMENTARY_MAINTENANCE_MESSAGE,
+  isAllowedCommentaryMatch,
+  isCommentaryRestrictionActive,
+} from '@/lib/dmoCommentaryMaintenance.mjs';
 
 export const dynamic = 'force-dynamic';
 export const maxDuration = 60;
@@ -28,6 +34,21 @@ export async function GET(request: Request, { params }: { params: Promise<{ id: 
     if (!replay) {
       return NextResponse.json({ error: 'Match replay not found.' }, { status: 404, headers: HEADERS });
     }
+    const warmupAuthorized = isWtslSyncAuthorized(request.headers);
+    if (
+      isCommentaryRestrictionActive()
+      && !warmupAuthorized
+      && !isAllowedCommentaryMatch({
+        replayId: replay.id,
+        names: [replay.player1, replay.player2],
+        tournament: replay.tournament,
+      })
+    ) {
+      return NextResponse.json(
+        { error: COMMENTARY_MAINTENANCE_MESSAGE },
+        { status: 503, headers: { ...HEADERS, 'Retry-After': 'Sat, 14 Nov 2026 08:00:00 GMT' } },
+      );
+    }
     const track = await getDmoCommentaryTrack(replay, () => loadDmoReplayViewer({
       id,
       sourcePath: replay.privateBlobPathname,
@@ -39,12 +60,13 @@ export async function GET(request: Request, { params }: { params: Promise<{ id: 
     // A viewer joining part-way gets the clips from their position first.
     const rawFrom = new URL(request.url).searchParams.get('from');
     const from = rawFrom !== null && /^\d{1,9}$/.test(rawFrom) ? Number(rawFrom) : null;
-    if (!track.complete) {
+    if (!track.complete && !warmupAuthorized) {
       after(() => prepareDmoCommentaryClips(replay, track, storeId, 45_000, from).then(() => undefined));
     }
     return NextResponse.json({
       version: track.version,
       fps: track.fps,
+      complete: Boolean(track.complete),
       cues: track.cues.map(({ at, speaker, text, kind, group, mustPlay, clip }) => ({
         at, speaker, text, kind, group, mustPlay, clip,
       })),

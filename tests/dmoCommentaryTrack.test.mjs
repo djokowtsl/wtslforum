@@ -261,3 +261,56 @@ test('starting or seeking asks for the next stretch of clips at once', async () 
   p.track.update(0, false); await tick();
   assert.deepEqual(p.positions, [30 * 60 * 10, 0], 'a seek reports the new position');
 });
+
+test('a busy bot skips the line quietly instead of reporting commentary unavailable', async () => {
+  const played = [];
+  const states = [];
+  const track = createDmoCommentaryTrackPlayer({
+    cues: [cue('intro', null, 1), cue('call', 60, 2)],
+    fps: 30,
+    wait: () => new Promise(() => {}),
+    loadClip: async (clip) => {
+      if (clip === 'intro') throw Object.assign(new Error('503'), { busy: true });
+      return `audio:${clip}`;
+    },
+    playClip: async (audio) => { played.push(audio); },
+    onState: (state) => states.push(state),
+  });
+  track.start(0, true);
+  await tick();
+  assert.deepEqual(states, ['starting']);
+  track.update(60, true);
+  await tick();
+  assert.deepEqual(played, ['audio:call']);
+  assert.deepEqual(states, ['starting', 'on']);
+});
+
+test('a busy bot line is retried after its three-second backoff', async () => {
+  let time = 0;
+  let requests = 0;
+  const track = createDmoCommentaryTrackPlayer({
+    cues: [cue('call', 60, 1)],
+    fps: 30,
+    now: () => time,
+    loadClip: async () => {
+      requests += 1;
+      if (requests === 1) throw Object.assign(new Error('503'), { busy: true });
+      return 'audio:call';
+    },
+    playClip: async () => {},
+  });
+  track.start(0, true);
+  await tick();
+  track.update(60, true);
+  await tick();
+  assert.equal(requests, 1);
+  time = 2_999;
+  track.update(61, true);
+  await tick();
+  assert.equal(requests, 1, 'the worker is not polled during Retry-After');
+  time = 3_001;
+  track.update(62, true);
+  await tick();
+  assert.equal(requests, 2, 'the line is retried after three seconds');
+  assert.equal(track.state, 'on');
+});
