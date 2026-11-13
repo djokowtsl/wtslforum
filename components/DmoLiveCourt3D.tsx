@@ -191,6 +191,23 @@ import {
   type UmpireCallEvent,
 } from '@/lib/liveCourtUmpire';
 
+/** What the Commentary button says, so a viewer is never left with silence. */
+const COMMENTARY_BUTTON_LABELS = {
+  off: 'Commentary off',
+  starting: 'Commentary starting…',
+  on: 'Commentary on',
+  'sign-in': 'Sign in for commentary',
+  unavailable: 'Commentary unavailable · tap to retry',
+} as const;
+
+const COMMENTARY_BUTTON_ACTIONS = {
+  off: 'Turn match commentary on',
+  starting: 'Commentary is starting; tap to turn it off',
+  on: 'Turn match commentary off',
+  'sign-in': 'Sign in to the Forum to hear commentary; tap to try again',
+  unavailable: 'Commentary could not start; tap to try again',
+} as const;
+
 type Props = {
   modelAssetBase?: string;
   playerBundledMotions?: readonly [BundledMotionSource | null, BundledMotionSource | null];
@@ -209,6 +226,10 @@ type Props = {
   scoreboard?: StadiumScoreboardData;
   crowdDensity?: number;
   tournamentRound?: string | null;
+  /** A stored replay's id: its commentary plays from pre-made clips. */
+  commentaryReplayId?: string | null;
+  /** A live broadcast's id: its commentary plays from the broadcast's clips. */
+  commentaryBroadcastId?: string | null;
   tournamentName?: string | null;
   onReplayFrameChange?: (frame: number) => void;
   showVoiceDiagnostics?: boolean;
@@ -305,6 +326,8 @@ function ThreeCourt({
   playerBundledMotions,
   playerCharacters = [null, null],
   commentaryNames = null,
+  commentaryReplayId = null,
+  commentaryBroadcastId = null,
   playerGruntSettings,
   playerOutfitSeed,
   commentaryPoints = [],
@@ -507,6 +530,8 @@ function ThreeCourt({
     soundEnabled,
     soundReady: soundEnabled && soundReady,
     getAudioContext: getCommentaryAudioContext,
+    replayId: commentaryReplayId,
+    broadcastId: commentaryBroadcastId,
     playbackState: commentaryPlaybackState,
   });
   const [crowdVolume, setCrowdVolume] = useState(0.24);
@@ -3191,13 +3216,13 @@ function ThreeCourt({
             className={styles.soundButton}
             type="button"
             aria-pressed={commentary.enabled}
-            aria-label={commentary.enabled ? 'Turn match commentary off' : 'Turn match commentary on'}
-            aria-busy={commentary.voiceLoading}
-            title="Turn match commentary on or off."
+            aria-label={COMMENTARY_BUTTON_ACTIONS[commentary.status]}
+            aria-busy={commentary.status === 'starting'}
+            title={COMMENTARY_BUTTON_ACTIONS[commentary.status]}
             disabled={!soundEnabled || !soundReady}
             onClick={commentary.toggle}
           >
-            <span>{`Commentary ${commentary.enabled ? 'on' : 'off'}`}</span>
+            <span>{COMMENTARY_BUTTON_LABELS[commentary.status]}</span>
           </button>
           <button
             className={styles.soundButton}

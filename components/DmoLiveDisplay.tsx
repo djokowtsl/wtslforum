@@ -245,6 +245,7 @@ export default function DmoLiveDisplay({
           isWta={isWta}
           playerCharacters={motionNames}
           commentaryNames={commentaryNames}
+          commentaryBroadcastId={broadcastId ?? null}
           showVoiceDiagnostics={showVoiceDiagnostics}
           playerGruntSettings={nativeMotion.playerGruntSettings}
           buffering={buffering}

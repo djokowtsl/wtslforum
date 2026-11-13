@@ -281,6 +281,8 @@ export default function Te4DmoReplayPlayer({
             tournamentRound={tournamentRound}
             tournamentName={normalizeDmoTournamentName(viewer.tournament)}
             commentaryPoints={commentaryPoints}
+            commentaryReplayId={replaySubmissionId ?? null}
+            commentaryBroadcastId={broadcastId ?? null}
             fullReplay
             playerOutfitSeed={replayUrl || broadcastId || snapshot.filename}
             playerBundledMotions={nativeMotion.sources}

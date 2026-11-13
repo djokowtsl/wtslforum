@@ -50,7 +50,7 @@ export function buildDmoReplayCommentaryPoints(
       setAfter: next?.set,
       setsWonBefore: setsWonBefore ?? undefined,
       setsToWin: setsToWin ?? undefined,
-      ...(matchOver ? { matchOver: true, finalSets: finalSets!.map(([a, b]) => [a, b]) } : {}),
+      ...(matchOver ? { matchOver: true, finalSets: finalSets!.map(([a, b]) => [a, b] as [number, number]) } : {}),
     }];
   });
 }

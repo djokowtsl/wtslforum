@@ -146,6 +146,7 @@ export default function CourtPictureInPictureButton({
     const video = videoRef.current;
     if (!video || videoReadyRef.current || preparationPromiseRef.current) return;
 
+    setError('');
     setIsPreparingVideo(true);
     let playResult: Promise<void> | void;
     try {
@@ -347,6 +348,17 @@ export default function CourtPictureInPictureButton({
   };
 
   const isActive = mode !== 'off';
+  const canRetryPreparation = !videoReady && Boolean(error) && Boolean(streamRef.current);
+  const pictureInPictureButtonDisabled = !videoReady && !canRetryPreparation;
+  const handlePictureInPictureButtonClick = () => {
+    if (!videoReadyRef.current && canRetryPreparation) {
+      // Retry playback inside this user gesture; a later tap will request PiP
+      // synchronously once the captured video has produced its frames.
+      startVideoPreparation();
+      return;
+    }
+    togglePictureInPicture();
+  };
 
   return (
     <>
@@ -362,14 +374,20 @@ export default function CourtPictureInPictureButton({
           ? 'Close system picture in picture'
           : videoReady
             ? 'Open system picture in picture'
-            : isPreparingVideo ? 'Preparing court video for Picture in Picture' : 'Picture in Picture is unavailable until the court video is ready'}
-        disabled={!videoReady}
-        onClick={togglePictureInPicture}
+            : canRetryPreparation
+              ? 'Retry preparing court video for Picture in Picture'
+              : isPreparingVideo ? 'Preparing court video for Picture in Picture' : 'Picture in Picture is unavailable until the court video is ready'}
+        disabled={pictureInPictureButtonDisabled || isPreparingVideo}
+        onClick={handlePictureInPictureButtonClick}
       >
         {isActive
           ? <Minimize2 size={15} aria-hidden="true" />
           : <PictureInPicture2 size={15} aria-hidden="true" />}
-        <span>{isActive ? 'PiP on' : videoReady ? 'PiP' : isPreparingVideo ? 'Preparing PiP' : 'PiP unavailable'}</span>
+        <span>{isActive
+          ? 'PiP on'
+          : videoReady
+            ? 'PiP'
+            : canRetryPreparation ? 'Retry PiP setup' : isPreparingVideo ? 'Preparing PiP' : 'PiP unavailable'}</span>
       </button>
       {portalRoot && createPortal(
         <video
