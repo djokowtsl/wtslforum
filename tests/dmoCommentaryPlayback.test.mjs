@@ -507,7 +507,7 @@ test('opening a full replay does not fetch or generate speech until commentary i
     assert.equal(h.value().enabled, false);
     assert.equal(h.requests.length, 0, 'the track is not requested until commentary is enabled');
     await h.value().toggle(); h.render();
-    assert.match(h.requests[0].url, /\/api\/dmo-replays\/21\/commentary$/);
+    assert.match(h.requests[0].url, /\/api\/dmo-replays\/21\/commentary\?from=\d+$/);
     h.requests[0].resolve({ ok: false, status: 503, json: async () => ({}) });
     await h.flush(); h.render();
     assert.equal(loads, 0, 'a missing stored track does not generate speech on the device');
@@ -892,7 +892,7 @@ test('a stored replay plays its pre-made clips and never loads a voice model', a
     h.render({ fullReplay: true, replayId: '21', getAudioContext: () => audio });
     await h.value().toggle(); h.render();
     assert.equal(h.value().status, 'starting');
-    assert.match(h.requests[0].url, /\/api\/dmo-replays\/21\/commentary$/);
+    assert.match(h.requests[0].url, /\/api\/dmo-replays\/21\/commentary\?from=\d+$/);
     h.requests[0].resolve({ ok: true, json: async () => ({ fps: 30, cues: [
       { at: null, clip: 'a'.repeat(32), group: 1 },
       { at: 300, clip: 'b'.repeat(32), group: 2, mustPlay: true },

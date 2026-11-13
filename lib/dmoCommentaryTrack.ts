@@ -180,6 +180,29 @@ export async function getDmoCommentaryClip(track: DmoCommentaryTrack, clip: stri
 }
 
 /**
+ * The order to store clips in. From the start of the replay by default; when
+ * a viewer is part-way through, the score summary they'll hear and the calls
+ * from their position on come first, then everything else in script order.
+ */
+export function dmoCommentaryPreparationOrder<Cue extends { at: number | null; kind?: string }>(
+  cues: readonly Cue[],
+  fromFrame: number | null = null,
+): Cue[] {
+  if (fromFrame === null || !Number.isFinite(fromFrame) || fromFrame <= 0) return [...cues];
+  let join: Cue | null = null;
+  for (const cue of cues) {
+    if (cue.kind === 'join' && cue.at !== null && cue.at <= fromFrame
+      && (!join || (join.at ?? -1) < cue.at)) join = cue;
+  }
+  const ahead = cues
+    .filter((cue) => cue.at !== null && cue.at >= fromFrame && cue.kind !== 'join')
+    .sort((a, b) => (a.at ?? 0) - (b.at ?? 0));
+  const first = join ? [join, ...ahead] : ahead;
+  const chosen = new Set(first);
+  return [...first, ...cues.filter((cue) => !chosen.has(cue))];
+}
+
+/**
  * Generate missing clips in script order until the time budget runs out, so
  * the first viewer rarely waits and later viewers never do. Safe to run again:
  * stored clips are skipped.
@@ -189,13 +212,14 @@ export async function prepareDmoCommentaryClips(
   track: DmoCommentaryTrack,
   storeId: string,
   budgetMs = 45_000,
+  fromFrame: number | null = null,
 ) {
   const total = new Set(track.cues.map((cue) => cue.clip)).size;
   if (track.complete) return { ready: total, total };
   const deadline = Date.now() + budgetMs;
   const seen = new Set<string>();
   let ready = 0;
-  for (const cue of track.cues) {
+  for (const cue of dmoCommentaryPreparationOrder(track.cues, fromFrame)) {
     if (seen.has(cue.clip)) continue;
     seen.add(cue.clip);
     if (Date.now() > deadline) break;
