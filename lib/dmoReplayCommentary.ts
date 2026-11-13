@@ -12,9 +12,12 @@ function setsWon(sets: readonly Te4SetScore[] | undefined): [number, number] | n
 
 function setsToWinFor(viewer: Te4ViewerData, bestOf?: number | null) {
   if (bestOf === 1 || bestOf === 3 || bestOf === 5) return Math.ceil(bestOf / 2);
+  // Recordings don't store the format, and a recording can stop part-way
+  // through a match. Like the replay page, assume best of three unless the
+  // recording shows someone winning three sets; never fewer than two, so a
+  // set point in an unfinished recording is never called a match point.
   const final = setsWon(viewer.final?.ss);
-  if (!final || final[0] === final[1]) return null;
-  return Math.max(final[0], final[1]);
+  return Math.max(2, final ? Math.max(final[0], final[1]) : 0);
 }
 
 /** Keep the viewer's separate game and point scores distinct in spoken calls. */

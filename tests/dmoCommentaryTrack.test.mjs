@@ -146,3 +146,9 @@ test('a clip that failed is not requested again for five seconds', async () => {
   time += 5_000; track.update(20, true); await tick();
   assert.equal(requests, 2, 'it is retried after the cool-down');
 });
+
+test('if the very first clip cannot be downloaded, it says unavailable at once', async () => {
+  const p = player([cue('intro', null, 1), cue('a', 3000, 2)], { fail: () => true });
+  p.track.start(0, true); await tick();
+  assert.deepEqual(p.states, ['starting', 'unavailable']);
+});
