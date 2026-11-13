@@ -95,3 +95,23 @@ test('replay points carry set counts and only a verified match end', () => {
   }, { bestOf: 3 });
   assert.equal(abandoned[0].matchOver, undefined);
 });
+
+test('a recording that stops part-way never turns a set point into a match point', () => {
+  const base = { mf: 0, fc: 30, n: 2, f: 0, sh: [], tb: 0, s: 1 };
+  // Set one ends 6-3; the recording stops during set two. Format unknown.
+  const viewer = {
+    match: { n: 900 },
+    final: { ss: [[6, 3]], wp: 1 },
+    pts: [
+      { ...base, k: 1, w: 1, set: 1, ss: [], g: '5-3', pt: '30-15' },
+      { ...base, k: 2, w: 1, set: 1, ss: [], g: '5-3', pt: '40-15', mf: 100 },
+      { ...base, k: 3, w: 1, set: 2, ss: [[6, 3]], g: '0-0', pt: '0-0', mf: 200 },
+    ],
+  };
+  const points = buildDmoReplayCommentaryPoints(viewer);
+  assert.equal(points[0].setsToWin, 2, 'assumes best of three');
+  const call = buildDmoPointCommentary(points[0], names);
+  assert.match(call, /set point/i);
+  assert.doesNotMatch(call, /match point/i);
+  assert.equal(points.at(-1).matchOver, undefined);
+});
