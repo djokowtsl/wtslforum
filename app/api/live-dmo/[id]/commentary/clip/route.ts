@@ -5,6 +5,11 @@ import {
   getDmoLiveCommentaryClip,
   getDmoLivePhrasebook,
 } from '@/lib/dmoLiveCommentary';
+import {
+  COMMENTARY_MAINTENANCE_MESSAGE,
+  isAllowedCommentaryMatch,
+  isCommentaryRestrictionActive,
+} from '@/lib/dmoCommentaryMaintenance.mjs';
 
 export const dynamic = 'force-dynamic';
 export const maxDuration = 60;
@@ -51,6 +56,18 @@ export async function GET(request: Request, context: RouteContext) {
     const broadcast = await findLiveCommentaryBroadcast(id);
     if (!broadcast) {
       return NextResponse.json({ error: 'Broadcast not found.' }, { status: 404, headers: ERROR_HEADERS });
+    }
+    if (
+      isCommentaryRestrictionActive()
+      && !isAllowedCommentaryMatch({
+        names: broadcast.names,
+        tournament: broadcast.tournament,
+      })
+    ) {
+      return NextResponse.json(
+        { error: COMMENTARY_MAINTENANCE_MESSAGE },
+        { status: 503, headers: { ...ERROR_HEADERS, 'Retry-After': 'Sat, 14 Nov 2026 08:00:00 GMT' } },
+      );
     }
     const book = await getDmoLivePhrasebook(broadcast, storeId);
     const audio = await getDmoLiveCommentaryClip(book, { text, voice }, storeId);

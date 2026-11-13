@@ -1,6 +1,10 @@
 import { NextResponse } from 'next/server';
 import { getSession } from '@/lib/auth';
 import { normalizeDmoSpeechRequest } from '@/lib/dmoCommentarySpeech.mjs';
+import {
+  COMMENTARY_MAINTENANCE_MESSAGE,
+  isCommentaryRestrictionActive,
+} from '@/lib/dmoCommentaryMaintenance.mjs';
 
 export const dynamic = 'force-dynamic';
 export const maxDuration = 60;
@@ -42,6 +46,12 @@ function rateLimited(userId: string) {
 }
 
 export async function GET(request: Request) {
+  if (isCommentaryRestrictionActive()) {
+    return NextResponse.json(
+      { error: COMMENTARY_MAINTENANCE_MESSAGE },
+      { status: 503, headers: { ...PRIVATE_ERROR_HEADERS, 'Retry-After': 'Sat, 14 Nov 2026 08:00:00 GMT' } },
+    );
+  }
   const user = await getSession();
   if (!user) {
     return NextResponse.json(
