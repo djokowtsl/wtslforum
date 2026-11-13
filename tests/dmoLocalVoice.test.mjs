@@ -1,135 +1,243 @@
 import assert from 'node:assert/strict';
-import { readFile } from 'node:fs/promises';
 import test from 'node:test';
+import {
+  DMO_VOICE_WARMUP_TEXT,
+  isMobileDmoVoiceDevice,
+  loadDmoLocalVoiceModel,
+  resetDmoLocalVoiceModel,
+} from '../lib/dmoLocalVoice.mjs';
+import { createDmoVoiceRouter, createDmoWorkerVoiceModel } from '../lib/dmoVoiceEngine.mjs';
+import { createDmoKokoroWorkerHandler, DMO_KOKORO_MODEL_ID } from '../lib/dmoKokoroWorker.mjs';
 
-const source = await readFile(new URL('../lib/dmoLocalVoice.mjs', import.meta.url), 'utf8');
-let moduleNumber = 0;
-
-async function withLoader({ gpu, createModel, userAgent = '', serverModel = null }, check) {
-  const navigatorDescriptor = Object.getOwnPropertyDescriptor(globalThis, 'navigator');
-  const previousFactory = globalThis.__testDmoKokoro;
-  const calls = [];
-  const progress = [];
-  Object.defineProperty(globalThis, 'navigator', { configurable: true, value: { gpu, userAgent } });
-  globalThis.__testDmoSpeech = {
-    createDmoServerVoiceModel: () => {
-      if (!serverModel) throw new Error('server voice unavailable');
-      return serverModel;
-    },
-  };
-  globalThis.__testDmoKokoro = {
-    async from_pretrained(id, options) {
-      calls.push({ id, ...options });
-      return createModel(options);
-    },
-  };
-  try {
-    // Exercise the real loader without fetching weights or initializing hardware.
-    const injected = source.replaceAll(
-      "import('kokoro-js')",
-      'Promise.resolve({ KokoroTTS: globalThis.__testDmoKokoro })',
-    ).replaceAll(
-      "import('./dmoCommentarySpeech.mjs')",
-      'Promise.resolve(globalThis.__testDmoSpeech)',
-    ) + `\n// isolated loader ${moduleNumber++}`;
-    const module = await import(`data:text/javascript;base64,${Buffer.from(injected).toString('base64')}`);
-    await check(module, calls, progress);
-  } finally {
-    if (navigatorDescriptor) Object.defineProperty(globalThis, 'navigator', navigatorDescriptor);
-    else delete globalThis.navigator;
-    if (previousFactory === undefined) delete globalThis.__testDmoKokoro;
-    else globalThis.__testDmoKokoro = previousFactory;
-  }
+const tick = () => new Promise((resolve) => setImmediate(resolve));
+const audio = (value = 0.1) => ({ audio: new Float32Array([value]), sampling_rate: 24_000 });
+function deferred() {
+  let resolve; let reject;
+  const promise = new Promise((ok, fail) => { resolve = ok; reject = fail; });
+  return { promise, resolve, reject };
+}
+function speaker(label, log = []) {
+  return { label, log, async generate(text, options) { log.push({ label, text, ...options }); return audio(); } };
 }
 
-test('Kokoro runs the compact q8 model on WASM even when WebGPU is available', async () => {
-  const model = {};
-  await withLoader({
-    gpu: { requestAdapter: async () => ({}) },
-    createModel: async () => model,
-  }, async (loader, calls, progress) => {
-    assert.equal(await loader.loadDmoLocalVoiceModel((event) => progress.push(event)), model);
-    assert.equal(calls.length, 1);
-    assert.equal(calls[0].device, 'wasm');
-    assert.equal(calls[0].dtype, 'q8');
-    assert.ok(!progress.some((event) => event.backend === 'webgpu'));
-    assert.equal(await loader.loadDmoLocalVoiceModel(), model, 'the model is shared across callers');
-    assert.equal(calls.length, 1);
-  });
+// ---- Device detection ----
+
+test('phones and tablets are recognised for the server voice', () => {
+  assert.equal(isMobileDmoVoiceDevice({ userAgent: 'Mozilla/5.0 (iPhone; CPU iPhone OS 26_0 like Mac OS X)' }), true);
+  assert.equal(isMobileDmoVoiceDevice({ userAgent: 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7)', maxTouchPoints: 5 }), true);
+  assert.equal(isMobileDmoVoiceDevice({ userAgent: 'Mozilla/5.0 (Windows NT 10.0; Win64; x64)' }), false);
 });
 
-test('the loader proves the voice can speak with a short warm-up line', async () => {
-  const spoken = [];
-  const model = { async generate(text, options) { spoken.push({ text, ...options }); return {}; } };
-  await withLoader({ createModel: async () => model }, async (loader, calls, progress) => {
-    assert.equal(await loader.loadDmoLocalVoiceModel((event) => progress.push(event)), model);
-    assert.deepEqual(spoken, [{ text: loader.DMO_VOICE_WARMUP_TEXT, voice: 'af_heart' }]);
-    assert.ok(progress.some((event) => event.status === 'warmup'));
+// ---- Loader ----
+
+test('phones use only the server voice and never start local Kokoro', async () => {
+  resetDmoLocalVoiceModel();
+  const server = speaker('server');
+  let localStarts = 0;
+  const voice = await loadDmoLocalVoiceModel(undefined, {
+    serverOnly: true,
+    createServer: () => server,
+    createLocal: () => { localStarts += 1; return new Promise(() => {}); },
   });
+  assert.equal(localStarts, 0);
+  assert.deepEqual(server.log.map((entry) => entry.text), [DMO_VOICE_WARMUP_TEXT], 'proven before use');
+  await voice.generate('Deuce.', { voice: 'am_michael' });
+  assert.equal(voice.dmoVoiceSource, 'server');
+  resetDmoLocalVoiceModel();
 });
 
-test('a voice that cannot speak fails the load and can be retried', async () => {
+test('desktop commentary is ready as soon as the server voice answers, while local Kokoro loads', async () => {
+  resetDmoLocalVoiceModel();
+  const server = speaker('server');
+  const local = deferred();
+  const voice = await loadDmoLocalVoiceModel(undefined, {
+    serverOnly: false, createServer: () => server, createLocal: () => local.promise,
+  });
+  await voice.generate('Break point, gifu.', { voice: 'af_heart' });
+  assert.equal(server.log.at(-1).text, 'Break point, gifu.', 'the server speaks while the local model loads');
+  const localModel = speaker('local');
+  local.resolve(localModel);
+  await tick();
+  assert.equal(voice.dmoVoiceSource, 'local');
+  await voice.generate('Set point, gifu.', { voice: 'af_heart' });
+  assert.equal(localModel.log.at(-1).text, 'Set point, gifu.', 'local Kokoro takes over once ready');
+  resetDmoLocalVoiceModel();
+});
+
+test('desktop commentary still starts on local Kokoro when the server voice is unavailable', async () => {
+  resetDmoLocalVoiceModel();
+  const localModel = speaker('local');
+  const voice = await loadDmoLocalVoiceModel(undefined, {
+    serverOnly: false,
+    createServer: () => ({ async generate() { throw new Error('404'); } }),
+    createLocal: async () => localModel,
+  });
+  await voice.generate('Deuce.', { voice: 'af_heart' });
+  assert.equal(localModel.log.at(-1).text, 'Deuce.');
+  resetDmoLocalVoiceModel();
+});
+
+test('if neither voice can speak, the local cause is reported and a retry starts afresh', async () => {
+  resetDmoLocalVoiceModel();
   let attempts = 0;
-  await withLoader({
-    createModel: async () => ({
-      async generate() {
-        if (++attempts === 1) throw new Error('WASM memory allocation failed');
-        return {};
-      },
-    }),
-  }, async (loader, calls) => {
-    await assert.rejects(loader.loadDmoLocalVoiceModel(), /WASM memory allocation failed/);
-    await loader.loadDmoLocalVoiceModel();
-    assert.equal(calls.length, 2);
-  });
+  const options = {
+    serverOnly: false,
+    createServer: () => ({ async generate() { throw new Error('401'); } }),
+    createLocal: async () => { attempts += 1; throw new Error('WASM memory allocation failed'); },
+  };
+  await assert.rejects(loadDmoLocalVoiceModel(undefined, options), /WASM memory allocation failed/);
+  await assert.rejects(loadDmoLocalVoiceModel(undefined, options), /WASM memory/);
+  assert.equal(attempts, 2);
+  resetDmoLocalVoiceModel();
 });
 
-test('browsers without a usable GPU adapter use local WASM directly', async () => {
-  await withLoader({
-    gpu: { requestAdapter: async () => null },
-    createModel: async () => ({}),
-  }, async (loader, calls) => {
-    await loader.loadDmoLocalVoiceModel();
-    assert.deepEqual(calls.map((call) => call.device), ['wasm']);
-  });
+// ---- Router ----
+
+test('the router caches each line, so a repeated or prefetched line is not generated twice', async () => {
+  const server = speaker('server');
+  const voice = createDmoVoiceRouter({ server });
+  voice.prefetch('Game, gifu.', { voice: 'am_michael', speed: 1.03 });
+  const played = await voice.generate('Game, gifu.', { voice: 'am_michael', speed: 1.03, priority: 'high' });
+  assert.equal(server.log.length, 1);
+  assert.equal(server.log[0].priority, 'low', 'prefetches ask for background priority');
+  assert.equal(played.audio.length, 1);
+  await voice.generate('Game, gifu.', { voice: 'af_heart', speed: 1.03 });
+  assert.equal(server.log.length, 2, 'a different voice is a different recording');
 });
 
-test('a failed local model load can be retried', async () => {
-  let attempts = 0;
-  await withLoader({
-    createModel: async () => {
-      if (++attempts === 1) throw new Error('offline');
-      return {};
-    },
-  }, async (loader, calls) => {
-    await assert.rejects(loader.loadDmoLocalVoiceModel(), /offline/);
-    await loader.loadDmoLocalVoiceModel();
-    assert.equal(calls.length, 2);
+test('failed lines are not cached and prefetch failures stay silent', async () => {
+  let fail = true;
+  const voice = createDmoVoiceRouter({
+    server: { async generate() { if (fail) throw new Error('busy'); return audio(); } },
   });
+  voice.prefetch('Deuce.', { voice: 'af_heart' });
+  await tick();
+  fail = false;
+  assert.equal((await voice.generate('Deuce.', { voice: 'af_heart' })).audio.length, 1);
 });
 
-test('phones use the server voice and never load Kokoro in the tab', async () => {
+test('the cache is bounded', async () => {
+  const server = speaker('server');
+  const voice = createDmoVoiceRouter({ server, cacheEntries: 2 });
+  for (const line of ['One.', 'Two.', 'Three.']) await voice.generate(line, { voice: 'af_heart' });
+  await voice.generate('One.', { voice: 'af_heart' });
+  assert.equal(server.log.length, 4, 'the oldest line was evicted');
+});
+
+test('a local failure falls back to the server, and a server failure waits for local', async () => {
+  const server = speaker('server');
+  const broken = { async generate() { throw new Error('worker stopped'); } };
+  await createDmoVoiceRouter({ server, local: broken }).generate('A.', { voice: 'af_heart' });
+  assert.equal(server.log.at(-1).text, 'A.');
+
+  const local = deferred();
+  const voice = createDmoVoiceRouter({ server: { async generate() { throw new Error('503'); } }, local: local.promise });
+  const line = voice.generate('B.', { voice: 'af_heart' });
+  const localModel = speaker('local');
+  local.resolve(localModel);
+  await line;
+  assert.equal(localModel.log.at(-1).text, 'B.');
+});
+
+// ---- Worker client ----
+
+function fakeWorker() {
+  const listeners = { message: [], error: [] };
+  const worker = {
+    sent: [], terminated: false,
+    postMessage(message) { worker.sent.push(message); },
+    addEventListener(type, listener) { listeners[type].push(listener); },
+    terminate() { worker.terminated = true; },
+    emit(data) { for (const listener of listeners.message) listener({ data }); },
+    crash(message) { for (const listener of listeners.error) listener({ message }); },
+  };
+  return worker;
+}
+
+test('the worker client loads in the background and returns generated audio', async () => {
+  const worker = fakeWorker();
+  const progress = [];
+  const ready = createDmoWorkerVoiceModel({ createWorker: () => worker, onProgress: (event) => progress.push(event) });
+  assert.deepEqual(worker.sent[0], { type: 'load' });
+  worker.emit({ type: 'progress', progress: { status: 'progress', progress: 40 } });
+  worker.emit({ type: 'ready' });
+  const model = await ready;
+  assert.equal(model.dmoVoiceSource, 'local');
+  assert.equal(progress[0].progress, 40);
+  const line = model.generate('Deuce.', { voice: 'am_michael', speed: 1.03 });
+  const request = worker.sent.at(-1);
+  assert.equal(request.type, 'generate');
+  assert.equal(request.priority, 'high');
+  worker.emit({ type: 'audio', id: request.id, audio: new Float32Array([0.2]), sampling_rate: 24_000 });
+  assert.equal((await line).audio[0], new Float32Array([0.2])[0]);
+});
+
+test('a worker that fails to load or crashes rejects instead of hanging', async () => {
+  const failing = fakeWorker();
+  const load = createDmoWorkerVoiceModel({ createWorker: () => failing });
+  failing.emit({ type: 'load-error', message: 'offline' });
+  await assert.rejects(load, /offline/);
+  assert.equal(failing.terminated, true);
+
+  const crashing = fakeWorker();
+  const ready = createDmoWorkerVoiceModel({ createWorker: () => crashing });
+  crashing.emit({ type: 'ready' });
+  const model = await ready;
+  const line = model.generate('Deuce.');
+  crashing.crash('out of memory');
+  await assert.rejects(line, /out of memory/);
+  await assert.rejects(model.generate('Again.'), /out of memory/);
+});
+
+test('browsers that cannot create the worker reject so the server voice is used', async () => {
+  await assert.rejects(createDmoWorkerVoiceModel({ createWorker: () => { throw new Error('no module workers'); } }),
+    /no module workers/);
+});
+
+// ---- Worker ----
+
+function workerHarness({ generate } = {}) {
+  const posted = [];
+  const loads = [];
+  const model = { async generate(text, options) { return generate ? generate(text, options) : audio(); } };
+  const handle = createDmoKokoroWorkerHandler({
+    post: (message, transfer) => posted.push({ message, transfer }),
+    importKokoro: async () => ({ KokoroTTS: { async from_pretrained(id, options) { loads.push({ id, ...options }); return model; } } }),
+  });
+  return { posted, loads, handle };
+}
+
+test('the worker loads the compact q8 model on WASM, warms up, then reports ready', async () => {
   const spoken = [];
-  const serverModel = { dmoVoiceSource: 'server', async generate(text) { spoken.push(text); return {}; } };
-  await withLoader({
-    userAgent: 'Mozilla/5.0 (iPhone; CPU iPhone OS 26_0 like Mac OS X)',
-    createModel: async () => { throw new Error('must not load locally'); },
-    serverModel,
-  }, async (loader, calls, progress) => {
-    assert.equal(await loader.loadDmoLocalVoiceModel((event) => progress.push(event)), serverModel);
-    assert.equal(calls.length, 0);
-    assert.deepEqual(spoken, [loader.DMO_VOICE_WARMUP_TEXT]);
-    assert.ok(progress.some((event) => event.backend === 'server'));
-  });
+  const w = workerHarness({ generate: (text) => { spoken.push(text); return audio(); } });
+  w.handle({ type: 'load' });
+  await tick(); await tick();
+  assert.equal(w.loads[0].id, DMO_KOKORO_MODEL_ID);
+  assert.equal(w.loads[0].device, 'wasm');
+  assert.equal(w.loads[0].dtype, 'q8');
+  assert.deepEqual(spoken, ['Ready.']);
+  assert.ok(w.posted.some(({ message }) => message.type === 'ready'));
 });
 
-test('a desktop that cannot run Kokoro locally falls back to the server voice', async () => {
-  const serverModel = { dmoVoiceSource: 'server', async generate() { return {}; } };
-  await withLoader({
-    createModel: async () => { throw new Error('WASM unavailable'); },
-    serverModel,
-  }, async (loader, calls, progress) => {
-    assert.equal(await loader.loadDmoLocalVoiceModel((event) => progress.push(event)), serverModel);
-    assert.ok(progress.some((event) => event.status === 'backend-fallback'));
-  });
+test('the worker hands audio over without copying and puts urgent lines first', async () => {
+  const order = [];
+  const w = workerHarness({ generate: (text) => { order.push(text); return audio(); } });
+  w.handle({ type: 'generate', id: 1, text: 'Prefetched one.', voice: 'af_heart', speed: 1, priority: 'low' });
+  w.handle({ type: 'generate', id: 2, text: 'Prefetched two.', voice: 'af_heart', speed: 1, priority: 'low' });
+  w.handle({ type: 'generate', id: 3, text: 'Needed now.', voice: 'af_heart', speed: 1, priority: 'high' });
+  for (let step = 0; step < 8; step += 1) await tick();
+  // The first low job was already being generated; the urgent one jumps the rest.
+  assert.deepEqual(order.filter((text) => text !== 'Ready.'), ['Prefetched one.', 'Needed now.', 'Prefetched two.']);
+  const delivered = w.posted.filter(({ message }) => message.type === 'audio');
+  assert.equal(delivered.length, 3);
+  assert.equal(delivered[0].transfer[0], delivered[0].message.audio.buffer);
+});
+
+test('a worker generation failure is reported for that line only', async () => {
+  const w = workerHarness({ generate: (text) => { if (text === 'Bad.') throw new Error('phonemizer'); return audio(); } });
+  w.handle({ type: 'generate', id: 1, text: 'Bad.', voice: 'af_heart', speed: 1, priority: 'high' });
+  w.handle({ type: 'generate', id: 2, text: 'Good.', voice: 'af_heart', speed: 1, priority: 'high' });
+  for (let step = 0; step < 8; step += 1) await tick();
+  assert.deepEqual(w.posted.filter(({ message }) => message.id).map(({ message }) => [message.id, message.type]),
+    [[1, 'error'], [2, 'audio']]);
 });

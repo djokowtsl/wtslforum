@@ -462,9 +462,10 @@ test('turning on commentary automatically loads Kokoro and alternates its voices
   } finally { h.cleanup(); }
 });
 
-test('background voice status stays behind the player diagnostics gate', () => {
+test('background voice status stays behind the player diagnostics gate', async () => {
   const h = harness();
   try {
+    await h.value().toggle(); await h.flush(); h.render();
     assert.notEqual(h.value().voiceStatus, '');
     assert.match(courtSource, /showVoiceDiagnostics && \(soundError \|\| commentary\.error \|\| commentary\.voiceStatus\)/);
     assert.doesNotMatch(courtSource, /commentary\.enabled && commentary\.voiceStatus/);
@@ -505,7 +506,7 @@ test('commentary automatically loads Kokoro without a separate download action',
   } finally { h.cleanup(); }
 });
 
-test('full replay preloads the commentary voice before it is enabled', async () => {
+test('opening a full replay does not load the voice until commentary is turned on', async () => {
   let loads = 0;
   const h = harness(undefined, {
     loadModel: async () => {
@@ -518,9 +519,11 @@ test('full replay preloads the commentary voice before it is enabled', async () 
   try {
     h.render({ fullReplay: true });
     await h.flush();
-    assert.equal(loads, 1, 'opening a replay prepares the voice in the background');
-    assert.equal(h.value().enabled, false, 'preloading does not turn commentary on');
-    assert.equal(h.nativeSpoken.length, 0, 'preloading does not speak before opt-in');
+    assert.equal(loads, 0, 'viewers who never use commentary pay nothing for it');
+    assert.equal(h.value().enabled, false);
+    await h.value().toggle(); await h.flush(); h.render();
+    assert.equal(loads, 1, 'turning commentary on prepares the voice');
+    assert.equal(h.nativeSpoken.length, 0);
   } finally { h.cleanup(); }
 });
 
@@ -602,7 +605,7 @@ test('slow Kokoro generation stays active without a device-speech fallback', asy
     await enableLoadedKokoro(h);
     assert.equal(finishGeneration.length, 1);
 
-    h.advance(20_000);
+    h.advance(15_000);
     assert.match(h.value().voiceStatus, /Generating commentary locally/);
     assert.equal(h.value().error, '');
     assert.equal(h.nativeSpoken.length, 0);
@@ -749,7 +752,7 @@ test('commentary reuses the court audio context instead of creating a separate i
   } finally { h.cleanup(); }
 });
 
-test('slow desktop Kokoro generation is not abandoned or duplicated after 30 seconds', async () => {
+test('a line that takes over 20 seconds is skipped once, without blocking later calls', async () => {
   const pending = [];
   const audio = { audio: new Float32Array([0.1]), sampling_rate: 24_000 };
   const h = harness(undefined, {
@@ -763,21 +766,15 @@ test('slow desktop Kokoro generation is not abandoned or duplicated after 30 sec
   try {
     await enableLoadedKokoro(h);
     assert.equal(pending.length, 1);
-    h.advance(30_001); await h.flush(); h.render();
-    assert.equal(h.spoken.length, 0);
+    h.advance(20_001); await h.flush(); h.render();
+    assert.equal(pending.length, 1, 'a slow line is not retried in parallel');
+    assert.match(h.value().error, /line was skipped/);
+    assert.equal(h.value().enabled, true, 'commentary carries on');
     assert.equal(h.nativeSpoken.length, 0);
-    assert.match(h.value().voiceStatus, /still generating locally on the CPU/);
-    assert.equal(h.value().error, '', 'a slow generation remains active instead of being discarded');
-    assert.equal(pending.length, 1, 'a slow generation is not retried in parallel');
 
     pending[0](audio);
     await h.flush(); h.render();
-    assert.equal(pending.length, 2, 'the reply starts after the first generated call');
-    pending[1](audio);
-    await h.flush(); h.render();
-    assert.equal(h.value().error, '');
-    assert.equal(h.nativeSpoken.length, 0);
-    assert.match(h.value().voiceStatus, /Local Kokoro voices are ready/);
+    assert.equal(h.spoken.length, 0, 'audio that arrives after the limit is never played out of turn');
   } finally { h.cleanup(); }
 });
 
@@ -804,5 +801,45 @@ test('muting while Kokoro generates prevents delayed speech from escaping', asyn
     await h.flush(); h.render();
     assert.equal(h.value().enabled, false);
     assert.equal(h.spoken.length, 0);
+  } finally { h.cleanup(); }
+});
+
+test('a replay prepares the next point\'s call while the current point plays', async () => {
+  const prefetched = [];
+  const audio = { audio: new Float32Array([0.1]), sampling_rate: 24_000 };
+  const localModel = {
+    generated: [],
+    async generate(text, options) {
+      localModel.generated.push({ text, ...options });
+      return audio;
+    },
+    prefetch(text, options) { prefetched.push({ text, ...options }); },
+  };
+  const h = harness(undefined, { localModel });
+  try {
+    h.playback.frame = 0;
+    h.render({ fullReplay: true, replayFrame: 0, commentaryPoints: [
+      { number: 4, frame: 100, winner: 1, server: 1, rallyHits: 4,
+        scoreBeforeLabel: '0-0(40-30)', scoreAfterLabel: '1-0(0-0)' },
+      { number: 8, frame: 2000, winner: 2, server: 2, rallyHits: 4,
+        scoreBeforeLabel: '1-0(30-40)', scoreAfterLabel: '1-1(0-0)' },
+    ] });
+    await enableLoadedKokoro(h);
+    h.advance(1000);
+    h.playback.frame = 150;
+    h.render({ replayFrame: 150 });
+    await h.flush();
+    const nextCall = prefetched.find((entry) => /game/i.test(entry.text));
+    assert.ok(nextCall, 'the next game call is prepared before that point ends');
+    assert.equal(prefetched.filter((entry) => entry.text === nextCall.text).length, 1, 'prepared once');
+
+    for (let step = 0; step < 6; step += 1) {
+      h.finishAudio(); await h.flush(); h.advance(1000); await h.flush(); h.render();
+    }
+    h.playback.frame = 2100;
+    h.render({ replayFrame: 2100 });
+    h.advance(300); await h.flush(); h.render();
+    assert.ok(localModel.generated.some((entry) => entry.text === nextCall.text && entry.voice === nextCall.voice),
+      'the prepared line is the one requested when the point ends');
   } finally { h.cleanup(); }
 });
