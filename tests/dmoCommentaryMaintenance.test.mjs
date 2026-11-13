@@ -16,8 +16,10 @@ test('the landing page is active from 01:00 through 07:59 GMT only', () => {
   assert.equal(isForumMaintenanceActive(FORUM_MAINTENANCE_END_UTC), false);
 });
 
-test('commentary is restricted until 08:00 GMT', () => {
-  assert.equal(isCommentaryRestrictionActive(COMMENTARY_RESTRICTION_END_UTC - 1), true);
+test('commentary remains open independently of the Forum maintenance window', () => {
+  assert.equal(isCommentaryRestrictionActive(FORUM_MAINTENANCE_START_UTC - 1), false);
+  assert.equal(isCommentaryRestrictionActive(FORUM_MAINTENANCE_START_UTC), false);
+  assert.equal(isCommentaryRestrictionActive(COMMENTARY_RESTRICTION_END_UTC - 1), false);
   assert.equal(isCommentaryRestrictionActive(COMMENTARY_RESTRICTION_END_UTC), false);
 });
 
