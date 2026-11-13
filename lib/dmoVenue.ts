@@ -2,6 +2,8 @@ export type DmoVenueProfile = {
   label: string;
   /** City lettering shown beside the court; absent when the location is ambiguous. */
   cityLabel?: string;
+  /** Real venue has no city lettering painted on the court. */
+  hideCourtCityLabel?: boolean;
   capacity: number;
   upperRows: number;
   tierRows: number;
@@ -151,9 +153,11 @@ export function resolveDmoVenueProfile(value: string | null | undefined): DmoVen
   const venue = venueReferences.find((candidate) => candidate.matches.some((pattern) => pattern.test(normalized)));
   const cityLabel = cityReferences.find((candidate) => candidate.matches.some((pattern) => pattern.test(normalized)))
     ?.cityLabel ?? venue?.cityLabel;
+  const hideCourtCityLabel = /\b(?:roland[- ]garros|french open|philippe[- ]chatrier|suzanne[- ]lenglen|simonne[- ]mathieu)\b/i.test(normalized);
   // Keep the previous full bowl when a replay has no venue metadata; do not
   // invent a capacity for it. Known venue data scales the bowl down or up.
-  return venue
+  const resolved = venue
     ? profile(venue.label, venue.capacity, undefined, cityLabel)
     : profile('Unspecified tennis venue', 0, 18, cityLabel);
+  return hideCourtCityLabel ? { ...resolved, hideCourtCityLabel: true } : resolved;
 }
