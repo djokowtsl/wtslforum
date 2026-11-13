@@ -9,14 +9,22 @@ import {
   isForumMaintenanceActive,
 } from '../lib/dmoCommentaryMaintenance.mjs';
 
-test('the landing page is active from 01:00 through 07:59 GMT only', () => {
+test('the cancelled outage never closes the Forum, including the entire former window', () => {
   assert.equal(isForumMaintenanceActive(FORUM_MAINTENANCE_START_UTC - 1), false);
-  assert.equal(isForumMaintenanceActive(FORUM_MAINTENANCE_START_UTC), true);
-  assert.equal(isForumMaintenanceActive(FORUM_MAINTENANCE_END_UTC - 1), true);
+  for (let now = FORUM_MAINTENANCE_START_UTC; now < FORUM_MAINTENANCE_END_UTC; now += 60_000) {
+    assert.equal(isForumMaintenanceActive(now), false);
+  }
+  assert.equal(isForumMaintenanceActive(FORUM_MAINTENANCE_END_UTC - 1), false);
   assert.equal(isForumMaintenanceActive(FORUM_MAINTENANCE_END_UTC), false);
 });
 
-test('commentary remains open independently of the Forum maintenance window', () => {
+test('the real-time maintenance gate also stays open during the cancelled outage', (t) => {
+  t.mock.method(Date, 'now', () => FORUM_MAINTENANCE_START_UTC + 60 * 60_000);
+  assert.equal(isForumMaintenanceActive(), false);
+  assert.equal(isCommentaryRestrictionActive(), false);
+});
+
+test('commentary remains open throughout the cancelled Forum maintenance window', () => {
   assert.equal(isCommentaryRestrictionActive(FORUM_MAINTENANCE_START_UTC - 1), false);
   assert.equal(isCommentaryRestrictionActive(FORUM_MAINTENANCE_START_UTC), false);
   assert.equal(isCommentaryRestrictionActive(COMMENTARY_RESTRICTION_END_UTC - 1), false);
