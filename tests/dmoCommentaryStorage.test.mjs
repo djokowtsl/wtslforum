@@ -101,3 +101,13 @@ test('preparing stores every clip in script order and then marks the track compl
   assert.deepEqual(await again.prepareDmoCommentaryClips(replay, stored, 'store'), result, 'nothing left to do');
   assert.equal(botCalls.length, result.total);
 });
+
+test('a viewer part-way through gets clips from their position stored first', () => {
+  const { dmoCommentaryPreparationOrder: order } = loadTrackModule({ blobs: new Map(), botCalls: [], contextCalls: [] });
+  const cues = [
+    { clip: 'open', at: null }, { clip: 'p1', at: 300 }, { clip: 'join1', at: 900, kind: 'join' },
+    { clip: 'p2', at: 1200 }, { clip: 'join2', at: 2000, kind: 'join' }, { clip: 'p3', at: 2400 },
+  ];
+  assert.deepEqual(order(cues, null).map((cue) => cue.clip), cues.map((cue) => cue.clip));
+  assert.deepEqual(order(cues, 1000).map((cue) => cue.clip), ['join1', 'p2', 'p3', 'open', 'p1', 'join2']);
+});

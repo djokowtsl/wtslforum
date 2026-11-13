@@ -548,9 +548,15 @@ export function useDmoCommentary({
    * MP3, so this only downloads clips a little ahead and plays them on cue.
    * Resolves false if the replay has no stored track, so live voice is used.
    */
+  const lastPrepareRequestRef = useRef(0);
   const startStoredCommentary = useCallback(async (request: number, id: string) => {
     try {
-      const response = await fetch(`/api/dmo-replays/${encodeURIComponent(id)}/commentary`);
+      // Tell the server where the viewer is, so it stores clips from here first.
+      const startFrame = Math.max(0, Math.floor(playbackState().frame));
+      lastPrepareRequestRef.current = Date.now();
+      const response = await fetch(
+        `/api/dmo-replays/${encodeURIComponent(id)}/commentary?from=${startFrame}`,
+      );
       if (!response.ok) return false;
       const track = await response.json() as {
         fps?: number;
@@ -582,14 +588,33 @@ export function useDmoCommentary({
           localAudioSourceRef.current = source;
           localSpeechBusyRef.current = true;
           lastSpeechAtRef.current = Date.now();
-          source.onended = () => {
+          let settled = false;
+          let safety: ReturnType<typeof setTimeout> | undefined;
+          const finish = () => {
+            if (settled) return;
+            settled = true;
+            if (safety) clearTimeout(safety);
             if (localAudioSourceRef.current === source) localAudioSourceRef.current = null;
             localSpeechBusyRef.current = false;
             lastSpeechAtRef.current = Date.now();
             resolve();
           };
+          source.onended = finish;
+          // A suspended or interrupted audio context never fires onended;
+          // never let one clip hold up every call after it.
+          safety = setTimeout(finish, (buffer.duration + 2) * 1000);
           source.start();
         }),
+        onPosition: (frame) => {
+          // Ask the server to store the clips from here on next, ahead of
+          // the rest of the replay. At most once every 20 seconds.
+          const nowMs = Date.now();
+          if (nowMs - lastPrepareRequestRef.current < 20_000) return;
+          lastPrepareRequestRef.current = nowMs;
+          void fetch(
+            `/api/dmo-replays/${encodeURIComponent(id)}/commentary?from=${Math.max(0, Math.floor(frame))}`,
+          ).catch(() => undefined);
+        },
         onState: (state) => {
           if (request !== requestRef.current) return;
           setTrackState(state);

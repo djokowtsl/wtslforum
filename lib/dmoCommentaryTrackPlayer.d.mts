@@ -6,8 +6,11 @@ export function createDmoCommentaryTrackPlayer<Audio>(options: {
   loadClip: (clip: string) => Promise<Audio>;
   playClip: (audio: Audio) => Promise<void>;
   onState?: (state: DmoCommentaryTrackState) => void;
+  /** Called on start and after a seek, with the new replay frame. */
+  onPosition?: (frame: number) => void;
   lookAhead?: number;
   now?: () => number;
+  wait?: (ms: number) => Promise<unknown>;
 }): {
   start(frame: number, playing?: boolean): void;
   update(frame: number, playing: boolean): void;

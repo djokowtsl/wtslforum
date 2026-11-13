@@ -5,15 +5,23 @@ import { buildDmoCommentaryScript, estimateDmoSpeechSeconds } from '../lib/dmoCo
 
 const tick = async (times = 6) => { for (let i = 0; i < times; i += 1) await new Promise((r) => setImmediate(r)); };
 
-function player(cues, { fail = () => false, hold = false } = {}) {
-  const played = []; const loads = []; const states = []; const finishers = [];
+function player(cues, { fail = () => false, hold = false, slow = () => false } = {}) {
+  const played = []; const loads = []; const states = []; const finishers = []; const waits = [];
+  const slowLoads = new Map(); const positions = [];
   const track = createDmoCommentaryTrackPlayer({
     cues, fps: 30, lookAhead: 3,
-    loadClip: async (clip) => { loads.push(clip); if (fail(clip)) throw new Error('503'); return `audio:${clip}`; },
+    wait: (ms) => new Promise((resolve) => waits.push({ ms, resolve })),
+    onPosition: (frame) => positions.push(frame),
+    loadClip: async (clip) => {
+      loads.push(clip);
+      if (fail(clip)) throw new Error('503');
+      if (slow(clip)) await new Promise((resolve) => slowLoads.set(clip, resolve));
+      return `audio:${clip}`;
+    },
     playClip: (audio) => { played.push(audio); return hold ? new Promise((resolve) => finishers.push(resolve)) : Promise.resolve(); },
     onState: (state) => states.push(state),
   });
-  return { track, played, loads, states, finishers };
+  return { track, played, loads, states, finishers, waits, slowLoads, positions };
 }
 
 const cue = (clip, at, group, extra = {}) => ({ clip, at, group, ...extra });
@@ -26,12 +34,12 @@ test('the opening plays at once, then each call plays when its frame is reached'
   assert.deepEqual(p.states, ['starting', 'on']);
   p.track.update(299, true); await tick();
   assert.equal(p.played.length, 2, 'not before its frame');
-  p.track.update(301, true); await tick();
+  p.track.update(300, true); await tick();
   assert.deepEqual(p.played.slice(2), ['audio:game1']);
 });
 
 test('upcoming clips are downloaded ahead of time', async () => {
-  const p = player([cue('a', 300, 1), cue('b', 600, 2), cue('c', 900, 3), cue('d', 1200, 4)]);
+  const p = player([cue('a', 300, 1), cue('b', 600, 2), cue('c', 900, 3), cue('d', 3000, 4)]);
   p.track.start(0, true); await tick();
   assert.deepEqual(p.loads, ['a', 'b', 'c'], 'the next three are fetched before they are due');
 });
@@ -206,4 +214,50 @@ test('the script has a score summary after every game except the last', () => {
   assert.equal(summaries.length, 3);
   assert.match(summaries[0].text, /gifu leads one game to love in the first set/);
   assert.match(summaries[2].text, /gifu leads two games to one in the first set/);
+});
+
+test('a clip still being made never holds up the calls behind it', async () => {
+  // The 17:50 case: one slow clip used to block every later call until all
+  // of them were too late to say.
+  const p = player([cue('slow', 300, 1), cue('next', 420, 2), cue('later', 600, 3)], {
+    slow: (clip) => clip === 'slow',
+  });
+  p.track.start(0, true); await tick();
+  p.track.update(300, true); await tick();
+  assert.equal(p.played.length, 0, 'waiting for the slow clip');
+  const limit = p.waits.at(-1);
+  assert.ok(limit.ms <= 4_000, 'waits no longer than the call stays worth saying');
+  p.track.update(300 + 30 * 4 + 1, true); await tick();
+  limit.resolve(); await tick();
+  p.track.update(421, true); await tick();
+  assert.deepEqual(p.played, ['audio:next'], 'the next call plays on time');
+  assert.notEqual(p.track.state, 'unavailable', 'a slow clip is not a failure');
+  p.slowLoads.get('slow')(); await tick();
+  p.track.update(601, true); await tick();
+  assert.deepEqual(p.played, ['audio:next', 'audio:later']);
+});
+
+test('a slow score summary is skipped after a few seconds', async () => {
+  const p = player([
+    cue('join', 600, 9, { kind: 'join' }),
+    cue('call', 1300, 2),
+  ], { slow: (clip) => clip === 'join' });
+  p.track.start(1200, true); await tick();
+  const limit = p.waits.at(-1);
+  assert.equal(limit.ms, 6_000);
+  limit.resolve(); await tick();
+  p.track.update(1301, true); await tick();
+  assert.deepEqual(p.played, ['audio:call']);
+});
+
+test('starting or seeking asks for the next stretch of clips at once', async () => {
+  const cues = [];
+  for (let i = 1; i <= 20; i += 1) cues.push(cue(`c${i}`, 30 * 60 * 10 + i * 30 * 10, i));
+  const p = player(cues);
+  p.track.start(30 * 60 * 10, false); await tick();
+  // 90 seconds ahead at 10 seconds apart: nine calls, not just the next three.
+  assert.deepEqual(p.loads, ['c1', 'c2', 'c3', 'c4', 'c5', 'c6', 'c7', 'c8', 'c9']);
+  assert.deepEqual(p.positions, [30 * 60 * 10]);
+  p.track.update(0, false); await tick();
+  assert.deepEqual(p.positions, [30 * 60 * 10, 0], 'a seek reports the new position');
 });

@@ -13,7 +13,7 @@ const HEADERS = { 'Cache-Control': 'private, no-store', 'X-Content-Type-Options'
  * The replay's stored commentary script: every line, its voice, and the frame
  * it plays at. Whoever can watch the replay can hear its commentary.
  */
-export async function GET(_request: Request, { params }: { params: Promise<{ id: string }> }) {
+export async function GET(request: Request, { params }: { params: Promise<{ id: string }> }) {
   const { id } = await params;
   if (!isDmoReplayId(id)) {
     return NextResponse.json({ error: 'Match replay not found.' }, { status: 404, headers: HEADERS });
@@ -36,7 +36,12 @@ export async function GET(_request: Request, { params }: { params: Promise<{ id:
     }), storeId);
     // After answering, store any clips not yet generated, in script order,
     // so playback never has to wait for them.
-    if (!track.complete) after(() => prepareDmoCommentaryClips(replay, track, storeId).then(() => undefined));
+    // A viewer joining part-way gets the clips from their position first.
+    const rawFrom = new URL(request.url).searchParams.get('from');
+    const from = rawFrom !== null && /^\d{1,9}$/.test(rawFrom) ? Number(rawFrom) : null;
+    if (!track.complete) {
+      after(() => prepareDmoCommentaryClips(replay, track, storeId, 45_000, from).then(() => undefined));
+    }
     return NextResponse.json({
       version: track.version,
       fps: track.fps,
