@@ -907,7 +907,7 @@ test('a stored replay plays its pre-made clips and never loads a voice model', a
     assert.equal(h.value().status, 'on');
     audio.started[0].end();
     await settle(h);
-    h.playback.frame = 310; h.advance(300); await settle(h);
+    h.playback.frame = 300; h.advance(300); await settle(h);
     assert.equal(audio.started.at(-1).buffer.decoded, 'b', 'the game call plays at its frame');
     assert.equal(loads, 0, 'no voice model is downloaded or run');
     assert.equal(h.nativeSpoken.length, 0);

@@ -554,7 +554,7 @@ export function useDmoCommentary({
       if (!response.ok) return false;
       const track = await response.json() as {
         fps?: number;
-        cues?: Array<{ at: number | null; clip: string; group: number; mustPlay?: boolean }>;
+        cues?: Array<{ at: number | null; clip: string; group: number; mustPlay?: boolean; kind?: string }>;
       };
       if (request !== requestRef.current || !enabledRef.current) return true;
       if (!Array.isArray(track.cues) || !track.cues.length) return false;

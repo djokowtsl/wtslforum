@@ -41,23 +41,24 @@ test('a call the viewer has moved past is dropped with its reply; game calls get
     cue('point', 300, 1), cue('point-reply', 300, 1),
     cue('game', 330, 2, { mustPlay: true }),
   ], { hold: true });
-  p.track.start(0, true); await tick();
-  p.track.update(300 + 30 * 5, true); await tick(); // five seconds late
+  p.track.start(150, true); await tick();
+  p.track.update(450, true); await tick(); // the point is five seconds late
   assert.deepEqual(p.played, ['audio:game'], 'the routine call and its reply are skipped, the game call is not');
 });
 
 test('commentary waits while paused and resumes with playback', async () => {
   const p = player([cue('a', 300, 1)]);
   p.track.start(0, true); await tick();
-  p.track.update(310, false); await tick();
+  p.track.update(300, false); await tick();
   assert.equal(p.played.length, 0);
-  p.track.update(311, true); await tick();
+  p.track.update(301, true); await tick();
   assert.deepEqual(p.played, ['audio:a']);
 });
 
 test('seeking back replays calls from the new position, seeking far ahead skips the backlog', async () => {
   const p = player([cue('a', 300, 1), cue('b', 3000, 2), cue('c', 6000, 3)]);
   p.track.start(0, true); await tick();
+  p.track.update(300, true); await tick();
   p.track.update(305, true); await tick();
   p.track.update(5990, true); await tick();
   assert.deepEqual(p.played, ['audio:a'], 'jumping ahead does not play everything in between');
@@ -151,4 +152,58 @@ test('if the very first clip cannot be downloaded, it says unavailable at once',
   const p = player([cue('intro', null, 1), cue('a', 3000, 2)], { fail: () => true });
   p.track.start(0, true); await tick();
   assert.deepEqual(p.states, ['starting', 'unavailable']);
+});
+
+test('turning commentary on part-way plays where the match stands, not the opening', async () => {
+  const p = player([
+    cue('intro', null, 1), cue('reply', null, 1),
+    cue('game1', 300, 2, { mustPlay: true }), cue('join1', 300, 3, { kind: 'join' }),
+    cue('game2', 900, 4, { mustPlay: true }), cue('join2', 900, 5, { kind: 'join' }),
+    cue('point', 1200, 6),
+  ]);
+  p.track.start(1000, true); await tick();
+  assert.deepEqual(p.played, ['audio:join2'], 'the latest score, then nothing already past');
+  p.track.update(1205, true); await tick();
+  assert.deepEqual(p.played, ['audio:join2', 'audio:point'], 'then calls carry on from here');
+});
+
+test('score summaries never play as part of the running commentary', async () => {
+  const p = player([cue('game1', 300, 1, { mustPlay: true }), cue('join1', 300, 2, { kind: 'join' })]);
+  p.track.start(0, true); await tick();
+  p.track.update(150, true); await tick();
+  p.track.update(305, true); await tick();
+  assert.deepEqual(p.played, ['audio:game1']);
+});
+
+test('starting during the first game still plays the opening', async () => {
+  const p = player([cue('intro', null, 1), cue('join1', 300, 2, { kind: 'join' })]);
+  p.track.start(100, true); await tick();
+  assert.deepEqual(p.played, ['audio:intro']);
+});
+
+test('seeking more than ten seconds forward or back announces the current score', async () => {
+  const p = player([
+    cue('intro', null, 1),
+    cue('join1', 300, 2, { kind: 'join' }),
+    cue('join2', 600, 3, { kind: 'join' }),
+  ]);
+  p.track.start(0, true); await tick();
+  p.track.update(30, true); await tick();
+  p.track.update(390, true); await tick(); // 12 seconds forward
+  p.track.update(900, true); await tick(); // 17 seconds forward
+  p.track.update(520, true); await tick(); // more than 12 seconds back
+  assert.deepEqual(p.played, ['audio:intro', 'audio:join1', 'audio:join2', 'audio:join1']);
+});
+
+test('the script has a score summary after every game except the last', () => {
+  const points = simulatedPoints();
+  const built = buildDmoCommentaryScript({ names: ['gifu', 'Debuffy'], points, fps: 30, tournament: 'Roland-Garros' });
+  const joins = built.cues.filter((entry) => entry.kind === 'join');
+  assert.equal(joins.length, 0, 'no set counts without verified sets');
+  const withSets = points.map((point) => ({ ...point, setsWonBefore: [0, 0], setsToWin: 2 }));
+  const scored = buildDmoCommentaryScript({ names: ['gifu', 'Debuffy'], points: withSets, fps: 30, tournament: 'Roland-Garros' });
+  const summaries = scored.cues.filter((entry) => entry.kind === 'join');
+  assert.equal(summaries.length, 3);
+  assert.match(summaries[0].text, /gifu leads one game to love in the first set/);
+  assert.match(summaries[2].text, /gifu leads two games to one in the first set/);
 });
