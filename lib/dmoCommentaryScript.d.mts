@@ -11,7 +11,8 @@ export type DmoCommentaryScriptCue = {
   voice: string;
   speed: number;
   text: string;
-  kind: 'opening' | 'facts' | 'point' | 'game' | 'stats';
+  /** `join`: where the match stands, for viewers who start part-way. */
+  kind: 'opening' | 'facts' | 'point' | 'game' | 'stats' | 'join';
   /** Lines of one exchange (a call and its reply) share a group. */
   group: number;
   /** Game, set and match calls are never dropped for being late. */

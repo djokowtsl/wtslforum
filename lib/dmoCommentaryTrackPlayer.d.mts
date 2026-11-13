@@ -1,7 +1,7 @@
 export type DmoCommentaryTrackState = 'starting' | 'on' | 'unavailable';
 
 export function createDmoCommentaryTrackPlayer<Audio>(options: {
-  cues: ReadonlyArray<{ at: number | null; clip: string; group: number; mustPlay?: boolean }>;
+  cues: ReadonlyArray<{ at: number | null; clip: string; group: number; mustPlay?: boolean; kind?: string }>;
   fps?: number;
   loadClip: (clip: string) => Promise<Audio>;
   playClip: (audio: Audio) => Promise<void>;

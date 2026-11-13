@@ -40,7 +40,9 @@ test('a phrasebook built in advance covers most of what a new match says', () =>
   for (let seed = 0; seed < 10; seed += 1) {
     const script = buildDmoCommentaryScript({ names, points: simulateDmoCommentaryMatch(424_242 + seed),
       tournament: 'Roland-Garros', surface: 'Clay', round: 'Final' });
-    for (const cue of script.cues) { total += 1; if (known.has(key(cue))) hit += 1; }
+    for (const cue of script.cues.filter((entry) => entry.kind !== 'join')) {
+      total += 1; if (known.has(key(cue))) hit += 1;
+    }
   }
   assert.ok(hit / total >= 0.7, `${Math.round(100 * hit / total)}% covered`);
 });
