@@ -3,6 +3,7 @@
 import { useEffect, useState, type FormEvent } from 'react';
 import {
   NATIVE_MOTION_STROKES,
+  nativeMotionStrokeLabel,
   nativeMotionClipSupportsStroke,
   type NativeMotionCatalog,
   type NativeMotionHand,
@@ -191,7 +192,7 @@ export default function NativeMotionMatchOverrides({ catalog }: { catalog?: Nati
                     <div className={styles.matchStroke} key={stroke}>
                       <label className={styles.field}>
                         <span id={`match-${index}-${stroke}-label`}>
-                          {stroke[0].toUpperCase() + stroke.slice(1)} version
+                          {nativeMotionStrokeLabel(stroke)} version
                         </span>
                         <SearchableClipSelect
                           id={`match-${index}-${stroke}-clip`}

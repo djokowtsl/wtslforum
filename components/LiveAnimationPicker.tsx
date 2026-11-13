@@ -4,6 +4,7 @@ import { useEffect, useMemo, useState } from 'react';
 import { NATIVE_MOTION_CATALOG_SHA256 } from '@/lib/nativeMotionCatalog';
 import {
   NATIVE_MOTION_STROKES,
+  nativeMotionStrokeLabel,
   nativeMotionClipSupportsStroke,
   type NativeMotionCatalog,
   type NativeMotionHand,
@@ -32,6 +33,8 @@ function emptyPlayer(): PlayerDraft {
     forehand: { ...EMPTY_PICK },
     backhand: { ...EMPTY_PICK },
     serve: { ...EMPTY_PICK },
+    'slice-forehand': { ...EMPTY_PICK },
+    'slice-backhand': { ...EMPTY_PICK },
   };
 }
 
@@ -233,7 +236,7 @@ export default function LiveAnimationPicker({ broadcastId, players, playerCharac
                 return (
                   <div className={styles.stroke} key={stroke}>
                     <label className={NativeMotionStyles.field}>
-                      <span id={labelId}>{stroke[0].toUpperCase() + stroke.slice(1)} clip</span>
+                      <span id={labelId}>{nativeMotionStrokeLabel(stroke)} clip</span>
                       <SearchableClipSelect
                         id={`${labelId}-clip`}
                         labelledBy={labelId}

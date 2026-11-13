@@ -1,7 +1,14 @@
 import type { BundledRigSchema } from './dmoBundledMotion.mjs';
 
 export const NATIVE_MOTION_AUTOMATIC_PROFILE_KEY = '__automatic_stream_fallback__';
-export const NATIVE_MOTION_STROKES = ['forehand', 'backhand', 'serve'] as const;
+export const NATIVE_MOTION_STROKES = ['forehand', 'backhand', 'serve', 'slice-forehand', 'slice-backhand'] as const;
+
+export function nativeMotionStrokeLabel(stroke: NativeMotionStroke) {
+  return ({
+    forehand: 'Forehand', backhand: 'Backhand', serve: 'Serve',
+    'slice-forehand': 'Forehand slice', 'slice-backhand': 'Backhand slice',
+  })[stroke];
+}
 
 export type NativeMotionStroke = (typeof NATIVE_MOTION_STROKES)[number];
 export type NativeMotionHand = 'left' | 'right';
@@ -78,6 +85,7 @@ export function firstValidNativeMotionClip(
 ) {
   return catalog.clips.find((clip) => (
     nativeMotionClipSupportsStroke(clip, stroke)
+    && (!stroke.startsWith('slice-') || clipSupportsNamedStroke(clip, stroke))
     && !clip.hidden
     && !clip.accelerationVariant
   )) ?? null;
@@ -99,6 +107,13 @@ function isAccelerationClip(clip: NativeMotionCatalogClip) {
 
 function clipSupportsNamedStroke(clip: NativeMotionCatalogClip, stroke: NativeMotionStroke) {
   const clipWords = words(`${clip.sourceBundle} ${clip.originalClipName} ${clip.label}`);
+  if (stroke.startsWith('slice-')) {
+    return nativeMotionClipSupportsStroke(clip, stroke)
+      && clipWords.some((word) => (
+        stroke === 'slice-forehand' ? /^(forehand|fh)\d*$/.test(word) : /^(backhand|bh)\d*$/.test(word)
+      ));
+  }
+  if (clipWords.some((word) => /^slice\d*$/.test(word))) return false;
   if (stroke === 'serve') {
     return clipWords.some((word) => word === 'serve' || word === 'service');
   }
@@ -167,6 +182,18 @@ export function nativeMotionClipSupportsStroke(
   stroke: NativeMotionStroke,
 ) {
   const contactTime = clip?.events?.contactTime;
+  if (!clip) return false;
+  if (stroke.startsWith('slice-')) {
+    const clipWords = words(`${clip.sourceBundle} ${clip.originalClipName} ${clip.label}`);
+    const isSlice = clipWords.some((word) => /^slice\d*$/.test(word));
+    const forehand = clipWords.some((word) => /^(forehand|fh)\d*$/.test(word));
+    const backhand = clipWords.some((word) => /^(backhand|bh)\d*$/.test(word));
+    // Side-neutral slice names remain available for explicit admin assignment;
+    // known opposite-side recordings must not be offered for the wrong side.
+    if (!isSlice || (stroke === 'slice-forehand' ? backhand : forehand)) {
+      return false;
+    }
+  }
   return clip?.events?.kind === (stroke === 'serve' ? 'serve' : 'strike')
     && typeof contactTime === 'number'
     && Number.isFinite(contactTime)

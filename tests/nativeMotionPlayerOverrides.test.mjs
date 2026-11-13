@@ -47,6 +47,8 @@ function setup(options = {}) {
           clips: [
             { id: 'a1_b1', duration: 1, events: { kind: 'strike', contactTime: 0.5 }, hidden: true, accelerationVariant: true },
             { id: 'a2_b2', duration: 1, events: { kind: 'serve', contactTime: 0.5 } },
+            { id: 'a5_b5', label: 'Barty-BH-Slice', sourceBundle: 'barty-bh-slice',
+              originalClipName: 'barty-bh-slice', duration: 1, events: { kind: 'strike', contactTime: 0.5 } },
           ],
         };
       },
@@ -74,6 +76,45 @@ const body = (overrides = {}) => ({
   targetType: 'replay', targetId: '17', playerClips: [{ forehand: pick }, {}], ...overrides,
 });
 
+test('character profiles persist slice choices, clear them, and keep legacy automatic profiles valid', async () => {
+  const writes = [];
+  const route = load('app/api/admin/native-motion/profiles/route.ts', {
+    'next/server': { NextResponse: { json: (data, init) => Response.json(data, init) } },
+    '@/lib/auth': { getSession: async () => ({ isAdmin: true }) },
+    '@/lib/liveRequestSecurity': { isSameSiteMutation: () => true },
+    '@/lib/nativeMotionCatalogData': catalogData,
+    '@/lib/nativeMotionServer': {
+      fetchNativeMotionCatalog: async () => ({ clips: [
+        { id: 'a1_b1', duration: 1, events: { kind: 'strike', contactTime: 0.5 } },
+        { id: 'a2_b2', duration: 1, events: { kind: 'serve', contactTime: 0.5 } },
+        { id: 'a5_b5', label: 'Barty-BH-Slice', sourceBundle: 'barty-bh-slice',
+          duration: 1, events: { kind: 'strike', contactTime: 0.5 } },
+      ] }),
+    },
+    '@/lib/db': { sql: async (strings, ...values) => { writes.push(values); return []; } },
+  });
+  const slice = { clipId: 'a5_b5', sourceHandedness: 'right' };
+  const payload = { characterName: 'Barty', automaticFallback: false,
+    clips: { backhand: pick, 'slice-backhand': slice } };
+  const saved = await route.PUT(request(payload));
+  assert.equal(saved.status, 200);
+  assert.deepEqual((await saved.json()).profile.clips, payload.clips);
+  const cleared = await route.PUT(request({
+    ...payload, clips: { backhand: pick, 'slice-backhand': null },
+  }));
+  assert.deepEqual((await cleared.json()).profile.clips, { backhand: pick });
+  const fallback = await route.PUT(request({
+    automaticFallback: true,
+    clips: { forehand: pick, backhand: pick, serve: alternate },
+  }));
+  assert.equal(fallback.status, 200);
+  const invalid = await route.PUT(request({
+    ...payload, clips: { 'slice-forehand': slice },
+  }));
+  assert.equal(invalid.status, 400);
+  assert.equal(writes.length, 3);
+});
+
 test('guests, members, and cross-site requests cannot change match animations', async () => {
   for (const options of [{ user: null }, { user: { isAdmin: false } }, { sameSite: false }]) {
     const { route, calls, writes } = setup(options);
@@ -89,6 +130,26 @@ test('a replay accepts an arbitrary compatible variant without character restric
   assert.equal(writes.length, 2);
   assert.match(writes[0].text, /DELETE.+submission_id/s);
   assert.deepEqual(writes[1].values, ['17', 0, JSON.stringify({ forehand: pick })]);
+});
+
+test('per-player slice selections are saved for replay and live targets with opposite-side validation', async () => {
+  const slice = { clipId: 'a5_b5', sourceHandedness: 'right' };
+  for (const target of [
+    { targetType: 'replay', targetId: '17' },
+    { targetType: 'manual', targetId: broadcastId },
+  ]) {
+    const { route, writes } = setup();
+    const response = await route.PUT(request(body({
+      ...target, playerClips: [{ 'slice-backhand': slice }, {}],
+    })));
+    assert.equal(response.status, 200);
+    assert.ok(writes.some((write) => write.values.includes(JSON.stringify({ 'slice-backhand': slice }))));
+  }
+  const { route, writes } = setup();
+  assert.equal((await route.PUT(request(body({
+    playerClips: [{ 'slice-forehand': slice }, {}],
+  })))).status, 400);
+  assert.equal(writes.length, 0);
 });
 
 test('each player and stroke is stored separately and clearing restores defaults', async () => {
@@ -261,12 +322,18 @@ test('playback uses one chosen version and preserves player identity when replay
           { profileKey: 'djokovic', clips: { forehand: { clipId: 'a3_b3', sourceHandedness: 'right' } } },
           { profileKey: 'federer', clips: {} },
         ],
-        playerClipOverrides: [{ forehand: pick }, { forehand: { ...pick, clipId: 'a4_b4' } }],
+        playerClipOverrides: [
+          { forehand: pick, 'slice-backhand': { ...pick, clipId: 'a5_b5' } },
+          { forehand: { ...pick, clipId: 'a4_b4' } },
+        ],
       });
     }
     if (url.endsWith('/catalog.json')) return Response.json({
       format: 'WTMC1', rig: { modelHash: 'test-rig' },
-      clips: ['a1_b1', 'a3_b3', 'a4_b4'].map(clipMetadata),
+      clips: [
+        ...['a1_b1', 'a3_b3', 'a4_b4'].map(clipMetadata),
+        { ...clipMetadata('a5_b5'), label: 'Barty-BH-Slice', sourceBundle: 'barty-bh-slice', originalClipName: 'barty-bh-slice' },
+      ],
     });
     return new Response(new TextEncoder().encode(url.includes('a4_b4') ? 'second-player' : 'first-player'));
   };
@@ -293,11 +360,31 @@ test('playback uses one chosen version and preserves player identity when replay
     const sources = changes.at(-1);
     assert.equal(sources[0].clips.forehand.clip.selected, 'second-player');
     assert.equal(sources[1].clips.forehand.clip.selected, 'first-player');
+    assert.equal(sources[1].clips['slice-backhand'].clip.selected, 'first-player');
+    assert.equal(sources[0].clips['slice-backhand'], undefined);
     assert.equal(requests.some((url) => url.includes('a3_b3.wtm')), false);
-    assert.equal(requests.filter((url) => url.endsWith('.wtm')).length, 2);
+    assert.equal(requests.filter((url) => url.endsWith('.wtm')).length, 3);
     assert.match(requests[0], /submissionId=17/);
   } finally {
     cleanup?.();
     globalThis.fetch = oldFetch;
   }
+});
+
+test('the existing slice path uses assigned slice timing, never the ordinary drive or smash', () => {
+  const { bundledCaptureTiming } = load('components/DmoBundledGroundstroke.ts', {
+    '@/lib/dmoBundledMotion.mjs': {},
+  });
+  const binding = (contactTime) => ({ clip: { duration: 2 }, contactTime });
+  const source = { clips: {
+    forehand: binding(0.25), backhand: binding(0.5),
+    'slice-forehand': binding(0.75), 'slice-backhand': binding(1),
+    smash: binding(1.25),
+  } };
+  assert.equal(bundledCaptureTiming(source, { stroke: 'backhand', slice: true }).leadFrames, 60);
+  assert.equal(bundledCaptureTiming(source, { stroke: 'forehand', slice: true }).leadFrames, 45);
+  assert.equal(bundledCaptureTiming(source, { stroke: 'backhand' }).leadFrames, 30);
+  assert.equal(bundledCaptureTiming(source, { stroke: 'forehand' }).leadFrames, 15);
+  assert.equal(bundledCaptureTiming(source, { stroke: 'forehand', smash: true }).leadFrames, 75);
+  assert.equal(bundledCaptureTiming({ clips: {} }, { stroke: 'backhand', slice: true }), undefined);
 });
