@@ -166,7 +166,6 @@ test('court lettering spans both baselines, faces play, and stays outside the li
   try {
     for (const [surface, venue, city] of [
       ['hard', 'Paris Masters', 'PARIS'],
-      ['clay', 'Roland Garros', 'PARIS'],
       ['grass', 'Wimbledon', 'LONDON'],
       ['hard', 'Vienna', 'VIENNA'],
       ['hard', 'Doha', 'DOHA'],
@@ -191,6 +190,19 @@ test('court lettering spans both baselines, faces play, and stays outside the li
     const unknown = new THREE.Scene();
     sceneApi.buildCourt(unknown, 'hard', true, 'Unmapped venue');
     assert.equal(unknown.children.filter(object => object.name === 'wtsl-court-city-label').length, 0);
+    for (const venue of [
+      'Roland Garros', 'Roland-Garros WTA', 'French Open Paris',
+      'Philippe-Chatrier', 'Suzanne Lenglen', 'Simonne-Mathieu',
+    ]) {
+      const court = new THREE.Scene();
+      const before = printed.length;
+      sceneApi.buildCourt(court, 'clay', false, venue);
+      assert.equal(court.children.filter(object => object.name === 'wtsl-court-city-label').length, 0, venue);
+      assert.equal(printed.slice(before).includes('PARIS'), false, venue);
+      assert.equal(venueApi.resolveDmoVenueProfile(venue).hideCourtCityLabel, true, venue);
+    }
+    assert.equal(venueApi.resolveDmoVenueProfile('Roland Garros').cityLabel, 'PARIS',
+      'the location stays Paris; only painted lettering is suppressed');
     assert.ok(printed.includes('PARIS'));
     assert.ok(printed.includes('LONDON'));
     assert.ok(printed.includes('VIENNA'));

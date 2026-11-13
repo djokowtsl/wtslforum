@@ -950,7 +950,7 @@ export function buildCourt(
   runoff.receiveShadow = true;
   scene.add(runoff);
   const venue = resolveDmoVenueProfile(venueName);
-  if (venue.cityLabel && typeof document !== 'undefined') {
+  if (!venue.hideCourtCityLabel && venue.cityLabel && typeof document !== 'undefined') {
     const canvas = document.createElement('canvas');
     canvas.width = 768;
     canvas.height = 160;
