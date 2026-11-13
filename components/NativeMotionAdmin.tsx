@@ -6,6 +6,7 @@ import {
   firstValidNativeMotionClip,
   NATIVE_MOTION_AUTOMATIC_PROFILE_KEY,
   NATIVE_MOTION_STROKES,
+  nativeMotionStrokeLabel,
   nativeMotionCharacterDefaults,
   nativeMotionClipSupportsStroke,
   nativeMotionProfileKey,
@@ -36,6 +37,8 @@ function emptyPicks(): Record<NativeMotionStroke, DraftPick> {
     forehand: { ...EMPTY_PICK },
     backhand: { ...EMPTY_PICK },
     serve: { ...EMPTY_PICK },
+    'slice-forehand': { ...EMPTY_PICK },
+    'slice-backhand': { ...EMPTY_PICK },
   };
 }
 
@@ -265,8 +268,8 @@ export default function NativeMotionAdmin() {
         if (!pick.sourceHandedness) throw new Error(`Confirm the original handedness for the ${stroke} clip.`);
         clips[stroke] = { clipId: pick.clipId, sourceHandedness: pick.sourceHandedness };
       }
-      if (automaticFallback && NATIVE_MOTION_STROKES.some((stroke) => !clips[stroke])) {
-        throw new Error('Automatic fallback needs a confirmed clip for every stroke.');
+      if (automaticFallback && (['forehand', 'backhand', 'serve'] as const).some((stroke) => !clips[stroke])) {
+        throw new Error('Automatic fallback needs confirmed forehand, backhand and serve clips. Slice choices are optional.');
       }
       if (!automaticFallback && !Object.keys(clips).length) {
         throw new Error('Select at least one stroke animation.');
@@ -453,7 +456,7 @@ export default function NativeMotionAdmin() {
                 const labelId = `native-motion-${stroke}-label`;
                 return (
                   <fieldset className={styles.stroke} key={stroke}>
-                    <legend>{stroke[0].toUpperCase() + stroke.slice(1)}</legend>
+                    <legend>{nativeMotionStrokeLabel(stroke)}</legend>
                     <label className={styles.field}>
                       <span id={labelId}>Recorded clip</span>
                       <SearchableClipSelect

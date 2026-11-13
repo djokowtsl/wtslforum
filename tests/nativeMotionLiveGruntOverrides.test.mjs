@@ -43,7 +43,7 @@ function setup(options = {}) {
     '@/lib/dmoCharacterAppearance.mjs': appearance,
     '@/lib/nativeMotionCatalogData': catalogData,
     '@/lib/nativeMotionServer': {
-      fetchNativeMotionCatalog: async () => ({ clips: [] }),
+      fetchNativeMotionCatalog: async () => ({ clips: options.clips ?? [] }),
     },
     '@/lib/db': {
       sql: async (strings, ...values) => {
@@ -85,6 +85,25 @@ function putRequest(body) {
     body: JSON.stringify(body),
   });
 }
+
+test('stream owners can save and clear slice choices using the existing live control endpoint', async () => {
+  const slice = { clipId: 'a5_b5', sourceHandedness: 'right' };
+  const { route, writes } = setup({ clips: [{
+    id: 'a5_b5', sourceBundle: 'barty-bh-slice', label: 'Barty-BH-Slice',
+    duration: 1, events: { kind: 'strike', contactTime: 0.5 },
+  }] });
+  const response = await route.PUT(putRequest({
+    broadcastId, playerClips: [{ 'slice-backhand': slice }, {}],
+  }));
+  assert.equal(response.status, 200);
+  assert.ok(writes.some((write) => write.values.includes(JSON.stringify({ 'slice-backhand': slice }))));
+  const cleared = await route.PUT(putRequest({ broadcastId, playerClips: [{}, {}] }));
+  assert.equal(cleared.status, 200);
+  const invalid = await route.PUT(putRequest({
+    broadcastId, playerClips: [{ 'slice-forehand': slice }, {}],
+  }));
+  assert.equal(invalid.status, 400);
+});
 
 test('stream owners can read per-player grunt choices, including explicit silence', async () => {
   const { route } = setup();

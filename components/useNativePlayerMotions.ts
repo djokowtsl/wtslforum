@@ -12,6 +12,7 @@ import {
   type DmoCharacterGruntSetting,
 } from '@/lib/dmoCharacterAppearance.mjs';
 import {
+  NATIVE_MOTION_STROKES,
   nativeMotionClipSupportsStroke,
   mergeNativeMotionPicks,
   type NativeMotionCatalog,
@@ -160,7 +161,7 @@ export function useNativePlayerMotions({
         ))));
         const sourceFor = (picks: NativeMotionPicks): BundledMotionSource | null => {
           const clips: BundledMotionSource['clips'] = {};
-          for (const stroke of ['forehand', 'backhand', 'serve'] as const) {
+          for (const stroke of NATIVE_MOTION_STROKES) {
             const pick = picks[stroke];
             if (!pick) continue;
             const metadata = catalog.clips.find((clip) => clip.id === pick.clipId);

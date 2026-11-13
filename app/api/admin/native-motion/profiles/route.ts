@@ -30,6 +30,8 @@ const bodySchema = z.object({
     forehand: z.object({ clipId: clipIdSchema, sourceHandedness: handSchema }).nullable().optional(),
     backhand: z.object({ clipId: clipIdSchema, sourceHandedness: handSchema }).nullable().optional(),
     serve: z.object({ clipId: clipIdSchema, sourceHandedness: handSchema }).nullable().optional(),
+    'slice-forehand': z.object({ clipId: clipIdSchema, sourceHandedness: handSchema }).nullable().optional(),
+    'slice-backhand': z.object({ clipId: clipIdSchema, sourceHandedness: handSchema }).nullable().optional(),
   }).strict(),
 }).strict();
 
@@ -154,8 +156,8 @@ export async function PUT(request: Request) {
   if (!NATIVE_MOTION_STROKES.some((stroke) => selected[stroke])) {
     return NextResponse.json({ error: 'Select at least one stroke animation.' }, { status: 400, headers: PRIVATE_HEADERS });
   }
-  if (automaticFallback && NATIVE_MOTION_STROKES.some((stroke) => !selected[stroke])) {
-    return NextResponse.json({ error: 'Automatic fallback needs a confirmed clip for every stroke.' }, { status: 400, headers: PRIVATE_HEADERS });
+  if (automaticFallback && (['forehand', 'backhand', 'serve'] as const).some((stroke) => !selected[stroke])) {
+    return NextResponse.json({ error: 'Automatic fallback needs confirmed forehand, backhand and serve clips. Slice choices are optional.' }, { status: 400, headers: PRIVATE_HEADERS });
   }
 
   try {

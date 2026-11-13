@@ -22,6 +22,8 @@ const clipsSchema = z.object({
   forehand: pickSchema.optional(),
   backhand: pickSchema.optional(),
   serve: pickSchema.optional(),
+  'slice-forehand': pickSchema.optional(),
+  'slice-backhand': pickSchema.optional(),
 }).strict();
 const gruntOverrideSchema = z.object({
   gruntGroup: z.string().max(80).nullable(),

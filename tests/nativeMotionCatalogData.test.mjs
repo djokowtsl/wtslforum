@@ -49,6 +49,50 @@ test('character profiles are shared by normalized character names, not player ac
   );
 });
 
+test('slice slots accept recorded slices on the correct side and retain unnamed-side options for explicit review', () => {
+  const backhand = clip('barty-bh-slice', { label: 'Barty-BH-Slice' });
+  const forehand = clip('forehand-slice', { label: 'Forehand slice' });
+  const neutral = clip('evans-slice1', { label: 'evans-slice1' });
+  assert.equal(nativeMotionClipSupportsStroke(backhand, 'slice-backhand'), true);
+  assert.equal(nativeMotionClipSupportsStroke(backhand, 'slice-forehand'), false);
+  assert.equal(nativeMotionClipSupportsStroke(forehand, 'slice-forehand'), true);
+  assert.equal(nativeMotionClipSupportsStroke(forehand, 'slice-backhand'), false);
+  assert.equal(nativeMotionClipSupportsStroke(neutral, 'slice-backhand'), true);
+  assert.equal(nativeMotionClipSupportsStroke(neutral, 'slice-forehand'), true);
+  assert.equal(nativeMotionClipSupportsStroke(clip('ordinary-fh'), 'slice-forehand'), false);
+  assert.equal(nativeMotionClipSupportsStroke(clip('broken-bh-slice', {
+    events: { kind: 'strike', contactTime: 2 },
+  }), 'slice-backhand'), false);
+});
+
+test('character slice defaults remain separate from drives and do not guess an unnamed side', () => {
+  const catalog = { clips: [
+    clip('barty-bh-slice', { label: 'Barty-BH-Slice' }),
+    clip('barty-backhand', { label: 'Barty backhand' }),
+    clip('barty-fh-slice', { label: 'Barty-FH-Slice' }),
+    clip('barty-forehand', { label: 'Barty forehand' }),
+    clip('evans-slice1', { label: 'Evans slice1' }),
+  ] };
+  const defaults = nativeMotionCharacterDefaults(catalog, 'Ashleigh Barty');
+  assert.equal(defaults.backhand.id, 'barty-backhand');
+  assert.equal(defaults.forehand.id, 'barty-forehand');
+  assert.equal(defaults['slice-backhand'].id, 'barty-bh-slice');
+  assert.equal(defaults['slice-forehand'].id, 'barty-fh-slice');
+  assert.deepEqual(nativeMotionCharacterDefaults(catalog, 'Dan Evans'), {});
+  assert.equal(firstValidNativeMotionClip({ clips: [catalog.clips[4]] }, 'slice-forehand'), null);
+});
+
+test('match slice overrides replace just their own side and preserve the ordinary stroke', () => {
+  const drive = { clipId: 'a1_b1', sourceHandedness: 'right' };
+  const slice = { clipId: 'a2_b2', sourceHandedness: 'left' };
+  const override = { clipId: 'a3_b3', sourceHandedness: 'right' };
+  const picks = mergeNativeMotionPicks(
+    { backhand: drive, 'slice-backhand': slice },
+    { 'slice-backhand': override },
+  );
+  assert.deepEqual(picks, { backhand: drive, 'slice-backhand': override });
+});
+
 test('a match overrides only the chosen stroke with exactly one fixed version', () => {
   const defaultForehand = { clipId: 'a1_b1', sourceHandedness: 'right' };
   const defaultServe = { clipId: 'a2_b2', sourceHandedness: 'right' };
