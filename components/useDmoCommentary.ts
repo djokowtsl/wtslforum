@@ -23,7 +23,14 @@ import {
 import type { DmoCommentaryPoint } from '@/lib/dmoCommentary.mjs';
 import type { Te4LiveSnapshot } from '@/lib/te4DmoLive';
 
-type LocalVoiceModel = Pick<import('kokoro-js').KokoroTTS, 'generate'> & { dmoVoiceSource?: 'server' };
+type LocalVoiceModel = {
+  generate(
+    text: string,
+    options?: { voice?: string; speed?: number; priority?: 'high' | 'low' },
+  ): Promise<{ audio: Float32Array; sampling_rate: number }>;
+  prefetch?: (text: string, options?: { voice?: string; speed?: number }) => void;
+  dmoVoiceSource?: 'server' | 'local';
+};
 
 type CommentaryPoint = DmoCommentaryPoint & {
   frame: number;
@@ -63,25 +70,8 @@ function withVoiceDeadline<T>(work: Promise<T>, milliseconds: number): Promise<T
   });
 }
 
-function withVoiceSlowNotice<T>(
-  work: Promise<T>,
-  milliseconds: number,
-  onSlow: () => void,
-): Promise<T> {
-  return new Promise((resolve, reject) => {
-    const timer = setTimeout(onSlow, milliseconds);
-    work.then(
-      (value) => {
-        clearTimeout(timer);
-        resolve(value);
-      },
-      (cause) => {
-        clearTimeout(timer);
-        reject(cause);
-      },
-    );
-  });
-}
+/** Longest a single commentary line may take to prepare before it is skipped. */
+const LINE_DEADLINE_MS = 20_000;
 
 function readyVoiceStatus(model: unknown) {
   return (model as { dmoVoiceSource?: string } | null)?.dmoVoiceSource === 'server'
@@ -154,6 +144,7 @@ export function useDmoCommentary({
   const localSpeechIdleRef = useRef(Promise.resolve());
   const generationFailuresRef = useRef(0);
   const lastStatsPointRef = useRef(0);
+  const prefetchedPointsRef = useRef(new Set<number>());
   const lastPointNumberRef = useRef(snapshot.pointCount);
   const lastReplayFrameRef = useRef(replayFrame);
   const pendingTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
@@ -240,8 +231,8 @@ export function useDmoCommentary({
     const serverVoice = isMobileDmoLocalVoiceDevice();
     setVoiceStatus(serverVoice
       ? 'Connecting to the WTSL commentary voice.'
-      : 'Loading the local voice model; first use downloads about 92 MB.');
-    const pending = withVoiceDeadline(loadDmoLocalVoiceModel((progress) => {
+      : 'Preparing the commentary voice; local Kokoro loads in the background.');
+    const pending = loadDmoLocalVoiceModel((progress) => {
       if (progress.status === 'backend') {
         localVoiceBackendRef.current = progress.backend === 'wasm' ? 'wasm' : 'unknown';
         setVoiceStatus(progress.backend === 'server'
@@ -257,15 +248,13 @@ export function useDmoCommentary({
       if (progress.status === 'warmup') {
         setVoiceStatus('Testing the commentary voice before it starts.');
       }
-      if (progress.status === 'progress' && typeof progress.progress === 'number') {
+      if (progress.status === 'progress' && typeof progress.progress === 'number'
+        && !localModelRef.current) {
         setVoiceStatus(
           `Loading local voice model: ${Math.round(progress.progress)}% (first use downloads about 92 MB).`,
         );
       }
-    // A quantized first-use model is about 92 MB. Slow connections can
-    // legitimately need more than 60 seconds; show progress instead of
-    // silently timing out before the download can finish.
-    }), 300_000)
+    })
       .then((model) => {
         localModelRef.current = model;
         if (model) {
@@ -293,13 +282,8 @@ export function useDmoCommentary({
     return pending;
   }, [localVoiceSupported]);
 
-  useEffect(() => {
-    if (!fullReplay && !soundEnabled) return;
-    // Warm the voice before playback commentary is requested. Replay viewers
-    // can begin preparing as soon as the match opens; live viewers prepare
-    // once they enable broadcast audio.
-    void ensureLocalVoiceModel();
-  }, [ensureLocalVoiceModel, fullReplay, soundEnabled]);
+  // Voice preparation starts only when commentary is enabled. The replay page
+  // should not download the local model or spend CPU for viewers who opt out.
 
   const playLocalSpeech = useCallback((
     lines: readonly string[],
@@ -332,19 +316,15 @@ export function useDmoCommentary({
             : `Generating commentary locally${backendSuffix}.`);
           let phase = 'local speech generation';
           try {
-            const audio = await withVoiceSlowNotice(
+            // Skip a stale point call after the deadline, but let the worker
+            // finish and cache it without blocking replay rendering.
+            const audio = await withVoiceDeadline(
               model.generate(lines[index], {
                 voice: speaker === 'female' ? 'af_heart' : 'am_michael',
                 speed: 1.03,
+                priority: 'high',
               }),
-              30_000,
-              () => {
-                if (session === localSpeechSessionRef.current && soundEnabledRef.current) {
-                  setVoiceStatus(model.dmoVoiceSource === 'server'
-                    ? 'Kokoro is still generating with the WTSL voice; waiting for the current request.'
-                    : `Kokoro is still generating locally${backendSuffix}; waiting instead of cancelling the request.`);
-                }
-              },
+              LINE_DEADLINE_MS,
             );
             if (session !== localSpeechSessionRef.current || !soundEnabledRef.current) {
               return { status: 'cancelled' };
@@ -585,6 +565,7 @@ export function useDmoCommentary({
     enabledRef.current = true;
     generationFailuresRef.current = 0;
     lastStatsPointRef.current = currentPointNumber(playbackState().frame);
+    prefetchedPointsRef.current.clear();
     setEnabled(true);
     lastRallyCommentaryPointRef.current = null;
     rallyCommentedPointsRef.current.clear();
@@ -616,7 +597,7 @@ export function useDmoCommentary({
       }
     } else {
       if (!localVoiceLoadingRef.current) {
-        setVoiceStatus('Preparing Kokoro; commentary will start when it is ready.');
+        setVoiceStatus('Preparing Kokoro; commentary will start when a voice is ready.');
       }
       void ensureLocalVoiceModel().then((model) => {
         if (request !== requestRef.current || !enabledRef.current || !soundEnabledRef.current) return;
@@ -713,6 +694,7 @@ export function useDmoCommentary({
     recentCommentaryLinesRef.current = [];
     lastReplayFrameRef.current = replayFrame;
     rallyCommentedPointsRef.current.clear();
+    prefetchedPointsRef.current.clear();
     clearPendingCommentary();
     cancelCommentarySpeech();
     enabledRef.current = false;
@@ -825,16 +807,17 @@ export function useDmoCommentary({
 
   useEffect(() => {
     if (!enabled || !kokoroReady) return;
-    const submitPoint = (point: DmoCommentaryPoint, history: readonly DmoCommentaryPoint[]) => {
+    const planPointSpeech = (
+      point: DmoCommentaryPoint,
+      history: readonly DmoCommentaryPoint[],
+      suppressRallyCommentary: boolean,
+    ) => {
       const pointNumber = point.number ?? 0;
-      const enriched = withDmoCommentaryHistory({
-        ...point,
-        suppressRallyCommentary: rallyCommentedPointsRef.current.delete(pointNumber),
-      }, history);
+      const enriched = withDmoCommentaryHistory({ ...point, suppressRallyCommentary }, history);
       const mustDeliver = isDmoGameEnding(enriched);
       const recentLines = recentCommentaryLinesRef.current;
       const line = buildDmoPointCommentary(enriched, names, recentLines);
-      if (!line) return;
+      if (!line) return null;
       // Keep game wrap-ups concise, with a score reply after a set or match.
       // Break, set, and match-point calls stand alone before the next serve.
       const reply = mustDeliver
@@ -842,15 +825,51 @@ export function useDmoCommentary({
         : dmoPressureAfterPoint(enriched)
           ? ''
           : buildDmoCommentaryFollowUp({ names, point: enriched, leadLine: line, recentLines });
+      const firstSpeaker: CommentarySpeaker = pointNumber % 2 === 0 ? 'male' : 'female';
+      return { pointNumber, line, reply, mustDeliver, firstSpeaker };
+    };
+    const submitPoint = (point: DmoCommentaryPoint, history: readonly DmoCommentaryPoint[]) => {
+      const plan = planPointSpeech(
+        point,
+        history,
+        rallyCommentedPointsRef.current.delete(point.number ?? 0),
+      );
+      if (!plan) return;
+      const { pointNumber, line, reply, mustDeliver, firstSpeaker } = plan;
       const priorityCall = isPriorityPointCall(line);
       scheduleSpeech(reply ? [line, reply] as const : line, {
         delayMs: 250,
         minimumGapMs: priorityCall ? 2_000 : pointNumber <= 8 ? 8_000 : 10_000,
         maxWaitMs: priorityCall ? 8_000 : 9_000,
         pointFrame: point.frame,
-        firstSpeaker: pointNumber % 2 === 0 ? 'male' : 'female',
+        firstSpeaker,
         mustDeliver,
       });
+    };
+    /**
+     * Replays know what comes next: prepare the next point's call while the
+     * current one plays, so it can be heard the moment that point ends.
+     */
+    const prefetchNextPoint = () => {
+      const model = localModelRef.current;
+      if (!model?.prefetch) return;
+      const upcoming = commentaryPoints.find((point) => point.frame > lastReplayFrameRef.current);
+      if (!upcoming || prefetchedPointsRef.current.has(upcoming.number ?? -1)) return;
+      prefetchedPointsRef.current.add(upcoming.number ?? -1);
+      const plan = planPointSpeech(
+        upcoming,
+        commentaryPoints,
+        rallyCommentedPointsRef.current.has(upcoming.number ?? 0),
+      );
+      if (!plan) return;
+      const voiceFor = (speaker: CommentarySpeaker) => (speaker === 'female' ? 'af_heart' : 'am_michael');
+      model.prefetch(plan.line, { voice: voiceFor(plan.firstSpeaker), speed: 1.03 });
+      if (plan.reply) {
+        model.prefetch(plan.reply, {
+          voice: voiceFor(plan.firstSpeaker === 'female' ? 'male' : 'female'),
+          speed: 1.03,
+        });
+      }
     };
     if (fullReplay) {
       const previousFrame = lastReplayFrameRef.current;
@@ -858,6 +877,7 @@ export function useDmoCommentary({
         lastReplayFrameRef.current = replayFrame;
         lastStatsPointRef.current = currentPointNumber(replayFrame);
         rallyCommentedPointsRef.current.clear();
+        prefetchedPointsRef.current.clear();
         clearPendingCommentary();
         cancelCommentarySpeech();
         return;
@@ -870,6 +890,7 @@ export function useDmoCommentary({
       for (const point of gamePoints.length ? gamePoints : duePoints.slice(-1)) {
         submitPoint(point, commentaryPoints);
       }
+      prefetchNextPoint();
       return;
     }
 
