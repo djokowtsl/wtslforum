@@ -137,3 +137,35 @@ test('a viewer part-way through gets clips from their position stored first', ()
   assert.deepEqual(order(cues, null).map((cue) => cue.clip), cues.map((cue) => cue.clip));
   assert.deepEqual(order(cues, 1000).map((cue) => cue.clip), ['join1', 'p2', 'p3', 'open', 'p1', 'join2']);
 });
+
+test('clips made elsewhere are stored, counted, and complete the track', async () => {
+  const blobs = new Map(); const botCalls = [];
+  const track = loadTrackModule({ blobs, botCalls, contextCalls: [] });
+  const built = await track.getDmoCommentaryTrack(replay, async () => viewer, 'store');
+  const before = await track.listMissingDmoCommentaryClips(built, 'store');
+  assert.equal(before.missing.length, before.total);
+  for (const line of before.missing) await track.storeDmoCommentaryClip(line.clip, new Uint8Array([0xff, 0xfb, 0, 0]), 'store');
+  const after = await track.listMissingDmoCommentaryClips(built, 'store');
+  assert.equal(after.missing.length, 0);
+  await track.markDmoCommentaryTrackComplete(replay, built, 'store');
+  const fresh = loadTrackModule({ blobs, botCalls, contextCalls: [] });
+  assert.equal((await fresh.getDmoCommentaryTrack(replay, async () => viewer, 'store')).complete, true);
+  assert.equal(botCalls.length, 0, 'the bot was never asked');
+});
+
+test('the bot makes missing clips by default; switching it off only stops that', async () => {
+  const blobs = new Map(); const botCalls = [];
+  const track = loadTrackModule({ blobs, botCalls, contextCalls: [] });
+  const built = await track.getDmoCommentaryTrack(replay, async () => viewer, 'store');
+  assert.equal(track.dmoCommentaryBotGenerationEnabled(), true);
+  process.env.DMO_COMMENTARY_BOT_GENERATION = 'off';
+  try {
+    await assert.rejects(track.getDmoCommentaryClip(built, built.cues[0].clip, 'store'), /not been made yet/);
+    assert.equal((await track.prepareDmoCommentaryClips(replay, built, 'store')).ready, 0);
+    assert.equal(botCalls.length, 0);
+  } finally {
+    delete process.env.DMO_COMMENTARY_BOT_GENERATION;
+  }
+  assert.ok(await track.getDmoCommentaryClip(built, built.cues[0].clip, 'store'));
+  assert.equal(botCalls.length, 1);
+});

@@ -2,7 +2,7 @@ import { NextResponse } from 'next/server';
 import { getSession } from '@/lib/auth';
 import { isDmoReplayId } from '@/lib/dmoReplayLibrary';
 import { findViewableDmoReplay, loadDmoReplayViewer } from '@/lib/dmoReplayViewerData';
-import { getDmoCommentaryClip, getDmoCommentaryTrack } from '@/lib/dmoCommentaryTrack';
+import { DmoCommentaryClipNotReady, getDmoCommentaryClip, getDmoCommentaryTrack } from '@/lib/dmoCommentaryTrack';
 import { isWtslSyncAuthorized } from '@/lib/wtslSyncAuth';
 import {
   COMMENTARY_MAINTENANCE_MESSAGE,
@@ -69,6 +69,19 @@ export async function GET(
       },
     });
   } catch (error) {
+    if (error instanceof DmoCommentaryClipNotReady) {
+      return NextResponse.json(
+        { error: error.message },
+        {
+          status: 503,
+          headers: {
+            ...ERROR_HEADERS,
+            'X-WTSL-Commentary-Busy': 'true',
+            'Retry-After': '60',
+          },
+        },
+      );
+    }
     const speechError = error as Error & { busy?: boolean; retryAfter?: string };
     const headers = speechError.busy
       ? {

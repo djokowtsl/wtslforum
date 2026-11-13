@@ -185,8 +185,75 @@ export async function generateDmoCommentaryClip(
 export async function getDmoCommentaryClip(track: DmoCommentaryTrack, clip: string, storeId: string) {
   const cue = track.cues.find((candidate) => candidate.clip === clip);
   if (!cue) return null;
-  return (await readDmoCommentaryClip(clip, storeId)) ?? generateDmoCommentaryClip(cue, storeId);
+  const stored = await readDmoCommentaryClip(clip, storeId);
+  if (stored) return stored;
+  if (!dmoCommentaryBotGenerationEnabled()) throw new DmoCommentaryClipNotReady();
+  return generateDmoCommentaryClip(cue, storeId);
 }
+
+/** The clip exists in the script but hasn't been made yet. */
+export class DmoCommentaryClipNotReady extends Error {
+  constructor() {
+    super('This commentary line has not been made yet.');
+  }
+}
+
+/**
+ * Whether the Forum may ask the bot to make missing clips. Set
+ * DMO_COMMENTARY_BOT_GENERATION=off when clips are built elsewhere (the PC
+ * builder), so viewers can never load the bot with speech work.
+ */
+export function dmoCommentaryBotGenerationEnabled() {
+  return (process.env.DMO_COMMENTARY_BOT_GENERATION ?? '').trim().toLowerCase() !== 'off';
+}
+
+/** One entry per distinct clip in the track, in script order. */
+function uniqueClips(track: DmoCommentaryTrack) {
+  const seen = new Set<string>();
+  return track.cues.filter((cue) => !seen.has(cue.clip) && Boolean(seen.add(cue.clip)));
+}
+
+/** The track's lines whose clips are not stored yet (checked ten at a time). */
+export async function listMissingDmoCommentaryClips(track: DmoCommentaryTrack, storeId: string) {
+  const clips = uniqueClips(track);
+  if (track.complete) return { missing: [] as DmoCommentaryCue[], total: clips.length };
+  const missing: DmoCommentaryCue[] = [];
+  for (let index = 0; index < clips.length; index += 10) {
+    const batch = clips.slice(index, index + 10);
+    const exists = await Promise.all(batch.map((cue) => dmoCommentaryClipExists(cue.clip, storeId)));
+    batch.forEach((cue, position) => { if (!exists[position]) missing.push(cue); });
+  }
+  return { missing, total: clips.length };
+}
+
+/** Store an MP3 made elsewhere (the PC builder) under its clip name. */
+export async function storeDmoCommentaryClip(clip: string, audio: Uint8Array, storeId: string) {
+  await put(clipPath(clip), Buffer.from(audio), {
+    access: 'private',
+    storeId,
+    addRandomSuffix: false,
+    allowOverwrite: true,
+    contentType: 'audio/mpeg',
+  });
+}
+
+/** Record that every clip is stored, so nothing checks or prepares it again. */
+export async function markDmoCommentaryTrackComplete(
+  replay: CommentaryReplay,
+  track: DmoCommentaryTrack,
+  storeId: string,
+) {
+  const key = scriptPath(replay.id, replay.privateBlobPathname);
+  remember(key, { ...track, complete: true });
+  await put(key, JSON.stringify({ ...track, complete: true }), {
+    access: 'private',
+    storeId,
+    addRandomSuffix: false,
+    allowOverwrite: true,
+    contentType: 'application/json',
+  }).catch(() => undefined);
+}
+
 
 /**
  * The order to store clips in. From the start of the replay by default; when
@@ -225,6 +292,7 @@ export async function prepareDmoCommentaryClips(
 ) {
   const total = new Set(track.cues.map((cue) => cue.clip)).size;
   if (track.complete) return { ready: total, total };
+  if (!dmoCommentaryBotGenerationEnabled()) return { ready: 0, total };
   const deadline = Date.now() + budgetMs;
   const seen = new Set<string>();
   let ready = 0;
@@ -243,16 +311,6 @@ export async function prepareDmoCommentaryClips(
       break; // The bot is unavailable; viewers' requests will retry per clip.
     }
   }
-  if (ready === total) {
-    const key = scriptPath(replay.id, replay.privateBlobPathname);
-    remember(key, { ...track, complete: true });
-    await put(key, JSON.stringify({ ...track, complete: true }), {
-      access: 'private',
-      storeId,
-      addRandomSuffix: false,
-      allowOverwrite: true,
-      contentType: 'application/json',
-    }).catch(() => undefined);
-  }
+  if (ready === total) await markDmoCommentaryTrackComplete(replay, track, storeId);
   return { ready, total };
 }
