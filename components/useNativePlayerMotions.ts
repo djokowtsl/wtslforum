@@ -101,9 +101,20 @@ export function useNativePlayerMotions({
     let active = true;
     let inFlight = false;
     let requestController: AbortController | null = null;
+    // What was last handed to the court. Live broadcasts re-check every 10
+    // seconds; the court rebuilds its whole 3D scene whenever `sources`
+    // changes, so an unchanged answer must never produce a new value.
+    let appliedPicks: string | null = null;
+    let appliedGrunts = '';
+    const applyGrunts = (next: [DmoCharacterGruntSetting, DmoCharacterGruntSetting]) => {
+      const key = JSON.stringify(next);
+      if (key === appliedGrunts) return;
+      appliedGrunts = key;
+      setPlayerGruntSettings(next);
+    };
     setSources([null, null]);
     setError('');
-    setPlayerGruntSettings([
+    applyGrunts([
       getDmoCharacterGruntSetting(playerOne),
       getDmoCharacterGruntSetting(playerTwo),
     ]);
@@ -136,7 +147,7 @@ export function useNativePlayerMotions({
         }
         const resolvedGrunts = payload.playerGruntSettings
           ?? [getDmoCharacterGruntSetting(playerOne), getDmoCharacterGruntSetting(playerTwo)];
-        if (active) setPlayerGruntSettings(resolvedGrunts);
+        if (active) applyGrunts(resolvedGrunts);
         const profiles = new Map(payload.profiles.map((profile) => [profile.profileKey, profile]));
         const selected = payload.playerProfileKeys.map((key) => key ? profiles.get(key) ?? null : null) as [
           NativeMotionProfile | null,
@@ -147,8 +158,14 @@ export function useNativePlayerMotions({
           mergeNativeMotionPicks(selected[0]?.clips, direct[orderOne]),
           mergeNativeMotionPicks(selected[1]?.clips, direct[orderTwo]),
         ];
+        const picksKey = JSON.stringify(chosenPicks);
+        // Same animations as last time: nothing to load, nothing to change.
+        if (picksKey === appliedPicks) return;
         if (!chosenPicks.some((picks) => Object.keys(picks).length)) {
-          if (active) setSources([null, null]);
+          if (active) {
+            appliedPicks = picksKey;
+            setSources([null, null]);
+          }
           return;
         }
 
@@ -188,14 +205,18 @@ export function useNativePlayerMotions({
         };
         const next: SourcePair = [sourceFor(chosenPicks[0]), sourceFor(chosenPicks[1])];
         if (active) {
+          appliedPicks = picksKey;
           setSources(next);
           setError('');
         }
       } catch (cause) {
+        // A failed re-check during a broadcast keeps the animations already
+        // showing; only a failed first load falls back to standard motion.
+        if (appliedPicks !== null) return;
         if (active && !(cause instanceof DOMException && cause.name === 'AbortError')) {
           setError('Saved character animations could not be loaded; standard replay motion is active.');
           setSources([null, null]);
-          setPlayerGruntSettings([
+          applyGrunts([
             getDmoCharacterGruntSetting(playerOne),
             getDmoCharacterGruntSetting(playerTwo),
           ]);
