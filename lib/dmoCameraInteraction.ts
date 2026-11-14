@@ -35,3 +35,15 @@ export function fullscreenCameraView<T extends string>(
 ): T | 'custom' {
   return fullscreen && !wasFullscreen && current === 'custom' ? selected : current;
 }
+
+/** Rotate a position or target halfway around the court's vertical axis. */
+export function swapCourtEnd(point: { x: number; y: number; z: number }) {
+  return { x: -point.x, y: point.y, z: -point.z };
+}
+
+/** A player camera from the other end is the other player's same camera. */
+export function otherEndPlayerView<T extends string>(view: T): T {
+  if (view.startsWith('player-one-')) return view.replace('player-one-', 'player-two-') as T;
+  if (view.startsWith('player-two-')) return view.replace('player-two-', 'player-one-') as T;
+  return view;
+}

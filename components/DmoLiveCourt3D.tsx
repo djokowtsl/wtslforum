@@ -4,7 +4,12 @@ import { useCallback, useEffect, useRef, useState } from 'react';
 import { ChevronLeft, ChevronRight, Minus, Pause, Play, Plus, RotateCcw, Volume2, VolumeX } from 'lucide-react';
 import * as THREE from 'three';
 import { OrbitControls } from 'three/examples/jsm/controls/OrbitControls.js';
-import { fullscreenCameraView, observeDmoManualCamera } from '@/lib/dmoCameraInteraction';
+import {
+  fullscreenCameraView,
+  observeDmoManualCamera,
+  otherEndPlayerView,
+  swapCourtEnd,
+} from '@/lib/dmoCameraInteraction';
 import {
   LIVE_DMO_EVENT_SYNC_BUFFER_FRAMES,
   LIVE_DMO_UPDATE_INTERVAL_MS,
@@ -469,6 +474,9 @@ function ThreeCourt({
   const cameraViewRef = useRef<CameraView>(initialCameraView);
   const selectedCameraViewRef = useRef<Exclude<CameraView, 'custom'>>(initialCameraView);
   const playerCameraPanRef = useRef(0);
+  // Watch from the other end of the court; kept across camera presets.
+  const endsSwappedRef = useRef(false);
+  const [endsSwapped, setEndsSwapped] = useState(false);
   const [cameraView, setCameraView] = useState<CameraView>(initialCameraView);
   useEffect(() => {
     cameraViewRef.current = initialCameraView;
@@ -1041,6 +1049,10 @@ function ThreeCourt({
         camera.position.set(0, Math.min(32, cameraMaxDistance * 0.98), 0.1);
         controls.target.set(0, 0.5, 0);
         cameraTargetAnchor.copy(controls.target);
+      }
+      if (endsSwappedRef.current && (activeView === 'court' || activeView === 'tv' || activeView === 'aerial')) {
+        const swapped = swapCourtEnd(camera.position);
+        camera.position.set(swapped.x, swapped.y, swapped.z);
       }
       controls.maxDistance = maxDistanceForTarget(cameraTargetAnchor);
       controls.minDistance = Math.min(preferredCameraMinDistance, controls.maxDistance);
@@ -2730,7 +2742,11 @@ function ThreeCourt({
           camera.position.copy(DEFAULT_CAMERA).multiplyScalar(narrowScale);
         }
       }
-      else {
+      if (endsSwappedRef.current && !view.startsWith('player-')) {
+        const swapped = swapCourtEnd(camera.position);
+        camera.position.set(swapped.x, swapped.y, swapped.z);
+      }
+      if (view.startsWith('player-')) {
         const playerIndex = view.startsWith('player-two') ? 1 : 0;
         const player = players[playerIndex];
         const forward = new THREE.Vector3(
@@ -2767,6 +2783,24 @@ function ThreeCourt({
       controls.update();
     };
     const reset = () => preset(initialCameraView);
+    // Presets swap ends; player views keep their camera type; custom views
+    // turn both the camera and its target around the centre of the court.
+    const swapEnds = () => {
+      endsSwappedRef.current = !endsSwappedRef.current;
+      setEndsSwapped(endsSwappedRef.current);
+      const view = cameraViewRef.current;
+      if (view === 'custom') {
+        const position = swapCourtEnd(camera.position);
+        const target = swapCourtEnd(controls.target);
+        camera.position.set(position.x, position.y, position.z);
+        controls.target.set(target.x, target.y, target.z);
+        cameraTargetAnchor.copy(controls.target);
+        controls.maxDistance = maxDistanceForTarget(cameraTargetAnchor);
+        controls.update();
+      } else {
+        preset(otherEndPlayerView(view));
+      }
+    };
     const onZoom = (event: Event) => zoom((event as CustomEvent<number>).detail);
     const onPreset = (event: Event) =>
       preset((event as CustomEvent<Exclude<CameraView, 'custom'>>).detail);
@@ -2779,6 +2813,7 @@ function ThreeCourt({
     viewport.addEventListener('courtreset', reset);
     viewport.addEventListener('courtpreset', onPreset);
     viewport.addEventListener('courtplayerpan', onPlayerPan);
+    viewport.addEventListener('courtswapends', swapEnds);
 
     return () => {
       if (crowdRigRef.current === crowdRig) crowdRigRef.current = null;
@@ -2798,6 +2833,7 @@ function ThreeCourt({
       viewport.removeEventListener('courtreset', reset);
       viewport.removeEventListener('courtpreset', onPreset);
       viewport.removeEventListener('courtplayerpan', onPlayerPan);
+      viewport.removeEventListener('courtswapends', swapEnds);
       renderer.dispose();
       renderer.domElement.remove();
       if (canvasElementRef.current === renderer.domElement) canvasElementRef.current = null;
@@ -2844,6 +2880,7 @@ function ThreeCourt({
     viewportRef.current?.dispatchEvent(new CustomEvent('courtpreset', { detail: view }));
   };
   const resetCamera = () => viewportRef.current?.dispatchEvent(new Event('courtreset'));
+  const requestSwapEnds = () => viewportRef.current?.dispatchEvent(new Event('courtswapends'));
   const changePlayerCameraPan = (pan: number) => {
     viewportRef.current?.dispatchEvent(new CustomEvent<number>('courtplayerpan', { detail: pan }));
   };
@@ -3112,6 +3149,14 @@ function ThreeCourt({
             <button type="button" aria-pressed={cameraView === 'court'} onClick={() => setPreset('court')}>Court</button>
             <button type="button" aria-pressed={cameraView === 'aerial'} onClick={() => setPreset('aerial')}>Aerial</button>
             <button type="button" aria-pressed={cameraView === 'tv'} onClick={() => setPreset('tv')}>TV view</button>
+            <button
+              type="button"
+              aria-pressed={endsSwapped}
+              onClick={requestSwapEnds}
+              title="View from the other end of the court. In a player view, switches to the other player."
+            >
+              Swap ends
+            </button>
           </div>
           <div className={styles.presets} role="group" aria-label="Broadcast time of day">
             {BROADCAST_TIME_OF_DAY_OPTIONS.map(option => (

@@ -23,6 +23,8 @@ import { consumePendingDmoReaderReset } from '@/lib/dmoReaderState';
 import { hasPlayerPositionData } from '@/lib/te4LiveSetup';
 import { isPresignedUrlRetrievalFailure } from '@/lib/dmoUploadErrors';
 import { attemptFullReplayPreparation } from '@/lib/liveReplayPreparation';
+import { startBackgroundTicker } from '@/lib/backgroundTicker.mjs';
+import LiveStreamAnimationPicker from './LiveStreamAnimationPicker';
 import {
   fetchLiveDmoResponse,
   reconcileLiveDmoSequence,
@@ -433,10 +435,10 @@ export default function DmoLiveHost({ displayName, canPrepareFullReplay }: Props
       }
     };
     void refreshDmoFiles();
-    const interval = window.setInterval(() => { void refreshDmoFiles(); }, 5_000);
+    const stopTicker = startBackgroundTicker(() => { void refreshDmoFiles(); }, 5_000);
     return () => {
       cancelled = true;
-      window.clearInterval(interval);
+      stopTicker();
     };
   }, [directory]);
 
@@ -1222,10 +1224,10 @@ export default function DmoLiveHost({ displayName, canPrepareFullReplay }: Props
     };
 
     void pollFolder();
-    const interval = window.setInterval(() => { void pollFolder(); }, LIVE_DMO_UPDATE_INTERVAL_MS);
+    const stopTicker = startBackgroundTicker(() => { void pollFolder(); }, LIVE_DMO_UPDATE_INTERVAL_MS);
     return () => {
       cancelled = true;
-      window.clearInterval(interval);
+      stopTicker();
       requestController.abort();
       // Keep the shared lock until an in-flight poll reaches its `finally`.
     };
@@ -1404,6 +1406,13 @@ export default function DmoLiveHost({ displayName, canPrepareFullReplay }: Props
                     ? 'Characters saved'
                     : 'Save characters'}
             </button>
+          )}
+          {broadcastId && (
+            <LiveStreamAnimationPicker
+              broadcastId={broadcastId}
+              open={[!savedBroadcastCharacter.trim(), !savedBroadcastOpponentCharacter.trim()]}
+              labels={['Your player', 'Opponent']}
+            />
           )}
         </div>
         <button type="button" className={styles.secondaryButton} onClick={chooseFolder} disabled={busy || Boolean(broadcastId)}>
