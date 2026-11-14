@@ -388,3 +388,99 @@ test('the existing slice path uses assigned slice timing, never the ordinary dri
   assert.equal(bundledCaptureTiming(source, { stroke: 'forehand', smash: true }).leadFrames, 75);
   assert.equal(bundledCaptureTiming({ clips: {} }, { stroke: 'backhand', slice: true }), undefined);
 });
+
+test('a live broadcast re-check with unchanged animations never hands the court new ones', async () => {
+  // The court rebuilds its whole 3D scene when the animations change, so a
+  // re-check every 10 seconds used to rebuild a live stream every 10 seconds.
+  const sourceChanges = [];
+  const gruntChanges = [];
+  const requests = [];
+  const oldFetch = globalThis.fetch;
+  const oldWindow = globalThis.window;
+  let stateIndex = 0;
+  let poll;
+  let cleanup;
+  let failProfiles = false;
+  let failClips = false;
+  let selectedPick = pick;
+  globalThis.window = { setInterval: (fn) => { poll = fn; return 1; }, clearInterval: () => {} };
+  globalThis.fetch = async (input) => {
+    const url = String(input);
+    requests.push(url);
+    if (url.startsWith('/api/native-motion/profiles?')) {
+      if (failProfiles) return new Response('busy', { status: 503 });
+      return Response.json({
+        playerProfileKeys: ['djokovic', null],
+        profiles: [{ profileKey: 'djokovic', clips: selectedPick ? { forehand: selectedPick } : {} }],
+      });
+    }
+    if (url.endsWith('/catalog.json')) return Response.json({
+      format: 'WTMC1', rig: { modelHash: 'test-rig' },
+      clips: [
+        { id: 'a1_b1', duration: 1, events: { kind: 'strike', contactTime: 0.5 } },
+        { id: 'a2_b2', duration: 1, events: { kind: 'strike', contactTime: 0.5 } },
+      ],
+    });
+    if (failClips) return new Response('busy', { status: 503 });
+    return new Response(new TextEncoder().encode('clip'));
+  };
+  const settle = async () => { for (let i = 0; i < 20; i++) await new Promise((resolve) => setTimeout(resolve, 5)); };
+  try {
+    const hook = load('components/useNativePlayerMotions.ts', {
+      react: {
+        useState: (initial) => {
+          const index = stateIndex++;
+          return [initial, (value) => {
+            if (index === 0) sourceChanges.push(value);
+            if (index === 1) gruntChanges.push(value);
+          }];
+        },
+        useEffect: (effect) => { cleanup = effect(); },
+      },
+      '@/lib/dmoBundledMotion.mjs': { decodeBundledMotion: () => ({ selected: 'clip' }) },
+      '@/lib/nativeMotionCatalog': { NATIVE_MOTION_CATALOG_SHA256: 'catalog-hash' },
+      '@/lib/nativeMotionCatalogData': catalogData,
+      '@/lib/dmoCharacterAppearance.mjs': characterGrunts,
+    });
+    hook.useNativePlayerMotions({ playerNames: ['Djokovic', 'Federer'], broadcastId });
+    await settle();
+    const loaded = sourceChanges.filter((value) => value[0]);
+    assert.equal(loaded.length, 1, 'the animations load once');
+    const clipRequests = requests.filter((url) => url.endsWith('.wtm')).length;
+
+    await poll(); await settle();
+    await poll(); await settle();
+    assert.equal(sourceChanges.filter((value) => value[0]).length, 1, 'unchanged re-checks change nothing');
+    assert.equal(requests.filter((url) => url.endsWith('.wtm')).length, clipRequests, 'and download nothing');
+    assert.equal(gruntChanges.length, 1, 'grunt settings are not re-sent either');
+
+    failProfiles = true;
+    await poll(); await settle();
+    assert.equal(sourceChanges.at(-1), loaded[0], 'a failed re-check keeps the current animations');
+
+    failProfiles = false;
+    selectedPick = alternate;
+    failClips = true;
+    await poll(); await settle();
+    assert.equal(sourceChanges.at(-1), loaded[0], 'a failed replacement clip keeps the current animations');
+
+    failClips = false;
+    await poll(); await settle();
+    assert.equal(sourceChanges.filter((value) => value[0]).length, 2, 'an admin animation change applies on the next poll');
+    assert.equal(sourceChanges.at(-1)[0].clips.forehand.sourceHandedness, 'left');
+    const replacement = sourceChanges.at(-1);
+    await poll(); await settle();
+    assert.equal(sourceChanges.at(-1), replacement, 'the replacement remains stable on later polls');
+
+    selectedPick = null;
+    await poll(); await settle();
+    assert.deepEqual(sourceChanges.at(-1), [null, null], 'removing saved choices switches to standard motion');
+    const cleared = sourceChanges.at(-1);
+    await poll(); await settle();
+    assert.equal(sourceChanges.at(-1), cleared, 'empty choices also remain stable');
+  } finally {
+    cleanup?.();
+    globalThis.fetch = oldFetch;
+    globalThis.window = oldWindow;
+  }
+});
