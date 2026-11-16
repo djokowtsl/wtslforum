@@ -32,11 +32,15 @@ export type NativeMotionCatalogClip = {
   accelerationVariant: boolean;
   sourceHandedness: NativeMotionHand | null;
   events: {
-    kind: 'strike' | 'serve' | 'serve-waiting';
+    kind: 'strike' | 'serve' | 'serve-waiting' | 'gesture';
     contactTime?: number;
     maxExtensionTime?: number;
     tossTime?: number;
+    /** For gestures: the Tennis Elbow gesture type, e.g. 'CheerFist'. */
+    gesture?: string;
   } | null;
+  /** For gestures from a gesture mod: the mod's name, e.g. 'MyGestures'. */
+  gestureMod?: string | null;
 };
 
 export type NativeMotionCharacterDefaults =
@@ -199,4 +203,14 @@ export function nativeMotionClipSupportsStroke(
     && Number.isFinite(contactTime)
     && contactTime >= 0
     && contactTime <= clip.duration;
+}
+
+/**
+ * The catalog's animations for one Tennis Elbow gesture type ('CheerFist',
+ * 'Stupid' ...), e.g. a gesture mod's "siu" fist pump. Never strokes.
+ */
+export function nativeMotionGestureClips(catalog: NativeMotionCatalog | null | undefined, gesture: string) {
+  return (catalog?.clips ?? []).filter((clip) => (
+    clip.events?.kind === 'gesture' && clip.events.gesture === gesture && !clip.hidden
+  ));
 }
