@@ -20,7 +20,8 @@ export interface BundledClipBinding {
 export interface BundledMotionSource {
   schema: BundledRigSchema;
   clips: Partial<Record<BundledStrokeName, BundledClipBinding>>;
-  gestures?: Readonly<Record<string, BundledMotionClip>>;
+  /** Each gesture type's animations; one is chosen per gesture (see variant). */
+  gestures?: Readonly<Record<string, BundledMotionClip | readonly BundledMotionClip[]>>;
 }
 
 const BODY = new Set([
@@ -130,8 +131,10 @@ export class DmoBundledGroundstroke {
     return !playback.readyPose && Boolean(this.source.clips[this.key(playback)]);
   }
 
-  applyGesture(type: string, time: number, weight: number) {
-    const clip = this.source.gestures?.[type];
+  applyGesture(type: string, time: number, weight: number, variant = 0) {
+    const entry = this.source.gestures?.[type];
+    const set = Array.isArray(entry) ? entry : entry ? [entry as BundledMotionClip] : [];
+    const clip = set.length ? set[Math.abs(Math.trunc(variant)) % set.length] : undefined;
     if (!clip || !Number.isFinite(time) || !Number.isFinite(weight)) return;
     const blend = THREE.MathUtils.clamp(weight, 0, 1);
     if (blend <= 0) return;

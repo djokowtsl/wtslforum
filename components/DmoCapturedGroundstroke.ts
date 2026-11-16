@@ -448,8 +448,8 @@ export class DmoCapturedGroundstroke {
     return pairs;
   }
 
-  applyGesture(type: string, time: number, weight: number) {
-    this.bundled?.applyGesture(type, time, weight);
+  applyGesture(type: string, time: number, weight: number, variant = 0) {
+    this.bundled?.applyGesture(type, time, weight, variant);
   }
 
   apply(playback: GroundstrokePlayback): CapturedBodyHints | null {

@@ -9,6 +9,8 @@ import {
   NATIVE_MOTION_STROKES,
   nativeMotionClipSupportsStroke,
   nativeMotionGestureClips,
+  nativeMotionGestureClipIds,
+  NATIVE_MOTION_GESTURE_SET_LIMIT,
   type NativeMotionGesturePicks,
   type NativeMotionPicks,
 } from '@/lib/nativeMotionCatalogData';
@@ -27,8 +29,11 @@ const clipsSchema = z.object({
   'slice-forehand': pickSchema.optional(),
   'slice-backhand': pickSchema.optional(),
 }).strict();
+const gestureClipIdSchema = z.string().regex(/^[a-f0-9]+_[a-f0-9]+$/i).max(80);
+// One animation, or a set the court plays in turn (`clipIds`, first = clipId).
 const gesturePickSchema = z.object({
-  clipId: z.string().regex(/^[a-f0-9]+_[a-f0-9]+$/i).max(80),
+  clipId: gestureClipIdSchema,
+  clipIds: z.array(gestureClipIdSchema).min(1).max(NATIVE_MOTION_GESTURE_SET_LIMIT).optional(),
 }).strict();
 const gesturesSchema = z.record(z.string().min(1).max(40), gesturePickSchema);
 const gruntOverrideSchema = z.object({
@@ -206,7 +211,8 @@ export async function PUT(request: Request) {
       }
       for (const gestures of playerGestures) {
         for (const [type, pick] of Object.entries(gestures)) {
-          if (!nativeMotionGestureClips(catalog, type).some((clip) => clip.id === pick.clipId)) {
+          const available = new Set(nativeMotionGestureClips(catalog, type).map((clip) => clip.id));
+          if (!nativeMotionGestureClipIds(pick).every((id) => available.has(id))) {
             return NextResponse.json({ error: 'The selected clip is not available for that gesture.' }, {
               status: 400, headers: HEADERS,
             });

@@ -20,6 +20,8 @@ const {
   mergeNativeMotionPicks,
   nativeMotionCharacterDefaults,
   nativeMotionGestureClips,
+  nativeMotionGestureClipIds,
+  nativeMotionGesturePickFromIds,
 } = module.exports;
 
 function clip(id, overrides = {}) {
@@ -199,4 +201,15 @@ test('gesture animations are listed by gesture type and never offered as strokes
   for (const stroke of ['forehand', 'backhand', 'serve', 'slice-forehand', 'slice-backhand']) {
     assert.equal(nativeMotionClipSupportsStroke(siu, stroke), false);
   }
+});
+
+test('a gesture choice can hold a set of animations and stays readable by older code', () => {
+  assert.deepEqual(nativeMotionGesturePickFromIds(['a1_b1']), { clipId: 'a1_b1' });
+  assert.deepEqual(nativeMotionGesturePickFromIds(['a1_b1', 'a2_b2', 'a1_b1']),
+    { clipId: 'a1_b1', clipIds: ['a1_b1', 'a2_b2'] }, 'the first stays in clipId; repeats drop');
+  assert.equal(nativeMotionGesturePickFromIds([]), null);
+  assert.equal(nativeMotionGesturePickFromIds(Array.from({ length: 20 }, (_, i) => `a${i}_b`)).clipIds.length, 12);
+  assert.deepEqual(nativeMotionGestureClipIds({ clipId: 'a1_b1' }), ['a1_b1'], 'older single choices');
+  assert.deepEqual(nativeMotionGestureClipIds({ clipId: 'a1_b1', clipIds: ['a1_b1', 'a2_b2'] }), ['a1_b1', 'a2_b2']);
+  assert.deepEqual(nativeMotionGestureClipIds(undefined), []);
 });

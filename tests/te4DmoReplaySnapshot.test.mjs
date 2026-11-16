@@ -205,3 +205,8 @@ test('replay points say whether they ended on a winner or an error', () => {
   const snapshot = te4ViewerToLiveSnapshot(viewer);
   assert.deepEqual(snapshot.pointHistory.map((point) => point.endedBy), ['winner', 'error', 'error']);
 });
+
+test('the replay page shows when gesture animations could not load, like live streams do', async () => {
+  const player = await readFile(new URL('../components/Te4DmoReplayPlayer.tsx', import.meta.url), 'utf8');
+  assert.match(player, /\{nativeMotion\.gestureError && \(/);
+});

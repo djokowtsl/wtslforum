@@ -305,6 +305,9 @@ export default function Te4DmoReplayPlayer({
           {nativeMotion.error && (
             <p className={styles.classicError} role="status">{nativeMotion.error}</p>
           )}
+          {nativeMotion.gestureError && (
+            <p className={styles.classicError} role="status">{nativeMotion.gestureError}</p>
+          )}
           {replayScore && (
             <DmoReplayScoreBug players={viewer.names} score={replayScore} />
           )}
