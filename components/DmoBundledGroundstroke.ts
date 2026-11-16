@@ -33,6 +33,8 @@ const BODY = new Set([
 const UPPER = new Set([...BODY].filter(name => !/^(pelvis|thigh_|calf_|foot_|ball_)/.test(name)));
 const mirrorName = (name: string) => name.endsWith('_l') ? `${name.slice(0, -2)}_r`
   : name.endsWith('_r') ? `${name.slice(0, -2)}_l` : name;
+/** Most a gesture may shift the hips sideways from where the player stands (m). */
+const GESTURE_SWAY_LIMIT = 0.45;
 const reflect = (q: THREE.Quaternion) => new THREE.Quaternion(q.x, -q.y, -q.z, q.w).normalize();
 
 type StrokeChoice = Pick<GroundstrokePlayback, 'stroke' | 'slice' | 'smash' | 'readyPose'>;
@@ -71,6 +73,8 @@ export class DmoBundledGroundstroke {
   private readonly shadow: THREE.Object3D;
   private readonly shadows = new Map<string, THREE.Bone>();
   private readonly bindWorld = new Map<string, THREE.Quaternion>();
+  /** Each gesture clip's starting hip position, so it plays where the player stands. */
+  private readonly gestureStarts = new WeakMap<BundledMotionClip, THREE.Vector3>();
   private readonly ordered: THREE.Bone[];
   private readonly contacts = new WeakMap<BundledClipBinding, THREE.Vector3>();
   private readonly bindModelToSpace: THREE.Matrix4;
@@ -131,27 +135,75 @@ export class DmoBundledGroundstroke {
     return !playback.readyPose && Boolean(this.source.clips[this.key(playback)]);
   }
 
-  applyGesture(type: string, time: number, weight: number, variant = 0) {
+  /**
+   * Plays a gesture over the whole body, the same way a stroke is played:
+   * legs and hips included (crouches, jumps, bows), before the player's
+   * finishing pass (racket in hand, grip, wrist twist, shoes). The court keeps
+   * the player where they stand; the clip supplies crouch/jump height. Gesture
+   * clips are treated as right-handed and mirrored for left-handed players.
+   * Returns the weight applied (0 when there is nothing to play).
+   */
+  applyGesture(type: string, time: number, weight: number, variant = 0, handedness: 'left' | 'right' = 'right'): number {
     const entry = this.source.gestures?.[type];
     const set = Array.isArray(entry) ? entry : entry ? [entry as BundledMotionClip] : [];
     const clip = set.length ? set[Math.abs(Math.trunc(variant)) % set.length] : undefined;
-    if (!clip || !Number.isFinite(time) || !Number.isFinite(weight)) return;
+    if (!clip || !Number.isFinite(time) || !Number.isFinite(weight)) return 0;
     const blend = THREE.MathUtils.clamp(weight, 0, 1);
-    if (blend <= 0) return;
+    if (blend <= 0) return 0;
+    let start = this.gestureStarts.get(clip);
+    if (!start) {
+      this.sample(clip, 0);
+      start = this.shadows.get('pelvis')!.getWorldPosition(new THREE.Vector3());
+      this.gestureStarts.set(clip, start);
+    }
     this.sample(clip, THREE.MathUtils.clamp(time, 0, clip.duration));
+    const mirrored = handedness === 'left';
+    const base = this.ordered.map(bone => ({
+      bone, position: bone.position.clone(), rotation: bone.quaternion.clone(),
+    }));
     this.model.updateWorldMatrix(true, true);
     const modelRotation = this.model.getWorldQuaternion(new THREE.Quaternion());
     for (const bone of this.ordered) {
-      if (!UPPER.has(bone.name)) continue;
-      const sampled = this.shadows.get(bone.name);
-      if (!sampled) continue;
-      const rotation = sampled.getWorldQuaternion(new THREE.Quaternion());
+      const sourceName = mirrored ? mirrorName(bone.name) : bone.name;
+      const shadow = this.shadows.get(sourceName);
+      if (!shadow) continue;
+      let rotation = shadow.getWorldQuaternion(new THREE.Quaternion());
+      if (mirrored) {
+        rotation.multiply(this.bindWorld.get(sourceName)!.clone().invert());
+        rotation = reflect(rotation).multiply(this.bindWorld.get(bone.name)!);
+      }
       bone.parent!.updateWorldMatrix(true, false);
-      const target = bone.parent!.getWorldQuaternion(new THREE.Quaternion()).invert()
-        .multiply(modelRotation).multiply(rotation).normalize();
-      bone.quaternion.slerp(target, blend);
+      bone.quaternion.copy(bone.parent!.getWorldQuaternion(new THREE.Quaternion()).invert()
+        .multiply(modelRotation).multiply(rotation)).normalize();
+      if (bone.name === 'pelvis') {
+        // The clip's height (crouch, jump) and its small hip sway from where
+        // it starts, added to where the player stands, so the feet stay planted.
+        const offset = this.shadows.get('pelvis')!.getWorldPosition(new THREE.Vector3()).sub(start);
+        if (mirrored) offset.x *= -1;
+        const origin = new THREE.Vector3(0, start.y, 0).applyMatrix4(this.bindModelToSpace);
+        const moved = new THREE.Vector3(offset.x, start.y + offset.y, offset.z).applyMatrix4(this.bindModelToSpace);
+        const sway = moved.clone().sub(origin);
+        const horizontal = Math.hypot(sway.x, sway.z);
+        if (horizontal > GESTURE_SWAY_LIMIT) {
+          sway.x *= GESTURE_SWAY_LIMIT / horizontal;
+          sway.z *= GESTURE_SWAY_LIMIT / horizontal;
+        }
+        const current = this.space.worldToLocal(bone.getWorldPosition(new THREE.Vector3()));
+        const position = new THREE.Vector3(current.x + sway.x, moved.y, current.z + sway.z);
+        bone.position.copy(bone.parent!.worldToLocal(this.space.localToWorld(position)));
+      }
+      bone.updateMatrixWorld(true);
     }
+    const sampled = this.ordered.map(bone => ({ position: bone.position.clone(), rotation: bone.quaternion.clone() }));
+    base.forEach(({ bone, position, rotation }, index) => {
+      bone.position.copy(position);
+      bone.quaternion.copy(rotation);
+      if (!BODY.has(bone.name)) return;
+      bone.quaternion.slerp(sampled[index].rotation, blend);
+      if (bone.name === 'pelvis') bone.position.lerp(sampled[index].position, blend);
+    });
     this.model.updateMatrixWorld(true);
+    return blend;
   }
 
   private sample(clip: BundledMotionClip, time: number) {
