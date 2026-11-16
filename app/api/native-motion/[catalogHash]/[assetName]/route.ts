@@ -1,5 +1,8 @@
 import { NextResponse } from 'next/server';
-import { NATIVE_MOTION_CATALOG_SHA256 } from '@/lib/nativeMotionCatalog';
+import {
+  NATIVE_MOTION_CATALOG_SHA256,
+  NATIVE_MOTION_GESTURE_CATALOG_SHA256,
+} from '@/lib/nativeMotionCatalog';
 
 export const dynamic = 'force-dynamic';
 
@@ -15,7 +18,7 @@ export async function GET(
 ) {
   const { catalogHash, assetName } = await params;
   if (
-    catalogHash !== NATIVE_MOTION_CATALOG_SHA256
+    ![NATIVE_MOTION_CATALOG_SHA256, NATIVE_MOTION_GESTURE_CATALOG_SHA256].includes(catalogHash)
     || (assetName !== 'catalog.json' && !/^[a-f0-9]+_[a-f0-9]+\.wtm$/.test(assetName))
   ) {
     return NextResponse.json({ error: 'Native animation asset not found.' }, { status: 404 });

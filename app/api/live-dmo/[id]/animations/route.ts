@@ -3,10 +3,11 @@ import { z } from 'zod';
 import { getSession } from '@/lib/auth';
 import { sql, transaction } from '@/lib/db';
 import { isSameSiteMutation } from '@/lib/liveRequestSecurity';
-import { fetchNativeMotionCatalog } from '@/lib/nativeMotionServer';
+import { fetchNativeMotionCatalog, fetchNativeMotionGestureCatalog } from '@/lib/nativeMotionServer';
 import {
   NATIVE_MOTION_STROKES,
   nativeMotionClipSupportsStroke,
+  nativeMotionGestureClips,
 } from '@/lib/nativeMotionCatalogData';
 
 export const dynamic = 'force-dynamic';
@@ -23,12 +24,18 @@ const clipsSchema = z.object({
   'slice-forehand': pickSchema.optional(),
   'slice-backhand': pickSchema.optional(),
 }).strict();
+const gesturePickSchema = z.object({
+  clipId: z.string().regex(/^[a-f0-9]+_[a-f0-9]+$/i).max(80),
+}).strict();
+const gesturesSchema = z.record(z.string().min(1).max(40), gesturePickSchema);
 const bodySchema = z.object({
   playerClips: z.tuple([clipsSchema.nullable(), clipsSchema.nullable()]),
+  playerGestures: z.tuple([gesturesSchema.nullable(), gesturesSchema.nullable()]).optional(),
   onlyIfEmpty: z.boolean().optional(),
 }).strict();
 type RouteContext = { params: Promise<{ id: string }> };
 type Clips = z.infer<typeof clipsSchema>;
+type Gestures = z.infer<typeof gesturesSchema>;
 
 async function ownedLiveStream(id: string) {
   const user = await getSession();
@@ -72,10 +79,19 @@ export async function GET(_request: Request, context: RouteContext) {
       WHERE broadcast_id=${id}::uuid
     `;
     const playerClips: [Clips, Clips] = [{}, {}];
+    const playerGestures: [Gestures, Gestures] = [{}, {}];
     for (const row of rows) {
-      if (row.player_index === 0 || row.player_index === 1) playerClips[row.player_index as 0 | 1] = row.clips ?? {};
+      if (row.player_index !== 0 && row.player_index !== 1) continue;
+      const stored = row.clips && typeof row.clips === 'object' ? row.clips : {};
+      const { gestures, ...clips } = stored as Record<string, unknown>;
+      playerClips[row.player_index as 0 | 1] = clips as Clips;
+      playerGestures[row.player_index as 0 | 1] = gestures && typeof gestures === 'object'
+        ? gestures as Gestures : {};
     }
-    return NextResponse.json({ playerClips, ownerDiscordId: managed.ownerDiscordId }, { headers: HEADERS });
+    return NextResponse.json(
+      { playerClips, playerGestures, ownerDiscordId: managed.ownerDiscordId },
+      { headers: HEADERS },
+    );
   } catch (cause) {
     console.error('[live-broadcast] animation lookup failed', cause instanceof Error ? cause.name : 'UnknownError');
     return NextResponse.json({ error: 'Stream animations are temporarily unavailable.' }, { status: 503, headers: HEADERS });
@@ -104,7 +120,7 @@ export async function PUT(request: Request, context: RouteContext) {
       { status: 400, headers: HEADERS },
     );
   }
-  const { playerClips, onlyIfEmpty } = parsed.data;
+  const { playerClips, playerGestures, onlyIfEmpty } = parsed.data;
   try {
     const managed = await ownedLiveStream(id);
     if (managed.error) return managed.error;
@@ -128,13 +144,36 @@ export async function PUT(request: Request, context: RouteContext) {
         }
       }
     }
+    if (playerGestures?.some((gestures) => gestures && Object.keys(gestures).length)) {
+      let catalog;
+      try {
+        catalog = await fetchNativeMotionGestureCatalog();
+      } catch (error) {
+        console.error('Live gesture catalog validation is unavailable.', error);
+        return NextResponse.json(
+          { error: 'Gesture clips are not available from Core yet; existing motion is unchanged.' },
+          { status: 503, headers: HEADERS },
+        );
+      }
+      for (const gestures of playerGestures) {
+        for (const [type, pick] of Object.entries(gestures ?? {})) {
+          if (!nativeMotionGestureClips(catalog, type).some((clip) => clip.id === pick.clipId)) {
+            return NextResponse.json(
+              { error: 'The selected clip is not available for that gesture.' },
+              { status: 400, headers: HEADERS },
+            );
+          }
+        }
+      }
+    }
     await transaction((query) => {
       const commands: ReturnType<typeof query>[] = [];
       playerClips.forEach((clips, index) => {
-        if (clips === null) return;
+        const gestures = playerGestures?.[index] ?? null;
+        if (clips === null && gestures === null) return;
         // Restoring device defaults must never replace existing admin choices,
         // including choices saved between the initial GET and this transaction.
-        if (onlyIfEmpty) {
+        if (onlyIfEmpty && clips !== null) {
           if (Object.keys(clips).length) commands.push(query`
             INSERT INTO dmo_native_motion_player_overrides (broadcast_id, player_index, clips)
             VALUES (${id}::uuid, ${index}, ${JSON.stringify(clips)}::jsonb)
@@ -142,14 +181,42 @@ export async function PUT(request: Request, context: RouteContext) {
           `);
           return;
         }
-        commands.push(query`
-          DELETE FROM dmo_native_motion_player_overrides
-          WHERE broadcast_id=${id}::uuid AND player_index=${index}
-        `);
-        if (Object.keys(clips).length) commands.push(query`
-          INSERT INTO dmo_native_motion_player_overrides (broadcast_id, player_index, clips)
-          VALUES (${id}::uuid, ${index}, ${JSON.stringify(clips)}::jsonb)
-        `);
+        if (clips !== null) {
+          const payload = {
+            ...clips,
+            ...(playerGestures?.[index] !== undefined ? { gestures: gestures ?? {} } : {}),
+          };
+          commands.push(query`
+            INSERT INTO dmo_native_motion_player_overrides (broadcast_id, player_index, clips)
+            VALUES (${id}::uuid, ${index}, ${JSON.stringify(payload)}::jsonb)
+            ON CONFLICT (broadcast_id, player_index) WHERE broadcast_id IS NOT NULL DO UPDATE
+            SET clips = CASE
+              WHEN ${playerGestures?.[index] !== undefined} THEN EXCLUDED.clips
+              ELSE jsonb_set(
+                EXCLUDED.clips,
+                '{gestures}',
+                COALESCE(dmo_native_motion_player_overrides.clips->'gestures', '{}'::jsonb),
+                true
+              )
+            END
+          `);
+        } else if (gestures !== null) {
+          commands.push(query`
+            INSERT INTO dmo_native_motion_player_overrides (broadcast_id, player_index, clips)
+            VALUES (${id}::uuid, ${index}, ${JSON.stringify({ gestures })}::jsonb)
+            ON CONFLICT (broadcast_id, player_index) WHERE broadcast_id IS NOT NULL DO UPDATE
+            SET clips = CASE
+              WHEN EXCLUDED.clips->'gestures' = '{}'::jsonb
+                THEN dmo_native_motion_player_overrides.clips - 'gestures'
+              ELSE jsonb_set(
+                dmo_native_motion_player_overrides.clips,
+                '{gestures}',
+                EXCLUDED.clips->'gestures',
+                true
+              )
+            END
+          `);
+        }
       });
       return commands;
     });

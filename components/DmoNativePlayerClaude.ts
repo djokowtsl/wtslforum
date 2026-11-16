@@ -855,6 +855,11 @@ export function attachNativePlayer(
         }
       }
     }
+    const gesturePlayback = rig.root.userData.gesturePlayback as
+      { type: string; time: number; weight: number } | undefined;
+    if (gesturePlayback) {
+      capturedGroundstroke.applyGesture(gesturePlayback.type, gesturePlayback.time, gesturePlayback.weight);
+    }
   };
   rig.detailed = { update };
   return { model, pose, grips, update };

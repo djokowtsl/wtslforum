@@ -6,6 +6,7 @@ import {
   NATIVE_MOTION_AUTOMATIC_PROFILE_KEY,
   nativeMotionProfileKey,
   type NativeMotionPicks,
+  type NativeMotionGesturePicks,
   type NativeMotionProfile,
 } from '@/lib/nativeMotionCatalogData';
 import {
@@ -89,6 +90,7 @@ export async function GET(request: Request) {
     const profileByKey = new Map(profiles.map((row) => [row.profile_key, toProfile(row)]));
     const overrideKeys: [string | null, string | null] = [null, null];
     const playerClipOverrides: [NativeMotionPicks, NativeMotionPicks] = [{}, {}];
+    const playerGestureOverrides: [NativeMotionGesturePicks, NativeMotionGesturePicks] = [{}, {}];
     const playerGruntSettings: [DmoCharacterGruntSetting, DmoCharacterGruntSetting] = [
       getDmoCharacterGruntSetting(playerNames[0]),
       getDmoCharacterGruntSetting(playerNames[1]),
@@ -142,7 +144,12 @@ export async function GET(request: Request) {
         : [];
     for (const row of clipRows) {
       if (row.player_index === 0 || row.player_index === 1) {
-        playerClipOverrides[row.player_index as 0 | 1] = row.clips ?? {};
+        const index = row.player_index as 0 | 1;
+        const stored = row.clips && typeof row.clips === 'object' ? row.clips : {};
+        const { gestures, ...strokes } = stored as Record<string, unknown>;
+        playerClipOverrides[index] = strokes as NativeMotionPicks;
+        playerGestureOverrides[index] = gestures && typeof gestures === 'object'
+          ? gestures as NativeMotionGesturePicks : {};
       }
     }
     const gruntOverrideRows = submissionId
@@ -182,6 +189,7 @@ export async function GET(request: Request) {
       {
         playerProfileKeys,
         playerClipOverrides,
+        playerGestureOverrides,
         playerGruntSettings,
         profiles: [...usedKeys].flatMap((key) => {
           const profile = profileByKey.get(key);

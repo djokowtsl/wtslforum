@@ -448,6 +448,10 @@ export class DmoCapturedGroundstroke {
     return pairs;
   }
 
+  applyGesture(type: string, time: number, weight: number) {
+    this.bundled?.applyGesture(type, time, weight);
+  }
+
   apply(playback: GroundstrokePlayback): CapturedBodyHints | null {
     if (this.bundled?.has(playback)) return this.bundled.apply(playback);
     const weight = THREE.MathUtils.clamp(playback.weight, 0, 1);

@@ -432,7 +432,7 @@ test('a live broadcast re-check with unchanged animations never hands the court 
           const index = stateIndex++;
           return [initial, (value) => {
             if (index === 0) sourceChanges.push(value);
-            if (index === 1) gruntChanges.push(value);
+            if (index === 2) gruntChanges.push(value);
           }];
         },
         useEffect: (effect) => { cleanup = effect(); },

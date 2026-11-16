@@ -20,6 +20,7 @@ export interface BundledClipBinding {
 export interface BundledMotionSource {
   schema: BundledRigSchema;
   clips: Partial<Record<BundledStrokeName, BundledClipBinding>>;
+  gestures?: Readonly<Record<string, BundledMotionClip>>;
 }
 
 const BODY = new Set([
@@ -127,6 +128,27 @@ export class DmoBundledGroundstroke {
 
   has(playback: GroundstrokePlayback) {
     return !playback.readyPose && Boolean(this.source.clips[this.key(playback)]);
+  }
+
+  applyGesture(type: string, time: number, weight: number) {
+    const clip = this.source.gestures?.[type];
+    if (!clip || !Number.isFinite(time) || !Number.isFinite(weight)) return;
+    const blend = THREE.MathUtils.clamp(weight, 0, 1);
+    if (blend <= 0) return;
+    this.sample(clip, THREE.MathUtils.clamp(time, 0, clip.duration));
+    this.model.updateWorldMatrix(true, true);
+    const modelRotation = this.model.getWorldQuaternion(new THREE.Quaternion());
+    for (const bone of this.ordered) {
+      if (!UPPER.has(bone.name)) continue;
+      const sampled = this.shadows.get(bone.name);
+      if (!sampled) continue;
+      const rotation = sampled.getWorldQuaternion(new THREE.Quaternion());
+      bone.parent!.updateWorldMatrix(true, false);
+      const target = bone.parent!.getWorldQuaternion(new THREE.Quaternion()).invert()
+        .multiply(modelRotation).multiply(rotation).normalize();
+      bone.quaternion.slerp(target, blend);
+    }
+    this.model.updateMatrixWorld(true);
   }
 
   private sample(clip: BundledMotionClip, time: number) {

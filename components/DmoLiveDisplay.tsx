@@ -197,6 +197,12 @@ export default function DmoLiveDisplay({
   };
   const pointScore = score?.pointText.join('–') ?? '—';
   const displayedPointLog = pointLog ?? snapshot.recentPoints;
+  const setWins: [number, number] = [0, 0];
+  for (const [first, second] of snapshot.score.sets) {
+    if (first > second) setWins[0]++;
+    else if (second > first) setWins[1]++;
+  }
+  const matchOver = state === 'ended' && Math.max(...setWins) >= Math.ceil(snapshot.bestOf / 2);
 
   useEffect(() => {
     frameProgressRef.current = {
@@ -244,6 +250,8 @@ export default function DmoLiveDisplay({
           playbackSpeed={playbackSpeed}
           isWta={isWta}
           playerCharacters={motionNames}
+          gesturePoints={snapshot.pointHistory ?? pointLog ?? snapshot.recentPoints}
+          matchOver={matchOver}
           commentaryNames={commentaryNames}
           commentaryBroadcastId={broadcastId ?? null}
           showVoiceDiagnostics={showVoiceDiagnostics}
@@ -254,6 +262,9 @@ export default function DmoLiveDisplay({
         />
         {nativeMotion.error && (
           <p className={styles.pointNote} role="status">{nativeMotion.error}</p>
+        )}
+        {nativeMotion.gestureError && (
+          <p className={styles.pointNote} role="status">{nativeMotion.gestureError}</p>
         )}
         <p className={styles.pointNote}>
           {liveScore !== undefined
