@@ -18,6 +18,7 @@ import {
   NATIVE_MOTION_STROKES,
   nativeMotionClipSupportsStroke,
   nativeMotionGestureClips,
+  nativeMotionGestureClipIds,
   mergeNativeMotionPicks,
   type NativeMotionCatalog,
   type NativeMotionGesturePicks,
@@ -30,7 +31,8 @@ import type { BundledMotionSource } from './DmoBundledGroundstroke';
 type SourcePair = readonly [BundledMotionSource | null, BundledMotionSource | null];
 type GestureMotionSource = {
   schema: BundledMotionSource['schema'];
-  clips: Readonly<Record<string, BundledMotionClip>>;
+  /** Each gesture type's animations, played in turn. */
+  clips: Readonly<Record<string, readonly BundledMotionClip[]>>;
 };
 type GestureSourcePair = readonly [GestureMotionSource | null, GestureMotionSource | null];
 type ProfileResponse = {
@@ -246,23 +248,26 @@ export function useNativePlayerMotions({
             try {
               const catalog = await loadCatalog(NATIVE_MOTION_GESTURE_CATALOG_SHA256);
               const clipIds = [...new Set(gesturePicks.flatMap((picks) => (
-                Object.values(picks).flatMap((pick) => pick ? [pick.clipId] : [])
+                Object.values(picks).flatMap((pick) => nativeMotionGestureClipIds(pick))
               )))];
               const loadedClips = new Map(await Promise.all(clipIds.map(async (id) => (
                 [id, await loadClip(id, catalog, NATIVE_MOTION_GESTURE_CATALOG_SHA256)] as const
               ))));
               const sourceFor = (picks: NativeMotionGesturePicks): GestureMotionSource | null => {
-                const clips: Record<string, BundledMotionClip> = {};
+                const clips: Record<string, BundledMotionClip[]> = {};
                 for (const [type, pick] of Object.entries(picks)) {
-                  if (!pick) continue;
-                  const metadata = nativeMotionGestureClips(catalog, type)
-                    .find((clip) => clip.id === pick.clipId);
-                  const clip = loadedClips.get(pick.clipId);
-                  if (!metadata || !clip || metadata.duration !== clip.duration
-                    || clip.rigHash !== catalog.rig.rigHash) {
-                    throw new Error(`The saved ${type} gesture clip is unavailable or invalid.`);
+                  const set: BundledMotionClip[] = [];
+                  for (const clipId of nativeMotionGestureClipIds(pick)) {
+                    const metadata = nativeMotionGestureClips(catalog, type)
+                      .find((clip) => clip.id === clipId);
+                    const clip = loadedClips.get(clipId);
+                    if (!metadata || !clip || metadata.duration !== clip.duration
+                      || clip.rigHash !== catalog.rig.rigHash) {
+                      throw new Error(`The saved ${type} gesture clip is unavailable or invalid.`);
+                    }
+                    set.push(clip);
                   }
-                  clips[type] = clip;
+                  if (set.length) clips[type] = set;
                 }
                 return Object.keys(clips).length ? { schema: catalog.rig, clips } : null;
               };

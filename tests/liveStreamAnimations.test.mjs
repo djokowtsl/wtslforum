@@ -37,6 +37,7 @@ function setup({
       ] }),
       fetchNativeMotionGestureCatalog: async () => ({ clips: [
         { id: 'c1_d1', duration: 1, events: { kind: 'gesture', gesture: 'CheerFist' } },
+        { id: 'c3_d3', duration: 1, events: { kind: 'gesture', gesture: 'CheerFist' } },
       ] }),
     },
     '@/lib/db': {
@@ -157,6 +158,18 @@ test('gesture clips use the separate catalog and coexist with stroke overrides',
   }), context)).status, 400);
   assert.equal(invalid.writes.length, 0);
 });
+test('streamers can give a gesture type a set of animations', async () => {
+  const { route, writes } = setup();
+  const gestures = { CheerFist: { clipId: 'c1_d1', clipIds: ['c1_d1', 'c3_d3'] } };
+  const response = await route.PUT(put({ playerClips: [null, null], playerGestures: [gestures, null] }), context);
+  assert.equal(response.status, 200);
+  assert.deepEqual(JSON.parse(writes[0].values[2]), { gestures });
+  const unknown = setup();
+  assert.equal((await unknown.route.PUT(put({
+    playerClips: [null, null],
+    playerGestures: [{ CheerFist: { clipId: 'c1_d1', clipIds: ['c1_d1', 'ff_ff'] } }, null],
+  }), context)).status, 400, 'every animation in the set must exist for that type');
+});
 test('the host only offers editable slots for no-character players', () => {
   const host = readFileSync(new URL('../components/DmoLiveHost.tsx', import.meta.url), 'utf8');
   assert.match(host, /<LiveStreamAnimationPicker[\s\S]*open=\{\[!savedBroadcastCharacter\.trim\(\), !savedBroadcastOpponentCharacter\.trim\(\)\]\}/);
@@ -198,6 +211,7 @@ async function restorePicker({ saved = [{}, {}], open = [true, true], fail = fal
       '@/lib/nativeMotionCatalogData': catalogData,
       '@/lib/nativeMotionCatalog': { NATIVE_MOTION_CATALOG_SHA256: 'test' },
       './SearchableClipSelect': { default: () => null },
+      './GestureClipSetPicker': { default: () => null },
       './DmoLiveHost.module.css': {},
     }).default;
     component({ broadcastId: STREAM, open, labels: ['Your player', 'Opponent'] });

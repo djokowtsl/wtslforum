@@ -831,9 +831,11 @@ export function attachNativePlayer(
       }
     }
     const gesturePlayback = rig.root.userData.gesturePlayback as
-      { type: string; time: number; weight: number } | undefined;
+      { type: string; time: number; weight: number; variant?: number } | undefined;
     if (gesturePlayback) {
-      capturedGroundstroke.applyGesture(gesturePlayback.type, gesturePlayback.time, gesturePlayback.weight);
+      capturedGroundstroke.applyGesture(
+        gesturePlayback.type, gesturePlayback.time, gesturePlayback.weight, gesturePlayback.variant ?? 0,
+      );
     }
   };
   rig.detailed = { update };

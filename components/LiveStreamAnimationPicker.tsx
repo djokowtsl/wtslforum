@@ -3,10 +3,10 @@
 import { useEffect, useState } from 'react';
 import {
   NATIVE_MOTION_STROKES,
-  nativeMotionGestureClips,
   nativeMotionClipSupportsStroke,
   nativeMotionStrokeLabel,
   type NativeMotionCatalog,
+  type NativeMotionGesturePick,
   type NativeMotionGesturePicks,
   type NativeMotionHand,
   type NativeMotionPicks,
@@ -17,6 +17,7 @@ import {
   NATIVE_MOTION_GESTURE_CATALOG_SHA256,
 } from '@/lib/nativeMotionCatalog';
 import SearchableClipSelect from './SearchableClipSelect';
+import GestureClipSetPicker from './GestureClipSetPicker';
 import styles from './DmoLiveHost.module.css';
 
 type Draft = Partial<Record<NativeMotionStroke, { clipId: string; sourceHandedness: NativeMotionHand | '' }>>;
@@ -180,11 +181,11 @@ export default function LiveStreamAnimationPicker({ broadcastId, open, labels }:
     setMessage('');
   }
 
-  function changeGesture(index: 0 | 1, type: string, clipId: string) {
+  function changeGesture(index: 0 | 1, type: string, pick: NativeMotionGesturePick | null) {
     setGestureDrafts((current) => {
       const next: [GestureDraft, GestureDraft] = [{ ...current[0] }, { ...current[1] }];
-      if (!clipId) delete next[index][type];
-      else next[index][type] = { clipId };
+      if (!pick) delete next[index][type];
+      else next[index][type] = pick;
       return next;
     });
     setMessage('');
@@ -289,23 +290,17 @@ export default function LiveStreamAnimationPicker({ broadcastId, open, labels }:
                 {gestureCatalog && [...new Set(gestureCatalog.clips
                   .filter((clip) => clip.events?.kind === 'gesture' && clip.events.gesture)
                   .map((clip) => clip.events!.gesture!))].map((type) => (
-                  <label className={styles.bestOf} key={type}>
-                    <span id={`stream-${index}-gesture-${type}-label`}>
-                      {type.replace(/([a-z])([A-Z])/g, '$1 $2')}
-                    </span>
-                    <SearchableClipSelect
-                      id={`stream-${index}-gesture-${type}`} labelledBy={`stream-${index}-gesture-${type}-label`}
-                      value={gestureDrafts[index][type]?.clipId ?? ''}
-                      options={[
-                        { value: '', label: 'No gesture clip' },
-                        ...nativeMotionGestureClips(gestureCatalog, type).map((clip) => ({
-                          value: clip.id,
-                          label: [clip.gestureMod, clip.sourceBundle, clip.originalClipName].filter(Boolean).join(' · ') || clip.id,
-                        })),
-                      ]}
-                      onChange={(clipId) => changeGesture(index, type, clipId)}
-                    />
-                  </label>
+                  <GestureClipSetPicker
+                    key={type}
+                    id={`stream-${index}-gesture-${type}`}
+                    type={type}
+                    catalog={gestureCatalog}
+                    value={gestureDrafts[index][type]}
+                    emptyLabel="No gesture clip"
+                    onChange={(pick) => changeGesture(index, type, pick)}
+                    className={styles.bestOf}
+                    buttonClassName={styles.secondaryButton}
+                  />
                 ))}
               </div>
             </fieldset>

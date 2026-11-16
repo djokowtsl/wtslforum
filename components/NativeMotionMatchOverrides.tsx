@@ -4,9 +4,11 @@ import { useEffect, useState, type FormEvent } from 'react';
 import {
   NATIVE_MOTION_STROKES,
   nativeMotionGestureClips,
+  nativeMotionGestureClipIds,
   nativeMotionStrokeLabel,
   nativeMotionClipSupportsStroke,
   type NativeMotionCatalog,
+  type NativeMotionGesturePick,
   type NativeMotionGesturePicks,
   type NativeMotionHand,
   type NativeMotionPicks,
@@ -16,6 +18,7 @@ import { NATIVE_MOTION_GESTURE_CATALOG_SHA256 } from '@/lib/nativeMotionCatalog'
 import { getDmoCharacterGruntGroups } from '@/lib/dmoCharacterAppearance.mjs';
 import styles from './NativeMotionAdmin.module.css';
 import SearchableClipSelect from './SearchableClipSelect';
+import GestureClipSetPicker from './GestureClipSetPicker';
 
 type Draft = Partial<Record<NativeMotionStroke, { clipId: string; sourceHandedness: NativeMotionHand | '' }>>;
 type Target = {
@@ -126,15 +129,15 @@ export default function NativeMotionMatchOverrides({ catalog }: { catalog?: Nati
     setMessage('');
   }
 
-  function changeGesture(player: 0 | 1, type: string, clipId: string) {
+  function changeGesture(player: 0 | 1, type: string, pick: NativeMotionGesturePick | null) {
     setGestureDrafts((current) => {
       const pair = current[selectedKey] ?? [{}, {}];
       const next: [NativeMotionGesturePicks, NativeMotionGesturePicks] = [
         { ...pair[0] },
         { ...pair[1] },
       ];
-      if (!clipId) delete next[player][type];
-      else next[player][type] = { clipId };
+      if (!pick) delete next[player][type];
+      else next[player][type] = pick;
       return { ...current, [selectedKey]: next };
     });
     setMessage('');
@@ -158,7 +161,9 @@ export default function NativeMotionMatchOverrides({ catalog }: { catalog?: Nati
       if (gestureCatalog) {
         for (const player of gesturePicks) {
           for (const [type, pick] of Object.entries(player)) {
-            if (!pick || !nativeMotionGestureClips(gestureCatalog, type).some((clip) => clip.id === pick.clipId)) {
+            const available = new Set(nativeMotionGestureClips(gestureCatalog, type).map((clip) => clip.id));
+            const ids = nativeMotionGestureClipIds(pick);
+            if (!ids.length || !ids.every((id) => available.has(id))) {
               throw new Error(`Choose a valid clip for the ${type} gesture.`);
             }
           }
@@ -202,7 +207,7 @@ export default function NativeMotionMatchOverrides({ catalog }: { catalog?: Nati
       </p>
       {(catalog || gestureCatalog) && (
         <p className={styles.notice}>
-          One selected clip plays for each stroke or gesture type—no cycling or random versions.
+          One selected clip plays for each stroke. A gesture type can hold several animations, which play in turn.
           All stroke variants, including hidden and acceleration variants, remain available; gesture lists show compatible visible clips.
           These choices override character profiles only for the selected match.
         </p>
@@ -301,25 +306,17 @@ export default function NativeMotionMatchOverrides({ catalog }: { catalog?: Nati
                     </small>
                   )}
                   {gestureCatalog && gestureTypes.map((type) => (
-                    <label className={styles.field} key={type}>
-                      <span id={`match-${index}-gesture-${type}-label`}>
-                        {type.replace(/([a-z])([A-Z])/g, '$1 $2')}
-                      </span>
-                      <SearchableClipSelect
-                        id={`match-${index}-gesture-${type}`}
-                        labelledBy={`match-${index}-gesture-${type}-label`}
-                        value={gesturePicks[index][type]?.clipId ?? ''}
-                        options={[
-                          { value: '', label: 'Use character/default gesture' },
-                          ...nativeMotionGestureClips(gestureCatalog, type).map((clip) => ({
-                            value: clip.id,
-                            label: [clip.gestureMod, clip.sourceBundle, clip.originalClipName]
-                              .filter(Boolean).join(' · ') || clip.id,
-                          })),
-                        ]}
-                        onChange={(clipId) => changeGesture(index, type, clipId)}
-                      />
-                    </label>
+                    <GestureClipSetPicker
+                      key={type}
+                      id={`match-${index}-gesture-${type}`}
+                      type={type}
+                      catalog={gestureCatalog}
+                      value={gesturePicks[index][type]}
+                      emptyLabel="Use character/default gesture"
+                      onChange={(pick) => changeGesture(index, type, pick)}
+                      className={styles.field}
+                      buttonClassName="btn btn-ghost"
+                    />
                   ))}
                 </div>
               </fieldset>

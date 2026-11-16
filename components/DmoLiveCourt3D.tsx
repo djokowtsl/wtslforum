@@ -20,7 +20,9 @@ import {
 } from '@/lib/te4DmoLive';
 import {
   buildDmoPointGestureEvents,
-  resolveDmoGesturePlayback,
+  dmoGestureDuringDwell,
+  findDmoGestureDwell,
+  type DmoGestureDwell,
   type DmoPointGestureEvent,
 } from '@/lib/dmoGesturePlayback.mjs';
 import type { Te4CourtSurface } from '@/lib/te4DmoTypes';
@@ -1097,6 +1099,25 @@ function ThreeCourt({
     let graphicsFailed = false;
     let changeoverUntil = 0;
     let changeoverLabelUntil = 0;
+    // Gestures happen standing still, as in the game: playback holds a point's
+    // end while players gesture, then carries on as recorded. Live playback
+    // then runs a little faster until it is back to its usual delay.
+    let gestureDwell: (DmoGestureDwell & { elapsed: number }) | null = null;
+    let gestureCatchUpFrames = 0;
+    const gestureClipsFor = (player: 1 | 2) => playerBundledMotions?.[player - 1]?.gestures;
+    const holdForGestures = (from: number | null, to: number, speed: number, elapsedMs: number) => {
+      if (gestureDwell) {
+        gestureDwell.elapsed += (Math.min(1000, Math.max(0, elapsedMs)) / 1000) * Math.max(0, speed);
+        if (gestureDwell.elapsed < gestureDwell.seconds) return gestureDwell.frame;
+        gestureDwell = null;
+        return to;
+      }
+      if (from === null) return to;
+      const dwell = findDmoGestureDwell(gestureEventsRef.current, from, to, gestureClipsFor);
+      if (!dwell) return to;
+      gestureDwell = { ...dwell, elapsed: 0 };
+      return dwell.frame;
+    };
     let lastCrowdEventFrame: number | null = null;
     let crowdApplauseUntil = 0;
     let olderNetBallPosition: THREE.Vector3 | null = null;
@@ -2288,13 +2309,9 @@ function ThreeCourt({
         nonDominantElbowMesh.position.copy(nonDominantElbow);
         poseLimb(nonDominantForearm, nonDominantElbow, supportWrist);
       }
-      const gesture = resolveDmoGesturePlayback(
-        gestureEventsRef.current,
-        (index + 1) as 1 | 2,
-        frame,
-        snapshot.frameRate ?? TE4_DMO_FRAMES_PER_SECOND,
-        playerBundledMotions?.[index]?.gestures,
-      );
+      const gesture = gestureDwell && gestureDwell.frame === frame
+        ? dmoGestureDuringDwell(gestureDwell, (index + 1) as 1 | 2, gestureDwell.elapsed)
+        : null;
       if (gesture) rig.root.userData.gesturePlayback = gesture;
       else delete rig.root.userData.gesturePlayback;
       rig.detailed?.update();
@@ -2315,14 +2332,20 @@ function ThreeCourt({
         if (fullReplay) {
           const replayStart = firstFrame;
           const replayEnd = lastFrame;
+          // A seek away from the held frame cancels the hold.
+          if (gestureDwell && replayFrameRef.current !== gestureDwell.frame) gestureDwell = null;
           if (replayPlayingRef.current) {
-            currentFrame = advanceLiveCourtPlayhead(
-              replayFrameRef.current,
-              clockElapsed,
-              replaySpeedRef.current,
-              samples,
-              frameRate,
-            ) ?? replayStart;
+            const previous = replayFrameRef.current;
+            currentFrame = gestureDwell
+              ? gestureDwell.frame
+              : advanceLiveCourtPlayhead(
+                replayFrameRef.current,
+                clockElapsed,
+                replaySpeedRef.current,
+                samples,
+                frameRate,
+              ) ?? replayStart;
+            currentFrame = holdForGestures(previous, currentFrame, replaySpeedRef.current, clockElapsed);
             if (currentFrame >= replayEnd) {
               currentFrame = replayEnd;
               replayPlayingRef.current = false;
@@ -2345,15 +2368,29 @@ function ThreeCourt({
           // behind it, so a ball going past a player is known in time for him
           // to stretch for it. Both are measured from the newest frame, so
           // they don't add up.
-          currentFrame = advanceLiveCourtPlayhead(
-            playheadRef.current,
-            clockElapsed,
-            sceneDataRef.current.playbackSpeed,
-            samples,
-            frameRate,
-            LIVE_DMO_EVENT_SYNC_BUFFER_FRAMES,
-            LIVE_CUSHION_SECONDS * frameRate * sceneDataRef.current.playbackSpeed,
-          ) ?? firstFrame;
+          const previous = playheadRef.current;
+          if (gestureDwell && previous !== gestureDwell.frame) gestureDwell = null;
+          const speed = sceneDataRef.current.playbackSpeed;
+          if (gestureDwell) {
+            currentFrame = holdForGestures(previous, gestureDwell.frame, speed, clockElapsed);
+            // Time spent standing is caught up afterwards (see the boost below).
+            gestureCatchUpFrames += (Math.min(1000, clockElapsed) / 1000) * frameRate * speed;
+          } else {
+            const boost = gestureCatchUpFrames > 0 ? 1.25 : 1;
+            const advanced = advanceLiveCourtPlayhead(
+              previous,
+              clockElapsed,
+              speed * boost,
+              samples,
+              frameRate,
+              LIVE_DMO_EVENT_SYNC_BUFFER_FRAMES,
+              LIVE_CUSHION_SECONDS * frameRate * speed,
+            ) ?? firstFrame;
+            if (boost > 1 && previous !== null) {
+              gestureCatchUpFrames = Math.max(0, gestureCatchUpFrames - Math.max(0, advanced - previous) * (1 - 1 / boost));
+            }
+            currentFrame = holdForGestures(previous, advanced, speed, clockElapsed);
+          }
           if (now - courtDelayReportedAtRef.current >= 1000) {
             courtDelayReportedAtRef.current = now;
             // Behind the newest data, plus that data's average age on arrival

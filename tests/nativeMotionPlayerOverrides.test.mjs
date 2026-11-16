@@ -59,6 +59,7 @@ function setup(options = {}) {
           clips: [
             { id: 'c1_d1', duration: 1, events: { kind: 'gesture', gesture: 'CheerFist' } },
             { id: 'c2_d2', duration: 1, events: { kind: 'gesture', gesture: 'RagingFist' } },
+            { id: 'c3_d3', duration: 1, events: { kind: 'gesture', gesture: 'CheerFist' } },
           ],
         };
       },
@@ -209,6 +210,25 @@ test('gesture selections are validated and saved independently for replay and ma
   })));
   assert.equal(response.status, 400);
   assert.equal(invalid.writes.length, 0);
+});
+
+test('admins can give a gesture type a set of animations, all from that type', async () => {
+  const gestures = { CheerFist: { clipId: 'c1_d1', clipIds: ['c1_d1', 'c3_d3'] } };
+  const harness = setup();
+  const response = await harness.route.PUT(request(body({
+    playerClips: [{}, {}],
+    playerGestures: [gestures, {}],
+  })));
+  assert.equal(response.status, 200);
+  assert.ok(harness.writes.some((write) => write.values.includes(JSON.stringify({ gestures }))));
+
+  const mixed = setup();
+  const refused = await mixed.route.PUT(request(body({
+    playerClips: [{}, {}],
+    playerGestures: [{ CheerFist: { clipId: 'c1_d1', clipIds: ['c1_d1', 'c2_d2'] } }, {}],
+  })));
+  assert.equal(refused.status, 400, 'a raging fist cannot join the fist pump set');
+  assert.equal(mixed.writes.length, 0);
 });
 
 test('admins can assign a grunt bank or silence either match player', async () => {
@@ -579,4 +599,59 @@ test('re-rendering hands the court the same animations, so it never rebuilds for
   assert.equal(second, first, 'the same sources across renders');
   const source = readFileSync(new URL('../components/useNativePlayerMotions.ts', import.meta.url), 'utf8');
   assert.match(source, /useMemo<SourcePair>\([\s\S]*\}, \[sources, gestureSources\]\)/);
+});
+
+test('a saved set of gesture animations loads every animation in it, in order', async () => {
+  const gestureChanges = [];
+  let stateIndex = 0;
+  let cleanup;
+  const oldFetch = globalThis.fetch;
+  const oldWindow = globalThis.window;
+  globalThis.window = { setInterval: () => 1, clearInterval: () => {} };
+  globalThis.fetch = async (input) => {
+    const url = String(input);
+    if (url.startsWith('/api/native-motion/profiles?')) {
+      return Response.json({
+        playerProfileKeys: [null, null], profiles: [],
+        playerGestureOverrides: [{ CheerFist: { clipId: 'c1_d1', clipIds: ['c1_d1', 'c3_d3'] } }, {}],
+      });
+    }
+    if (url === '/api/native-motion/gesture-hash/catalog.json') {
+      return Response.json({ format: 'WTMC1', rig: { rigHash: 'rig', modelHash: 'model' }, clips: [
+        { id: 'c1_d1', duration: 1, events: { kind: 'gesture', gesture: 'CheerFist' } },
+        { id: 'c3_d3', duration: 1, events: { kind: 'gesture', gesture: 'CheerFist' } },
+      ] });
+    }
+    return new Response(new TextEncoder().encode(url.includes('c3_d3') ? 'second' : 'first'));
+  };
+  try {
+    const hook = load('components/useNativePlayerMotions.ts', {
+      react: {
+        useState: (initial) => {
+          const index = stateIndex++;
+          return [initial, (value) => { if (index === 1) gestureChanges.push(value); }];
+        },
+        useEffect: (effect) => { cleanup = effect(); },
+        useMemo: (build) => build(),
+      },
+      '@/lib/dmoBundledMotion.mjs': {
+        decodeBundledMotion: (buffer) => ({ name: new TextDecoder().decode(buffer), duration: 1, rigHash: 'rig' }),
+      },
+      '@/lib/nativeMotionCatalog': { NATIVE_MOTION_CATALOG_SHA256: 'stroke-hash', NATIVE_MOTION_GESTURE_CATALOG_SHA256: 'gesture-hash' },
+      '@/lib/nativeMotionCatalogData': catalogData,
+      '@/lib/dmoCharacterAppearance.mjs': characterGrunts,
+    });
+    hook.useNativePlayerMotions({ playerNames: ['Djokovic', 'Federer'], submissionId: '17' });
+    for (let attempt = 0; attempt < 40 && !gestureChanges.some((value) => value[0]); attempt++) {
+      await new Promise((resolve) => setTimeout(resolve, 5));
+    }
+    const loaded = gestureChanges.find((value) => value[0]);
+    assert.ok(loaded, 'gestures loaded');
+    assert.deepEqual(loaded[0].clips.CheerFist.map((clip) => clip.name), ['first', 'second']);
+    assert.equal(loaded[1], null);
+  } finally {
+    cleanup?.();
+    globalThis.fetch = oldFetch;
+    globalThis.window = oldWindow;
+  }
 });

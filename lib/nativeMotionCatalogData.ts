@@ -17,7 +17,27 @@ export type NativeMotionPick = {
   sourceHandedness: NativeMotionHand;
 };
 export type NativeMotionPicks = Partial<Record<NativeMotionStroke, NativeMotionPick>>;
-export type NativeMotionGesturePick = { clipId: string };
+/**
+ * The animations chosen for one gesture type. `clipId` is the first (older
+ * code reads only that); `clipIds`, when present, is the whole set, which
+ * the court plays in turn, one per gesture.
+ */
+export type NativeMotionGesturePick = { clipId: string; clipIds?: string[] };
+export const NATIVE_MOTION_GESTURE_SET_LIMIT = 12;
+
+/** Every animation in a gesture choice, in order, without repeats. */
+export function nativeMotionGestureClipIds(pick: NativeMotionGesturePick | null | undefined): string[] {
+  if (!pick) return [];
+  const ids = Array.isArray(pick.clipIds) && pick.clipIds.length ? pick.clipIds : [pick.clipId];
+  return [...new Set(ids.filter((id) => typeof id === 'string' && id))].slice(0, NATIVE_MOTION_GESTURE_SET_LIMIT);
+}
+
+/** A gesture choice from a list of animations (null when the list is empty). */
+export function nativeMotionGesturePickFromIds(ids: readonly string[]): NativeMotionGesturePick | null {
+  const unique = [...new Set(ids.filter((id) => typeof id === 'string' && id))].slice(0, NATIVE_MOTION_GESTURE_SET_LIMIT);
+  if (!unique.length) return null;
+  return unique.length === 1 ? { clipId: unique[0] } : { clipId: unique[0], clipIds: unique };
+}
 export type NativeMotionGesturePicks = Partial<Record<string, NativeMotionGesturePick>>;
 
 export type NativeMotionCatalogClip = {
