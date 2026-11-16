@@ -8,6 +8,7 @@ import {
   replayFrameAtElapsedTime,
   formatLivePointScore,
   deriveLiveDmoPointEndEvents,
+  dmoPointEndedBy,
   Te4DmoLiveParser,
 } from '../lib/te4DmoLive.ts';
 import {
@@ -434,4 +435,13 @@ test('live writes require a matching same-site Origin and forwarded host', () =>
   });
   assert.equal(isSameSiteMutation(allowed), true);
   assert.equal(isSameSiteMutation(rejected), false);
+});
+
+test('a point ended on a winner when its winner hit the last shot', () => {
+  assert.equal(dmoPointEndedBy(1, 1, 0), 'winner', 'an ace');
+  assert.equal(dmoPointEndedBy(1, 2, 0), 'error', 'no hits but the receiver won: the serve was the error');
+  assert.equal(dmoPointEndedBy(1, 1, 1), 'error', 'the receiver hit last and lost');
+  assert.equal(dmoPointEndedBy(2, 1, 1), 'winner', 'the receiver hit last and won');
+  assert.equal(dmoPointEndedBy(2, 2, 4), 'winner', 'the server hit the fourth hit');
+  assert.equal(dmoPointEndedBy(1, null, 3), undefined, 'a let has no winner');
 });

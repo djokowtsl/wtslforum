@@ -90,6 +90,17 @@ export default function Te4DmoReplayPlayer({
       strokeStyles: activeStrokeStyles ?? initialSnapshot.strokeStyles,
     }
     : null, [initialSnapshot, activeHandedness[0], activeHandedness[1], activeStrokeStyles]);
+  // A complete recording ends with the match won, so the last point gets the
+  // victory gestures; a recording that stops mid-match doesn't.
+  const replayMatchOver = useMemo(() => {
+    if (!snapshot) return false;
+    const setWins = [0, 0];
+    for (const [first, second] of snapshot.score.sets) {
+      if (first > second) setWins[0]++;
+      else if (second > first) setWins[1]++;
+    }
+    return Math.max(...setWins) >= Math.ceil(snapshot.bestOf / 2);
+  }, [snapshot]);
   const commentaryPoints = useMemo(
     () => viewer
       ? buildDmoReplayCommentaryPoints(viewer, { bestOf: initialSnapshot?.bestOf ?? null })
@@ -286,6 +297,8 @@ export default function Te4DmoReplayPlayer({
             fullReplay
             playerOutfitSeed={replayUrl || broadcastId || snapshot.filename}
             playerBundledMotions={nativeMotion.sources}
+            gesturePoints={snapshot.pointHistory}
+            matchOver={replayMatchOver}
             scoreboard={replayScoreboard}
             onReplayFrameChange={handleReplayFrameChange}
           />
