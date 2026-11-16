@@ -15,8 +15,14 @@ import {
   LIVE_DMO_UPDATE_INTERVAL_MS,
   TE4_DMO_FRAMES_PER_SECOND,
   type Te4DmoReplaySpeed,
+  type Te4LivePoint,
   type Te4LiveSnapshot,
 } from '@/lib/te4DmoLive';
+import {
+  buildDmoPointGestureEvents,
+  resolveDmoGesturePlayback,
+  type DmoPointGestureEvent,
+} from '@/lib/dmoGesturePlayback.mjs';
 import type { Te4CourtSurface } from '@/lib/te4DmoTypes';
 import {
   constrainDmoOrbit,
@@ -223,6 +229,8 @@ type Props = {
   playerGruntSettings?: readonly [DmoCharacterGruntSetting | null, DmoCharacterGruntSetting | null];
   playerOutfitSeed?: string;
   commentaryPoints?: readonly CommentaryReplayPoint[];
+  gesturePoints?: readonly Te4LivePoint[];
+  matchOver?: boolean;
   snapshot: Te4LiveSnapshot;
   surface: Te4CourtSurface;
   playbackSpeed: Te4DmoReplaySpeed;
@@ -338,6 +346,8 @@ function ThreeCourt({
   playerGruntSettings,
   playerOutfitSeed,
   commentaryPoints = [],
+  gesturePoints,
+  matchOver = false,
   snapshot,
   surface,
   playbackSpeed,
@@ -365,6 +375,17 @@ function ThreeCourt({
   onRenderSettingChange: (setting: BroadcastRenderSetting) => void;
   onRenderFrame: (elapsedMs: number) => void;
 }) {
+  const gestureEventsRef = useRef<DmoPointGestureEvent[]>([]);
+  useEffect(() => {
+    gestureEventsRef.current = buildDmoPointGestureEvents(
+      gesturePoints ?? snapshot.pointHistory ?? snapshot.recentPoints,
+      {
+        characters: playerCharacters,
+        matchOver,
+      },
+    );
+  }, [gesturePoints, snapshot.pointHistory, snapshot.recentPoints, playerCharacters, matchOver]);
+
   const sceneElementRef = useRef<HTMLElement>(null);
   const viewportRef = useRef<HTMLDivElement>(null);
   const canvasHostRef = useRef<HTMLDivElement>(null);
@@ -2266,6 +2287,15 @@ function ThreeCourt({
         nonDominantElbowMesh.position.copy(nonDominantElbow);
         poseLimb(nonDominantForearm, nonDominantElbow, supportWrist);
       }
+      const gesture = resolveDmoGesturePlayback(
+        gestureEventsRef.current,
+        (index + 1) as 1 | 2,
+        frame,
+        snapshot.frameRate ?? TE4_DMO_FRAMES_PER_SECOND,
+        playerBundledMotions?.[index]?.gestures,
+      );
+      if (gesture) rig.root.userData.gesturePlayback = gesture;
+      else delete rig.root.userData.gesturePlayback;
       rig.detailed?.update();
     };
 

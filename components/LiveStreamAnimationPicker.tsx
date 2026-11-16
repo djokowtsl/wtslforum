@@ -3,18 +3,24 @@
 import { useEffect, useState } from 'react';
 import {
   NATIVE_MOTION_STROKES,
+  nativeMotionGestureClips,
   nativeMotionClipSupportsStroke,
   nativeMotionStrokeLabel,
   type NativeMotionCatalog,
+  type NativeMotionGesturePicks,
   type NativeMotionHand,
   type NativeMotionPicks,
   type NativeMotionStroke,
 } from '@/lib/nativeMotionCatalogData';
-import { NATIVE_MOTION_CATALOG_SHA256 } from '@/lib/nativeMotionCatalog';
+import {
+  NATIVE_MOTION_CATALOG_SHA256,
+  NATIVE_MOTION_GESTURE_CATALOG_SHA256,
+} from '@/lib/nativeMotionCatalog';
 import SearchableClipSelect from './SearchableClipSelect';
 import styles from './DmoLiveHost.module.css';
 
 type Draft = Partial<Record<NativeMotionStroke, { clipId: string; sourceHandedness: NativeMotionHand | '' }>>;
+type GestureDraft = NativeMotionGesturePicks;
 type Props = {
   broadcastId: string;
   open: readonly [boolean, boolean];
@@ -52,7 +58,10 @@ const complete = (draft: Draft): NativeMotionPicks => Object.fromEntries(
 /** Per-stream choices for no-character players, remembered per streamer/device. */
 export default function LiveStreamAnimationPicker({ broadcastId, open, labels }: Props) {
   const [catalog, setCatalog] = useState<NativeMotionCatalog | null>(null);
+  const [gestureCatalog, setGestureCatalog] = useState<NativeMotionCatalog | null>(null);
+  const [gestureCatalogStatus, setGestureCatalogStatus] = useState<'loading' | 'ready' | 'unavailable'>('loading');
   const [drafts, setDrafts] = useState<[Draft, Draft]>([{}, {}]);
+  const [gestureDrafts, setGestureDrafts] = useState<[GestureDraft, GestureDraft]>([{}, {}]);
   const [owner, setOwner] = useState('');
   const [loadedStream, setLoadedStream] = useState('');
   const [busy, setBusy] = useState(false);
@@ -78,6 +87,26 @@ export default function LiveStreamAnimationPicker({ broadcastId, open, labels }:
   useEffect(() => {
     if (!anyOpen) return;
     let active = true;
+    setGestureCatalogStatus('loading');
+    fetch(`/api/native-motion/${NATIVE_MOTION_GESTURE_CATALOG_SHA256}/catalog.json`, { cache: 'force-cache' })
+      .then(async (response) => {
+        if (!response.ok) throw new Error();
+        const body = await response.json() as NativeMotionCatalog;
+        if (!Array.isArray(body?.clips)) throw new Error();
+        if (active) {
+          setGestureCatalog(body);
+          setGestureCatalogStatus('ready');
+        }
+      })
+      .catch(() => {
+        if (active) setGestureCatalogStatus('unavailable');
+      });
+    return () => { active = false; };
+  }, [anyOpen]);
+
+  useEffect(() => {
+    if (!anyOpen) return;
+    let active = true;
     const controller = new AbortController();
     let savedLoaded = false;
     setLoadedStream('');
@@ -90,6 +119,7 @@ export default function LiveStreamAnimationPicker({ broadcastId, open, labels }:
         const body = await response.json();
         if (!response.ok) throw new Error(body.error || 'Stream animations could not be loaded.');
         const saved = body.playerClips as [NativeMotionPicks, NativeMotionPicks];
+        const savedGestures = (body.playerGestures ?? [{}, {}]) as [GestureDraft, GestureDraft];
         if (!Array.isArray(saved) || saved.length !== 2 || !body.ownerDiscordId) throw new Error('Invalid stream animation response.');
         const streamer = String(body.ownerDiscordId);
         const next: [Draft, Draft] = [{ ...saved[0] }, { ...saved[1] }];
@@ -103,6 +133,7 @@ export default function LiveStreamAnimationPicker({ broadcastId, open, labels }:
         if (!active) return;
         setOwner(streamer);
         setDrafts(next);
+        setGestureDrafts([{ ...savedGestures[0] }, { ...savedGestures[1] }]);
         savedLoaded = true;
         if (apply.some(Boolean)) {
           const restore = await fetch(endpoint, {
@@ -119,6 +150,7 @@ export default function LiveStreamAnimationPicker({ broadcastId, open, labels }:
           if (!refreshed.ok) throw new Error(actual.error || 'Restored animations could not be loaded.');
           if (active) {
             setDrafts(actual.playerClips);
+            setGestureDrafts(actual.playerGestures ?? [{}, {}]);
             setMessage('Your saved animations are applied to this stream.');
           }
         }
@@ -148,6 +180,16 @@ export default function LiveStreamAnimationPicker({ broadcastId, open, labels }:
     setMessage('');
   }
 
+  function changeGesture(index: 0 | 1, type: string, clipId: string) {
+    setGestureDrafts((current) => {
+      const next: [GestureDraft, GestureDraft] = [{ ...current[0] }, { ...current[1] }];
+      if (!clipId) delete next[index][type];
+      else next[index][type] = { clipId };
+      return next;
+    });
+    setMessage('');
+  }
+
   async function save() {
     if (loadedStream !== broadcastId || !owner) return;
     setBusy(true);
@@ -164,10 +206,14 @@ export default function LiveStreamAnimationPicker({ broadcastId, open, labels }:
         }
       }
       const playerClips = ([0, 1] as const).map((index) => (open[index] ? complete(drafts[index]) : null));
+      const playerGestures = ([0, 1] as const).map((index) => (open[index] ? gestureDrafts[index] : null));
       const response = await fetch(`/api/live-dmo/${encodeURIComponent(broadcastId)}/animations`, {
         method: 'PUT',
         headers: { 'content-type': 'application/json' },
-        body: JSON.stringify({ playerClips }),
+        body: JSON.stringify({
+          playerClips,
+          ...(gestureCatalog ? { playerGestures } : {}),
+        }),
       });
       const body = await response.json();
       if (!response.ok) throw new Error(body.error || 'Stream animations could not be saved.');
@@ -189,8 +235,8 @@ export default function LiveStreamAnimationPicker({ broadcastId, open, labels }:
       {expanded && (
         <>
           <small className={styles.characterRosterStatus}>
-            For players with no WTSL character, such as a created character. One clip per stroke;
-            leave a stroke empty for standard motion. Remembered on this device for your next stream.
+            For players with no WTSL character, such as a created character. Choose one clip per stroke
+            or gesture type. Stroke choices are remembered on this device; gesture choices are saved to this stream.
           </small>
           {!catalog && !error && <small role="status">Loading animations…</small>}
           {catalog && ([0, 1] as const).filter((index) => open[index]).map((index) => (
@@ -230,6 +276,38 @@ export default function LiveStreamAnimationPicker({ broadcastId, open, labels }:
                   </div>
                 );
               })}
+              <div className={styles.animationStroke}>
+                <strong>Gesture clips</strong>
+                <small>Used for selected long-rally and match reactions.</small>
+                {!gestureCatalog && (
+                  <small role="status">
+                    {gestureCatalogStatus === 'loading'
+                      ? 'Loading gesture clips…'
+                      : 'Gesture clips are not available from Core yet; existing motion is unchanged.'}
+                  </small>
+                )}
+                {gestureCatalog && [...new Set(gestureCatalog.clips
+                  .filter((clip) => clip.events?.kind === 'gesture' && clip.events.gesture)
+                  .map((clip) => clip.events!.gesture!))].map((type) => (
+                  <label className={styles.bestOf} key={type}>
+                    <span id={`stream-${index}-gesture-${type}-label`}>
+                      {type.replace(/([a-z])([A-Z])/g, '$1 $2')}
+                    </span>
+                    <SearchableClipSelect
+                      id={`stream-${index}-gesture-${type}`} labelledBy={`stream-${index}-gesture-${type}-label`}
+                      value={gestureDrafts[index][type]?.clipId ?? ''}
+                      options={[
+                        { value: '', label: 'No gesture clip' },
+                        ...nativeMotionGestureClips(gestureCatalog, type).map((clip) => ({
+                          value: clip.id,
+                          label: [clip.gestureMod, clip.sourceBundle, clip.originalClipName].filter(Boolean).join(' · ') || clip.id,
+                        })),
+                      ]}
+                      onChange={(clipId) => changeGesture(index, type, clipId)}
+                    />
+                  </label>
+                ))}
+              </div>
             </fieldset>
           ))}
           {catalog && (

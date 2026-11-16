@@ -30,10 +30,15 @@ function setup({
     '@/lib/auth': { getSession: async () => user },
     '@/lib/liveRequestSecurity': { isSameSiteMutation: () => sameSite },
     '@/lib/nativeMotionCatalogData': catalogData,
-    '@/lib/nativeMotionServer': { fetchNativeMotionCatalog: async () => ({ clips: [
-      { id: 'a1_b1', duration: 1, events: { kind: 'strike', contactTime: 0.5 } },
-      { id: 'a2_b2', duration: 1, events: { kind: 'serve', contactTime: 0.5 } },
-    ] }) },
+    '@/lib/nativeMotionServer': {
+      fetchNativeMotionCatalog: async () => ({ clips: [
+        { id: 'a1_b1', duration: 1, events: { kind: 'strike', contactTime: 0.5 } },
+        { id: 'a2_b2', duration: 1, events: { kind: 'serve', contactTime: 0.5 } },
+      ] }),
+      fetchNativeMotionGestureCatalog: async () => ({ clips: [
+        { id: 'c1_d1', duration: 1, events: { kind: 'gesture', gesture: 'CheerFist' } },
+      ] }),
+    },
     '@/lib/db': {
       sql: async (strings, ...values) => {
         const text = strings.join('?');
@@ -57,16 +62,16 @@ test('the streamer saves one no-character player and leaves the other alone', as
   const { route, writes } = setup();
   const response = await route.PUT(put({ playerClips: [{ forehand: pick, serve }, null] }), context);
   assert.equal(response.status, 200);
-  assert.equal(writes.length, 2);
-  assert.match(writes[0].text, /DELETE[\s\S]*player_index=/);
-  assert.deepEqual(writes[0].values, [STREAM, 0]);
-  assert.deepEqual(JSON.parse(writes[1].values[2]), { forehand: pick, serve });
+  assert.equal(writes.length, 1);
+  assert.match(writes[0].text, /INSERT[\s\S]*ON CONFLICT[\s\S]*jsonb_set/);
+  assert.deepEqual(writes[0].values.slice(0, 3), [STREAM, 0, JSON.stringify({ forehand: pick, serve })]);
+  assert.equal(writes[0].values[3], false);
 });
 test('an empty choice clears that player back to standard motion', async () => {
   const { route, writes } = setup();
   assert.equal((await route.PUT(put({ playerClips: [null, {}] }), context)).status, 200);
   assert.equal(writes.length, 1);
-  assert.deepEqual(writes[0].values, [STREAM, 1]);
+  assert.deepEqual(writes[0].values.slice(0, 3), [STREAM, 1, '{}']);
 });
 test('manual and automatic streams have the same ownership rules', async () => {
   for (const mode of ['auto', 'manual']) {
@@ -127,7 +132,30 @@ test('incompatible clips, missing handedness, invalid JSON and oversized bodies 
 test('the streamer can read back choices and its own owner-scoped storage identity', async () => {
   const { route } = setup({ saved: [{ player_index: 1, clips: { forehand: pick } }] });
   const response = await route.GET(new Request('https://forum.test'), context);
-  assert.deepEqual(await response.json(), { playerClips: [{}, { forehand: pick }], ownerDiscordId: 'streamer' });
+  assert.deepEqual(await response.json(), {
+    playerClips: [{}, { forehand: pick }],
+    playerGestures: [{}, {}],
+    ownerDiscordId: 'streamer',
+  });
+});
+test('gesture clips use the separate catalog and coexist with stroke overrides', async () => {
+  const { route, writes } = setup();
+  const gestures = { CheerFist: { clipId: 'c1_d1' } };
+  const response = await route.PUT(put({
+    playerClips: [null, null],
+    playerGestures: [gestures, null],
+  }), context);
+  assert.equal(response.status, 200);
+  assert.equal(writes.length, 1);
+  assert.match(writes[0].text, /jsonb_set/);
+  assert.deepEqual(JSON.parse(writes[0].values[2]), { gestures });
+
+  const invalid = setup();
+  assert.equal((await invalid.route.PUT(put({
+    playerClips: [null, null],
+    playerGestures: [{ CheerFist: { clipId: 'a1_b1' } }, null],
+  }), context)).status, 400);
+  assert.equal(invalid.writes.length, 0);
 });
 test('the host only offers editable slots for no-character players', () => {
   const host = readFileSync(new URL('../components/DmoLiveHost.tsx', import.meta.url), 'utf8');
@@ -187,7 +215,7 @@ test('remembered choices restore for the same streamer and read back concurrent 
   const writes = requests.filter((request) => request.init?.method === 'PUT');
   assert.equal(writes.length, 1);
   assert.deepEqual(JSON.parse(writes[0].init.body), { playerClips: [{ forehand: pick }, null], onlyIfEmpty: true });
-  assert.deepEqual(states[1].at(-1), [{ serve }, { forehand: pick }]);
+  assert.deepEqual(states[3].at(-1), [{ serve }, { forehand: pick }]);
 });
 test('existing choices are not restored over and roster slots are left alone', async () => {
   for (const options of [{ saved: [{ forehand: pick }, {}] }, { open: [false, true] }]) {
@@ -197,6 +225,6 @@ test('existing choices are not restored over and roster slots are left alone', a
 });
 test('a failed automatic restore is visible and leaves manual correction available', async () => {
   const { states } = await restorePicker({ fail: true });
-  assert.equal(states[5].at(-1), 'Restore failed');
-  assert.equal(states[3].at(-1), STREAM);
+  assert.equal(states[8].at(-1), 'Restore failed');
+  assert.equal(states[6].at(-1), STREAM);
 });

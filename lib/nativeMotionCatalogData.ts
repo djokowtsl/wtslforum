@@ -17,6 +17,8 @@ export type NativeMotionPick = {
   sourceHandedness: NativeMotionHand;
 };
 export type NativeMotionPicks = Partial<Record<NativeMotionStroke, NativeMotionPick>>;
+export type NativeMotionGesturePick = { clipId: string };
+export type NativeMotionGesturePicks = Partial<Record<string, NativeMotionGesturePick>>;
 
 export type NativeMotionCatalogClip = {
   id: string;

@@ -1,13 +1,16 @@
-import { NATIVE_MOTION_CATALOG_SHA256 } from './nativeMotionCatalog';
+import {
+  NATIVE_MOTION_CATALOG_SHA256,
+  NATIVE_MOTION_GESTURE_CATALOG_SHA256,
+} from './nativeMotionCatalog';
 import type { NativeMotionCatalog } from './nativeMotionCatalogData';
 
-export async function fetchNativeMotionCatalog(): Promise<NativeMotionCatalog> {
+async function fetchCatalog(hash: string): Promise<NativeMotionCatalog> {
   const base = (process.env.WTSL_CORE_API_URL || '').replace(/\/+$/, '');
   const token = process.env.WTSL_CORE_API_KEY || '';
   if (!base || !token) throw new Error('Native motion Core API is not configured.');
 
   const response = await fetch(
-    `${base}/api/core/native-motion/${NATIVE_MOTION_CATALOG_SHA256}/catalog.json`,
+    `${base}/api/core/native-motion/${hash}/catalog.json`,
     {
       headers: {
         Accept: 'application/json',
@@ -23,4 +26,12 @@ export async function fetchNativeMotionCatalog(): Promise<NativeMotionCatalog> {
     throw new Error('Native motion catalog did not pass format validation.');
   }
   return catalog;
+}
+
+export function fetchNativeMotionCatalog(): Promise<NativeMotionCatalog> {
+  return fetchCatalog(NATIVE_MOTION_CATALOG_SHA256);
+}
+
+export function fetchNativeMotionGestureCatalog(): Promise<NativeMotionCatalog> {
+  return fetchCatalog(NATIVE_MOTION_GESTURE_CATALOG_SHA256);
 }
