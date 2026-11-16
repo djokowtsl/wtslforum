@@ -397,6 +397,7 @@ test('playback uses one chosen version and preserves player identity when replay
           return [initial, (value) => { if (index === 0) changes.push(value); }];
         },
         useEffect: (effect) => { cleanup = effect(); },
+        useMemo: (build) => build(),
       },
       '@/lib/dmoBundledMotion.mjs': { decodeBundledMotion: (buffer) => ({ selected: new TextDecoder().decode(buffer) }) },
       '@/lib/nativeMotionCatalog': { NATIVE_MOTION_CATALOG_SHA256: 'catalog-hash' },
@@ -488,6 +489,7 @@ test('a live broadcast re-check with unchanged animations never hands the court 
           }];
         },
         useEffect: (effect) => { cleanup = effect(); },
+        useMemo: (build) => build(),
       },
       '@/lib/dmoBundledMotion.mjs': { decodeBundledMotion: () => ({ selected: 'clip' }) },
       '@/lib/nativeMotionCatalog': { NATIVE_MOTION_CATALOG_SHA256: 'catalog-hash' },
@@ -535,4 +537,46 @@ test('a live broadcast re-check with unchanged animations never hands the court 
     globalThis.fetch = oldFetch;
     globalThis.window = oldWindow;
   }
+});
+
+test('re-rendering hands the court the same animations, so it never rebuilds for nothing', () => {
+  // Gestures made the hook build a fresh value on every render; the court
+  // rebuilt its whole scene each time a point ended (or every live update).
+  const states = new Map();
+  const memos = [];
+  let stateIndex = 0;
+  let memoIndex = 0;
+  const react = {
+    useState: (initial) => {
+      const index = stateIndex++;
+      if (!states.has(index)) states.set(index, initial);
+      return [states.get(index), () => {}];
+    },
+    useEffect: () => {},
+    useMemo: (build, deps) => {
+      const index = memoIndex++;
+      const previous = memos[index];
+      if (previous && previous.deps.every((dep, i) => Object.is(dep, deps[i]))) return previous.value;
+      const value = build();
+      memos[index] = { deps, value };
+      return value;
+    },
+  };
+  const hook = load('components/useNativePlayerMotions.ts', {
+    react,
+    '@/lib/dmoBundledMotion.mjs': { decodeBundledMotion: () => ({}) },
+    '@/lib/nativeMotionCatalog': { NATIVE_MOTION_CATALOG_SHA256: 'a', NATIVE_MOTION_GESTURE_CATALOG_SHA256: 'b' },
+    '@/lib/nativeMotionCatalogData': catalogData,
+    '@/lib/dmoCharacterAppearance.mjs': characterGrunts,
+  });
+  const render = () => {
+    stateIndex = 0;
+    memoIndex = 0;
+    return hook.useNativePlayerMotions({ playerNames: ['Djokovic', 'Federer'], broadcastId: 'b' }).sources;
+  };
+  const first = render();
+  const second = render();
+  assert.equal(second, first, 'the same sources across renders');
+  const source = readFileSync(new URL('../components/useNativePlayerMotions.ts', import.meta.url), 'utf8');
+  assert.match(source, /useMemo<SourcePair>\([\s\S]*\}, \[sources, gestureSources\]\)/);
 });

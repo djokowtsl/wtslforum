@@ -1,6 +1,6 @@
 'use client';
 
-import { useEffect, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import {
   decodeBundledMotion,
   type BundledMotionClip,
@@ -307,16 +307,21 @@ export function useNativePlayerMotions({
     };
   }, [playerOne, playerTwo, broadcastId, submissionId, orderOne, orderTwo, allowAutomaticFallback]);
 
-  const combine = (index: 0 | 1): BundledMotionSource | null => {
-    const motion = sources[index];
-    const gestures = gestureSources[index];
-    if (!motion && !gestures) return null;
-    return {
-      schema: motion?.schema ?? gestures!.schema,
-      clips: motion?.clips ?? {},
-      ...(gestures ? { gestures: gestures.clips } : {}),
+  // The court rebuilds its whole 3D scene whenever this value changes, so it
+  // must only change when the stroke or gesture animations do, never on an
+  // ordinary re-render (a new point, a score update, a live frame).
+  const combinedSources = useMemo<SourcePair>(() => {
+    const combine = (index: 0 | 1): BundledMotionSource | null => {
+      const motion = sources[index];
+      const gestures = gestureSources[index];
+      if (!gestures) return motion;
+      return {
+        schema: motion?.schema ?? gestures.schema,
+        clips: motion?.clips ?? {},
+        gestures: gestures.clips,
+      };
     };
-  };
-  const combinedSources: SourcePair = [combine(0), combine(1)];
+    return [combine(0), combine(1)];
+  }, [sources, gestureSources]);
   return { sources: combinedSources, error, gestureError, playerGruntSettings };
 }
