@@ -33,6 +33,7 @@ function setup(options = {}) {
   const calls = [];
   const writes = [];
   let catalogFetches = 0;
+  let gestureCatalogFetches = 0;
   const route = load('app/api/admin/native-motion/player-overrides/route.ts', {
     'next/server': { NextResponse: { json: (data, init) => Response.json(data, init) } },
     '@/lib/auth': { getSession: async () => options.user === undefined ? { isAdmin: true } : options.user },
@@ -52,6 +53,15 @@ function setup(options = {}) {
           ],
         };
       },
+      fetchNativeMotionGestureCatalog: async () => {
+        gestureCatalogFetches += 1;
+        return {
+          clips: [
+            { id: 'c1_d1', duration: 1, events: { kind: 'gesture', gesture: 'CheerFist' } },
+            { id: 'c2_d2', duration: 1, events: { kind: 'gesture', gesture: 'RagingFist' } },
+          ],
+        };
+      },
     },
     '@/lib/db': {
       sql: async (strings, ...values) => {
@@ -67,7 +77,11 @@ function setup(options = {}) {
       },
     },
   });
-  return { route, calls, writes, get catalogFetches() { return catalogFetches; } };
+  return {
+    route, calls, writes,
+    get catalogFetches() { return catalogFetches; },
+    get gestureCatalogFetches() { return gestureCatalogFetches; },
+  };
 }
 const request = (body) => new Request('https://forum.test/api/admin/native-motion/player-overrides', {
   method: 'PUT', headers: { 'content-type': 'application/json' }, body: JSON.stringify(body),
@@ -128,8 +142,9 @@ test('a replay accepts an arbitrary compatible variant without character restric
   const { route, writes } = setup();
   assert.equal((await route.PUT(request(body()))).status, 200);
   assert.equal(writes.length, 2);
-  assert.match(writes[0].text, /DELETE.+submission_id/s);
-  assert.deepEqual(writes[1].values, ['17', 0, JSON.stringify({ forehand: pick })]);
+  assert.match(writes[0].text, /ON CONFLICT \(submission_id, player_index\)/);
+  assert.deepEqual(writes[0].values.slice(0, 3), ['17', 0, JSON.stringify({ forehand: pick })]);
+  assert.deepEqual(writes[0].values[3], ['forehand', 'backhand', 'serve', 'slice-forehand', 'slice-backhand']);
 });
 
 test('per-player slice selections are saved for replay and live targets with opposite-side validation', async () => {
@@ -156,12 +171,44 @@ test('each player and stroke is stored separately and clearing restores defaults
   const first = setup();
   const response = await first.route.PUT(request(body({ playerClips: [{ forehand: pick }, { serve: alternate }] })));
   assert.equal(response.status, 200);
-  assert.equal(first.writes.length, 3);
-  assert.deepEqual(first.writes[2].values, ['17', 1, JSON.stringify({ serve: alternate })]);
+  assert.equal(first.writes.length, 2);
+  assert.deepEqual(first.writes[1].values.slice(0, 3), ['17', 1, JSON.stringify({ serve: alternate })]);
   const cleared = setup();
   assert.equal((await cleared.route.PUT(request(body({ playerClips: [{}, {}] })))).status, 200);
-  assert.equal(cleared.writes.length, 1);
-  assert.match(cleared.writes[0].text, /DELETE/);
+  assert.equal(cleared.writes.length, 2);
+  assert.deepEqual(cleared.writes[0].values[2], JSON.stringify({}));
+  assert.match(cleared.writes[0].text, /clips - \?::text\[\]/);
+});
+
+test('gesture selections are validated and saved independently for replay and manual stream players', async () => {
+  const gestures = { CheerFist: { clipId: 'c1_d1' } };
+  for (const target of [
+    { targetType: 'replay', targetId: '17' },
+    { targetType: 'manual', targetId: broadcastId },
+  ]) {
+    const harness = setup();
+    const response = await harness.route.PUT(request(body({
+      ...target,
+      playerClips: [{}, {}],
+      playerGestures: [gestures, {}],
+    })));
+    assert.equal(response.status, 200);
+    assert.equal(harness.gestureCatalogFetches, 1);
+    assert.ok(harness.writes.some((write) => (
+      write.values.includes(JSON.stringify({ gestures }))
+      && write.text.includes(target.targetType === 'replay'
+        ? 'submission_id, player_index'
+        : 'broadcast_id, player_index')
+    )));
+  }
+
+  const invalid = setup();
+  const response = await invalid.route.PUT(request(body({
+    playerClips: [{}, {}],
+    playerGestures: [{ CheerFist: { clipId: 'a1_b1' } }, {}],
+  })));
+  assert.equal(response.status, 400);
+  assert.equal(invalid.writes.length, 0);
 });
 
 test('admins can assign a grunt bank or silence either match player', async () => {
@@ -210,8 +257,8 @@ test('automatic, expired, hidden, and missing targets cannot receive overrides',
 test('manual streams save the chosen clips under the broadcast, not the character', async () => {
   const { route, writes } = setup();
   assert.equal((await route.PUT(request(body({ targetType: 'manual', targetId: broadcastId })))).status, 200);
-  assert.match(writes[1].text, /\(broadcast_id, player_index, clips\)/);
-  assert.equal(writes[1].values[0], broadcastId);
+  assert.match(writes[0].text, /\(broadcast_id, player_index, clips\)/);
+  assert.equal(writes[0].values[0], broadcastId);
 });
 
 test('invalid strokes, arrays of alternatives, and missing handedness are rejected', async () => {
@@ -254,14 +301,19 @@ test('replay resolver checks visibility and returns match overrides above option
     '@/lib/dmoCharacterAppearance.mjs': characterGrunts,
     '@/lib/db': { sql: async (strings) => {
       const text = strings.join('?'); queries.push(text);
-      return text.includes('FROM dmo_native_motion_player_overrides') ? [{ player_index: 1, clips: { forehand: pick } }] : [];
+      return text.includes('FROM dmo_native_motion_player_overrides') ? [{
+        player_index: 1,
+        clips: { forehand: pick, gestures: { CheerFist: { clipId: 'c1_d1' } } },
+      }] : [];
     } },
   };
   const route = load('app/api/native-motion/profiles/route.ts', mocks);
   const response = await route.GET(new Request('https://forum.test/api/native-motion/profiles?submissionId=17&player1=Federer&player2=Djokovic'));
   assert.equal(response.status, 200);
   assert.equal(response.headers.get('cache-control'), 'private, no-store');
-  assert.deepEqual((await response.json()).playerClipOverrides, [{}, { forehand: pick }]);
+  const payload = await response.json();
+  assert.deepEqual(payload.playerClipOverrides, [{}, { forehand: pick }]);
+  assert.deepEqual(payload.playerGestureOverrides, [{}, { CheerFist: { clipId: 'c1_d1' } }]);
   const hidden = load('app/api/native-motion/profiles/route.ts', {
     ...mocks,
     '@/lib/dmoReplayLibrary': { ...mocks['@/lib/dmoReplayLibrary'], getPublicDmoReplay: async () => null },
