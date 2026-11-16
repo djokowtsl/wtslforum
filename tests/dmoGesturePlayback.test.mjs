@@ -181,3 +181,30 @@ test('the court plays gestures only while holding the point end, in replays and 
   assert.match(court, /gestureDwell && gestureDwell\.frame === frame\s*\? dmoGestureDuringDwell/, 'no gestures over walking');
   assert.match(court, /if \(gestureDwell && replayFrameRef\.current !== gestureDwell\.frame\) gestureDwell = null;/, 'a seek cancels the hold');
 });
+
+test('gestures play over the whole body at the stroke stage, before the racket, grip and shoes', async () => {
+  const { readFile } = await import('node:fs/promises');
+  const bundled = await readFile(new URL('../components/DmoBundledGroundstroke.ts', import.meta.url), 'utf8');
+  const gesture = bundled.slice(bundled.indexOf('  applyGesture('), bundled.indexOf('  private sample('));
+  assert.doesNotMatch(gesture, /UPPER/, 'legs and hips take part (crouch, jump, bow), like a stroke');
+  assert.match(gesture, /if \(!BODY\.has\(bone\.name\)\) return;/);
+  assert.match(gesture, /const mirrored = handedness === 'left';/, 'left-handers get a mirrored gesture');
+  assert.match(gesture, /reflect\(rotation\)/);
+  assert.match(gesture, /bone\.name === 'pelvis'/, 'the clip supplies hip height');
+  assert.match(gesture, /GESTURE_SWAY_LIMIT/, 'hip sway is kept small so feet stay planted');
+  assert.match(gesture, /return blend;/);
+  for (const file of ['DmoNativePlayer.ts', 'DmoNativePlayerClaude.ts']) {
+    const source = await readFile(new URL(`../components/${file}`, import.meta.url), 'utf8');
+    const applied = source.indexOf('capturedGroundstroke.applyGesture(');
+    assert.ok(applied > 0, `${file} plays gestures`);
+    assert.equal(source.indexOf('capturedGroundstroke.applyGesture(', applied + 1), -1, `${file} plays a gesture once per update`);
+    const look = source.indexOf('const lookWeight =');
+    const racket = source.indexOf('rig.racket.quaternion.copy(handOrientation');
+    const support = source.indexOf('const supportHold =');
+    assert.ok(source.indexOf('capturedGroundstroke.apply(strokePlayback)') < applied, `${file}: after the stroke stage`);
+    assert.ok(applied < look && applied < racket && applied < support, `${file}: before look-at, racket and grip`);
+    assert.match(source, /const lookWeight = [^\n]*\* \(1 - gestureWeight\);/, `${file}: the head stops tracking the ball`);
+    assert.match(source.slice(support, support + 400), /\* \(1 - gestureWeight\);/, `${file}: the free hand lets go`);
+    assert.match(source, /dominant === 'l' \? 'left' : 'right'/, `${file}: passes handedness`);
+  }
+});

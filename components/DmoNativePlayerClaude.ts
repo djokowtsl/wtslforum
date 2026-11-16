@@ -679,9 +679,21 @@ export function attachNativePlayer(
       }
     }
 
+    // Gestures (between points) play over the whole body here, like a stroke,
+    // so the racket, grip, wrist twist and shoes below follow them.
+    const gesturePlayback = rig.root.userData.gesturePlayback as
+      { type: string; time: number; weight: number; variant?: number } | undefined;
+    const gestureWeight = gesturePlayback
+      ? capturedGroundstroke.applyGesture(
+        gesturePlayback.type, gesturePlayback.time, gesturePlayback.weight, gesturePlayback.variant ?? 0,
+        dominant === 'l' ? 'left' : 'right',
+      )
+      : 0;
+
     // Eyes on the ball. The neck takes part of the turn, within anatomical
     // limits; the head follows smoothly instead of snapping between updates.
-    const lookWeight = THREE.MathUtils.clamp(Number(rig.root.userData.lookWeight ?? 0), 0, 1);
+    // A gesture owns the head; it doesn't keep tracking the ball.
+    const lookWeight = THREE.MathUtils.clamp(Number(rig.root.userData.lookWeight ?? 0), 0, 1) * (1 - gestureWeight);
     const lookTarget = rig.root.userData.lookTarget as [number, number, number] | undefined;
     if (lookTarget && lookWeight > 0.001) {
       const relative = (name: string) => pose.rotation(name).multiply(pose.rest.get(name)!.rotation.clone().invert());
@@ -727,10 +739,11 @@ export function attachNativePlayer(
       0,
       1,
     );
+    // During a gesture the free hand lets go of the racket and follows the clip.
     const supportHold = Math.max(
       strokeHold,
       THREE.MathUtils.clamp(Number(rig.root.userData.supportHoldWeight ?? 0), 0, 1) * (1 - captureWeight),
-    );
+    ) * (1 - gestureWeight);
     grips[support].setClosed(supportHold > 0.5);
     if (supportHold > 0) {
       const racketRotation = rig.racket.quaternion.clone();
@@ -854,13 +867,6 @@ export function attachNativePlayer(
           model.updateMatrixWorld(true);
         }
       }
-    }
-    const gesturePlayback = rig.root.userData.gesturePlayback as
-      { type: string; time: number; weight: number; variant?: number } | undefined;
-    if (gesturePlayback) {
-      capturedGroundstroke.applyGesture(
-        gesturePlayback.type, gesturePlayback.time, gesturePlayback.weight, gesturePlayback.variant ?? 0,
-      );
     }
   };
   rig.detailed = { update };
