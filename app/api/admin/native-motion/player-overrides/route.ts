@@ -4,10 +4,12 @@ import { getSession } from '@/lib/auth';
 import { sql, transaction } from '@/lib/db';
 import { isSameSiteMutation } from '@/lib/liveRequestSecurity';
 import { isDmoReplayId } from '@/lib/dmoReplayLibrary';
-import { fetchNativeMotionCatalog } from '@/lib/nativeMotionServer';
+import { fetchNativeMotionCatalog, fetchNativeMotionGestureCatalog } from '@/lib/nativeMotionServer';
 import {
   NATIVE_MOTION_STROKES,
   nativeMotionClipSupportsStroke,
+  nativeMotionGestureClips,
+  type NativeMotionGesturePicks,
   type NativeMotionPicks,
 } from '@/lib/nativeMotionCatalogData';
 import { isDmoCharacterGruntGroup } from '@/lib/dmoCharacterAppearance.mjs';
@@ -25,6 +27,10 @@ const clipsSchema = z.object({
   'slice-forehand': pickSchema.optional(),
   'slice-backhand': pickSchema.optional(),
 }).strict();
+const gesturePickSchema = z.object({
+  clipId: z.string().regex(/^[a-f0-9]+_[a-f0-9]+$/i).max(80),
+}).strict();
+const gesturesSchema = z.record(z.string().min(1).max(40), gesturePickSchema);
 const gruntOverrideSchema = z.object({
   gruntGroup: z.string().max(80).nullable(),
 }).strict();
@@ -32,12 +38,42 @@ const bodySchema = z.object({
   targetType: z.enum(['replay', 'manual']),
   targetId: z.string().min(1).max(40),
   playerClips: z.tuple([clipsSchema, clipsSchema]).optional(),
+  playerGestures: z.tuple([gesturesSchema, gesturesSchema]).optional(),
   playerGruntOverrides: z.tuple([
     gruntOverrideSchema.nullable(),
     gruntOverrideSchema.nullable(),
   ]).optional(),
-}).strict().refine((body) => body.playerClips !== undefined || body.playerGruntOverrides !== undefined);
+}).strict().refine((body) => (
+  body.playerClips !== undefined
+  || body.playerGestures !== undefined
+  || body.playerGruntOverrides !== undefined
+));
 const uuidSchema = z.string().uuid();
+
+function splitClipOverrides(overrides: Record<string, unknown> | null | undefined) {
+  const split = (index: '0' | '1') => {
+    const raw = overrides?.[index];
+    const stored = raw && typeof raw === 'object' && !Array.isArray(raw)
+      ? raw as Record<string, unknown>
+      : {};
+    const { gestures, ...clips } = stored;
+    return {
+      clips: clips as NativeMotionPicks,
+      gestures: gestures && typeof gestures === 'object' && !Array.isArray(gestures)
+        ? gestures as NativeMotionGesturePicks
+        : {},
+    };
+  };
+  const first = split('0');
+  const second = split('1');
+  return {
+    playerClips: [first.clips, second.clips] as [NativeMotionPicks, NativeMotionPicks],
+    playerGestures: [first.gestures, second.gestures] as [
+      NativeMotionGesturePicks,
+      NativeMotionGesturePicks,
+    ],
+  };
+}
 
 export async function GET(request: Request) {
   if (!(await getSession())?.isAdmin) {
@@ -81,7 +117,7 @@ export async function GET(request: Request) {
         players: [String(row.player1), String(row.player2)],
         characters: [row.player1_character || null, row.player2_character || null],
         label: [row.tournament, row.round_name, row.submitted_at].filter(Boolean).join(' · '),
-        playerClips: [row.clip_overrides?.['0'] ?? {}, row.clip_overrides?.['1'] ?? {}],
+        ...splitClipOverrides(row.clip_overrides),
         playerGruntOverrides: [row.grunt_overrides?.['0'] ?? null, row.grunt_overrides?.['1'] ?? null],
       })),
       ...broadcasts.flatMap((row) => {
@@ -93,7 +129,7 @@ export async function GET(request: Request) {
           players: row.players,
           characters: [null, null],
           label: `Active manual stream · ${new Date(row.started_at).toISOString()}`,
-          playerClips: [row.clip_overrides?.['0'] ?? {}, row.clip_overrides?.['1'] ?? {}],
+          ...splitClipOverrides(row.clip_overrides),
           playerGruntOverrides: [row.grunt_overrides?.['0'] ?? null, row.grunt_overrides?.['1'] ?? null],
         }];
       }),
@@ -128,7 +164,7 @@ export async function PUT(request: Request) {
       status: 400, headers: HEADERS,
     });
   }
-  const { targetType, targetId, playerClips, playerGruntOverrides } = parsed.data;
+  const { targetType, targetId, playerClips, playerGestures, playerGruntOverrides } = parsed.data;
   if (targetType === 'replay' ? !isDmoReplayId(targetId) : !uuidSchema.safeParse(targetId).success) {
     return NextResponse.json({ error: 'Match not found.' }, { status: 404, headers: HEADERS });
   }
@@ -159,6 +195,25 @@ export async function PUT(request: Request) {
         }
       }
     }
+    if (playerGestures?.some((gestures) => Object.keys(gestures).length)) {
+      let catalog;
+      try {
+        catalog = await fetchNativeMotionGestureCatalog();
+      } catch {
+        return NextResponse.json({ error: 'Gesture clips are temporarily unavailable.' }, {
+          status: 503, headers: HEADERS,
+        });
+      }
+      for (const gestures of playerGestures) {
+        for (const [type, pick] of Object.entries(gestures)) {
+          if (!nativeMotionGestureClips(catalog, type).some((clip) => clip.id === pick.clipId)) {
+            return NextResponse.json({ error: 'The selected clip is not available for that gesture.' }, {
+              status: 400, headers: HEADERS,
+            });
+          }
+        }
+      }
+    }
     for (const override of playerGruntOverrides ?? []) {
       if (override?.gruntGroup && !isDmoCharacterGruntGroup(override.gruntGroup)) {
         return NextResponse.json({ error: 'Choose a grunt bank from the available character profiles.' }, {
@@ -168,20 +223,30 @@ export async function PUT(request: Request) {
     }
     await transaction((query) => {
       const commands = [];
-      if (playerClips) {
-        commands.push(targetType === 'replay'
-          ? query`DELETE FROM dmo_native_motion_player_overrides WHERE submission_id = ${targetId}::bigint`
-          : query`DELETE FROM dmo_native_motion_player_overrides WHERE broadcast_id = ${targetId}::uuid`);
-        playerClips.forEach((clips: NativeMotionPicks, index) => {
-          if (!Object.keys(clips).length) return;
+      if (playerClips || playerGestures) {
+        const replaceKeys = [
+          ...(playerClips ? ['forehand', 'backhand', 'serve', 'slice-forehand', 'slice-backhand'] : []),
+          ...(playerGestures ? ['gestures'] : []),
+        ];
+        ([0, 1] as const).forEach((index) => {
+          const saved = {
+            ...(playerClips ? playerClips[index] : {}),
+            ...(playerGestures ? { gestures: playerGestures[index] } : {}),
+          };
           commands.push(targetType === 'replay'
             ? query`
               INSERT INTO dmo_native_motion_player_overrides (submission_id, player_index, clips)
-              VALUES (${targetId}::bigint, ${index}, ${JSON.stringify(clips)}::jsonb)
+              VALUES (${targetId}::bigint, ${index}, ${JSON.stringify(saved)}::jsonb)
+              ON CONFLICT (submission_id, player_index) WHERE submission_id IS NOT NULL DO UPDATE
+              SET clips = (dmo_native_motion_player_overrides.clips - ${replaceKeys}::text[]) || EXCLUDED.clips,
+                  updated_at = NOW()
             `
             : query`
               INSERT INTO dmo_native_motion_player_overrides (broadcast_id, player_index, clips)
-              VALUES (${targetId}::uuid, ${index}, ${JSON.stringify(clips)}::jsonb)
+              VALUES (${targetId}::uuid, ${index}, ${JSON.stringify(saved)}::jsonb)
+              ON CONFLICT (broadcast_id, player_index) WHERE broadcast_id IS NOT NULL DO UPDATE
+              SET clips = (dmo_native_motion_player_overrides.clips - ${replaceKeys}::text[]) || EXCLUDED.clips,
+                  updated_at = NOW()
             `);
         });
       }

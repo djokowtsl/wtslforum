@@ -3,13 +3,16 @@
 import { useEffect, useState, type FormEvent } from 'react';
 import {
   NATIVE_MOTION_STROKES,
+  nativeMotionGestureClips,
   nativeMotionStrokeLabel,
   nativeMotionClipSupportsStroke,
   type NativeMotionCatalog,
+  type NativeMotionGesturePicks,
   type NativeMotionHand,
   type NativeMotionPicks,
   type NativeMotionStroke,
 } from '@/lib/nativeMotionCatalogData';
+import { NATIVE_MOTION_GESTURE_CATALOG_SHA256 } from '@/lib/nativeMotionCatalog';
 import { getDmoCharacterGruntGroups } from '@/lib/dmoCharacterAppearance.mjs';
 import styles from './NativeMotionAdmin.module.css';
 import SearchableClipSelect from './SearchableClipSelect';
@@ -22,6 +25,7 @@ type Target = {
   characters: [string | null, string | null];
   label: string;
   playerClips: [NativeMotionPicks, NativeMotionPicks];
+  playerGestures: [NativeMotionGesturePicks, NativeMotionGesturePicks];
   playerGruntOverrides: [null | { gruntGroup: string | null }, null | { gruntGroup: string | null }];
 };
 const keyFor = (target: Target) => `${target.type}:${target.id}`;
@@ -33,6 +37,11 @@ export default function NativeMotionMatchOverrides({ catalog }: { catalog?: Nati
   const [targets, setTargets] = useState<Target[]>([]);
   const [selectedKey, setSelectedKey] = useState('');
   const [drafts, setDrafts] = useState<Record<string, [Draft, Draft]>>({});
+  const [gestureCatalog, setGestureCatalog] = useState<NativeMotionCatalog | null>(null);
+  const [gestureCatalogStatus, setGestureCatalogStatus] = useState<'loading' | 'ready' | 'unavailable'>('loading');
+  const [gestureDrafts, setGestureDrafts] = useState<
+    Record<string, [NativeMotionGesturePicks, NativeMotionGesturePicks]>
+  >({});
   const [gruntDrafts, setGruntDrafts] = useState<Record<string, [string, string]>>({});
   const gruntGroups = getDmoCharacterGruntGroups();
   const [loading, setLoading] = useState(true);
@@ -41,7 +50,31 @@ export default function NativeMotionMatchOverrides({ catalog }: { catalog?: Nati
   const [message, setMessage] = useState('');
   const selected = targets.find((target) => keyFor(target) === selectedKey) ?? null;
   const picks = drafts[selectedKey] ?? [{}, {}];
+  const gesturePicks = gestureDrafts[selectedKey] ?? [{}, {}];
   const gruntPicks = gruntDrafts[selectedKey] ?? [USE_PROFILE, USE_PROFILE];
+  const gestureTypes = gestureCatalog
+    ? [...new Set(gestureCatalog.clips
+      .filter((clip) => clip.events?.kind === 'gesture' && clip.events.gesture)
+      .map((clip) => clip.events!.gesture!))]
+    : [];
+
+  useEffect(() => {
+    let active = true;
+    fetch(`/api/native-motion/${NATIVE_MOTION_GESTURE_CATALOG_SHA256}/catalog.json`, { cache: 'force-cache' })
+      .then(async (response) => {
+        if (!response.ok) throw new Error();
+        const body = await response.json() as NativeMotionCatalog;
+        if (!Array.isArray(body?.clips)) throw new Error();
+        if (active) {
+          setGestureCatalog(body);
+          setGestureCatalogStatus('ready');
+        }
+      })
+      .catch(() => {
+        if (active) setGestureCatalogStatus('unavailable');
+      });
+    return () => { active = false; };
+  }, []);
 
   async function load(search: string, signal?: AbortSignal) {
     setLoading(true);
@@ -55,6 +88,10 @@ export default function NativeMotionMatchOverrides({ catalog }: { catalog?: Nati
       const next = body.targets as Target[];
       setTargets(next);
       setDrafts(Object.fromEntries(next.map((target) => [keyFor(target), target.playerClips])));
+      setGestureDrafts(Object.fromEntries(next.map((target) => [
+        keyFor(target),
+        target.playerGestures ?? [{}, {}],
+      ])));
       setGruntDrafts(Object.fromEntries(next.map((target) => [
         keyFor(target),
         target.playerGruntOverrides.map((override) => (
@@ -89,6 +126,20 @@ export default function NativeMotionMatchOverrides({ catalog }: { catalog?: Nati
     setMessage('');
   }
 
+  function changeGesture(player: 0 | 1, type: string, clipId: string) {
+    setGestureDrafts((current) => {
+      const pair = current[selectedKey] ?? [{}, {}];
+      const next: [NativeMotionGesturePicks, NativeMotionGesturePicks] = [
+        { ...pair[0] },
+        { ...pair[1] },
+      ];
+      if (!clipId) delete next[player][type];
+      else next[player][type] = { clipId };
+      return { ...current, [selectedKey]: next };
+    });
+    setMessage('');
+  }
+
   async function save() {
     if (!selected) return;
     setBusy(true);
@@ -104,6 +155,15 @@ export default function NativeMotionMatchOverrides({ catalog }: { catalog?: Nati
           }
         }
       }
+      if (gestureCatalog) {
+        for (const player of gesturePicks) {
+          for (const [type, pick] of Object.entries(player)) {
+            if (!pick || !nativeMotionGestureClips(gestureCatalog, type).some((clip) => clip.id === pick.clipId)) {
+              throw new Error(`Choose a valid clip for the ${type} gesture.`);
+            }
+          }
+        }
+      }
       const response = await fetch('/api/admin/native-motion/player-overrides', {
         method: 'PUT',
         headers: { 'content-type': 'application/json' },
@@ -111,6 +171,7 @@ export default function NativeMotionMatchOverrides({ catalog }: { catalog?: Nati
           targetType: selected.type,
           targetId: selected.id,
           ...(catalog ? { playerClips: picks } : {}),
+          ...(gestureCatalog ? { playerGestures: gesturePicks } : {}),
           playerGruntOverrides: gruntPicks.map((value) => (
             value === USE_PROFILE ? null : { gruntGroup: value === NO_GRUNT ? null : value }
           )),
@@ -118,8 +179,8 @@ export default function NativeMotionMatchOverrides({ catalog }: { catalog?: Nati
       });
       const body = await response.json();
       if (!response.ok) throw new Error(body.error || 'Match choices could not be saved.');
-      setMessage(catalog
-        ? 'Saved for this match only. Reopen the replay to load the selected clips; live streams update automatically.'
+      setMessage(catalog || gestureCatalog
+        ? 'Saved for this match only. Reopen the replay to load selected clips and gestures; live streams update automatically.'
         : 'Grunt choices saved for this match only.');
     } catch (cause) {
       setError(cause instanceof Error ? cause.message : 'Match choices could not be saved.');
@@ -139,10 +200,11 @@ export default function NativeMotionMatchOverrides({ catalog }: { catalog?: Nati
         Select a submitted replay or an active manual stream. Search by player, tournament, or replay ID.
         Match-specific grunt choices work independently of the animation catalog.
       </p>
-      {catalog && (
+      {(catalog || gestureCatalog) && (
         <p className={styles.notice}>
-          One selected clip plays for each stroke—no cycling or random versions.
-          All versions, including hidden and acceleration variants, are available. These choices override character profiles only for the selected match.
+          One selected clip plays for each stroke or gesture type—no cycling or random versions.
+          All stroke variants, including hidden and acceleration variants, remain available; gesture lists show compatible visible clips.
+          These choices override character profiles only for the selected match.
         </p>
       )}
       <form className={styles.searchRow} onSubmit={search}>
@@ -228,6 +290,38 @@ export default function NativeMotionMatchOverrides({ catalog }: { catalog?: Nati
                     </div>
                   );
                 })}
+                <div className={styles.matchStroke}>
+                  <strong>Gesture clips</strong>
+                  <small>Optional per-player choices for match reactions.</small>
+                  {!gestureCatalog && (
+                    <small role="status">
+                      {gestureCatalogStatus === 'loading'
+                        ? 'Loading gesture clips…'
+                        : 'Gesture clips are unavailable. Existing choices will be preserved.'}
+                    </small>
+                  )}
+                  {gestureCatalog && gestureTypes.map((type) => (
+                    <label className={styles.field} key={type}>
+                      <span id={`match-${index}-gesture-${type}-label`}>
+                        {type.replace(/([a-z])([A-Z])/g, '$1 $2')}
+                      </span>
+                      <SearchableClipSelect
+                        id={`match-${index}-gesture-${type}`}
+                        labelledBy={`match-${index}-gesture-${type}-label`}
+                        value={gesturePicks[index][type]?.clipId ?? ''}
+                        options={[
+                          { value: '', label: 'Use character/default gesture' },
+                          ...nativeMotionGestureClips(gestureCatalog, type).map((clip) => ({
+                            value: clip.id,
+                            label: [clip.gestureMod, clip.sourceBundle, clip.originalClipName]
+                              .filter(Boolean).join(' · ') || clip.id,
+                          })),
+                        ]}
+                        onChange={(clipId) => changeGesture(index, type, clipId)}
+                      />
+                    </label>
+                  ))}
+                </div>
               </fieldset>
             ))}
           </div>
@@ -237,11 +331,14 @@ export default function NativeMotionMatchOverrides({ catalog }: { catalog?: Nati
             </button>
             <button type="button" className="btn btn-ghost" disabled={busy} onClick={() => {
               setDrafts((current) => ({ ...current, [selectedKey]: [{}, {}] }));
+              if (gestureCatalog) setGestureDrafts((current) => ({ ...current, [selectedKey]: [{}, {}] }));
               setGruntDrafts((current) => ({ ...current, [selectedKey]: [USE_PROFILE, USE_PROFILE] }));
-              setMessage(catalog
-                ? 'Overrides cleared in the form. Save to restore profile grunts and standard motion.'
+              setMessage(catalog || gestureCatalog
+                ? gestureCatalog
+                  ? 'Overrides cleared in the form. Save to restore character gestures, profile grunts, and standard motion.'
+                  : 'Stroke and grunt overrides cleared in the form. Saved gesture choices were preserved because the gesture catalog is unavailable.'
                 : 'Grunt overrides cleared in the form. Save to restore character profile grunts.');
-            }}>{catalog ? 'Clear match overrides' : 'Use character profile grunts'}</button>
+            }}>{catalog || gestureCatalog ? 'Clear match overrides' : 'Use character profile grunts'}</button>
           </div>
         </>
       )}
