@@ -156,7 +156,31 @@ export type Te4LivePoint = {
   winner: Te4LivePlayer;
   rallyHits: number;
   faults: number;
+  /** 'winner' when the point winner hit the last shot (winner or ace), 'error' when the loser did. */
+  endedBy?: 'winner' | 'error';
+  /**
+   * Gestures the players really made after this point, once the recording's
+   * gesture data is decoded. They override inferred gestures.
+   */
+  recordedGestures?: Array<{ player: Te4LivePlayer; type: string; frame?: number }>;
 };
+
+/**
+ * How a point ended, from who hit the last shot. The server serves, then the
+ * receiver hits first, so an odd number of hits after the serve means the
+ * receiver hit last.
+ */
+export function dmoPointEndedBy(
+  server: Te4LivePlayer,
+  winner: Te4LivePlayer | null | undefined,
+  hitsAfterServe: number,
+): 'winner' | 'error' | undefined {
+  if (winner !== 1 && winner !== 2) return undefined;
+  if (!Number.isInteger(hitsAfterServe) || hitsAfterServe < 0) return undefined;
+  const receiver: Te4LivePlayer = server === 1 ? 2 : 1;
+  const lastHitter = hitsAfterServe % 2 === 1 ? receiver : server;
+  return lastHitter === winner ? 'winner' : 'error';
+}
 
 export type Te4LiveSoundEvent = NonNullable<Te4LiveSnapshot['soundEvents']>[number];
 
@@ -810,6 +834,12 @@ export class Te4DmoLiveParser {
         winner: point.winner as Te4LivePlayer,
         rallyHits: point.hits.length,
         faults: point.faults,
+        ...(point.faults >= 2
+          ? { endedBy: 'error' as const }
+          : (() => {
+            const endedBy = dmoPointEndedBy(point.server, point.winner as Te4LivePlayer, point.hits.length);
+            return endedBy ? { endedBy } : {};
+          })()),
       };
     };
     const recentPoints = points.slice(recentStart).map((_, index) => describePoint(recentStart + index));

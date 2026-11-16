@@ -3,6 +3,8 @@ export interface DmoPointGestureEvent {
   player: 1 | 2;
   type: string;
   style: number | null;
+  /** True when the player really made this gesture (read from the recording). */
+  recorded?: boolean;
 }
 
 export function buildDmoPointGestureEvents(
@@ -12,11 +14,16 @@ export function buildDmoPointGestureEvents(
     rallyHits?: number;
     faults?: number;
     setNumber?: number;
+    server?: 1 | 2;
+    scoreLabel?: string;
+    isTiebreak?: boolean;
     endedBy?: 'winner' | 'error' | null;
+    recordedGestures?: readonly { player: 1 | 2; type: string; frame?: number }[];
   }[] | null | undefined,
   options?: {
     characters?: readonly [string | null | undefined, string | null | undefined];
     matchOver?: boolean;
+    bestOf?: number | null;
   },
 ): DmoPointGestureEvent[];
 

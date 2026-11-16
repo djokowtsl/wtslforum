@@ -382,9 +382,10 @@ function ThreeCourt({
       {
         characters: playerCharacters,
         matchOver,
+        bestOf: snapshot.bestOf,
       },
     );
-  }, [gesturePoints, snapshot.pointHistory, snapshot.recentPoints, playerCharacters, matchOver]);
+  }, [gesturePoints, snapshot.pointHistory, snapshot.recentPoints, playerCharacters, matchOver, snapshot.bestOf]);
 
   const sceneElementRef = useRef<HTMLElement>(null);
   const viewportRef = useRef<HTMLDivElement>(null);

@@ -174,3 +174,34 @@ test('replay tiebreak scores stay in player order when service changes', () => {
     .map((event) => event.scoreCall);
   assert.deepEqual(scoreCalls, ['six-five', 'six-all']);
 });
+
+test('replays give every point its end frame, so gestures can play on the replay clock', () => {
+  const viewer = viewerData();
+  const second = { ...viewer.pts[0], k: 2, pt: '30-0', mf: 4, fc: 6, tb: 1 };
+  viewer.pts = [viewer.pts[0], second];
+  const snapshot = te4ViewerToLiveSnapshot(viewer);
+  assert.equal(snapshot.pointHistory.length, 2, 'every point, not just the latest twelve');
+  assert.deepEqual(snapshot.pointHistory.map((point) => point.frame), [3, 9], 'mf + fc - 1, as commentary uses');
+  assert.deepEqual(snapshot.pointHistory.map((point) => point.isTiebreak), [false, true]);
+  assert.deepEqual(snapshot.recentPoints, snapshot.pointHistory);
+});
+
+test('the replay player hands the court every point and whether the match was won', async () => {
+  const player = await readFile(new URL('../components/Te4DmoReplayPlayer.tsx', import.meta.url), 'utf8');
+  assert.match(player, /gesturePoints=\{snapshot\.pointHistory\}/);
+  assert.match(player, /matchOver=\{replayMatchOver\}/);
+});
+
+test('replay points say whether they ended on a winner or an error', () => {
+  const viewer = viewerData();
+  const base = viewer.pts[0];
+  viewer.pts = [
+    // An ace: the server (and winner) hit the last shot.
+    { ...base, k: 1, s: 1, w: 1, sh: [{ t: 0, p: 1, k: 's', v: 200, bt: 1 }] },
+    // The server netted the third shot.
+    { ...base, k: 2, s: 1, w: 2, sh: [{ t: 0, p: 1, k: 's' }, { t: 1, p: 2, k: 'r' }, { t: 2, p: 1, k: 'r' }] },
+    { ...base, k: 3, s: 1, w: 2, f: 2, sh: [] },
+  ];
+  const snapshot = te4ViewerToLiveSnapshot(viewer);
+  assert.deepEqual(snapshot.pointHistory.map((point) => point.endedBy), ['winner', 'error', 'error']);
+});

@@ -170,8 +170,14 @@ function replayPoint(
   finalSetNumber: number,
   finalSetScore?: [number, number],
 ): Te4LiveSnapshot['recentPoints'][number] {
+  // The point's last frame on the replay clock, as commentary uses it.
+  const frame = Number.isInteger(point.mf) && Number.isInteger(point.fc) && point.fc > 0
+    ? point.mf + point.fc - 1
+    : undefined;
   return {
     number: point.k,
+    ...(frame !== undefined ? { frame } : {}),
+    isTiebreak: point.tb === 1,
     // Live point labels represent the score after the point. Viewer pt/g are
     // the score before that point, so use the next point's opening score.
     scoreLabel: next
@@ -182,7 +188,16 @@ function replayPoint(
     winner: point.w,
     rallyHits: point.sh.length,
     faults: point.f,
+    ...endedByFor(point),
   };
+}
+
+/** A point ended on a winner if its winner hit the last shot, otherwise on an error. */
+function endedByFor(point: Te4ViewerPoint): { endedBy?: 'winner' | 'error' } {
+  if (point.f >= 2) return { endedBy: 'error' };
+  const lastHitter = point.sh.at(-1)?.p;
+  if ((lastHitter !== 1 && lastHitter !== 2) || (point.w !== 1 && point.w !== 2)) return {};
+  return { endedBy: lastHitter === point.w ? 'winner' : 'error' };
 }
 
 export function te4ViewerToLiveSnapshot(
@@ -291,8 +306,11 @@ export function te4ViewerToLiveSnapshot(
   const finalSetNumber = Math.max(viewer.final.ss.length, viewer.pts.at(-1)?.set ?? 1);
   const finalSetScore = viewer.final.ss.at(-1);
   const recentStart = Math.max(0, viewer.pts.length - 12);
-  const recentPoints = viewer.pts.slice(recentStart).map((point, index) =>
-    replayPoint(point, viewer.pts[recentStart + index + 1], finalSetNumber, finalSetScore));
+  // Every point, so gestures (and anything else keyed to points) work across
+  // the whole replay; the live view keeps only the latest twelve.
+  const pointHistory = viewer.pts.map((point, index) =>
+    replayPoint(point, viewer.pts[index + 1], finalSetNumber, finalSetScore));
+  const recentPoints = pointHistory.slice(recentStart);
   const points = [
     Number(lastPoint?.pt.match(/\d+/)?.[0] ?? 0),
     Number(lastPoint?.pt.match(/\d+$/)?.[0] ?? 0),
@@ -329,6 +347,7 @@ export function te4ViewerToLiveSnapshot(
     winHistory: [],
     stats: [zeroStats(), zeroStats()],
     recentPoints,
+    pointHistory,
     court,
     courtFrameIndices,
     trajectoryEvents,
