@@ -19,6 +19,7 @@ const {
   nativeMotionProfileKey,
   mergeNativeMotionPicks,
   nativeMotionCharacterDefaults,
+  nativeMotionGestureClips,
 } = module.exports;
 
 function clip(id, overrides = {}) {
@@ -186,4 +187,16 @@ test('character defaults choose named regular clips and exclude acceleration var
   assert.equal(federer.serve.id, 'federer-serve');
   assert.equal(nativeMotionCharacterDefaults(catalog, 'Novak Djokovic').forehand.id, 'djokovic-forehand');
   assert.deepEqual(nativeMotionCharacterDefaults(catalog, 'Unknown Player'), {});
+});
+
+test('gesture animations are listed by gesture type and never offered as strokes', () => {
+  const siu = { id: 'g1', hidden: false, events: { kind: 'gesture', gesture: 'CheerFist' }, sourceBundle: 'tm-siu-cheerfist', originalClipName: 'SiuCheerFist', label: 'siu' };
+  const violin = { id: 'g2', hidden: false, events: { kind: 'gesture', gesture: 'RagingFist' }, sourceBundle: 'tm-violin-ragingfist', originalClipName: 'ViolinRagingFist', label: 'violin' };
+  const hiddenGesture = { ...siu, id: 'g3', hidden: true };
+  const catalog = { format: 'WTMC1', rig: {}, clips: [siu, violin, hiddenGesture] };
+  assert.deepEqual(nativeMotionGestureClips(catalog, 'CheerFist').map((clip) => clip.id), ['g1']);
+  assert.deepEqual(nativeMotionGestureClips(null, 'CheerFist'), []);
+  for (const stroke of ['forehand', 'backhand', 'serve', 'slice-forehand', 'slice-backhand']) {
+    assert.equal(nativeMotionClipSupportsStroke(siu, stroke), false);
+  }
 });

@@ -1,0 +1,1455 @@
+{
+  "source": "XKT(WTSL)",
+  "types": [
+    "ThrowRacket",
+    "HitRacket",
+    "Stupid",
+    "Applause",
+    "RagingFist",
+    "CheerFist",
+    "CheerJump",
+    "Sorry",
+    "Victory",
+    "VictoryGreat"
+  ],
+  "characters": {
+    "adrian mannarino": {
+      "name": "Adrian Mannarino",
+      "gestures": {
+        "CheerFist": 7,
+        "RagingFist": 4,
+        "Stupid": 5,
+        "ThrowRacket": 6
+      }
+    },
+    "agnieszka radwanska": {
+      "name": "Agnieszka Radwanska",
+      "gestures": {
+        "CheerFist": 7,
+        "RagingFist": 14,
+        "Stupid": 2,
+        "ThrowRacket": 6,
+        "VictoryGreat": 15
+      }
+    },
+    "alejandro falla": {
+      "name": "Alejandro Falla",
+      "gestures": {}
+    },
+    "alex de minaur": {
+      "name": "Alex de Minaur",
+      "gestures": {
+        "CheerFist": 7,
+        "RagingFist": 14,
+        "Stupid": 12,
+        "ThrowRacket": 6,
+        "VictoryGreat": 15
+      }
+    },
+    "alexander bublik": {
+      "name": "Alexander Bublik",
+      "gestures": {
+        "CheerFist": 7,
+        "RagingFist": 14,
+        "Stupid": 2,
+        "ThrowRacket": 6,
+        "VictoryGreat": 15
+      }
+    },
+    "alexander zverev": {
+      "name": "Alexander Zverev",
+      "gestures": {
+        "CheerFist": 7,
+        "RagingFist": 4,
+        "Stupid": 12,
+        "ThrowRacket": 6
+      }
+    },
+    "alexandr dolgopolov": {
+      "name": "Alexandr Dolgopolov",
+      "gestures": {
+        "CheerFist": 7,
+        "RagingFist": 4,
+        "Stupid": 4,
+        "ThrowRacket": 6
+      }
+    },
+    "alexandra eala": {
+      "name": "Alexandra Eala",
+      "gestures": {
+        "CheerFist": 7,
+        "RagingFist": 14,
+        "Stupid": 12,
+        "ThrowRacket": 6,
+        "VictoryGreat": 15
+      }
+    },
+    "amanda anisimova": {
+      "name": "Amanda Anisimova",
+      "gestures": {
+        "CheerFist": 7,
+        "RagingFist": 14,
+        "Stupid": 2,
+        "ThrowRacket": 6,
+        "VictoryGreat": 15
+      }
+    },
+    "amelie mauresmo": {
+      "name": "Amelie Mauresmo",
+      "gestures": {
+        "CheerFist": 7,
+        "RagingFist": 4,
+        "Stupid": 5,
+        "ThrowRacket": 6
+      }
+    },
+    "ana ivanovic": {
+      "name": "Ana Ivanovic",
+      "gestures": {
+        "CheerFist": 7,
+        "RagingFist": 14,
+        "Stupid": 12,
+        "ThrowRacket": 6,
+        "VictoryGreat": 15
+      }
+    },
+    "andre agassi": {
+      "name": "Andre Agassi",
+      "gestures": {
+        "CheerFist": 7,
+        "RagingFist": 4,
+        "Stupid": 5,
+        "ThrowRacket": 6
+      }
+    },
+    "andrey rublev": {
+      "name": "Andrey Rublev",
+      "gestures": {
+        "CheerFist": 7,
+        "RagingFist": 14,
+        "Stupid": 12,
+        "VictoryGreat": 15
+      }
+    },
+    "andy murray": {
+      "name": "Andy Murray",
+      "gestures": {
+        "CheerFist": 7,
+        "RagingFist": 4,
+        "Stupid": 4,
+        "ThrowRacket": 6
+      }
+    },
+    "andy roddick": {
+      "name": "Andy Roddick",
+      "gestures": {
+        "CheerFist": 7,
+        "RagingFist": 4,
+        "Stupid": 4,
+        "ThrowRacket": 6
+      }
+    },
+    "anett kontaveit": {
+      "name": "Anett Kontaveit",
+      "gestures": {
+        "CheerFist": 7,
+        "RagingFist": 14,
+        "Stupid": 2,
+        "ThrowRacket": 6,
+        "VictoryGreat": 15
+      }
+    },
+    "angelique kerber": {
+      "name": "Angelique Kerber",
+      "gestures": {
+        "CheerFist": 7,
+        "RagingFist": 4,
+        "Stupid": 5,
+        "ThrowRacket": 6
+      }
+    },
+    "anna kournikova": {
+      "name": "Anna Kournikova",
+      "gestures": {
+        "CheerFist": 7,
+        "RagingFist": 14,
+        "Stupid": 12,
+        "ThrowRacket": 6,
+        "VictoryGreat": 15
+      }
+    },
+    "arthur fils": {
+      "name": "Arthur Fils",
+      "gestures": {
+        "CheerFist": 7,
+        "RagingFist": 4,
+        "Stupid": 4
+      }
+    },
+    "aryna sabalenka": {
+      "name": "Aryna Sabalenka",
+      "gestures": {
+        "CheerFist": 7,
+        "RagingFist": 14,
+        "Stupid": 2,
+        "ThrowRacket": 6,
+        "VictoryGreat": 15
+      }
+    },
+    "ashleigh barty": {
+      "name": "Ashleigh Barty",
+      "gestures": {
+        "CheerFist": 7,
+        "RagingFist": 14,
+        "Stupid": 12,
+        "ThrowRacket": 6,
+        "VictoryGreat": 15
+      }
+    },
+    "barbora krejcikova": {
+      "name": "Barbora Krejcikova",
+      "gestures": {
+        "CheerFist": 7,
+        "RagingFist": 4,
+        "Stupid": 5,
+        "ThrowRacket": 6
+      }
+    },
+    "beatriz haddad maia": {
+      "name": "Beatriz Haddad Maia",
+      "gestures": {
+        "CheerFist": 7,
+        "RagingFist": 14,
+        "Stupid": 12,
+        "ThrowRacket": 6,
+        "VictoryGreat": 15
+      }
+    },
+    "ben shelton": {
+      "name": "Ben Shelton",
+      "gestures": {
+        "CheerFist": 7,
+        "RagingFist": 4,
+        "Stupid": 5,
+        "ThrowRacket": 6
+      }
+    },
+    "bernard tomic": {
+      "name": "Bernard Tomic",
+      "gestures": {
+        "CheerFist": 7,
+        "RagingFist": 4,
+        "Stupid": 5,
+        "ThrowRacket": 6
+      }
+    },
+    "bianca andreescu": {
+      "name": "Bianca Andreescu",
+      "gestures": {
+        "CheerFist": 7,
+        "RagingFist": 4,
+        "Stupid": 4,
+        "ThrowRacket": 6
+      }
+    },
+    "bjorn borg": {
+      "name": "Bjorn Borg",
+      "gestures": {
+        "CheerFist": 7,
+        "RagingFist": 14,
+        "Stupid": 2,
+        "ThrowRacket": 6,
+        "VictoryGreat": 15
+      }
+    },
+    "bob bryan": {
+      "name": "Bob Bryan",
+      "gestures": {
+        "CheerFist": 7,
+        "RagingFist": 14,
+        "Stupid": 12,
+        "ThrowRacket": 6,
+        "VictoryGreat": 15
+      }
+    },
+    "boris becker": {
+      "name": "Boris Becker",
+      "gestures": {
+        "CheerFist": 7,
+        "RagingFist": 14,
+        "Stupid": 12,
+        "ThrowRacket": 6,
+        "VictoryGreat": 15
+      }
+    },
+    "borna coric": {
+      "name": "Borna Coric",
+      "gestures": {
+        "CheerFist": 7,
+        "RagingFist": 4,
+        "Stupid": 5,
+        "ThrowRacket": 6
+      }
+    },
+    "cameron norrie": {
+      "name": "Cameron Norrie",
+      "gestures": {
+        "CheerFist": 7,
+        "RagingFist": 4,
+        "Stupid": 4,
+        "ThrowRacket": 6
+      }
+    },
+    "carlos alcaraz": {
+      "name": "Carlos Alcaraz",
+      "gestures": {
+        "CheerFist": 7,
+        "RagingFist": 4,
+        "Stupid": 12,
+        "ThrowRacket": 6
+      }
+    },
+    "caroline wozniacki": {
+      "name": "Caroline Wozniacki",
+      "gestures": {
+        "CheerFist": 7,
+        "RagingFist": 4,
+        "Stupid": 4,
+        "ThrowRacket": 6
+      }
+    },
+    "casper ruud": {
+      "name": "Casper Ruud",
+      "gestures": {
+        "CheerFist": 7,
+        "RagingFist": 4,
+        "Stupid": 12,
+        "ThrowRacket": 6
+      }
+    },
+    "christopher eubanks": {
+      "name": "Christopher Eubanks",
+      "gestures": {
+        "CheerFist": 7,
+        "RagingFist": 4,
+        "Stupid": 4,
+        "ThrowRacket": 6
+      }
+    },
+    "coco gauff": {
+      "name": "Coco Gauff",
+      "gestures": {
+        "CheerFist": 7,
+        "RagingFist": 14,
+        "Stupid": 2,
+        "ThrowRacket": 6,
+        "VictoryGreat": 15
+      }
+    },
+    "corentin moutet": {
+      "name": "Corentin Moutet",
+      "gestures": {
+        "CheerFist": 7,
+        "RagingFist": 4,
+        "Stupid": 4,
+        "ThrowRacket": 6
+      }
+    },
+    "cristian garin": {
+      "name": "Cristian Garin",
+      "gestures": {
+        "CheerFist": 7,
+        "RagingFist": 4,
+        "Stupid": 5,
+        "ThrowRacket": 6
+      }
+    },
+    "daniel evans": {
+      "name": "Daniel Evans",
+      "gestures": {
+        "CheerFist": 7,
+        "RagingFist": 4,
+        "Stupid": 5,
+        "ThrowRacket": 6
+      }
+    },
+    "danielle collins": {
+      "name": "Danielle Collins",
+      "gestures": {
+        "CheerFist": 7,
+        "RagingFist": 4,
+        "Stupid": 5,
+        "ThrowRacket": 6
+      }
+    },
+    "daniil medvedev": {
+      "name": "Daniil Medvedev",
+      "gestures": {
+        "CheerFist": 7,
+        "RagingFist": 14,
+        "Stupid": 12,
+        "ThrowRacket": 6,
+        "VictoryGreat": 15
+      }
+    },
+    "david ferrer": {
+      "name": "David Ferrer",
+      "gestures": {
+        "CheerFist": 7,
+        "RagingFist": 4,
+        "Stupid": 5,
+        "ThrowRacket": 6
+      }
+    },
+    "david goffin": {
+      "name": "David Goffin",
+      "gestures": {
+        "CheerFist": 7,
+        "RagingFist": 14,
+        "Stupid": 2,
+        "ThrowRacket": 6,
+        "VictoryGreat": 15
+      }
+    },
+    "david nalbandian": {
+      "name": "David Nalbandian",
+      "gestures": {
+        "CheerFist": 7,
+        "RagingFist": 4,
+        "Stupid": 4,
+        "ThrowRacket": 6
+      }
+    },
+    "denis shapovalov": {
+      "name": "Denis Shapovalov",
+      "gestures": {
+        "CheerFist": 7,
+        "RagingFist": 4,
+        "Stupid": 5,
+        "ThrowRacket": 6
+      }
+    },
+    "diego schwartzman": {
+      "name": "Diego Schwartzman",
+      "gestures": {
+        "CheerFist": 7,
+        "RagingFist": 4,
+        "Stupid": 5,
+        "ThrowRacket": 6
+      }
+    },
+    "dominic thiem": {
+      "name": "Dominic Thiem",
+      "gestures": {
+        "CheerFist": 7,
+        "RagingFist": 4,
+        "Stupid": 2,
+        "ThrowRacket": 6
+      }
+    },
+    "dominika cibulkova": {
+      "name": "Dominika Cibulkova",
+      "gestures": {
+        "CheerFist": 7,
+        "RagingFist": 4,
+        "Stupid": 4,
+        "ThrowRacket": 6
+      }
+    },
+    "dustin brown": {
+      "name": "Dustin Brown",
+      "gestures": {
+        "CheerFist": 7,
+        "RagingFist": 14,
+        "Stupid": 12,
+        "ThrowRacket": 6,
+        "VictoryGreat": 15
+      }
+    },
+    "elena rybakina": {
+      "name": "Elena Rybakina",
+      "gestures": {
+        "CheerFist": 7,
+        "RagingFist": 4,
+        "Stupid": 5,
+        "ThrowRacket": 6
+      }
+    },
+    "elina svitolina": {
+      "name": "Elina Svitolina",
+      "gestures": {
+        "CheerFist": 7,
+        "RagingFist": 4,
+        "Stupid": 5,
+        "ThrowRacket": 6
+      }
+    },
+    "emma raducanu": {
+      "name": "Emma Raducanu",
+      "gestures": {
+        "CheerFist": 7,
+        "RagingFist": 14,
+        "Stupid": 12,
+        "ThrowRacket": 6,
+        "VictoryGreat": 15
+      }
+    },
+    "ernests gulbis": {
+      "name": "Ernests Gulbis",
+      "gestures": {
+        "CheerFist": 7,
+        "RagingFist": 4,
+        "Stupid": 5,
+        "ThrowRacket": 6
+      }
+    },
+    "fabio fognini": {
+      "name": "Fabio Fognini",
+      "gestures": {
+        "CheerFist": 7,
+        "RagingFist": 14,
+        "Stupid": 12,
+        "ThrowRacket": 6,
+        "VictoryGreat": 15
+      }
+    },
+    "feliciano lopez": {
+      "name": "Feliciano Lopez",
+      "gestures": {
+        "CheerFist": 7,
+        "RagingFist": 4,
+        "Stupid": 4,
+        "ThrowRacket": 6
+      }
+    },
+    "felix auger aliassime": {
+      "name": "Felix Auger-Aliassime",
+      "gestures": {
+        "CheerFist": 7,
+        "RagingFist": 14,
+        "Stupid": 5,
+        "ThrowRacket": 6,
+        "VictoryGreat": 15
+      }
+    },
+    "fernando gonzalez": {
+      "name": "Fernando Gonzalez",
+      "gestures": {
+        "CheerFist": 7,
+        "RagingFist": 14,
+        "Stupid": 12,
+        "ThrowRacket": 6,
+        "VictoryGreat": 15
+      }
+    },
+    "fernando verdasco": {
+      "name": "Fernando Verdasco",
+      "gestures": {
+        "CheerFist": 7,
+        "RagingFist": 4,
+        "Stupid": 4,
+        "ThrowRacket": 6
+      }
+    },
+    "flavio cobolli": {
+      "name": "Flavio Cobolli",
+      "gestures": {}
+    },
+    "frances tiafoe": {
+      "name": "Frances Tiafoe",
+      "gestures": {
+        "CheerFist": 7,
+        "RagingFist": 4,
+        "Stupid": 5,
+        "ThrowRacket": 6
+      }
+    },
+    "francisco cerundolo": {
+      "name": "Francisco Cerundolo",
+      "gestures": {
+        "CheerFist": 7,
+        "RagingFist": 14,
+        "Stupid": 12,
+        "ThrowRacket": 6,
+        "VictoryGreat": 15
+      }
+    },
+    "gael monfils": {
+      "name": "Gael Monfils",
+      "gestures": {
+        "CheerFist": 7,
+        "RagingFist": 14,
+        "Stupid": 5,
+        "ThrowRacket": 6,
+        "VictoryGreat": 15
+      }
+    },
+    "garbine muguruza": {
+      "name": "Garbine Muguruza",
+      "gestures": {
+        "CheerFist": 7,
+        "RagingFist": 4,
+        "Stupid": 4,
+        "ThrowRacket": 6
+      }
+    },
+    "gilles muller": {
+      "name": "Gilles Muller",
+      "gestures": {
+        "CheerFist": 7,
+        "RagingFist": 14,
+        "Stupid": 2,
+        "ThrowRacket": 6,
+        "VictoryGreat": 15
+      }
+    },
+    "gilles simon": {
+      "name": "Gilles Simon",
+      "gestures": {
+        "CheerFist": 7,
+        "RagingFist": 4,
+        "Stupid": 5,
+        "ThrowRacket": 6
+      }
+    },
+    "giovanni mpetshi perricard": {
+      "name": "Giovanni Mpetshi Perricard",
+      "gestures": {
+        "CheerFist": 7,
+        "RagingFist": 14,
+        "Stupid": 2,
+        "ThrowRacket": 6,
+        "VictoryGreat": 15
+      }
+    },
+    "goran ivanisevic": {
+      "name": "Goran Ivanisevic",
+      "gestures": {}
+    },
+    "grigor dimitrov": {
+      "name": "Grigor Dimitrov",
+      "gestures": {
+        "CheerFist": 7,
+        "RagingFist": 4,
+        "Stupid": 2,
+        "ThrowRacket": 6
+      }
+    },
+    "gustavo kuerten": {
+      "name": "Gustavo Kuerten",
+      "gestures": {
+        "CheerFist": 7,
+        "RagingFist": 14,
+        "Stupid": 12,
+        "ThrowRacket": 6,
+        "VictoryGreat": 15
+      }
+    },
+    "holger rune": {
+      "name": "Holger Rune",
+      "gestures": {
+        "CheerFist": 7,
+        "RagingFist": 14,
+        "Stupid": 12,
+        "ThrowRacket": 6,
+        "VictoryGreat": 15
+      }
+    },
+    "hubert hurkacz": {
+      "name": "Hubert Hurkacz",
+      "gestures": {
+        "CheerFist": 7,
+        "RagingFist": 4,
+        "Stupid": 5,
+        "ThrowRacket": 6
+      }
+    },
+    "hugo gaston": {
+      "name": "Hugo Gaston",
+      "gestures": {
+        "CheerFist": 7,
+        "RagingFist": 14,
+        "Stupid": 12,
+        "ThrowRacket": 6,
+        "VictoryGreat": 15
+      }
+    },
+    "hyeon chung": {
+      "name": "Hyeon Chung",
+      "gestures": {
+        "CheerFist": 7,
+        "RagingFist": 4,
+        "Stupid": 4,
+        "ThrowRacket": 6
+      }
+    },
+    "iga swiatek": {
+      "name": "Iga Swiatek",
+      "gestures": {
+        "CheerFist": 7,
+        "RagingFist": 14,
+        "Stupid": 2,
+        "ThrowRacket": 6,
+        "VictoryGreat": 15
+      }
+    },
+    "ivan ljubicic": {
+      "name": "Ivan Ljubicic",
+      "gestures": {
+        "CheerFist": 7,
+        "RagingFist": 14,
+        "Stupid": 12,
+        "ThrowRacket": 6,
+        "VictoryGreat": 15
+      }
+    },
+    "jack draper": {
+      "name": "Jack Draper",
+      "gestures": {
+        "CheerFist": 7,
+        "RagingFist": 14,
+        "Stupid": 12,
+        "VictoryGreat": 15
+      }
+    },
+    "jack sock": {
+      "name": "Jack Sock",
+      "gestures": {
+        "CheerFist": 7,
+        "RagingFist": 14,
+        "Stupid": 2,
+        "ThrowRacket": 6,
+        "VictoryGreat": 15
+      }
+    },
+    "jakub mensik": {
+      "name": "Jakub Mensik",
+      "gestures": {
+        "CheerFist": 7,
+        "RagingFist": 4,
+        "Stupid": 4
+      }
+    },
+    "james blake": {
+      "name": "James Blake",
+      "gestures": {
+        "CheerFist": 7,
+        "RagingFist": 14,
+        "Stupid": 12,
+        "ThrowRacket": 6,
+        "VictoryGreat": 15
+      }
+    },
+    "jannik sinner": {
+      "name": "Jannik Sinner",
+      "gestures": {
+        "CheerFist": 7,
+        "RagingFist": 4,
+        "Stupid": 5
+      }
+    },
+    "jasmine paolini": {
+      "name": "Jasmine Paolini",
+      "gestures": {
+        "CheerFist": 7,
+        "RagingFist": 14,
+        "Stupid": 12,
+        "ThrowRacket": 6,
+        "VictoryGreat": 15
+      }
+    },
+    "jelena jankovic": {
+      "name": "Jelena Jankovic",
+      "gestures": {
+        "CheerFist": 7,
+        "RagingFist": 4,
+        "Stupid": 4,
+        "ThrowRacket": 6
+      }
+    },
+    "jelena ostapenko": {
+      "name": "Jelena Ostapenko",
+      "gestures": {
+        "CheerFist": 7,
+        "RagingFist": 14,
+        "Stupid": 12,
+        "ThrowRacket": 6,
+        "VictoryGreat": 15
+      }
+    },
+    "jerzy janowicz": {
+      "name": "Jerzy Janowicz",
+      "gestures": {
+        "CheerFist": 7,
+        "RagingFist": 14,
+        "Stupid": 2,
+        "ThrowRacket": 6,
+        "VictoryGreat": 15
+      }
+    },
+    "jimmy connors": {
+      "name": "Jimmy Connors",
+      "gestures": {
+        "CheerFist": 7,
+        "RagingFist": 4,
+        "Stupid": 4,
+        "ThrowRacket": 6
+      }
+    },
+    "jo wilfried tsonga": {
+      "name": "Jo-Wilfried Tsonga",
+      "gestures": {
+        "CheerFist": 7,
+        "RagingFist": 4,
+        "Stupid": 4,
+        "ThrowRacket": 6,
+        "VictoryGreat": 15
+      }
+    },
+    "joao fonseca": {
+      "name": "Joao Fonseca",
+      "gestures": {
+        "CheerFist": 7,
+        "RagingFist": 4,
+        "Stupid": 4,
+        "ThrowRacket": 6
+      }
+    },
+    "john isner": {
+      "name": "John Isner",
+      "gestures": {
+        "CheerFist": 7,
+        "RagingFist": 4,
+        "Stupid": 4,
+        "ThrowRacket": 6
+      }
+    },
+    "john mcenroe": {
+      "name": "John McEnroe",
+      "gestures": {
+        "CheerFist": 7,
+        "RagingFist": 4,
+        "Stupid": 4,
+        "ThrowRacket": 6
+      }
+    },
+    "jordan thompson": {
+      "name": "Jordan Thompson",
+      "gestures": {
+        "CheerFist": 7,
+        "RagingFist": 4,
+        "Stupid": 5,
+        "ThrowRacket": 6
+      }
+    },
+    "juan martin del potro": {
+      "name": "Juan Martin Del Potro",
+      "gestures": {
+        "CheerFist": 7,
+        "RagingFist": 14,
+        "Stupid": 12,
+        "ThrowRacket": 6,
+        "VictoryGreat": 15
+      }
+    },
+    "justine henin": {
+      "name": "Justine Henin",
+      "gestures": {
+        "CheerFist": 7,
+        "RagingFist": 4,
+        "Stupid": 4,
+        "ThrowRacket": 6
+      }
+    },
+    "karen khachanov": {
+      "name": "Karen Khachanov",
+      "gestures": {
+        "CheerFist": 7,
+        "RagingFist": 4,
+        "Stupid": 4,
+        "ThrowRacket": 6
+      }
+    },
+    "karolina muchova": {
+      "name": "Karolina Muchova",
+      "gestures": {
+        "CheerFist": 7,
+        "RagingFist": 4,
+        "Stupid": 5,
+        "ThrowRacket": 6
+      }
+    },
+    "kei nishikori": {
+      "name": "Kei Nishikori",
+      "gestures": {
+        "CheerFist": 7,
+        "RagingFist": 14,
+        "Stupid": 2,
+        "ThrowRacket": 6,
+        "VictoryGreat": 15
+      }
+    },
+    "kevin anderson": {
+      "name": "Kevin Anderson",
+      "gestures": {
+        "CheerFist": 7,
+        "RagingFist": 14,
+        "Stupid": 12,
+        "ThrowRacket": 6,
+        "VictoryGreat": 15
+      }
+    },
+    "kim clijsters": {
+      "name": "Kim Clijsters",
+      "gestures": {
+        "CheerFist": 7,
+        "RagingFist": 4,
+        "Stupid": 4,
+        "ThrowRacket": 6
+      }
+    },
+    "learner tien": {
+      "name": "Learner Tien",
+      "gestures": {
+        "CheerFist": 7,
+        "RagingFist": 14,
+        "Stupid": 2,
+        "ThrowRacket": 6,
+        "VictoryGreat": 15
+      }
+    },
+    "leylah fernandez": {
+      "name": "Leylah Fernandez",
+      "gestures": {
+        "CheerFist": 7,
+        "RagingFist": 4,
+        "Stupid": 4,
+        "ThrowRacket": 6
+      }
+    },
+    "lleyton hewitt": {
+      "name": "Lleyton Hewitt",
+      "gestures": {
+        "CheerFist": 7,
+        "RagingFist": 4,
+        "Stupid": 2
+      }
+    },
+    "lorenzo musetti": {
+      "name": "Lorenzo Musetti",
+      "gestures": {
+        "CheerFist": 7,
+        "RagingFist": 4,
+        "Stupid": 4,
+        "ThrowRacket": 6
+      }
+    },
+    "lorenzo sonego": {
+      "name": "Lorenzo Sonego",
+      "gestures": {
+        "CheerFist": 7,
+        "RagingFist": 4,
+        "Stupid": 4,
+        "ThrowRacket": 6
+      }
+    },
+    "madison keys": {
+      "name": "Madison Keys",
+      "gestures": {
+        "CheerFist": 7,
+        "RagingFist": 14,
+        "Stupid": 12,
+        "ThrowRacket": 6,
+        "VictoryGreat": 15
+      }
+    },
+    "mansour bahrami": {
+      "name": "Mansour Bahrami",
+      "gestures": {
+        "CheerFist": 7,
+        "RagingFist": 14,
+        "Stupid": 2,
+        "ThrowRacket": 6,
+        "VictoryGreat": 15
+      }
+    },
+    "marcelo rios": {
+      "name": "Marcelo Rios",
+      "gestures": {
+        "CheerFist": 7,
+        "RagingFist": 4,
+        "Stupid": 4,
+        "ThrowRacket": 6
+      }
+    },
+    "maria sakkari": {
+      "name": "Maria Sakkari",
+      "gestures": {
+        "CheerFist": 7,
+        "RagingFist": 4,
+        "Stupid": 4,
+        "ThrowRacket": 6
+      }
+    },
+    "maria sharapova": {
+      "name": "Maria Sharapova",
+      "gestures": {
+        "CheerFist": 7,
+        "RagingFist": 14,
+        "Stupid": 12,
+        "ThrowRacket": 6,
+        "VictoryGreat": 15
+      }
+    },
+    "martina hingis": {
+      "name": "Martina Hingis",
+      "gestures": {
+        "CheerFist": 7,
+        "RagingFist": 4,
+        "Stupid": 5,
+        "ThrowRacket": 6
+      }
+    },
+    "martina trevisan": {
+      "name": "Martina Trevisan",
+      "gestures": {
+        "CheerFist": 7,
+        "RagingFist": 4,
+        "Stupid": 4,
+        "ThrowRacket": 6
+      }
+    },
+    "mats wilander": {
+      "name": "Mats Wilander",
+      "gestures": {}
+    },
+    "matteo berrettini": {
+      "name": "Matteo Berrettini",
+      "gestures": {
+        "CheerFist": 7,
+        "RagingFist": 4,
+        "Stupid": 12,
+        "ThrowRacket": 6
+      }
+    },
+    "mike bryan": {
+      "name": "Mike Bryan",
+      "gestures": {
+        "CheerFist": 7,
+        "RagingFist": 4,
+        "Stupid": 5,
+        "ThrowRacket": 6
+      }
+    },
+    "milos raonic": {
+      "name": "Milos Raonic",
+      "gestures": {
+        "CheerFist": 7,
+        "RagingFist": 4,
+        "Stupid": 4,
+        "ThrowRacket": 6
+      }
+    },
+    "mirra andreeva": {
+      "name": "Mirra Andreeva",
+      "gestures": {
+        "CheerFist": 7,
+        "RagingFist": 14,
+        "Stupid": 2,
+        "ThrowRacket": 6,
+        "VictoryGreat": 15
+      }
+    },
+    "monica seles": {
+      "name": "Monica Seles",
+      "gestures": {
+        "CheerFist": 7,
+        "RagingFist": 14,
+        "Stupid": 12,
+        "ThrowRacket": 6,
+        "VictoryGreat": 15
+      }
+    },
+    "na li": {
+      "name": "Na Li",
+      "gestures": {
+        "CheerFist": 7,
+        "RagingFist": 4,
+        "Stupid": 4,
+        "ThrowRacket": 6
+      }
+    },
+    "naomi osaka": {
+      "name": "Naomi Osaka",
+      "gestures": {
+        "CheerFist": 7,
+        "RagingFist": 14,
+        "Stupid": 12,
+        "ThrowRacket": 6,
+        "VictoryGreat": 15
+      }
+    },
+    "nick kyrgios": {
+      "name": "Nick Kyrgios",
+      "gestures": {
+        "CheerFist": 7,
+        "RagingFist": 14,
+        "Stupid": 5,
+        "ThrowRacket": 6,
+        "VictoryGreat": 15
+      }
+    },
+    "nicolas almagro": {
+      "name": "Nicolas Almagro",
+      "gestures": {
+        "CheerFist": 7,
+        "RagingFist": 4,
+        "Stupid": 4,
+        "ThrowRacket": 6
+      }
+    },
+    "nikolay davydenko": {
+      "name": "Nikolay Davydenko",
+      "gestures": {
+        "CheerFist": 7,
+        "RagingFist": 4,
+        "Stupid": 4,
+        "ThrowRacket": 6
+      }
+    },
+    "novak djokovic": {
+      "name": "Novak Djokovic",
+      "gestures": {
+        "CheerFist": 7,
+        "RagingFist": 4,
+        "Stupid": 2,
+        "ThrowRacket": 6
+      }
+    },
+    "ons jabeur": {
+      "name": "Ons Jabeur",
+      "gestures": {
+        "CheerFist": 7,
+        "RagingFist": 14,
+        "Stupid": 2,
+        "ThrowRacket": 6,
+        "VictoryGreat": 15
+      }
+    },
+    "pablo cuevas": {
+      "name": "Pablo Cuevas",
+      "gestures": {
+        "CheerFist": 7,
+        "RagingFist": 14,
+        "Stupid": 2,
+        "ThrowRacket": 6,
+        "VictoryGreat": 15
+      }
+    },
+    "paradorn srichapan": {
+      "name": "Paradorn Srichapan",
+      "gestures": {
+        "CheerFist": 7,
+        "RagingFist": 4,
+        "Stupid": 4,
+        "ThrowRacket": 6
+      }
+    },
+    "paula badosa": {
+      "name": "Paula Badosa",
+      "gestures": {
+        "CheerFist": 7,
+        "RagingFist": 14,
+        "Stupid": 2,
+        "ThrowRacket": 6,
+        "VictoryGreat": 15
+      }
+    },
+    "pete sampras": {
+      "name": "Pete Sampras",
+      "gestures": {
+        "CheerFist": 7,
+        "RagingFist": 14,
+        "Stupid": 2,
+        "ThrowRacket": 6,
+        "VictoryGreat": 15
+      }
+    },
+    "qinwen zheng": {
+      "name": "Qinwen Zheng",
+      "gestures": {
+        "CheerFist": 7,
+        "RagingFist": 4,
+        "Stupid": 5,
+        "ThrowRacket": 6
+      }
+    },
+    "rafael jodar": {
+      "name": "Rafael Jodar",
+      "gestures": {
+        "CheerFist": 7,
+        "RagingFist": 14,
+        "Stupid": 12,
+        "ThrowRacket": 6,
+        "VictoryGreat": 15
+      }
+    },
+    "rafael nadal": {
+      "name": "Rafael Nadal",
+      "gestures": {
+        "CheerFist": 7,
+        "RagingFist": 4,
+        "Stupid": 2,
+        "ThrowRacket": 6
+      }
+    },
+    "reilly opelka": {
+      "name": "Reilly Opelka",
+      "gestures": {
+        "CheerFist": 7,
+        "RagingFist": 14,
+        "Stupid": 2,
+        "ThrowRacket": 6,
+        "VictoryGreat": 15
+      }
+    },
+    "richard gasquet": {
+      "name": "Richard Gasquet",
+      "gestures": {
+        "CheerFist": 7,
+        "RagingFist": 14,
+        "Stupid": 4,
+        "ThrowRacket": 6,
+        "VictoryGreat": 15
+      }
+    },
+    "robin soderling": {
+      "name": "Robin Soderling",
+      "gestures": {
+        "CheerFist": 7,
+        "RagingFist": 14,
+        "Stupid": 2,
+        "ThrowRacket": 6,
+        "VictoryGreat": 15
+      }
+    },
+    "roger federer": {
+      "name": "Roger Federer",
+      "gestures": {
+        "CheerFist": 7,
+        "RagingFist": 4,
+        "Stupid": 4
+      }
+    },
+    "sam stosur": {
+      "name": "Sam Stosur",
+      "gestures": {
+        "CheerFist": 7,
+        "RagingFist": 14,
+        "Stupid": 2,
+        "ThrowRacket": 6,
+        "VictoryGreat": 15
+      }
+    },
+    "sania mirza": {
+      "name": "Sania Mirza",
+      "gestures": {
+        "CheerFist": 7,
+        "RagingFist": 14,
+        "Stupid": 12,
+        "ThrowRacket": 6,
+        "VictoryGreat": 15
+      }
+    },
+    "sara errani": {
+      "name": "Sara Errani",
+      "gestures": {
+        "CheerFist": 7,
+        "RagingFist": 4,
+        "Stupid": 4,
+        "ThrowRacket": 6
+      }
+    },
+    "serena williams": {
+      "name": "Serena Williams",
+      "gestures": {
+        "CheerFist": 7,
+        "RagingFist": 4,
+        "Stupid": 4,
+        "ThrowRacket": 6
+      }
+    },
+    "shuai peng": {
+      "name": "Shuai Peng",
+      "gestures": {
+        "CheerFist": 7,
+        "RagingFist": 4,
+        "Stupid": 4,
+        "ThrowRacket": 6
+      }
+    },
+    "simona halep": {
+      "name": "Simona Halep",
+      "gestures": {
+        "CheerFist": 7,
+        "RagingFist": 14,
+        "Stupid": 2,
+        "ThrowRacket": 6,
+        "VictoryGreat": 15
+      }
+    },
+    "sofia kenin": {
+      "name": "Sofia Kenin",
+      "gestures": {
+        "CheerFist": 7,
+        "RagingFist": 14,
+        "Stupid": 12,
+        "ThrowRacket": 6,
+        "VictoryGreat": 15
+      }
+    },
+    "stanislas wawrinka": {
+      "name": "Stanislas Wawrinka",
+      "gestures": {
+        "CheerFist": 7,
+        "RagingFist": 4,
+        "Stupid": 4,
+        "ThrowRacket": 6
+      }
+    },
+    "stefanos tsitsipas": {
+      "name": "Stefanos Tsitsipas",
+      "gestures": {
+        "CheerFist": 7,
+        "RagingFist": 14,
+        "Stupid": 4,
+        "ThrowRacket": 6,
+        "VictoryGreat": 15
+      }
+    },
+    "steffi graf": {
+      "name": "Steffi Graf",
+      "gestures": {
+        "CheerFist": 7,
+        "RagingFist": 14,
+        "Stupid": 2,
+        "ThrowRacket": 6,
+        "VictoryGreat": 15
+      }
+    },
+    "su wei hsieh": {
+      "name": "Su-Wei Hsieh",
+      "gestures": {
+        "CheerFist": 7,
+        "RagingFist": 14,
+        "Stupid": 12,
+        "ThrowRacket": 6,
+        "VictoryGreat": 15
+      }
+    },
+    "sumit nagal": {
+      "name": "Sumit Nagal",
+      "gestures": {
+        "CheerFist": 7,
+        "RagingFist": 14,
+        "Stupid": 2,
+        "ThrowRacket": 6,
+        "VictoryGreat": 15
+      }
+    },
+    "taylor fritz": {
+      "name": "Taylor Fritz",
+      "gestures": {
+        "CheerFist": 7,
+        "RagingFist": 4,
+        "Stupid": 12,
+        "ThrowRacket": 6
+      }
+    },
+    "tomas berdych": {
+      "name": "Tomas Berdych",
+      "gestures": {
+        "CheerFist": 7,
+        "RagingFist": 14,
+        "Stupid": 2,
+        "ThrowRacket": 6,
+        "VictoryGreat": 15
+      }
+    },
+    "tommy paul": {
+      "name": "Tommy Paul",
+      "gestures": {
+        "CheerFist": 7,
+        "RagingFist": 4,
+        "Stupid": 4,
+        "ThrowRacket": 6
+      }
+    },
+    "valentin vacherot": {
+      "name": "Valentin Vacherot",
+      "gestures": {
+        "CheerFist": 7,
+        "RagingFist": 14,
+        "Stupid": 2,
+        "ThrowRacket": 6,
+        "VictoryGreat": 15
+      }
+    },
+    "venus williams": {
+      "name": "Venus Williams",
+      "gestures": {
+        "CheerFist": 7,
+        "RagingFist": 14,
+        "Stupid": 12,
+        "ThrowRacket": 6,
+        "VictoryGreat": 15
+      }
+    },
+    "victoria azarenka": {
+      "name": "Victoria Azarenka",
+      "gestures": {
+        "CheerFist": 7,
+        "RagingFist": 4,
+        "Stupid": 5,
+        "ThrowRacket": 6
+      }
+    },
+    "victoria mboko": {
+      "name": "Victoria Mboko",
+      "gestures": {
+        "CheerFist": 7,
+        "RagingFist": 14,
+        "Stupid": 2,
+        "ThrowRacket": 6,
+        "VictoryGreat": 15
+      }
+    },
+    "yibing wu": {
+      "name": "Yibing Wu",
+      "gestures": {
+        "CheerFist": 7,
+        "RagingFist": 4,
+        "Stupid": 5,
+        "ThrowRacket": 6
+      }
+    },
+    "yoshihito nishioka": {
+      "name": "Yoshihito Nishioka",
+      "gestures": {
+        "CheerFist": 7,
+        "RagingFist": 4,
+        "Stupid": 5,
+        "ThrowRacket": 6
+      }
+    },
+    "zhizhen zhang": {
+      "name": "Zhizhen Zhang",
+      "gestures": {
+        "CheerFist": 7,
+        "RagingFist": 4,
+        "Stupid": 4,
+        "ThrowRacket": 6
+      }
+    }
+  }
+}
