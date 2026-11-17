@@ -223,6 +223,12 @@ export type CoreMatchSchedulerWebState = {
   proposed_at: string;
   timezone: string;
   slots_utc: string[];
+  availability_by_user?: Record<string, {
+    submitted_by_name: string;
+    submitted_at: string;
+    timezone: string;
+    windows: CoreMatchSchedulerAvailabilityWindow[];
+  }>;
   confirmed_slot_utc: string;
   confirmed_by_user_id: string | null;
   confirmed_by_name: string;
@@ -257,6 +263,22 @@ export type CoreMatchSchedulerRecord = {
   created_at: string;
   availability: CoreMatchSchedulerAvailability;
   web_scheduler: CoreMatchSchedulerWebState;
+};
+
+export type CoreMatchSchedulerStoredRecord = {
+  schedule_id: string;
+  tournament_id: string;
+  tournament_name: string;
+  round_name: string;
+  source_match_id: string;
+  player_one: string;
+  player_two: string;
+  player_one_user_id?: number | string | null;
+  player_two_user_id?: number | string | null;
+  status: string;
+  is_test: boolean;
+  created_at: string;
+  metadata: Record<string, unknown> | string;
 };
 
 export type CoreMatchSchedulerOpenMatch = {
@@ -465,7 +487,8 @@ export const wtslCore = {
       },
     ),
 
-  matchSchedules: () => core<unknown[]>('/api/core/match-schedules'),
+  matchSchedules: () =>
+    core<CoreMatchSchedulerStoredRecord[]>('/api/core/match-schedules'),
 
   matchSchedulerState: (discordId: string) =>
     core<CoreMatchSchedulerState>(
