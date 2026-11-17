@@ -114,10 +114,10 @@ test('score pressure and match statistics come from each recorded point', () => 
 
 test('only a recorded error bounce just outside court lines is a close call', () => {
   const points = [
-    // bx runs along the court (baseline at ±1188.5 cm), by across it (±548.5 cm).
-    { mf: 100, fc: 240, s: 1, w: 2, f: 0, sh: [{ p: 1, bx: 0, by: 555, bt: 140 }] },
+    // bx runs along the court (baseline at ±1188.5 cm), by across it (singles sideline ±411.5 cm).
+    { mf: 100, fc: 240, s: 1, w: 2, f: 0, sh: [{ p: 1, bx: 0, by: 418, bt: 140 }] },
     { mf: 500, fc: 240, s: 1, w: 2, f: 0, sh: [{ p: 1, bx: 0, by: 600, bt: 140 }] },
-    { mf: 900, fc: 240, s: 1, w: 1, f: 0, sh: [{ p: 1, bx: 0, by: 555, bt: 140 }] },
+    { mf: 900, fc: 240, s: 1, w: 1, f: 0, sh: [{ p: 1, bx: 0, by: 418, bt: 140 }] },
     { mf: 1300, fc: 240, s: 1, w: 2, f: 0, sh: [{ p: 1, bx: null, by: null, bt: null }] },
     { mf: 1700, fc: 240, s: 1, w: 2, f: 0, sh: [{ p: 1, bx: 555, by: 0, bt: 140 }] },
     { mf: 2100, fc: 240, s: 1, w: 2, f: 0, sh: [{ p: 1, bx: -1195, by: 100, bt: 140 }] },
@@ -128,11 +128,12 @@ test('only a recorded error bounce just outside court lines is a close call', ()
     frame: 240,
     startFrame: 150,
     endFrame: 339,
-    x: 5.55,
+    x: 4.18,
     z: 0,
     distanceMeters: 0.07,
-  }, 'just wide');
-  assert.deepEqual(calls.map((call) => call.point), [0, 5], 'a ball inside the court (point 5) is never a close call; just long is');
+  }, 'just wide of the singles line');
+  assert.deepEqual(calls.map((call) => call.point), [0, 5],
+    'the doubles alley (point 1) is not close; a ball inside the court (point 4) never is; just long (point 5) is');
   assert.equal(calls[1].distanceMeters, 0.07);
 });
 
@@ -234,7 +235,7 @@ test('the replay court wires navigation, shortcuts and remembered settings', asy
   assert.match(court, /<DmoReplaySeekMarkers markers=\{replayMarkers\} \/>/);
   assert.match(court, /<DmoReplayPointList/);
   assert.match(court, /viewport\.scrollIntoView/, 'opening the point panel brings the court into view');
-  assert.match(court, /Close call · automatic replay/, 'recorded near-line errors trigger one replay');
+  assert.match(court, /Close call · replay/, 'recorded near-line errors trigger one replay');
   assert.match(court, /replaySpeedLocked/, 'broadcast replays do not change the stream speed');
   assert.match(court, /RALLY SHOT/, 'rally callouts use a factual shot label');
   assert.match(court, /Replay settings/, 'full replay settings are grouped behind a disclosure');
