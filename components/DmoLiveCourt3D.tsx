@@ -3943,6 +3943,17 @@ function ThreeCourt({
                 <SkipBack size={15} aria-hidden="true" />
               </button>
             )}
+            {currentReplayPoint >= 0 && (
+              <button
+                type="button"
+                className={`${styles.replayIconButton} ${styles.replayInstantButton}`}
+                aria-label="Replay current point"
+                title="Replay current point from the beginning"
+                onClick={replayCurrentPoint}
+              >
+                <RotateCcw size={15} aria-hidden="true" />
+              </button>
+            )}
             <button
               type="button"
               className={styles.replayToggle}

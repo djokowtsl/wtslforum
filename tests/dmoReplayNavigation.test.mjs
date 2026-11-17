@@ -227,6 +227,8 @@ test('viewer settings are remembered, merged and validated', () => {
 test('the replay court wires navigation, shortcuts and remembered settings', async () => {
   const court = await readFile(new URL('../components/DmoLiveCourt3D.tsx', import.meta.url), 'utf8');
   assert.match(court, /aria-label="Previous point"/);
+  assert.match(court, /aria-label="Replay current point"/);
+  assert.match(court, /onClick=\{replayCurrentPoint\}/, 'the toolbar replays the active point from its start');
   assert.match(court, /aria-label="Next point"/);
   assert.match(court, /DMO_REPLAY_SPEEDS\.map/);
   assert.match(court, /<DmoReplaySeekMarkers markers=\{replayMarkers\} \/>/);
