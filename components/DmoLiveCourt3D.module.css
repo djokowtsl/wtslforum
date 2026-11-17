@@ -1187,3 +1187,35 @@
 :global(:root[data-theme='light']) .shareStatus {
   color: #3d5d18;
 }
+
+/* Close-call review: the distance, pinned above the ball mark by the render loop. */
+.closeCallLabel {
+  position: absolute;
+  top: 0;
+  left: 0;
+  z-index: 4;
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 4px 9px;
+  border-radius: 999px;
+  background: rgba(6, 13, 29, .86);
+  border: 1px solid rgba(255, 90, 79, .6);
+  color: #f1f5fb;
+  font: 700 11px/1.2 system-ui, sans-serif;
+  white-space: nowrap;
+  pointer-events: none;
+  opacity: 0;
+  transition: opacity 160ms ease;
+  will-change: transform;
+}
+
+.closeCallLabel strong {
+  color: #ff7a70;
+  letter-spacing: .06em;
+  text-transform: uppercase;
+}
+
+.closeCallLabel span {
+  font-variant-numeric: tabular-nums;
+}

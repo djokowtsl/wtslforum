@@ -202,6 +202,15 @@ import {
 import { readDmoBroadcastSettings, saveDmoBroadcastSettings, type DmoBroadcastSettings } from '@/lib/dmoBroadcastSettings.mjs';
 import { dmoShotMovementAt, planDmoShotMovements, type DmoShotMovement } from '@/lib/dmoShotMovement.mjs';
 
+/** Close-call review: points along the ball's flight, and the camera's move-in time (ms). */
+const CLOSE_CALL_PATH_POINTS = 48;
+const CLOSE_CALL_CAMERA_MS = 700;
+/** How long the review holds on the mark after the bounce (ms). */
+const CLOSE_CALL_HOLD_MS = 1800;
+/** Outside edges of the singles sideline and the baseline from the court's centre (m). */
+const SINGLES_SIDELINE = 8.23 / 2;
+const BASELINE_DISTANCE = 23.77 / 2;
+
 /** A stretched forehand to a ball lower than this (m) is played as a slice. */
 const STRETCH_SLICE_HEIGHT = 0.75;
 import {
@@ -545,7 +554,16 @@ function ThreeCourt({
     call: DmoReplayCloseCall;
     originalSpeed: number;
     rewinding: boolean;
+    /** The review has held on the mark after the bounce. */
+    held?: boolean;
   } | null>(null);
+  /** The "Wide · 14 cm" label over the mark (positioned by the render loop). */
+  const closeCallLabelRef = useRef<HTMLDivElement>(null);
+  const [closeCallLabel, setCloseCallLabel] = useState('');
+  const closeCallHoldTimerRef = useRef<number | null>(null);
+  useEffect(() => () => {
+    if (closeCallHoldTimerRef.current !== null) window.clearTimeout(closeCallHoldTimerRef.current);
+  }, []);
   const closeCallZoomRef = useRef<(DmoReplayCloseCall & { applied: boolean }) | null>(null);
   const previousReplayFrameRef = useRef<number | null>(null);
   const initialReplayFrameRef = useRef(initialReplayFrame);
@@ -723,9 +741,14 @@ function ThreeCourt({
       setShotCallout(null);
       setLivePointCaption(null);
       setCloseCallCaption(null);
+      setCloseCallLabel('');
       closeCallSeenRef.current.clear();
       activeCloseCallRef.current = null;
       closeCallZoomRef.current = null;
+      if (closeCallHoldTimerRef.current !== null) {
+        window.clearTimeout(closeCallHoldTimerRef.current);
+        closeCallHoldTimerRef.current = null;
+      }
       previousReplayFrameRef.current = null;
       if (shotCalloutTimerRef.current !== null) {
         window.clearTimeout(shotCalloutTimerRef.current);
@@ -1182,6 +1205,46 @@ function ThreeCourt({
     trail.frustumCulled = false;
     trail.renderOrder = 3;
     scene.add(trail);
+
+    // Close-call review, Hawk-Eye style: the ball's flight from the last hit,
+    // the mark where it landed and the gap to the line, seen from a low
+    // camera behind the bounce. Hidden except during a close-call replay.
+    const reviewPathMaterial = new THREE.MeshBasicMaterial({
+      color: 0xffd166, transparent: true, opacity: 0.92, depthWrite: false, toneMapped: false,
+    });
+    let reviewPath: THREE.Mesh | null = null;
+    const reviewMark = new THREE.Mesh(
+      new THREE.CircleGeometry(1, 40),
+      new THREE.MeshBasicMaterial({
+        color: 0xff5a4f, transparent: true, opacity: 0.9, depthWrite: false, toneMapped: false,
+      }),
+    );
+    reviewMark.rotation.x = -Math.PI / 2;
+    reviewMark.renderOrder = 5;
+    reviewMark.visible = false;
+    scene.add(reviewMark);
+    const reviewGap = new THREE.Mesh(
+      new THREE.BoxGeometry(1, 0.006, 0.022),
+      new THREE.MeshBasicMaterial({ color: 0xffffff, transparent: true, opacity: 0.95, depthWrite: false, toneMapped: false }),
+    );
+    reviewGap.renderOrder = 6;
+    reviewGap.visible = false;
+    scene.add(reviewGap);
+    let review: {
+      key: string;
+      path: { frame: number; point: THREE.Vector3 }[];
+      drawn: number;
+      bounce: THREE.Vector3;
+      bounceFrame: number;
+      showGap: boolean;
+      savedCamera: THREE.Vector3;
+      savedTarget: THREE.Vector3;
+      fromCamera: THREE.Vector3;
+      fromTarget: THREE.Vector3;
+      eye: THREE.Vector3;
+      aim: THREE.Vector3;
+      startedAt: number;
+    } | null = null;
 
     let wasFullscreen = false;
     const resize = () => {
@@ -2876,7 +2939,7 @@ function ThreeCourt({
         crowdRig.update(now / 1000, now < crowdApplauseUntil, gazeTarget, camera);
         fixtureRig.update(gazeTarget);
         const activeView = cameraViewRef.current;
-        if (activeView.startsWith('player-')) {
+        if (activeView.startsWith('player-') && !review) {
           const playerIndex = activeView.startsWith('player-two') ? 1 : 0;
           const player = players[playerIndex];
           const heading = player.root.rotation.y;
@@ -2962,19 +3025,125 @@ function ThreeCourt({
         ball.visible = (showTrail || tossing || serveBallShown || !knownPhase) && performance.now() >= changeoverUntil;
         ballShadow.visible = ball.visible;
         (trailGeometry.attributes.position as THREE.BufferAttribute).needsUpdate = true;
-        const closeCallZoom = closeCallZoomRef.current;
-        if (closeCallZoom && !closeCallZoom.applied) {
-          const bounds = host.getBoundingClientRect();
-          const projected = new THREE.Vector3(closeCallZoom.x, BALL_RADIUS, closeCallZoom.z).project(camera);
-          const originX = THREE.MathUtils.clamp((projected.x + 1) * 0.5 * bounds.width, bounds.width * 0.16, bounds.width * 0.84);
-          const originY = THREE.MathUtils.clamp((1 - projected.y) * 0.5 * bounds.height, bounds.height * 0.18, bounds.height * 0.82);
-          host.style.transformOrigin = `${originX}px ${originY}px`;
-          host.style.transition = 'transform 360ms ease';
-          host.style.transform = 'scale(1.55)';
-          closeCallZoom.applied = true;
-        } else if (!closeCallZoom && host.style.transform && host.style.transform !== 'scale(1)') {
-          host.style.transition = 'transform 320ms ease';
-          host.style.transform = 'scale(1)';
+        const closeCall = closeCallZoomRef.current;
+        const closeCallKey = closeCall ? `${closeCall.point}:${closeCall.frame}` : '';
+        if (closeCall && review?.key !== closeCallKey) {
+          // Start: the flight from the last hit to just after the bounce, and
+          // a camera low behind the bounce, looking back up the flight.
+          const bounceFrame = closeCall.frame;
+          const hit = latestLiveCourtShotEvent(trajectoryEventsRef.current, bounceFrame - 1);
+          const fromFrame = Math.max(firstFrame, hit?.frame ?? bounceFrame - frameRate * 1.2);
+          const toFrame = Math.min(lastFrame, bounceFrame + frameRate * 0.3);
+          const path: { frame: number; point: THREE.Vector3 }[] = [];
+          for (let index = 0; index <= CLOSE_CALL_PATH_POINTS; index += 1) {
+            const frameAt = THREE.MathUtils.lerp(fromFrame, toFrame, index / CLOSE_CALL_PATH_POINTS);
+            const at = interpolateLiveCourtFrame(samples, frameAt, maxGapFrames);
+            if (!at) continue;
+            path.push({
+              frame: frameAt,
+              point: new THREE.Vector3(at[0] * SCALE, Math.max(0, at[2]) * SCALE + BALL_RADIUS, at[1] * SCALE),
+            });
+          }
+          // The recorded bounce: along the court (x) and across it (z).
+          const bounce = new THREE.Vector3(closeCall.z, 0, closeCall.x);
+          const alongSign = Math.sign(bounce.x) || 1;
+          const acrossSign = Math.sign(bounce.z) || 1;
+          if (review) {
+            camera.position.copy(review.savedCamera);
+            controls.target.copy(review.savedTarget);
+          }
+          review = {
+            key: closeCallKey,
+            path,
+            drawn: -1,
+            bounce,
+            bounceFrame,
+            showGap: false,
+            savedCamera: review?.savedCamera ?? camera.position.clone(),
+            savedTarget: review?.savedTarget ?? controls.target.clone(),
+            fromCamera: camera.position.clone(),
+            fromTarget: controls.target.clone(),
+            eye: bounce.clone().add(new THREE.Vector3(alongSign * 3.4, 1.7, acrossSign * 1.3)),
+            aim: bounce.clone().add(new THREE.Vector3(-alongSign * 1.4, 0.12, -acrossSign * 0.25)),
+            startedAt: now,
+          };
+          // The mark is longer along the flight, like a real ball mark.
+          const before = [...path].reverse().find(entry => entry.frame < bounceFrame - 1)?.point;
+          const heading = before ? Math.atan2(bounce.x - before.x, bounce.z - before.z) : 0;
+          reviewMark.position.set(bounce.x, 0.007, bounce.z);
+          reviewMark.rotation.set(-Math.PI / 2, 0, heading);
+          reviewMark.scale.set(BALL_RADIUS * 1.25, BALL_RADIUS * 2.1, 1);
+          // The gap from the outside edge of the line to the edge of the mark.
+          const wide = Math.max(0, Math.abs(bounce.z) - SINGLES_SIDELINE);
+          const long = Math.max(0, Math.abs(bounce.x) - BASELINE_DISTANCE);
+          const gap = Math.max(wide, long) - BALL_RADIUS * 1.25;
+          reviewGap.visible = false;
+          review.showGap = gap > 0.005;
+          if (review.showGap) {
+            if (wide >= long) {
+              reviewGap.scale.set(0.022, 1, gap / 0.022);
+              reviewGap.position.set(bounce.x, 0.008, acrossSign * (SINGLES_SIDELINE + gap / 2));
+            } else {
+              reviewGap.scale.set(gap, 1, 1);
+              reviewGap.position.set(alongSign * (BASELINE_DISTANCE + gap / 2), 0.008, bounce.z);
+            }
+          }
+        } else if (!closeCall && review) {
+          // End: put the viewer's camera back exactly as it was.
+          camera.position.copy(review.savedCamera);
+          controls.target.copy(review.savedTarget);
+          review = null;
+          reviewMark.visible = false;
+          reviewGap.visible = false;
+          if (reviewPath) {
+            scene.remove(reviewPath);
+            reviewPath.geometry.dispose();
+            reviewPath = null;
+          }
+          if (closeCallLabelRef.current) closeCallLabelRef.current.style.opacity = '0';
+        }
+        if (review) {
+          const ease = THREE.MathUtils.smoothstep((now - review.startedAt) / CLOSE_CALL_CAMERA_MS, 0, 1);
+          camera.position.lerpVectors(review.fromCamera, review.eye, ease);
+          controls.target.lerpVectors(review.fromTarget, review.aim, ease);
+          camera.lookAt(controls.target);
+          // The flight grows with the replay and stays once drawn.
+          let drawn = 0;
+          while (drawn < review.path.length && review.path[drawn].frame <= currentFrame) drawn += 1;
+          if (drawn !== review.drawn) {
+            review.drawn = drawn;
+            if (reviewPath) {
+              scene.remove(reviewPath);
+              reviewPath.geometry.dispose();
+              reviewPath = null;
+            }
+            if (drawn >= 2) {
+              const curve = new THREE.CatmullRomCurve3(review.path.slice(0, drawn).map(entry => entry.point));
+              reviewPath = new THREE.Mesh(
+                new THREE.TubeGeometry(curve, Math.max(8, drawn * 2), 0.016, 6, false),
+                reviewPathMaterial,
+              );
+              reviewPath.renderOrder = 4;
+              reviewPath.frustumCulled = false;
+              scene.add(reviewPath);
+            }
+          }
+          const landed = currentFrame >= review.bounceFrame;
+          reviewMark.visible = landed;
+          reviewGap.visible = landed && review.showGap;
+          const label = closeCallLabelRef.current;
+          if (label) {
+            if (landed) {
+              const bounds = host.getBoundingClientRect();
+              const projected = review.bounce.clone().setY(0.25).project(camera);
+              const x = THREE.MathUtils.clamp((projected.x + 1) * 0.5 * bounds.width, 60, bounds.width - 60);
+              const y = THREE.MathUtils.clamp((1 - projected.y) * 0.5 * bounds.height, 40, bounds.height - 40);
+              label.style.transform = `translate(${x.toFixed(1)}px, ${y.toFixed(1)}px) translate(-50%, -100%)`;
+              label.style.opacity = '1';
+            } else {
+              label.style.opacity = '0';
+            }
+          }
         }
       }
       try {
@@ -2982,7 +3151,7 @@ function ThreeCourt({
           transitionRef.current.style.transition = 'opacity 250ms ease-out';
           transitionRef.current.style.opacity = '0';
         }
-        controls.update();
+        if (!review) controls.update();
         renderer.render(scene, camera);
       } catch {
         graphicsFailed = true;
@@ -3433,6 +3602,11 @@ function ThreeCourt({
     activeCloseCallRef.current = null;
     closeCallZoomRef.current = null;
     setCloseCallCaption(null);
+    setCloseCallLabel('');
+    if (closeCallHoldTimerRef.current !== null) {
+      window.clearTimeout(closeCallHoldTimerRef.current);
+      closeCallHoldTimerRef.current = null;
+    }
     if (!replaySpeedLocked) {
       replaySpeedRef.current = active.originalSpeed;
       setReplaySpeed(active.originalSpeed);
@@ -3522,10 +3696,24 @@ function ThreeCourt({
         active.rewinding = false;
         return;
       }
+      if (!active.held && replayFrame >= active.call.frame && replayFrame < active.call.endFrame) {
+        // Hold on the mark so the gap to the line can be read.
+        active.held = true;
+        replayPlayingRef.current = false;
+        setReplayPlaying(false);
+        closeCallHoldTimerRef.current = window.setTimeout(() => {
+          closeCallHoldTimerRef.current = null;
+          if (activeCloseCallRef.current !== active) return;
+          replayPlayingRef.current = true;
+          setReplayPlaying(true);
+        }, CLOSE_CALL_HOLD_MS);
+        return;
+      }
       if (replayFrame >= active.call.endFrame) {
         activeCloseCallRef.current = null;
         closeCallZoomRef.current = null;
         setCloseCallCaption(null);
+        setCloseCallLabel('');
         if (!replaySpeedLocked) {
           replaySpeedRef.current = active.originalSpeed;
           setReplaySpeed(active.originalSpeed);
@@ -3554,10 +3742,10 @@ function ThreeCourt({
       rewinding: true,
     };
     closeCallZoomRef.current = { ...closeCall, applied: false };
-    setCloseCallCaption({
-      title: 'Close call · replay',
-      detail: `Out by ${Math.max(1, Math.round(closeCall.distanceMeters * 100))} cm`,
-    });
+    const outBy = `${Math.max(1, Math.round(closeCall.distanceMeters * 100))} cm`;
+    setCloseCallCaption({ title: 'Close call · replay', detail: `Out by ${outBy}` });
+    // closeCall.x runs across the court: past the singles sideline is wide.
+    setCloseCallLabel(`${Math.abs(closeCall.x) > SINGLES_SIDELINE ? 'Wide' : 'Long'} · ${outBy}`);
     if (!replaySpeedLocked) {
       replaySpeedRef.current = 0.5;
       setReplaySpeed(0.5);
@@ -3912,6 +4100,12 @@ function ThreeCourt({
       <div className={styles.viewport} ref={viewportRef}>
         <div className={styles.canvasHost} ref={canvasHostRef} />
         <div ref={transitionRef} className={styles.changeover} aria-hidden="true" />
+        {closeCallLabel && (
+          <div ref={closeCallLabelRef} className={styles.closeCallLabel} aria-hidden="true">
+            <strong>Out</strong>
+            <span>{closeCallLabel}</span>
+          </div>
+        )}
         {shownPointCaption && (
           <div
             className={styles.pointCaption}
