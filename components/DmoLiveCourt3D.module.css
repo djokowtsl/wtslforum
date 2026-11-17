@@ -1128,8 +1128,10 @@
 }
 
 @media (max-width: 420px) {
-  /* One row of buttons above the seek bar on a phone. */
+  /* One row of buttons above the seek bar on a phone: the Points button is
+     icon-only here (the list itself highlights the current point). */
   .replayPointsButton > span,
+  .replayPointsButton > small,
   .replayClockTotal {
     display: none;
   }

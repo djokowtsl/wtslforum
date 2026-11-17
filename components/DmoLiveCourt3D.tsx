@@ -3517,8 +3517,8 @@ function ThreeCourt({
     };
     closeCallZoomRef.current = { ...closeCall, applied: false };
     setCloseCallCaption({
-      title: 'Close call · automatic replay',
-      detail: `Bounce just outside the court by ${closeCall.distanceMeters.toFixed(2)} m`,
+      title: 'Close call · replay',
+      detail: `Out by ${Math.max(1, Math.round(closeCall.distanceMeters * 100))} cm`,
     });
     if (!replaySpeedLocked) {
       replaySpeedRef.current = 0.5;
