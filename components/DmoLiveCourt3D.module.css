@@ -1149,6 +1149,11 @@
     gap: 4px;
   }
 
+  .replayInstantButton {
+    min-width: 28px;
+    padding: 0 3px;
+  }
+
   .replayToggle {
     min-width: 36px;
     padding: 0 6px;
