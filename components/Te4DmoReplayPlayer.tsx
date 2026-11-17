@@ -17,9 +17,12 @@ import type { Te4ViewerData } from '@/lib/te4DmoTypes';
 import type { PlayerStrokeStylePair } from '@/lib/liveCourtPerformance';
 import {
   buildDmoReplayPointIndex,
+  buildDmoReplayCloseCalls,
+  buildDmoReplayStatistics,
   dmoReplayMomentFrame,
   parseDmoReplayMoment,
   type DmoReplayMoment,
+  type DmoReplayCloseCall,
 } from '@/lib/dmoReplayNavigation.mjs';
 import { useTe4ViewerTheme } from '@/components/useTe4ViewerTheme';
 import DmoLiveCourt3D from './DmoLiveCourt3D';
@@ -130,8 +133,23 @@ export default function Te4DmoReplayPlayer({
   );
   // Every point, once per replay: seek-bar marks, point list, previous/next.
   const replayPoints = useMemo(
-    () => viewer ? buildDmoReplayPointIndex(viewer.pts, { matchOver: replayMatchOver }) : [],
-    [viewer, replayMatchOver],
+    () => viewer
+      ? buildDmoReplayPointIndex(viewer.pts, {
+        matchOver: replayMatchOver,
+        bestOf: snapshot?.bestOf ?? 3,
+      })
+      : [],
+    [viewer, replayMatchOver, snapshot?.bestOf],
+  );
+  const replayStatistics = useMemo(
+    () => viewer ? buildDmoReplayStatistics(viewer.pts, { bestOf: snapshot?.bestOf ?? 3 }) : [],
+    [viewer, snapshot?.bestOf],
+  );
+  const replayCloseCalls = useMemo(
+    () => viewer
+      ? buildDmoReplayCloseCalls(viewer.pts, { frameRate: snapshot?.frameRate ?? viewer.match.fps })
+      : [] as DmoReplayCloseCall[],
+    [viewer, snapshot?.frameRate],
   );
   const replayLinkParams = useMemo<Record<string, string>>(
     () => {
@@ -352,8 +370,12 @@ export default function Te4DmoReplayPlayer({
             scoreboard={replayScoreboard}
             onReplayFrameChange={handleReplayFrameChange}
             replayPoints={replayPoints}
+            replayStatistics={replayStatistics}
+            replayHighlights={viewer.highlights}
+            replayCloseCalls={replayCloseCalls}
             initialReplayFrame={initialReplayFrame}
             rememberReplaySpeed={!broadcastId}
+            replaySpeedLocked={Boolean(broadcastId)}
             replayLinkParams={replayLinkParams}
           />
           {nativeMotion.error && (
@@ -363,7 +385,7 @@ export default function Te4DmoReplayPlayer({
             <p className={styles.classicError} role="status">{nativeMotion.gestureError}</p>
           )}
           {replayScore && (
-            <DmoReplayScoreBug players={viewer.names} score={replayScore} />
+            <DmoReplayScoreBug players={viewer.names} score={replayScore} bestOf={snapshot.bestOf} />
           )}
         </>
       ) : classicError ? (

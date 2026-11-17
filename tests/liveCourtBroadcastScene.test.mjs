@@ -578,8 +578,8 @@ test('stadium and audience scale with recognized tournament capacities', async (
   assert.doesNotMatch(court, /player repair r19|RENDERER_BUILD|Renderer build|buildTag/);
   assert.doesNotMatch(court, /player repair r14|recorded volleys \+/);
   assert.doesNotMatch(court, /Drag to orbit · scroll to zoom|Use Look across court to pan laterally/);
-  assert.match(court, /backgroundColor: colorToCss\(PALETTE\.playerOne\)/);
-  assert.match(court, /backgroundColor: colorToCss\(PALETTE\.playerTwo\)/);
+  assert.match(court, /backgroundColor: colorToCss\(playerLegendColors\[0\]\)/);
+  assert.match(court, /backgroundColor: colorToCss\(playerLegendColors\[1\]\)/);
   assert.match(court, /backgroundColor: colorToCss\(PALETTE\.yellow\)/);
   assert.match(fallback, /color: LIVE_COURT_COLORS\.playerOne/);
   assert.match(fallback, /color: LIVE_COURT_COLORS\.playerTwo/);

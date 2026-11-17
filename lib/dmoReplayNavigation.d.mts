@@ -22,6 +22,36 @@ export interface DmoReplayPointEntry {
   endsSet: boolean;
   endsMatch: boolean;
   isBreak: boolean;
+  breakPointFor: 1 | 2 | null;
+  setPointFor: 1 | 2 | null;
+  matchPointFor: 1 | 2 | null;
+}
+
+export interface DmoReplayPlayerStatistics {
+  player: 1 | 2;
+  pointsWon: number;
+  servicePoints: number;
+  servicePointsWon: number;
+  aces: number;
+  doubleFaults: number;
+  firstServeFaults: number;
+  winners: number;
+  errors: number;
+  breakPointsFaced: number;
+  breakPointsConverted: number;
+  breakPointsSaved: number;
+}
+
+export interface DmoReplayCloseCall {
+  /** Zero-based point position in the viewer's points array. */
+  point: number;
+  frame: number;
+  startFrame: number;
+  endFrame: number;
+  /** Court coordinates in metres: x across the court, z along it. */
+  x: number;
+  z: number;
+  distanceMeters: number;
 }
 
 export interface DmoReplaySeekMarker {
@@ -37,8 +67,39 @@ export function buildDmoReplayPointIndex(
     k?: number; mf: number; fc?: number; set?: number; g?: string; pt?: string;
     tb?: 0 | 1; s?: 1 | 2; w?: 1 | 2; f?: number; sh?: readonly { p?: number }[];
   }[] | null | undefined,
-  options?: { matchOver?: boolean },
+  options?: { matchOver?: boolean; bestOf?: number },
 ): DmoReplayPointEntry[];
+export function dmoReplayPointPressure(
+  point: { s?: 1 | 2; g?: string; pt?: string; tb?: 0 | 1; ss?: readonly [number, number][] },
+  bestOf?: number,
+): { breakPointFor: 1 | 2 | null; setPointFor: 1 | 2 | null; matchPointFor: 1 | 2 | null };
+export function dmoCurrentPointPressure(
+  score: {
+    sets?: readonly [number, number][];
+    games?: readonly [number, number];
+    pointText?: readonly [string, string];
+    tiebreak?: boolean;
+    server?: 1 | 2 | null;
+  } | null | undefined,
+  bestOf?: number,
+): { breakPointFor: 1 | 2 | null; setPointFor: 1 | 2 | null; matchPointFor: 1 | 2 | null };
+export function buildDmoReplayStatistics(
+  points: readonly {
+    s?: 1 | 2; w?: 1 | 2; f?: number; g?: string; pt?: string; tb?: 0 | 1;
+    ss?: readonly [number, number][]; sh?: readonly { p?: number }[];
+  }[] | null | undefined,
+  options?: { bestOf?: number },
+): DmoReplayPlayerStatistics[];
+export function buildDmoReplayCloseCalls(
+  points: readonly {
+    mf: number; fc?: number; s?: 1 | 2; w?: 1 | 2; f?: number;
+    sh?: readonly { p?: 1 | 2; bx?: number | null; by?: number | null; bt?: number | null }[];
+  }[] | null | undefined,
+  options?: {
+    frameRate?: number; courtLengthMeters?: number; courtWidthMeters?: number;
+    coordinateScale?: number; nearLineMeters?: number;
+  },
+): DmoReplayCloseCall[];
 export function dmoReplayPointAt(index: readonly DmoReplayPointEntry[], frame: number): number;
 export function dmoReplayAdjacentPointFrame(
   index: readonly DmoReplayPointEntry[], frame: number, direction: number, frameRate?: number,
@@ -63,3 +124,8 @@ export function dmoReplayMomentUrl(
 export function describeDmoReplayPoint(
   point: DmoReplayPointEntry, players: readonly [string, string] | readonly string[],
 ): { winner: string; how: string };
+export function describeDmoReplayPointCaption(
+  point: DmoReplayPointEntry | null | undefined,
+  frame: number,
+  players: readonly [string, string] | readonly string[],
+): { title: string; detail: string } | null;
