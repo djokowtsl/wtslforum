@@ -221,27 +221,106 @@
 }
 
 .replaySettings > summary {
+  /* A clear button: icon, what it is, what's set now, and a chevron. */
   display: inline-flex;
   align-items: center;
-  min-height: 34px;
-  padding: 0 12px;
-  border: 1px solid rgba(152, 174, 207, .25);
-  border-radius: 8px;
-  background: rgba(3, 9, 20, .5);
-  color: #d8e3f2;
+  gap: 9px;
+  min-height: 40px;
+  padding: 5px 12px 5px 11px;
+  border: 1px solid rgba(176, 244, 59, .45);
+  border-radius: 10px;
+  background: rgba(176, 244, 59, .1);
+  color: #e7eef8;
   font: 750 11px/1 system-ui, sans-serif;
   list-style: none;
   cursor: pointer;
+  transition: background 160ms ease, border-color 160ms ease;
+}
+
+.replaySettings > summary > svg:first-child {
+  flex: 0 0 auto;
+  color: #b0f43b;
+}
+
+.replaySettings > summary:hover,
+.replaySettings[open] > summary {
+  border-color: rgba(176, 244, 59, .75);
+  background: rgba(176, 244, 59, .16);
+}
+
+.replaySettings > summary:focus-visible {
+  outline: 2px solid #b0f43b;
+  outline-offset: 2px;
 }
 
 .replaySettings > summary::-webkit-details-marker {
   display: none;
 }
 
-.replaySettings > summary::after {
-  content: '＋';
-  margin-left: 8px;
+.settingsLabel {
+  display: grid;
+  gap: 3px;
+  min-width: 0;
+  text-align: left;
+}
+
+.settingsLabel strong {
+  color: #f1f5fb;
+  font: 800 12px/1.1 system-ui, sans-serif;
+}
+
+.settingsLabel small {
+  overflow: hidden;
+  color: #a9b8cd;
+  font: 650 10px/1.1 system-ui, sans-serif;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.settingsChevron {
+  flex: 0 0 auto;
+  margin-left: auto;
   color: #b0f43b;
+  transition: transform 180ms ease;
+}
+
+.replaySettings[open] .settingsChevron {
+  transform: rotate(180deg);
+}
+
+:global(:root[data-theme='light']) .replaySettings > summary {
+  border-color: #91b36c;
+  background: #f2f8e8;
+  color: #1f2a3a;
+}
+
+:global(:root[data-theme='light']) .replaySettings > summary > svg:first-child,
+:global(:root[data-theme='light']) .settingsChevron {
+  color: #3d5d18;
+}
+
+:global(:root[data-theme='light']) .settingsLabel strong {
+  color: #1f2a3a;
+}
+
+:global(:root[data-theme='light']) .settingsLabel small {
+  color: #52627b;
+}
+
+/* Until a viewer has opened it once: a soft glow, three times, then still. */
+.replaySettings[data-hint='true']:not([open]) > summary {
+  animation: settingsHint 1.8s ease-in-out 1.2s 3;
+}
+
+@keyframes settingsHint {
+  0%, 100% { box-shadow: 0 0 0 0 rgba(176, 244, 59, 0); }
+  50% { box-shadow: 0 0 0 5px rgba(176, 244, 59, .22); }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .replaySettings[data-hint='true']:not([open]) > summary {
+    animation: none;
+  }
 }
 
 .replaySettings[open] {
@@ -253,10 +332,6 @@
 
 .replaySettings[open] > summary {
   align-self: flex-end;
-}
-
-.replaySettings[open] > summary::after {
-  content: '−';
 }
 
 .replaySettings[open] .controls {
@@ -1119,7 +1194,8 @@
   }
 
   .replaySettings > summary {
-    min-height: 32px;
+    display: flex;
+    min-height: 44px;
   }
 
   .replayToggle {
@@ -1164,6 +1240,22 @@
   .replaySpeedControl select {
     padding: 0 4px;
   }
+
+  /* Share sits at the end of the seek bar's row, so the buttons above never
+     wrap onto a row of their own. */
+  .replaySeek {
+    order: 4;
+    flex: 1 1 calc(100% - 46px);
+    min-width: 0;
+  }
+
+  .replayShareButton {
+    order: 5;
+  }
+
+  .replayControls > .shareStatus {
+    order: 6;
+  }
 }
 
 :global(:root[data-theme='light']) .replayIconButton,
@@ -1186,36 +1278,4 @@
 
 :global(:root[data-theme='light']) .shareStatus {
   color: #3d5d18;
-}
-
-/* Close-call review: the distance, pinned above the ball mark by the render loop. */
-.closeCallLabel {
-  position: absolute;
-  top: 0;
-  left: 0;
-  z-index: 4;
-  display: inline-flex;
-  align-items: center;
-  gap: 6px;
-  padding: 4px 9px;
-  border-radius: 999px;
-  background: rgba(6, 13, 29, .86);
-  border: 1px solid rgba(255, 90, 79, .6);
-  color: #f1f5fb;
-  font: 700 11px/1.2 system-ui, sans-serif;
-  white-space: nowrap;
-  pointer-events: none;
-  opacity: 0;
-  transition: opacity 160ms ease;
-  will-change: transform;
-}
-
-.closeCallLabel strong {
-  color: #ff7a70;
-  letter-spacing: .06em;
-  text-transform: uppercase;
-}
-
-.closeCallLabel span {
-  font-variant-numeric: tabular-nums;
 }
