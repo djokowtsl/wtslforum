@@ -9,6 +9,7 @@ import {
 import {
   NATIVE_MOTION_CATALOG_SHA256,
   NATIVE_MOTION_GESTURE_CATALOG_SHA256,
+  NATIVE_MOTION_SPECIAL_CLIPS,
 } from '@/lib/nativeMotionCatalog';
 import {
   getDmoCharacterGruntSetting,
@@ -201,6 +202,26 @@ export function useNativePlayerMotions({
             const loadedClips = new Map(await Promise.all(clipIds.map(async (id) => (
               [id, await loadClip(id, catalog, NATIVE_MOTION_CATALOG_SHA256)] as const
             ))));
+            // Special-moment clips (slides, a forehand slice): extras, so one
+            // that can't be loaded just isn't used.
+            const specialClips = new Map<string, BundledMotionClip>();
+            await Promise.all(Object.values(NATIVE_MOTION_SPECIAL_CLIPS).map(async ({ clipId }) => {
+              if (loadedClips.has(clipId)) return;
+              try {
+                specialClips.set(clipId, await loadClip(clipId, catalog, NATIVE_MOTION_CATALOG_SHA256));
+              } catch {
+                // Not available: the player plays his normal stroke instead.
+              }
+            }));
+            const special = (key: keyof typeof NATIVE_MOTION_SPECIAL_CLIPS) => {
+              const { clipId, sourceHandedness } = NATIVE_MOTION_SPECIAL_CLIPS[key];
+              const metadata = catalog.clips.find((clip) => clip.id === clipId);
+              const clip = loadedClips.get(clipId) ?? specialClips.get(clipId);
+              const contactTime = metadata?.events?.kind === 'strike' ? metadata.events.contactTime : undefined;
+              if (!clip || !metadata || contactTime === undefined || !Number.isFinite(contactTime)
+                || contactTime < 0 || contactTime > metadata.duration) return null;
+              return { clip, contactTime, sourceHandedness };
+            };
             const sourceFor = (picks: NativeMotionPicks): BundledMotionSource | null => {
               const clips: BundledMotionSource['clips'] = {};
               for (const stroke of NATIVE_MOTION_STROKES) {
@@ -226,7 +247,14 @@ export function useNativePlayerMotions({
                   sourceHandedness: pick.sourceHandedness,
                 };
               }
-              return Object.keys(clips).length ? { schema: catalog.rig, clips } : null;
+              if (!Object.keys(clips).length) return null;
+              const slide = special('slide-backhand');
+              if (slide) clips['slide-backhand'] = slide;
+              if (!clips['slice-forehand']) {
+                const slice = special('slice-forehand');
+                if (slice) clips['slice-forehand'] = slice;
+              }
+              return { schema: catalog.rig, clips };
             };
             const next: SourcePair = [sourceFor(chosenPicks[0]), sourceFor(chosenPicks[1])];
             if (active) {

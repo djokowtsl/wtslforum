@@ -84,6 +84,8 @@ export interface GroundstrokePlayback {
   oneHanded?: boolean;
   /** A detected slice uses the volley recording as a high-to-low stand-in. */
   slice?: boolean;
+  /** Slid into the shot: plays the source's slide clip for this side, when it has one. */
+  slide?: boolean;
   /** A rally overhead uses the optional recorded smash, never a serve. */
   smash?: boolean;
   /** Speed up the take-back when a fast reply leaves too little preparation time. */
