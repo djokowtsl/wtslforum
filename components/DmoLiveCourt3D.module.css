@@ -891,3 +891,148 @@
     white-space: nowrap;
   }
 }
+
+/* Replay navigation: previous/next point, point list, share. */
+.replayButtons {
+  display: inline-flex;
+  flex: 0 0 auto;
+  align-items: center;
+  gap: 4px;
+}
+
+.replayIconButton,
+.replayPointsButton {
+  display: inline-flex;
+  flex: 0 0 auto;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  min-width: 36px;
+  min-height: 36px;
+  padding: 0 8px;
+  border: 1px solid rgba(152, 174, 207, .24);
+  border-radius: 7px;
+  background: rgba(3, 9, 20, .72);
+  color: #e7eef8;
+  font: 700 11px/1 system-ui, sans-serif;
+  cursor: pointer;
+}
+
+.replayIconButton:hover,
+.replayPointsButton:hover,
+.replayPointsButton[aria-pressed='true'] {
+  border-color: rgba(176, 244, 59, .5);
+  color: #b0f43b;
+}
+
+.replayIconButton:focus-visible,
+.replayPointsButton:focus-visible {
+  outline: 2px solid #b0f43b;
+  outline-offset: 2px;
+}
+
+.replayPointsButton small {
+  color: #8fa2bd;
+  font-size: 10px;
+  font-variant-numeric: tabular-nums;
+}
+
+.replayToggle {
+  min-height: 36px;
+}
+
+.replaySeek {
+  position: relative;
+}
+
+.shareStatus {
+  flex: 0 0 auto;
+  color: #c9f27a;
+  font: 700 10px/1 system-ui, sans-serif;
+}
+
+/* The point list: a drawer on the right of the court. */
+.pointPanel {
+  position: absolute;
+  top: 10px;
+  right: 10px;
+  bottom: 10px;
+  z-index: 7;
+  width: min(330px, 46%);
+}
+
+.scene:fullscreen .pointPanel,
+.scene:-webkit-full-screen .pointPanel,
+.scene.fullscreenFallback .pointPanel {
+  top: max(72px, 14dvh);
+  bottom: calc(76px + env(safe-area-inset-bottom));
+  right: max(10px, env(safe-area-inset-right));
+}
+
+@media (max-width: 720px) {
+  /* Phones: the list takes the court area and closes after a point is chosen. */
+  .pointPanel {
+    inset: 0;
+    width: auto;
+    border: 0;
+    border-radius: 0;
+  }
+
+  /* Full screen on a phone: a bottom sheet, leaving the top of the court in view. */
+  .scene:fullscreen .pointPanel,
+  .scene:-webkit-full-screen .pointPanel,
+  .scene.fullscreenFallback .pointPanel {
+    inset: 34% 0 0;
+    border-radius: 14px 14px 0 0;
+    padding-bottom: env(safe-area-inset-bottom);
+  }
+
+  .replaySpeedControl > span,
+  .replayToggle span {
+    display: none;
+  }
+
+  .replayToggle {
+    min-width: 40px;
+  }
+}
+
+@media (max-width: 420px) {
+  /* One row of buttons above the seek bar on a phone. */
+  .replayPointsButton > span,
+  .replayClockTotal {
+    display: none;
+  }
+
+  .replayControls {
+    gap: 6px;
+  }
+
+  .replayIconButton,
+  .replayPointsButton {
+    min-width: 34px;
+    padding: 0 6px;
+  }
+}
+
+:global(:root[data-theme='light']) .replayIconButton,
+:global(:root[data-theme='light']) .replayPointsButton {
+  border-color: #ccd7e4;
+  background: #fff;
+  color: #34445c;
+}
+
+:global(:root[data-theme='light']) .replayIconButton:hover,
+:global(:root[data-theme='light']) .replayPointsButton:hover,
+:global(:root[data-theme='light']) .replayPointsButton[aria-pressed='true'] {
+  border-color: #91b36c;
+  color: #3d5d18;
+}
+
+:global(:root[data-theme='light']) .replayPointsButton small {
+  color: #52627b;
+}
+
+:global(:root[data-theme='light']) .shareStatus {
+  color: #3d5d18;
+}

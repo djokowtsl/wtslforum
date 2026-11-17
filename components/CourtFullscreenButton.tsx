@@ -249,6 +249,7 @@ export default function CourtFullscreenButton({
       <button
         className={className}
         type="button"
+        data-court-fullscreen
         aria-label={isFullscreen ? 'Exit full screen' : 'Watch full screen'}
         aria-pressed={isFullscreen}
         title={isFullscreen ? 'Exit full screen' : 'Watch full screen'}
