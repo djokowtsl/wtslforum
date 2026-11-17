@@ -143,6 +143,9 @@ export class NativePlayerPose {
   }
 }
 
+/** Lowest an ankle joint goes: its height with the foot flat on the court (m). */
+const ANKLE_FLOOR = 0.095;
+
 export function nativeTwoBone(
   shoulder: THREE.Vector3, target: THREE.Vector3, upper: number, lower: number, preference: THREE.Vector3,
 ) {
@@ -580,8 +583,12 @@ export function attachNativePlayer(
     if (capturedBody) {
       // A stroke played on the run keeps the stepping legs: the captured legs
       // stand still and would glide across the court with the moving player.
-      const running = THREE.MathUtils.clamp(Number(rig.root.userData.stepLegs
+      const runningLegs = THREE.MathUtils.clamp(Number(rig.root.userData.stepLegs
         ?? THREE.MathUtils.smoothstep(Number(rig.root.userData.locomotionSpeed ?? 0), 1.2, 3)), 0, 1);
+      // Except in a slide: the stroke's own legs carry it, gliding with the
+      // player (the running legs on top of a slide's low hips looked like
+      // running in place, sunk into the court).
+      const running = runningLegs * (playback?.slideIn ? 1 - captureWeight : 1);
       if (running > 0) {
         LEG_BONES.forEach((name, i) => pose.bones.get(name)!.quaternion.slerp(steppingLegs[i], running));
         model.updateMatrixWorld(true);
@@ -802,6 +809,20 @@ export function attachNativePlayer(
         .add(new THREE.Vector3((support === 'l' ? 1 : -1) * 0.18, -0.08, -0.05));
       reachArm(support, target, null, handNow, elbowPreference);
     }
+    // Feet stay on the court: when the hips are lower than the legs allow
+    // (a slide or lunge clip's low hips, a deep stretch), the knees bend
+    // instead of the feet going through the court surface.
+    for (const side of ['l', 'r'] as const) {
+      const ankle = pose.point(`foot_${side}`);
+      if (ankle.y >= ANKLE_FLOOR) continue;
+      const foot = pose.rotation(`foot_${side}`);
+      const hip = pose.point(`thigh_${side}`);
+      const knee = pose.point(`calf_${side}`);
+      const solved = nativeTwoBone(hip, ankle.clone().setY(ANKLE_FLOOR), legs[side].lengths[0], legs[side].lengths[1], knee);
+      setLimb(legs[side], solved.elbow, solved.wrist, solved.hinge);
+      pose.orient(`foot_${side}`, foot);
+    }
+    model.updateMatrixWorld(true);
     distributeNativeTwist(pose.bones, pose.rest);
     pose.finish();
     {
