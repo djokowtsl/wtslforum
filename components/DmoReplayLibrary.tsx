@@ -223,6 +223,9 @@ export default function DmoReplayLibrary({
     setViewerMode('forum');
     const url = new URL(window.location.href);
     url.searchParams.set('match', match.id);
+    // A moment from a shared link belongs to the replay it opened.
+    url.searchParams.delete('t');
+    url.searchParams.delete('point');
     window.history.pushState({}, '', url);
   };
 

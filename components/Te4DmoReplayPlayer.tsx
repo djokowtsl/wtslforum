@@ -15,6 +15,12 @@ import {
 } from '@/lib/te4DmoReplayScoreboard';
 import type { Te4ViewerData } from '@/lib/te4DmoTypes';
 import type { PlayerStrokeStylePair } from '@/lib/liveCourtPerformance';
+import {
+  buildDmoReplayPointIndex,
+  dmoReplayMomentFrame,
+  parseDmoReplayMoment,
+  type DmoReplayMoment,
+} from '@/lib/dmoReplayNavigation.mjs';
 import { useTe4ViewerTheme } from '@/components/useTe4ViewerTheme';
 import DmoLiveCourt3D from './DmoLiveCourt3D';
 import DmoReplayScoreBug from './DmoReplayScoreBug';
@@ -37,6 +43,21 @@ type Props = {
   showVoiceDiagnostics?: boolean;
   fallback?: ReactNode;
 };
+
+// A shared moment applies once per page load, to the replay the link names.
+let consumedMomentLink = '';
+
+function linkedMoment(params: Readonly<Record<string, string>>): DmoReplayMoment | null {
+  if (typeof window === 'undefined') return null;
+  const search = new URLSearchParams(window.location.search);
+  const entries = Object.entries(params);
+  if (!entries.length || entries.some(([key, value]) => search.get(key) !== value)) return null;
+  const key = `${window.location.pathname}?${search.toString()}`;
+  if (consumedMomentLink === key) return null;
+  const moment = parseDmoReplayMoment(search);
+  if (moment) consumedMomentLink = key;
+  return moment;
+}
 
 function isViewerData(value: unknown): value is Te4ViewerData {
   const viewer = value as Te4ViewerData | null;
@@ -107,6 +128,31 @@ export default function Te4DmoReplayPlayer({
       : [],
     [viewer, initialSnapshot?.bestOf],
   );
+  // Every point, once per replay: seek-bar marks, point list, previous/next.
+  const replayPoints = useMemo(
+    () => viewer ? buildDmoReplayPointIndex(viewer.pts, { matchOver: replayMatchOver }) : [],
+    [viewer, replayMatchOver],
+  );
+  const replayLinkParams = useMemo<Record<string, string>>(
+    () => {
+      const params: Record<string, string> = {};
+      if (replaySubmissionId) params.match = replaySubmissionId;
+      else if (broadcastId) params.broadcast = broadcastId;
+      return params;
+    },
+    [replaySubmissionId, broadcastId],
+  );
+  const [moment, setMoment] = useState<DmoReplayMoment | null>(null);
+  useEffect(() => {
+    if (moment && broadcastId) document.getElementById(`broadcast-${broadcastId}`)?.scrollIntoView({ block: 'start' });
+  }, [moment, broadcastId]);
+  const initialReplayFrame = useMemo(() => {
+    if (!moment || !initialSnapshot) return null;
+    const frames = initialSnapshot.courtFrameIndices;
+    const first = frames?.[0] ?? 0;
+    const last = frames?.at(-1) ?? Math.max(0, initialSnapshot.frameCount - 1);
+    return dmoReplayMomentFrame(moment, replayPoints, first, last, initialSnapshot.frameRate ?? 60);
+  }, [moment, initialSnapshot, replayPoints]);
   const scoreTimeline = useMemo(
     () => viewer ? buildTe4DmoReplayScoreTimeline(viewer) : [],
     [viewer],
@@ -177,6 +223,10 @@ export default function Te4DmoReplayPlayer({
           : undefined;
         const nextSnapshot = te4ViewerToLiveSnapshot(payload.viewer, replayHandedness);
         if (!active) return;
+        // Read with the data, so the court starts at a shared moment rather than jumping there.
+        setMoment(linkedMoment(
+          replaySubmissionId ? { match: replaySubmissionId } : broadcastId ? { broadcast: broadcastId } : {},
+        ));
         setViewer(payload.viewer);
         setInitialSnapshot(nextSnapshot);
         setReplayPresentation({
@@ -301,6 +351,10 @@ export default function Te4DmoReplayPlayer({
             matchOver={replayMatchOver}
             scoreboard={replayScoreboard}
             onReplayFrameChange={handleReplayFrameChange}
+            replayPoints={replayPoints}
+            initialReplayFrame={initialReplayFrame}
+            rememberReplaySpeed={!broadcastId}
+            replayLinkParams={replayLinkParams}
           />
           {nativeMotion.error && (
             <p className={styles.classicError} role="status">{nativeMotion.error}</p>
