@@ -238,7 +238,9 @@ test('the replay court wires navigation, shortcuts and remembered settings', asy
   assert.match(court, /Close call · replay/, 'recorded near-line errors trigger one replay');
   assert.match(court, /replaySpeedLocked/, 'broadcast replays do not change the stream speed');
   assert.match(court, /RALLY SHOT/, 'rally callouts use a factual shot label');
-  assert.match(court, /Replay settings/, 'full replay settings are grouped behind a disclosure');
+  assert.match(court, /<strong>Camera &amp; sound<\/strong>/, 'full replay settings sit behind a clear Camera & sound button');
+  assert.match(court, /data-hint=\{fullReplay && !settingsSeen \? 'true' : undefined\}/, 'it draws attention until first opened');
+  assert.match(court, /saveDmoBroadcastSettings\(\{ settingsSeen: true \}\)/);
   assert.match(court, /window\.addEventListener\('keydown', onKeyDown\)/);
   assert.match(court, /input:not\(\[type="range"\]\), select, textarea/, 'shortcuts never fire while typing');
   assert.match(court, /useMemo\(\s*\(\) => dmoReplaySeekMarkers/, 'marks are worked out once per replay');
@@ -262,16 +264,16 @@ test('the replay court wires navigation, shortcuts and remembered settings', asy
   assert.match(list, /export const DmoReplayPointList = memo\(/, 'the list only re-renders when the point changes');
 });
 
-test('close-call replays review the ball like Hawk-Eye: flight, mark, gap and distance', async () => {
+test('close-call replays zoom in on the flight and the mark, with one caption', async () => {
   const court = await readFile(new URL('../components/DmoLiveCourt3D.tsx', import.meta.url), 'utf8');
   assert.doesNotMatch(court, /host\.style\.transform = 'scale\(1\.55\)'/, 'no flat digital zoom');
   // The recorded bounce: closeCall.z runs along the court (scene x), closeCall.x across it (scene z).
   assert.match(court, /const bounce = new THREE\.Vector3\(closeCall\.z, 0, closeCall\.x\);/);
   assert.match(court, /new THREE\.TubeGeometry\(curve/, 'the flight is drawn from the last hit');
   assert.match(court, /reviewMark\.visible = landed;/, 'the mark appears when the ball lands');
-  assert.match(court, /reviewGap\.visible = landed && review\.showGap;/, 'the gap to the line is shown');
+  assert.doesNotMatch(court, /reviewGap|closeCallLabel/, 'no gap bar or second distance label: the caption says it');
   assert.match(court, /if \(!review\) controls\.update\(\);/, 'the review camera is not clamped by the orbit controls');
   assert.match(court, /camera\.position\.copy\(review\.savedCamera\);/, "the viewer's camera comes back afterwards");
   assert.match(court, /CLOSE_CALL_HOLD_MS\);/, 'the replay holds on the mark');
-  assert.match(court, /'Wide' : 'Long'\} · \$\{outBy\}/);
+  assert.match(court, /title: 'Close call · replay', detail: `Out by \$\{outBy\}`/);
 });

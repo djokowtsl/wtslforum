@@ -16,6 +16,7 @@ export interface DmoBroadcastSettings {
   renderReplay?: '720p' | '1080p' | '4k';
   crowdDensity?: 'auto' | 'light' | 'standard' | 'packed';
   replaySpeed?: 0.25 | 0.5 | 1 | 2 | 4 | 8;
+  settingsSeen?: boolean;
 }
 
 type SettingsStorage = Pick<Storage, 'getItem' | 'setItem'> | null | undefined;

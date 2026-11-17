@@ -155,6 +155,8 @@ export class NativePlayerPose {
 
 /** Lowest an ankle joint goes: its height with the foot flat on the court (m). */
 const ANKLE_FLOOR = 0.095;
+/** How far the hips sink into a slide that has no slide recording (m). */
+const SLIDE_HIP_DROP = 0.1;
 
 export function nativeTwoBone(
   shoulder: THREE.Vector3, target: THREE.Vector3, upper: number, lower: number, preference: THREE.Vector3,
@@ -606,6 +608,42 @@ export function attachNativePlayer(
         LEG_BONES.forEach((name, i) => pose.bones.get(name)!.quaternion.slerp(steppingLegs[i], running));
         model.updateMatrixWorld(true);
       }
+    }
+    // 2a. A slide with no slide recording (a forehand slide, say): instead of
+    //     the stroke's standing legs gliding over the court, he sits into it,
+    //     the lead leg out towards the slide with the knee over the foot, the
+    //     trailing leg stretched behind with its knee low, both feet on the court.
+    const slidePose = rig.root.userData.slidePose as { weight: number; side: number } | undefined;
+    const slideLegs = slidePose && !playback?.slide ? THREE.MathUtils.clamp(slidePose.weight, 0, 1) : 0;
+    if (slideLegs > 0.001) {
+      const towards = slidePose!.side >= 0 ? 1 : -1;
+      // Space +X is the player's anatomical left.
+      const lead: Side = towards > 0 ? 'l' : 'r';
+      const trail: Side = lead === 'l' ? 'r' : 'l';
+      model.position.y -= SLIDE_HIP_DROP * slideLegs;
+      model.updateMatrixWorld(true);
+      const pelvis = pose.point('pelvis');
+      const goals: Record<Side, { foot: THREE.Vector3; knee: THREE.Vector3 }> = {
+        [lead]: {
+          foot: new THREE.Vector3(pelvis.x + towards * 0.55, ANKLE_FLOOR, pelvis.z + 0.12),
+          knee: new THREE.Vector3(towards * 0.22, -0.12, 0.42),
+        },
+        [trail]: {
+          foot: new THREE.Vector3(pelvis.x - towards * 0.38, ANKLE_FLOOR, pelvis.z - 0.3),
+          knee: new THREE.Vector3(-towards * 0.08, -0.38, 0.22),
+        },
+      } as Record<Side, { foot: THREE.Vector3; knee: THREE.Vector3 }>;
+      for (const side of [lead, trail]) {
+        const hip = pose.point(`thigh_${side}`);
+        const foot = pose.rotation(`foot_${side}`);
+        const target = pose.point(`foot_${side}`).lerp(goals[side].foot, slideLegs);
+        const solved = nativeTwoBone(
+          hip, target, legs[side].lengths[0], legs[side].lengths[1], hip.clone().add(goals[side].knee),
+        );
+        setLimb(legs[side], solved.elbow, solved.wrist, solved.hinge);
+        pose.orient(`foot_${side}`, foot);
+      }
+      model.updateMatrixWorld(true);
     }
     const stretching = Boolean((rig.root.userData.contactTarget as ContactTarget | undefined)?.stretch);
     if (capturedBody && !capturedBody.nativeRecording && playback && playback.stroke !== 'serve') {

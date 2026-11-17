@@ -134,3 +134,17 @@ test('during a slide the legs follow the stroke, and feet never go below the cou
   assert.match(court, /if \(movement\?\.kind === 'slide'\) capturedEvent\.slideIn = true;/);
   assert.match(court, /\.\.\.\(capturedEvent\.slideIn \? \{ slideIn: true \} : \{\}\)/);
 });
+
+test('a slide without a slide recording gets slide legs, on a side fixed for the whole slide', async () => {
+  for (const file of ['DmoNativePlayer.ts', 'DmoNativePlayerClaude.ts']) {
+    const source = await readFile(new URL(`../components/${file}`, import.meta.url), 'utf8');
+    assert.match(source, /const slideLegs = slidePose && !playback\?\.slide \?/, `${file}: not over the slide recording`);
+    const legs = source.indexOf('const slideLegs = ');
+    assert.ok(legs > source.indexOf('capturedGroundstroke.apply(strokePlayback)'), `${file}: after the stroke's legs`);
+    assert.ok(legs < source.indexOf('rig.racket.quaternion.copy(handOrientation'), `${file}: before the racket is placed`);
+    assert.ok(legs < source.indexOf('if (ankle.y >= ANKLE_FLOOR) continue;'), `${file}: the floor still applies after`);
+  }
+  const court = await readFile(new URL('../components/DmoLiveCourt3D.tsx', import.meta.url), 'utf8');
+  assert.match(court, /rig\.root\.userData\.slideSide = slideDirection \|\| 1;/);
+  assert.match(court, /rig\.root\.userData\.slidePose = \{ weight: slideWeight, side: rig\.root\.userData\.slideSide \};/);
+});

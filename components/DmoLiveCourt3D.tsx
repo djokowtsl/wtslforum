@@ -2,8 +2,8 @@
 
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
-  ChevronLeft, ChevronRight, ListOrdered, Minus, Pause, Play, Plus, RotateCcw, Share2, SkipBack, SkipForward,
-  Volume2, VolumeX,
+  ChevronDown, ChevronLeft, ChevronRight, ListOrdered, Minus, Pause, Play, Plus, RotateCcw, Share2, SkipBack,
+  SkipForward, SlidersHorizontal, Volume2, VolumeX,
 } from 'lucide-react';
 import * as THREE from 'three';
 import { OrbitControls } from 'three/examples/jsm/controls/OrbitControls.js';
@@ -207,9 +207,6 @@ const CLOSE_CALL_PATH_POINTS = 48;
 const CLOSE_CALL_CAMERA_MS = 700;
 /** How long the review holds on the mark after the bounce (ms). */
 const CLOSE_CALL_HOLD_MS = 1800;
-/** Outside edges of the singles sideline and the baseline from the court's centre (m). */
-const SINGLES_SIDELINE = 8.23 / 2;
-const BASELINE_DISTANCE = 23.77 / 2;
 
 /** A stretched forehand to a ball lower than this (m) is played as a slice. */
 const STRETCH_SLICE_HEIGHT = 0.75;
@@ -301,6 +298,17 @@ type Props = {
 };
 
 const NO_REPLAY_POINTS: readonly DmoReplayPointEntry[] = [];
+
+const CAMERA_VIEW_LABELS: Partial<Record<string, string>> = {
+  court: 'Court view',
+  aerial: 'Aerial view',
+  tv: 'TV view',
+  'player-one-first': 'Player view',
+  'player-one-third': 'Player view',
+  'player-two-first': 'Player view',
+  'player-two-third': 'Player view',
+  custom: 'Custom view',
+};
 
 /** Saves a setting when it changes, never on the first render. */
 function useSaveOnChange<T>(value: T, save: (value: T) => void) {
@@ -546,6 +554,13 @@ function ThreeCourt({
   const [replayFrame, setReplayFrame] = useState(snapshot.courtFrameIndices?.[0] ?? 0);
   const [replaySpeed, setReplaySpeed] = useState<number>(playbackSpeed);
   const [pointListOpen, setPointListOpen] = useState(false);
+  /** The replay's camera and sound panel; open on live streams. */
+  const [settingsOpen, setSettingsOpen] = useState(false);
+  /** Until the viewer first opens it, the panel's button gently draws attention. */
+  const [settingsSeen, setSettingsSeen] = useState(true);
+  useEffect(() => {
+    setSettingsSeen(Boolean(readDmoBroadcastSettings().settingsSeen));
+  }, []);
   const [showPointCaptions, setShowPointCaptions] = useState(true);
   const [closeCallCaption, setCloseCallCaption] = useState<{ title: string; detail: string } | null>(null);
   const [shareStatus, setShareStatus] = useState('');
@@ -557,9 +572,6 @@ function ThreeCourt({
     /** The review has held on the mark after the bounce. */
     held?: boolean;
   } | null>(null);
-  /** The "Wide · 14 cm" label over the mark (positioned by the render loop). */
-  const closeCallLabelRef = useRef<HTMLDivElement>(null);
-  const [closeCallLabel, setCloseCallLabel] = useState('');
   const closeCallHoldTimerRef = useRef<number | null>(null);
   useEffect(() => () => {
     if (closeCallHoldTimerRef.current !== null) window.clearTimeout(closeCallHoldTimerRef.current);
@@ -741,7 +753,6 @@ function ThreeCourt({
       setShotCallout(null);
       setLivePointCaption(null);
       setCloseCallCaption(null);
-      setCloseCallLabel('');
       closeCallSeenRef.current.clear();
       activeCloseCallRef.current = null;
       closeCallZoomRef.current = null;
@@ -1206,9 +1217,9 @@ function ThreeCourt({
     trail.renderOrder = 3;
     scene.add(trail);
 
-    // Close-call review, Hawk-Eye style: the ball's flight from the last hit,
-    // the mark where it landed and the gap to the line, seen from a low
-    // camera behind the bounce. Hidden except during a close-call replay.
+    // Close-call review: the ball's flight from the last hit and the mark
+    // where it landed, seen from a low camera behind the bounce. Hidden
+    // except during a close-call replay.
     const reviewPathMaterial = new THREE.MeshBasicMaterial({
       color: 0xffd166, transparent: true, opacity: 0.92, depthWrite: false, toneMapped: false,
     });
@@ -1223,20 +1234,12 @@ function ThreeCourt({
     reviewMark.renderOrder = 5;
     reviewMark.visible = false;
     scene.add(reviewMark);
-    const reviewGap = new THREE.Mesh(
-      new THREE.BoxGeometry(1, 0.006, 0.022),
-      new THREE.MeshBasicMaterial({ color: 0xffffff, transparent: true, opacity: 0.95, depthWrite: false, toneMapped: false }),
-    );
-    reviewGap.renderOrder = 6;
-    reviewGap.visible = false;
-    scene.add(reviewGap);
     let review: {
       key: string;
       path: { frame: number; point: THREE.Vector3 }[];
       drawn: number;
       bounce: THREE.Vector3;
       bounceFrame: number;
-      showGap: boolean;
       savedCamera: THREE.Vector3;
       savedTarget: THREE.Vector3;
       fromCamera: THREE.Vector3;
@@ -1650,6 +1653,18 @@ function ThreeCourt({
       const slideWeight = liveCourtSlideWeight(footworkEventsRef.current, eventPlayer, frame, frameRate);
       const lateralVelocity = velocityX * localXAxis[0] + velocityZ * localXAxis[1];
       const slideDirection = Math.sign(lateralVelocity);
+      // The detailed player's slide legs: which way he slides is fixed at the
+      // start of the slide (the sideways speed falls to nothing as he stops,
+      // and its sign would flick the legs from side to side).
+      if (slideWeight > 0.001) {
+        if (rig.root.userData.slideSide === undefined || !rig.root.userData.slidePose) {
+          rig.root.userData.slideSide = slideDirection || 1;
+        }
+        rig.root.userData.slidePose = { weight: slideWeight, side: rig.root.userData.slideSide };
+      } else {
+        delete rig.root.userData.slidePose;
+        delete rig.root.userData.slideSide;
+      }
       // Ground-locked stepping: the step cycle advances by the distance the rig
       // actually travels, along its travel direction (see lib/liveCourtGait).
       const speedMs = Math.hypot(velocityX, velocityZ) * frameRate / 4;
@@ -3062,7 +3077,6 @@ function ThreeCourt({
             drawn: -1,
             bounce,
             bounceFrame,
-            showGap: false,
             savedCamera: review?.savedCamera ?? camera.position.clone(),
             savedTarget: review?.savedTarget ?? controls.target.clone(),
             fromCamera: camera.position.clone(),
@@ -3077,34 +3091,17 @@ function ThreeCourt({
           reviewMark.position.set(bounce.x, 0.007, bounce.z);
           reviewMark.rotation.set(-Math.PI / 2, 0, heading);
           reviewMark.scale.set(BALL_RADIUS * 1.25, BALL_RADIUS * 2.1, 1);
-          // The gap from the outside edge of the line to the edge of the mark.
-          const wide = Math.max(0, Math.abs(bounce.z) - SINGLES_SIDELINE);
-          const long = Math.max(0, Math.abs(bounce.x) - BASELINE_DISTANCE);
-          const gap = Math.max(wide, long) - BALL_RADIUS * 1.25;
-          reviewGap.visible = false;
-          review.showGap = gap > 0.005;
-          if (review.showGap) {
-            if (wide >= long) {
-              reviewGap.scale.set(0.022, 1, gap / 0.022);
-              reviewGap.position.set(bounce.x, 0.008, acrossSign * (SINGLES_SIDELINE + gap / 2));
-            } else {
-              reviewGap.scale.set(gap, 1, 1);
-              reviewGap.position.set(alongSign * (BASELINE_DISTANCE + gap / 2), 0.008, bounce.z);
-            }
-          }
         } else if (!closeCall && review) {
           // End: put the viewer's camera back exactly as it was.
           camera.position.copy(review.savedCamera);
           controls.target.copy(review.savedTarget);
           review = null;
           reviewMark.visible = false;
-          reviewGap.visible = false;
           if (reviewPath) {
             scene.remove(reviewPath);
             reviewPath.geometry.dispose();
             reviewPath = null;
           }
-          if (closeCallLabelRef.current) closeCallLabelRef.current.style.opacity = '0';
         }
         if (review) {
           const ease = THREE.MathUtils.smoothstep((now - review.startedAt) / CLOSE_CALL_CAMERA_MS, 0, 1);
@@ -3134,20 +3131,6 @@ function ThreeCourt({
           }
           const landed = currentFrame >= review.bounceFrame;
           reviewMark.visible = landed;
-          reviewGap.visible = landed && review.showGap;
-          const label = closeCallLabelRef.current;
-          if (label) {
-            if (landed) {
-              const bounds = host.getBoundingClientRect();
-              const projected = review.bounce.clone().setY(0.25).project(camera);
-              const x = THREE.MathUtils.clamp((projected.x + 1) * 0.5 * bounds.width, 60, bounds.width - 60);
-              const y = THREE.MathUtils.clamp((1 - projected.y) * 0.5 * bounds.height, 40, bounds.height - 40);
-              label.style.transform = `translate(${x.toFixed(1)}px, ${y.toFixed(1)}px) translate(-50%, -100%)`;
-              label.style.opacity = '1';
-            } else {
-              label.style.opacity = '0';
-            }
-          }
         }
       }
       try {
@@ -3606,7 +3589,6 @@ function ThreeCourt({
     activeCloseCallRef.current = null;
     closeCallZoomRef.current = null;
     setCloseCallCaption(null);
-    setCloseCallLabel('');
     if (closeCallHoldTimerRef.current !== null) {
       window.clearTimeout(closeCallHoldTimerRef.current);
       closeCallHoldTimerRef.current = null;
@@ -3717,7 +3699,6 @@ function ThreeCourt({
         activeCloseCallRef.current = null;
         closeCallZoomRef.current = null;
         setCloseCallCaption(null);
-        setCloseCallLabel('');
         if (!replaySpeedLocked) {
           replaySpeedRef.current = active.originalSpeed;
           setReplaySpeed(active.originalSpeed);
@@ -3748,8 +3729,6 @@ function ThreeCourt({
     closeCallZoomRef.current = { ...closeCall, applied: false };
     const outBy = `${Math.max(1, Math.round(closeCall.distanceMeters * 100))} cm`;
     setCloseCallCaption({ title: 'Close call · replay', detail: `Out by ${outBy}` });
-    // closeCall.x runs across the court: past the singles sideline is wide.
-    setCloseCallLabel(`${Math.abs(closeCall.x) > SINGLES_SIDELINE ? 'Wide' : 'Long'} · ${outBy}`);
     if (!replaySpeedLocked) {
       replaySpeedRef.current = 0.5;
       setReplaySpeed(0.5);
@@ -3915,9 +3894,37 @@ function ThreeCourt({
         </div>
         <details
           className={fullReplay ? styles.replaySettings : styles.liveSettings}
-          open={!fullReplay}
+          open={fullReplay ? settingsOpen : true}
+          data-hint={fullReplay && !settingsSeen ? 'true' : undefined}
+          onToggle={(event) => {
+            if (!fullReplay) return;
+            const open = event.currentTarget.open;
+            setSettingsOpen(open);
+            if (open && !settingsSeen) {
+              setSettingsSeen(true);
+              saveDmoBroadcastSettings({ settingsSeen: true });
+            }
+          }}
         >
-          <summary>{fullReplay ? 'Replay settings' : 'Court view controls'}</summary>
+          <summary aria-label={fullReplay ? 'Camera and sound settings' : 'Court view controls'}>
+            {fullReplay ? (
+              <>
+                <SlidersHorizontal size={16} aria-hidden="true" />
+                <span className={styles.settingsLabel}>
+                  <strong>Camera &amp; sound</strong>
+                  {/* What's set now, so it reads as controls, not a heading. */}
+                  <small>
+                    {CAMERA_VIEW_LABELS[cameraView] ?? 'Camera'}
+                    {' · '}
+                    {BROADCAST_TIME_OF_DAY_OPTIONS.find((option) => option.value === timeOfDay)?.label ?? 'Day'}
+                    {' · '}
+                    {soundEnabled ? 'Sound on' : 'Sound off'}
+                  </small>
+                </span>
+                <ChevronDown size={16} aria-hidden="true" className={styles.settingsChevron} />
+              </>
+            ) : 'Court view controls'}
+          </summary>
           <div className={styles.controls} aria-label="Court view controls">
           <div className={styles.presets} role="group" aria-label="Camera angle">
             <button type="button" aria-pressed={cameraView === 'court'} onClick={() => setPreset('court')}>Court</button>
@@ -4104,12 +4111,6 @@ function ThreeCourt({
       <div className={styles.viewport} ref={viewportRef}>
         <div className={styles.canvasHost} ref={canvasHostRef} />
         <div ref={transitionRef} className={styles.changeover} aria-hidden="true" />
-        {closeCallLabel && (
-          <div ref={closeCallLabelRef} className={styles.closeCallLabel} aria-hidden="true">
-            <strong>Out</strong>
-            <span>{closeCallLabel}</span>
-          </div>
-        )}
         {shownPointCaption && (
           <div
             className={styles.pointCaption}
@@ -4269,7 +4270,7 @@ function ThreeCourt({
           )}
           <button
             type="button"
-            className={styles.replayIconButton}
+            className={`${styles.replayIconButton} ${styles.replayShareButton}`}
             aria-label="Share a link to this moment"
             title="Share a link to this moment"
             onClick={() => void shareReplayMoment()}
