@@ -2026,6 +2026,8 @@ function ThreeCourt({
         spinSlice?: boolean;
         /** Slid into the shot (plays the slide clip, when the player has one). */
         slide?: boolean;
+        /** Any planned slide into the shot, either side. */
+        slideIn?: boolean;
         smash?: boolean;
         /** A stretch at a ball going past him (no TE4 shot). */
         attempt?: boolean;
@@ -2090,6 +2092,7 @@ function ThreeCourt({
           const movement = strokeEvent.shotType === 'rally' && !recordedSmash && !capturedEvent.attempt
             ? dmoShotMovementAt(shotMovementsRef.current, eventPlayer, strokeEvent.frame)
             : null;
+          if (movement?.kind === 'slide') capturedEvent.slideIn = true;
           if (movement?.kind === 'slide' && capturedEvent.stroke === 'backhand' && bundledSource?.clips['slide-backhand']) {
             capturedEvent.slide = true;
             delete capturedEvent.slice;
@@ -2208,6 +2211,7 @@ function ThreeCourt({
               ...(capturedEvent.smash ? { smash: true } : {}),
               ...(capturedEvent.slice ? { slice: true } : {}),
               ...(capturedEvent.slide ? { slide: true } : {}),
+              ...(capturedEvent.slideIn ? { slideIn: true } : {}),
               // (A slice return does fit its whole preparation in: without it
               // only the last ~0.3 s of the slice showed, and it read as a
               // push or a drive. Rally slices keep their slow preparation.)

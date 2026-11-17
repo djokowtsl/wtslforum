@@ -208,6 +208,8 @@ export type LiveCourtFootworkEvent = {
   frame: number;
   kind: 'footstep' | 'slide';
   player: 1 | 2;
+  /** A slide into a shot: eases in and out more slowly than a quick stop. */
+  shot?: boolean;
 };
 
 export type LiveCourtSkidMark = {
@@ -467,7 +469,7 @@ export function deriveLiveCourtFootworkEvents(
     const last = samples[samples.length - 1].frame;
     for (const slide of shotSlides) {
       if (slide.frame < first || slide.frame > last) continue;
-      events.push({ frame: slide.frame, kind: 'slide', player: slide.player });
+      events.push({ frame: slide.frame, kind: 'slide', player: slide.player, shot: true });
     }
   }
 
@@ -475,6 +477,8 @@ export function deriveLiveCourtFootworkEvents(
     first.frame - second.frame || first.kind.localeCompare(second.kind),
   );
 }
+
+const THREE_SMOOTH = (t: number) => t * t * (3 - 2 * t);
 
 export function liveCourtSlideWeight(
   events: LiveCourtFootworkEvent[],
@@ -486,16 +490,20 @@ export function liveCourtSlideWeight(
   const frameRate = Number.isFinite(framesPerSecond) && framesPerSecond > 0
     ? framesPerSecond
     : 60;
-  const duration = Math.max(1, frameRate * 0.42);
   for (let index = events.length - 1; index >= 0; index -= 1) {
     const event = events[index];
     if (event.frame > frame || event.player !== player || event.kind !== 'slide') continue;
     const age = frame - event.frame;
-    // Eases in over ~0.1 s: starting at full strength dropped the hips ~10 cm
-    // and spread the feet in a single frame at the start of every slide.
+    // A slide into a shot lasts longer and eases in and out gently; a quick
+    // stop is short. Easing in at all matters: starting at full strength
+    // dropped the hips ~10 cm and spread the feet in a single frame.
+    const duration = Math.max(1, frameRate * (event.shot ? 0.75 : 0.42));
     if (age <= duration) {
-      const onset = Math.min(1, age / Math.max(1, frameRate * 0.1));
-      return onset * onset * (3 - 2 * onset) * Math.max(0, 1 - age / duration);
+      const onset = Math.min(1, age / Math.max(1, frameRate * (event.shot ? 0.18 : 0.1)));
+      const eased = onset * onset * (3 - 2 * onset);
+      if (!event.shot) return eased * Math.max(0, 1 - age / duration);
+      const fade = THREE_SMOOTH(Math.min(1, Math.max(0, (age - duration * 0.45) / (duration * 0.55))));
+      return eased * (1 - fade);
     }
   }
   return 0;

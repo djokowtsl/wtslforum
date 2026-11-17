@@ -87,7 +87,7 @@ test('with a surface, footwork slides only where realistic', () => {
   assert.equal(slides(deriveLiveCourtFootworkEvents(samples, 60, { surface: 'clay' })).length, 0, 'too slow to slide');
   assert.equal(slides(deriveLiveCourtFootworkEvents(samples, 60, { surface: 'grass' })).length, 0);
   const planned = deriveLiveCourtFootworkEvents(samples, 60, { surface: 'hard', shotSlides: [{ frame: 40, player: 1 }] });
-  assert.deepEqual(slides(planned), [{ frame: 28, kind: 'slide', player: 1 }], 'a planned slide starts 0.2 s before contact');
+  assert.deepEqual(slides(planned), [{ frame: 28, kind: 'slide', player: 1, shot: true }], 'a planned slide starts 0.2 s before contact');
 });
 
 test('the court plays the slide clip and the forehand slice from the plan', async () => {
@@ -104,4 +104,33 @@ test('the court plays the slide clip and the forehand slice from the plan', asyn
   assert.match(loader, /if \(!clips\['slice-forehand'\]\)/, "a player's own forehand slice wins");
   const catalog = await readFile(new URL('../lib/nativeMotionCatalog.ts', import.meta.url), 'utf8');
   assert.match(catalog, /'slide-backhand': \{ clipId: 'a2c075e329bf25172543_80477a8d19745e08'/);
+});
+
+test('a slide into a shot eases in and out smoothly and lasts longer than a quick stop', async () => {
+  const { liveCourtSlideWeight } = await import('../lib/liveCourtMotion.ts');
+  const shotSlide = [{ frame: 0, kind: 'slide', player: 1, shot: true }];
+  const quickStop = [{ frame: 0, kind: 'slide', player: 1 }];
+  const curve = [];
+  for (let frame = 0; frame <= 50; frame += 1) curve.push(liveCourtSlideWeight(shotSlide, 1, frame, 60));
+  assert.equal(curve[0], 0, 'starts from nothing');
+  assert.ok(Math.max(...curve) > 0.95, 'reaches full strength');
+  assert.equal(liveCourtSlideWeight(shotSlide, 1, 45, 60), 0, 'over by 0.75 s');
+  for (let index = 1; index < curve.length; index += 1) {
+    assert.ok(Math.abs(curve[index] - curve[index - 1]) < 0.15, `no jump at frame ${index}`);
+  }
+  assert.ok(liveCourtSlideWeight(shotSlide, 1, 30, 60) > liveCourtSlideWeight(quickStop, 1, 30, 60));
+});
+
+test('during a slide the legs follow the stroke, and feet never go below the court', async () => {
+  for (const file of ['DmoNativePlayer.ts', 'DmoNativePlayerClaude.ts']) {
+    const source = await readFile(new URL(`../components/${file}`, import.meta.url), 'utf8');
+    assert.match(source, /const running = runningLegs \* \(playback\?\.slideIn \? 1 - captureWeight : 1\);/, file);
+    assert.match(source, /if \(ankle\.y >= ANKLE_FLOOR\) continue;/, file);
+    const clamp = source.indexOf('if (ankle.y >= ANKLE_FLOOR) continue;');
+    assert.ok(clamp > source.indexOf('capturedGroundstroke.applyGesture('), `${file}: after strokes and gestures`);
+    assert.ok(clamp < source.indexOf('distributeNativeTwist(pose.bones, pose.rest);'), `${file}: before the shoes`);
+  }
+  const court = await readFile(new URL('../components/DmoLiveCourt3D.tsx', import.meta.url), 'utf8');
+  assert.match(court, /if \(movement\?\.kind === 'slide'\) capturedEvent\.slideIn = true;/);
+  assert.match(court, /\.\.\.\(capturedEvent\.slideIn \? \{ slideIn: true \} : \{\}\)/);
 });
