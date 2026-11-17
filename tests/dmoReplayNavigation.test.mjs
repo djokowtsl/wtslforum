@@ -50,15 +50,27 @@ test('the point index records what each point decided', () => {
   assert.deepEqual(describeDmoReplayPoint(index[1], ['Ana', 'Bea']), { winner: 'Ana', how: 'Winner · 3 shots' });
   assert.deepEqual(describeDmoReplayPoint(index[2], ['Ana', 'Bea']), { winner: 'Ana', how: 'Opponent error · 3 shots' });
   assert.deepEqual(describeDmoReplayPoint(index[3], ['Ana', 'Bea']), { winner: 'Bea', how: 'Double fault' });
-  assert.deepEqual(describeDmoReplayPointCaption(index[0], 100, ['Ana', 'Bea']), {
-    title: 'Ana serving',
-    detail: 'Set 1 · 0-0 · 0-0',
-  });
-  assert.deepEqual(describeDmoReplayPointCaption(index[0], 399, ['Ana', 'Bea']), {
-    title: 'Ace · Ana',
-    detail: 'Point 0',
-  });
+  // Routine points get no caption at all, before or after.
+  assert.equal(describeDmoReplayPointCaption(index[0], 100, ['Ana', 'Bea']), null);
+  assert.equal(describeDmoReplayPointCaption(index[0], 399, ['Ana', 'Bea']), null);
+  // The set-winning break: shown after the point, for 3 seconds only.
+  assert.deepEqual(describeDmoReplayPointCaption(index[2], 1699, ['Ana', 'Bea'], 60), { title: 'Set · Ana', detail: '' });
+  assert.equal(describeDmoReplayPointCaption(index[2], 1699 + 181, ['Ana', 'Bea'], 60), null);
+  assert.deepEqual(describeDmoReplayPointCaption(index[3], 2199, ['Ana', 'Bea'], 60), { title: 'Match · Bea', detail: '' });
   assert.deepEqual(buildDmoReplayPointIndex(null), []);
+});
+
+test('captions only mark pressure points and long rallies, briefly', () => {
+  const names = ['Ana', 'Bea'];
+  const breakPoint = { ...buildDmoReplayPointIndex(points)[1], breakPointFor: 2, winner: 1, endsGame: false };
+  assert.deepEqual(describeDmoReplayPointCaption(breakPoint, 600, names, 60), { title: 'Break point · Bea', detail: '' });
+  assert.equal(describeDmoReplayPointCaption(breakPoint, 600 + 181, names, 60), null, 'gone after 3 s');
+  assert.deepEqual(describeDmoReplayPointCaption(breakPoint, 999, names, 60), { title: 'Break point saved · Ana', detail: '' });
+  const converted = { ...breakPoint, winner: 2 };
+  assert.deepEqual(describeDmoReplayPointCaption(converted, 999, names, 60), { title: 'Break · Bea', detail: '' });
+  const rally = { ...buildDmoReplayPointIndex(points)[1], shots: 15 };
+  assert.deepEqual(describeDmoReplayPointCaption(rally, 1000, names, 60), { title: '15-shot rally · Ana', detail: '' });
+  assert.equal(describeDmoReplayPointCaption({ ...rally, shots: 14 }, 1000, names, 60), null);
 });
 
 test('score pressure and match statistics come from each recorded point', () => {
@@ -102,12 +114,16 @@ test('score pressure and match statistics come from each recorded point', () => 
 
 test('only a recorded error bounce just outside court lines is a close call', () => {
   const points = [
-    { mf: 100, fc: 240, s: 1, w: 2, f: 0, sh: [{ p: 1, bx: 555, by: 0, bt: 140 }] },
-    { mf: 500, fc: 240, s: 1, w: 2, f: 0, sh: [{ p: 1, bx: 600, by: 0, bt: 140 }] },
-    { mf: 900, fc: 240, s: 1, w: 1, f: 0, sh: [{ p: 1, bx: 555, by: 0, bt: 140 }] },
+    // bx runs along the court (baseline at ±1188.5 cm), by across it (±548.5 cm).
+    { mf: 100, fc: 240, s: 1, w: 2, f: 0, sh: [{ p: 1, bx: 0, by: 555, bt: 140 }] },
+    { mf: 500, fc: 240, s: 1, w: 2, f: 0, sh: [{ p: 1, bx: 0, by: 600, bt: 140 }] },
+    { mf: 900, fc: 240, s: 1, w: 1, f: 0, sh: [{ p: 1, bx: 0, by: 555, bt: 140 }] },
     { mf: 1300, fc: 240, s: 1, w: 2, f: 0, sh: [{ p: 1, bx: null, by: null, bt: null }] },
+    { mf: 1700, fc: 240, s: 1, w: 2, f: 0, sh: [{ p: 1, bx: 555, by: 0, bt: 140 }] },
+    { mf: 2100, fc: 240, s: 1, w: 2, f: 0, sh: [{ p: 1, bx: -1195, by: 100, bt: 140 }] },
   ];
-  assert.deepEqual(buildDmoReplayCloseCalls(points), [{
+  const calls = buildDmoReplayCloseCalls(points);
+  assert.deepEqual(calls[0], {
     point: 0,
     frame: 240,
     startFrame: 150,
@@ -115,7 +131,9 @@ test('only a recorded error bounce just outside court lines is a close call', ()
     x: 5.55,
     z: 0,
     distanceMeters: 0.07,
-  }]);
+  }, 'just wide');
+  assert.deepEqual(calls.map((call) => call.point), [0, 5], 'a ball inside the court (point 5) is never a close call; just long is');
+  assert.equal(calls[1].distanceMeters, 0.07);
 });
 
 test('finding the current point and stepping between points', () => {
