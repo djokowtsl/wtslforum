@@ -60,6 +60,44 @@
   font-variant-numeric: tabular-nums;
 }
 
+.tabs {
+  display: inline-flex;
+  flex: none;
+  align-items: center;
+  gap: 3px;
+  margin-left: auto;
+  padding: 3px;
+  border: 1px solid rgba(152, 174, 207, .18);
+  border-radius: 8px;
+  background: rgba(3, 9, 20, .38);
+}
+
+.tabs button {
+  min-height: 27px;
+  padding: 0 8px;
+  border: 0;
+  border-radius: 6px;
+  background: transparent;
+  color: #9eafc7;
+  font: 750 10px/1 system-ui, sans-serif;
+  cursor: pointer;
+}
+
+.tabs button:hover,
+.tabs button:focus-visible,
+.tabs .activeTab {
+  background: rgba(176, 244, 59, .14);
+  color: #d1f59b;
+  outline: none;
+}
+
+.tabs small {
+  margin-left: 3px;
+  color: inherit;
+  font-size: 9px;
+  font-variant-numeric: tabular-nums;
+}
+
 .close {
   display: inline-grid;
   place-items: center;
@@ -222,6 +260,189 @@
   color: #c4d0e2;
   font: 700 9px/15px system-ui, sans-serif;
   text-align: center;
+}
+
+.insights {
+  flex: 1;
+  min-height: 0;
+  padding: 12px 14px;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  -webkit-overflow-scrolling: touch;
+}
+
+.captionControl {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 0 0 10px;
+  border-bottom: 1px solid rgba(152, 174, 207, .17);
+  color: #d5e0ee;
+  font-weight: 700;
+}
+
+.captionControl button {
+  min-width: 48px;
+  min-height: 30px;
+  padding: 0 9px;
+  border: 1px solid rgba(152, 174, 207, .28);
+  border-radius: 7px;
+  background: rgba(3, 9, 20, .45);
+  color: #c4d0e2;
+  font: 750 10px/1 system-ui, sans-serif;
+  cursor: pointer;
+}
+
+.captionControl button[aria-pressed='true'] {
+  border-color: rgba(176, 244, 59, .5);
+  color: #c9f27a;
+}
+
+.replayCurrent {
+  display: flex;
+  width: 100%;
+  align-items: center;
+  justify-content: center;
+  gap: 7px;
+  min-height: 34px;
+  margin: 10px 0 4px;
+  border: 1px solid rgba(152, 174, 207, .25);
+  border-radius: 7px;
+  background: rgba(3, 9, 20, .45);
+  color: #e7eef8;
+  font: 750 10px/1 system-ui, sans-serif;
+  cursor: pointer;
+}
+
+.replayCurrent:hover,
+.replayCurrent:focus-visible {
+  border-color: rgba(176, 244, 59, .5);
+  color: #c9f27a;
+  outline: none;
+}
+
+.replayCurrent:disabled {
+  opacity: .45;
+  cursor: not-allowed;
+}
+
+.statsWrap {
+  width: 100%;
+  overflow-x: auto;
+}
+
+.statsTable {
+  width: 100%;
+  border-collapse: collapse;
+  table-layout: fixed;
+  font-variant-numeric: tabular-nums;
+}
+
+.statsTable th,
+.statsTable td {
+  padding: 7px 5px;
+  border-bottom: 1px solid rgba(152, 174, 207, .12);
+  text-align: right;
+}
+
+.statsTable thead th {
+  color: #9eafc7;
+  font-size: 10px;
+  font-weight: 800;
+}
+
+.statsTable thead th:first-child,
+.statsTable tbody th {
+  width: 48%;
+  overflow: hidden;
+  color: #c4d0e2;
+  text-align: left;
+  text-overflow: ellipsis;
+}
+
+.statsTable tbody th,
+.statsTable td {
+  font-size: 11px;
+}
+
+.statsTable tbody th {
+  font-weight: 650;
+}
+
+.statsTable td {
+  color: #f0f5fc;
+  font-weight: 800;
+}
+
+.highlights {
+  margin-top: 14px;
+}
+
+.highlights h3 {
+  margin: 0 0 8px;
+  color: #d5e0ee;
+  font-size: 11px;
+  letter-spacing: .04em;
+  text-transform: uppercase;
+}
+
+.highlights ul {
+  display: grid;
+  gap: 5px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.highlights button {
+  display: flex;
+  width: 100%;
+  flex-direction: column;
+  gap: 3px;
+  padding: 8px 9px;
+  border: 1px solid rgba(152, 174, 207, .15);
+  border-radius: 7px;
+  background: rgba(3, 9, 20, .28);
+  color: #e7eef8;
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+
+.highlights button:hover,
+.highlights button:focus-visible {
+  border-color: rgba(176, 244, 59, .45);
+  outline: none;
+}
+
+.highlights button strong {
+  font-size: 11px;
+}
+
+.highlights button span,
+.insightNote {
+  color: #91a3bd;
+  font-size: 10px;
+  line-height: 1.45;
+}
+
+.sharedInsightsLink {
+  display: inline-flex;
+  margin-top: 13px;
+  color: #c9f27a;
+  font-size: 11px;
+  font-weight: 800;
+  text-decoration: none;
+}
+
+.sharedInsightsLink:hover,
+.sharedInsightsLink:focus-visible {
+  text-decoration: underline;
+}
+
+.insightNote {
+  margin: 5px 0 0;
 }
 
 /* Keyboard shortcuts only mean something with a keyboard and pointer. */

@@ -1,0 +1,79 @@
+.reportReplay {
+  display: grid;
+  gap: 14px;
+}
+
+.moments {
+  padding: clamp(14px, 2vw, 20px);
+  border: 1px solid var(--line-2);
+  border-radius: 12px;
+  background: var(--bg-2);
+}
+
+.momentsHeading h3 {
+  color: var(--text-strong);
+  font-family: var(--font-display);
+  font-size: 20px;
+  font-style: italic;
+  text-transform: uppercase;
+}
+
+.momentsHeading p {
+  margin: 4px 0 12px;
+  color: var(--muted);
+  font-size: 12px;
+  line-height: 1.5;
+}
+
+.moments ul {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 8px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.moments button {
+  display: flex;
+  width: 100%;
+  min-height: 64px;
+  flex-direction: column;
+  justify-content: center;
+  gap: 5px;
+  padding: 10px 12px;
+  border: 1px solid var(--line);
+  border-radius: 9px;
+  background: var(--panel);
+  color: var(--text-strong);
+  text-align: left;
+  cursor: pointer;
+}
+
+.moments button:hover,
+.moments button:focus-visible,
+.moments button[aria-pressed='true'] {
+  border-color: var(--lime);
+  outline: none;
+}
+
+.moments button strong {
+  overflow: hidden;
+  font-size: 12px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.moments button span {
+  overflow: hidden;
+  color: var(--muted);
+  font-size: 10px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+@media (max-width: 640px) {
+  .moments ul {
+    grid-template-columns: 1fr;
+  }
+}

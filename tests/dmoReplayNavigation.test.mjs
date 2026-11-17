@@ -3,12 +3,17 @@ import test from 'node:test';
 import { readFile } from 'node:fs/promises';
 import {
   DMO_REPLAY_SPEEDS,
+  buildDmoReplayCloseCalls,
+  buildDmoReplayStatistics,
   buildDmoReplayPointIndex,
   describeDmoReplayPoint,
+  describeDmoReplayPointCaption,
+  dmoCurrentPointPressure,
   dmoReplayAdjacentPointFrame,
   dmoReplayMomentFrame,
   dmoReplayMomentUrl,
   dmoReplayPointAt,
+  dmoReplayPointPressure,
   dmoReplaySeekMarkers,
   formatDmoReplayMoment,
   normalizeDmoReplaySpeed,
@@ -45,7 +50,72 @@ test('the point index records what each point decided', () => {
   assert.deepEqual(describeDmoReplayPoint(index[1], ['Ana', 'Bea']), { winner: 'Ana', how: 'Winner · 3 shots' });
   assert.deepEqual(describeDmoReplayPoint(index[2], ['Ana', 'Bea']), { winner: 'Ana', how: 'Opponent error · 3 shots' });
   assert.deepEqual(describeDmoReplayPoint(index[3], ['Ana', 'Bea']), { winner: 'Bea', how: 'Double fault' });
+  assert.deepEqual(describeDmoReplayPointCaption(index[0], 100, ['Ana', 'Bea']), {
+    title: 'Ana serving',
+    detail: 'Set 1 · 0-0 · 0-0',
+  });
+  assert.deepEqual(describeDmoReplayPointCaption(index[0], 399, ['Ana', 'Bea']), {
+    title: 'Ace · Ana',
+    detail: 'Point 0',
+  });
   assert.deepEqual(buildDmoReplayPointIndex(null), []);
+});
+
+test('score pressure and match statistics come from each recorded point', () => {
+  const setAndMatchPoint = {
+    s: 1, g: '5-4', pt: '40-15', tb: 0, ss: [[6, 4]],
+  };
+  assert.deepEqual(dmoReplayPointPressure(setAndMatchPoint, 3), {
+    breakPointFor: null,
+    setPointFor: 1,
+    matchPointFor: 1,
+  });
+  assert.deepEqual(dmoReplayPointPressure({
+    s: 2, g: '6-6', pt: '6-5', tb: 1, ss: [],
+  }, 3), {
+    breakPointFor: null,
+    setPointFor: 1,
+    matchPointFor: null,
+  });
+  assert.deepEqual(dmoCurrentPointPressure({
+    server: 2,
+    games: [1, 0],
+    pointText: ['40', '0'],
+    tiebreak: false,
+    sets: [],
+  }), {
+    breakPointFor: 1,
+    setPointFor: null,
+    matchPointFor: null,
+  });
+  const stats = buildDmoReplayStatistics(points.map((point, index) =>
+    index === 2 ? { ...point, pt: '40-0' } : point));
+  assert.deepEqual(
+    stats.map(({ pointsWon, servicePoints, servicePointsWon, aces, doubleFaults, winners, errors, breakPointsFaced, breakPointsConverted }) =>
+      [pointsWon, servicePoints, servicePointsWon, aces, doubleFaults, winners, errors, breakPointsFaced, breakPointsConverted]),
+    [
+      [3, 3, 2, 1, 1, 1, 0, 0, 1],
+      [1, 1, 0, 0, 0, 0, 1, 1, 0],
+    ],
+  );
+});
+
+test('only a recorded error bounce just outside court lines is a close call', () => {
+  const points = [
+    { mf: 100, fc: 240, s: 1, w: 2, f: 0, sh: [{ p: 1, bx: 555, by: 0, bt: 140 }] },
+    { mf: 500, fc: 240, s: 1, w: 2, f: 0, sh: [{ p: 1, bx: 600, by: 0, bt: 140 }] },
+    { mf: 900, fc: 240, s: 1, w: 1, f: 0, sh: [{ p: 1, bx: 555, by: 0, bt: 140 }] },
+    { mf: 1300, fc: 240, s: 1, w: 2, f: 0, sh: [{ p: 1, bx: null, by: null, bt: null }] },
+  ];
+  assert.deepEqual(buildDmoReplayCloseCalls(points), [{
+    point: 0,
+    frame: 240,
+    startFrame: 150,
+    endFrame: 339,
+    x: 5.55,
+    z: 0,
+    distanceMeters: 0.07,
+  }]);
 });
 
 test('finding the current point and stepping between points', () => {
@@ -143,6 +213,11 @@ test('the replay court wires navigation, shortcuts and remembered settings', asy
   assert.match(court, /DMO_REPLAY_SPEEDS\.map/);
   assert.match(court, /<DmoReplaySeekMarkers markers=\{replayMarkers\} \/>/);
   assert.match(court, /<DmoReplayPointList/);
+  assert.match(court, /viewport\.scrollIntoView/, 'opening the point panel brings the court into view');
+  assert.match(court, /Close call · automatic replay/, 'recorded near-line errors trigger one replay');
+  assert.match(court, /replaySpeedLocked/, 'broadcast replays do not change the stream speed');
+  assert.match(court, /RALLY SHOT/, 'rally callouts use a factual shot label');
+  assert.match(court, /Replay settings/, 'full replay settings are grouped behind a disclosure');
   assert.match(court, /window\.addEventListener\('keydown', onKeyDown\)/);
   assert.match(court, /input:not\(\[type="range"\]\), select, textarea/, 'shortcuts never fire while typing');
   assert.match(court, /useMemo\(\s*\(\) => dmoReplaySeekMarkers/, 'marks are worked out once per replay');
@@ -152,7 +227,16 @@ test('the replay court wires navigation, shortcuts and remembered settings', asy
   assert.ok(restore > 0 && restore < autoplay);
   const player = await readFile(new URL('../components/Te4DmoReplayPlayer.tsx', import.meta.url), 'utf8');
   assert.match(player, /buildDmoReplayPointIndex\(viewer\.pts/);
+  assert.match(player, /buildDmoReplayStatistics/);
+  assert.match(player, /buildDmoReplayCloseCalls/);
   assert.match(player, /rememberReplaySpeed=\{!broadcastId\}/, "a broadcast keeps the streamer's speed");
+  assert.match(player, /replaySpeedLocked=\{Boolean\(broadcastId\)\}/);
+  const scoreBug = await readFile(new URL('../components/DmoReplayScoreBug.tsx', import.meta.url), 'utf8');
+  assert.match(scoreBug, /styles\.setScore/, 'set totals appear in the scoreboard rows');
+  const reportReplay = await readFile(new URL('../components/CoachingReportReplay.tsx', import.meta.url), 'utf8');
+  assert.match(reportReplay, /select-point/, 'approved report highlights jump to their points');
+  const reportPage = await readFile(new URL('../app/coaching-hub/[id]/page.tsx', import.meta.url), 'utf8');
+  assert.match(reportPage, /<Te4CoachInsights \/>/, 'shared WTSL context is shown beside public match reports');
   const list = await readFile(new URL('../components/DmoReplayNavigation.tsx', import.meta.url), 'utf8');
   assert.match(list, /export const DmoReplayPointList = memo\(/, 'the list only re-renders when the point changes');
 });

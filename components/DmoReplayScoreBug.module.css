@@ -35,9 +35,9 @@
 
 .header > strong {
   overflow: hidden;
-  color: var(--score-muted);
-  font-size: 8px;
-  font-weight: 700;
+  color: var(--score-text);
+  font-size: 9px;
+  font-weight: 800;
   text-align: right;
   text-overflow: ellipsis;
   white-space: nowrap;
@@ -69,6 +69,10 @@
   text-align: left;
 }
 
+.heading .activeSet {
+  color: var(--score-lime);
+}
+
 .row {
   min-height: 25px;
   border-top: 1px solid rgba(196, 208, 226, .11);
@@ -92,6 +96,15 @@
   white-space: nowrap;
 }
 
+.setScore {
+  color: var(--score-muted);
+}
+
+.currentSetScore {
+  color: var(--score-text);
+  font-size: 12px;
+}
+
 .server {
   flex: none;
   width: 6px;
@@ -104,13 +117,6 @@
 .points {
   color: var(--score-lime);
   font-size: 12px;
-}
-
-.serve {
-  overflow: hidden;
-  color: var(--score-muted);
-  font-size: 7px;
-  text-overflow: ellipsis;
 }
 
 @media (max-width: 520px) {
@@ -127,6 +133,15 @@
   .row {
     min-height: 23px;
     font-size: 9px;
+  }
+
+  .player {
+    gap: 4px;
+  }
+
+  .currentSetScore,
+  .points {
+    font-size: 11px;
   }
 }
 

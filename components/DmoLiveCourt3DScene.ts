@@ -796,27 +796,49 @@ function buildCourtNet(
 function claySkidTexture() {
   if (typeof document === 'undefined') return null;
   const canvas = document.createElement('canvas');
-  canvas.width = 256;
-  canvas.height = 48;
+  canvas.width = 240;
+  canvas.height = 112;
   const context = canvas.getContext('2d');
   if (!context) return null;
-  const gradient = context.createLinearGradient(0, 0, 0, canvas.height);
-  gradient.addColorStop(0, 'rgba(59,25,21,0)');
-  gradient.addColorStop(0.22, 'rgba(66,28,24,0.24)');
-  gradient.addColorStop(0.5, 'rgba(51,21,19,0.48)');
-  gradient.addColorStop(0.78, 'rgba(66,28,24,0.2)');
-  gradient.addColorStop(1, 'rgba(59,25,21,0)');
-  context.fillStyle = gradient;
-  context.fillRect(0, 0, canvas.width, canvas.height);
-  context.strokeStyle = 'rgba(42,18,17,0.24)';
-  context.lineWidth = 1;
-  for (let line = 0; line < 9; line += 1) {
-    const y = 7 + line * 4;
+  // A shoe scuff has a rounded toe, a narrower heel and interrupted tread,
+  // rather than the uniform straight line of a ball trace.
+  context.shadowColor = 'rgba(76,27,17,.22)';
+  context.shadowBlur = 9;
+  context.fillStyle = 'rgba(77,31,22,.28)';
+  context.beginPath();
+  context.moveTo(28, 56);
+  context.bezierCurveTo(43, 34, 70, 30, 96, 35);
+  context.bezierCurveTo(133, 42, 175, 33, 205, 43);
+  context.bezierCurveTo(230, 51, 231, 72, 212, 81);
+  context.bezierCurveTo(185, 94, 146, 83, 112, 86);
+  context.bezierCurveTo(78, 91, 45, 84, 30, 73);
+  context.bezierCurveTo(22, 68, 21, 62, 28, 56);
+  context.fill();
+  context.shadowBlur = 0;
+
+  const tread = context.createLinearGradient(0, 0, 0, canvas.height);
+  tread.addColorStop(0, 'rgba(54,22,17,0)');
+  tread.addColorStop(0.3, 'rgba(54,22,17,.24)');
+  tread.addColorStop(0.7, 'rgba(54,22,17,.2)');
+  tread.addColorStop(1, 'rgba(54,22,17,0)');
+  context.strokeStyle = tread;
+  context.lineWidth = 3;
+  context.lineCap = 'round';
+  for (let line = 0; line < 6; line += 1) {
+    const x = 72 + line * 22;
     context.beginPath();
-    context.moveTo(10, y);
-    context.lineTo(246, y + (line % 2 ? 1 : -1));
+    context.moveTo(x, 43 + (line % 2) * 4);
+    context.lineTo(x + 5, 78 - (line % 2) * 4);
     context.stroke();
   }
+  context.strokeStyle = 'rgba(54,22,17,.17)';
+  context.lineWidth = 2;
+  context.beginPath();
+  context.moveTo(42, 56);
+  context.quadraticCurveTo(54, 50, 64, 57);
+  context.moveTo(42, 69);
+  context.quadraticCurveTo(54, 75, 64, 68);
+  context.stroke();
   const texture = new THREE.CanvasTexture(canvas);
   texture.colorSpace = THREE.SRGBColorSpace;
   return texture;
@@ -1042,7 +1064,7 @@ export function buildCourt(
   const skidCount = 2048;
   const skidMesh = skidTexture
     ? new THREE.InstancedMesh(
-      new THREE.PlaneGeometry(0.68, 0.12),
+      new THREE.PlaneGeometry(0.52, 0.23),
       new THREE.MeshBasicMaterial({
         map: skidTexture,
         color: 0xffffff,

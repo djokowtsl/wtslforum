@@ -2,6 +2,7 @@ import Link from 'next/link';
 import { notFound } from 'next/navigation';
 import PageHero from '@/components/PageHero';
 import CoachingReportReplay from '@/components/CoachingReportReplay';
+import Te4CoachInsights from '@/components/Te4CoachInsights';
 import { getPublishedCoachingReport } from '@/lib/coachingReports';
 import styles from '../coaching-hub.module.css';
 
@@ -50,6 +51,11 @@ export default async function CoachingReportPage({
             staff analysis workspace are not available here.
           </p>
         </section>
+        <p className={styles.consentNote}>
+          The WTSL insights below summarize multiple verified matches. They provide league-wide
+          context and are not attributed to a specific point in this replay.
+        </p>
+        <Te4CoachInsights />
         <Link className="btn btn-ghost" href="/coaching-hub">Back to Coaching Hub</Link>
       </main>
     </>

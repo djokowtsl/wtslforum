@@ -28,7 +28,7 @@ import {
   type DmoGestureDwell,
   type DmoPointGestureEvent,
 } from '@/lib/dmoGesturePlayback.mjs';
-import type { Te4CourtSurface } from '@/lib/te4DmoTypes';
+import type { Te4CourtSurface, Te4Highlight } from '@/lib/te4DmoTypes';
 import {
   constrainDmoOrbit,
   dmoOrbitSettings,
@@ -185,12 +185,16 @@ import densityStyles from './DmoCrowdDensityControl.module.css';
 import { DmoReplayPointList, DmoReplaySeekMarkers } from './DmoReplayNavigation';
 import {
   DMO_REPLAY_SPEEDS,
+  describeDmoReplayPointCaption,
+  dmoCurrentPointPressure,
   dmoReplayAdjacentPointFrame,
   dmoReplayMomentUrl,
   dmoReplayPointAt,
   dmoReplaySeekMarkers,
   normalizeDmoReplaySpeed,
   stepDmoReplaySpeed,
+  type DmoReplayCloseCall,
+  type DmoReplayPlayerStatistics,
   type DmoReplayPointEntry,
 } from '@/lib/dmoReplayNavigation.mjs';
 import { readDmoBroadcastSettings, saveDmoBroadcastSettings, type DmoBroadcastSettings } from '@/lib/dmoBroadcastSettings.mjs';
@@ -267,10 +271,16 @@ type Props = {
   showVoiceDiagnostics?: boolean;
   /** Full replays: every point, for the seek-bar marks, point list and previous/next point. */
   replayPoints?: readonly DmoReplayPointEntry[];
+  /** Full replays: source-derived statistics and selected moments. */
+  replayStatistics?: readonly DmoReplayPlayerStatistics[];
+  replayHighlights?: readonly Te4Highlight[];
+  replayCloseCalls?: readonly DmoReplayCloseCall[];
   /** Full replays: where to start (from a shared link). */
   initialReplayFrame?: number | null;
   /** Full replays: start at the viewer's last chosen speed (not for broadcasts, whose speed the streamer sets). */
   rememberReplaySpeed?: boolean;
+  /** Broadcast replays keep the streamer's chosen playback speed. */
+  replaySpeedLocked?: boolean;
   /** Full replays: what a shared link needs to open this replay, e.g. { match: '23' }. */
   replayLinkParams?: Readonly<Record<string, string>>;
 };
@@ -354,6 +364,24 @@ function formatReplayClock(frame: number, frameRate: number) {
   return `${Math.floor(seconds / 60)}:${String(seconds % 60).padStart(2, '0')}`;
 }
 
+function describeLivePoint(point: Te4LivePoint, players: readonly string[]) {
+  const winner = players[point.winner - 1] ?? `Player ${point.winner}`;
+  const outcome = point.faults >= 2
+    ? 'Double fault'
+    : point.rallyHits <= 1 && point.server === point.winner
+      ? 'Ace'
+      : point.endedBy === 'winner'
+        ? 'Winner'
+        : point.endedBy === 'error'
+          ? 'Opponent error'
+          : 'Point won';
+  const detail = [
+    point.serveSpeedKmh ? `Serve ${Math.round(point.serveSpeedKmh)} km/h` : '',
+    point.scoreLabel ?? '',
+  ].filter(Boolean).join(' · ');
+  return { title: `${outcome} · ${winner}`, detail };
+}
+
 function playSample(
   context: AudioContext,
   buffer: AudioBuffer,
@@ -399,8 +427,12 @@ function ThreeCourt({
   onReplayFrameChange,
   showVoiceDiagnostics = false,
   replayPoints = NO_REPLAY_POINTS,
+  replayStatistics = [],
+  replayHighlights = [],
+  replayCloseCalls = [],
   initialReplayFrame = null,
   rememberReplaySpeed = false,
+  replaySpeedLocked = false,
   replayLinkParams,
   gruntsEnabled,
   onGruntsEnabledChange,
@@ -443,6 +475,26 @@ function ThreeCourt({
     crowdRigRef.current?.setDensity(crowdDensity);
   }, [crowdDensity]);
   const playerCharacterKey = playerCharacters.map((name) => name?.trim() ?? '').join('\u0000');
+  const playerLegendColors = useMemo(() => {
+    const kits = isWta ? WTA_PLAYER_KITS : ATP_PLAYER_KITS;
+    const indices = selectDmoPlayerKitIndices(
+      playerOutfitSeed || snapshot.filename,
+      [
+        playerCharacters[0] ?? snapshot.players[0],
+        playerCharacters[1] ?? snapshot.players[1],
+      ],
+      kits.length,
+    );
+    return [kits[indices[0]].shirtColor, kits[indices[1]].shirtColor] as const;
+  }, [
+    isWta,
+    playerOutfitSeed,
+    snapshot.filename,
+    snapshot.players[0],
+    snapshot.players[1],
+    playerCharacters[0],
+    playerCharacters[1],
+  ]);
   const playerGruntKey = `${playerCharacterKey}\u0001${playerGruntSettings
     ?.map((setting) => setting ? `${setting.groupId ?? ''}:${setting.useGenericFallback}` : '')
     .join('\u0000') ?? ''}`;
@@ -488,9 +540,20 @@ function ThreeCourt({
   const [replayFrame, setReplayFrame] = useState(snapshot.courtFrameIndices?.[0] ?? 0);
   const [replaySpeed, setReplaySpeed] = useState<number>(playbackSpeed);
   const [pointListOpen, setPointListOpen] = useState(false);
+  const [showPointCaptions, setShowPointCaptions] = useState(true);
+  const [closeCallCaption, setCloseCallCaption] = useState<{ title: string; detail: string } | null>(null);
   const [shareStatus, setShareStatus] = useState('');
+  const closeCallSeenRef = useRef(new Set<number>());
+  const activeCloseCallRef = useRef<{
+    call: DmoReplayCloseCall;
+    originalSpeed: number;
+    rewinding: boolean;
+  } | null>(null);
+  const closeCallZoomRef = useRef<(DmoReplayCloseCall & { applied: boolean }) | null>(null);
+  const previousReplayFrameRef = useRef<number | null>(null);
   const initialReplayFrameRef = useRef(initialReplayFrame);
   const replayPlayingRef = useRef(replayPlaying);
+  const replayWasPlayingRef = useRef(replayPlaying);
   const replayFrameRef = useRef<number | null>(null);
   const replaySpeedRef = useRef(replaySpeed);
   const replayUiUpdateAt = useRef(0);
@@ -620,6 +683,20 @@ function ThreeCourt({
     speedKmh: number;
     frame: number;
   } | null>(null);
+  const [livePointCaption, setLivePointCaption] = useState<{ title: string; detail: string } | null>(null);
+  const latestLivePoint = snapshot.recentPoints.at(-1) ?? null;
+  const latestLivePointKey = latestLivePoint
+    ? `${snapshot.filename}:${latestLivePoint.number}:${latestLivePoint.frame ?? ''}`
+    : '';
+  useEffect(() => {
+    if (fullReplay || !showPointCaptions || !latestLivePoint) {
+      setLivePointCaption(null);
+      return;
+    }
+    setLivePointCaption(describeLivePoint(latestLivePoint, snapshot.players));
+    const timer = window.setTimeout(() => setLivePointCaption(null), 2600);
+    return () => window.clearTimeout(timer);
+  }, [fullReplay, showPointCaptions, latestLivePointKey, snapshot.players[0], snapshot.players[1]]);
   soundPreferenceRef.current = soundEnabled;
   umpireCallsEnabledRef.current = umpireCallsEnabled;
   const umpireSpeechReadyRef = useRef(umpireSpeechReady);
@@ -645,6 +722,12 @@ function ThreeCourt({
       lastCalloutFrameRef.current = null;
       lastUmpireCallFrameRef.current = snapshot.courtFrameIndices?.[0] ?? 0;
       setShotCallout(null);
+      setLivePointCaption(null);
+      setCloseCallCaption(null);
+      closeCallSeenRef.current.clear();
+      activeCloseCallRef.current = null;
+      closeCallZoomRef.current = null;
+      previousReplayFrameRef.current = null;
       if (shotCalloutTimerRef.current !== null) {
         window.clearTimeout(shotCalloutTimerRef.current);
         shotCalloutTimerRef.current = null;
@@ -1048,13 +1131,46 @@ function ThreeCourt({
     scene.add(ballShadow);
 
     const trailGeometry = new THREE.BufferGeometry();
-    const trailPositions = new Float32Array(30);
+    const trailSegments = 24;
+    const trailPositions = new Float32Array((trailSegments + 1) * 2 * 3);
+    const trailCenters = new Float32Array((trailSegments + 1) * 3);
+    const trailColors = new Float32Array(trailPositions.length);
+    const trailIndices = new Uint16Array(trailSegments * 6);
+    const trailTailColor = new THREE.Color(0xb09d4c);
+    const trailHeadColor = new THREE.Color(PALETTE.yellow);
+    for (let index = 0; index <= trailSegments; index += 1) {
+      const t = index / trailSegments;
+      const color = trailTailColor.clone().lerp(trailHeadColor, t);
+      const vertex = index * 6;
+      trailColors[vertex] = color.r;
+      trailColors[vertex + 1] = color.g;
+      trailColors[vertex + 2] = color.b;
+      trailColors[vertex + 3] = color.r;
+      trailColors[vertex + 4] = color.g;
+      trailColors[vertex + 5] = color.b;
+      if (index < trailSegments) {
+        const first = index * 2;
+        const next = first + 2;
+        const offset = index * 6;
+        trailIndices.set([first, first + 1, next, first + 1, next + 1, next], offset);
+      }
+    }
     trailGeometry.setAttribute('position', new THREE.BufferAttribute(trailPositions, 3));
-    const trail = new THREE.Line(
+    trailGeometry.setAttribute('color', new THREE.BufferAttribute(trailColors, 3));
+    trailGeometry.setIndex(new THREE.BufferAttribute(trailIndices, 1));
+    const trail = new THREE.Mesh(
       trailGeometry,
-      new THREE.LineBasicMaterial({ color: PALETTE.yellow, transparent: true, opacity: 0.52 }),
+      new THREE.MeshBasicMaterial({
+        vertexColors: true,
+        transparent: true,
+        opacity: 0.54,
+        depthWrite: false,
+        side: THREE.DoubleSide,
+        toneMapped: false,
+      }),
     );
     trail.frustumCulled = false;
+    trail.renderOrder = 3;
     scene.add(trail);
 
     let wasFullscreen = false;
@@ -2770,20 +2886,40 @@ function ThreeCourt({
 
         const latestHit = latestLiveCourtShotEvent(trajectoryEventsRef.current, currentFrame);
         const trailStartFrame = Math.max(firstFrame, latestHit?.frame ?? firstFrame, currentFrame - Math.min(10, (lastFrame - firstFrame) * 0.35));
-        for (let index = 0; index < 10; index += 1) {
-          const t = index / 9;
+        for (let index = 0; index <= trailSegments; index += 1) {
+          const t = index / trailSegments;
           const trailValues = interpolateLiveCourtFrame(
             samples,
             THREE.MathUtils.lerp(trailStartFrame, currentFrame, t),
             maxGapFrames,
           ) ?? values;
-          trailPositions[index * 3] = trailValues[0] * SCALE;
-          trailPositions[index * 3 + 1] = Math.max(0, trailValues[2]) * SCALE + BALL_RADIUS;
-          trailPositions[index * 3 + 2] = trailValues[1] * SCALE;
+          const center = index * 3;
+          trailCenters[center] = trailValues[0] * SCALE;
+          trailCenters[center + 1] = Math.max(0, trailValues[2]) * SCALE + BALL_RADIUS;
+          trailCenters[center + 2] = trailValues[1] * SCALE;
+        }
+        for (let index = 0; index <= trailSegments; index += 1) {
+          const previous = Math.max(0, index - 1) * 3;
+          const next = Math.min(trailSegments, index + 1) * 3;
+          const center = index * 3;
+          const dx = trailCenters[next] - trailCenters[previous];
+          const dz = trailCenters[next + 2] - trailCenters[previous + 2];
+          const length = Math.hypot(dx, dz) || 1;
+          const sideX = dz / length;
+          const sideZ = -dx / length;
+          const t = index / trailSegments;
+          const width = THREE.MathUtils.lerp(0.008, 0.055, t * t);
+          const vertex = index * 6;
+          trailPositions[vertex] = trailCenters[center] + sideX * width;
+          trailPositions[vertex + 1] = trailCenters[center + 1];
+          trailPositions[vertex + 2] = trailCenters[center + 2] + sideZ * width;
+          trailPositions[vertex + 3] = trailCenters[center] - sideX * width;
+          trailPositions[vertex + 4] = trailCenters[center + 1];
+          trailPositions[vertex + 5] = trailCenters[center + 2] - sideZ * width;
         }
         const showTrail = trailAllowed(trajectoryEventsRef.current, currentFrame)
           && performance.now() >= changeoverUntil;
-        trailGeometry.setDrawRange(0, showTrail ? 10 : 0);
+        trailGeometry.setDrawRange(0, showTrail ? trailSegments * 6 : 0);
         const tossing = Boolean(findLiveCourtShotInRange(
           trajectoryEventsRef.current,
           currentFrame + 1,
@@ -2795,6 +2931,20 @@ function ThreeCourt({
         ball.visible = (showTrail || tossing || serveBallShown || !knownPhase) && performance.now() >= changeoverUntil;
         ballShadow.visible = ball.visible;
         (trailGeometry.attributes.position as THREE.BufferAttribute).needsUpdate = true;
+        const closeCallZoom = closeCallZoomRef.current;
+        if (closeCallZoom && !closeCallZoom.applied) {
+          const bounds = host.getBoundingClientRect();
+          const projected = new THREE.Vector3(closeCallZoom.x, BALL_RADIUS, closeCallZoom.z).project(camera);
+          const originX = THREE.MathUtils.clamp((projected.x + 1) * 0.5 * bounds.width, bounds.width * 0.16, bounds.width * 0.84);
+          const originY = THREE.MathUtils.clamp((1 - projected.y) * 0.5 * bounds.height, bounds.height * 0.18, bounds.height * 0.82);
+          host.style.transformOrigin = `${originX}px ${originY}px`;
+          host.style.transition = 'transform 360ms ease';
+          host.style.transform = 'scale(1.55)';
+          closeCallZoom.applied = true;
+        } else if (!closeCallZoom && host.style.transform && host.style.transform !== 'scale(1)') {
+          host.style.transition = 'transform 320ms ease';
+          host.style.transform = 'scale(1)';
+        }
       }
       try {
         if (transitionRef.current && performance.now() >= changeoverUntil) {
@@ -3246,8 +3396,21 @@ function ThreeCourt({
   const replayEndFrame = sampleBufferRef.current.at(-1)?.frame
     ?? snapshot.courtFrameIndices?.at(-1)
     ?? Math.max(0, snapshot.frameCount - 1);
-  const seekReplay = (requestedFrame: number) => {
+  const cancelAutomaticCloseCall = useCallback(() => {
+    const active = activeCloseCallRef.current;
+    if (!active) return;
+    activeCloseCallRef.current = null;
+    closeCallZoomRef.current = null;
+    setCloseCallCaption(null);
+    if (!replaySpeedLocked) {
+      replaySpeedRef.current = active.originalSpeed;
+      setReplaySpeed(active.originalSpeed);
+    }
+  }, [replaySpeedLocked]);
+  const seekReplay = (requestedFrame: number, automaticCloseCall = false) => {
+    if (!automaticCloseCall) cancelAutomaticCloseCall();
     const frame = THREE.MathUtils.clamp(requestedFrame, replayStartFrame, replayEndFrame);
+    if (!automaticCloseCall) previousReplayFrameRef.current = frame;
     replayFrameRef.current = frame;
     playheadRef.current = frame;
     lastSoundFrameRef.current = frame;
@@ -3286,6 +3449,8 @@ function ThreeCourt({
     if (frame !== null) seekReplay(frame);
   };
   const changeReplaySpeed = (speed: number) => {
+    if (replaySpeedLocked) return;
+    cancelAutomaticCloseCall();
     const next = normalizeDmoReplaySpeed(speed);
     replaySpeedRef.current = next;
     setReplaySpeed(next);
@@ -3313,12 +3478,127 @@ function ThreeCourt({
   }, [shareStatus]);
   const seekReplayRef = useRef(seekReplay);
   seekReplayRef.current = seekReplay;
-  const selectReplayPoint = useCallback((point: DmoReplayPointEntry) => {
+  useEffect(() => {
+    const previousFrame = previousReplayFrameRef.current;
+    previousReplayFrameRef.current = replayFrame;
+    const wasPlaying = replayWasPlayingRef.current;
+    replayWasPlayingRef.current = replayPlaying;
+    if (!fullReplay) return;
+
+    const active = activeCloseCallRef.current;
+    if (active) {
+      if (active.rewinding) {
+        active.rewinding = false;
+        return;
+      }
+      if (replayFrame >= active.call.endFrame) {
+        activeCloseCallRef.current = null;
+        closeCallZoomRef.current = null;
+        setCloseCallCaption(null);
+        if (!replaySpeedLocked) {
+          replaySpeedRef.current = active.originalSpeed;
+          setReplaySpeed(active.originalSpeed);
+        }
+        const resumeFrame = Math.min(replayEndFrame, active.call.endFrame + 1);
+        seekReplayRef.current(resumeFrame, true);
+        const continuePlayback = active.call.endFrame < replayEndFrame;
+        replayPlayingRef.current = continuePlayback;
+        setReplayPlaying(continuePlayback);
+      }
+      return;
+    }
+
+    if ((!replayPlaying && !wasPlaying) || previousFrame === null) return;
+    const closeCall = replayCloseCalls.find((call) => (
+      call.endFrame > previousFrame
+      && call.endFrame <= replayFrame
+      && !closeCallSeenRef.current.has(call.point)
+    ));
+    if (!closeCall) return;
+
+    closeCallSeenRef.current.add(closeCall.point);
+    activeCloseCallRef.current = {
+      call: closeCall,
+      originalSpeed: replaySpeedRef.current,
+      rewinding: true,
+    };
+    closeCallZoomRef.current = { ...closeCall, applied: false };
+    setCloseCallCaption({
+      title: 'Close call · automatic replay',
+      detail: `Bounce just outside the court by ${closeCall.distanceMeters.toFixed(2)} m`,
+    });
+    if (!replaySpeedLocked) {
+      replaySpeedRef.current = 0.5;
+      setReplaySpeed(0.5);
+    }
+    seekReplayRef.current(Math.max(replayStartFrame, closeCall.startFrame), true);
+    replayPlayingRef.current = true;
+    setReplayPlaying(true);
+  }, [
+    fullReplay,
+    replayCloseCalls,
+    replayFrame,
+    replayPlaying,
+    replayEndFrame,
+    replayStartFrame,
+    replaySpeedLocked,
+  ]);
+  const replayFromPoint = useCallback((point: DmoReplayPointEntry) => {
     seekReplayRef.current(point.start);
+    replayPlayingRef.current = true;
+    setReplayPlaying(true);
+  }, []);
+  const selectReplayPoint = useCallback((point: DmoReplayPointEntry) => {
+    replayFromPoint(point);
     // On a phone the list covers the court; close it to watch.
     if (window.matchMedia('(max-width: 720px)').matches) setPointListOpen(false);
-  }, []);
+  }, [replayFromPoint]);
+  const replayCurrentPoint = useCallback(() => {
+    const point = replayPoints[currentReplayPoint];
+    if (point) replayFromPoint(point);
+    if (window.matchMedia('(max-width: 720px)').matches) setPointListOpen(false);
+  }, [currentReplayPoint, replayFromPoint, replayPoints]);
+  const selectReplayHighlight = useCallback((highlight: Te4Highlight) => {
+    const point = replayPoints[highlight.point - 1]
+      ?? replayPoints.find((entry) => entry.start === highlight.frame)
+      ?? replayPoints.find((entry) => entry.number === highlight.point);
+    if (point) replayFromPoint(point);
+    else seekReplayRef.current(highlight.frame);
+    setPointListOpen(false);
+  }, [replayPoints, replayFromPoint]);
   const closePointList = useCallback(() => setPointListOpen(false), []);
+  useEffect(() => {
+    if (!fullReplay || !pointListOpen) return;
+    const viewport = viewportRef.current;
+    if (!viewport) return;
+    const bounds = viewport.getBoundingClientRect();
+    if (bounds.top >= 0 && bounds.bottom <= window.innerHeight) return;
+    viewport.scrollIntoView({
+      block: 'center',
+      behavior: window.matchMedia('(prefers-reduced-motion: reduce)').matches ? 'auto' : 'smooth',
+    });
+  }, [fullReplay, pointListOpen]);
+  const currentReplayEntry = currentReplayPoint >= 0 ? replayPoints[currentReplayPoint] : null;
+  const replayPointCaption = fullReplay && showPointCaptions
+    ? describeDmoReplayPointCaption(currentReplayEntry, replayFrame, snapshot.players)
+    : null;
+  const livePressure = !fullReplay && showPointCaptions && snapshot.currentPoint.inProgress
+    ? dmoCurrentPointPressure(snapshot.score, snapshot.bestOf)
+    : null;
+  const pressurePlayer = livePressure?.matchPointFor ?? livePressure?.setPointFor ?? livePressure?.breakPointFor;
+  const livePressureCaption = pressurePlayer
+    ? {
+      title: `${livePressure?.matchPointFor ? 'Match point' : livePressure?.setPointFor ? 'Set point' : 'Break point'} for ${snapshot.players[pressurePlayer - 1]}`,
+      detail: `${snapshot.score.games.join('–')} games · ${snapshot.score.pointText.join('–')}`,
+    }
+    : null;
+  const shownPointCaption = closeCallCaption ?? (
+    fullReplay ? replayPointCaption : livePointCaption ?? livePressureCaption
+  );
+  const togglePointCaptions = useCallback(
+    () => setShowPointCaptions((enabled) => !enabled),
+    [],
+  );
 
   // Keyboard shortcuts for replays, while the replay is on screen.
   const shortcutActionsRef = useRef({
@@ -3381,7 +3661,7 @@ function ThreeCourt({
         handleSoundActivationGesture(event.target);
       }}
     >
-      <div className={styles.toolbar}>
+      <div className={`${styles.toolbar} ${fullReplay ? styles.replayToolbar : ''}`}>
         <div className={styles.title}>
           <span className={styles.liveDot} aria-hidden="true" />
           <strong>{fullReplay ? 'FULL MATCH REPLAY' : 'LIVE'}</strong>
@@ -3399,7 +3679,12 @@ function ThreeCourt({
             </span>
           )}
         </div>
-        <div className={styles.controls} aria-label="Court view controls">
+        <details
+          className={fullReplay ? styles.replaySettings : styles.liveSettings}
+          open={!fullReplay}
+        >
+          <summary>{fullReplay ? 'Replay settings' : 'Court view controls'}</summary>
+          <div className={styles.controls} aria-label="Court view controls">
           <div className={styles.presets} role="group" aria-label="Camera angle">
             <button type="button" aria-pressed={cameraView === 'court'} onClick={() => setPreset('court')}>Court</button>
             <button type="button" aria-pressed={cameraView === 'aerial'} onClick={() => setPreset('aerial')}>Aerial</button>
@@ -3579,15 +3864,27 @@ function ThreeCourt({
                 }} />
             </label>
           )}
-        </div>
+          </div>
+        </details>
       </div>
       <div className={styles.viewport} ref={viewportRef}>
         <div className={styles.canvasHost} ref={canvasHostRef} />
         <div ref={transitionRef} className={styles.changeover} aria-hidden="true" />
+        {shownPointCaption && (
+          <div
+            className={styles.pointCaption}
+            role="status"
+            aria-live="polite"
+            key={`${fullReplay ? currentReplayEntry?.index ?? 'none' : latestLivePointKey}:${shownPointCaption.title}`}
+          >
+            <strong>{shownPointCaption.title}</strong>
+            {shownPointCaption.detail && <span>{shownPointCaption.detail}</span>}
+          </div>
+        )}
         {shotCallout && (
           <div className={styles.shotCallout} role="status" aria-live="polite" key={shotCallout.frame}>
             <span className={styles.shotCalloutLabel}>
-              {shotCallout.shotType === 'serve' ? 'FAST SERVE' : 'POWER SHOT'}
+              {shotCallout.shotType === 'serve' ? 'SERVE' : 'RALLY SHOT'}
             </span>
             <strong>{shotCallout.player}</strong>
             <b>{shotCallout.speedKmh}<small>km/h</small></b>
@@ -3605,6 +3902,12 @@ function ThreeCourt({
             players={snapshot.players}
             onSelect={selectReplayPoint}
             onClose={closePointList}
+            statistics={replayStatistics}
+            highlights={replayHighlights}
+            captionsEnabled={showPointCaptions}
+            onToggleCaptions={togglePointCaptions}
+            onSelectHighlight={selectReplayHighlight}
+            onReplayCurrentPoint={replayCurrentPoint}
           />
         )}
       </div>
@@ -3618,8 +3921,8 @@ function ThreeCourt({
         </p>
       )}
       <div className={styles.legend}>
-        <span><i style={{ backgroundColor: colorToCss(PALETTE.playerOne) }} />{snapshot.players[0]}</span>
-        <span><i style={{ backgroundColor: colorToCss(PALETTE.playerTwo) }} />{snapshot.players[1]}</span>
+        <span><i style={{ backgroundColor: colorToCss(playerLegendColors[0]) }} />{snapshot.players[0]}</span>
+        <span><i style={{ backgroundColor: colorToCss(playerLegendColors[1]) }} />{snapshot.players[1]}</span>
         <span><i className={styles.ball} style={{ backgroundColor: colorToCss(PALETTE.yellow) }} />Ball</span>
       </div>
       {fullReplay && hasCourtData && (
@@ -3679,18 +3982,25 @@ function ThreeCourt({
               {formatReplayClock(replayEndFrame - replayStartFrame, replayFrameRate)}
             </span>
           </output>
-          <label className={styles.replaySpeedControl}>
-            <span>Speed</span>
-            <select
-              aria-label="Full match replay speed"
-              value={replaySpeed}
-              onChange={(event) => changeReplaySpeed(Number(event.currentTarget.value))}
-            >
-              {DMO_REPLAY_SPEEDS.map((speed) => (
-                <option key={speed} value={speed}>{speed === 0.25 ? '¼' : speed === 0.5 ? '½' : speed}×</option>
-              ))}
-            </select>
-          </label>
+          {replaySpeedLocked ? (
+            <output className={styles.replaySpeedLocked} aria-label={`Streamer-controlled replay speed: ${replaySpeed}×`}>
+              <span>Stream speed</span>
+              <strong>{replaySpeed === 0.25 ? '¼' : replaySpeed === 0.5 ? '½' : replaySpeed}×</strong>
+            </output>
+          ) : (
+            <label className={styles.replaySpeedControl}>
+              <span>Speed</span>
+              <select
+                aria-label="Full match replay speed"
+                value={replaySpeed}
+                onChange={(event) => changeReplaySpeed(Number(event.currentTarget.value))}
+              >
+                {DMO_REPLAY_SPEEDS.map((speed) => (
+                  <option key={speed} value={speed}>{speed === 0.25 ? '¼' : speed === 0.5 ? '½' : speed}×</option>
+                ))}
+              </select>
+            </label>
+          )}
           {replayPoints.length > 0 && (
             <button
               type="button"
