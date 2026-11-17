@@ -4,6 +4,7 @@ import PageHero from '@/components/PageHero';
 import MatchSchedulerDetail from '@/components/MatchSchedulerDetail';
 import { getSession } from '@/lib/auth';
 import { wtslCore } from '@/lib/wtsl-core';
+import { getAdminMatchSchedule } from '@/lib/matchSchedulerAdmin';
 
 export const dynamic = 'force-dynamic';
 export const metadata: Metadata = { title: 'Match schedule' };
@@ -30,10 +31,29 @@ export default async function MatchSchedulerDetailPage({ params }: Props) {
       </>
     );
   } catch {
+    if (session.isAdmin) {
+      try {
+        const schedule = await getAdminMatchSchedule(scheduleId);
+        if (schedule) {
+          return (
+            <>
+              <PageHero eyebrow="Staff · read-only" title="Match schedule">Review this schedule without changing player decisions.</PageHero>
+              <MatchSchedulerDetail
+                initialSchedule={schedule}
+                viewerDiscordId={session.discordId}
+                readOnly
+              />
+            </>
+          );
+        }
+      } catch {
+        // Keep the same unavailable state if the authenticated Core API is down.
+      }
+    }
     return (
       <>
         <PageHero eyebrow="Official WTSL draws" title="Match schedule">Schedule details are only available to its participants.</PageHero>
-        <main className="scheduler-page"><section className="scheduler-empty"><strong>Schedule unavailable</strong>This schedule may have closed, or you may not have access to it. Return to your match list to check the latest status.<div><Link className="btn btn-sm" href="/match-scheduler">Your match schedules</Link></div></section></main>
+        <main className="scheduler-page"><section className="scheduler-empty"><strong>Schedule unavailable</strong>This schedule may have closed, or you may not have access to it. Return to your match list to check the latest status.<div><Link className="btn btn-sm" href={session.isAdmin ? '/admin/match-scheduler' : '/match-scheduler'}>{session.isAdmin ? 'Admin schedule list' : 'Your match schedules'}</Link></div></section></main>
       </>
     );
   }

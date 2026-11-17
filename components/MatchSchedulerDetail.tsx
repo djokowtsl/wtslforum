@@ -6,7 +6,7 @@ import { useEffect, useState } from 'react';
 import type { FormEvent } from 'react';
 import type { CoreMatchSchedulerRecord } from '@/lib/wtsl-core';
 
-type Props = { initialSchedule: CoreMatchSchedulerRecord; viewerDiscordId: string };
+type Props = { initialSchedule: CoreMatchSchedulerRecord; viewerDiscordId: string; readOnly?: boolean };
 
 function closedStatus(status: string) {
   return ['closed', 'complete', 'completed', 'settled', 'cancelled', 'canceled', 'forfeit'].includes(status.toLowerCase());
@@ -35,7 +35,7 @@ function validTimezone(value: string) {
   }
 }
 
-export default function MatchSchedulerDetail({ initialSchedule, viewerDiscordId }: Props) {
+export default function MatchSchedulerDetail({ initialSchedule, viewerDiscordId, readOnly = false }: Props) {
   const router = useRouter();
   const [schedule, setSchedule] = useState(initialSchedule);
   const [slots, setSlots] = useState(['', '', '']);
@@ -72,6 +72,7 @@ export default function MatchSchedulerDetail({ initialSchedule, viewerDiscordId 
   }, []);
 
   useEffect(() => {
+    if (readOnly) return;
     let active = true;
     let pending = false;
     const refreshSchedule = async () => {
@@ -107,9 +108,13 @@ export default function MatchSchedulerDetail({ initialSchedule, viewerDiscordId 
       active = false;
       window.clearInterval(interval);
     };
-  }, [schedule.schedule_id]);
+  }, [readOnly, schedule.schedule_id]);
 
   async function sendAction(body: Record<string, unknown>) {
+    if (readOnly) {
+      setError('This staff schedule view is read-only.');
+      return false;
+    }
     setBusy(true);
     setError('');
     setNotice('');
@@ -183,11 +188,19 @@ export default function MatchSchedulerDetail({ initialSchedule, viewerDiscordId 
   return (
     <main className="scheduler-page">
       <div className="scheduler-action-row" style={{ marginBottom: 18 }}>
-        <Link className="scheduler-inline-link" href="/match-scheduler">Back to your matches</Link>
+        <Link className="scheduler-inline-link" href={readOnly ? '/admin/match-scheduler' : '/match-scheduler'}>
+          {readOnly ? 'Back to schedule list' : 'Back to your matches'}
+        </Link>
         <span className={`scheduler-pill ${closed ? '' : web.status === 'confirmed' ? 'scheduler-pill--confirmed' : 'scheduler-pill--pending'}`}>
           {closed ? 'Schedule closed' : extension.status === 'agreed' ? 'Extension agreed' : web.status === 'confirmed' ? 'Time confirmed' : 'Time pending'}
         </span>
       </div>
+      {readOnly && (
+        <div className="scheduler-intro" role="status" style={{ marginBottom: 18 }}>
+          <strong>Read-only staff view</strong>
+          You can review schedule details here. Only the two participants can propose or confirm a time.
+        </div>
+      )}
       <div className="scheduler-detail-layout">
         <section className="scheduler-detail-card" aria-labelledby="schedule-title">
           <div className="scheduler-match-meta"><span>{schedule.tournament}</span><span aria-hidden="true">·</span><span className="scheduler-round">{schedule.round}</span></div>
@@ -222,6 +235,24 @@ export default function MatchSchedulerDetail({ initialSchedule, viewerDiscordId 
             )}
           </div>
 
+          {Object.entries(web.availability_by_user ?? {}).map(([playerKey, proposal]) => (
+            proposal.windows.length > 0 && (
+              <div className="scheduler-intro scheduler-intro--invite" key={playerKey}>
+                <strong>Shared availability · {proposal.submitted_by_name || 'A participant'}</strong>
+                <p>{proposal.timezone || 'UTC'}</p>
+                <ul className="scheduler-availability-list">
+                  {proposal.windows.map((window) => (
+                    <li key={`${window.start_utc}-${window.end_utc}`}>
+                      {displayTime(window.start_utc, proposal.timezone)}
+                      {' – '}
+                      {displayTime(window.end_utc, proposal.timezone)}
+                    </li>
+                  ))}
+                </ul>
+              </div>
+            )
+          ))}
+
           {error && <p className="scheduler-error" role="alert">{error}</p>}
           {notice && <p className="scheduler-intro" role="status">{notice}</p>}
 
@@ -252,7 +283,7 @@ export default function MatchSchedulerDetail({ initialSchedule, viewerDiscordId 
             </div>
           )}
 
-          {!closed && web.status !== 'confirmed' && (
+          {!readOnly && !closed && web.status !== 'confirmed' && (
             <div className="scheduler-intro scheduler-intro--invite">
               <strong>Agree on a time together</strong>
               <p>
@@ -309,7 +340,7 @@ export default function MatchSchedulerDetail({ initialSchedule, viewerDiscordId 
                     {web.slots_utc.map((slot) => (
                       <div className="scheduler-time-option" key={slot}>
                         <span>{displayTime(slot, timezone)}</span>
-                        {!isProposer && (
+                        {!readOnly && !isProposer && (
                           <button className="btn btn-primary btn-sm" type="button" onClick={() => void sendAction({ action: 'confirm', schedule_id: schedule.schedule_id, slot_utc: slot })} disabled={busy}>
                             {busy ? 'Saving…' : 'Confirm this time'}
                           </button>
@@ -320,7 +351,7 @@ export default function MatchSchedulerDetail({ initialSchedule, viewerDiscordId 
                   {isProposer && <p className="muted">Your opponent can confirm one of these options. Keep discussing in the private Discord thread.</p>}
                 </div>
               )}
-              {proposalFormOpen && (
+              {!readOnly && proposalFormOpen && (
               <form
                 className="scheduler-form"
                 id="scheduler-proposal-form"
@@ -352,7 +383,7 @@ export default function MatchSchedulerDetail({ initialSchedule, viewerDiscordId 
                 </div>
               </form>
               )}
-              {canRequestExtension && extensionFormOpen && (
+              {!readOnly && canRequestExtension && extensionFormOpen && (
                 <form
                   className="scheduler-form"
                   id="scheduler-extension-form"
@@ -390,8 +421,10 @@ export default function MatchSchedulerDetail({ initialSchedule, viewerDiscordId 
 
         <aside className="scheduler-stack">
           <div className="scheduler-discord-note">
-            <strong>Discord stays central</strong>
-            Use the private match conversation to talk through availability and details. This page refreshes the shared schedule automatically, so either participant can propose or confirm here.
+            <strong>{readOnly ? 'Staff review' : 'Discord stays central'}</strong>
+            {readOnly
+              ? 'This page displays shared schedule details. Player actions remain limited to the participants.'
+              : 'Use the private match conversation to talk through availability and details. This page refreshes the shared schedule automatically, so either participant can propose or confirm here.'}
             {schedule.thread_url && <p><a className="scheduler-inline-link" href={schedule.thread_url} target="_blank" rel="noreferrer">Open private Discord thread</a></p>}
           </div>
           <div className="scheduler-detail-card">
