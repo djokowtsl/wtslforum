@@ -184,6 +184,8 @@ import type { StadiumScoreboardData } from './DmoStadiumArchitecture';
 import densityStyles from './DmoCrowdDensityControl.module.css';
 import { DmoReplayPointList, DmoReplaySeekMarkers } from './DmoReplayNavigation';
 import {
+  DMO_CAPTION_LONG_RALLY,
+  DMO_CAPTION_SECONDS,
   DMO_REPLAY_SPEEDS,
   describeDmoReplayPointCaption,
   dmoCurrentPointPressure,
@@ -364,22 +366,11 @@ function formatReplayClock(frame: number, frameRate: number) {
   return `${Math.floor(seconds / 60)}:${String(seconds % 60).padStart(2, '0')}`;
 }
 
+/** Live captions only for long rallies; routine points get none. */
 function describeLivePoint(point: Te4LivePoint, players: readonly string[]) {
+  if (point.rallyHits < DMO_CAPTION_LONG_RALLY) return null;
   const winner = players[point.winner - 1] ?? `Player ${point.winner}`;
-  const outcome = point.faults >= 2
-    ? 'Double fault'
-    : point.rallyHits <= 1 && point.server === point.winner
-      ? 'Ace'
-      : point.endedBy === 'winner'
-        ? 'Winner'
-        : point.endedBy === 'error'
-          ? 'Opponent error'
-          : 'Point won';
-  const detail = [
-    point.serveSpeedKmh ? `Serve ${Math.round(point.serveSpeedKmh)} km/h` : '',
-    point.scoreLabel ?? '',
-  ].filter(Boolean).join(' · ');
-  return { title: `${outcome} · ${winner}`, detail };
+  return { title: `${point.rallyHits}-shot rally · ${winner}`, detail: '' };
 }
 
 function playSample(
@@ -693,8 +684,10 @@ function ThreeCourt({
       setLivePointCaption(null);
       return;
     }
-    setLivePointCaption(describeLivePoint(latestLivePoint, snapshot.players));
-    const timer = window.setTimeout(() => setLivePointCaption(null), 2600);
+    const caption = describeLivePoint(latestLivePoint, snapshot.players);
+    setLivePointCaption(caption);
+    if (!caption) return;
+    const timer = window.setTimeout(() => setLivePointCaption(null), DMO_CAPTION_SECONDS * 1000);
     return () => window.clearTimeout(timer);
   }, [fullReplay, showPointCaptions, latestLivePointKey, snapshot.players[0], snapshot.players[1]]);
   soundPreferenceRef.current = soundEnabled;
@@ -3580,17 +3573,28 @@ function ThreeCourt({
   }, [fullReplay, pointListOpen]);
   const currentReplayEntry = currentReplayPoint >= 0 ? replayPoints[currentReplayPoint] : null;
   const replayPointCaption = fullReplay && showPointCaptions
-    ? describeDmoReplayPointCaption(currentReplayEntry, replayFrame, snapshot.players)
+    ? describeDmoReplayPointCaption(currentReplayEntry, replayFrame, snapshot.players, replayFrameRate)
     : null;
   const livePressure = !fullReplay && showPointCaptions && snapshot.currentPoint.inProgress
     ? dmoCurrentPointPressure(snapshot.score, snapshot.bestOf)
     : null;
   const pressurePlayer = livePressure?.matchPointFor ?? livePressure?.setPointFor ?? livePressure?.breakPointFor;
-  const livePressureCaption = pressurePlayer
-    ? {
-      title: `${livePressure?.matchPointFor ? 'Match point' : livePressure?.setPointFor ? 'Set point' : 'Break point'} for ${snapshot.players[pressurePlayer - 1]}`,
-      detail: `${snapshot.score.games.join('–')} games · ${snapshot.score.pointText.join('–')}`,
-    }
+  const livePressureTitle = pressurePlayer
+    ? `${livePressure?.matchPointFor ? 'Match point' : livePressure?.setPointFor ? 'Set point' : 'Break point'} · ${snapshot.players[pressurePlayer - 1]}`
+    : '';
+  // A pressure point is announced once, briefly, as it starts.
+  const livePressureKey = livePressureTitle
+    ? `${snapshot.filename}:${JSON.stringify(snapshot.score.sets)}:${snapshot.score.games.join('-')}:${snapshot.score.pointText.join('-')}`
+    : '';
+  const [livePressureShownKey, setLivePressureShownKey] = useState('');
+  useEffect(() => {
+    if (!livePressureKey) return;
+    setLivePressureShownKey(livePressureKey);
+    const timer = window.setTimeout(() => setLivePressureShownKey(''), DMO_CAPTION_SECONDS * 1000);
+    return () => window.clearTimeout(timer);
+  }, [livePressureKey]);
+  const livePressureCaption = livePressureTitle && livePressureShownKey === livePressureKey
+    ? { title: livePressureTitle, detail: '' }
     : null;
   const shownPointCaption = closeCallCaption ?? (
     fullReplay ? replayPointCaption : livePointCaption ?? livePressureCaption

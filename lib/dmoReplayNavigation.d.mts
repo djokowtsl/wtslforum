@@ -124,8 +124,11 @@ export function dmoReplayMomentUrl(
 export function describeDmoReplayPoint(
   point: DmoReplayPointEntry, players: readonly [string, string] | readonly string[],
 ): { winner: string; how: string };
+export const DMO_CAPTION_LONG_RALLY: number;
+export const DMO_CAPTION_SECONDS: number;
 export function describeDmoReplayPointCaption(
   point: DmoReplayPointEntry | null | undefined,
   frame: number,
   players: readonly [string, string] | readonly string[],
+  frameRate?: number,
 ): { title: string; detail: string } | null;
