@@ -11,7 +11,7 @@ import type {
   CapturedClipTiming,
 } from './DmoCapturedGroundstroke';
 
-export type BundledStrokeName = GroundstrokeName | 'slice-forehand' | 'slice-backhand';
+export type BundledStrokeName = GroundstrokeName | 'slice-forehand' | 'slice-backhand' | 'slide-backhand';
 export interface BundledClipBinding {
   clip: BundledMotionClip;
   contactTime: number;
@@ -37,9 +37,11 @@ const mirrorName = (name: string) => name.endsWith('_l') ? `${name.slice(0, -2)}
 const GESTURE_SWAY_LIMIT = 0.45;
 const reflect = (q: THREE.Quaternion) => new THREE.Quaternion(q.x, -q.y, -q.z, q.w).normalize();
 
-type StrokeChoice = Pick<GroundstrokePlayback, 'stroke' | 'slice' | 'smash' | 'readyPose'>;
-function strokeKey(playback: StrokeChoice): BundledStrokeName {
+type StrokeChoice = Pick<GroundstrokePlayback, 'stroke' | 'slice' | 'slide' | 'smash' | 'readyPose'>;
+function strokeKey(playback: StrokeChoice, source?: BundledMotionSource | null): BundledStrokeName {
   if (playback.smash && playback.stroke !== 'serve') return 'smash';
+  // A slide into the shot plays the slide clip for that side, when there is one.
+  if (playback.slide && playback.stroke === 'backhand' && source?.clips['slide-backhand']) return 'slide-backhand';
   if (playback.slice && (playback.stroke === 'forehand' || playback.stroke === 'backhand')) {
     return `slice-${playback.stroke}`;
   }
@@ -51,7 +53,7 @@ export function bundledCaptureTiming(
   source: BundledMotionSource | null | undefined,
   playback: StrokeChoice,
 ): CapturedClipTiming | undefined {
-  const binding = !playback.readyPose && source?.clips[strokeKey(playback)];
+  const binding = !playback.readyPose && source?.clips[strokeKey(playback, source)];
   if (!binding) return undefined;
   const recoveryFrames = Math.max(12, Math.ceil((binding.clip.duration - binding.contactTime) * 60));
   return {
@@ -128,7 +130,7 @@ export class DmoBundledGroundstroke {
   }
 
   private key(playback: GroundstrokePlayback): BundledStrokeName {
-    return strokeKey(playback);
+    return strokeKey(playback, this.source);
   }
 
   has(playback: GroundstrokePlayback) {

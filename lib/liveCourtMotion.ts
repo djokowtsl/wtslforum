@@ -377,13 +377,38 @@ export function liveCourtTrajectoryCue(
   return event.shotType === 'rally' && gruntsEnabled ? 'grunt' : null;
 }
 
+/** Seconds before a shot's contact that a slide into it starts. */
+const SHOT_SLIDE_LEAD_SECONDS = 0.2;
+/** Away from a shot, only a clay court slides, and only from this speed (m/s). */
+const CLAY_RECOVERY_SLIDE_SPEED = 3.6;
+/** And not again within this many seconds. */
+const RECOVERY_SLIDE_COOLDOWN_SECONDS = 2.5;
+
+export type LiveCourtFootworkOptions = {
+  /** With a surface, slides follow it (see below); without, every hard stop at speed slides. */
+  surface?: string;
+  /** Shots the player slides into (from planDmoShotMovements). */
+  shotSlides?: ReadonlyArray<{ frame: number; player: 1 | 2 }>;
+};
+
+/**
+ * Footsteps and slides. With `options.surface`, slides are realistic rather
+ * than on every hard stop: the planned slides into shots, plus, on clay
+ * only, an occasional recovery slide when changing direction flat out.
+ */
 export function deriveLiveCourtFootworkEvents(
   samples: LiveCourtSample[],
   framesPerSecond = 60,
+  options?: LiveCourtFootworkOptions,
 ): LiveCourtFootworkEvent[] {
   const frameRate = Number.isFinite(framesPerSecond) && framesPerSecond > 0
     ? framesPerSecond
     : 60;
+  const realistic = typeof options?.surface === 'string';
+  const shotSlides = (options?.shotSlides ?? [])
+    .map(slide => ({ frame: Math.round(slide.frame - SHOT_SLIDE_LEAD_SECONDS * frameRate), player: slide.player }));
+  const nearShotSlide = (player: 1 | 2, frame: number) => shotSlides.some(slide =>
+    slide.player === player && Math.abs(slide.frame - frame) < RECOVERY_SLIDE_COOLDOWN_SECONDS * frameRate);
   const lastFootstep = [-Infinity, -Infinity];
   const lastSlide = [-Infinity, -Infinity];
   const events: LiveCourtFootworkEvent[] = [];
@@ -415,10 +440,17 @@ export function deriveLiveCourtFootworkEvents(
         && nextSpeed < speed * 0.58;
       const turning = nextSeconds > 0 && nextSeconds <= 0.3 && nextDistance > 0.01
         && (length * nextLength + lateral * nextLateral) / (distance * nextDistance) < 0.45;
+      const side = (player + 1) as 1 | 2;
       if (
-        speed >= 2.2
-        && (lateralRatio >= 0.78 || braking || turning)
-        && current.frame - lastSlide[player] >= frameRate * 0.75
+        (realistic
+          ? options?.surface === 'clay'
+            && speed >= CLAY_RECOVERY_SLIDE_SPEED
+            && (braking || turning)
+            && current.frame - lastSlide[player] >= frameRate * RECOVERY_SLIDE_COOLDOWN_SECONDS
+            && !nearShotSlide(side, current.frame)
+          : speed >= 2.2
+            && (lateralRatio >= 0.78 || braking || turning)
+            && current.frame - lastSlide[player] >= frameRate * 0.75)
       ) {
         events.push({ frame: current.frame, kind: 'slide', player: (player + 1) as 1 | 2 });
         lastSlide[player] = current.frame;
@@ -427,6 +459,15 @@ export function deriveLiveCourtFootworkEvents(
         events.push({ frame: current.frame, kind: 'footstep', player: (player + 1) as 1 | 2 });
         lastFootstep[player] = current.frame;
       }
+    }
+  }
+
+  if (realistic && samples.length) {
+    const first = samples[0].frame;
+    const last = samples[samples.length - 1].frame;
+    for (const slide of shotSlides) {
+      if (slide.frame < first || slide.frame > last) continue;
+      events.push({ frame: slide.frame, kind: 'slide', player: slide.player });
     }
   }
 

@@ -200,6 +200,10 @@ import {
   type DmoReplayPointEntry,
 } from '@/lib/dmoReplayNavigation.mjs';
 import { readDmoBroadcastSettings, saveDmoBroadcastSettings, type DmoBroadcastSettings } from '@/lib/dmoBroadcastSettings.mjs';
+import { dmoShotMovementAt, planDmoShotMovements, type DmoShotMovement } from '@/lib/dmoShotMovement.mjs';
+
+/** A stretched forehand to a ball lower than this (m) is played as a slice. */
+const STRETCH_SLICE_HEIGHT = 0.75;
 import {
   CROWD_DENSITY_CHOICES,
   resolveCrowdDensity,
@@ -505,6 +509,8 @@ function ThreeCourt({
   const skidMarksRef = useRef<LiveCourtSkidMark[]>([]);
   const effectsVolumeRef = useRef(0.9);
   const footworkEventsRef = useRef<LiveCourtFootworkEvent[]>([]);
+  /** Shots each player slides or stretches into (see planDmoShotMovements). */
+  const shotMovementsRef = useRef<DmoShotMovement[]>([]);
   const transitionRef = useRef<HTMLDivElement>(null);
   const sampleBufferRef = useRef<LiveCourtSample[]>([]);
   const trajectoryEventsRef = useRef<LiveCourtMotionEvent[]>([]);
@@ -778,9 +784,20 @@ function ThreeCourt({
       });
       if (seen.size > 512) for (const key of [...seen.keys()].slice(0, seen.size - 512)) seen.delete(key);
     }
+    // Slides and stretches into shots, from how each player ran in and the
+    // court surface; the footwork then slides only where it's realistic.
+    const shotMovements = planDmoShotMovements(sampleBufferRef.current, trajectoryEventsRef.current, {
+      surface: sceneDataRef.current.surface ?? 'unknown',
+      frameRate: snapshot.frameRate ?? TE4_DMO_FRAMES_PER_SECOND,
+    });
+    shotMovementsRef.current = shotMovements;
     const footworkEvents = deriveLiveCourtFootworkEvents(
       sampleBufferRef.current,
       snapshot.frameRate ?? TE4_DMO_FRAMES_PER_SECOND,
+      {
+        surface: sceneDataRef.current.surface ?? 'unknown',
+        shotSlides: shotMovements.filter((movement) => movement.kind === 'slide'),
+      },
     );
     footworkEventsRef.current = footworkEvents;
     soundEventsRef.current = deriveLiveCourtSoundEvents(
@@ -1944,6 +1961,8 @@ function ThreeCourt({
         handedness: 'left' | 'right';
         slice?: boolean;
         spinSlice?: boolean;
+        /** Slid into the shot (plays the slide clip, when the player has one). */
+        slide?: boolean;
         smash?: boolean;
         /** A stretch at a ball going past him (no TE4 shot). */
         attempt?: boolean;
@@ -2002,6 +2021,24 @@ function ThreeCourt({
             if (recordedTouch || spinSlice) capturedEvent.slice = true;
             if (spinSlice) capturedEvent.spinSlice = true;
           }
+          // Slides and stretches (planned from the run-in and the surface):
+          // a slide into a backhand plays the slide clip; a stretched forehand
+          // to a low ball is played as a slice.
+          const movement = strokeEvent.shotType === 'rally' && !recordedSmash && !capturedEvent.attempt
+            ? dmoShotMovementAt(shotMovementsRef.current, eventPlayer, strokeEvent.frame)
+            : null;
+          if (movement?.kind === 'slide' && capturedEvent.stroke === 'backhand' && bundledSource?.clips['slide-backhand']) {
+            capturedEvent.slide = true;
+            delete capturedEvent.slice;
+            delete capturedEvent.spinSlice;
+          } else if (
+            movement?.kind === 'stretch'
+            && capturedEvent.stroke === 'forehand'
+            && movement.ballHeight < STRETCH_SLICE_HEIGHT
+            && bundledSource?.clips['slice-forehand']
+          ) {
+            capturedEvent.slice = true;
+          }
         }
         rig.root.userData.capturedGroundstrokeEvent = capturedEvent;
         if (contactSample) {
@@ -2011,7 +2048,7 @@ function ThreeCourt({
           const dx = (contactSample[0] - contactSample[xIndex]) * SCALE;
           const dz = (contactSample[1] - contactSample[zIndex]) * SCALE;
           rig.root.userData.contactTarget = {
-            key: `${strokeEvent.frame}:${capturedEvent.stroke}:${capturedEvent.handedness}:${capturedEvent.smash ? 'smash' : ''}${capturedEvent.attempt ? ':stretch' : ''}`,
+            key: `${strokeEvent.frame}:${capturedEvent.stroke}:${capturedEvent.handedness}:${capturedEvent.smash ? 'smash' : ''}${capturedEvent.attempt ? ':stretch' : ''}${capturedEvent.slide ? ':slide' : ''}${capturedEvent.slice ? ':slice' : ''}`,
             // A stretch: he reaches out toward a ball beyond his normal reach
             // (a ball going past him, or a wide volley: the volley recording's
             // contact is close in front, so a volley more than a metre to the
@@ -2103,10 +2140,11 @@ function ThreeCourt({
               weight,
               handedness: capturedEvent.handedness,
               rootOffset: false,
-              hands: !capturedEvent.smash && !capturedEvent.slice && !capturedEvent.oneHandReach
+              hands: !capturedEvent.smash && !capturedEvent.slice && !capturedEvent.slide && !capturedEvent.oneHandReach
                 && recordedStrokeUsesTwoHands(capturedEvent.stroke, playerStrokeStyle, false) ? 'two' : 'one',
               ...(capturedEvent.smash ? { smash: true } : {}),
               ...(capturedEvent.slice ? { slice: true } : {}),
+              ...(capturedEvent.slide ? { slide: true } : {}),
               // (A slice return does fit its whole preparation in: without it
               // only the last ~0.3 s of the slice showed, and it read as a
               // push or a drive. Rally slices keep their slow preparation.)
@@ -2125,7 +2163,7 @@ function ThreeCourt({
         delete rig.root.userData.lunge;
       }
         const twoHandedStroke = !serving && !capturedEvent?.smash && !isRecordedVolley(capturedEvent?.stroke)
-          && !capturedEvent?.slice && !capturedEvent?.oneHandReach
+          && !capturedEvent?.slice && !capturedEvent?.slide && !capturedEvent?.oneHandReach
         && recordedStrokeUsesTwoHands(stroke, playerStrokeStyle, stroke === 'backhand');
       const armPump = Math.sin(phase * 0.55) * gaitSpeed * 0.12;
       // Between shots the racket is carried, not held up by the head: in front
@@ -2403,7 +2441,7 @@ function ThreeCourt({
       // The stroke being played back (if any) decides the grip style through
       // its recovery, rather than the ball's current side after the event passes.
       const recordedStroke = rig.root.userData.capturedGroundstrokeEvent as
-        { frame: number; stroke: GroundstrokeName; slice?: boolean; smash?: boolean; oneHandReach?: boolean } | undefined;
+        { frame: number; stroke: GroundstrokeName; slice?: boolean; slide?: boolean; smash?: boolean; oneHandReach?: boolean } | undefined;
       const nativeRecovery = recordedStroke ? bundledCaptureTiming(bundledSource, recordedStroke) : undefined;
       const twoHandedSide = Boolean(recordedStroke)
         && recordedStroke!.stroke !== 'serve'
@@ -2412,7 +2450,7 @@ function ThreeCourt({
         && !isRecordedVolley(recordedStroke!.stroke)
         && recordedStrokeUsesTwoHands(recordedStroke!.stroke, playerStrokeStyle, false);
       const recordedTwoHanded = recordedStroke
-        ? twoHandedSide && !recordedStroke.slice && !recordedStroke.smash && !recordedStroke.oneHandReach
+        ? twoHandedSide && !recordedStroke.slice && !recordedStroke.slide && !recordedStroke.smash && !recordedStroke.oneHandReach
         : twoHandedStroke;
       const sliceTakeBackHold = recordedStroke?.slice && twoHandedSide && frame <= recordedStroke.frame
         ? 1 - THREE.MathUtils.smoothstep(
