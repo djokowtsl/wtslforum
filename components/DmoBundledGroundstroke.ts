@@ -11,7 +11,8 @@ import type {
   CapturedClipTiming,
 } from './DmoCapturedGroundstroke';
 
-export type BundledStrokeName = GroundstrokeName | 'slice-forehand' | 'slice-backhand' | 'slide-backhand';
+export type BundledStrokeName =
+  | GroundstrokeName | 'slice-forehand' | 'slice-backhand' | 'slide-backhand' | 'stretch-slice-forehand';
 export interface BundledClipBinding {
   clip: BundledMotionClip;
   contactTime: number;
@@ -37,11 +38,14 @@ const mirrorName = (name: string) => name.endsWith('_l') ? `${name.slice(0, -2)}
 const GESTURE_SWAY_LIMIT = 0.45;
 const reflect = (q: THREE.Quaternion) => new THREE.Quaternion(q.x, -q.y, -q.z, q.w).normalize();
 
-type StrokeChoice = Pick<GroundstrokePlayback, 'stroke' | 'slice' | 'slide' | 'smash' | 'readyPose'>;
+type StrokeChoice = Pick<GroundstrokePlayback, 'stroke' | 'slice' | 'slide' | 'lastDitch' | 'smash' | 'readyPose'>;
 function strokeKey(playback: StrokeChoice, source?: BundledMotionSource | null): BundledStrokeName {
   if (playback.smash && playback.stroke !== 'serve') return 'smash';
   // A slide into the shot plays the slide clip for that side, when there is one.
   if (playback.slide && playback.stroke === 'backhand' && source?.clips['slide-backhand']) return 'slide-backhand';
+  // A last-ditch forehand: the player's own forehand slice, or the stand-in.
+  if (playback.lastDitch && playback.stroke === 'forehand' && !source?.clips['slice-forehand']
+    && source?.clips['stretch-slice-forehand']) return 'stretch-slice-forehand';
   if (playback.slice && (playback.stroke === 'forehand' || playback.stroke === 'backhand')) {
     return `slice-${playback.stroke}`;
   }

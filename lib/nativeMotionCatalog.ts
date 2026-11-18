@@ -11,11 +11,12 @@ export const NATIVE_MOTION_GESTURE_CATALOG_SHA256 =
  * the player's own choices (more can be added as clips arrive):
  * - 'slide-backhand': a backhand played sliding in (mod "Djokovic Slide",
  *   by Rharm), used when a player slides into a backhand;
- * - 'slice-forehand': a forehand slice (mod "Djokovic forehand slice"), used
- *   for a low ball at full stretch on the forehand side when the player has
- *   no forehand slice of his own.
+ * - 'stretch-slice-forehand': a forehand slice (mod "Djokovic forehand
+ *   slice"), only for a last-ditch forehand (see LAST_DITCH_* in the court)
+ *   when the player has no forehand slice of his own. Not used for ordinary
+ *   forehands: players rarely slice them.
  */
 export const NATIVE_MOTION_SPECIAL_CLIPS = {
   'slide-backhand': { clipId: 'a2c075e329bf25172543_80477a8d19745e08', sourceHandedness: 'right' },
-  'slice-forehand': { clipId: '0996c83fd2fc9c7639e9_8454ce7fe166591f', sourceHandedness: 'right' },
+  'stretch-slice-forehand': { clipId: '0996c83fd2fc9c7639e9_8454ce7fe166591f', sourceHandedness: 'right' },
 } as const;

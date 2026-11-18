@@ -208,8 +208,14 @@ const CLOSE_CALL_CAMERA_MS = 700;
 /** How long the review holds on the mark after the bounce (ms). */
 const CLOSE_CALL_HOLD_MS = 1800;
 
-/** A stretched forehand to a ball lower than this (m) is played as a slice. */
-const STRETCH_SLICE_HEIGHT = 0.75;
+/**
+ * A last-ditch forehand, played as a slice: running in fast (m/s) to a ball
+ * this far away (m) and this low (m). Players rarely slice forehands
+ * otherwise; a few times a match at most (3 in match 23).
+ */
+const LAST_DITCH_REACH = 1.8;
+const LAST_DITCH_HEIGHT = 0.6;
+const LAST_DITCH_SPEED = 3;
 import {
   CROWD_DENSITY_CHOICES,
   resolveCrowdDensity,
@@ -2043,6 +2049,8 @@ function ThreeCourt({
         slide?: boolean;
         /** Any planned slide into the shot, either side. */
         slideIn?: boolean;
+        /** A last-ditch forehand (played as a slice). */
+        lastDitch?: boolean;
         smash?: boolean;
         /** A stretch at a ball going past him (no TE4 shot). */
         attempt?: boolean;
@@ -2097,13 +2105,16 @@ function ThreeCourt({
             // (A stretch for a ball going past him is a full reach, not a slice.)
             && !capturedEvent.attempt
           ) {
-            const spinSlice = liveCourtShotSpin(samples, strokeEvent.frame, frameRate) === 'slice';
+            // Backspin alone makes a backhand a slice. Forehands are rarely
+            // sliced: only a touch shot (or a last-ditch forehand, below).
+            const spinSlice = capturedEvent.stroke === 'backhand'
+              && liveCourtShotSpin(samples, strokeEvent.frame, frameRate) === 'slice';
             if (recordedTouch || spinSlice) capturedEvent.slice = true;
             if (spinSlice) capturedEvent.spinSlice = true;
           }
           // Slides and stretches (planned from the run-in and the surface):
-          // a slide into a backhand plays the slide clip; a stretched forehand
-          // to a low ball is played as a slice.
+          // a slide into a backhand plays the slide clip; only a last-ditch
+          // forehand (flat out, at full stretch, to a low ball) becomes a slice.
           const movement = strokeEvent.shotType === 'rally' && !recordedSmash && !capturedEvent.attempt
             ? dmoShotMovementAt(shotMovementsRef.current, eventPlayer, strokeEvent.frame)
             : null;
@@ -2113,12 +2124,15 @@ function ThreeCourt({
             delete capturedEvent.slice;
             delete capturedEvent.spinSlice;
           } else if (
-            movement?.kind === 'stretch'
+            movement
             && capturedEvent.stroke === 'forehand'
-            && movement.ballHeight < STRETCH_SLICE_HEIGHT
-            && bundledSource?.clips['slice-forehand']
+            && movement.reach >= LAST_DITCH_REACH
+            && movement.ballHeight < LAST_DITCH_HEIGHT
+            && movement.approachSpeed >= LAST_DITCH_SPEED
+            && (bundledSource?.clips['slice-forehand'] || bundledSource?.clips['stretch-slice-forehand'])
           ) {
             capturedEvent.slice = true;
+            capturedEvent.lastDitch = true;
           }
         }
         rig.root.userData.capturedGroundstrokeEvent = capturedEvent;
@@ -2227,6 +2241,7 @@ function ThreeCourt({
               ...(capturedEvent.slice ? { slice: true } : {}),
               ...(capturedEvent.slide ? { slide: true } : {}),
               ...(capturedEvent.slideIn ? { slideIn: true } : {}),
+              ...(capturedEvent.lastDitch ? { lastDitch: true } : {}),
               // (A slice return does fit its whole preparation in: without it
               // only the last ~0.3 s of the slice showed, and it read as a
               // push or a drive. Rally slices keep their slow preparation.)

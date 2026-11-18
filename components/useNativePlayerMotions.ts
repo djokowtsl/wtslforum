@@ -250,9 +250,10 @@ export function useNativePlayerMotions({
               if (!Object.keys(clips).length) return null;
               const slide = special('slide-backhand');
               if (slide) clips['slide-backhand'] = slide;
+              // Only for last-ditch forehands; a player's own forehand slice wins.
               if (!clips['slice-forehand']) {
-                const slice = special('slice-forehand');
-                if (slice) clips['slice-forehand'] = slice;
+                const slice = special('stretch-slice-forehand');
+                if (slice) clips['stretch-slice-forehand'] = slice;
               }
               return { schema: catalog.rig, clips };
             };
