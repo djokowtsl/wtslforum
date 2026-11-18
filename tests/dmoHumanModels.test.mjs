@@ -23,10 +23,12 @@ const surfaceApi = await loadTs('../lib/te4DmoSurface.ts');
 const crowdDensityApi = await loadTs('../lib/dmoCrowdDensity.ts');
 const crowdClothingApi = await loadTs('../lib/dmoCrowdClothing.ts');
 const crowdBrandingApi = await loadTs('../lib/dmoCrowdBranding.ts');
+const liveCourtPlayerColorsApi = await loadTs('../lib/liveCourtPlayerColors.ts');
 const characterAppearanceApi = await import('../lib/dmoCharacterAppearance.mjs');
 const sceneApi = await loadTs('../components/DmoLiveCourt3DScene.ts', {
   './DmoStadiumArchitecture': stadiumArchitectureApi,
   '../lib/dmoVenue': venueApi,
+  '../lib/liveCourtPlayerColors': liveCourtPlayerColorsApi,
   '@/lib/te4DmoSurface': surfaceApi,
   '@/lib/dmoCrowdDensity': crowdDensityApi,
   '@/lib/dmoCrowdClothing': crowdClothingApi,
@@ -401,19 +403,23 @@ for (const gender of ['male', 'female']) test(`${gender}: continuous native body
   }
   const attached = humans.attachHumanPlayer(template, rig, 0x275c77);
   const { pose, grips } = attached;
-  assert.equal(attached.model.getObjectByName('native-tour-mark-1').userData.inventedLabel, 'COURTLINE');
+  const brands = nativeKit.KIT_SPORTSWEAR_BRANDS;
+  assert.equal(attached.model.getObjectByName('native-tour-mark-1').userData.inventedLabel,
+    brands[nativeKit.BROADCAST_PLAYER_KITS[0].brand].name);
   assert.ok(attached.model.getObjectByName('native-player-headband-1'));
   assert.ok(attached.model.getObjectByName('native-player-swept-hair-1'));
   const apparelPatch = attached.model.getObjectByName('native-apparel-patch');
-  assert.ok(apparelPatch?.geometry.parameters.width >= 0.16,
-    'fictional tour marks are apparel-sized patches rather than tiny unreadable emblems');
+  assert.ok(apparelPatch?.geometry.parameters.width >= 0.09 && apparelPatch.geometry.parameters.width <= 0.13,
+    'the invented maker logo is a chest-logo size: readable on broadcast without becoming a placard');
+  assert.equal(apparelPatch.parent.name, 'native-tour-mark-1');
   assert.equal(attached.model.getObjectByName('native-tennis-sweatband-1').parent.parent.name, 'hand_r');
   assert.equal(attached.model.getObjectByName('native-sports-watch-face-1').parent.parent.name, 'hand_l');
   const alternateKitRig = sceneApi.makePlayer(0xc7baa2, 0x35413d);
   const alternateKit = humans.attachHumanPlayer(
     template, alternateKitRig, 0xc7baa2, undefined, undefined, nativeKit.BROADCAST_PLAYER_KITS[1], 1,
   );
-  assert.equal(alternateKit.model.getObjectByName('native-tour-mark-2').userData.inventedLabel, 'MERIDIAN');
+  assert.equal(alternateKit.model.getObjectByName('native-tour-mark-2').userData.inventedLabel,
+    brands[nativeKit.BROADCAST_PLAYER_KITS[1].brand].name);
   if (gender === 'female') {
     assert.ok(alternateKit.model.getObjectByName('native-player-ponytail-2'));
     assert.ok(alternateKit.model.getObjectByName('native-player-hair-tie-2'));
@@ -1408,4 +1414,24 @@ test('limb roll is spread along helper twist bones without changing hand or fore
   assert.ok(2 * Math.acos(Math.min(1, Math.abs(helper.quaternion.w))) > 0.8, 'forearm roll was not moved to its helper');
   const lowerNow = pose.bones.get('lowerarm_r').getWorldQuaternion(new THREE.Quaternion());
   assert.ok(lowerNow.angleTo(before[0]) > 0.8, 'forearm bone still carries the roll');
+});
+
+test('kits mix collared, V-neck and racerback cuts with invented sportswear sponsors', () => {
+  const atp = nativeKit.ATP_PLAYER_KITS, wta = nativeKit.WTA_PLAYER_KITS;
+  const polos = atp.filter(kit => kit.maleNeck === 'polo');
+  assert.ok(polos.length >= 4, 'several ATP kits are collared polos');
+  assert.ok(polos.every(kit => kit.maleTopStyle !== 'sleeveless'), 'a collar always comes with sleeves');
+  assert.ok(atp.some(kit => kit.maleNeck === 'v-neck'));
+  assert.ok(atp.some(kit => kit.maleTopStyle === 'sleeveless'), 'sleeveless men\'s tops stay in the mix');
+  const tanks = wta.filter(kit => kit.femaleTopStyle === 'sleeveless');
+  assert.ok(tanks.length >= 5, 'plenty of WTA tank tops');
+  assert.ok(tanks.filter(kit => kit.femaleBack === 'racerback').length >= 3, 'some tanks are racerbacks');
+  assert.ok(wta.every(kit => kit.femaleBack !== 'racerback' || kit.femaleTopStyle === 'sleeveless'));
+  const names = [...nativeKit.KIT_SPORTSWEAR_BRANDS.map(brand => brand.name), ...nativeKit.KIT_PARTNER_BRANDS];
+  assert.equal(new Set(names).size, names.length, 'every invented brand name is distinct');
+  assert.ok(names.every(name => !/WTSL/.test(name)));
+  for (const kit of [...atp, ...wta]) {
+    assert.ok(nativeKit.KIT_SPORTSWEAR_BRANDS[kit.brand], `${kit.id} has a maker`);
+    assert.ok(nativeKit.KIT_PARTNER_BRANDS[kit.partner], `${kit.id} has a sleeve partner`);
+  }
 });

@@ -14,6 +14,13 @@ test('wardrobe selection is stable for the same replay and player names', () => 
   assert.notDeepEqual(selectDmoPlayerKitIndices('replay-456', ['Player One', 'Player Two'], 16), first);
 });
 
+test('existing replays receive a one-time stable kit reshuffle', () => {
+  const reshuffled = selectDmoPlayerKitIndices('replay-123', ['Player One', 'Player Two'], 16);
+  assert.deepEqual(reshuffled, [15, 14]);
+  assert.notDeepEqual(reshuffled, [0, 1], 'the prior kit lineup is replaced');
+  assert.deepEqual(selectDmoPlayerKitIndices('replay-123', ['Player One', 'Player Two'], 16), reshuffled);
+});
+
 test('two players in the same match receive different kits when options are available', () => {
   const [first, second] = selectDmoPlayerKitIndices('replay-123', ['Player One', 'Player Two'], 16);
   assert.notEqual(first, second);
@@ -27,7 +34,8 @@ test('wardrobe selection handles a single available kit and an empty collection'
 test('replay courts choose an outfit collection by tour and pass a stable replay seed', () => {
   assert.match(courtSource, /isWta \? WTA_PLAYER_KITS : ATP_PLAYER_KITS/);
   assert.match(courtSource, /selectDmoPlayerKitIndices\(/);
-  assert.match(courtSource, /playerKits\[playerKitIndices\[0\]\]/);
-  assert.match(courtSource, /playerKits\[playerKitIndices\[1\]\]/);
+  assert.match(courtSource, /const selectedPlayerKits = playerKitIndices\.map\(\(kitIndex, index\) =>/);
+  assert.match(courtSource, /\.\.\.playerKits\[kitIndex\]/);
+  assert.match(courtSource, /selectedPlayerKits\[index\]/);
   assert.match(replaySource, /playerOutfitSeed=\{replayUrl \|\| broadcastId \|\| snapshot\.filename\}/);
 });
