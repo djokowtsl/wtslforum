@@ -92,6 +92,10 @@ function shapeWtaBody(body: THREE.SkinnedMesh, model: THREE.Group) {
 type MaleHairStyle = 'short-crop' | 'textured-crop' | 'curly-top' | 'side-part' | 'swept-back' | 'buzz-cut';
 type FemaleHairStyle = 'swept' | 'ponytail' | 'high-ponytail' | 'low-ponytail' | 'braid' | 'double-braid' | 'bun' | 'bob';
 type TennisTopStyle = 'sleeveless' | 'cap-sleeve' | 'short-sleeve';
+/** Neck of the top: crew, a polo collar with a buttoned placket, or a V. */
+type NeckStyle = 'crew' | 'polo' | 'v-neck';
+/** Back of a sleeveless women's top: a standard tank or a racerback. */
+type BackStyle = 'standard' | 'racerback';
 type ShirtPattern = 'solid' | 'chest-band' | 'side-panels' | 'yoke';
 type Headwear = 'none' | 'headband' | 'visor';
 type FacialHair = 'none' | 'stubble' | 'short-beard';
@@ -111,7 +115,54 @@ export type NativePlayerKit = {
   headwear: Headwear;
   facialHair: FacialHair;
   skirtLength: number;
+  /** Invented sportswear maker (index into KIT_SPORTSWEAR_BRANDS). */
+  brand: number;
+  /** Invented sleeve partner (index into KIT_PARTNER_BRANDS). */
+  partner: number;
+  maleNeck: NeckStyle;
+  femaleNeck: NeckStyle;
+  femaleBack: BackStyle;
 };
+
+/**
+ * Invented sportswear makers and partners for the kits: original names and
+ * marks, never real brands or anything made to look like one.
+ */
+export const KIT_SPORTSWEAR_BRANDS = [
+  { name: 'VANTRE', mark: 'bars' },
+  { name: 'KESTRYN', mark: 'diamond' },
+  { name: 'ORBITA', mark: 'ring' },
+  { name: 'HALDEN', mark: 'hex' },
+  { name: 'NOVARC', mark: 'split-square' },
+] as const;
+export const KIT_PARTNER_BRANDS = ['TEMPORIQ', 'ALDERWYN', 'LUMARA', 'QUINTARA'] as const;
+
+/** Per kit (by position in its list): neck and back cuts. */
+const ATP_NECKS: NeckStyle[] = [
+  'polo', 'crew', 'v-neck', 'polo', 'crew', 'polo', 'crew', 'crew',
+  'v-neck', 'crew', 'polo', 'crew', 'crew', 'polo', 'v-neck', 'crew',
+];
+const WTA_NECKS: NeckStyle[] = [
+  'crew', 'crew', 'v-neck', 'crew', 'crew', 'v-neck', 'crew', 'crew',
+  'polo', 'crew', 'v-neck', 'crew', 'crew', 'polo', 'crew', 'crew',
+];
+
+function withCuts(kits: NativePlayerKit[], necks: NeckStyle[], female: boolean): NativePlayerKit[] {
+  return kits.map((kit, index) => {
+    const top = female ? kit.femaleTopStyle : kit.maleTopStyle;
+    // A collar needs sleeves; sleeveless tops keep a crew or scoop neck.
+    const neck = top === 'sleeveless' && necks[index] === 'polo' ? 'crew' : necks[index];
+    return {
+      ...kit,
+      brand: index % KIT_SPORTSWEAR_BRANDS.length,
+      partner: (index * 3 + 1) % KIT_PARTNER_BRANDS.length,
+      maleNeck: female ? kit.maleNeck : neck,
+      femaleNeck: female ? neck : kit.femaleNeck,
+      // Every other sleeveless women's top is a racerback.
+      femaleBack: female && top === 'sleeveless' && index % 2 === 0 ? 'racerback' : 'standard',
+    };
+  });
+}
 
 function createTennisKit(
   id: string,
@@ -142,10 +193,15 @@ function createTennisKit(
     headwear,
     facialHair,
     skirtLength,
+    brand: 0,
+    partner: 1,
+    maleNeck: 'crew',
+    femaleNeck: 'crew',
+    femaleBack: 'standard',
   };
 }
 
-export const ATP_PLAYER_KITS: NativePlayerKit[] = [
+export const ATP_PLAYER_KITS: NativePlayerKit[] = withCuts([
   createTennisKit('men-classic-white', 0xf0eee7, 0x26343a, 0xc9433a, 0x2b2522, 'side-part', 'swept', 'short-sleeve', 'sleeveless', 'side-panels', 'headband'),
   createTennisKit('men-royal-court', 0x245ca8, 0xf1eee7, 0xe8c844, 0x493429, 'textured-crop', 'ponytail', 'sleeveless', 'short-sleeve', 'chest-band', 'visor', 'short-beard', 0.17),
   createTennisKit('men-deep-teal', 0x167a77, 0x202b35, 0xb4d65a, 0x211d1b, 'curly-top', 'high-ponytail', 'short-sleeve', 'cap-sleeve', 'yoke', 'none'),
@@ -162,9 +218,9 @@ export const ATP_PLAYER_KITS: NativePlayerKit[] = [
   createTennisKit('men-white-lime', 0xf2efe3, 0x61704a, 0xc7d95c, 0x523b2d, 'swept-back', 'braid', 'short-sleeve', 'sleeveless', 'yoke', 'headband'),
   createTennisKit('men-teal-white', 0x195f69, 0xf1eee7, 0x80c2bc, 0x392b25, 'buzz-cut', 'double-braid', 'short-sleeve', 'cap-sleeve', 'chest-band', 'visor'),
   createTennisKit('men-charcoal-gold', 0x41444a, 0x282c34, 0xc5a25e, 0x7a553b, 'side-part', 'bob', 'sleeveless', 'short-sleeve', 'side-panels', 'none', 'stubble'),
-];
+], ATP_NECKS, false);
 
-export const WTA_PLAYER_KITS: NativePlayerKit[] = [
+export const WTA_PLAYER_KITS: NativePlayerKit[] = withCuts([
   createTennisKit('women-coral-classic', 0xd95f66, 0x273b54, 0xf4eee2, 0x38231f, 'side-part', 'swept', 'short-sleeve', 'sleeveless', 'side-panels', 'headband', 'none', 0.16),
   createTennisKit('women-royal-pleats', 0x245ca8, 0xf1eee7, 0xe9cc54, 0x573a2b, 'textured-crop', 'high-ponytail', 'sleeveless', 'cap-sleeve', 'chest-band', 'visor', 'none', 0.17),
   createTennisKit('women-mint-court', 0x91cbb5, 0x26343a, 0xe2d6b6, 0x251d19, 'curly-top', 'low-ponytail', 'short-sleeve', 'short-sleeve', 'yoke', 'none', 'none', 0.15),
@@ -181,72 +237,160 @@ export const WTA_PLAYER_KITS: NativePlayerKit[] = [
   createTennisKit('women-navy-teal', 0x243753, 0x1c6463, 0x8ec9be, 0x34231e, 'swept-back', 'swept', 'short-sleeve', 'short-sleeve', 'yoke', 'visor', 'none', 0.16),
   createTennisKit('women-peach-skirt', 0xe8ae91, 0x984b55, 0xf4eee2, 0x583a2b, 'buzz-cut', 'ponytail', 'sleeveless', 'cap-sleeve', 'chest-band', 'none', 'none', 0.15),
   createTennisKit('women-graphite-pink', 0x55545d, 0x303039, 0xe28ca0, 0x241d1a, 'side-part', 'high-ponytail', 'short-sleeve', 'sleeveless', 'side-panels', 'headband', 'none', 0.18),
-];
+], WTA_NECKS, true);
 
 export const BROADCAST_PLAYER_KITS: [NativePlayerKit, NativePlayerKit] = [
   ATP_PLAYER_KITS[0],
   ATP_PLAYER_KITS[1],
 ];
 
-function addTourMark(model: THREE.Group, kit: NativePlayerKit, index: number) {
-  const chest = model.getObjectByName('spine_03');
-  if (!(chest instanceof THREE.Bone)) return;
-  const mark = new THREE.Group();
-  mark.name = `native-tour-mark-${index + 1}`;
-  mark.position.set(-0.09, 0.11, 0.108);
-  const inventedLabel = index === 0 ? 'COURTLINE' : 'MERIDIAN';
-  mark.userData.inventedLabel = inventedLabel;
-  let map: THREE.CanvasTexture | undefined;
+const textureCache = new Map<string, THREE.CanvasTexture | null>();
+
+/** Dark ink on light kit colours, light ink on dark ones. */
+function inkFor(color: number) {
+  const c = new THREE.Color(color);
+  const luminance = 0.2126 * c.r + 0.7152 * c.g + 0.0722 * c.b;
+  return luminance > 0.45 ? '#1d2633' : '#f4f1e8';
+}
+
+/** An invented maker's mark, drawn in a square of side `size` at (x, y). */
+function drawBrandMark(context: CanvasRenderingContext2D, mark: string, x: number, y: number, size: number) {
+  context.save();
+  context.translate(x + size / 2, y + size / 2);
+  const r = size / 2;
+  context.beginPath();
+  if (mark === 'bars') {
+    // Three rising slanted bars.
+    for (let bar = 0; bar < 3; bar++) {
+      const height = r * (0.8 + bar * 0.45);
+      const left = -r * 0.95 + bar * r * 0.68;
+      context.moveTo(left, r * 0.9);
+      context.lineTo(left + r * 0.42, r * 0.9);
+      context.lineTo(left + r * 0.62, r * 0.9 - height);
+      context.lineTo(left + r * 0.2, r * 0.9 - height);
+      context.closePath();
+    }
+    context.fill();
+  } else if (mark === 'diamond') {
+    // A diamond with a smaller diamond cut out, off-centre.
+    context.moveTo(0, -r);
+    context.lineTo(r, 0);
+    context.lineTo(0, r);
+    context.lineTo(-r, 0);
+    context.closePath();
+    context.moveTo(r * 0.3, -r * 0.36);
+    context.lineTo(r * 0.66, 0);
+    context.lineTo(r * 0.3, r * 0.36);
+    context.lineTo(-r * 0.06, 0);
+    context.closePath();
+    context.fill('evenodd');
+  } else if (mark === 'ring') {
+    context.lineWidth = r * 0.32;
+    context.arc(0, 0, r * 0.74, 0, Math.PI * 2);
+    context.stroke();
+    context.beginPath();
+    context.arc(r * 0.36, -r * 0.36, r * 0.2, 0, Math.PI * 2);
+    context.fill();
+  } else if (mark === 'hex') {
+    context.lineWidth = r * 0.22;
+    for (let side = 0; side < 6; side++) {
+      const angle = Math.PI / 6 + side * Math.PI / 3;
+      context[side ? 'lineTo' : 'moveTo'](Math.cos(angle) * r * 0.9, Math.sin(angle) * r * 0.9);
+    }
+    context.closePath();
+    context.stroke();
+    context.fillRect(-r * 0.32, -r * 0.42, r * 0.16, r * 0.84);
+    context.fillRect(r * 0.16, -r * 0.42, r * 0.16, r * 0.84);
+    context.fillRect(-r * 0.32, -r * 0.08, r * 0.64, r * 0.16);
+  } else {
+    // A square split on the diagonal, the lower half filled.
+    context.lineWidth = r * 0.2;
+    context.strokeRect(-r * 0.8, -r * 0.8, r * 1.6, r * 1.6);
+    context.moveTo(-r * 0.8, r * 0.8);
+    context.lineTo(r * 0.8, -r * 0.8);
+    context.lineTo(r * 0.8, r * 0.8);
+    context.closePath();
+    context.fill();
+  }
+  context.restore();
+}
+
+/** A transparent wordmark texture (no box, printed straight onto the kit). */
+function wordmarkTexture(text: string, mark: string | null, ink: string, accent: string) {
+  const key = `${text}|${mark}|${ink}|${accent}`;
+  if (textureCache.has(key)) return textureCache.get(key) ?? undefined;
+  let texture: THREE.CanvasTexture | null = null;
   if (typeof document !== 'undefined') {
     const canvas = document.createElement('canvas');
     canvas.width = 512;
-    canvas.height = 196;
+    canvas.height = 160;
     const context = canvas.getContext('2d');
     if (context) {
-      const accent = `#${kit.accentColor.toString(16).padStart(6, '0')}`;
-      context.fillStyle = '#26343a';
-      context.fillRect(0, 0, canvas.width, canvas.height);
-      context.strokeStyle = '#d8d0bd';
-      context.lineWidth = 8;
-      context.strokeRect(5, 5, canvas.width - 10, canvas.height - 10);
-      context.fillStyle = accent;
-      context.fillRect(18, 18, 14, canvas.height - 36);
-      context.beginPath();
-      context.moveTo(66, 48);
-      context.lineTo(91, 98);
-      context.lineTo(66, 148);
-      context.lineTo(41, 98);
-      context.closePath();
-      context.fill();
-      context.fillStyle = '#f0eadc';
-      context.font = '700 44px sans-serif';
+      context.clearRect(0, 0, canvas.width, canvas.height);
+      let x = 18;
+      if (mark) {
+        context.fillStyle = accent;
+        context.strokeStyle = accent;
+        drawBrandMark(context, mark, x, 26, 108);
+        x += 132;
+      }
+      context.fillStyle = ink;
       context.textBaseline = 'middle';
-      context.fillText(inventedLabel, 111, 92, 374);
-      map = new THREE.CanvasTexture(canvas);
-      map.colorSpace = THREE.SRGBColorSpace;
+      context.textAlign = mark ? 'left' : 'center';
+      let size = 88;
+      const room = mark ? canvas.width - x - 14 : canvas.width - 36;
+      // Letter-spaced like a printed wordmark.
+      const spaced = text.split('').join(String.fromCharCode(8202));
+      do {
+        context.font = `800 ${size}px Arial, sans-serif`;
+        size -= 4;
+      } while (size > 30 && context.measureText(spaced).width > room);
+      context.fillText(spaced, mark ? x : canvas.width / 2, 84);
+      texture = new THREE.CanvasTexture(canvas);
+      texture.colorSpace = THREE.SRGBColorSpace;
+      texture.anisotropy = 4;
     }
   }
-  const patch = new THREE.Mesh(
-    new THREE.PlaneGeometry(0.17, 0.066),
+  textureCache.set(key, texture);
+  return texture ?? undefined;
+}
+
+/**
+ * A printed logo on the kit, placed on the bind-pose surface at `point`
+ * (facing `normal`) and carried by `bone`.
+ */
+function addKitPrint(
+  model: THREE.Group,
+  bone: THREE.Object3D | undefined,
+  name: string,
+  texture: THREE.CanvasTexture | undefined,
+  fallbackColor: number,
+  width: number,
+  point: THREE.Vector3,
+  normal: THREE.Vector3,
+  up: THREE.Vector3,
+) {
+  if (!bone) return null;
+  const print = new THREE.Mesh(
+    new THREE.PlaneGeometry(width, width / 3.2),
     new THREE.MeshStandardMaterial({
-      color: 0xffffff,
-      ...(map ? { map } : {}),
-      roughness: 0.86,
+      color: texture ? 0xffffff : fallbackColor,
+      ...(texture ? { map: texture, transparent: true, alphaTest: 0.3 } : {}),
+      roughness: 0.7,
       side: THREE.DoubleSide,
+      polygonOffset: true,
+      polygonOffsetFactor: -2,
     }),
   );
-  patch.name = 'native-apparel-patch';
-  mark.add(patch);
-  if (!map) {
-    const seam = new THREE.Mesh(
-      new THREE.BoxGeometry(0.13, 0.004, 0.003),
-      new THREE.MeshStandardMaterial({ color: kit.accentColor, roughness: 0.82 }),
-    );
-    seam.name = 'native-patch-seam';
-    seam.position.y = -0.023;
-    mark.add(seam);
-  }
-  chest.add(mark);
+  print.name = name;
+  model.add(print);
+  model.updateMatrixWorld(true);
+  const world = point.clone().addScaledVector(normal, 0.0035);
+  print.position.copy(model.worldToLocal(world.clone()));
+  print.up.copy(up);
+  print.lookAt(world.clone().add(normal));
+  bone.attach(print);
+  return print;
 }
 
 function addGrooming(model: THREE.Group, kit: NativePlayerKit, index: number, female: boolean) {
@@ -518,6 +662,62 @@ export function addNativePlayerAccessories(
   }
 }
 
+/** A polo's folded collar (with a tipped edge) and a two-button placket. */
+function addPoloCollar(
+  model: THREE.Group, kit: NativePlayerKit, neck: THREE.Vector3,
+  placketPoint: THREE.Vector3, placketNormal: THREE.Vector3,
+) {
+  const chest = model.getObjectByName('spine_03');
+  if (!chest) return;
+  const shirt = new THREE.MeshStandardMaterial({ color: kit.shirtColor, roughness: 0.76, side: THREE.DoubleSide });
+  const accent = new THREE.MeshStandardMaterial({ color: kit.accentColor, roughness: 0.76, side: THREE.DoubleSide });
+  const gap = 0.42; // open at the front
+  const collar = new THREE.Group();
+  collar.name = 'native-polo-collar';
+  // Standing band round the neck base, flaring out to the fold.
+  const band = new THREE.Mesh(new THREE.CylinderGeometry(0.079, 0.094, 0.038, 36, 1, true, gap / 2, Math.PI * 2 - gap), shirt);
+  band.name = 'native-polo-collar-band';
+  collar.add(band);
+  // The tipped edge: a thin contrast stripe along the top.
+  const tip = new THREE.Mesh(new THREE.CylinderGeometry(0.0795, 0.0815, 0.006, 36, 1, true, gap / 2, Math.PI * 2 - gap), accent);
+  tip.name = 'native-polo-collar-tipping';
+  tip.position.y = 0.014;
+  collar.add(tip);
+  collar.scale.set(1, 1, 0.94);
+  model.add(collar);
+  model.updateMatrixWorld(true);
+  const toLocal = model.getWorldQuaternion(new THREE.Quaternion()).invert();
+  collar.position.copy(model.worldToLocal(new THREE.Vector3(neck.x, neck.y - 0.03, neck.z + 0.012)));
+  collar.quaternion.copy(toLocal);
+  chest.attach(collar);
+  // The placket: a buttoned strip running down from the collar's opening,
+  // laid on the chest surface (its +Z along the surface normal).
+  const placket = new THREE.Group();
+  placket.name = 'native-polo-placket';
+  const strip = new THREE.Mesh(new THREE.PlaneGeometry(0.03, 0.085), shirt);
+  strip.name = 'native-polo-placket-strip';
+  placket.add(strip);
+  const edge = new THREE.Mesh(new THREE.PlaneGeometry(0.0025, 0.085), accent);
+  edge.name = 'native-polo-placket-edge';
+  edge.position.set(0.0135, 0, 0.0006);
+  placket.add(edge);
+  for (const [index, y] of [0.022, -0.016].entries()) {
+    const button = new THREE.Mesh(new THREE.CylinderGeometry(0.0045, 0.0045, 0.0025, 10),
+      new THREE.MeshStandardMaterial({ color: 0xf1eee6, roughness: 0.45 }));
+    button.name = `native-polo-button-${index + 1}`;
+    button.rotation.x = Math.PI / 2;
+    button.position.set(0, y, 0.0015);
+    placket.add(button);
+  }
+  model.add(placket);
+  model.updateMatrixWorld(true);
+  const world = placketPoint.clone().addScaledVector(new THREE.Vector3(0, 1, 0), 0.008);
+  placket.position.copy(model.worldToLocal(world.clone()));
+  placket.up.set(0, 1, 0);
+  placket.lookAt(world.clone().add(placketNormal));
+  chest.attach(placket);
+}
+
 export function dressNativePlayer(
   model: THREE.Group,
   shirtColor: number,
@@ -578,11 +778,15 @@ export function dressNativePlayer(
     type Field = (i: number) => number;
     // Crew neckline: an elliptical collar around the neck base, slightly lower
     // at the front. Positive = garment.
+    const neckStyle = female ? kit.femaleNeck : kit.maleNeck;
     const neckline: Field = i => {
       const p = points[i];
       const dx = p.x - neck.x, dz = p.z - (neck.z + 0.012);
       const radial = Math.hypot(dx / 0.088, dz / 0.082) - 1;
-      const collarHeight = neck.y - 0.045 - 0.022 * smooth(dz, 0, 0.08);
+      // A V-neck drops to a point at the front centre.
+      const vee = neckStyle === 'v-neck'
+        ? 0.075 * Math.max(0, 1 - Math.abs(dx) / 0.075) * smooth(dz, 0.01, 0.07) : 0;
+      const collarHeight = neck.y - 0.045 - 0.022 * smooth(dz, 0, 0.08) - vee;
       return Math.max(collarHeight - p.y, radial * 0.08);
     };
     // Short sleeves end ~45% down the upper arm, perpendicular to it. Torso
@@ -600,11 +804,22 @@ export function dressNativePlayer(
       : topStyle === 'cap-sleeve'
         ? WTA_CAP_SLEEVE_END_FRACTION
         : STANDARD_SHORT_SLEEVE_END_FRACTION;
+    const sleeveField = sleeve(sleeveEndFraction);
+    // A racerback: the back cut away to a centre strap between the shoulder blades.
+    const racerback = female && topStyle === 'sleeveless' && kit.femaleBack === 'racerback';
     const shirtFields: Field[] = [
       i => points[i].y - 0.86,
       neckline,
-      sleeve(sleeveEndFraction),
+      sleeveField,
       i => neck.y + 0.01 - points[i].y,
+      ...(racerback ? [(i: number) => {
+        const p = points[i];
+        return Math.max(
+          p.z - (neck.z - 0.03),
+          0.045 + Math.max(0, 1.42 - p.y) * 0.3 - Math.abs(p.x - neck.x),
+          1.2 - p.y,
+        );
+      }] : []),
     ];
     const isTrunk = (i: number) => weightOf(i, /^(pelvis|spine_01|thigh|calf)/) > 0.5;
     const shortsFields: Field[] = female
@@ -680,14 +895,17 @@ export function dressNativePlayer(
       geometry.setAttribute('normal', new THREE.Float32BufferAttribute(normal, 3));
       geometry.setAttribute('skinIndex', new THREE.Uint16BufferAttribute(joints, 4));
       geometry.setAttribute('skinWeight', new THREE.Float32BufferAttribute(weights, 4));
+      // Performance fabric: a soft sheen rather than flat cotton.
       const mesh = new THREE.SkinnedMesh(geometry, new THREE.MeshStandardMaterial({
-        color, roughness: 0.91, side: THREE.DoubleSide,
+        color, roughness: 0.76, side: THREE.DoubleSide,
       }));
       mesh.name = name;
       if (name === 'native-tennis-shirt') {
         mesh.userData.sleeveEndFraction = sleeveEndFraction;
         mesh.userData.topStyle = topStyle;
         mesh.userData.pattern = kit.shirtPattern;
+        mesh.userData.neckStyle = neckStyle;
+        mesh.userData.racerback = racerback;
       }
       mesh.position.copy(body.position); mesh.quaternion.copy(body.quaternion); mesh.scale.copy(body.scale);
       mesh.bind(body.skeleton, body.bindMatrix);
@@ -701,6 +919,14 @@ export function dressNativePlayer(
       const collarFit = 0.003 * (1 - smooth(v.fields[1], 0, 0.02));
       return 0.011 + hemFlare - collarFit;
     }, shirtFields);
+    // Contrast piping: a narrow band at the sleeve or armhole edge, and round
+    // a crew or V neckline (a polo has its collar instead).
+    addShell('native-tennis-shirt-sleeve-trim', kit.accentColor, () => 0.0175,
+      [...shirtFields, i => 0.035 - sleeveField(i)], undefined, false);
+    if (neckStyle !== 'polo') {
+      addShell('native-tennis-shirt-neck-trim', kit.accentColor, () => 0.017,
+        [...shirtFields, i => 0.011 - neckline(i)], undefined, false);
+    }
     if (kit.shirtPattern === 'chest-band') {
       const band: Field = i => 0.035 - Math.abs(points[i].y - 1.2);
       addShell('native-tennis-shirt-chest-band', kit.accentColor, () => 0.016,
@@ -718,6 +944,103 @@ export function dressNativePlayer(
         [...shirtFields, yoke], undefined, false);
     }
     addShell('native-tennis-shorts', kit.shortsColor, () => 0.007, shortsFields, triangle => triangle.every(isTrunk));
+    if (!female) {
+      // A contrast band at the shorts' hem.
+      addShell('native-tennis-shorts-hem-trim', kit.accentColor, () => 0.0085,
+        [...shortsFields, i => 0.6 - points[i].y], triangle => triangle.every(isTrunk), false);
+    }
+    // Printed logos, placed on the bind-pose surface.
+    const surface = (pick: (i: number) => boolean, score: (p: THREE.Vector3) => number, lift = 0.016) => {
+      let best = -1, bestScore = -Infinity;
+      for (let i = 0; i < points.length; i++) {
+        if (!pick(i)) continue;
+        const value = score(points[i]);
+        if (value > bestScore) { bestScore = value; best = i; }
+      }
+      if (best < 0) return null;
+      const normal = new THREE.Vector3().fromBufferAttribute(normals, best).transformDirection(body.matrixWorld);
+      return { point: points[best].clone().addScaledVector(normal, lift), normal };
+    };
+    const brand = KIT_SPORTSWEAR_BRANDS[kit.brand % KIT_SPORTSWEAR_BRANDS.length];
+    const accentCss = `#${kit.accentColor.toString(16).padStart(6, '0')}`;
+    const shirtInk = inkFor(kit.shirtColor);
+    const up = new THREE.Vector3(0, 1, 0);
+    // The maker's mark on the left chest (+X is the player's left).
+    const chest = surface(
+      i => Math.abs(points[i].x - (neck.x + 0.085)) < 0.02 && Math.abs(points[i].y - (neck.y - 0.17)) < 0.02,
+      p => p.z,
+    );
+    const upperChest = model.getObjectByName('spine_03');
+    if (chest && upperChest) {
+      const print = addKitPrint(model, upperChest, 'native-apparel-patch',
+        wordmarkTexture(brand.name, brand.mark, shirtInk, shirtInk === '#1d2633' ? accentCss : '#f4f1e8'),
+        kit.accentColor, 0.11, chest.point, chest.normal, up);
+      if (print) {
+        // Grouped (at the bone's origin) under the kit's maker name.
+        const mark = new THREE.Group();
+        mark.name = `native-tour-mark-${kitIndex + 1}`;
+        mark.userData.inventedLabel = brand.name;
+        upperChest.add(mark);
+        mark.add(print);
+        print.userData.inventedLabel = brand.name;
+      }
+    }
+    // The partner's name on the sleeve (player's right), when there's a sleeve.
+    if (topStyle === 'short-sleeve') {
+      const arm = arms[1];
+      // Outward from the arm's axis, toward up-and-away from the body: the
+      // outer face of the sleeve once the arm hangs at the side.
+      const outward = new THREE.Vector3(-1, 1, 0).normalize();
+      outward.addScaledVector(arm.axis, -outward.dot(arm.axis)).normalize();
+      const sleevePoint = surface(
+        i => weightOf(i, arm.test) > 0.6
+          && Math.abs(points[i].clone().sub(arm.shoulder).dot(arm.axis) / arm.length - 0.24) < 0.05,
+        p => {
+          const offset = p.clone().sub(arm.shoulder);
+          return offset.addScaledVector(arm.axis, -offset.dot(arm.axis)).dot(outward);
+        },
+      );
+      if (sleevePoint) {
+        addKitPrint(model, model.getObjectByName('upperarm_r'), 'native-sleeve-partner',
+          wordmarkTexture(KIT_PARTNER_BRANDS[kit.partner % KIT_PARTNER_BRANDS.length], null, shirtInk, accentCss),
+          kit.accentColor, 0.06, sleevePoint.point, sleevePoint.normal, arm.axis.clone().negate());
+      }
+    } else {
+      // Sleeveless: the maker's name across the upper back instead.
+      // A racerback's centre strap is too narrow: print below it instead.
+      const backY = racerback ? 1.12 : neck.y - 0.12;
+      const back = surface(
+        i => Math.abs(points[i].x - neck.x) < 0.02 && Math.abs(points[i].y - backY) < 0.02,
+        p => -p.z,
+      );
+      if (back) {
+        addKitPrint(model, model.getObjectByName(racerback ? 'spine_02' : 'spine_03'), 'native-back-wordmark',
+          wordmarkTexture(brand.name, null, shirtInk, accentCss),
+          kit.accentColor, racerback ? 0.12 : 0.15, back.point, back.normal, up);
+      }
+    }
+    if (!female) {
+      // The maker's mark on the left leg of the shorts, above the hem.
+      const leg = surface(
+        i => isTrunk(i) && points[i].x > 0.04 && Math.abs(points[i].y - 0.65) < 0.02,
+        p => p.z + p.x * 0.4,
+        0.006,
+      );
+      if (leg) {
+        addKitPrint(model, model.getObjectByName('thigh_l'), 'native-shorts-mark',
+          wordmarkTexture(brand.name, brand.mark, inkFor(kit.shortsColor), accentCss),
+          kit.accentColor, 0.065, leg.point, leg.normal, up);
+      }
+    }
+    // A polo's folded collar and buttoned placket, carried by the upper chest.
+    if (neckStyle === 'polo') {
+      const placket = surface(
+        i => Math.abs(points[i].x - neck.x) < 0.012 && Math.abs(points[i].y - (neck.y - 0.1)) < 0.012,
+        p => p.z,
+        0.013,
+      );
+      if (placket) addPoloCollar(model, kit, neck, placket.point, placket.normal);
+    }
     addShell('native-cropped-hair', kit.hairColor, () => 0.004, [i => points[i].y - 1.56],
       triangle => triangle.some(v => {
         const p = points[v];
@@ -738,6 +1061,12 @@ export function dressNativePlayer(
       new THREE.MeshStandardMaterial({ color: kit.shortsColor, roughness: 0.9, side: THREE.DoubleSide }));
     skirt.name = 'native-tennis-skirt';
     skirt.userData.skirtLength = kit.skirtLength;
+    // A contrast band round the hem.
+    const hemBand = new THREE.Mesh(new THREE.CylinderGeometry(0.2735, 0.2735, 0.014, 40, 1, true),
+      new THREE.MeshStandardMaterial({ color: kit.accentColor, roughness: 0.8, side: THREE.DoubleSide }));
+    hemBand.name = 'native-tennis-skirt-hem-trim';
+    hemBand.position.y = -kit.skirtLength / 2 + 0.007;
+    skirt.add(hemBand);
     model.updateMatrixWorld(true);
     const pelvisWorld = pelvis.getWorldPosition(new THREE.Vector3());
     const world = pelvisWorld.clone()
@@ -758,7 +1087,6 @@ export function dressNativePlayer(
     waistband.quaternion.copy(model.getWorldQuaternion(new THREE.Quaternion()).invert());
     pelvis.attach(waistband);
   }
-  addTourMark(model, kit, kitIndex);
   addGrooming(model, kit, kitIndex, female);
   if (female) addWtaMakeupAndStuds(model, kitIndex);
 }
