@@ -89,6 +89,8 @@ export interface GroundstrokePlayback {
   /** Any slide into the shot (either side, with or without a slide clip): the
    *  legs follow the stroke recording, not the running legs. */
   slideIn?: boolean;
+  /** A last-ditch forehand at full stretch to a low ball: played as a slice. */
+  lastDitch?: boolean;
   /** A rally overhead uses the optional recorded smash, never a serve. */
   smash?: boolean;
   /** Speed up the take-back when a fast reply leaves too little preparation time. */
