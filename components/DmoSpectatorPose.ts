@@ -119,7 +119,7 @@ function relaxFingerTip(model: THREE.Group, name: string, direction: THREE.Vecto
 
 /** Pose a fresh clone of the approved whole-body model. Never scale a bone or
  * rewrite the original skin: its authored fingers and wrist joins stay intact. */
-export function poseSpectator(model: THREE.Group, applause: 'rest' | 'open' | 'closed', look = 0) {
+export function poseSpectator(model: THREE.Group, applause: 'rest' | 'open' | 'closed' | 'sign', look = 0) {
   model.updateMatrixWorld(true);
   const tipAxes = applause === 'rest' ? nativeFingerTipAxes(model) : new Map<string, THREE.Vector3>();
   const ground = new THREE.Box3().setFromObject(model).min.y;
@@ -140,10 +140,13 @@ export function poseSpectator(model: THREE.Group, applause: 'rest' | 'open' | 'c
     const posedKnee = position(bone(model, `${prefix}Leg`));
     aim(model, `${prefix}Leg`, `${prefix}Foot`, v(posedKnee.x, offsets[index], posedKnee.z));
     setWorldQuaternion(bone(model, `${prefix}Foot`), footRotations[index]);
+    // 'sign': both hands up at head height, gripping the sides of a fan's sign.
     const wrist = applause === 'rest'
       ? v(hip.x + side * 0.015, 0.65, 0.26)
-      : v(side * (applause === 'open' ? 0.085 : 0.045), 0.98, 0.35);
-    solveArm(model, prefix, wrist, v(side * 0.37, 0.77, 0.10));
+      : applause === 'sign'
+        ? v(side * 0.19, 1.38, 0.24)
+        : v(side * (applause === 'open' ? 0.085 : 0.045), 0.98, 0.35);
+    solveArm(model, prefix, wrist, applause === 'sign' ? v(side * 0.46, 1.08, 0.04) : v(side * 0.37, 0.77, 0.10));
     orientHand(
       model,
       prefix,

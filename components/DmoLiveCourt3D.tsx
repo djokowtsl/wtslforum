@@ -174,7 +174,7 @@ import CourtFullscreenButton from './CourtFullscreenButton';
 import CourtPictureInPictureButton from './CourtPictureInPictureButton';
 import { attachHumanPlayer, disposeHumanModel, loadHumanModel } from './DmoHumanModels';
 import { bundledCaptureTiming, type BundledMotionSource } from './DmoBundledGroundstroke';
-import { attachHumanCourtStaff, addCrowdAccessories } from './DmoHumanCrowd';
+import { attachHumanCourtStaff } from './DmoHumanCrowd';
 import { attachSpectatorCrowd, loadSpectatorModel, loadDiverseSpectatorModel } from './DmoSpectatorCrowd';
 import { DIVERSE_SPECTATORS } from '../lib/dmoSpectatorRoster';
 import { ATP_PLAYER_KITS, WTA_PLAYER_KITS } from './DmoNativeKit';
@@ -1123,8 +1123,8 @@ function ThreeCourt({
         if (maleCrowd.status === 'fulfilled' && femaleCrowd.status === 'fulfilled') {
           const additions = diverseCrowd.flatMap(result => result.status === 'fulfilled' ? [result.value] : []);
           const crowdTemplates = [maleCrowd.value, femaleCrowd.value, ...additions];
+          // Caps, signs, drinks and snacks come with the spectators themselves.
           attachSpectatorCrowd(scene, crowdRig, crowdTemplates);
-          addCrowdAccessories(scene, crowdRig);
           if (maleHighDetailCrowd.status === 'fulfilled') {
             crowdRig.setHighDetailModel(maleHighDetailCrowd.value, 0);
           }

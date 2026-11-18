@@ -19,10 +19,12 @@ async function loadTs(path, overrides = {}) {
 const poseApi = await loadTs('../components/DmoSpectatorPose.ts');
 const skinApi = await loadTs('../components/DmoSpectatorSkin.ts');
 const lod = await loadTs('../lib/dmoCrowdLod.ts');
+const propsApi = await import('../lib/dmoCrowdProps.mjs');
 const api = await loadTs('../components/DmoSpectatorCrowd.ts', {
   './DmoSpectatorPose': poseApi,
   './DmoSpectatorSkin': skinApi,
   '../lib/dmoCrowdLod': lod,
+  '../lib/dmoCrowdProps.mjs': propsApi,
   './DmoLiveCourt3DScene': { getCrowdAppearance: i => ({ gender: i % 2 ? 'female' : 'male', stature: 1, wardrobe: i % 8 }) },
 });
 async function model(gender, detail, filename = `rocketbox-${gender}-${detail}.glb`) {
@@ -52,6 +54,14 @@ async function model(gender, detail, filename = `rocketbox-${gender}-${detail}.g
 const templates = {};
 for (const gender of ['male', 'female']) for (const detail of ['far', 'full']) templates[`${gender}-${detail}`] = await model(gender, detail);
 function p(model, name) { return model.getObjectByName(name).getWorldPosition(new THREE.Vector3()); }
+// People only (caps, signs, drinks and snacks are separate meshes).
+const people = scene => scene.children.filter(mesh => mesh.name.startsWith('wtsl-spectator-'));
+function disposeScene(scene) {
+  scene.children.forEach(mesh => {
+    mesh.geometry.dispose();
+    for (const material of Array.isArray(mesh.material) ? mesh.material : [mesh.material]) material.dispose();
+  });
+}
 
 for (const gender of ['male', 'female']) for (const detail of ['far', 'full']) {
   test(`${gender} ${detail}: native finger rig, fixed limb lengths and inward resting hands`, () => {
@@ -199,10 +209,7 @@ test('gaze updates turn heads in both directions without rotating seated bodies'
   crowd.update(3, false, new THREE.Vector3(0, 1, 8));
   assert.equal(gaze.getX(0), 1);
   assert.equal(gaze.getY(0), 0);
-  scene.children.forEach(mesh => {
-    mesh.geometry.dispose();
-    mesh.material.forEach(material => material.dispose());
-  });
+  disposeScene(scene);
 });
 
 test('camera culling compacts visible spectators without changing occupancy or clipping edge bodies', () => {
@@ -215,27 +222,24 @@ test('camera culling compacts visible spectators without changing occupancy or c
     replacePeople(update) { this.update = update; },
   };
   api.attachSpectatorCrowd(scene, crowd, [templates['male-far'], templates['female-far']]);
-  const total = () => scene.children.reduce((sum, mesh) => sum + mesh.count, 0);
+  const total = () => people(scene).reduce((sum, mesh) => sum + mesh.count, 0);
   const camera = new THREE.PerspectiveCamera(60, 1, 0.1, 100);
   camera.position.set(0, 1, 8);
   camera.lookAt(0, 1, 0);
   crowd.update(1, false, undefined, camera);
   assert.equal(total(), 2, 'off-screen/behind-camera people are not submitted, but an edge body remains');
   assert.ok(seats.every(seat => seat.occupied), 'camera culling never changes selected crowd density');
-  for (const mesh of scene.children.filter(mesh => mesh.count)) {
+  for (const mesh of people(scene).filter(mesh => mesh.count)) {
     assert.deepEqual(mesh.instanceMatrix.updateRanges, [{ start: 0, count: mesh.count * 16 }]);
     assert.deepEqual(mesh.geometry.attributes.spectatorGaze.updateRanges, [{ start: 0, count: mesh.count * 2 }]);
   }
   camera.lookAt(0, 1, 25);
   crowd.update(1.2, true, undefined, camera);
   assert.equal(total(), 1, 'turning the camera restores previously hidden people');
-  assert.ok(scene.children.filter(mesh => mesh.count).every(mesh => /-(open|closed)$/.test(mesh.name)));
+  assert.ok(people(scene).filter(mesh => mesh.count).every(mesh => /-(open|closed)$/.test(mesh.name)));
   crowd.update(1.21, false);
   assert.equal(total(), 4, 'callers without a camera retain complete crowd coverage');
-  scene.children.forEach(mesh => {
-    mesh.geometry.dispose();
-    mesh.material.forEach(material => material.dispose());
-  });
+  disposeScene(scene);
 });
 
 test('instanced crowd handles applause, both genders, detail toggle and changing occupancy without duplicate shoes', () => {
@@ -325,13 +329,68 @@ test('crowd distributes all sixteen identities without multiplying instance capa
   const roster = [templates['male-far'], templates['female-far'], ...diverseTemplates];
   api.attachSpectatorCrowd(scene, crowd, roster);
   crowd.update(1, false);
-  const meshes = scene.children.filter(object => object instanceof THREE.InstancedMesh);
-  assert.equal(meshes.length, 16 * 3, 'each identity has only one batch per applause pose');
+  const meshes = people(scene);
+  assert.ok(meshes.length >= 16 * 3 && meshes.length <= 16 * 4,
+    'each identity has only one batch per pose (applause, plus one far sign pose)');
   assert.equal(meshes.reduce((sum, mesh) => sum + mesh.count, 0), seats.length);
   assert.equal(new Set(meshes.filter(mesh => mesh.count).map(mesh => mesh.name.split('-')[3])).size, 16);
-  assert.equal(meshes.reduce((sum, mesh) => sum + mesh.instanceMatrix.count, 0), seats.length * 3);
-  meshes.forEach(mesh => {
-    mesh.geometry.dispose();
-    for (const material of mesh.material) material.dispose();
-  });
+  assert.ok(meshes.reduce((sum, mesh) => sum + mesh.instanceMatrix.count, 0) <= seats.length * 4);
+  const capped = seats.filter(seat => propsApi.crowdPropFor(seat.sourceIndex, seat.row) === 'cap').length;
+  assert.equal(scene.getObjectByName('wtsl-crowd-cap-domes').count, capped, 'one cap per capped spectator');
+  disposeScene(scene);
+});
+
+test('caps sit on the head and turn with it; props follow occupancy; signs go up with applause', () => {
+  const find = (kind, from = 0) => {
+    for (let index = from; index < 5000; index++) if (propsApi.crowdPropFor(index, 5) === kind) return index;
+    throw new Error(`no ${kind} seat`);
+  };
+  const capSeat = find('cap'), signSeat = find('sign'), drinkSeat = find('drink'), snackSeat = find('snack');
+  const scene = new THREE.Scene();
+  const seats = [capSeat, signSeat, drinkSeat, snackSeat].map((sourceIndex, i) => ({
+    x: i * 2, y: 0, z: 0, row: 5, facing: 0, sourceIndex, occupied: true,
+  }));
+  const crowd = { highDetailEnabled: false, seats, replacePeople(update) { this.update = update; } };
+  api.attachSpectatorCrowd(scene, crowd, [templates['male-far'], templates['female-far']]);
+  const count = name => scene.getObjectByName(name).count;
+  const signs = () => scene.children.filter(mesh => mesh.name.startsWith('wtsl-crowd-sign-'))
+    .reduce((sum, mesh) => sum + mesh.count, 0);
+  crowd.update(1, false, new THREE.Vector3(0, 1, 8));
+  assert.equal(count('wtsl-crowd-cap-domes'), 1);
+  assert.equal(count('wtsl-crowd-cap-peaks'), 1);
+  assert.equal(count('wtsl-crowd-cups') + count('wtsl-crowd-bottles'), 1);
+  assert.equal(count('wtsl-crowd-snack-tubs'), 1);
+  assert.equal(signs(), 1, 'the sign rests in the lap between points');
+  // The cap's dome sits just over the top of the head, not at a fixed height.
+  const capMatrix = new THREE.Matrix4();
+  scene.getObjectByName('wtsl-crowd-cap-domes').getMatrixAt(0, capMatrix);
+  const capPosition = new THREE.Vector3().setFromMatrixPosition(capMatrix);
+  const capScale = new THREE.Vector3().setFromMatrixScale(capMatrix);
+  const top = capPosition.y + capScale.y;
+  const identity = scene.children.find(mesh => mesh.name.startsWith('wtsl-spectator-far-') && mesh.count);
+  identity.geometry.computeBoundingBox();
+  assert.ok(top > 1 && top < 1.6, `cap top at a seated head height (${top.toFixed(2)} m)`);
+  const raisedBefore = new THREE.Matrix4();
+  const signMesh = scene.children.find(mesh => mesh.name.startsWith('wtsl-crowd-sign-') && mesh.count);
+  signMesh.getMatrixAt(0, raisedBefore);
+  crowd.update(2, true, new THREE.Vector3(0, 1, 8));
+  const raised = new THREE.Matrix4();
+  scene.children.find(mesh => mesh.name.startsWith('wtsl-crowd-sign-') && mesh.count).getMatrixAt(0, raised);
+  assert.ok(new THREE.Vector3().setFromMatrixPosition(raised).y > new THREE.Vector3().setFromMatrixPosition(raisedBefore).y + 0.4,
+    'applause raises the sign above the head');
+  assert.ok(people(scene).some(mesh => mesh.name.endsWith('-sign') && mesh.count), 'the holder raises both hands');
+  assert.ok(people(scene).some(mesh => mesh.name.endsWith('-rest') && mesh.count),
+    'fans holding food or a drink keep it rather than clapping');
+  // Turning the head turns the cap with it.
+  crowd.update(3, false, new THREE.Vector3(8, 1, 0));
+  const turned = new THREE.Matrix4();
+  scene.getObjectByName('wtsl-crowd-cap-domes').getMatrixAt(0, turned);
+  assert.notDeepEqual(turned.elements, capMatrix.elements);
+  // Empty seats have no props (crowd density changes occupancy at runtime).
+  seats.forEach(seat => { seat.occupied = false; });
+  crowd.invalidateUpdate();
+  crowd.update(4, false);
+  assert.equal(count('wtsl-crowd-cap-domes') + count('wtsl-crowd-cups') + count('wtsl-crowd-bottles')
+    + count('wtsl-crowd-snack-tubs') + signs(), 0, 'no hats floating over empty seats');
+  disposeScene(scene);
 });
