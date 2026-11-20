@@ -71,6 +71,15 @@ const snapshotSchema = z.object({
     winner: player,
     rallyHits: z.number().int().min(0).max(200),
     faults: z.number().int().min(0).max(10),
+    // The live parser adds these to each finished point (Te4LivePoint); a
+    // strict schema without them rejected every update after the first point.
+    /** Who hit the last shot ('winner': the point winner did; 'error': the loser did). */
+    endedBy: z.enum(['winner', 'error']).optional(),
+    recordedGestures: z.array(z.object({
+      player,
+      type: z.string().min(1).max(40),
+      frame: z.number().int().min(0).max(1_000_000).optional(),
+    }).strict()).max(8).optional(),
   }).strict()).max(12),
   courtFrameIndices: z.array(z.number().int().min(0).max(1_000_000)).max(400).optional(),
   trajectoryEvents: z.array(z.object({
