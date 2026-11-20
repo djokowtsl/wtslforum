@@ -131,8 +131,10 @@ test('signed-in admins can fetch the full private point log', async () => {
 
 test('point log batches are same-site, validated, owner-only updates', async () => {
   const queries = [];
+  // As the live parser sends them: finished points say who hit the last shot.
   const points = [
-    { number: 1, frame: 480, isTiebreak: false, serveSpeedKmh: 188, scoreLabel: '0-0(15-0)', setNumber: 2, server: 1, winner: 1, rallyHits: 0, faults: 0 },
+    { number: 1, frame: 480, isTiebreak: false, serveSpeedKmh: 188, scoreLabel: '0-0(15-0)', setNumber: 2, server: 1, winner: 1, rallyHits: 0, faults: 0, endedBy: 'winner' },
+    { number: 2, frame: 960, isTiebreak: false, serveSpeedKmh: 171, scoreLabel: '0-0(15-15)', setNumber: 1, server: 1, winner: 2, rallyHits: 5, faults: 0, endedBy: 'error' },
   ];
   const route = loadRoute('app/api/live-dmo/[id]/points/route.ts', {
     'next/server': nextServer,
@@ -168,8 +170,9 @@ test('point log batches are same-site, validated, owner-only updates', async () 
 
 test('live snapshot updates merge their recent points into the retained point log', async () => {
   const queries = [];
+  // As the live parser sends them (Te4LivePoint): finished points carry endedBy.
   const recentPoints = [
-    { number: 1, frame: 480, isTiebreak: false, serveSpeedKmh: 188, scoreLabel: '0-0(15-0)', setNumber: 2, server: 1, winner: 1, rallyHits: 0, faults: 0 },
+    { number: 1, frame: 480, isTiebreak: false, serveSpeedKmh: 188, scoreLabel: '0-0(15-0)', setNumber: 2, server: 1, winner: 1, rallyHits: 0, faults: 0, endedBy: 'winner' },
   ];
   const court = Array.from({ length: 361 }, (_, index) => [
     index,
@@ -523,5 +526,20 @@ test('expired private replay blobs are deleted before their database rows', asyn
   } finally {
     if (originalStoreId === undefined) delete process.env.MODERATION_BLOB_STORE_ID;
     else process.env.MODERATION_BLOB_STORE_ID = originalStoreId;
+  }
+});
+
+test('a snapshot built by the live parser passes the live update schema', async () => {
+  // Guards the parser and the route against drifting apart again: every key the
+  // parser writes on a finished point must be accepted by the strict schema.
+  const parserSource = readFileSync(new URL('../lib/te4DmoLive.ts', import.meta.url), 'utf8');
+  const pointType = parserSource.slice(parserSource.indexOf('export type Te4LivePoint = {'));
+  const pointKeys = [...pointType.slice(0, pointType.indexOf('\n};')).matchAll(/^  (\w+)\??:/gm)].map(match => match[1]);
+  const routeSource = readFileSync(new URL('../app/api/live-dmo/[id]/route.ts', import.meta.url), 'utf8');
+  const pointsRouteSource = readFileSync(new URL('../app/api/live-dmo/[id]/points/route.ts', import.meta.url), 'utf8');
+  assert.ok(pointKeys.includes('endedBy'));
+  for (const key of pointKeys) {
+    assert.match(routeSource, new RegExp(`\\b${key}:`), `the live update schema accepts recentPoints.${key}`);
+    assert.match(pointsRouteSource, new RegExp(`\\b${key}:`), `the point log schema accepts ${key}`);
   }
 });

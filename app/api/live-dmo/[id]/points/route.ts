@@ -23,6 +23,13 @@ const pointSchema = z.object({
   winner: player,
   rallyHits: z.number().int().min(0).max(200),
   faults: z.number().int().min(0).max(10),
+  /** Who hit the last shot ('winner': the point winner did; 'error': the loser did). */
+  endedBy: z.enum(['winner', 'error']).optional(),
+  recordedGestures: z.array(z.object({
+    player,
+    type: z.string().min(1).max(40),
+    frame: z.number().int().min(0).max(1_000_000).optional(),
+  }).strict()).max(8).optional(),
 }).strict();
 const batchSchema = z.object({ points: z.array(pointSchema).min(1).max(100) }).strict();
 const pointLogSchema = z.array(pointSchema).max(20_000);
