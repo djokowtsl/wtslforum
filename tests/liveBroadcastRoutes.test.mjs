@@ -1008,7 +1008,8 @@ test('broadcast owners can heartbeat and end only their own active broadcast', a
     context,
   );
   assert.equal(duplicateSnapshot.status, 200);
-  assert.match(queries[2].text, /live\.sequence = \?[\s\S]*live\.payload->'snapshot' = request_data\.snapshot/);
+  assert.match(queries[2].text,
+    /live\.sequence = \?[\s\S]*live\.payload->'snapshot' = \(\s*request_data\.snapshot\s*\|\|\s*COALESCE\(live\.payload->'presentationOverrides'/);
   assert.deepEqual(JSON.parse(queries[2].values[0]), snapshot);
 
   const conflictQueries = [];
