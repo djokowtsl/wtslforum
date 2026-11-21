@@ -21,7 +21,7 @@ const pick = { clipId: 'a1_b1', sourceHandedness: 'right' };
 const serve = { clipId: 'a2_b2', sourceHandedness: 'left' };
 function setup({
   user = { discordId: 'streamer', isAdmin: false }, owner = 'streamer', live = true,
-  saved = [], sameSite = true, payload = { hasDmo: true, playerCharacters: [null, null] },
+  saved = [], savedGrunts = [], sameSite = true, payload = { hasDmo: true, playerCharacters: [null, null] },
 } = {}) {
   const reads = [];
   const writes = [];
@@ -30,6 +30,9 @@ function setup({
     '@/lib/auth': { getSession: async () => user },
     '@/lib/liveRequestSecurity': { isSameSiteMutation: () => sameSite },
     '@/lib/nativeMotionCatalogData': catalogData,
+    '@/lib/dmoCharacterAppearance.mjs': {
+      isDmoCharacterGruntGroup: (group) => group === 'male-aliassime',
+    },
     '@/lib/nativeMotionServer': {
       fetchNativeMotionCatalog: async () => ({ clips: [
         { id: 'a1_b1', duration: 1, events: { kind: 'strike', contactTime: 0.5 } },
@@ -46,6 +49,7 @@ function setup({
         reads.push({ text, values });
         if (text.includes('FROM dmo_live_broadcasts')) return live ? [{ owner_discord_id: owner, payload }] : [];
         if (text.includes('FROM dmo_native_motion_player_overrides')) return saved;
+        if (text.includes('FROM dmo_character_grunt_match_overrides')) return savedGrunts;
         return [];
       },
       transaction: async (build) => {
@@ -99,19 +103,15 @@ test('guests, ended streams, video-only streams and cross-site saves are refused
   assert.equal((await setup().route.GET(new Request('https://forum.test'),
     { params: Promise.resolve({ id: 'not-a-uuid' }) })).status, 404);
 });
-test('roster players are protected on the server, including clears and admin requests', async () => {
+test('roster and created players can both receive stream-specific motion overrides', async () => {
   for (const payload of [
     { hasDmo: true, playerCharacters: ['Federer', null] },
     { hasDmo: true, character: 'Federer', opponentCharacter: null },
   ]) {
-    for (const clips of [{}, { forehand: pick }]) {
-      const { route, writes } = setup({ payload, user: { discordId: 'admin', isAdmin: true } });
-      assert.equal((await route.PUT(put({ playerClips: [clips, null] }), context)).status, 409);
-      assert.equal(writes.length, 0);
-    }
-    const { route, writes } = setup({ payload });
-    assert.equal((await route.PUT(put({ playerClips: [null, { forehand: pick }] }), context)).status, 200);
-    assert.ok(writes.every((write) => write.values[1] === 1));
+    const { route, writes } = setup({ payload, user: { discordId: 'admin', isAdmin: true } });
+    assert.equal((await route.PUT(put({ playerClips: [{ forehand: pick }, { serve }] }), context)).status, 200);
+    assert.equal(writes.length, 2);
+    assert.deepEqual(writes.map((write) => write.values[1]), [0, 1]);
   }
 });
 test('restoring device defaults cannot overwrite an existing admin assignment', async () => {
@@ -126,16 +126,20 @@ test('incompatible clips, missing handedness, invalid JSON and oversized bodies 
   assert.equal((await wrong.route.PUT(put({ playerClips: [{ serve: pick }, null] }), context)).status, 400);
   assert.equal(wrong.writes.length, 0);
   assert.equal((await setup().route.PUT(put({ playerClips: [{ forehand: { clipId: 'a1_b1' } }, null] }), context)).status, 400);
-  for (const [body, expected] of [['{', 400], [' '.repeat(8_001), 413]]) {
+  for (const [body, expected] of [['{', 400], [' '.repeat(24_001), 413]]) {
     assert.equal((await setup().route.PUT(new Request('https://forum.test', { method: 'PUT', body }), context)).status, expected);
   }
 });
 test('the streamer can read back choices and its own owner-scoped storage identity', async () => {
-  const { route } = setup({ saved: [{ player_index: 1, clips: { forehand: pick } }] });
+  const { route } = setup({
+    saved: [{ player_index: 1, clips: { forehand: pick } }],
+    savedGrunts: [{ player_index: 0, grunt_group: 'male-aliassime' }],
+  });
   const response = await route.GET(new Request('https://forum.test'), context);
   assert.deepEqual(await response.json(), {
     playerClips: [{}, { forehand: pick }],
     playerGestures: [{}, {}],
+    playerGruntOverrides: [{ gruntGroup: 'male-aliassime' }, null],
     ownerDiscordId: 'streamer',
   });
 });
@@ -158,6 +162,18 @@ test('gesture clips use the separate catalog and coexist with stroke overrides',
   }), context)).status, 400);
   assert.equal(invalid.writes.length, 0);
 });
+test('grunt banks can be chosen alongside player motion and gesture overrides', async () => {
+  const { route, writes } = setup();
+  const response = await route.PUT(put({
+    playerClips: [{ forehand: pick }, null],
+    playerGestures: [{ CheerFist: { clipId: 'c1_d1' } }, null],
+    playerGruntOverrides: [{ gruntGroup: 'male-aliassime' }, { gruntGroup: null }],
+  }), context);
+  assert.equal(response.status, 200);
+  assert.ok(writes.some((write) => write.text.includes('dmo_character_grunt_match_overrides')));
+  assert.ok(writes.some((write) => write.text.includes('dmo_native_motion_player_overrides')
+    && JSON.parse(write.values[2]).gestures.CheerFist.clipId === 'c1_d1'));
+});
 test('streamers can give a gesture type a set of animations', async () => {
   const { route, writes } = setup();
   const gestures = { CheerFist: { clipId: 'c1_d1', clipIds: ['c1_d1', 'c3_d3'] } };
@@ -170,11 +186,13 @@ test('streamers can give a gesture type a set of animations', async () => {
     playerGestures: [{ CheerFist: { clipId: 'c1_d1', clipIds: ['c1_d1', 'ff_ff'] } }, null],
   }), context)).status, 400, 'every animation in the set must exist for that type');
 });
-test('the host only offers editable slots for no-character players', () => {
+test('the host exposes both player settings before a DMO stream starts', () => {
   const host = readFileSync(new URL('../components/DmoLiveHost.tsx', import.meta.url), 'utf8');
-  assert.match(host, /<LiveStreamAnimationPicker[\s\S]*open=\{\[!savedBroadcastCharacter\.trim\(\), !savedBroadcastOpponentCharacter\.trim\(\)\]\}/);
+  assert.match(host, /\{directory && \(\s*<LiveStreamAnimationPicker[\s\S]*open=\{\[true, true\]\}/);
+  assert.match(host, /{directory && \(\s*<fieldset className={styles\.handednessControls}/);
   const picker = readFileSync(new URL('../components/LiveStreamAnimationPicker.tsx', import.meta.url), 'utf8');
   assert.match(picker, /open\[index\] \? complete\(drafts\[index\]\) : null/);
+  assert.match(picker, /playerGruntOverrides/);
 });
 
 async function restorePicker({ saved = [{}, {}], open = [true, true], fail = false } = {}) {
@@ -207,9 +225,12 @@ async function restorePicker({ saved = [{}, {}], open = [true, true], fail = fal
       react: {
         useState: (initial) => { const index = stateIndex++; states[index] = []; return [initial, (v) => states[index].push(v)]; },
         useEffect: (effect) => effects.push(effect),
+        useRef: (initial) => ({ current: initial }),
+        useMemo: (factory) => factory(),
       },
       '@/lib/nativeMotionCatalogData': catalogData,
       '@/lib/nativeMotionCatalog': { NATIVE_MOTION_CATALOG_SHA256: 'test' },
+      '@/lib/dmoCharacterAppearance.mjs': { getDmoCharacterGruntGroups: () => [] },
       './SearchableClipSelect': { default: () => null },
       './GestureClipSetPicker': { default: () => null },
       './DmoLiveHost.module.css': {},
@@ -239,6 +260,6 @@ test('existing choices are not restored over and roster slots are left alone', a
 });
 test('a failed automatic restore is visible and leaves manual correction available', async () => {
   const { states } = await restorePicker({ fail: true });
-  assert.equal(states[8].at(-1), 'Restore failed');
-  assert.equal(states[6].at(-1), STREAM);
+  assert.equal(states[9].at(-1), 'Restore failed');
+  assert.equal(states[7].at(-1), STREAM);
 });
