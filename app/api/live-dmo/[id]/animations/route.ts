@@ -4,6 +4,7 @@ import { getSession } from '@/lib/auth';
 import { sql, transaction } from '@/lib/db';
 import { isSameSiteMutation } from '@/lib/liveRequestSecurity';
 import { fetchNativeMotionCatalog, fetchNativeMotionGestureCatalog } from '@/lib/nativeMotionServer';
+import { isDmoCharacterGruntGroup } from '@/lib/dmoCharacterAppearance.mjs';
 import {
   NATIVE_MOTION_STROKES,
   nativeMotionClipSupportsStroke,
@@ -14,7 +15,7 @@ import {
 
 export const dynamic = 'force-dynamic';
 const HEADERS = { 'Cache-Control': 'private, no-store', 'X-Content-Type-Options': 'nosniff' };
-const MAX_BODY_BYTES = 8_000;
+const MAX_BODY_BYTES = 24_000;
 const pickSchema = z.object({
   clipId: z.string().regex(/^[a-f0-9]+_[a-f0-9]+$/i).max(80),
   sourceHandedness: z.enum(['left', 'right']),
@@ -33,9 +34,16 @@ const gesturePickSchema = z.object({
   clipIds: z.array(gestureClipIdSchema).min(1).max(NATIVE_MOTION_GESTURE_SET_LIMIT).optional(),
 }).strict();
 const gesturesSchema = z.record(z.string().min(1).max(40), gesturePickSchema);
+const gruntOverrideSchema = z.object({
+  gruntGroup: z.string().max(80).nullable(),
+}).strict();
 const bodySchema = z.object({
   playerClips: z.tuple([clipsSchema.nullable(), clipsSchema.nullable()]),
   playerGestures: z.tuple([gesturesSchema.nullable(), gesturesSchema.nullable()]).optional(),
+  playerGruntOverrides: z.tuple([
+    gruntOverrideSchema.nullable(),
+    gruntOverrideSchema.nullable(),
+  ]).optional(),
   onlyIfEmpty: z.boolean().optional(),
 }).strict();
 type RouteContext = { params: Promise<{ id: string }> };
@@ -69,9 +77,7 @@ async function ownedLiveStream(id: string) {
   if (payload.hasDmo !== true) {
     return { error: NextResponse.json({ error: 'This stream has no DMO court.' }, { status: 404, headers: HEADERS }) };
   }
-  const characters = Array.isArray(payload.playerCharacters) && payload.playerCharacters.length === 2
-    ? payload.playerCharacters : [payload.character, payload.opponentCharacter];
-  return { error: null, characters, ownerDiscordId: String(rows[0].owner_discord_id) };
+  return { error: null, ownerDiscordId: String(rows[0].owner_discord_id) };
 }
 
 export async function GET(_request: Request, context: RouteContext) {
@@ -81,6 +87,10 @@ export async function GET(_request: Request, context: RouteContext) {
     if (managed.error) return managed.error;
     const rows = await sql`
       SELECT player_index, clips FROM dmo_native_motion_player_overrides
+      WHERE broadcast_id=${id}::uuid
+    `;
+    const gruntRows = await sql`
+      SELECT player_index, grunt_group FROM dmo_character_grunt_match_overrides
       WHERE broadcast_id=${id}::uuid
     `;
     const playerClips: [Clips, Clips] = [{}, {}];
@@ -93,8 +103,14 @@ export async function GET(_request: Request, context: RouteContext) {
       playerGestures[row.player_index as 0 | 1] = gestures && typeof gestures === 'object'
         ? gestures as Gestures : {};
     }
+    const playerGruntOverrides: [null | { gruntGroup: string | null }, null | { gruntGroup: string | null }] = [null, null];
+    for (const row of gruntRows) {
+      if (row.player_index === 0 || row.player_index === 1) {
+        playerGruntOverrides[row.player_index] = { gruntGroup: row.grunt_group ?? null };
+      }
+    }
     return NextResponse.json(
-      { playerClips, playerGestures, ownerDiscordId: managed.ownerDiscordId },
+      { playerClips, playerGestures, playerGruntOverrides, ownerDiscordId: managed.ownerDiscordId },
       { headers: HEADERS },
     );
   } catch (cause) {
@@ -125,16 +141,10 @@ export async function PUT(request: Request, context: RouteContext) {
       { status: 400, headers: HEADERS },
     );
   }
-  const { playerClips, playerGestures, onlyIfEmpty } = parsed.data;
+  const { playerClips, playerGestures, playerGruntOverrides, onlyIfEmpty } = parsed.data;
   try {
     const managed = await ownedLiveStream(id);
     if (managed.error) return managed.error;
-    if (playerClips.some((clips, index) => clips !== null && String(managed.characters?.[index] ?? '').trim())) {
-      return NextResponse.json(
-        { error: 'These choices are only for players with no roster character. Leave roster players unchanged.' },
-        { status: 409, headers: HEADERS },
-      );
-    }
     if (playerClips.some((clips) => clips && Object.keys(clips).length)) {
       const catalog = await fetchNativeMotionCatalog();
       for (const clips of playerClips) {
@@ -170,6 +180,14 @@ export async function PUT(request: Request, context: RouteContext) {
             );
           }
         }
+      }
+    }
+    for (const override of playerGruntOverrides ?? []) {
+      if (override?.gruntGroup && !isDmoCharacterGruntGroup(override.gruntGroup)) {
+        return NextResponse.json(
+          { error: 'Choose a grunt bank from the available character profiles.' },
+          { status: 400, headers: HEADERS },
+        );
       }
     }
     await transaction((query) => {
@@ -224,6 +242,20 @@ export async function PUT(request: Request, context: RouteContext) {
           `);
         }
       });
+      if (playerGruntOverrides) {
+        commands.push(query`
+          DELETE FROM dmo_character_grunt_match_overrides
+          WHERE broadcast_id=${id}::uuid
+        `);
+        playerGruntOverrides.forEach((override, index) => {
+          if (override === null) return;
+          commands.push(query`
+            INSERT INTO dmo_character_grunt_match_overrides
+              (broadcast_id, player_index, grunt_group)
+            VALUES (${id}::uuid, ${index}, ${override.gruntGroup}::text)
+          `);
+        });
+      }
       return commands;
     });
     return NextResponse.json({ ok: true }, { headers: HEADERS });
