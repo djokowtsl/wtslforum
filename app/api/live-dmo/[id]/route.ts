@@ -165,7 +165,9 @@ export async function PATCH(request: Request, context: RouteContext) {
         UPDATE dmo_live_broadcasts AS live
         SET payload=COALESCE(live.payload, '{}'::jsonb)
               || jsonb_build_object(
-                'snapshot', request_data.snapshot,
+                'snapshot',
+                  request_data.snapshot
+                    || COALESCE(live.payload->'presentationOverrides', '{}'::jsonb),
                 'players', COALESCE(
                   NULLIF(live.payload->'players', 'null'::jsonb),
                   request_data.snapshot->'players'
@@ -207,7 +209,10 @@ export async function PATCH(request: Request, context: RouteContext) {
             live.sequence < ${update.data.sequence}
             OR (
               live.sequence = ${update.data.sequence}
-              AND live.payload->'snapshot' = request_data.snapshot
+               AND live.payload->'snapshot' = (
+                 request_data.snapshot
+                   || COALESCE(live.payload->'presentationOverrides', '{}'::jsonb)
+               )
             )
           )
         RETURNING live.id, live.sequence

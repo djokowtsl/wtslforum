@@ -736,6 +736,8 @@ export default function DmoLiveViewer({
                     broadcastId={broadcast.id}
                     players={broadcast.players ?? broadcast.snapshot?.players ?? ['', '']}
                     playerCharacters={broadcast.playerCharacters ?? [broadcast.character ?? null, null]}
+                    handedness={broadcast.snapshot?.handedness ?? ['right', 'right']}
+                    strokeStyles={broadcast.snapshot?.strokeStyles}
                   />
                 )}
                 {voiceServer && voiceRoom && broadcast.status === 'live' && !broadcast.replay && broadcast.stream && (

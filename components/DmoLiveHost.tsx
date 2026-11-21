@@ -24,7 +24,7 @@ import { hasPlayerPositionData } from '@/lib/te4LiveSetup';
 import { isPresignedUrlRetrievalFailure } from '@/lib/dmoUploadErrors';
 import { attemptFullReplayPreparation } from '@/lib/liveReplayPreparation';
 import { startBackgroundTicker } from '@/lib/backgroundTicker.mjs';
-import LiveStreamAnimationPicker from './LiveStreamAnimationPicker';
+import LiveStreamAnimationPicker, { type LiveStreamAnimationDraft } from './LiveStreamAnimationPicker';
 import {
   fetchLiveDmoResponse,
   reconcileLiveDmoSequence,
@@ -224,6 +224,7 @@ export default function DmoLiveHost({ displayName, canPrepareFullReplay }: Props
   const lastSentVersion = useRef(-1);
   const lastHeartbeat = useRef(0);
   const lastPresentationSignature = useRef('');
+  const presentationSaveQueue = useRef<Promise<void>>(Promise.resolve());
   const sequence = useRef(0);
   const pointLogSeeded = useRef(new Set<string>());
   const pointLogSeeding = useRef(new Set<string>());
@@ -238,6 +239,7 @@ export default function DmoLiveHost({ displayName, canPrepareFullReplay }: Props
   const automaticPlayers = useRef<[string, string] | null>(null);
   const replay = useRef<DmoReplay | null>(null);
   const canonicalBroadcastPlayers = useRef<[string, string] | null>(null);
+  const liveAnimationDraft = useRef<LiveStreamAnimationDraft | null>(null);
   const lastAutomaticAttemptAt = useRef(0);
 
   useEffect(() => {
@@ -581,6 +583,10 @@ export default function DmoLiveHost({ displayName, canPrepareFullReplay }: Props
     automaticMatch?: { players: [string, string]; bestOf: Te4LiveBestOf },
   ) => {
     if ((!directory && !discordMessageUrl.trim()) || busy || broadcastId) return;
+    if (directory && liveAnimationDraft.current?.missingSourceHandedness) {
+      setError('Choose the original handedness for every selected animation clip before starting.');
+      return;
+    }
     if (characterBackhandStatusRef.current === 'loading') {
       setNotice('Waiting for the selected character stroke setups to finish loading.');
       return;
@@ -593,12 +599,6 @@ export default function DmoLiveHost({ displayName, canPrepareFullReplay }: Props
     const broadcastBestOf = automaticMatch?.bestOf ?? bestOf;
     setBusy(true);
     setError('');
-    playerHandsRef.current = ['right', 'right'];
-    setPlayerHands(['right', 'right']);
-    playerStrokeStylesRef.current = defaultPlayerStrokeStyles();
-    setPlayerStrokeStyles(playerStrokeStylesRef.current);
-    manualBackhandOverrides.current = [false, false];
-    manualHandOverrides.current = [false, false];
     lastPresentationSignature.current = '';
     if (mode === 'manual') {
       liveDmoGrowthDetected.current = false;
@@ -662,6 +662,17 @@ export default function DmoLiveHost({ displayName, canPrepareFullReplay }: Props
       };
       if (!body.id) throw new Error('The broadcast could not be started.');
       createdBroadcastId = body.id;
+      if (directory && liveAnimationDraft.current) {
+        const { playerClips, playerGestures, playerGruntOverrides } = liveAnimationDraft.current;
+        const settingsResponse = await fetch(`/api/live-dmo/${encodeURIComponent(body.id)}/animations`, {
+          method: 'PUT',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ playerClips, playerGestures, playerGruntOverrides }),
+        });
+        if (!settingsResponse.ok) {
+          throw new Error(await responseError(settingsResponse));
+        }
+      }
       const canonicalPlayers = body.players ?? players ?? null;
       const savedCharacter = body.character ?? character.trim();
       const savedOpponentCharacter = body.playerCharacters?.[1] ?? opponentCharacter.trim();
@@ -1271,6 +1282,35 @@ export default function DmoLiveHost({ displayName, canPrepareFullReplay }: Props
     };
   })();
   const activeBroadcastPlayers = canonicalBroadcastPlayers.current ?? automaticPlayers.current;
+  const presentationPlayers = activeBroadcastPlayers ?? [
+    playerOne.trim() || 'Player 1',
+    playerTwo.trim() || 'Player 2',
+  ] as [string, string];
+  const persistPresentationSettings = () => {
+    if (!broadcastId) return;
+    const settings = {
+      handedness: resolveBroadcastHandedness(
+        presentationPlayers, playerHandsRef.current, characterHandsRef.current, manualHandOverrides.current,
+      ),
+      strokeStyles: resolveBroadcastStrokeStyles(
+        presentationPlayers, playerStrokeStylesRef.current,
+        characterBackhandTypesRef.current, manualBackhandOverrides.current,
+      ),
+    };
+    presentationSaveQueue.current = presentationSaveQueue.current
+      .catch(() => undefined)
+      .then(async () => {
+        const response = await fetch(`/api/live-dmo/${encodeURIComponent(broadcastId)}/presentation`, {
+          method: 'PATCH',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(settings),
+        });
+        if (!response.ok) throw new Error(await responseError(response));
+      })
+      .catch((cause) => {
+        setError(cause instanceof Error ? cause.message : 'Live stroke setup could not be saved.');
+      });
+  };
 
   return (
     <section className={styles.page}>
@@ -1407,11 +1447,14 @@ export default function DmoLiveHost({ displayName, canPrepareFullReplay }: Props
                     : 'Save characters'}
             </button>
           )}
-          {broadcastId && (
+          {directory && (
             <LiveStreamAnimationPicker
               broadcastId={broadcastId}
-              open={[!savedBroadcastCharacter.trim(), !savedBroadcastOpponentCharacter.trim()]}
-              labels={['Your player', 'Opponent']}
+              open={[true, true]}
+              labels={presentationPlayers}
+              disabled={busy}
+              suppressRememberedRestore={Boolean(liveAnimationDraft.current)}
+              onDraftChange={(draft) => { liveAnimationDraft.current = draft; }}
             />
           )}
         </div>
@@ -1515,26 +1558,28 @@ export default function DmoLiveHost({ displayName, canPrepareFullReplay }: Props
           />
           Broadcaster tags this as an official match (best of 3 or 5)
         </label>
-        {broadcastId && directory && activeBroadcastPlayers && (
+        {directory && (
           <fieldset className={styles.handednessControls}>
             <legend>Player stroke setup · shared with all viewers</legend>
-            <p>Selected characters supply their dominant hand and backhand setup. Manual choices override the character and update the next live snapshot.</p>
-            {activeBroadcastPlayers.map((name, index) => (
+            <p>Choose each player’s hand and grips before starting, or adjust them while live. Character defaults apply until you change a value.</p>
+            {presentationPlayers.map((name, index) => (
               <div className={styles.playerStyleRow} key={`${index}-${name}`}>
                 <strong>{name}</strong>
                 <label>
                   <span>Dominant hand</span>
                   <select
                     value={resolveBroadcastHandedness(
-                      activeBroadcastPlayers, playerHands, characterHands, manualHandOverrides.current,
+                      presentationPlayers, playerHands, characterHands, manualHandOverrides.current,
                     )[index]}
                     aria-label={`${name} dominant hand`}
+                    disabled={busy}
                     onChange={(event) => {
                       const next = [...playerHandsRef.current] as [PlayerHandedness, PlayerHandedness];
                       next[index] = event.currentTarget.value as PlayerHandedness;
                       manualHandOverrides.current[index] = true;
                       playerHandsRef.current = next;
                       setPlayerHands(next);
+                      persistPresentationSettings();
                     }}
                   >
                     <option value="right">Right-handed</option>
@@ -1547,6 +1592,7 @@ export default function DmoLiveHost({ displayName, canPrepareFullReplay }: Props
                     <select
                       value={playerStrokeStyles[index][stroke]}
                       aria-label={`${name} ${stroke} grip`}
+                      disabled={busy}
                       onChange={(event) => {
                         const next = playerStrokeStylesRef.current.map((style, playerIndex) =>
                           playerIndex === index
@@ -1560,6 +1606,7 @@ export default function DmoLiveHost({ displayName, canPrepareFullReplay }: Props
                           manualBackhandOverrides.current = overrides;
                         }
                         setPlayerStrokeStyles(next);
+                        persistPresentationSettings();
                       }}
                     >
                       <option value="one">One-handed</option>
