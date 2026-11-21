@@ -1,6 +1,6 @@
 'use client';
 
-import { useEffect, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import {
   NATIVE_MOTION_STROKES,
   nativeMotionClipSupportsStroke,
@@ -12,6 +12,7 @@ import {
   type NativeMotionPicks,
   type NativeMotionStroke,
 } from '@/lib/nativeMotionCatalogData';
+import { getDmoCharacterGruntGroups } from '@/lib/dmoCharacterAppearance.mjs';
 import {
   NATIVE_MOTION_CATALOG_SHA256,
   NATIVE_MOTION_GESTURE_CATALOG_SHA256,
@@ -22,11 +23,24 @@ import styles from './DmoLiveHost.module.css';
 
 type Draft = Partial<Record<NativeMotionStroke, { clipId: string; sourceHandedness: NativeMotionHand | '' }>>;
 type GestureDraft = NativeMotionGesturePicks;
+type GruntOverride = null | { gruntGroup: string | null };
+export type LiveStreamAnimationDraft = {
+  playerClips: [NativeMotionPicks, NativeMotionPicks];
+  playerGestures: [GestureDraft, GestureDraft];
+  playerGruntOverrides: [GruntOverride, GruntOverride];
+  missingSourceHandedness: boolean;
+};
 type Props = {
-  broadcastId: string;
+  broadcastId?: string | null;
   open: readonly [boolean, boolean];
   labels: readonly [string, string];
+  disabled?: boolean;
+  suppressRememberedRestore?: boolean;
+  onDraftChange?: (draft: LiveStreamAnimationDraft) => void;
 };
+
+const NONE = '__profile_default__';
+const NO_GRUNT = '__no_grunt__';
 
 function rememberKey(owner: string, index: 0 | 1) {
   return `wtsl-live-animations:${owner}:${index}`;
@@ -56,13 +70,16 @@ const complete = (draft: Draft): NativeMotionPicks => Object.fromEntries(
   }),
 ) as NativeMotionPicks;
 
-/** Per-stream choices for no-character players, remembered per streamer/device. */
-export default function LiveStreamAnimationPicker({ broadcastId, open, labels }: Props) {
+/** Per-stream motion and sound choices; draft controls are available before a stream starts. */
+export default function LiveStreamAnimationPicker({
+  broadcastId, open, labels, disabled = false, suppressRememberedRestore = false, onDraftChange,
+}: Props) {
   const [catalog, setCatalog] = useState<NativeMotionCatalog | null>(null);
   const [gestureCatalog, setGestureCatalog] = useState<NativeMotionCatalog | null>(null);
   const [gestureCatalogStatus, setGestureCatalogStatus] = useState<'loading' | 'ready' | 'unavailable'>('loading');
   const [drafts, setDrafts] = useState<[Draft, Draft]>([{}, {}]);
   const [gestureDrafts, setGestureDrafts] = useState<[GestureDraft, GestureDraft]>([{}, {}]);
+  const [gruntDrafts, setGruntDrafts] = useState<[string, string]>([NONE, NONE]);
   const [owner, setOwner] = useState('');
   const [loadedStream, setLoadedStream] = useState('');
   const [busy, setBusy] = useState(false);
@@ -70,6 +87,27 @@ export default function LiveStreamAnimationPicker({ broadcastId, open, labels }:
   const [message, setMessage] = useState('');
   const [expanded, setExpanded] = useState(false);
   const anyOpen = open[0] || open[1];
+  const gruntGroups = useMemo(() => getDmoCharacterGruntGroups(), []);
+  const onDraftChangeRef = useRef(onDraftChange);
+  onDraftChangeRef.current = onDraftChange;
+
+  function reportDraft(
+    nextDrafts = drafts,
+    nextGestures = gestureDrafts,
+    nextGrunts = gruntDrafts,
+  ) {
+    onDraftChangeRef.current?.({
+      playerClips: [complete(nextDrafts[0]), complete(nextDrafts[1])],
+      playerGestures: [{ ...nextGestures[0] }, { ...nextGestures[1] }],
+      playerGruntOverrides: nextGrunts.map((value) => (
+        value === NONE ? null : { gruntGroup: value === NO_GRUNT ? null : value }
+      )) as [GruntOverride, GruntOverride],
+      missingSourceHandedness: nextDrafts.some((draft) => NATIVE_MOTION_STROKES.some((stroke) => (
+        Boolean(draft[stroke]?.clipId)
+        && !['left', 'right'].includes(draft[stroke]?.sourceHandedness ?? '')
+      ))),
+    });
+  }
 
   useEffect(() => {
     if (!anyOpen) return;
@@ -106,7 +144,11 @@ export default function LiveStreamAnimationPicker({ broadcastId, open, labels }:
   }, [anyOpen]);
 
   useEffect(() => {
-    if (!anyOpen) return;
+    const streamId = broadcastId;
+    if (!anyOpen || !streamId) {
+      setLoadedStream('');
+      return;
+    }
     let active = true;
     const controller = new AbortController();
     let savedLoaded = false;
@@ -115,18 +157,22 @@ export default function LiveStreamAnimationPicker({ broadcastId, open, labels }:
     setMessage('');
     (async () => {
       try {
-        const endpoint = `/api/live-dmo/${encodeURIComponent(broadcastId)}/animations`;
+        const endpoint = `/api/live-dmo/${encodeURIComponent(streamId)}/animations`;
         const response = await fetch(endpoint, { cache: 'no-store', signal: controller.signal });
         const body = await response.json();
         if (!response.ok) throw new Error(body.error || 'Stream animations could not be loaded.');
         const saved = body.playerClips as [NativeMotionPicks, NativeMotionPicks];
         const savedGestures = (body.playerGestures ?? [{}, {}]) as [GestureDraft, GestureDraft];
+        const savedGrunts = (body.playerGruntOverrides ?? [null, null]) as [GruntOverride, GruntOverride];
         if (!Array.isArray(saved) || saved.length !== 2 || !body.ownerDiscordId) throw new Error('Invalid stream animation response.');
         const streamer = String(body.ownerDiscordId);
         const next: [Draft, Draft] = [{ ...saved[0] }, { ...saved[1] }];
+        const nextGrunts = savedGrunts.map((override) => (
+          override === null ? NONE : override.gruntGroup ?? NO_GRUNT
+        )) as [string, string];
         const apply: [NativeMotionPicks | null, NativeMotionPicks | null] = [null, null];
         ([0, 1] as const).forEach((index) => {
-          if (!open[index] || Object.keys(saved[index] ?? {}).length) return;
+          if (suppressRememberedRestore || !open[index] || Object.keys(saved[index] ?? {}).length) return;
           const picks = complete(remembered(streamer, index));
           if (!Object.keys(picks).length) return;
           apply[index] = picks;
@@ -135,6 +181,13 @@ export default function LiveStreamAnimationPicker({ broadcastId, open, labels }:
         setOwner(streamer);
         setDrafts(next);
         setGestureDrafts([{ ...savedGestures[0] }, { ...savedGestures[1] }]);
+        setGruntDrafts(nextGrunts);
+        reportDraft(next, savedGestures, nextGrunts);
+        ([0, 1] as const).forEach((index) => {
+          if (open[index] && Object.keys(saved[index] ?? {}).length) {
+            remember(streamer, index, next[index]);
+          }
+        });
         savedLoaded = true;
         if (apply.some(Boolean)) {
           const restore = await fetch(endpoint, {
@@ -151,48 +204,61 @@ export default function LiveStreamAnimationPicker({ broadcastId, open, labels }:
           if (!refreshed.ok) throw new Error(actual.error || 'Restored animations could not be loaded.');
           if (active) {
             setDrafts(actual.playerClips);
-            setGestureDrafts(actual.playerGestures ?? [{}, {}]);
+            const actualGestures = actual.playerGestures ?? [{}, {}];
+            const actualGrunts = actual.playerGruntOverrides ?? [null, null];
+            const actualGruntDrafts = actualGrunts.map((override: GruntOverride) => (
+              override === null ? NONE : override.gruntGroup ?? NO_GRUNT
+            )) as [string, string];
+            setGestureDrafts(actualGestures);
+            setGruntDrafts(actualGruntDrafts);
+            reportDraft(actual.playerClips, actualGestures, actualGruntDrafts);
             setMessage('Your saved animations are applied to this stream.');
           }
         }
-        if (active) setLoadedStream(broadcastId);
+        if (active) setLoadedStream(streamId);
       } catch (cause) {
         if (active) {
           setError(cause instanceof Error ? cause.message : 'Stream animations could not be loaded.');
-          if (savedLoaded) setLoadedStream(broadcastId);
+          if (savedLoaded) setLoadedStream(streamId);
         }
       }
     })();
     return () => { active = false; controller.abort(); };
-  }, [broadcastId, anyOpen, open[0], open[1]]);
+  }, [broadcastId, anyOpen, open[0], open[1], suppressRememberedRestore]);
 
   if (!anyOpen) return null;
 
   function change(index: 0 | 1, stroke: NativeMotionStroke, clipId: string, hand?: NativeMotionHand | '') {
-    setDrafts((current) => {
-      const next: [Draft, Draft] = [{ ...current[0] }, { ...current[1] }];
-      if (!clipId) delete next[index][stroke];
-      else next[index][stroke] = {
-        clipId,
-        sourceHandedness: hand ?? catalog?.clips.find((clip) => clip.id === clipId)?.sourceHandedness ?? '',
-      };
-      return next;
-    });
+    const next: [Draft, Draft] = [{ ...drafts[0] }, { ...drafts[1] }];
+    if (!clipId) delete next[index][stroke];
+    else next[index][stroke] = {
+      clipId,
+      sourceHandedness: hand ?? catalog?.clips.find((clip) => clip.id === clipId)?.sourceHandedness ?? '',
+    };
+    setDrafts(next);
+    reportDraft(next);
     setMessage('');
   }
 
   function changeGesture(index: 0 | 1, type: string, pick: NativeMotionGesturePick | null) {
-    setGestureDrafts((current) => {
-      const next: [GestureDraft, GestureDraft] = [{ ...current[0] }, { ...current[1] }];
-      if (!pick) delete next[index][type];
-      else next[index][type] = pick;
-      return next;
-    });
+    const next: [GestureDraft, GestureDraft] = [{ ...gestureDrafts[0] }, { ...gestureDrafts[1] }];
+    if (!pick) delete next[index][type];
+    else next[index][type] = pick;
+    setGestureDrafts(next);
+    reportDraft(drafts, next);
+    setMessage('');
+  }
+
+  function changeGrunt(index: 0 | 1, value: string) {
+    const next = [...gruntDrafts] as [string, string];
+    next[index] = value;
+    setGruntDrafts(next);
+    reportDraft(drafts, gestureDrafts, next);
     setMessage('');
   }
 
   async function save() {
-    if (loadedStream !== broadcastId || !owner) return;
+    if (!broadcastId || loadedStream !== broadcastId || !owner) return;
     setBusy(true);
     setError('');
     setMessage('');
@@ -208,12 +274,16 @@ export default function LiveStreamAnimationPicker({ broadcastId, open, labels }:
       }
       const playerClips = ([0, 1] as const).map((index) => (open[index] ? complete(drafts[index]) : null));
       const playerGestures = ([0, 1] as const).map((index) => (open[index] ? gestureDrafts[index] : null));
+      const playerGruntOverrides = gruntDrafts.map((value) => (
+        value === NONE ? null : { gruntGroup: value === NO_GRUNT ? null : value }
+      )) as [GruntOverride, GruntOverride];
       const response = await fetch(`/api/live-dmo/${encodeURIComponent(broadcastId)}/animations`, {
         method: 'PUT',
         headers: { 'content-type': 'application/json' },
         body: JSON.stringify({
           playerClips,
           ...(gestureCatalog ? { playerGestures } : {}),
+          playerGruntOverrides,
         }),
       });
       const body = await response.json();
@@ -236,13 +306,22 @@ export default function LiveStreamAnimationPicker({ broadcastId, open, labels }:
       {expanded && (
         <>
           <small className={styles.characterRosterStatus}>
-            For players with no WTSL character, such as a created character. Choose one clip per stroke
-            or gesture type. Stroke choices are remembered on this device; gesture choices are saved to this stream.
+            Choose motion, gesture, and grunt overrides for either player, including players with a WTSL character.
+            Stroke choices are remembered on this device; other choices are saved to this stream.
           </small>
           {!catalog && !error && <small role="status">Loading animations…</small>}
           {catalog && ([0, 1] as const).filter((index) => open[index]).map((index) => (
-            <fieldset className={styles.animationPlayer} key={index} disabled={busy || loadedStream !== broadcastId}>
+            <fieldset className={styles.animationPlayer} key={index}
+              disabled={disabled || busy || Boolean(broadcastId && loadedStream !== broadcastId)}>
               <legend>{labels[index]}</legend>
+              <label className={styles.bestOf}>
+                <span>Grunt bank</span>
+                <select value={gruntDrafts[index]} onChange={(event) => changeGrunt(index, event.currentTarget.value)}>
+                  <option value={NONE}>Use character profile</option>
+                  <option value={NO_GRUNT}>No grunt</option>
+                  {gruntGroups.map((group) => <option key={group.id} value={group.id}>{group.label}</option>)}
+                </select>
+              </label>
               {NATIVE_MOTION_STROKES.map((stroke) => {
                 const pick = drafts[index][stroke];
                 const labelId = `stream-${index}-${stroke}-label`;
@@ -305,10 +384,10 @@ export default function LiveStreamAnimationPicker({ broadcastId, open, labels }:
               </div>
             </fieldset>
           ))}
-          {catalog && (
+          {broadcastId && catalog && (
             <button type="button" className={styles.secondaryButton}
-              disabled={busy || loadedStream !== broadcastId} onClick={() => void save()}>
-              {busy ? 'Saving…' : 'Save animations'}
+              disabled={disabled || busy || loadedStream !== broadcastId} onClick={() => void save()}>
+              {busy ? 'Saving…' : 'Save live settings'}
             </button>
           )}
         </>
