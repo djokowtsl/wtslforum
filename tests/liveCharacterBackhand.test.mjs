@@ -31,7 +31,7 @@ test('host uses full-roster hand metadata and publishes setup changes without wa
   const host = await readFile(new URL('../components/DmoLiveHost.tsx', import.meta.url), 'utf8');
   assert.match(host, /body\.character_filter_metadata/);
   assert.match(host, /characterBroadcastSetup\(body\?\.profile\)/);
-  assert.equal((host.match(/handedness: resolveBroadcastHandedness\(/g) ?? []).length, 5);
+  assert.equal((host.match(/handedness: resolveBroadcastHandedness\(/g) ?? []).length, 6);
   assert.match(host, /lastHeartbeat\.current = 0;\s*\}, \[characterHands, characterBackhandTypes, playerHands, playerStrokeStyles\]/);
 });
 
