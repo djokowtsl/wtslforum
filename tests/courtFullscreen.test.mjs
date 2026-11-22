@@ -202,14 +202,32 @@ test('fullscreen fills the available screen and retains desktop playback control
   assert.match(fallbackCourt, /BROADCAST_RENDER_QUALITY_OPTIONS\.map/);
 });
 
-test('mobile fullscreen hides settings and playback UI but keeps an independent exit action', () => {
-  assert.match(liveCourt, /className=\{`\$\{styles\.soundButton\} \$\{styles\.mobileFullscreenExit\}`\}/);
-  const mobileStyles = styles.slice(styles.indexOf('/* Phone portrait and landscape fullscreen'));
-  assert.match(mobileStyles, /@media \(max-width: 900px\)/);
-  assert.match(mobileStyles, /\.controls > :not\(\.mobileFullscreenExit\)/);
-  assert.match(mobileStyles, /\.replayControls,[\s\S]*display:\s*none !important/);
-  assert.match(mobileStyles, /\.mobileFullscreenExit\s*\{[^}]*position:\s*absolute[^}]*pointer-events:\s*auto/s);
-  assert.match(mobileStyles, /top:\s*max\(12px, env\(safe-area-inset-top\)\)/);
+test('live and replay courts share one toolbar: share, full screen and Camera & sound', () => {
+  // The same settings button for live streams and replays (live used to pin a panel open).
+  assert.match(liveCourt, /className=\{styles\.replaySettings\}\s*open=\{settingsOpen\}/);
+  assert.doesNotMatch(liveCourt, /styles\.liveSettings/);
+  assert.match(liveCourt, /<summary aria-label="Camera and sound settings">/);
+  // Full screen sits in the toolbar row, outside the collapsible settings.
+  const actions = liveCourt.slice(liveCourt.indexOf('className={styles.toolbarActions}'), liveCourt.indexOf('className={styles.replaySettings}'));
+  assert.match(actions, /<CourtFullscreenButton/);
+  assert.match(actions, /aria-label="Share a link to this live match"/);
+  assert.match(liveCourt, /url\.hash = `broadcast-\$\{commentaryBroadcastId\}`/);
+});
+
+test('full screen keeps the score and the controls, fading them when idle (phones included)', () => {
+  assert.match(liveCourt, /className=\{styles\.courtScoreBug\}/);
+  assert.match(liveCourt, /data-chrome-idle=\{chromeHidden \? 'true' : undefined\}/);
+  assert.match(liveCourt, /chromeIdle && !settingsOpen && !pointListOpen/);
+  assert.match(styles, /\.scene:fullscreen \.courtScoreBug,[\s\S]*?display:\s*grid/);
+  assert.match(styles, /\.scene\.fullscreenFallback\[data-chrome-idle='true'\] \.toolbar,[\s\S]*?opacity:\s*0;\s*pointer-events:\s*none/);
+  const mobileStyles = styles.slice(styles.indexOf('/* Phone fullscreen keeps what you need to watch'));
+  const mobileBlock = mobileStyles.slice(0, mobileStyles.indexOf('/* Toolbar actions next to Camera & sound'));
+  assert.match(mobileBlock, /@media \(max-width: 900px\)/);
+  // Phones no longer hide the controls, the replay bar or the score.
+  assert.doesNotMatch(mobileBlock, /\.replayControls,[^{]*\{[^}]*display:\s*none/);
+  assert.doesNotMatch(mobileBlock, /\.controls > :not/);
+  assert.doesNotMatch(mobileBlock, /\.courtScoreBug[^{]*\{[^}]*display:\s*none/);
+  assert.match(mobileBlock, /\.replaySettings\[open\] \.controls\s*\{[^}]*overflow-y:\s*auto/);
   assert.match(fullscreenButton, /aria-label=\{isFullscreen \? 'Exit full screen'/);
 });
 

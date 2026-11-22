@@ -340,14 +340,6 @@
   padding-top: 6px;
 }
 
-.liveSettings {
-  display: contents;
-}
-
-.liveSettings > summary {
-  display: none;
-}
-
 .title {
   display: flex;
   align-items: center;
@@ -1021,21 +1013,17 @@
   }
 }
 
-/* Phone portrait and landscape fullscreen are court-only, except for a reachable
-   exit action. Never place that action inside a scrolling settings panel. */
+/* Phone fullscreen keeps what you need to watch: the score bug, and one row
+   of controls (share, exit, Camera & sound) plus the replay bar. Both fade
+   after a few quiet seconds and come back on a tap. The exit action lives in
+   that row, never inside a scrolling settings panel. */
 @media (max-width: 900px) {
   .scene:fullscreen .title,
   .scene:-webkit-full-screen .title,
   .scene.fullscreenFallback .title,
-  .scene:fullscreen .controls > :not(.mobileFullscreenExit),
-  .scene:-webkit-full-screen .controls > :not(.mobileFullscreenExit),
-  .scene.fullscreenFallback .controls > :not(.mobileFullscreenExit),
   .scene:fullscreen .legend,
   .scene:-webkit-full-screen .legend,
   .scene.fullscreenFallback .legend,
-  .scene:fullscreen .replayControls,
-  .scene:-webkit-full-screen .replayControls,
-  .scene.fullscreenFallback .replayControls,
   .scene:fullscreen .soundError,
   .scene:-webkit-full-screen .soundError,
   .scene.fullscreenFallback .soundError {
@@ -1045,45 +1033,224 @@
   .scene:fullscreen .toolbar,
   .scene:-webkit-full-screen .toolbar,
   .scene.fullscreenFallback .toolbar {
-    inset: 0;
-    max-height: none;
+    justify-content: flex-end;
+    gap: 6px;
     min-height: 0;
-    padding: 0;
     border: 0;
-    overflow: visible;
-    background: transparent;
+    background: linear-gradient(180deg, rgba(6, 13, 29, .82), rgba(6, 13, 29, 0));
     backdrop-filter: none;
-    pointer-events: none;
   }
 
-  .scene:fullscreen .mobileFullscreenExit,
-  .scene:-webkit-full-screen .mobileFullscreenExit,
-  .scene.fullscreenFallback .mobileFullscreenExit {
-    position: absolute;
-    top: max(12px, env(safe-area-inset-top));
-    right: max(12px, env(safe-area-inset-right));
-    z-index: 10;
-    display: inline-flex;
-    width: 46px;
-    height: 46px;
-    min-height: 46px;
-    padding: 0;
-    border: 1px solid rgba(231, 238, 248, .5);
-    border-radius: 50%;
-    background: rgba(6, 13, 29, .88);
-    color: #f1f5fb;
-    pointer-events: auto;
-  }
-
-  .scene:fullscreen .mobileFullscreenExit span,
-  .scene:-webkit-full-screen .mobileFullscreenExit span,
-  .scene.fullscreenFallback .mobileFullscreenExit span {
+  .scene:fullscreen .settingsLabel small,
+  .scene:-webkit-full-screen .settingsLabel small,
+  .scene.fullscreenFallback .settingsLabel small,
+  .scene:fullscreen .fullscreenAction span,
+  .scene:-webkit-full-screen .fullscreenAction span,
+  .scene.fullscreenFallback .fullscreenAction span {
     position: absolute;
     width: 1px;
     height: 1px;
     overflow: hidden;
     clip-path: inset(50%);
     white-space: nowrap;
+  }
+
+  .scene:fullscreen .replaySettings[open] .controls,
+  .scene:-webkit-full-screen .replaySettings[open] .controls,
+  .scene.fullscreenFallback .replaySettings[open] .controls {
+    max-height: 52dvh;
+    overflow-y: auto;
+    overscroll-behavior: contain;
+  }
+
+  .scene:fullscreen .replayControls,
+  .scene:-webkit-full-screen .replayControls,
+  .scene.fullscreenFallback .replayControls {
+    flex-wrap: wrap;
+    gap: 6px;
+    padding: 8px max(10px, env(safe-area-inset-right)) max(10px, env(safe-area-inset-bottom)) max(10px, env(safe-area-inset-left));
+  }
+
+  .scene:fullscreen .courtScoreBug,
+  .scene:-webkit-full-screen .courtScoreBug,
+  .scene.fullscreenFallback .courtScoreBug {
+    top: calc(max(8px, env(safe-area-inset-top)) + 52px);
+    left: max(8px, env(safe-area-inset-left));
+    font-size: 11px;
+  }
+}
+
+/* Toolbar actions next to Camera & sound: share (live) and full screen. */
+.toolbarActions {
+  display: inline-flex;
+  flex: 0 0 auto;
+  align-items: center;
+  gap: 6px;
+  margin-left: auto;
+}
+
+.toolbarActions + .replaySettings {
+  margin-left: 0;
+}
+
+.fullscreenAction {
+  min-height: 40px;
+}
+
+/* The score on the court: only in full screen, where the page's own
+   scoreboard can't be seen. */
+.courtScoreBug {
+  display: none;
+}
+
+.scene:fullscreen .courtScoreBug,
+.scene:-webkit-full-screen .courtScoreBug,
+.scene.fullscreenFallback .courtScoreBug {
+  position: absolute;
+  top: calc(max(10px, env(safe-area-inset-top)) + 66px);
+  left: max(12px, env(safe-area-inset-left));
+  z-index: 4;
+  display: grid;
+  gap: 2px;
+  min-width: 170px;
+  max-width: min(320px, calc(100% - 24px));
+  padding: 7px 9px 8px;
+  border: 1px solid rgba(152, 174, 207, .28);
+  border-radius: 9px;
+  background: rgba(6, 13, 29, .82);
+  backdrop-filter: blur(8px);
+  color: #e7eef8;
+  font: 700 12px/1.25 system-ui, sans-serif;
+  font-variant-numeric: tabular-nums;
+  pointer-events: none;
+  transition: top 280ms ease;
+}
+
+/* With the controls faded, the score moves up into their place. */
+.scene:fullscreen[data-chrome-idle='true'] .courtScoreBug,
+.scene:-webkit-full-screen[data-chrome-idle='true'] .courtScoreBug,
+.scene.fullscreenFallback[data-chrome-idle='true'] .courtScoreBug {
+  top: max(10px, env(safe-area-inset-top));
+}
+
+.courtScoreStatus {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  margin-bottom: 2px;
+  color: #a9b8cd;
+  font: 800 9px/1 system-ui, sans-serif;
+  letter-spacing: .08em;
+  text-transform: uppercase;
+}
+
+.courtScoreStatus i {
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: #8ea0b8;
+}
+
+.courtScoreStatus i[data-live='true'] {
+  background: #ff4d4d;
+  box-shadow: 0 0 0 3px rgba(255, 77, 77, .18);
+}
+
+.courtScoreRow {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.courtScoreName {
+  display: inline-flex;
+  flex: 1 1 auto;
+  align-items: center;
+  gap: 6px;
+  min-width: 0;
+}
+
+.courtScoreName > span {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.courtScoreName > i {
+  flex: 0 0 auto;
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+}
+
+.courtScoreName > i[data-serving='true'] {
+  background: #b0f43b;
+}
+
+.courtScoreSet {
+  flex: 0 0 auto;
+  min-width: 12px;
+  color: #8ea0b8;
+  text-align: center;
+}
+
+.courtScoreSet[data-won='true'] {
+  color: #e7eef8;
+}
+
+.courtScoreGames {
+  flex: 0 0 auto;
+  min-width: 14px;
+  text-align: center;
+}
+
+.courtScorePoints {
+  flex: 0 0 auto;
+  min-width: 26px;
+  padding: 1px 4px;
+  border-radius: 4px;
+  background: rgba(176, 244, 59, .16);
+  color: #c9f27a;
+  text-align: center;
+}
+
+/* Full screen: controls fade when nothing has happened for a few seconds. */
+.scene:fullscreen .toolbar,
+.scene:-webkit-full-screen .toolbar,
+.scene.fullscreenFallback .toolbar,
+.scene:fullscreen .replayControls,
+.scene:-webkit-full-screen .replayControls,
+.scene.fullscreenFallback .replayControls,
+.scene:fullscreen .legend,
+.scene:-webkit-full-screen .legend,
+.scene.fullscreenFallback .legend {
+  transition: opacity 320ms ease;
+}
+
+.scene:fullscreen[data-chrome-idle='true'],
+.scene:-webkit-full-screen[data-chrome-idle='true'],
+.scene.fullscreenFallback[data-chrome-idle='true'] {
+  cursor: none;
+}
+
+.scene:fullscreen[data-chrome-idle='true'] .toolbar,
+.scene:-webkit-full-screen[data-chrome-idle='true'] .toolbar,
+.scene.fullscreenFallback[data-chrome-idle='true'] .toolbar,
+.scene:fullscreen[data-chrome-idle='true'] .replayControls,
+.scene:-webkit-full-screen[data-chrome-idle='true'] .replayControls,
+.scene.fullscreenFallback[data-chrome-idle='true'] .replayControls,
+.scene:fullscreen[data-chrome-idle='true'] .legend,
+.scene:-webkit-full-screen[data-chrome-idle='true'] .legend,
+.scene.fullscreenFallback[data-chrome-idle='true'] .legend {
+  opacity: 0;
+  pointer-events: none;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .scene:fullscreen .courtScoreBug,
+  .scene:-webkit-full-screen .courtScoreBug,
+  .scene.fullscreenFallback .courtScoreBug {
+    transition: none;
   }
 }
 

@@ -1,0 +1,100 @@
+{
+ "version": 1,
+ "vertexCount": 16165,
+ "regionCount": 5189,
+ "positionChecksum": 8512.9873,
+ "source": "Google VALID avatar library (MIT), transplanted onto native-player.glb by scripts/buildPlayerHeads.py",
+ "heads": [
+  {
+   "key": "aian-f-1",
+   "gender": "female",
+   "skin": "#c6906e",
+   "iris": "#3a2418",
+   "texture": "aian-f-1.jpg"
+  },
+  {
+   "key": "asian-f-1",
+   "gender": "female",
+   "skin": "#dfa37e",
+   "iris": "#3a2418",
+   "texture": "asian-f-1.jpg"
+  },
+  {
+   "key": "black-f-1",
+   "gender": "female",
+   "skin": "#6b3c2a",
+   "iris": "#3a2418",
+   "texture": "black-f-1.jpg"
+  },
+  {
+   "key": "hispanic-f-1",
+   "gender": "female",
+   "skin": "#d6977a",
+   "iris": "#3a2418",
+   "texture": "hispanic-f-1.jpg"
+  },
+  {
+   "key": "mena-f-1",
+   "gender": "female",
+   "skin": "#c48e79",
+   "iris": "#3a2418",
+   "texture": "mena-f-1.jpg"
+  },
+  {
+   "key": "white-f-1",
+   "gender": "female",
+   "skin": "#e1ac8c",
+   "iris": "#567648",
+   "texture": "white-f-1.jpg"
+  },
+  {
+   "key": "aian-m-1",
+   "gender": "male",
+   "skin": "#c39166",
+   "iris": "#603e24",
+   "texture": "aian-m-1.jpg"
+  },
+  {
+   "key": "asian-m-1",
+   "gender": "male",
+   "skin": "#e0a37c",
+   "iris": "#3a2418",
+   "texture": "asian-m-1.jpg"
+  },
+  {
+   "key": "black-m-1",
+   "gender": "male",
+   "skin": "#78563d",
+   "iris": "#3a2418",
+   "texture": "black-m-1.jpg"
+  },
+  {
+   "key": "hispanic-m-1",
+   "gender": "male",
+   "skin": "#cb8e73",
+   "iris": "#3a2418",
+   "texture": "hispanic-m-1.jpg"
+  },
+  {
+   "key": "mena-m-1",
+   "gender": "male",
+   "skin": "#c59883",
+   "iris": "#3a2418",
+   "texture": "mena-m-1.jpg"
+  },
+  {
+   "key": "nhpi-m-1",
+   "gender": "male",
+   "skin": "#cb926f",
+   "iris": "#3a2418",
+   "texture": "nhpi-m-1.jpg"
+  },
+  {
+   "key": "white-m-1",
+   "gender": "male",
+   "skin": "#dea183",
+   "iris": "#603e24",
+   "texture": "white-m-1.jpg"
+  }
+ ]
+}

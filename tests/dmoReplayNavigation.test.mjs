@@ -239,7 +239,7 @@ test('the replay court wires navigation, shortcuts and remembered settings', asy
   assert.match(court, /replaySpeedLocked/, 'broadcast replays do not change the stream speed');
   assert.match(court, /RALLY SHOT/, 'rally callouts use a factual shot label');
   assert.match(court, /<strong>Camera &amp; sound<\/strong>/, 'full replay settings sit behind a clear Camera & sound button');
-  assert.match(court, /data-hint=\{fullReplay && !settingsSeen \? 'true' : undefined\}/, 'it draws attention until first opened');
+  assert.match(court, /data-hint=\{!settingsSeen \? 'true' : undefined\}/, 'it draws attention until first opened (live and replays)');
   assert.match(court, /saveDmoBroadcastSettings\(\{ settingsSeen: true \}\)/);
   assert.match(court, /window\.addEventListener\('keydown', onKeyDown\)/);
   assert.match(court, /input:not\(\[type="range"\]\), select, textarea/, 'shortcuts never fire while typing');
