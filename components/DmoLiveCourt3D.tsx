@@ -177,7 +177,8 @@ import { bundledCaptureTiming, type BundledMotionSource } from './DmoBundledGrou
 import { attachHumanCourtStaff } from './DmoHumanCrowd';
 import { attachSpectatorCrowd, loadSpectatorModel, loadDiverseSpectatorModel } from './DmoSpectatorCrowd';
 import { DIVERSE_SPECTATORS } from '../lib/dmoSpectatorRoster';
-import { ATP_PLAYER_KITS, WTA_PLAYER_KITS } from './DmoNativeKit';
+import { ATP_PLAYER_KITS, WTA_PLAYER_KITS, aimNativePlayerEyes } from './DmoNativeKit';
+import { loadPlayerHeads } from './DmoPlayerHeads';
 import { selectDmoPlayerKitIndices } from '@/lib/dmoPlayerWardrobe.mjs';
 import { racketCarryOrientation, racketContactOrientation, racketGripElbow, racketGripWrist } from './DmoRacketOrientation';
 import type { StadiumScoreboardData } from './DmoStadiumArchitecture';
@@ -570,6 +571,10 @@ function ThreeCourt({
   const [showPointCaptions, setShowPointCaptions] = useState(true);
   const [closeCallCaption, setCloseCallCaption] = useState<{ title: string; detail: string } | null>(null);
   const [shareStatus, setShareStatus] = useState('');
+  // In full screen the controls fade after a few quiet seconds, like a video
+  // player, and come back on any touch, click, mouse move or key.
+  const [chromeIdle, setChromeIdle] = useState(false);
+  const chromeTimerRef = useRef<number | null>(null);
   const closeCallSeenRef = useRef(new Set<number>());
   const activeCloseCallRef = useRef<{
     call: DmoReplayCloseCall;
@@ -1090,6 +1095,7 @@ function ThreeCourt({
     const selectedPlayerKits = playerKitIndices.map((kitIndex, index) => ({
       ...playerKits[kitIndex],
       skinColor: playerAppearances[index]?.complexionColor ?? null,
+      faceSeed: String(playerCharacters[index] ?? snapshot.players[index] ?? '') || null,
     })) as [typeof playerKits[number], typeof playerKits[number]];
     players.forEach(({ root }, index) => {
       root.userData.dominantHandedness = sceneDataRef.current.snapshot.handedness?.[index] ?? 'right';
@@ -1098,10 +1104,16 @@ function ThreeCourt({
     players.forEach(({ root }) => scene.add(root));
     const modelLoad = new AbortController();
     let detailedPlayersReady = false;
+    let playerHeadsRetained = false;
     setModelStatus('loading');
     Promise.allSettled([
       loadHumanModel(isWta ? 'female' : 'male', 'player', modelLoad.signal, modelAssetBase,
         playerBundledMotions?.find(Boolean)?.schema.modelHash),
+      // Real faces for the two players (each keeps theirs from match to match).
+      loadPlayerHeads(isWta ? 'female' : 'male',
+        selectedPlayerKits.map(kit => kit.faceSeed ?? kit.id),
+        selectedPlayerKits.map(kit => kit.skinColor),
+        modelLoad.signal, modelAssetBase),
       loadSpectatorModel('male', 'far', modelLoad.signal, modelAssetBase),
       loadSpectatorModel('female', 'far', modelLoad.signal, modelAssetBase),
       loadHumanModel('male', 'crowd-high', modelLoad.signal, modelAssetBase),
@@ -1112,12 +1124,16 @@ function ThreeCourt({
     ]).then((results) => {
       try {
         if (modelLoad.signal.aborted) return;
-        const [player, maleCrowd, femaleCrowd, maleStaff, femaleStaff, maleHighDetailCrowd, femaleHighDetailCrowd, ...diverseCrowd] = results;
+        const [player, playerHeads, maleCrowd, femaleCrowd, maleStaff, femaleStaff, maleHighDetailCrowd, femaleHighDetailCrowd, ...diverseCrowd] = results;
         if (player.status === 'fulfilled') {
+          // Without the head files, players fall back to sculpted faces.
+          const heads = playerHeads.status === 'fulfilled' ? playerHeads.value : [null, null];
+          // These textures are now referenced by the visible player materials.
+          playerHeadsRetained = true;
           attachHumanPlayer(player.value, players[0], PALETTE.shirtOne, undefined, undefined,
-            selectedPlayerKits[0], 0, playerBundledMotions?.[0] ?? undefined);
+            { ...selectedPlayerKits[0], head: heads[0] }, 0, playerBundledMotions?.[0] ?? undefined);
           attachHumanPlayer(player.value, players[1], PALETTE.shirtTwo, undefined, undefined,
-            selectedPlayerKits[1], 1, playerBundledMotions?.[1] ?? undefined);
+            { ...selectedPlayerKits[1], head: heads[1] }, 1, playerBundledMotions?.[1] ?? undefined);
           detailedPlayersReady = true;
         }
         if (maleCrowd.status === 'fulfilled' && femaleCrowd.status === 'fulfilled') {
@@ -1151,7 +1167,14 @@ function ThreeCourt({
         setModelStatus(highDetailFailed ? 'partial' : 'ready');
       } finally {
         // Visible instances retain texture maps; discard only the unused template buffers.
-        results.forEach((result) => { if (result.status === 'fulfilled') disposeHumanModel(result.value, modelLoad.signal.aborted); });
+        results.forEach((result) => {
+          if (result.status !== 'fulfilled') return;
+          if (result.value instanceof THREE.Object3D) {
+            disposeHumanModel(result.value, modelLoad.signal.aborted);
+          } else if (!playerHeadsRetained) {
+            result.value.forEach(head => head?.texture.dispose());
+          }
+        });
       }
     }).catch((error: unknown) => {
       if (modelLoad.signal.aborted) return;
@@ -2971,6 +2994,8 @@ function ThreeCourt({
         }
         const gazeTarget = trailAllowed(trajectoryEventsRef.current, currentFrame) ? ball.position : undefined;
         crowdRig.update(now / 1000, now < crowdApplauseUntil, gazeTarget, camera);
+        // Players watch the ball.
+        for (const player of players) aimNativePlayerEyes(player.root, ball.position);
         fixtureRig.update(gazeTarget);
         const activeView = cameraViewRef.current;
         if (activeView.startsWith('player-') && !review) {
@@ -3661,9 +3686,7 @@ function ThreeCourt({
     replaySpeedRef.current = next;
     setReplaySpeed(next);
   };
-  const shareReplayMoment = async () => {
-    const seconds = (currentFrameNow() - replayStartFrame) / replayFrameRate;
-    const url = dmoReplayMomentUrl(window.location.href, seconds, replayLinkParams);
+  const shareLink = async (url: string | null) => {
     if (!url) return;
     try {
       if (typeof navigator.share === 'function' && window.matchMedia('(pointer: coarse)').matches) {
@@ -3677,6 +3700,30 @@ function ThreeCourt({
       setShareStatus('Couldn\u2019t copy the link');
     }
   };
+  const shareReplayMoment = () => shareLink(dmoReplayMomentUrl(
+    window.location.href, (currentFrameNow() - replayStartFrame) / replayFrameRate, replayLinkParams,
+  ));
+  /** A live match: link to this broadcast on the viewer page. */
+  const shareLiveBroadcast = () => {
+    try {
+      const url = new URL(window.location.href);
+      url.search = '';
+      if (commentaryBroadcastId) url.hash = `broadcast-${commentaryBroadcastId}`;
+      return shareLink(url.toString());
+    } catch {
+      return shareLink(window.location.href);
+    }
+  };
+  const wakeChrome = useCallback(() => {
+    setChromeIdle(false);
+    if (chromeTimerRef.current !== null) window.clearTimeout(chromeTimerRef.current);
+    chromeTimerRef.current = window.setTimeout(() => setChromeIdle(true), 3500);
+  }, []);
+  useEffect(() => () => {
+    if (chromeTimerRef.current !== null) window.clearTimeout(chromeTimerRef.current);
+  }, []);
+  // Never fade while a panel is open.
+  const chromeHidden = chromeIdle && !settingsOpen && !pointListOpen;
   useEffect(() => {
     if (!shareStatus) return;
     const timer = window.setTimeout(() => setShareStatus(''), 2200);
@@ -3881,15 +3928,21 @@ function ThreeCourt({
       ref={sceneElementRef}
       className={styles.scene}
       data-full-replay={fullReplay ? 'true' : undefined}
+      data-chrome-idle={chromeHidden ? 'true' : undefined}
       aria-label={fullReplay ? 'Three-dimensional full match replay' : 'Three-dimensional live court'}
-      onPointerDownCapture={(event) => handleSoundActivationGesture(event.target)}
+      onPointerMove={wakeChrome}
+      onPointerDownCapture={(event) => {
+        wakeChrome();
+        handleSoundActivationGesture(event.target);
+      }}
       onPointerCancelCapture={() => { soundPointerActivationRef.current = false; }}
       onKeyDownCapture={(event) => {
+        wakeChrome();
         if (event.target instanceof Element && event.target.closest('[data-sound-toggle]')) return;
         handleSoundActivationGesture(event.target);
       }}
     >
-      <div className={`${styles.toolbar} ${fullReplay ? styles.replayToolbar : ''}`}>
+      <div className={`${styles.toolbar} ${styles.replayToolbar}`}>
         <div className={styles.title}>
           <span className={styles.liveDot} aria-hidden="true" />
           <strong>{fullReplay ? 'FULL MATCH REPLAY' : 'LIVE'}</strong>
@@ -3907,12 +3960,31 @@ function ThreeCourt({
             </span>
           )}
         </div>
+        <div className={styles.toolbarActions}>
+          {!fullReplay && (
+            <button
+              type="button"
+              className={`${styles.replayIconButton} ${styles.replayShareButton}`}
+              aria-label="Share a link to this live match"
+              title="Share a link to this live match"
+              onClick={() => void shareLiveBroadcast()}
+            >
+              <Share2 size={15} aria-hidden="true" />
+            </button>
+          )}
+          {!fullReplay && shareStatus && <span className={styles.shareStatus} role="status">{shareStatus}</span>}
+          <CourtFullscreenButton
+            targetRef={sceneElementRef}
+            className={`${styles.soundButton} ${styles.fullscreenAction}`}
+            statusClassName={styles.visuallyHidden}
+            fallbackClassName={styles.fullscreenFallback}
+          />
+        </div>
         <details
-          className={fullReplay ? styles.replaySettings : styles.liveSettings}
-          open={fullReplay ? settingsOpen : true}
-          data-hint={fullReplay && !settingsSeen ? 'true' : undefined}
+          className={styles.replaySettings}
+          open={settingsOpen}
+          data-hint={!settingsSeen ? 'true' : undefined}
           onToggle={(event) => {
-            if (!fullReplay) return;
             const open = event.currentTarget.open;
             setSettingsOpen(open);
             if (open && !settingsSeen) {
@@ -3921,8 +3993,8 @@ function ThreeCourt({
             }
           }}
         >
-          <summary aria-label={fullReplay ? 'Camera and sound settings' : 'Court view controls'}>
-            {fullReplay ? (
+          <summary aria-label="Camera and sound settings">
+            {(
               <>
                 <SlidersHorizontal size={16} aria-hidden="true" />
                 <span className={styles.settingsLabel}>
@@ -3938,7 +4010,7 @@ function ThreeCourt({
                 </span>
                 <ChevronDown size={16} aria-hidden="true" className={styles.settingsChevron} />
               </>
-            ) : 'Court view controls'}
+            )}
           </summary>
           <div className={styles.controls} aria-label="Court view controls">
           <div className={styles.presets} role="group" aria-label="Camera angle">
@@ -4002,12 +4074,6 @@ function ThreeCourt({
             <button type="button" aria-label="Zoom in" onClick={() => requestZoom(0.87)}><Plus size={15} /></button>
             <button type="button" aria-label="Reset court camera" onClick={resetCamera}><RotateCcw size={15} /></button>
           </div>
-          <CourtFullscreenButton
-            targetRef={sceneElementRef}
-            className={`${styles.soundButton} ${styles.mobileFullscreenExit}`}
-            statusClassName={styles.visuallyHidden}
-            fallbackClassName={styles.fullscreenFallback}
-          />
           <CourtPictureInPictureButton
             canvasRef={canvasElementRef}
             mediaVideoRef={mediaVideoRef}
@@ -4175,6 +4241,36 @@ function ThreeCourt({
               ? 'Detailed players loaded; some crowd or staff models could not load.'
             : 'Detailed characters could not load. Simplified reconstruction is shown.'}
         </p>
+      )}
+      {scoreboardData.score && (
+        <aside className={styles.courtScoreBug} aria-label={fullReplay ? 'Replay score' : 'Live score'}>
+          <span className={styles.courtScoreStatus}>
+            <i aria-hidden="true" data-live={!fullReplay && !scoreboardData.final ? 'true' : undefined} />
+            {scoreboardData.final ? 'Final' : fullReplay ? 'Replay' : 'Live'}
+          </span>
+          {scoreboardData.players.map((name, index) => {
+            const score = scoreboardData.score!;
+            return (
+              <div className={styles.courtScoreRow} key={`${index}-${name}`}>
+                <span className={styles.courtScoreName}>
+                  <i aria-label={score.server === index + 1 ? 'Serving' : undefined}
+                    data-serving={score.server === index + 1 ? 'true' : undefined} />
+                  <span title={name}>{name}</span>
+                </span>
+                {score.sets.map((set, setIndex) => (
+                  <span key={setIndex} className={styles.courtScoreSet}
+                    data-won={set[index] > set[1 - index] ? 'true' : undefined}>{set[index]}</span>
+                ))}
+                {!scoreboardData.final && (
+                  <>
+                    <strong className={styles.courtScoreGames}>{score.games[index]}</strong>
+                    <strong className={styles.courtScorePoints}>{score.pointText[index]}</strong>
+                  </>
+                )}
+              </div>
+            );
+          })}
+        </aside>
       )}
       <div className={styles.legend}>
         <span><i style={{ backgroundColor: colorToCss(playerLegendColors[0]) }} />{snapshot.players[0]}</span>

@@ -2244,7 +2244,7 @@ test('broadcast court audio defaults on and the Court camera remains the initial
   assert.match(fallback, /void activateSoundFromGesture\(false\)/);
   assert.match(primary, /const \[gruntsEnabled, setGruntsEnabled\] = useState\(true\)/);
   assert.match(primary, /const initialCameraView: Exclude<CameraView, 'custom'> = fullReplay \? 'tv' : 'court'/);
-  assert.match(primary, /onPointerDownCapture=\{\(event\) => handleSoundActivationGesture\(event\.target\)\}/);
+  assert.match(primary, /onPointerDownCapture=\{\(event\) => \{\s*wakeChrome\(\);\s*handleSoundActivationGesture\(event\.target\);\s*\}\}/);
   assert.match(fallback, /onPointerDownCapture=\{\(event\) => handleSoundActivationGesture\(event\.target\)\}/);
   assert.match(primary, /data-sound-toggle/);
   assert.match(fallback, /data-sound-toggle/);

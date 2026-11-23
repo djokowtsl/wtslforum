@@ -153,7 +153,13 @@ function makeFaceVariant(template: THREE.Group, female: boolean, kitIndex: 0 | 1
   if (hairCap instanceof THREE.SkinnedMesh) {
     hairParts.push(extractBoneSurface(hairCap, head, 0.2));
   }
-  const accessoryPattern = /native-player-(?:swept-hair|ponytail|hair-|headband|visor|neat-beard|stubble)/;
+  // Beards and moustaches are skinned shells on the face.
+  model.traverse((object) => {
+    if (object instanceof THREE.SkinnedMesh && object.name.startsWith('native-player-facial-hair-')) {
+      hairParts.push(extractBoneSurface(object, head, 0.2));
+    }
+  });
+  const accessoryPattern = /native-player-(?:swept-hair|ponytail|hair-|headband|visor)/;
   for (const child of head.children) {
     if (child instanceof THREE.Bone || !accessoryPattern.test(child.name)) continue;
     child.traverse((object) => {

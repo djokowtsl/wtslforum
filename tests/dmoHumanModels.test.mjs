@@ -82,8 +82,9 @@ test('expanded tennis wardrobes keep gender-specific cuts and varied hair visibl
   assert.equal(nativeKit.WTA_PLAYER_KITS.length, 16);
   assert.equal(new Set(nativeKit.ATP_PLAYER_KITS.map(kit => kit.shirtColor)).size, 16);
   assert.equal(new Set(nativeKit.WTA_PLAYER_KITS.map(kit => kit.shirtColor)).size, 16);
-  assert.ok(new Set(nativeKit.ATP_PLAYER_KITS.map(kit => kit.maleHairStyle)).size >= 5);
-  assert.ok(new Set(nativeKit.WTA_PLAYER_KITS.map(kit => kit.femaleHairStyle)).size >= 7);
+  assert.ok(new Set(nativeKit.ATP_PLAYER_KITS.map(kit => kit.maleHairStyle)).size >= 9);
+  assert.ok(new Set(nativeKit.WTA_PLAYER_KITS.map(kit => kit.femaleHairStyle)).size >= 10);
+  assert.ok(new Set(nativeKit.ATP_PLAYER_KITS.map(kit => kit.facialHair)).size >= 5);
 
   const menKit = nativeKit.ATP_PLAYER_KITS[2];
   const men = await nativePlayerTemplate('male');
@@ -106,7 +107,7 @@ test('expanded tennis wardrobes keep gender-specific cuts and varied hair visibl
   assert.equal(skirt.geometry.parameters.height, womenKit.skirtLength);
   assert.ok(women.getObjectByName('native-player-hair-braid-left-1'));
   assert.ok(women.getObjectByName('native-player-hair-braid-right-1'));
-  assert.equal(women.getObjectByName('native-player-neat-beard-1'), undefined);
+  assert.equal(women.getObjectByName('native-player-facial-hair-1'), undefined);
   assert.ok(women.getObjectByName('native-tennis-shirt-yoke'));
 });
 const crowds = await loadTs('../components/DmoHumanCrowd.ts', {
@@ -423,11 +424,11 @@ for (const gender of ['male', 'female']) test(`${gender}: continuous native body
   if (gender === 'female') {
     assert.ok(alternateKit.model.getObjectByName('native-player-ponytail-2'));
     assert.ok(alternateKit.model.getObjectByName('native-player-hair-tie-2'));
-    assert.equal(alternateKit.model.getObjectByName('native-player-neat-beard-2'), undefined,
+    assert.equal(alternateKit.model.getObjectByName('native-player-facial-hair-2'), undefined,
       'WTA styling must never inherit the ATP beard option');
   } else {
-    assert.ok(alternateKit.model.getObjectByName('native-player-neat-beard-2'));
-    assert.ok(alternateKit.model.getObjectByName('native-player-stubble-2'));
+    assert.equal(alternateKit.model.getObjectByName('native-player-facial-hair-2').userData.facialHair, 'short-beard');
+    assert.ok(alternateKit.model.getObjectByName('native-player-facial-hair-2-1'), 'a short beard comes with a moustache');
     assert.equal(alternateKit.model.getObjectByName('native-player-ponytail-2'), undefined);
   }
   assert.ok(alternateKit.model.getObjectByName('native-tennis-sweatband-2'));
@@ -511,12 +512,10 @@ for (const gender of ['male', 'female']) test(`${gender}: continuous native body
       'the long ponytail stays behind the head');
     assert.equal(attached.model.getObjectByName('native-player-front-lock-left-1'), undefined);
     assert.equal(attached.model.getObjectByName('native-player-front-lock-right-1'), undefined);
-    assert.ok(attached.model.getObjectByName('native-wta-blush-left-1'));
     assert.ok(attached.model.getObjectByName('native-wta-earring-left-1'));
-    assert.ok(attached.model.getObjectByName('native-wta-lip-tint-1'));
+    assert.equal(attached.model.getObjectByName('native-wta-lip-tint-1'), undefined, 'lip colour is painted on the skin now');
   } else {
     assert.equal(shirtGarment.userData.sleeveEndFraction, 0.46, 'standard kit sleeves should remain unchanged');
-    assert.equal(attached.model.getObjectByName('native-wta-blush-left-1'), undefined);
     assert.equal(attached.model.getObjectByName('native-wta-earring-left-1'), undefined);
   }
   {
@@ -1434,4 +1433,207 @@ test('kits mix collared, V-neck and racerback cuts with invented sportswear spon
     assert.ok(nativeKit.KIT_SPORTSWEAR_BRANDS[kit.brand], `${kit.id} has a maker`);
     assert.ok(nativeKit.KIT_PARTNER_BRANDS[kit.partner], `${kit.id} has a sleeve partner`);
   }
+});
+
+test('every hairstyle, beard and headband is fitted to the head itself', async () => {
+  const seen = new Set();
+  for (const [female, kits] of [[false, nativeKit.ATP_PLAYER_KITS], [true, nativeKit.WTA_PLAYER_KITS]]) {
+    for (const kit of kits) {
+      const style = female ? kit.femaleHairStyle : kit.maleHairStyle;
+      const key = `${female}:${style}:${female ? '' : kit.facialHair}:${kit.headwear}`;
+      if (seen.has(key)) continue;
+      seen.add(key);
+      const model = await nativePlayerTemplate(female ? 'female' : 'male');
+      nativeKit.dressNativePlayer(model, kit.shirtColor, female, kit, 0);
+      model.updateMatrixWorld(true);
+      const head = model.getObjectByName('head').getWorldPosition(new THREE.Vector3());
+      const skull = head.clone().add(new THREE.Vector3(0, 0.055, 0.006));
+      const label = `${kit.id} (${style})`;
+
+      const hair = model.getObjectByName('native-cropped-hair');
+      assert.equal(hair.userData.hairStyle, style, label);
+      hair.geometry.computeBoundingBox();
+      const top = hair.geometry.boundingBox.max.y - head.y;
+      assert.ok(top > 0.14 && top < 0.2, `${label}: hair top sits on the scalp (${top.toFixed(3)})`);
+
+      if (!female && kit.facialHair === 'stubble') {
+        let body;
+        model.traverse(o => { if (!body && o.isSkinnedMesh) body = o; });
+        assert.equal(body.userData.facialHair, 'stubble', `${label}: stubble is painted on the skin`);
+        assert.equal(model.getObjectByName('native-player-facial-hair-1'), undefined);
+      } else if (!female && kit.facialHair !== 'none') {
+        const beard = model.getObjectByName('native-player-facial-hair-1');
+        assert.equal(beard?.userData.facialHair, kit.facialHair, label);
+        beard.geometry.computeBoundingBox();
+        const box = beard.geometry.boundingBox;
+        assert.ok(box.max.y - head.y < 0.045 && box.min.y - head.y > -0.13, `${label}: facial hair stays on the lower face`);
+        assert.ok(box.max.z - head.z > 0.09, `${label}: facial hair reaches the front of the face`);
+      }
+      if (kit.headwear !== 'none') {
+        const band = new THREE.Box3().setFromObject(model.getObjectByName('native-player-headband-1'));
+        const middle = band.getCenter(new THREE.Vector3()).sub(head);
+        assert.ok(middle.y > 0.06 && middle.y < 0.1, `${label}: headband at the forehead (${middle.y.toFixed(3)})`);
+        assert.ok(band.max.z - head.z > 0.095 && band.min.z - head.z < -0.08, `${label}: headband goes round the head`);
+        assert.ok(band.max.x - head.x < 0.13, `${label}: headband hugs the head`);
+      }
+      const tie = model.getObjectByName('native-player-hair-tie-1');
+      if (tie) {
+        const reach = tie.getWorldPosition(new THREE.Vector3()).distanceTo(skull);
+        assert.ok(reach > 0.07 && reach < 0.125, `${label}: hair tie sits on the back of the head (${reach.toFixed(3)})`);
+      }
+      const curtain = model.getObjectByName('native-player-hair-curtain-1');
+      assert.equal(Boolean(curtain), ['flow', 'bob', 'curly'].includes(style), `${label}: long hair hangs as a curtain`);
+      if (curtain) {
+        const drop = new THREE.Box3().setFromObject(curtain);
+        assert.ok(drop.min.y - head.y < -0.04, `${label}: the curtain falls below the ears`);
+        assert.ok(drop.max.z - head.z < 0.06, `${label}: the curtain stays off the face`);
+      }
+      if (female) {
+        const earring = model.getObjectByName('native-wta-earring-right-1').getWorldPosition(new THREE.Vector3()).sub(head);
+        assert.ok(Math.abs(earring.x) > 0.064 && Math.abs(earring.x) < 0.09 && earring.y > -0.03 && earring.y < 0.005,
+          `${label}: earring on the ear lobe`);
+      }
+    }
+  }
+  assert.ok(seen.size >= 20);
+});
+
+test('players get their own face: eyeballs in the sockets, brows, and a sculpt from their name', async () => {
+  const same = nativeKit.faceShapeFor('Player One', false);
+  assert.deepEqual(nativeKit.faceShapeFor('Player One', false), same, 'the same player always gets the same face');
+  assert.notDeepEqual(nativeKit.faceShapeFor('Player Two', false), same);
+  const colours = new Set(Array.from({ length: 300 }, (_, i) => nativeKit.faceShapeFor(`p${i}`, false).eyeColorName));
+  assert.ok(colours.size >= 5, 'eye colours vary');
+
+  const headVertex = async (female, faceSeed) => {
+    const model = await nativePlayerTemplate(female ? 'female' : 'male');
+    const kit = { ...nativeKit.BROADCAST_PLAYER_KITS[0], faceSeed };
+    nativeKit.dressNativePlayer(model, kit.shirtColor, female, kit, 0);
+    model.updateMatrixWorld(true);
+    return model;
+  };
+  for (const female of [false, true]) {
+    const model = await headVertex(female, 'Player One');
+    const head = model.getObjectByName('head').getWorldPosition(new THREE.Vector3());
+    for (const side of ['left', 'right']) {
+      const eye = model.getObjectByName(`native-player-eye-${side}-1`);
+      assert.ok(eye, `${side} eye`);
+      const at = eye.getWorldPosition(new THREE.Vector3()).sub(head);
+      assert.ok(Math.abs(Math.abs(at.x) - 0.03) < 0.01 && Math.abs(at.y - 0.039) < 0.01 && Math.abs(at.z - 0.08) < 0.01,
+        `${side} eye sits in its socket (${at.toArray().map(v => v.toFixed(3))})`);
+      assert.ok(model.getObjectByName(`native-player-eye-${side}-1-iris`));
+      assert.ok(model.getObjectByName(`native-player-eye-${side}-1-pupil`));
+    }
+    const left = model.getObjectByName('native-player-eye-left-1').getWorldPosition(new THREE.Vector3());
+    const right = model.getObjectByName('native-player-eye-right-1').getWorldPosition(new THREE.Vector3());
+    assert.ok(left.x > right.x, 'the left eye is on the player\'s left (+X)');
+    const brows = model.getObjectByName('native-player-brows-1');
+    brows.geometry.computeBoundingBox();
+    const browY = brows.geometry.boundingBox.getCenter(new THREE.Vector3()).y - head.y;
+    assert.ok(browY > 0.05 && browY < 0.075, `brows above the eyes (${browY.toFixed(3)})`);
+    let body;
+    model.traverse(o => { if (!body && o.isSkinnedMesh) body = o; });
+    const tints = body.geometry.getAttribute('color');
+    assert.ok(tints, 'the face is painted (lips, cheeks, eye shade)');
+    let reddest = 0;
+    for (let i = 0; i < tints.count; i++) reddest = Math.max(reddest, tints.getX(i) - tints.getY(i));
+    assert.ok(reddest > 0.1, 'lips are tinted');
+    assert.equal(Boolean(model.getObjectByName('native-wta-lash-line-left-1')), female);
+
+    // Eyes turn toward a target (e.g. the ball), and back ahead without one.
+    const toTheirLeft = head.clone().add(new THREE.Vector3(1.5, 0, 2));
+    nativeKit.aimNativePlayerEyes(model, toTheirLeft, 1);
+    const eye = model.getObjectByName('native-player-eye-left-1');
+    assert.ok(eye.rotation.y > 0.2 && eye.rotation.y <= 0.45, `eyes turn toward the target (${eye.rotation.y.toFixed(2)})`);
+    nativeKit.aimNativePlayerEyes(model, head.clone().add(new THREE.Vector3(0, 0, -3)), 1);
+    assert.equal(eye.rotation.y, 0, 'a target behind the head: eyes rest ahead');
+  }
+
+  // Two players' heads differ; their eyes still fit.
+  const a = await headVertex(false, 'Player One');
+  const b = await headVertex(false, 'Player Two');
+  const bodyOf = model => { let body; model.traverse(o => { if (!body && o.isSkinnedMesh) body = o; }); return body; };
+  const pa = bodyOf(a).geometry.getAttribute('position'), pb = bodyOf(b).geometry.getAttribute('position');
+  let biggest = 0;
+  for (let i = 0; i < pa.count; i++) {
+    biggest = Math.max(biggest, Math.hypot(pa.getX(i) - pb.getX(i), pa.getY(i) - pb.getY(i), pa.getZ(i) - pb.getZ(i)));
+  }
+  assert.ok(biggest > 0.002 && biggest < 0.03, `faces are sculpted differently, within reason (${biggest.toFixed(4)})`);
+});
+
+const playerHeadsApi = await loadTs('../components/DmoPlayerHeads.ts');
+async function playerHeadAssets() {
+  const dir = '../public/models/dmo-humans/player-heads/';
+  const manifest = JSON.parse(await readFile(new URL(`${dir}player-heads.json`, import.meta.url), 'utf8'));
+  const bytes = await readFile(new URL(`${dir}player-heads.bin`, import.meta.url));
+  const data = playerHeadsApi.parsePlayerHeadData(manifest, bytes.buffer.slice(bytes.byteOffset, bytes.byteOffset + bytes.byteLength));
+  const headFor = (key) => {
+    const entry = manifest.heads.find(head => head.key === key);
+    return {
+      key, vertexCount: data.vertexCount, indices: data.indices, uv: data.uv, displacement: data.moves.get(key),
+      texture: new THREE.Texture(), skin: parseInt(entry.skin.slice(1), 16), iris: parseInt(entry.iris.slice(1), 16),
+    };
+  };
+  return { manifest, data, headFor };
+}
+
+test('real faces: each player keeps one head, chosen by gender and skin tone', async () => {
+  const { manifest } = await playerHeadAssets();
+  const women = manifest.heads.filter(head => head.gender === 'female');
+  const men = manifest.heads.filter(head => head.gender === 'male');
+  assert.ok(women.length >= 5 && men.length >= 5, 'several heads for each tour');
+  const once = playerHeadsApi.choosePlayerHeads(manifest.heads, 'female', ['Player One', 'Player Two'], [null, null]);
+  assert.deepEqual(playerHeadsApi.choosePlayerHeads(manifest.heads, 'female', ['Player One', 'Player Two'], [null, null]), once,
+    'the same players get the same heads every time');
+  assert.ok(once.every(key => women.some(head => head.key === key)), 'WTA players get women\'s heads');
+  assert.notEqual(once[0], once[1], 'two players in a match get different faces');
+  // With a known complexion, the head is one of the closest in skin tone.
+  const lightness = key => { const c = new THREE.Color(parseInt(manifest.heads.find(h => h.key === key).skin.slice(1), 16)); return c.r + c.g + c.b; };
+  const darkest = [...men].sort((a, b) => lightness(a.key) - lightness(b.key))[0];
+  const [pick] = playerHeadsApi.choosePlayerHeads(manifest.heads, 'male', ['Someone'], [parseInt(darkest.skin.slice(1), 16)]);
+  const ranked = men.map(h => h.key).sort((a, b) => Math.abs(lightness(a) - lightness(darkest.key)) - Math.abs(lightness(b) - lightness(darkest.key)));
+  assert.ok(ranked.slice(0, 4).includes(pick), 'a dark complexion gets one of the darker faces');
+});
+
+test('a transplanted head reshapes the face, takes the face texture, and keeps the eyes in their sockets', async () => {
+  const { manifest, headFor } = await playerHeadAssets();
+  for (const female of [false, true]) {
+    const entry = manifest.heads.find(head => head.gender === (female ? 'female' : 'male'));
+    const plain = await nativePlayerTemplate(female ? 'female' : 'male');
+    const model = await nativePlayerTemplate(female ? 'female' : 'male');
+    const kit = { ...nativeKit.BROADCAST_PLAYER_KITS[0], head: headFor(entry.key), skinColor: null };
+    nativeKit.dressNativePlayer(model, kit.shirtColor, female, kit, 0);
+    nativeKit.dressNativePlayer(plain, kit.shirtColor, female, { ...kit, head: null }, 0);
+    model.updateMatrixWorld(true);
+    let body;
+    model.traverse(o => { if (!body && o.isSkinnedMesh) body = o; });
+    assert.equal(body.userData.headKey, entry.key);
+    assert.ok(Array.isArray(body.material) && body.material[1].name === 'native-player-face');
+    assert.equal(body.material[1].map, kit.head.texture);
+    assert.equal(body.geometry.groups.length, 2);
+    assert.ok(body.geometry.groups[1].count > 3000, 'the head\'s triangles use the face material');
+    assert.equal(model.getObjectByName('native-player-brows-1'), undefined, 'the face texture has its own brows');
+    // The face moved (somewhere by a few millimetres or more), but not wildly.
+    let plainBody;
+    plain.traverse(o => { if (!plainBody && o.isSkinnedMesh) plainBody = o; });
+    const a = body.geometry.getAttribute('position'), b = plainBody.geometry.getAttribute('position');
+    let biggest = 0;
+    for (let i = 0; i < a.count; i++) biggest = Math.max(biggest, Math.hypot(a.getX(i) - b.getX(i), a.getY(i) - b.getY(i), a.getZ(i) - b.getZ(i)));
+    assert.ok(biggest > 0.004 && biggest < 0.03, `head reshaped within reason (${biggest.toFixed(4)})`);
+    // Eyes still sit in the sockets, with the face's own iris colour.
+    const head = model.getObjectByName('head').getWorldPosition(new THREE.Vector3());
+    const eye = model.getObjectByName('native-player-eye-left-1').getWorldPosition(new THREE.Vector3()).sub(head);
+    assert.ok(Math.abs(eye.x - 0.03) < 0.006 && Math.abs(eye.y - 0.039) < 0.006, 'eye in its socket');
+    assert.equal(model.getObjectByName('native-player-eye-left-1').userData.eyeColor, 'from-face');
+    // Hair still grows from the (reshaped) head.
+    assert.ok(model.getObjectByName('native-cropped-hair'));
+  }
+  // A head made for a different model is ignored (sculpted face instead).
+  const model = await nativePlayerTemplate('male');
+  const wrong = { ...headFor(manifest.heads[0].key), vertexCount: 123 };
+  nativeKit.dressNativePlayer(model, 0xffffff, false, { ...nativeKit.BROADCAST_PLAYER_KITS[0], head: wrong }, 0);
+  let body;
+  model.traverse(o => { if (!body && o.isSkinnedMesh) body = o; });
+  assert.equal(body.userData.headKey, undefined);
+  assert.ok(!Array.isArray(body.material));
 });
