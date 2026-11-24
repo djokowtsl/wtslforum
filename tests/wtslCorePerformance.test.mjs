@@ -4,7 +4,13 @@ import test from 'node:test';
 process.env.WTSL_CORE_API_URL = 'https://core.example.test';
 process.env.WTSL_CORE_API_KEY = 'test-only-key';
 
-const { wtslCore, WTSL_CORE_PUBLIC_TIMEOUT_MS, WTSL_CORE_FIXTURES_TIMEOUT_MS, WTSL_CORE_LEDGER_TIMEOUT_MS } = await import('../lib/wtsl-core.ts');
+const {
+  wtslCore,
+  WTSL_CORE_PUBLIC_TIMEOUT_MS,
+  WTSL_CORE_FIXTURES_TIMEOUT_MS,
+  WTSL_CORE_OPEN_FIXTURES_TIMEOUT_MS,
+  WTSL_CORE_LEDGER_TIMEOUT_MS,
+} = await import('../lib/wtsl-core.ts');
 
 test('public results and fixture reads are bounded and remain uncached at the fetch layer', async (t) => {
   const originalFetch = globalThis.fetch;
@@ -25,15 +31,19 @@ test('public results and fixture reads are bounded and remain uncached at the fe
 
   assert.equal(WTSL_CORE_PUBLIC_TIMEOUT_MS, 20_000);
   assert.equal(WTSL_CORE_FIXTURES_TIMEOUT_MS, 120_000);
+  assert.equal(WTSL_CORE_OPEN_FIXTURES_TIMEOUT_MS, 20_000);
   assert.deepEqual(await wtslCore.results(), []);
   assert.deepEqual(await wtslCore.fixtures(), []);
   assert.deepEqual(await wtslCore.fixturesBoard(), { open: [], recent_settled: [] });
+  assert.deepEqual(await wtslCore.openFixtures(), []);
 
   assert.match(requests[0].url, /\/api\/core\/results$/);
   assert.match(requests[1].url, /\/api\/core\/betting\/fixtures$/);
   assert.match(requests[2].url, /\/api\/core\/betting\/fixtures$/);
+  assert.match(requests[3].url, /\/api\/core\/betting\/fixtures\?include_recent_settled=false$/);
   assert.equal(requests[1].init.method, 'POST');
   assert.equal(requests[2].init.method, 'POST');
+  assert.equal(requests[3].init.method, undefined);
   for (const request of requests) {
     assert.equal(request.init.cache, 'no-store');
     assert.ok(request.init.signal instanceof AbortSignal);

@@ -25,14 +25,11 @@ import SnapshotAutoRefresh from '@/components/SnapshotAutoRefresh';
 import { fetchWTSLWtaMatchResults } from '@/lib/wtslSeasonResults';
 import {
   wtslCore,
-  type CoreCharacterRecommendation,
   type CoreFixture,
-  type CoreMatchlogLeaderboardRow,
 } from '@/lib/wtsl-core';
 import {
   buildDashboardMatchKeys,
   findVerifiedUpcomingFixture,
-  type DashboardMatchKeys as DashboardMatchKeysData,
 } from '@/lib/dashboardMatchKeys';
 import DashboardMatchKeys from '@/components/DashboardMatchKeys';
 
@@ -42,15 +39,13 @@ export const metadata: Metadata = { title: 'Dashboard' };
 type VerifiedPlayerCard = {
   tour: string;
   playerName: string;
+  playerId: string;
   stats: any;
   insights: PlayerInsightReport;
-  characterRecommendations: CoreCharacterRecommendation[] | null;
   ratings: BotRatingStatsRow | null;
   season: PlayerSeasonHighlights;
   seasonUnavailable: boolean;
   seasonCheckedAt: string | null;
-  matchKeys: DashboardMatchKeysData | null;
-  matchKeysUnavailable: boolean;
 };
 
 export default function Dashboard() {
@@ -109,39 +104,6 @@ async function DashboardContent() {
     ...(Array.isArray(coreSeasonSnapshot?.payload) ? coreSeasonSnapshot.payload : []),
     ...(Array.isArray(wtaSeasonSnapshot?.payload) ? wtaSeasonSnapshot.payload : []),
   ];
-  const supportedClaims = approved.filter((claim: any) =>
-    claim.tour === 'TE4' || claim.tour === 'TE4_(F)',
-  );
-  const fixturesBoard = supportedClaims.length
-    ? await safe(() => wtslCore.fixturesBoard(), null as {
-        open: CoreFixture[];
-        recent_settled: CoreFixture[];
-      } | null)
-    : null;
-  const matchFixtureByTour = new Map(
-    supportedClaims.map((claim: any) => [
-      claim.tour,
-      fixturesBoard ? findVerifiedUpcomingFixture(fixturesBoard.open, claim) : null,
-    ]),
-  );
-  const matchKeyTours = new Set(
-    supportedClaims
-      .filter((claim: any) => matchFixtureByTour.get(claim.tour))
-      .map((claim: any) => claim.tour === 'TE4_(F)' ? 'wta' : 'atp'),
-  );
-  const matchLogboards = await Promise.all(
-    Array.from(matchKeyTours, (tour) => safe(
-      () => wtslCore.matchlogLeaderboard(tour as 'atp' | 'wta', 0),
-      null as { rows: CoreMatchlogLeaderboardRow[] } | null,
-    )),
-  );
-  const matchLogBoardsByTour = new Map(
-    Array.from(matchKeyTours).map((tour, index) => [
-      tour,
-      matchLogboards[index],
-    ]),
-  );
-
   const playerCards: VerifiedPlayerCard[] = await Promise.all(
     approved.map(async (c: any) => {
       const [rows, ratingRows] = await Promise.all([
@@ -157,38 +119,12 @@ async function DashboardContent() {
         weakest: null,
         trainingFocus: null,
       } as PlayerInsightReport);
-      const isCharacterTour = c.tour === 'TE4' || c.tour === 'TE4_(F)';
-      const recommendationTour = c.tour === 'TE4_(F)' ? 'wta' : 'atp';
-      const characterRecommendations = !isCharacterTour
-        ? null
-        : !insights.qualifies
-          ? []
-          : await safe(async () => {
-              const result = await wtslCore.characterRecommendations({
-                tour: recommendationTour,
-                metrics: insights.metrics,
-              });
-              return result.recommendations;
-            }, null as CoreCharacterRecommendation[] | null);
-      const matchKeyEligible = c.tour === 'TE4' || c.tour === 'TE4_(F)';
-      const matchKeyTour = c.tour === 'TE4_(F)' ? 'wta' : 'atp';
-      const matchFixture = matchKeyEligible
-        ? matchFixtureByTour.get(c.tour) ?? null
-        : null;
-      const matchLogBoard = matchLogBoardsByTour.get(matchKeyTour) ?? null;
-      const matchKeys = matchFixture
-        ? buildDashboardMatchKeys(
-            matchFixture,
-            c.wtsl_player_id,
-            matchLogBoard?.rows ?? [],
-          )
-        : null;
       return {
         tour: c.tour,
         playerName: c.player_name,
+        playerId: String(c.wtsl_player_id),
         stats,
         insights,
-        characterRecommendations,
         ratings: ratingRows[0] ?? null,
         season: buildPlayerSeasonHighlights(seasonResults, c.player_name, c.tour, seasonYear, c.wtsl_player_id),
         seasonUnavailable: c.tour === 'TE4_(F)'
@@ -197,9 +133,6 @@ async function DashboardContent() {
         seasonCheckedAt: c.tour === 'TE4_(F)'
           ? wtaSeasonSnapshot?.checkedAt ?? null
           : coreSeasonSnapshot?.checkedAt ?? null,
-        matchKeys,
-        matchKeysUnavailable: matchKeyEligible
-          && (fixturesBoard === null || (matchFixture !== null && matchLogBoard === null)),
       };
     })
   );
@@ -268,15 +201,21 @@ async function DashboardContent() {
                   </div>
                 )}
                 {(card.tour === 'TE4' || card.tour === 'TE4_(F)') && (
-                  <CharacterSuggestions
-                    recommendations={card.characterRecommendations}
-                  />
+                  <Suspense fallback={<CharacterSuggestions recommendations={null} />}>
+                    <DashboardCharacterSuggestions
+                      tour={card.tour}
+                      insights={card.insights}
+                    />
+                  </Suspense>
                 )}
                 {(card.tour === 'TE4' || card.tour === 'TE4_(F)') && (
-                  <DashboardMatchKeys
-                    data={card.matchKeys}
-                    unavailable={card.matchKeysUnavailable}
-                  />
+                  <Suspense fallback={<DashboardMatchKeysLoading />}>
+                    <DashboardUpcomingMatchKeys
+                      tour={card.tour}
+                      playerId={card.playerId}
+                      playerName={card.playerName}
+                    />
+                  </Suspense>
                 )}
                 {card.seasonCheckedAt && (
                   <p className="muted feed-freshness">
@@ -337,4 +276,72 @@ async function DashboardContent() {
         </section>
       </main>
   );
+}
+
+function DashboardMatchKeysLoading() {
+  return (
+    <section className="panel" aria-label="Upcoming match keys">
+      <div className="panel-head"><h3 className="display">Upcoming match keys</h3></div>
+      <p className="empty">Checking the current official draw…</p>
+    </section>
+  );
+}
+
+async function DashboardCharacterSuggestions({
+  tour,
+  insights,
+}: {
+  tour: string;
+  insights: PlayerInsightReport;
+}) {
+  if (!insights.qualifies) {
+    return <CharacterSuggestions recommendations={[]} />;
+  }
+  const result = await safe(async () => {
+    const response = await wtslCore.characterRecommendations({
+      tour: tour === 'TE4_(F)' ? 'wta' : 'atp',
+      metrics: insights.metrics,
+    });
+    return response.recommendations;
+  }, null);
+  return <CharacterSuggestions recommendations={result} />;
+}
+
+async function DashboardUpcomingMatchKeys({
+  tour,
+  playerId,
+  playerName,
+}: {
+  tour: string;
+  playerId: string;
+  playerName: string;
+}) {
+  const fixtures = await safe(
+    () => wtslCore.openFixtures(),
+    null as CoreFixture[] | null,
+  );
+  if (!fixtures) {
+    return <DashboardMatchKeys data={null} unavailable />;
+  }
+  const claim = {
+    tour,
+    wtsl_player_id: playerId,
+    player_name: playerName,
+  };
+  const fixture = findVerifiedUpcomingFixture(fixtures, claim);
+  if (!fixture) {
+    return <DashboardMatchKeys data={null} />;
+  }
+  const matchLog = await safe(
+    () => wtslCore.matchlogLeaderboard(
+      tour === 'TE4_(F)' ? 'wta' : 'atp',
+      0,
+    ),
+    null as Awaited<ReturnType<typeof wtslCore.matchlogLeaderboard>> | null,
+  );
+  if (!matchLog) {
+    return <DashboardMatchKeys data={null} unavailable />;
+  }
+  const matchKeys = buildDashboardMatchKeys(fixture, playerId, matchLog.rows);
+  return <DashboardMatchKeys data={matchKeys} />;
 }

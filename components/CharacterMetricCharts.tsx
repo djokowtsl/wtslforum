@@ -61,6 +61,20 @@ function formatValue(value: number, metric: string) {
   return metric.toLowerCase() === 'topspin' ? `${formatted}%` : formatted;
 }
 
+function waitForRetry(delay: number, signal: AbortSignal) {
+  return new Promise<void>((resolve, reject) => {
+    const onAbort = () => {
+      clearTimeout(timer);
+      reject(new DOMException('Request aborted.', 'AbortError'));
+    };
+    const timer = setTimeout(() => {
+      signal.removeEventListener('abort', onAbort);
+      resolve();
+    }, delay);
+    signal.addEventListener('abort', onAbort, { once: true });
+  });
+}
+
 function sortedValues(values: number[]) {
   return [...values].sort((a, b) => a - b);
 }
@@ -599,9 +613,11 @@ export default function CharacterMetricCharts({
   onSelectCharacter: (character: string) => void;
 }) {
   const [data, setData] = useState<CharacterChartData | null>(null);
-  const [loading, setLoading] = useState(true);
+  const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
   const [retry, setRetry] = useState(0);
+  const [chartEnabled, setChartEnabled] = useState(false);
+  const sectionRef = useRef<HTMLElement | null>(null);
   const chartDataByTour = useRef(new Map<Tour, CharacterChartData>());
   const [xMetric, setXMetric] = useState('');
   const [yMetric, setYMetric] = useState('');
@@ -609,6 +625,23 @@ export default function CharacterMetricCharts({
   const [normalized, setNormalized] = useState(true);
 
   useEffect(() => {
+    const section = sectionRef.current;
+    if (!section || typeof IntersectionObserver === 'undefined') {
+      setChartEnabled(true);
+      return;
+    }
+    const observer = new IntersectionObserver((entries) => {
+      if (entries.some((entry) => entry.isIntersecting)) {
+        setChartEnabled(true);
+        observer.disconnect();
+      }
+    }, { rootMargin: '400px' });
+    observer.observe(section);
+    return () => observer.disconnect();
+  }, []);
+
+  useEffect(() => {
+    if (!chartEnabled) return;
     const cached = chartDataByTour.current.get(tour);
     if (cached) {
       setData(cached);
@@ -621,21 +654,33 @@ export default function CharacterMetricCharts({
     setLoading(true);
     setError('');
     setData(null);
-    fetch(
-      `/api/character-stats?tour=${encodeURIComponent(tour)}&include_chart_data=true&include_profile=false&include_official=false`,
-      { cache: 'no-store', signal: controller.signal },
-    )
-      .then(async (response) => {
+    const loadChartData = async () => {
+      const url = `/api/character-stats?tour=${encodeURIComponent(tour)}&include_chart_data=true&include_profile=false&include_official=false`;
+      for (let attempt = 0; attempt < 13; attempt += 1) {
+        const response = await fetch(url, {
+          cache: 'no-store',
+          signal: controller.signal,
+        });
         const result = await response.json().catch(() => null);
-        if (!response.ok || !result?.chart_data) {
+        if (response.ok && result?.chart_data) {
+          return result.chart_data as CharacterChartData;
+        }
+        if (
+          response.status !== 503
+          || result?.error !== 'character_chart_data_pending'
+          || attempt === 12
+        ) {
           throw new Error(
             response.status === 503
               ? 'Character chart data is temporarily unavailable.'
               : 'Could not load the character chart data.',
           );
         }
-        return result.chart_data as CharacterChartData;
-      })
+        await waitForRetry(Math.min(3000 + attempt * 500, 8000), controller.signal);
+      }
+      throw new Error('Character chart data is temporarily unavailable.');
+    };
+    loadChartData()
       .then((chartData) => {
         chartDataByTour.current.set(tour, chartData);
         setData(chartData);
@@ -647,7 +692,7 @@ export default function CharacterMetricCharts({
         setLoading(false);
       });
     return () => controller.abort();
-  }, [tour, retry]);
+  }, [chartEnabled, tour, retry]);
 
   const metricNames = useMemo(
     () => (data?.metric_names || []).filter((name) =>
@@ -695,7 +740,11 @@ export default function CharacterMetricCharts({
   }, [data, singleMetric]);
 
   return (
-    <section className={`panel ${styles.section}`} aria-labelledby="character-chart-heading">
+    <section
+      ref={sectionRef}
+      className={`panel ${styles.section}`}
+      aria-labelledby="character-chart-heading"
+    >
       <header className={styles.heading}>
         <div>
           <span className="panel-label">ROSTER DISTRIBUTIONS</span>
@@ -709,7 +758,12 @@ export default function CharacterMetricCharts({
         )}
       </header>
 
-      {loading && <p className={styles.status} role="status">Loading roster metrics…</p>}
+      {!chartEnabled && (
+        <p className={styles.status} role="status">
+          Roster charts load when this section is near the screen.
+        </p>
+      )}
+      {chartEnabled && loading && <p className={styles.status} role="status">Loading roster metrics…</p>}
       {error && (
         <div className={styles.error} role="alert">
           <span>{error}</span>

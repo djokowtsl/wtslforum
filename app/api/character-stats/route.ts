@@ -79,13 +79,27 @@ export async function GET(request: Request) {
         ? Number(error.statusCode)
         : 503;
     const status = [400, 404].includes(statusCode) ? statusCode : 503;
-    console.warn('[character-stats] WTSL character feed unavailable', {
-      status,
-      errorType: error instanceof Error ? error.name : 'UnknownError',
-    });
+    const chartPending = includeChartData
+      && error instanceof Error
+      && error.message === 'character_chart_data_pending';
+    if (!chartPending) {
+      console.warn('[character-stats] WTSL character feed unavailable', {
+        status,
+        errorType: error instanceof Error ? error.name : 'UnknownError',
+      });
+    }
     return NextResponse.json(
-      { error: status === 503 ? 'character_stats_unavailable' : 'invalid_selection' },
-      { status, headers: noStore },
+      {
+        error: chartPending
+          ? 'character_chart_data_pending'
+          : status === 503 ? 'character_stats_unavailable' : 'invalid_selection',
+      },
+      {
+        status,
+        headers: chartPending
+          ? { ...noStore, 'Retry-After': '3' }
+          : noStore,
+      },
     );
   }
 }

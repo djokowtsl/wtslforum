@@ -157,6 +157,21 @@ test('character chart data is reused when switching back to a tour', () => {
   assert.match(metricCharts, /chartDataByTour\.current\.set\(tour, chartData\)/);
 });
 
+test('character chart calculations start near the viewport and retry while pending', () => {
+  const metricCharts = readFileSync(
+    new URL('../components/CharacterMetricCharts.tsx', import.meta.url),
+    'utf8',
+  );
+  const apiRoute = readFileSync(
+    new URL('../app/api/character-stats/route.ts', import.meta.url),
+    'utf8',
+  );
+
+  assert.match(metricCharts, /new IntersectionObserver/);
+  assert.match(metricCharts, /character_chart_data_pending/);
+  assert.match(apiRoute, /'Retry-After': '3'/);
+});
+
 test('Physical and Net ratings are grouped with combined metrics in both charts', () => {
   const metricCharts = readFileSync(
     new URL('../components/CharacterMetricCharts.tsx', import.meta.url),

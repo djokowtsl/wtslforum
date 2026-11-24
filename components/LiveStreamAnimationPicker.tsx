@@ -17,6 +17,7 @@ import {
   NATIVE_MOTION_CATALOG_SHA256,
   NATIVE_MOTION_GESTURE_CATALOG_SHA256,
 } from '@/lib/nativeMotionCatalog';
+import { fetchNativeMotionAsset } from '@/lib/nativeMotionFetch';
 import SearchableClipSelect from './SearchableClipSelect';
 import GestureClipSetPicker from './GestureClipSetPicker';
 import styles from './DmoLiveHost.module.css';
@@ -112,7 +113,7 @@ export default function LiveStreamAnimationPicker({
   useEffect(() => {
     if (!anyOpen) return;
     let active = true;
-    fetch(`/api/native-motion/${NATIVE_MOTION_CATALOG_SHA256}/catalog.json`, { cache: 'force-cache' })
+    fetchNativeMotionAsset(`/api/native-motion/${NATIVE_MOTION_CATALOG_SHA256}/catalog.json`)
       .then(async (response) => {
         if (!response.ok) throw new Error();
         const body = await response.json() as NativeMotionCatalog;
@@ -127,7 +128,7 @@ export default function LiveStreamAnimationPicker({
     if (!anyOpen) return;
     let active = true;
     setGestureCatalogStatus('loading');
-    fetch(`/api/native-motion/${NATIVE_MOTION_GESTURE_CATALOG_SHA256}/catalog.json`, { cache: 'force-cache' })
+    fetchNativeMotionAsset(`/api/native-motion/${NATIVE_MOTION_GESTURE_CATALOG_SHA256}/catalog.json`)
       .then(async (response) => {
         if (!response.ok) throw new Error();
         const body = await response.json() as NativeMotionCatalog;

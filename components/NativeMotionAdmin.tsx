@@ -2,6 +2,7 @@
 
 import { useEffect, useMemo, useState } from 'react';
 import { NATIVE_MOTION_CATALOG_SHA256 } from '@/lib/nativeMotionCatalog';
+import { fetchNativeMotionAsset } from '@/lib/nativeMotionFetch';
 import {
   firstValidNativeMotionClip,
   NATIVE_MOTION_AUTOMATIC_PROFILE_KEY,
@@ -104,7 +105,7 @@ export default function NativeMotionAdmin() {
     const load = async () => {
       try {
         const [catalogResponse, profileResponse, broadcastResponse] = await Promise.all([
-          fetch(`/api/native-motion/${NATIVE_MOTION_CATALOG_SHA256}/catalog.json`, { cache: 'force-cache' }),
+          fetchNativeMotionAsset(`/api/native-motion/${NATIVE_MOTION_CATALOG_SHA256}/catalog.json`),
           fetch('/api/admin/native-motion/profiles', { cache: 'no-store' }),
           fetch('/api/admin/native-motion/broadcasts', { cache: 'no-store' }),
         ]);

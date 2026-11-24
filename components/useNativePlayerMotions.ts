@@ -30,6 +30,7 @@ import {
   type NativeMotionProfile,
   type NativeMotionStroke,
 } from '@/lib/nativeMotionCatalogData';
+import { fetchNativeMotionAsset } from '@/lib/nativeMotionFetch';
 import type { BundledMotionSource } from './DmoBundledGroundstroke';
 
 type SourcePair = readonly [BundledMotionSource | null, BundledMotionSource | null];
@@ -53,9 +54,8 @@ const decodedClips = new Map<string, Promise<BundledMotionClip>>();
 function loadCatalog(hash: string) {
   let promise = catalogPromises.get(hash);
   if (!promise) {
-    promise = fetch(
+    promise = fetchNativeMotionAsset(
       `/api/native-motion/${hash}/catalog.json`,
-      { cache: 'force-cache' },
     ).then(async (response) => {
       if (!response.ok) throw new Error(`Catalog request returned ${response.status}.`);
       const catalog = await response.json() as NativeMotionCatalog;
@@ -76,9 +76,8 @@ function loadClip(clipId: string, catalog: NativeMotionCatalog, hash: string) {
   const key = `${hash}:${clipId}`;
   let promise = decodedClips.get(key);
   if (!promise) {
-    promise = fetch(
+    promise = fetchNativeMotionAsset(
       `/api/native-motion/${hash}/${encodeURIComponent(`${clipId}.wtm`)}`,
-      { cache: 'force-cache' },
     ).then(async (response) => {
       if (!response.ok) throw new Error(`Animation clip request returned ${response.status}.`);
       return decodeBundledMotion(await response.arrayBuffer(), catalog.rig as BundledRigSchema);

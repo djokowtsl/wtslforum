@@ -5,6 +5,7 @@ import {
   NATIVE_MOTION_CATALOG_SHA256,
   NATIVE_MOTION_GESTURE_CATALOG_SHA256,
 } from '@/lib/nativeMotionCatalog';
+import { fetchNativeMotionAsset } from '@/lib/nativeMotionFetch';
 import {
   NATIVE_MOTION_STROKES,
   nativeMotionStrokeLabel,
@@ -118,7 +119,7 @@ export default function LiveAnimationPicker({
 
   useEffect(() => {
     let active = true;
-    fetch(`/api/native-motion/${NATIVE_MOTION_GESTURE_CATALOG_SHA256}/catalog.json`, { cache: 'force-cache' })
+    fetchNativeMotionAsset(`/api/native-motion/${NATIVE_MOTION_GESTURE_CATALOG_SHA256}/catalog.json`)
       .then(async (response) => {
         if (!response.ok) throw new Error();
         const body = await response.json() as NativeMotionCatalog;
@@ -144,7 +145,7 @@ export default function LiveAnimationPicker({
       setError('');
       try {
         const [catalogResponse, overridesResponse] = await Promise.all([
-          fetch(`/api/native-motion/${NATIVE_MOTION_CATALOG_SHA256}/catalog.json`, { cache: 'force-cache' }),
+          fetchNativeMotionAsset(`/api/native-motion/${NATIVE_MOTION_CATALOG_SHA256}/catalog.json`),
           fetch(`/api/live-dmo/${encodeURIComponent(broadcastId)}/animations`, { cache: 'no-store' }),
         ]);
         const [catalogPayload, overridesPayload] = await Promise.all([

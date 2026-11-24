@@ -131,8 +131,9 @@ test('missing player MatchLog rows return no personal keys', () => {
 });
 
 test('dashboard match keys are loaded only after sign-in and from approved claims', () => {
-  assert.ok(dashboardSource.indexOf('if (!viewer)') < dashboardSource.indexOf('wtslCore.matchlogLeaderboard'));
+  assert.ok(dashboardSource.indexOf('if (!viewer)') < dashboardSource.indexOf('wtslCore.openFixtures'));
   assert.ok(dashboardSource.includes("claims.filter((c: any) => c.status === 'approved')"));
-  assert.ok(dashboardSource.includes('findVerifiedUpcomingFixture(fixturesBoard.open, claim)'));
+  assert.ok(dashboardSource.includes('findVerifiedUpcomingFixture(fixtures, claim)'));
+  assert.ok(dashboardSource.includes('<Suspense fallback={<DashboardMatchKeysLoading />}'));
   assert.ok(dashboardSource.includes('<DashboardMatchKeys'));
 });
