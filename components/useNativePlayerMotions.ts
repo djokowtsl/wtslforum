@@ -13,10 +13,13 @@ import {
 } from '@/lib/nativeMotionCatalog';
 import {
   getDmoCharacterGruntSetting,
+  getDmoCharacterAppearance,
   type DmoCharacterGruntSetting,
 } from '@/lib/dmoCharacterAppearance.mjs';
 import {
   NATIVE_MOTION_STROKES,
+  nativeMotionAutomaticCharacterPicks,
+  nativeMotionCharacterGestureDefaults,
   nativeMotionClipSupportsStroke,
   nativeMotionGestureClips,
   nativeMotionGestureClipIds,
@@ -90,12 +93,14 @@ function loadClip(clipId: string, catalog: NativeMotionCatalog, hash: string) {
 
 export function useNativePlayerMotions({
   playerNames,
+  playerHandedness = ['right', 'right'],
   broadcastId,
   submissionId,
   overridePlayerOrder = [0, 1],
   allowAutomaticFallback = false,
 }: {
   playerNames: readonly [string | null | undefined, string | null | undefined];
+  playerHandedness?: readonly ['left' | 'right', 'left' | 'right'];
   broadcastId?: string;
   submissionId?: string;
   overridePlayerOrder?: readonly [number, number];
@@ -113,6 +118,10 @@ export function useNativePlayerMotions({
   const [gestureError, setGestureError] = useState('');
   const playerOne = playerNames[0]?.trim() ?? '';
   const playerTwo = playerNames[1]?.trim() ?? '';
+  const characterOne = getDmoCharacterAppearance(playerOne)?.name ?? null;
+  const characterTwo = getDmoCharacterAppearance(playerTwo)?.name ?? null;
+  const playerHandOne = playerHandedness[0] === 'left' ? 'left' : 'right';
+  const playerHandTwo = playerHandedness[1] === 'left' ? 'left' : 'right';
   const orderOne = overridePlayerOrder[0];
   const orderTwo = overridePlayerOrder[1];
 
@@ -176,17 +185,32 @@ export function useNativePlayerMotions({
           NativeMotionProfile | null,
         ];
         const direct = payload.playerClipOverrides ?? [{}, {}];
+        const hasSavedOrDirectPicks = selected.some((profile) => (
+          Boolean(profile && Object.keys(profile.clips).length)
+        )) || direct.some((picks) => Object.keys(picks).length > 0);
+        const motionCatalog = characterOne || characterTwo || hasSavedOrDirectPicks
+          ? await loadCatalog(NATIVE_MOTION_CATALOG_SHA256)
+          : null;
+        const automaticPicks: [NativeMotionPicks, NativeMotionPicks] = motionCatalog
+          ? [
+            characterOne
+              ? nativeMotionAutomaticCharacterPicks(motionCatalog, characterOne, playerHandOne)
+              : {},
+            characterTwo
+              ? nativeMotionAutomaticCharacterPicks(motionCatalog, characterTwo, playerHandTwo)
+              : {},
+          ]
+          : [{}, {}];
+        const profilePicks = selected.map((profile, index) => (
+          profile?.automaticFallback
+            ? mergeNativeMotionPicks(profile.clips, automaticPicks[index])
+            : mergeNativeMotionPicks(automaticPicks[index], profile?.clips)
+        )) as [NativeMotionPicks, NativeMotionPicks];
         const chosenPicks: [NativeMotionPicks, NativeMotionPicks] = [
-          mergeNativeMotionPicks(selected[0]?.clips, direct[orderOne]),
-          mergeNativeMotionPicks(selected[1]?.clips, direct[orderTwo]),
-        ];
-        const directGestures = payload.playerGestureOverrides ?? [{}, {}];
-        const gesturePicks: [NativeMotionGesturePicks, NativeMotionGesturePicks] = [
-          directGestures[orderOne],
-          directGestures[orderTwo],
+          mergeNativeMotionPicks(profilePicks[0], direct[orderOne]),
+          mergeNativeMotionPicks(profilePicks[1], direct[orderTwo]),
         ];
         const picksKey = JSON.stringify(chosenPicks);
-        const gesturePicksKey = JSON.stringify(gesturePicks);
         // Same choices as last time: nothing to load, nothing to change.
         if (picksKey !== appliedPicks) {
           if (!chosenPicks.some((picks) => Object.keys(picks).length)) {
@@ -195,7 +219,7 @@ export function useNativePlayerMotions({
               setSources([null, null]);
             }
           } else {
-            const catalog = await loadCatalog(NATIVE_MOTION_CATALOG_SHA256);
+            const catalog = motionCatalog ?? await loadCatalog(NATIVE_MOTION_CATALOG_SHA256);
             const clipIds = [...new Set(chosenPicks.flatMap((picks) => (
               Object.values(picks).flatMap((pick) => pick ? [pick.clipId] : [])
             )))];
@@ -205,7 +229,7 @@ export function useNativePlayerMotions({
             // Special-moment clips (slides, a forehand slice): extras, so one
             // that can't be loaded just isn't used.
             const specialClips = new Map<string, BundledMotionClip>();
-            await Promise.all(Object.values(NATIVE_MOTION_SPECIAL_CLIPS).map(async ({ clipId }) => {
+            await Promise.all(Object.values(NATIVE_MOTION_SPECIAL_CLIPS ?? {}).map(async ({ clipId }) => {
               if (loadedClips.has(clipId)) return;
               try {
                 specialClips.set(clipId, await loadClip(clipId, catalog, NATIVE_MOTION_CATALOG_SHA256));
@@ -214,7 +238,9 @@ export function useNativePlayerMotions({
               }
             }));
             const special = (key: keyof typeof NATIVE_MOTION_SPECIAL_CLIPS) => {
-              const { clipId, sourceHandedness } = NATIVE_MOTION_SPECIAL_CLIPS[key];
+              const config = NATIVE_MOTION_SPECIAL_CLIPS?.[key];
+              if (!config) return null;
+              const { clipId, sourceHandedness } = config;
               const metadata = catalog.clips.find((clip) => clip.id === clipId);
               const clip = loadedClips.get(clipId) ?? specialClips.get(clipId);
               const contactTime = metadata?.events?.kind === 'strike' ? metadata.events.contactTime : undefined;
@@ -266,16 +292,41 @@ export function useNativePlayerMotions({
           }
         }
 
+        const directGestures = payload.playerGestureOverrides ?? [{}, {}];
+        let gestureCatalog: NativeMotionCatalog | null = null;
+        if (characterOne || characterTwo) {
+          try {
+            gestureCatalog = await loadCatalog(NATIVE_MOTION_GESTURE_CATALOG_SHA256);
+          } catch {
+            // Gesture defaults are optional and must not block stroke playback.
+          }
+        }
+        const automaticGestures: [NativeMotionGesturePicks, NativeMotionGesturePicks] = [
+          characterOne && gestureCatalog
+            ? nativeMotionCharacterGestureDefaults(gestureCatalog, characterOne)
+            : {},
+          characterTwo && gestureCatalog
+            ? nativeMotionCharacterGestureDefaults(gestureCatalog, characterTwo)
+            : {},
+        ];
+        const gesturePicks: [NativeMotionGesturePicks, NativeMotionGesturePicks] = [
+          { ...automaticGestures[0], ...directGestures[orderOne] },
+          { ...automaticGestures[1], ...directGestures[orderTwo] },
+        ];
+        const gesturePicksKey = JSON.stringify(gesturePicks);
+        const automaticGesturesUnavailable = Boolean((characterOne || characterTwo) && !gestureCatalog);
         if (gesturePicksKey !== appliedGesturePicks) {
           if (!gesturePicks.some((picks) => Object.keys(picks).length)) {
             if (active) {
               appliedGesturePicks = gesturePicksKey;
               setGestureSources([null, null]);
-              setGestureError('');
+              setGestureError(automaticGesturesUnavailable
+                ? 'Automatic gesture animations could not be loaded; standard gesture motion is active.'
+                : '');
             }
           } else {
             try {
-              const catalog = await loadCatalog(NATIVE_MOTION_GESTURE_CATALOG_SHA256);
+              const catalog = gestureCatalog ?? await loadCatalog(NATIVE_MOTION_GESTURE_CATALOG_SHA256);
               const clipIds = [...new Set(gesturePicks.flatMap((picks) => (
                 Object.values(picks).flatMap((pick) => nativeMotionGestureClipIds(pick))
               )))];
@@ -339,7 +390,10 @@ export function useNativePlayerMotions({
       requestController?.abort();
       if (poll) window.clearInterval(poll);
     };
-  }, [playerOne, playerTwo, broadcastId, submissionId, orderOne, orderTwo, allowAutomaticFallback]);
+  }, [
+    playerOne, playerTwo, playerHandOne, playerHandTwo,
+    broadcastId, submissionId, orderOne, orderTwo, allowAutomaticFallback,
+  ]);
 
   // The court rebuilds its whole 3D scene whenever this value changes, so it
   // must only change when the stroke or gesture animations do, never on an

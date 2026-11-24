@@ -182,10 +182,18 @@ export default function Te4DmoReplayPlayer({
         viewer.names,
         characterNames,
       )
-      : [viewer.names[0], viewer.names[1]] as const
+      : [null, null] as const
     : [null, null] as const;
+  const nativeMotionHandedness = viewer
+    ? alignDmoReplayPlayerStyles(
+      submissionPlayers ?? viewer.names,
+      viewer.names,
+      handedness,
+    )
+    : handedness;
   const nativeMotion = useNativePlayerMotions({
     playerNames: nativeMotionNames,
+    playerHandedness: nativeMotionHandedness,
     broadcastId,
     submissionId: replaySubmissionId,
     overridePlayerOrder: viewer && submissionPlayers

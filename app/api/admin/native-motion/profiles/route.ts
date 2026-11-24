@@ -3,6 +3,7 @@ import { z } from 'zod';
 import { getSession } from '@/lib/auth';
 import { isSameSiteMutation } from '@/lib/liveRequestSecurity';
 import { sql } from '@/lib/db';
+import { getDmoCharacterAppearance } from '@/lib/dmoCharacterAppearance.mjs';
 import {
   NATIVE_MOTION_AUTOMATIC_PROFILE_KEY,
   NATIVE_MOTION_STROKES,
@@ -94,7 +95,9 @@ export async function GET() {
       ` as Promise<CharacterRow[]>,
     ]);
     const characters = deduplicateNativeMotionCharacterNames(
-      characterRows.map((row) => row.character_name),
+      characterRows.map((row) => (
+        getDmoCharacterAppearance(row.character_name)?.name ?? row.character_name
+      )),
     );
     return NextResponse.json(
       { profiles: rows.map(toProfile), characters },
@@ -137,7 +140,10 @@ export async function PUT(request: Request) {
   }
 
   const { automaticFallback, clips } = parsed.data;
-  const characterName = automaticFallback ? 'Automatic stream fallback' : parsed.data.characterName?.trim();
+  const submittedCharacterName = parsed.data.characterName?.trim();
+  const characterName = automaticFallback
+    ? 'Automatic stream fallback'
+    : getDmoCharacterAppearance(submittedCharacterName)?.name ?? submittedCharacterName;
   if (!characterName) {
     return NextResponse.json({ error: 'Enter the character name exactly as it appears in replay data.' }, { status: 400, headers: PRIVATE_HEADERS });
   }

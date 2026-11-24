@@ -2,6 +2,7 @@ import { NextResponse } from 'next/server';
 import { getSession } from '@/lib/auth';
 import { isSameSiteMutation } from '@/lib/liveRequestSecurity';
 import { sql } from '@/lib/db';
+import { getDmoCharacterAppearance } from '@/lib/dmoCharacterAppearance.mjs';
 import {
   NATIVE_MOTION_AUTOMATIC_PROFILE_KEY,
   NATIVE_MOTION_STROKES,
@@ -83,7 +84,8 @@ export async function POST(request: Request) {
 
     const characters = new Map<string, { name: string; hands: Set<'left' | 'right'> }>();
     for (const row of rows) {
-      const name = row.character_name.trim().replace(/\s+/g, ' ');
+      const submittedName = row.character_name.trim().replace(/\s+/g, ' ');
+      const name = getDmoCharacterAppearance(submittedName)?.name ?? submittedName;
       const key = nativeMotionProfileKey(name);
       if (!key || key === NATIVE_MOTION_AUTOMATIC_PROFILE_KEY) continue;
       const entry = characters.get(key) ?? { name, hands: new Set<'left' | 'right'>() };
@@ -102,11 +104,13 @@ export async function POST(request: Request) {
     let skippedClips = 0;
 
     for (const [profileKey, character] of characters) {
-      if (character.hands.size !== 1) {
+      if (character.hands.size > 1) {
         skippedHandedness += 1;
         continue;
       }
-      const [playingHand] = character.hands;
+      const playingHand = character.hands.size === 1
+        ? [...character.hands][0]
+        : 'right';
       const defaults = nativeMotionCharacterDefaults(catalog, character.name);
       const clips: NativeMotionPicks = {};
       for (const stroke of NATIVE_MOTION_STROKES) {

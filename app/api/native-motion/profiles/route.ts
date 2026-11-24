@@ -11,6 +11,7 @@ import {
 } from '@/lib/nativeMotionCatalogData';
 import {
   dmoCharacterNameKey,
+  getDmoCharacterAppearance,
   getDmoCharacterGruntSetting,
   type DmoCharacterGruntSetting,
 } from '@/lib/dmoCharacterAppearance.mjs';
@@ -59,7 +60,10 @@ export async function GET(request: Request) {
   const headers = broadcastId || submissionId
     ? { ...PROFILE_HEADERS, 'Cache-Control': 'private, no-store' }
     : PROFILE_HEADERS;
-  const exactKeys = playerNames.map(nativeMotionProfileKey) as [string, string];
+  const canonicalPlayerNames = playerNames.map((name) => (
+    getDmoCharacterAppearance(name)?.name ?? name
+  )) as [string, string];
+  const exactKeys = canonicalPlayerNames.map(nativeMotionProfileKey) as [string, string];
   const gruntProfileKeys = playerNames.map(dmoCharacterNameKey) as [string, string];
   const playerIndexes = [
     Number(params.get('playerIndex1') ?? 0),

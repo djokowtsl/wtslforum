@@ -203,6 +203,27 @@ export function nativeMotionCharacterDefaults(
   return defaults;
 }
 
+/**
+ * Build replay defaults without storing them in the database. Character-named
+ * clips win; otherwise use the first regular clip whose name identifies that stroke.
+ */
+export function nativeMotionAutomaticCharacterPicks(
+  catalog: NativeMotionCatalog,
+  characterName: string,
+  sourceHandedness: NativeMotionHand = 'right',
+): NativeMotionPicks {
+  const named = nativeMotionCharacterDefaults(catalog, characterName);
+  return Object.fromEntries(NATIVE_MOTION_STROKES.flatMap((stroke) => {
+    const clip = named[stroke] ?? catalog.clips.find((candidate) => (
+      nativeMotionClipSupportsStroke(candidate, stroke)
+      && clipSupportsNamedStroke(candidate, stroke)
+      && !candidate.hidden
+      && !isAccelerationClip(candidate)
+    ));
+    return clip ? [[stroke, { clipId: clip.id, sourceHandedness }]] : [];
+  })) as NativeMotionPicks;
+}
+
 export function nativeMotionClipSupportsStroke(
   clip: NativeMotionCatalogClip | undefined,
   stroke: NativeMotionStroke,
@@ -235,4 +256,47 @@ export function nativeMotionGestureClips(catalog: NativeMotionCatalog | null | u
   return (catalog?.clips ?? []).filter((clip) => (
     clip.events?.kind === 'gesture' && clip.events.gesture === gesture && !clip.hidden
   ));
+}
+
+// Gesture libraries have many clips; cap automatic variants to keep replay startup light.
+const AUTOMATIC_GESTURE_VARIANT_LIMIT = 3;
+
+/** Use character-named gesture clips when present; otherwise choose a varied, bounded set. */
+export function nativeMotionCharacterGestureDefaults(
+  catalog: NativeMotionCatalog | null | undefined,
+  characterName: string,
+): NativeMotionGesturePicks {
+  const identity = words(
+    characterName
+      .replace(/\([^)]*\)/g, ' ')
+      .replace(/\b(classic|master|pro|retro|prime|custom)\b/gi, ' '),
+  ).filter((word) => word.length >= 3);
+  const surname: string | undefined = identity.at(-1);
+  if (typeof surname !== 'string' || !surname) return {};
+
+  const types = [...new Set((catalog?.clips ?? [])
+    .filter((clip) => clip.events?.kind === 'gesture' && clip.events.gesture && !clip.hidden)
+    .map((clip) => clip.events!.gesture!))]
+    .sort((a, b) => a.localeCompare(b, 'en-GB'));
+  const defaults: NativeMotionGesturePicks = {};
+  for (const type of types) {
+    const clips = nativeMotionGestureClips(catalog, type)
+      .sort((a, b) => a.label.localeCompare(b.label, 'en-GB') || a.id.localeCompare(b.id));
+    const named = clips.filter((clip) => (
+      words(`${clip.sourceBundle} ${clip.originalClipName} ${clip.label}`)
+        .some((word) => word === surname)
+    ));
+    const candidates = named.length ? named : clips;
+    let offset = 0;
+    for (const character of `${characterName}:${type}`) {
+      offset = (offset * 31 + character.charCodeAt(0)) >>> 0;
+    }
+    const count = Math.min(AUTOMATIC_GESTURE_VARIANT_LIMIT, candidates.length);
+    const selected = Array.from({ length: count }, (_, index) => (
+      candidates[(offset + index) % candidates.length]
+    ));
+    const pick = nativeMotionGesturePickFromIds(selected.map((clip) => clip.id));
+    if (pick) defaults[type] = pick;
+  }
+  return defaults;
 }
