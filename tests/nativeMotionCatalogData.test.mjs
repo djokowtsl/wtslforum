@@ -19,9 +19,11 @@ const {
   nativeMotionProfileKey,
   mergeNativeMotionPicks,
   nativeMotionCharacterDefaults,
+  nativeMotionAutomaticCharacterPicks,
   nativeMotionGestureClips,
   nativeMotionGestureClipIds,
   nativeMotionGesturePickFromIds,
+  nativeMotionCharacterGestureDefaults,
 } = module.exports;
 
 function clip(id, overrides = {}) {
@@ -191,6 +193,44 @@ test('character defaults choose named regular clips and exclude acceleration var
   assert.deepEqual(nativeMotionCharacterDefaults(catalog, 'Unknown Player'), {});
 });
 
+test('automatic replay picks prefer character clips and fill remaining strokes safely', () => {
+  const catalog = { format: 'WTMC1', rig: {}, clips: [
+    clip('alcaraz-forehand', {
+      sourceBundle: 'alcaraz forehand',
+      originalClipName: 'alcaraz forehand',
+      label: 'Alcaraz forehand',
+    }),
+    clip('generic-backhand', { label: 'generic backhand' }),
+    clip('generic-serve', { events: { kind: 'serve', contactTime: 0.5 } }),
+    clip('generic-fh-slice', {
+      sourceBundle: 'generic fh slice',
+      originalClipName: 'generic fh slice',
+      label: 'generic fh slice',
+    }),
+    clip('generic-bh-slice', {
+      sourceBundle: 'generic bh slice',
+      originalClipName: 'generic bh slice',
+      label: 'generic bh slice',
+    }),
+    clip('hidden-alcaraz-backhand', {
+      sourceBundle: 'alcaraz backhand',
+      originalClipName: 'alcaraz backhand',
+      label: 'Alcaraz backhand',
+      hidden: true,
+    }),
+  ] };
+  const picks = nativeMotionAutomaticCharacterPicks(catalog, 'Carlos Alcaraz', 'left');
+  assert.deepEqual(Object.keys(picks).sort(), [
+    'backhand', 'forehand', 'serve', 'slice-backhand', 'slice-forehand',
+  ]);
+  assert.equal(picks.forehand.clipId, 'alcaraz-forehand');
+  assert.equal(picks.backhand.clipId, 'generic-backhand');
+  assert.equal(picks.serve.clipId, 'generic-serve');
+  assert.equal(picks['slice-forehand'].clipId, 'generic-fh-slice');
+  assert.equal(picks['slice-backhand'].clipId, 'generic-bh-slice');
+  assert.ok(Object.values(picks).every((pick) => pick.sourceHandedness === 'left'));
+});
+
 test('gesture animations are listed by gesture type and never offered as strokes', () => {
   const siu = { id: 'g1', hidden: false, events: { kind: 'gesture', gesture: 'CheerFist' }, sourceBundle: 'tm-siu-cheerfist', originalClipName: 'SiuCheerFist', label: 'siu' };
   const violin = { id: 'g2', hidden: false, events: { kind: 'gesture', gesture: 'RagingFist' }, sourceBundle: 'tm-violin-ragingfist', originalClipName: 'ViolinRagingFist', label: 'violin' };
@@ -201,6 +241,51 @@ test('gesture animations are listed by gesture type and never offered as strokes
   for (const stroke of ['forehand', 'backhand', 'serve', 'slice-forehand', 'slice-backhand']) {
     assert.equal(nativeMotionClipSupportsStroke(siu, stroke), false);
   }
+});
+
+test('automatic gesture defaults use named clips or a stable bounded set per type', () => {
+  const catalog = { format: 'WTMC1', rig: {}, clips: [
+    {
+      ...clip('federer-victory', {
+        sourceBundle: 'federer victory',
+        originalClipName: 'federer victory',
+        label: 'Federer victory',
+      }),
+      events: { kind: 'gesture', gesture: 'Victory' },
+    },
+    {
+      ...clip('generic-victory', { label: 'generic victory' }),
+      events: { kind: 'gesture', gesture: 'Victory' },
+    },
+    {
+      ...clip('applause-a', { label: 'applause a' }),
+      events: { kind: 'gesture', gesture: 'Applause' },
+    },
+    {
+      ...clip('applause-b', { label: 'applause b' }),
+      events: { kind: 'gesture', gesture: 'Applause' },
+    },
+    ...Array.from({ length: 5 }, (_, index) => ({
+      ...clip(`raging-${index}`, { label: `raging ${index}` }),
+      events: { kind: 'gesture', gesture: 'RagingFist' },
+    })),
+    {
+      ...clip('hidden-applause', { hidden: true }),
+      events: { kind: 'gesture', gesture: 'Applause' },
+    },
+  ] };
+  const picks = nativeMotionCharacterGestureDefaults(catalog, 'Roger Federer');
+  assert.deepEqual(nativeMotionGestureClipIds(picks.Victory), ['federer-victory']);
+  assert.deepEqual(
+    nativeMotionGestureClipIds(picks.Applause).sort(),
+    ['applause-a', 'applause-b'],
+  );
+  assert.equal(nativeMotionGestureClipIds(picks.RagingFist).length, 3);
+  assert.deepEqual(
+    nativeMotionCharacterGestureDefaults(catalog, 'Roger Federer'),
+    picks,
+    'automatic variant choice stays stable across replays',
+  );
 });
 
 test('a gesture choice can hold a set of animations and stays readable by older code', () => {

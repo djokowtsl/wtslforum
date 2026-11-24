@@ -18,8 +18,22 @@ function load(path, mocks = {}) {
   return module.exports;
 }
 const catalogData = load('lib/nativeMotionCatalogData.ts');
+const canonicalCharacterNames = {
+  'R.Federer': 'Roger Federer',
+  'N.Djokovic': 'Novak Djokovic',
+  'Roger Federer': 'Roger Federer',
+  'Novak Djokovic': 'Novak Djokovic',
+  'Carlos Alcaraz': 'Carlos Alcaraz',
+};
 const characterGrunts = {
-  dmoCharacterNameKey: (name) => String(name ?? '').toLowerCase(),
+  dmoCharacterNameKey: (name) => (
+    canonicalCharacterNames[String(name ?? '')]?.toLowerCase()
+      ?? String(name ?? '').toLowerCase()
+  ),
+  getDmoCharacterAppearance: (name) => {
+    const canonicalName = canonicalCharacterNames[String(name ?? '')];
+    return canonicalName ? { name: canonicalName } : null;
+  },
   getDmoCharacterGruntSetting: (name) => ({
     groupId: name ? `profile-${String(name).toLowerCase()}` : null,
     useGenericFallback: true,
@@ -98,6 +112,7 @@ test('character profiles persist slice choices, clear them, and keep legacy auto
     '@/lib/auth': { getSession: async () => ({ isAdmin: true }) },
     '@/lib/liveRequestSecurity': { isSameSiteMutation: () => true },
     '@/lib/nativeMotionCatalogData': catalogData,
+    '@/lib/dmoCharacterAppearance.mjs': characterGrunts,
     '@/lib/nativeMotionServer': {
       fetchNativeMotionCatalog: async () => ({ clips: [
         { id: 'a1_b1', duration: 1, events: { kind: 'strike', contactTime: 0.5 } },
@@ -123,11 +138,16 @@ test('character profiles persist slice choices, clear them, and keep legacy auto
     clips: { forehand: pick, backhand: pick, serve: alternate },
   }));
   assert.equal(fallback.status, 200);
+  const aliasProfile = await route.PUT(request({ ...payload, characterName: 'R.Federer' }));
+  const aliasSaved = await aliasProfile.json();
+  assert.equal(aliasSaved.profile.profileKey, 'roger federer');
+  assert.equal(aliasSaved.profile.characterName, 'Roger Federer');
+  assert.deepEqual(writes.at(-1).slice(0, 2), ['roger federer', 'Roger Federer']);
   const invalid = await route.PUT(request({
     ...payload, clips: { 'slice-forehand': slice },
   }));
   assert.equal(invalid.status, 400);
-  assert.equal(writes.length, 3);
+  assert.equal(writes.length, 4);
 });
 
 test('guests, members, and cross-site requests cannot change match animations', async () => {
@@ -341,6 +361,50 @@ test('replay resolver checks visibility and returns match overrides above option
   assert.equal((await hidden.GET(new Request('https://forum.test/api/native-motion/profiles?submissionId=17'))).status, 404);
 });
 
+test('abbreviated replay character names resolve full motion and grunt profiles', async () => {
+  const calls = [];
+  const profiles = [
+    { profile_key: 'roger federer', character_name: 'Roger Federer', automatic_fallback: false,
+      clips: { forehand: pick }, updated_at: '2026-11-24T00:00:00.000Z' },
+    { profile_key: 'novak djokovic', character_name: 'Novak Djokovic', automatic_fallback: false,
+      clips: { backhand: alternate }, updated_at: '2026-11-24T00:00:00.000Z' },
+  ];
+  const route = load('app/api/native-motion/profiles/route.ts', {
+    'next/server': { NextResponse: { json: (data, init) => Response.json(data, init) } },
+    '@/lib/auth': { getSession: async () => null },
+    '@/lib/dmoReplayLibrary': {
+      isDmoReplayId: () => true,
+      getPublicDmoReplay: async () => null,
+      getDmoReplaySubmission: async () => null,
+    },
+    '@/lib/nativeMotionCatalogData': catalogData,
+    '@/lib/dmoCharacterAppearance.mjs': characterGrunts,
+    '@/lib/db': { sql: async (strings, ...values) => {
+      const text = strings.join('?');
+      calls.push({ text, values });
+      if (text.includes('FROM dmo_native_motion_profiles')) return profiles;
+      if (text.includes('FROM dmo_character_grunt_profiles')) return [
+        { profile_key: 'roger federer', grunt_group: 'male-federer' },
+        { profile_key: 'novak djokovic', grunt_group: 'male-djokovic' },
+      ];
+      return [];
+    } },
+  });
+  const response = await route.GET(new Request(
+    'https://forum.test/api/native-motion/profiles?player1=R.Federer&player2=N.Djokovic',
+  ));
+  assert.equal(response.status, 200);
+  const payload = await response.json();
+  assert.deepEqual(payload.playerProfileKeys, ['roger federer', 'novak djokovic']);
+  assert.deepEqual(payload.profiles.map((profile) => profile.characterName), ['Roger Federer', 'Novak Djokovic']);
+  assert.deepEqual(payload.playerGruntSettings, [
+    { groupId: 'male-federer', useGenericFallback: false },
+    { groupId: 'male-djokovic', useGenericFallback: false },
+  ]);
+  assert.deepEqual(calls[0].values.slice(0, 2), ['roger federer', 'novak djokovic']);
+  assert.deepEqual(calls[1].values, ['roger federer', 'novak djokovic']);
+});
+
 test('replay grunt overrides follow replay player order and can explicitly disable audio', async () => {
   const mocks = {
     'next/server': { NextResponse: { json: (data, init) => Response.json(data, init) } },
@@ -441,6 +505,123 @@ test('playback uses one chosen version and preserves player identity when replay
   } finally {
     cleanup?.();
     globalThis.fetch = oldFetch;
+  }
+});
+
+test('a character without a saved profile loads named strokes and all available gesture variants', async () => {
+  const sourceChanges = [];
+  const gestureChanges = [];
+  const requests = [];
+  const oldFetch = globalThis.fetch;
+  const oldWindow = globalThis.window;
+  let stateIndex = 0;
+  let cleanup;
+  const motionClip = (id, label, events, sourceBundle = label) => ({
+    id,
+    file: `${id}.wtm`,
+    label,
+    sourceBundle,
+    originalClipName: label,
+    author: 'test',
+    frameCount: 30,
+    duration: 1,
+    hidden: false,
+    acceleration: '',
+    accelerationVariant: false,
+    sourceHandedness: null,
+    events,
+  });
+  const strokeCatalog = {
+    format: 'WTMC1',
+    rig: { rigHash: 'rig', modelHash: 'model' },
+    clips: [
+      motionClip('alcaraz-forehand', 'Alcaraz forehand', { kind: 'strike', contactTime: 0.5 }, 'alcaraz forehand'),
+      motionClip('generic-backhand', 'Generic backhand', { kind: 'strike', contactTime: 0.5 }),
+      motionClip('generic-serve', 'Generic serve', { kind: 'serve', contactTime: 0.5 }),
+      motionClip('generic-fh-slice', 'Generic fh slice', { kind: 'strike', contactTime: 0.5 }),
+      motionClip('generic-bh-slice', 'Generic bh slice', { kind: 'strike', contactTime: 0.5 }),
+    ],
+  };
+  const gestureCatalog = {
+    format: 'WTMC1',
+    rig: { rigHash: 'rig', modelHash: 'model' },
+    clips: [
+      motionClip('gesture-cheer-a', 'Cheer A', { kind: 'gesture', gesture: 'CheerFist' }),
+      motionClip('gesture-cheer-b', 'Cheer B', { kind: 'gesture', gesture: 'CheerFist' }),
+      motionClip('gesture-victory', 'Victory', { kind: 'gesture', gesture: 'Victory' }),
+    ],
+  };
+  globalThis.window = { setInterval: () => 1, clearInterval: () => {} };
+  globalThis.fetch = async (input) => {
+    const url = String(input);
+    requests.push(url);
+    if (url.startsWith('/api/native-motion/profiles?')) {
+      return Response.json({
+        playerProfileKeys: [null, null],
+        profiles: [],
+        playerClipOverrides: [{}, {}],
+        playerGestureOverrides: [{}, {}],
+      });
+    }
+    if (url.endsWith('/catalog.json')) {
+      return Response.json(url.includes('/stroke-hash/') ? strokeCatalog : gestureCatalog);
+    }
+    return new Response(new TextEncoder().encode(url.split('/').at(-1).replace(/\.wtm$/, '')));
+  };
+  try {
+    const hook = load('components/useNativePlayerMotions.ts', {
+      react: {
+        useState: (initial) => {
+          const index = stateIndex++;
+          return [initial, (value) => {
+            if (index === 0) sourceChanges.push(value);
+            if (index === 1) gestureChanges.push(value);
+          }];
+        },
+        useEffect: (effect) => { cleanup = effect(); },
+        useMemo: (build) => build(),
+      },
+      '@/lib/dmoBundledMotion.mjs': {
+        decodeBundledMotion: (buffer) => ({
+          name: new TextDecoder().decode(buffer),
+          duration: 1,
+          rigHash: 'rig',
+        }),
+      },
+      '@/lib/nativeMotionCatalog': {
+        NATIVE_MOTION_CATALOG_SHA256: 'stroke-hash',
+        NATIVE_MOTION_GESTURE_CATALOG_SHA256: 'gesture-hash',
+        NATIVE_MOTION_SPECIAL_CLIPS: {},
+      },
+      '@/lib/nativeMotionCatalogData': catalogData,
+      '@/lib/dmoCharacterAppearance.mjs': characterGrunts,
+    });
+    hook.useNativePlayerMotions({
+      playerNames: ['Carlos Alcaraz', null],
+      playerHandedness: ['left', 'right'],
+    });
+    for (let attempt = 0; attempt < 40
+      && (!sourceChanges.some((value) => value[0]) || !gestureChanges.some((value) => value[0])); attempt++) {
+      await new Promise((resolve) => setTimeout(resolve, 5));
+    }
+    const source = sourceChanges.find((value) => value[0])?.[0];
+    const gestures = gestureChanges.find((value) => value[0])?.[0];
+    assert.ok(source, 'stroke defaults load without a saved character profile');
+    assert.ok(gestures, 'gesture defaults load without per-replay settings');
+    assert.equal(source.clips.forehand.clip.name, 'alcaraz-forehand');
+    assert.equal(source.clips.forehand.sourceHandedness, 'left');
+    assert.equal(source.clips.backhand.clip.name, 'generic-backhand');
+    assert.equal(source.clips['slice-forehand'].clip.name, 'generic-fh-slice');
+    assert.deepEqual(
+      gestures.clips.CheerFist.map((clip) => clip.name).sort(),
+      ['gesture-cheer-a', 'gesture-cheer-b'],
+    );
+    assert.deepEqual(gestures.clips.Victory.map((clip) => clip.name), ['gesture-victory']);
+    assert.equal(requests.filter((url) => url.endsWith('.wtm')).length, 8);
+  } finally {
+    cleanup?.();
+    globalThis.fetch = oldFetch;
+    globalThis.window = oldWindow;
   }
 });
 

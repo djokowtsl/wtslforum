@@ -4,6 +4,7 @@ import {
   dmoCharacterBodyScale,
   dmoCharacterNameKey,
   getDmoCharacterAppearance,
+  getDmoCharacterGruntSetting,
   getDmoCharacterGruntUrls,
 } from '../lib/dmoCharacterAppearance.mjs';
 
@@ -13,6 +14,21 @@ test('character profiles match names with TE4 tour and version suffixes', () => 
   assert.equal(profile?.heightCm, 190);
   assert.equal(profile?.weightKg, 88);
   assert.equal(dmoCharacterNameKey('Felix Auger-Aliassime v2 (ATP)'), 'felix auger aliassime');
+});
+
+test('initial-and-surname replay labels resolve to canonical character and grunt profiles', () => {
+  assert.equal(getDmoCharacterAppearance('R.Federer')?.name, 'Roger Federer');
+  assert.equal(getDmoCharacterAppearance('N.Djokovic')?.name, 'Novak Djokovic');
+  assert.equal(dmoCharacterNameKey('R.Federer'), 'roger federer');
+  assert.equal(dmoCharacterNameKey('N.Djokovic'), 'novak djokovic');
+  assert.deepEqual(getDmoCharacterGruntSetting('R.Federer'), {
+    groupId: 'male-federer',
+    useGenericFallback: false,
+  });
+  assert.deepEqual(getDmoCharacterGruntSetting('N.Djokovic'), {
+    groupId: 'male-djokovic',
+    useGenericFallback: false,
+  });
 });
 
 test('profile grunt banks provide only their assigned character samples', () => {
