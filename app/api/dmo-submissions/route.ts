@@ -1,5 +1,5 @@
 import { del, get, head, put } from '@vercel/blob';
-import { NextRequest, NextResponse } from 'next/server';
+import { after, NextRequest, NextResponse } from 'next/server';
 import { getSession } from '@/lib/auth';
 import { sendDmoSubmission } from '@/lib/discord';
 import {
@@ -8,6 +8,7 @@ import {
   updateDmoDiscordDelivery,
 } from '@/lib/dmo-submissions';
 import { parseTe4CoachShareUrl } from '@/lib/te4CoachEmbed';
+import { scanDmoSubmission } from '@/lib/dmoIntegrity';
 import { isDmoBackhandType, isDmoPlayingHand } from '@/lib/dmoSubmissionPlayerStyle';
 import { syncPublicDmoSubmissionToTe4CoachGroup } from '@/lib/te4CoachGroupServer';
 import {
@@ -207,6 +208,15 @@ export async function POST(req: NextRequest) {
       await del(privatePathname, { storeId }).catch(() => {});
     }
     throw error;
+  }
+
+  if (privatePathname) {
+    // Admin-only integrity screening, after the response so the submitter
+    // never waits for it (or learns of it).
+    const scanId = Number(submission.id);
+    after(() => scanDmoSubmission(scanId).then(() => undefined, (error) => {
+      console.error('[dmo-integrity] background scan failed', { id: scanId, errorType: error instanceof Error ? error.name : 'UnknownError' });
+    }));
   }
 
   let coachGroupSync: 'synced' | 'skipped' | 'not_configured' | 'failed' = 'skipped';

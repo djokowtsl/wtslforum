@@ -6,6 +6,10 @@ import DmoSubmissionVisibilityControl from '@/components/DmoSubmissionVisibility
 import DmoSubmissionTagEditor from '@/components/DmoSubmissionTagEditor';
 import { getSession } from '@/lib/auth';
 import { listDmoSubmissions } from '@/lib/dmo-submissions';
+import { safe } from '@/lib/db';
+import { getDmoIntegrityLevels } from '@/lib/dmoIntegrity';
+import { DMO_INTEGRITY_LEVELS, type DmoIntegrityLevel } from '@/lib/dmoIntegrityScore.mjs';
+import integrityStyles from '@/components/DmoIntegrity.module.css';
 
 export const dynamic = 'force-dynamic';
 
@@ -24,6 +28,10 @@ export default async function AdminDmoSubmissions() {
   if (!user) redirect('/api/auth/discord');
   if (!user.isAdmin) redirect('/');
   const submissions = await listDmoSubmissions(250);
+  const integrity = await safe(
+    () => getDmoIntegrityLevels(submissions.map((submission) => Number(submission.id))),
+    new Map(),
+  );
 
   return (
     <>
@@ -48,7 +56,26 @@ export default async function AdminDmoSubmissions() {
               <article className="admin-card" key={submissionId}>
                 <div style={{ display: 'flex', justifyContent: 'space-between', gap: 12, flexWrap: 'wrap' }}>
                   <h3 style={{ margin: 0 }}>{submission.tournament} — {submission.round_name}</h3>
-                  <span className="notice">Submission date: {displayDate}</span>
+                  <span style={{ display: 'flex', gap: 8, alignItems: 'center', flexWrap: 'wrap' }}>
+                    {(() => {
+                      const scan = integrity.get(id);
+                      if (!scan || scan.status === 'no_file') return null;
+                      const label = scan.status === 'done'
+                        ? DMO_INTEGRITY_LEVELS[(scan.level ?? 'none') as DmoIntegrityLevel].label
+                        : "Integrity: couldn't analyse";
+                      return (
+                        <a
+                          className={integrityStyles.level}
+                          data-level={scan.status === 'done' ? scan.level ?? 'none' : 'unsupported'}
+                          href={`/admin/dmo-integrity#match-${id}`}
+                          title="Match integrity screening (admins only)"
+                        >
+                          {label}
+                        </a>
+                      );
+                    })()}
+                    <span className="notice">Submission date: {displayDate}</span>
+                  </span>
                 </div>
                 <p style={{ margin: '10px 0 6px' }}>
                   <strong>{submission.player1}</strong> vs <strong>{submission.player2}</strong>
