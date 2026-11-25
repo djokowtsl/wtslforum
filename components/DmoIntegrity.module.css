@@ -79,6 +79,17 @@
   font-size: 13px;
 }
 
+.recorded {
+  color: var(--muted);
+  font-size: 12.5px;
+}
+
+.recorded[data-confirmed='true'],
+.meta[data-confirmed='true'] {
+  color: #ff9aa4;
+  font-weight: 650;
+}
+
 /* Assessment badges: soft background, strong text (as in the GPT table). */
 .level {
   display: inline-flex;

@@ -37,6 +37,20 @@ function dateText(value: string | Date) {
   return new Date(`${iso}T00:00:00Z`).toLocaleDateString('en-GB', { timeZone: 'UTC', day: 'numeric', month: 'short', year: 'numeric' });
 }
 
+const GRADE_NAMES: Record<number, string> = {
+  3: 'Converging indicators',
+  2: 'Intermediate',
+  1: 'Weak / exploratory',
+};
+
+function recordedAimText(recorded: { minCm: number; maxCm: number; plateau: boolean } | null | undefined) {
+  if (!recorded) return 'No recorded aim for this passage, so it could not be checked.';
+  const range = `${Math.round(recorded.minCm)}–${Math.round(recorded.maxCm)} cm`;
+  return recorded.plateau
+    ? `Recorded aim confirms it: held at ${range} (a plateau, as an aiming script would).`
+    : `Recorded aim does not confirm it: moved ${range}, not held on a plateau.`;
+}
+
 function sortKey(row: DmoIntegrityRow) {
   return {
     status: row.status,
@@ -91,9 +105,13 @@ function ScanCard({ row }: { row: DmoIntegrityRow }) {
                     {own.reasons.map((reason) => <li key={reason}>{reason}</li>)}
                   </ul>
                 ) : null}
-                <span className={styles.meta}>
-                  Analyzer grade: {DMO_INTEGRITY_LEVELS[own?.level ?? 'none'].toolGrade}
-                </span>
+                {player.flaggedWindows > 0 && (
+                  <span className={styles.meta} data-confirmed={player.recordedConfirmedPassages > 0 ? 'true' : undefined}>
+                    {player.recordedCheckedPassages === 0
+                      ? `No recorded aim was available for any of ${player.flaggedWindows} flagged passages (0 confirmed).`
+                      : `Recorded aim confirms ${player.recordedConfirmedPassages} of ${player.flaggedWindows} flagged passages${player.recordedCheckedPassages < player.flaggedWindows ? `; ${player.flaggedWindows - player.recordedCheckedPassages} lacked recorded aim data` : ''}.`}
+                  </span>
+                )}
                 <dl className={styles.numbers}>
                   <dt>Flagged passages (weak · intermediate · converging)</dt>
                   <dd>{player.weakWindows} · {player.intermediateWindows} · {player.convergingWindows}</dd>
@@ -122,10 +140,15 @@ function ScanCard({ row }: { row: DmoIntegrityRow }) {
           <ul className={styles.passages}>
             {summary.passages.map((passage, index) => (
               <li key={index}>
-                {summary.players[passage.player]?.name}: point {passage.point} ({passage.score}),{' '}
+                <strong>{GRADE_NAMES[passage.strength] ?? 'Flagged'}</strong>
+                {' · '}{summary.players[passage.player]?.name}: point {passage.point} ({passage.score}),{' '}
                 {clock(passage.matchTimeSeconds)} into the match
                 {passage.intoPointSeconds !== null ? `, ${passage.intoPointSeconds.toFixed(1)} s into the point` : ''}
                 {' '}· {passage.methods.join(', ')}
+                <br />
+                <span className={styles.recorded} data-confirmed={passage.recordedAim?.plateau ? 'true' : undefined}>
+                  {recordedAimText(passage.recordedAim)}
+                </span>
               </li>
             ))}
           </ul>
@@ -171,15 +194,17 @@ export default async function AdminDmoIntegrity() {
   return (
     <>
       <PageHero eyebrow="Staff" title="Match integrity">
-        Submitted DMOs screened with the Online Circuit input analyzer, most suspicious first. Admins only.
+        Submitted DMOs screened with the Online Circuit input analyzer, grouped by its own grades, strongest first. Admins only.
       </PageHero>
       <main className="container">
         <p className="notice warn" style={{ marginBottom: 16 }}>
-          Levels follow the analyzer&apos;s own grades: a player&apos;s strongest flagged passage
-          outside serves (Converging indicators → Highly suspicious, Intermediate → Suspicious,
-          Weak / exploratory → Weak suspicion). The other numbers are for review only. A level is
-          a lead, not proof: controllers, keyboard habits and lag can produce the same patterns. Before acting, open the full report, check the flagged passages in the replay
-          with the aiming indicator, and compare both players. Keep results within the admin team.
+          These are the analyzer&apos;s own grades for each player&apos;s strongest flagged passage
+          outside serves. No grade is proof of cheating: fast tapping, keyboards, worn sticks and
+          lag produce the same input patterns. Each passage also says whether the replay&apos;s
+          recorded aim confirms it (aim held on a plateau, as a script would); that is shown for
+          review and never changes the grade. Watch the passages in the replay and compare both
+          players before drawing any conclusion. Review the full report and flagged replay passages
+          with the aiming indicator. Keep results within the admin team.
         </p>
         <div className={styles.summaryBar}>
           <div className={styles.counts}>
@@ -208,7 +233,7 @@ export default async function AdminDmoIntegrity() {
           );
           return (
             <section className={styles.section} id={`level-${group.level}`} key={group.level}>
-              {group.level === 'none' ? (
+              {group.level === 'none' || group.level === 'weak' ? (
                 <details>
                   <summary className={styles.sectionTitle}>{heading}</summary>
                   {content}

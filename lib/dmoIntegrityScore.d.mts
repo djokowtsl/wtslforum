@@ -14,6 +14,10 @@ export type DmoIntegrityPlayerSummary = {
   intermediateWindows: number;
   convergingWindows: number;
   recordedPlateaus: number;
+  recordedCheckedPassages: number;
+  recordedConfirmedPassages: number;
+  strongPassagesChecked: number;
+  strongPassagesConfirmed: number;
   aimGaps: number;
   moveGaps: number;
   changesPer100s: number;
@@ -30,6 +34,7 @@ export type DmoIntegrityPassage = {
   durationSeconds: number;
   strength: number;
   methods: string[];
+  recordedAim: { minCm: number; maxCm: number; medianCm: number; plateau: boolean } | null;
 };
 
 export type DmoIntegritySummary = {

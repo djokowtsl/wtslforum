@@ -19,11 +19,12 @@ with a newer version, update the hashes there and bump
 `DMO_INTEGRITY_ANALYZER_VERSION` in `lib/dmoIntegrityScore.mjs` so every match
 is rescanned.
 
-The suspicion levels in the admin panel follow the tool's own grades exactly
-(`lib/dmoIntegrityScore.mjs`): a player's strongest flagged passage outside
-serves, where "Converging indicators" means Highly suspicious, "Intermediate"
-means Suspicious and "Weak / exploratory" means Weak suspicion. A flag is a lead
-for an admin to review in the replay, not proof.
+The admin panel shows the tool's own grades, using its own names: each
+player's strongest flagged passage outside serves (Converging indicators,
+Intermediate or Weak / exploratory). For each passage it also says whether the
+replay's recorded aim confirms it (the tool's recorded plateau check). That is
+for review only and never changes the grade. A grade is a lead for an admin to
+check in the replay, not proof.
 
 Supported: online singles between two humans, TE4 Builds 167–169, replay
 formats 32–33. Anything else is marked "Couldn't analyse".
