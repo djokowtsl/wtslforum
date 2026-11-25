@@ -1055,14 +1055,6 @@
     white-space: nowrap;
   }
 
-  .scene:fullscreen .replaySettings[open] .controls,
-  .scene:-webkit-full-screen .replaySettings[open] .controls,
-  .scene.fullscreenFallback .replaySettings[open] .controls {
-    max-height: 52dvh;
-    overflow-y: auto;
-    overscroll-behavior: contain;
-  }
-
   .scene:fullscreen .replayControls,
   .scene:-webkit-full-screen .replayControls,
   .scene.fullscreenFallback .replayControls {
@@ -1071,13 +1063,6 @@
     padding: 8px max(10px, env(safe-area-inset-right)) max(10px, env(safe-area-inset-bottom)) max(10px, env(safe-area-inset-left));
   }
 
-  .scene:fullscreen .courtScoreBug,
-  .scene:-webkit-full-screen .courtScoreBug,
-  .scene.fullscreenFallback .courtScoreBug {
-    top: calc(max(8px, env(safe-area-inset-top)) + 52px);
-    left: max(8px, env(safe-area-inset-left));
-    font-size: 11px;
-  }
 }
 
 /* Toolbar actions next to Camera & sound: share (live) and full screen. */
@@ -1445,4 +1430,147 @@
 
 :global(:root[data-theme='light']) .shareStatus {
   color: #3d5d18;
+}
+
+/* Phone full screen, part two: the header row stays one line (exit, share,
+   Camera & sound) and never scrolls away. The settings open as a panel
+   below that row, with their own scrolling, and the score bug steps aside
+   while the panel or the point list is open so nothing sits on top of it.
+   Kept at the end so it wins over the shared full-screen rules above. */
+@media (max-width: 900px) {
+  .scene:fullscreen .toolbar,
+  .scene:-webkit-full-screen .toolbar,
+  .scene.fullscreenFallback .toolbar {
+    flex-direction: row;
+    flex-wrap: nowrap;
+    align-items: center;
+    max-height: none;
+    overflow: visible;
+    padding: max(6px, env(safe-area-inset-top)) max(8px, env(safe-area-inset-right)) 8px max(8px, env(safe-area-inset-left));
+  }
+
+  .scene:fullscreen .toolbarActions,
+  .scene:-webkit-full-screen .toolbarActions,
+  .scene.fullscreenFallback .toolbarActions {
+    flex: 0 0 auto;
+    margin-left: 0;
+  }
+
+  .scene:fullscreen .replaySettings,
+  .scene:-webkit-full-screen .replaySettings,
+  .scene.fullscreenFallback .replaySettings,
+  .scene:fullscreen .replaySettings[open],
+  .scene:-webkit-full-screen .replaySettings[open],
+  .scene.fullscreenFallback .replaySettings[open] {
+    position: static;
+    display: block;
+    flex: 0 1 auto;
+    width: auto;
+    min-width: 0;
+    margin-left: 0;
+  }
+
+  .scene:fullscreen .replaySettings > summary,
+  .scene:-webkit-full-screen .replaySettings > summary,
+  .scene.fullscreenFallback .replaySettings > summary {
+    display: flex;
+    min-width: 0;
+    min-height: 40px;
+  }
+
+  .scene:fullscreen .settingsLabel strong,
+  .scene:-webkit-full-screen .settingsLabel strong,
+  .scene.fullscreenFallback .settingsLabel strong {
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+
+  .scene:fullscreen .replaySettings[open] .controls,
+  .scene:-webkit-full-screen .replaySettings[open] .controls,
+  .scene.fullscreenFallback .replaySettings[open] .controls {
+    position: absolute;
+    top: 100%;
+    right: 0;
+    left: 0;
+    z-index: 7;
+    box-sizing: border-box;
+    width: auto;
+    max-height: min(58dvh, calc(100dvh - 190px));
+    overflow-x: hidden;
+    overflow-y: auto;
+    overscroll-behavior: contain;
+    -webkit-overflow-scrolling: touch;
+    flex-wrap: wrap;
+    justify-content: flex-start;
+    gap: 8px;
+    padding: 10px max(10px, env(safe-area-inset-right)) 12px max(10px, env(safe-area-inset-left));
+    border-bottom: 1px solid rgba(152, 174, 207, .22);
+    background: rgba(6, 13, 29, .95);
+    backdrop-filter: blur(10px);
+  }
+
+  .scene:fullscreen .replaySettings[open] .controls > *,
+  .scene:-webkit-full-screen .replaySettings[open] .controls > *,
+  .scene.fullscreenFallback .replaySettings[open] .controls > * {
+    box-sizing: border-box;
+    flex-shrink: 0;
+    max-width: 100%;
+  }
+
+  .scene:fullscreen .replaySettings[open] .presets,
+  .scene:-webkit-full-screen .replaySettings[open] .presets,
+  .scene.fullscreenFallback .replaySettings[open] .presets,
+  .scene:fullscreen .replaySettings[open] .iconControls,
+  .scene:-webkit-full-screen .replaySettings[open] .iconControls,
+  .scene.fullscreenFallback .replaySettings[open] .iconControls,
+  .scene:fullscreen .replaySettings[open] .volumeControl,
+  .scene:-webkit-full-screen .replaySettings[open] .volumeControl,
+  .scene.fullscreenFallback .replaySettings[open] .volumeControl {
+    flex-wrap: wrap;
+  }
+
+  .scene:fullscreen .replaySettings[open] .soundButton,
+  .scene:-webkit-full-screen .replaySettings[open] .soundButton,
+  .scene.fullscreenFallback .replaySettings[open] .soundButton,
+  .scene:fullscreen .replaySettings[open] .playerCameraControl,
+  .scene:-webkit-full-screen .replaySettings[open] .playerCameraControl,
+  .scene.fullscreenFallback .replaySettings[open] .playerCameraControl,
+  .scene:fullscreen .replaySettings[open] .panControl,
+  .scene:-webkit-full-screen .replaySettings[open] .panControl,
+  .scene.fullscreenFallback .replaySettings[open] .panControl {
+    max-width: 100%;
+    white-space: normal;
+    text-align: left;
+  }
+
+  .scene:fullscreen .replaySettings[open] .playerCameraControl select,
+  .scene:-webkit-full-screen .replaySettings[open] .playerCameraControl select,
+  .scene.fullscreenFallback .replaySettings[open] .playerCameraControl select {
+    max-width: min(176px, 52vw);
+  }
+
+  .scene:fullscreen .courtScoreBug,
+  .scene:-webkit-full-screen .courtScoreBug,
+  .scene.fullscreenFallback .courtScoreBug {
+    top: calc(max(6px, env(safe-area-inset-top)) + 56px);
+    left: max(8px, env(safe-area-inset-left));
+    min-width: 0;
+    font-size: 11px;
+  }
+
+  .scene:fullscreen[data-chrome-idle='true'] .courtScoreBug,
+  .scene:-webkit-full-screen[data-chrome-idle='true'] .courtScoreBug,
+  .scene.fullscreenFallback[data-chrome-idle='true'] .courtScoreBug {
+    top: max(8px, env(safe-area-inset-top));
+  }
+
+  .scene:fullscreen[data-settings-open='true'] .courtScoreBug,
+  .scene:-webkit-full-screen[data-settings-open='true'] .courtScoreBug,
+  .scene.fullscreenFallback[data-settings-open='true'] .courtScoreBug,
+  .scene:fullscreen[data-point-list-open='true'] .courtScoreBug,
+  .scene:-webkit-full-screen[data-point-list-open='true'] .courtScoreBug,
+  .scene.fullscreenFallback[data-point-list-open='true'] .courtScoreBug {
+    visibility: hidden;
+  }
 }
