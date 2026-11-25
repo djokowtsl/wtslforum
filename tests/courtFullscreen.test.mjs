@@ -227,8 +227,23 @@ test('full screen keeps the score and the controls, fading them when idle (phone
   assert.doesNotMatch(mobileBlock, /\.replayControls,[^{]*\{[^}]*display:\s*none/);
   assert.doesNotMatch(mobileBlock, /\.controls > :not/);
   assert.doesNotMatch(mobileBlock, /\.courtScoreBug[^{]*\{[^}]*display:\s*none/);
-  assert.match(mobileBlock, /\.replaySettings\[open\] \.controls\s*\{[^}]*overflow-y:\s*auto/);
   assert.match(fullscreenButton, /aria-label=\{isFullscreen \? 'Exit full screen'/);
+});
+
+test('phone full screen keeps one header row and opens settings as a panel below it', () => {
+  const start = styles.indexOf('/* Phone full screen, part two');
+  assert.ok(start > styles.indexOf('.scene.fullscreenFallback[data-chrome-idle=\'true\'] .courtScoreBug'), 'phone overrides come after the shared full-screen rules');
+  const block = styles.slice(start);
+  assert.match(block, /@media \(max-width: 900px\)/);
+  // The header row never clips or scrolls away (it used to be capped at 24-26dvh).
+  assert.match(block, /\.scene\.fullscreenFallback \.toolbar\s*\{[^}]*flex-wrap:\s*nowrap[^}]*max-height:\s*none[^}]*overflow:\s*visible/);
+  // Camera & sound drops down below the row, scrolls on its own and fits the width.
+  assert.match(block, /\.scene\.fullscreenFallback \.replaySettings\[open\] \.controls\s*\{[^}]*position:\s*absolute[^}]*top:\s*100%[^}]*overflow-x:\s*hidden[^}]*overflow-y:\s*auto/);
+  assert.match(block, /\.scene\.fullscreenFallback \.replaySettings\[open\] \.controls > \*\s*\{[^}]*max-width:\s*100%/);
+  // The score bug steps aside while the panel or the point list is open.
+  assert.match(liveCourt, /data-settings-open=\{settingsOpen \? 'true' : undefined\}/);
+  assert.match(liveCourt, /data-point-list-open=\{fullReplay && pointListOpen \? 'true' : undefined\}/);
+  assert.match(block, /\.scene\.fullscreenFallback\[data-settings-open='true'\] \.courtScoreBug,[\s\S]*?visibility:\s*hidden/);
 });
 
 test('embedded broadcast and replay players permit native fullscreen', () => {

@@ -3929,6 +3929,8 @@ function ThreeCourt({
       className={styles.scene}
       data-full-replay={fullReplay ? 'true' : undefined}
       data-chrome-idle={chromeHidden ? 'true' : undefined}
+      data-settings-open={settingsOpen ? 'true' : undefined}
+      data-point-list-open={fullReplay && pointListOpen ? 'true' : undefined}
       aria-label={fullReplay ? 'Three-dimensional full match replay' : 'Three-dimensional live court'}
       onPointerMove={wakeChrome}
       onPointerDownCapture={(event) => {
