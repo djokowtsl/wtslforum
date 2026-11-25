@@ -69,7 +69,7 @@ export function orientOfficialScore(score: string, playerOneName: unknown, brack
 
 export function displayBracketScore(match: BracketMatch): string | null {
   const officialScore = match.officialScore?.trim();
-  if (officialScore) return officialScore;
+  if (officialScore) return officialScore.replace(/[,;]+/g, ' ').replace(/\s+/g, ' ').trim();
 
   const scores = match.scores.map((score) => score?.trim() ?? '');
   const challongeScore = scores.filter(Boolean).join('-');

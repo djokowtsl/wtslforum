@@ -51,6 +51,18 @@ export type TournamentBracketData = {
   completedMatchCount?: number;
 };
 
+export function splitBracketParticipantLabel(value: string): {
+  name: string;
+  character: string | null;
+} {
+  const name = value.replace(/^\s*\(\d+\)\s*/, '').replace(/\s+/g, ' ').trim();
+  const character = name.match(/^(.*?)\s+\[([^\]]+)\]$/);
+  if (!character || !character[1].trim() || !character[2].trim()) {
+    return { name, character: null };
+  }
+  return { name: character[1].trim(), character: character[2].trim() };
+}
+
 type XmlElement = {
   name: string;
   attributes: Record<string, string>;

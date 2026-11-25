@@ -28,6 +28,8 @@ export async function GET(
   const url = new URL(request.url);
   const firstName = (url.searchParams.get('first') ?? '').trim().slice(0, 120);
   const secondName = (url.searchParams.get('second') ?? '').trim().slice(0, 120);
+  const firstCharacter = (url.searchParams.get('firstCharacter') ?? '').trim().slice(0, 80) || null;
+  const secondCharacter = (url.searchParams.get('secondCharacter') ?? '').trim().slice(0, 80) || null;
   const roundName = (url.searchParams.get('round') ?? '').trim().slice(0, 80);
   const requestedScore = (url.searchParams.get('score') ?? '').trim().slice(0, 120);
   const requestedWinner = (url.searchParams.get('winner') ?? '').trim().slice(0, 120);
@@ -50,6 +52,7 @@ export async function GET(
       SELECT wtsl_player_id, name
       FROM wtsl_players
       WHERE tour=${String(tournament.tour)}
+        AND lower(name)=ANY(${[firstName, secondName].map((name) => name.toLocaleLowerCase('en'))})
     `;
     const players = (roster as any[]).filter((player) => [firstKey, secondKey]
       .includes(normalizeBracketPlayerName(player.name)));
@@ -228,6 +231,7 @@ export async function GET(
     return NextResponse.json({
       firstName,
       secondName,
+      characterPicks: { first: firstCharacter, second: secondCharacter },
       playerIds: { first: firstId ?? null, second: secondId ?? null },
       playerStats,
       headToHead: { ...wins, matches: wins.first + wins.second },

@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
 import { getChallongeTournamentId, getChallongeTournamentUrl } from '../lib/challongeBracket.ts';
-import { parseChallongeBracketSvg } from '../lib/challongeBracketData.ts';
+import { parseChallongeBracketSvg, splitBracketParticipantLabel } from '../lib/challongeBracketData.ts';
 import { parseWTSLTournamentResults } from '../lib/wtsl.ts';
 import {
   attachOfficialTournamentResults,
@@ -71,6 +71,17 @@ test('parses a native bracket and formats player character picks', () => {
   assert.equal(result.connectors.length, 1);
 });
 
+test('splits scraped participant names from their character picks', () => {
+  assert.deepEqual(splitBracketParticipantLabel('gifu [S. Tsitsipas]'), {
+    name: 'gifu',
+    character: 'S. Tsitsipas',
+  });
+  assert.deepEqual(splitBracketParticipantLabel('Winner of match 2'), {
+    name: 'Winner of match 2',
+    character: null,
+  });
+});
+
 test('labels Challonge walkover and BCT totals while preserving official results', () => {
   const base = parseChallongeBracketSvg(bracketSvg()).main[0].matches[0];
   assert.equal(displayBracketScore({ ...base, scores: ['0', '0'] }), 'Walkover');
@@ -80,6 +91,7 @@ test('labels Challonge walkover and BCT totals while preserving official results
   assert.equal(displayBracketScore({ ...base, scores: ['6', '3'], winner: 1 }), '6–3');
   assert.equal(displayBracketScore({ ...base, scores: ['3', '6'], winner: null }), '6–3');
   assert.equal(displayBracketScore({ ...base, scores: ['0', '0'], officialScore: 'Coin Toss (6-3)' }), 'Coin Toss (6-3)');
+  assert.equal(displayBracketScore({ ...base, officialScore: '6-3,5-7,6-4' }), '6-3 5-7 6-4');
   assert.equal(displayBracketScore({ ...base, scores: ['', ''] }), null);
 });
 
