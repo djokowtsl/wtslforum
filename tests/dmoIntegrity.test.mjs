@@ -4,6 +4,7 @@ import { existsSync, readFileSync } from 'node:fs';
 import { createRequire } from 'node:module';
 import test from 'node:test';
 import {
+  DMO_INTEGRITY_LEVELS,
   assessDmoIntegrity,
   assessPlayer,
   compareIntegrityScans,
@@ -81,11 +82,11 @@ test('rubric: clean players get no flags', () => {
 });
 
 test('levels follow the analyzer grade of the strongest passage, nothing else', () => {
-  // Converging indicators (strength 3) -> Highly suspicious.
+  // Strength 3 -> Converging indicators.
   assert.equal(assessPlayer(player({ convergingWindows: 1, flaggedWindows: 1 })).level, 'high');
-  // Intermediate (strength 2) -> Suspicious, even for a single passage.
+  // Strength 2 -> Intermediate, even for a single passage.
   assert.equal(assessPlayer(player({ intermediateWindows: 1, flaggedWindows: 1 })).level, 'medium');
-  // Weak / exploratory (strength 1) -> Weak suspicion, however many.
+  // Strength 1 -> Weak / exploratory, however many.
   assert.equal(assessPlayer(player({ weakWindows: 33, flaggedWindows: 33 })).level, 'weak');
   // Gap rates, recorded plateaus and the opponent never change the level.
   assert.equal(assessPlayer(player({ repeatedGapPreparations: 60, repeatedGapShare: 0.5, recordedPlateaus: 4 })).level, 'none');
@@ -100,7 +101,7 @@ test('levels follow the analyzer grade of the strongest passage, nothing else', 
   assert.equal(squeaky.score, 2, 'sort key is the number of passages at the top grade');
 });
 
-test('rubric: the match takes the more suspicious player, and sorting puts it first', () => {
+test('the match takes the player with the stronger grade, and sorting puts it first', () => {
   const result = assessDmoIntegrity(summary({ flaggedWindows: 1, weakWindows: 1 }, { convergingWindows: 2, flaggedWindows: 2 }));
   assert.equal(result.score, 2);
   assert.equal(result.level, 'high');
@@ -133,7 +134,9 @@ test('summary keeps the analyzer measurements and drops frame data', () => {
         ],
       },
       Candidates: [
-        { Player: 0, Point: 3, Score: 'S1 0-0 / 15-0', Context: 'rally', Start: 120, Duration: 0.5, Strength: 2, Methods: ['simulated aim plateau'] },
+        { Player: 0, Point: 3, Score: 'S1 0-0 / 15-0', Context: 'rally', Start: 120, Duration: 0.5, Strength: 2, Methods: ['simulated aim plateau'], Recorded: { Min: 155.04, Max: 329.4, Median: 250, Plateau: false } },
+        { Player: 0, Point: 3, Score: 'S1 0-0 / 15-0', Context: 'rally', Start: 200, Duration: 0.5, Strength: 1, Methods: ['short neutral gaps'], Recorded: { Min: 290, Max: 320, Median: 300, Plateau: true } },
+        { Player: 0, Point: 3, Score: 'S1 0-0 / 15-0', Context: 'rally', Start: 300, Duration: 0.5, Strength: 1, Methods: ['short neutral gaps'] },
         { Player: 0, Point: 3, Score: 'S1 0-0 / 15-0', Context: 'service', Start: 70, Duration: 0.5, Strength: 1, Methods: ['short neutral gaps'] },
       ],
     },
@@ -145,10 +148,64 @@ test('summary keeps the analyzer measurements and drops frame data', () => {
   assert.equal(result.players[0].intermediateWindows, 1);
   assert.equal(result.players[0].aimGaps, 2);
   assert.equal(result.players[0].impactMedianCm, 300);
-  assert.equal(result.passages.length, 1, 'serves are left out of the passages');
+  assert.equal(result.passages.length, 3, 'serves are left out of the passages');
+  assert.deepEqual(result.passages[0].recordedAim, { minCm: 155, maxCm: 329.4, medianCm: 250, plateau: false });
+  assert.equal(result.passages[1].recordedAim.plateau, true);
+  assert.equal(result.passages[2].recordedAim, null, 'no recorded aim: not checkable');
+  assert.equal(result.players[0].recordedCheckedPassages, 2);
+  assert.equal(result.players[0].recordedConfirmedPassages, 1);
+  assert.equal(result.players[0].strongPassagesChecked, 1);
+  assert.equal(result.players[0].strongPassagesConfirmed, 0);
   assert.equal(result.passages[0].matchTimeSeconds, 2);
   assert.equal(result.passages[0].intoPointSeconds, 1);
   assert.ok(JSON.stringify(result).length < 4000);
+});
+
+test('the summary retains recorded-aim checks for every flagged passage', () => {
+  const candidates = Array.from({ length: 13 }, (_, index) => ({
+    Player: 0,
+    Point: index + 1,
+    Score: '',
+    Context: 'rally',
+    Start: index,
+    Duration: 0.5,
+    Strength: 1,
+    Methods: [],
+    Recorded: { Min: 120, Max: 140, Median: 130, Plateau: false },
+  }));
+  const result = summarizeAnalyzerRun({
+    demo: { Header: { Names: ['Alpha', 'Beta'] }, Frames: [], Scores: [] },
+    timing: { StepMs: 1000 / 60, OriginMs: 0 },
+    analysis: {
+      Summary: [
+        { Player: 0, Candidates: 13, Medium: 0, High: 0 },
+        { Player: 1, Candidates: 0, Medium: 0, High: 0 },
+      ],
+      Candidates: candidates,
+      Points: [],
+      Recorded: { Summary: [] },
+    },
+  });
+  assert.equal(result.passages.length, 13);
+  assert.equal(result.passages.filter((passage) => passage.recordedAim !== null).length, 13);
+  assert.equal(result.players[0].recordedCheckedPassages, 13);
+  assert.equal(result.players[0].recordedConfirmedPassages, 0);
+});
+
+test('labels use analyzer grades and weak-only and clean matches are folded away', () => {
+  assert.deepEqual(
+    ['high', 'medium', 'weak', 'none'].map((level) => DMO_INTEGRITY_LEVELS[level].label),
+    ['Converging indicators', 'Intermediate', 'Weak / exploratory', 'No flags'],
+  );
+  for (const path of ['app/admin/dmo-integrity/page.tsx', 'app/admin/dmo-submissions/page.tsx', 'app/admin/page.tsx', 'lib/dmoIntegrityScore.mjs']) {
+    assert.doesNotMatch(source(path).replace(/no level says "suspicious"/, ''), /suspicio/i, path);
+  }
+  const page = source('app/admin/dmo-integrity/page.tsx');
+  assert.match(page, /group\.level === 'none' \|\| group\.level === 'weak' \? \(\s*<details>/);
+  assert.match(page, /recordedAimText\(passage\.recordedAim\)/);
+  assert.match(page, /Recorded aim does not confirm it/);
+  assert.match(page, /Recorded aim confirms \$\{player\.recordedConfirmedPassages\} of \$\{player\.flaggedWindows\} flagged passages/);
+  assert.match(page, /recordedCheckedPassages < player\.flaggedWindows/);
 });
 
 test('integrity results are admin-only and scans run in the background after submission', () => {

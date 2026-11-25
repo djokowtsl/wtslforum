@@ -61,8 +61,8 @@ export default async function AdminDmoSubmissions() {
                       const scan = integrity.get(id);
                       if (!scan || scan.status === 'no_file') return null;
                       const label = scan.status === 'done'
-                        ? DMO_INTEGRITY_LEVELS[(scan.level ?? 'none') as DmoIntegrityLevel].label
-                        : "Integrity: couldn't analyse";
+                        ? `Analyzer: ${DMO_INTEGRITY_LEVELS[(scan.level ?? 'none') as DmoIntegrityLevel].label}`
+                        : "Analyzer: couldn't analyse";
                       return (
                         <a
                           className={integrityStyles.level}
