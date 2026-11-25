@@ -373,6 +373,76 @@ export async function fetchWTSLAllResults(timeoutMs?: number): Promise<WTSLAllRe
   return parseAllResults(await res.text());
 }
 
+export type WTSLTournamentResultRow = {
+  tournamentName: string;
+  round: string;
+  player1Id: string;
+  player1Name: string;
+  player2Id: string;
+  player2Name: string;
+  date: string | null;
+  score: string;
+};
+
+export function parseWTSLTournamentResults(html: string): WTSLTournamentResultRow[] {
+  const tournamentName = cleanHtml(html.match(/<h1[^>]*>([\s\S]*?)<\/h1>/i)?.[1] ?? '');
+  const rows = html.match(/<tr\b[^>]*>[\s\S]*?<\/tr>/gi) ?? [];
+  const out: WTSLTournamentResultRow[] = [];
+  for (const row of rows) {
+    const cells = row.match(/<td\b[^>]*>[\s\S]*?<\/td>/gi) ?? [];
+    if (cells.length !== 6) continue;
+    const participant = (cell: string) => {
+      const link = cell.match(/<a[^>]+href=["']([^"']+)["'][^>]*>([\s\S]*?)<\/a>/i);
+      if (!link) return null;
+      try {
+        const url = new URL(link[1].replace(/&amp;/g, '&'), `${WTSL_BASE}/tournament_page.php`);
+        const playerId = url.searchParams.get('player');
+        const name = cleanHtml(link[2]);
+        return playerId && name ? { id: playerId, name } : null;
+      } catch {
+        return null;
+      }
+    };
+    const first = participant(cells[2]);
+    const second = participant(cells[3]);
+    if (!first || !second) continue;
+    const score = cleanHtml(cells[5]);
+    if (!score || /\b(?:scheduled|pending|live|in progress)\b/i.test(score)) continue;
+    const rawDate = cleanHtml(cells[0]);
+    const dateMatch = rawDate.match(/(\d{2})\.(\d{2})\.(\d{4})/);
+    out.push({
+      tournamentName,
+      round: cleanHtml(cells[1]),
+      player1Id: first.id,
+      player1Name: first.name,
+      player2Id: second.id,
+      player2Name: second.name,
+      date: dateMatch ? `${dateMatch[3]}-${dateMatch[2]}-${dateMatch[1]}` : null,
+      score,
+    });
+  }
+  return out;
+}
+
+export async function fetchWTSLTournamentResults(
+  tournamentId: string,
+  timeoutMs = 8_000,
+): Promise<WTSLTournamentResultRow[]> {
+  if (!/^[A-Za-z0-9_()-]{1,120}$/.test(tournamentId)) {
+    throw new Error('Invalid WTSL tournament id.');
+  }
+  const url = new URL(`${WTSL_BASE}/tournament_page.php`);
+  url.searchParams.set('tournament', tournamentId);
+  const res = await fetch(url, {
+    cache: 'force-cache',
+    next: { revalidate: 300 },
+    headers: { 'user-agent': 'WTSL-Community-Bridge/1.0' },
+    signal: AbortSignal.timeout(timeoutMs),
+  });
+  if (!res.ok) throw new Error(`WTSL tournament results request failed: ${res.status}`);
+  return parseWTSLTournamentResults(await res.text());
+}
+
 /** Diagnostic used by /api/sync/wtsl?debug=1 — shows what was fetched and what the parser made of it. */
 export async function inspectWTSLRankings(tour: TourCode = DEFAULT_TOUR) {
   const url = rankingsUrl(tour);

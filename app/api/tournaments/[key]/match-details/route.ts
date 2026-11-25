@@ -3,7 +3,13 @@ import { sql } from '@/lib/db';
 import { getTournament } from '@/lib/tournaments';
 import { getChallongeTournamentId } from '@/lib/challongeBracket';
 import { wtslCore } from '@/lib/wtsl-core';
-import { normalizeBracketPlayerName, orientOfficialScore } from '@/lib/tournamentBracketResults';
+import { fetchWTSLTournamentResults } from '@/lib/wtsl';
+import {
+  dedupeEquivalentOfficialMeetings,
+  normalizeBracketPlayerName,
+  normalizeOfficialResultScore,
+  orientOfficialScore,
+} from '@/lib/tournamentBracketResults';
 
 export const runtime = 'nodejs';
 export const maxDuration = 25;
@@ -23,6 +29,7 @@ export async function GET(
   const firstName = (url.searchParams.get('first') ?? '').trim().slice(0, 120);
   const secondName = (url.searchParams.get('second') ?? '').trim().slice(0, 120);
   const roundName = (url.searchParams.get('round') ?? '').trim().slice(0, 80);
+  const requestedScore = (url.searchParams.get('score') ?? '').trim().slice(0, 120);
   const firstKey = normalizeBracketPlayerName(firstName);
   const secondKey = normalizeBracketPlayerName(secondName);
   if (!firstKey || !secondKey || firstKey === secondKey) {
@@ -58,6 +65,7 @@ export async function GET(
     const firstId = playerIds.get(firstKey);
     const secondId = playerIds.get(secondKey);
     let meetings: any[] = [];
+    let uniqueMeetings: any[] = [];
     let tournamentMatch: any = null;
     let playerStats: any[] = [];
 
@@ -77,7 +85,8 @@ export async function GET(
             (m.player_one_id=${firstId} AND m.player_two_id=${secondId})
             OR (m.player_one_id=${secondId} AND m.player_two_id=${firstId})
           )
-        ORDER BY m.played_at DESC NULLS LAST
+        ORDER BY CASE WHEN COALESCE(m.source_id,'') LIKE 'recent:%' THEN 0 ELSE 1 END,
+          m.played_at DESC NULLS LAST
         LIMIT 100
         `,
         sql`
@@ -117,22 +126,61 @@ export async function GET(
         `,
       ]);
 
+      uniqueMeetings = dedupeEquivalentOfficialMeetings(meetings, firstName);
+      const uniqueEventMatches = dedupeEquivalentOfficialMeetings(eventMatches, firstName);
       const roundKey = roundName.toLocaleLowerCase('en').replace(/[^a-z0-9]/g, '');
-      const candidates = eventMatches.filter((match) => {
+      const candidates = uniqueEventMatches.filter((match) => {
         const sameRound = !roundKey
           || String(match.round_name ?? '').toLocaleLowerCase('en').replace(/[^a-z0-9]/g, '') === roundKey;
-        return sameRound && Boolean(match.score);
+        const scoreMatches = !requestedScore || (
+          Boolean(match.score)
+          && normalizeOfficialResultScore(
+            orientOfficialScore(String(match.score), match.player_one_name, firstName),
+          ) === normalizeOfficialResultScore(requestedScore)
+        );
+        return (requestedScore ? scoreMatches : sameRound && Boolean(match.score));
       });
-      const distinctCandidates = [...new Map(candidates.map((match) => [
-        `${String(match.played_at ?? '').slice(0, 10)}|${match.score}|${match.winner_id}`,
-        match,
-      ])).values()];
+      const distinctCandidates = candidates;
       if (distinctCandidates.length === 1) tournamentMatch = distinctCandidates[0];
-      else if (candidates.length === 0 && eventMatches.length === 1) tournamentMatch = eventMatches[0];
+      else if (!requestedScore && candidates.length === 0 && uniqueEventMatches.length === 1) {
+        tournamentMatch = uniqueEventMatches[0];
+      }
+
+      if (!tournamentMatch && challongeId && requestedScore) {
+        try {
+          const officialRows = await fetchWTSLTournamentResults(challongeId);
+          const matchingRows = officialRows.filter((row) => {
+            const rowFirst = normalizeBracketPlayerName(row.player1Name);
+            const rowSecond = normalizeBracketPlayerName(row.player2Name);
+            const samePair = (rowFirst === firstKey && rowSecond === secondKey)
+              || (rowFirst === secondKey && rowSecond === firstKey);
+            return samePair
+              && normalizeOfficialResultScore(
+                orientOfficialScore(row.score, row.player1Name, firstName),
+              ) === normalizeOfficialResultScore(requestedScore);
+          });
+          if (matchingRows.length === 1) {
+            const row = matchingRows[0];
+            tournamentMatch = {
+              player_one_id: row.player1Id,
+              player_two_id: row.player2Id,
+              player_one_name: row.player1Name,
+              player_two_name: row.player2Name,
+              winner_id: row.player1Id,
+              score: row.score,
+              stats: {},
+            };
+          }
+        } catch (error) {
+          console.warn('[tournament-match-details] Official event result unavailable', {
+            errorType: error instanceof Error ? error.name : 'UnknownError',
+          });
+        }
+      }
     }
 
     const wins = { first: 0, second: 0 };
-    for (const match of meetings) {
+    for (const match of uniqueMeetings) {
       if (match.winner_id == null) continue;
       if (String(match.winner_id) === firstId) wins.first += 1;
       if (String(match.winner_id) === secondId) wins.second += 1;
@@ -173,7 +221,7 @@ export async function GET(
       playerIds: { first: firstId ?? null, second: secondId ?? null },
       playerStats,
       headToHead: { ...wins, matches: wins.first + wins.second },
-      meetings: meetings.slice(0, 10).map((match) => ({
+      meetings: uniqueMeetings.slice(0, 10).map((match) => ({
         tournament: match.tournament_name,
         round: match.round_name,
         score: match.score

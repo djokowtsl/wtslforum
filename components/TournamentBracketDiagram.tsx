@@ -1,4 +1,5 @@
 import type { BracketMatch, BracketRound, TournamentBracketData } from '@/lib/challongeBracketData';
+import { displayBracketScore } from '@/lib/tournamentBracketResults';
 import styles from './TournamentBracket.module.css';
 import type { KeyboardEvent } from 'react';
 
@@ -68,9 +69,8 @@ function accessiblePlayer(name: string, seed: string | null): string {
 }
 
 function matchLabel(match: BracketMatch): string {
-  const score = match.officialScore || match.scores.some(Boolean)
-    ? `, score ${match.officialScore || match.scores.filter(Boolean).join(' to ')}`
-    : '';
+  const displayedScore = displayBracketScore(match);
+  const score = displayedScore ? `, score ${displayedScore}` : '';
   return `${accessiblePlayer(match.team1, match.team1Seed)} versus ${accessiblePlayer(match.team2, match.team2Seed)}${score}`;
 }
 
@@ -79,7 +79,7 @@ function bracketMatch(match: BracketMatch, onSelect: (match: BracketMatch) => vo
     { name: match.team1, seed: match.team1Seed, y: 20, winner: match.winner === 1 },
     { name: match.team2, seed: match.team2Seed, y: 44, winner: match.winner === 2 },
   ];
-  const fullScore = match.officialScore || match.scores.filter(Boolean).join('–');
+  const fullScore = displayBracketScore(match);
   return (
     <g
       key={match.matchId}
