@@ -1,0 +1,3 @@
+# Vendored moderator tool: keep its Windows line endings byte-for-byte (tests check the hashes).
+lib/te4InputAnalyzer/*.cjs -text
+lib/te4InputAnalyzer/*.txt -text

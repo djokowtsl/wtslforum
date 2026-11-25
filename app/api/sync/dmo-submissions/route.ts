@@ -1,5 +1,5 @@
 import { del, put } from '@vercel/blob';
-import { NextRequest, NextResponse } from 'next/server';
+import { after, NextRequest, NextResponse } from 'next/server';
 import { isWtslSyncAuthorized } from '@/lib/wtslSyncAuth';
 import {
   createDmoSubmission,
@@ -7,6 +7,7 @@ import {
   submissionDateInLondon,
 } from '@/lib/dmo-submissions';
 import { parseTe4CoachShareUrl } from '@/lib/te4CoachEmbed';
+import { scanDmoSubmission } from '@/lib/dmoIntegrity';
 
 export const dynamic = 'force-dynamic';
 export const maxDuration = 60;
@@ -167,6 +168,13 @@ export async function POST(req: NextRequest) {
     });
     if (privatePathname && storeId && submission.private_blob_pathname !== privatePathname) {
       await del(privatePathname, { storeId }).catch(() => {});
+    }
+    if (privatePathname && submission.private_blob_pathname === privatePathname) {
+      // New Discord submission with a stored file: admin-only integrity screening.
+      const scanId = Number(submission.id);
+      after(() => scanDmoSubmission(scanId).then(() => undefined, (error) => {
+        console.error('[dmo-integrity] background scan failed', { id: scanId, errorType: error instanceof Error ? error.name : 'UnknownError' });
+      }));
     }
     return NextResponse.json({ ok: true, id: submission.id }, { status: 201 });
   } catch (error) {
