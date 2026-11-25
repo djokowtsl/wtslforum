@@ -28,13 +28,19 @@ export async function GET(
   const url = new URL(request.url);
   const firstName = (url.searchParams.get('first') ?? '').trim().slice(0, 120);
   const secondName = (url.searchParams.get('second') ?? '').trim().slice(0, 120);
+  const firstCharacter = (url.searchParams.get('firstCharacter') ?? '').trim().slice(0, 80) || null;
+  const secondCharacter = (url.searchParams.get('secondCharacter') ?? '').trim().slice(0, 80) || null;
   const roundName = (url.searchParams.get('round') ?? '').trim().slice(0, 80);
   const requestedScore = (url.searchParams.get('score') ?? '').trim().slice(0, 120);
+  const requestedWinner = (url.searchParams.get('winner') ?? '').trim().slice(0, 120);
   const firstKey = normalizeBracketPlayerName(firstName);
   const secondKey = normalizeBracketPlayerName(secondName);
   if (!firstKey || !secondKey || firstKey === secondKey) {
     return NextResponse.json({ error: 'A valid player matchup is required.' }, { status: 400 });
   }
+  const requestedWinnerKey = normalizeBracketPlayerName(requestedWinner);
+  const hasRequestedWinner = requestedWinnerKey === firstKey || requestedWinnerKey === secondKey;
+  const scorePerspectiveName = hasRequestedWinner ? requestedWinner : firstName;
 
   try {
     const tournament = await getTournament(key);
@@ -46,6 +52,7 @@ export async function GET(
       SELECT wtsl_player_id, name
       FROM wtsl_players
       WHERE tour=${String(tournament.tour)}
+        AND lower(name)=ANY(${[firstName, secondName].map((name) => name.toLocaleLowerCase('en'))})
     `;
     const players = (roster as any[]).filter((player) => [firstKey, secondKey]
       .includes(normalizeBracketPlayerName(player.name)));
@@ -135,7 +142,7 @@ export async function GET(
         const scoreMatches = !requestedScore || (
           Boolean(match.score)
           && normalizeOfficialResultScore(
-            orientOfficialScore(String(match.score), match.player_one_name, firstName),
+            orientOfficialScore(String(match.score), match.player_one_name, scorePerspectiveName),
           ) === normalizeOfficialResultScore(requestedScore)
         );
         return (requestedScore ? scoreMatches : sameRound && Boolean(match.score));
@@ -156,7 +163,7 @@ export async function GET(
               || (rowFirst === secondKey && rowSecond === firstKey);
             return samePair
               && normalizeOfficialResultScore(
-                orientOfficialScore(row.score, row.player1Name, firstName),
+                orientOfficialScore(row.score, row.player1Name, scorePerspectiveName),
               ) === normalizeOfficialResultScore(requestedScore);
           });
           if (matchingRows.length === 1) {
@@ -179,6 +186,12 @@ export async function GET(
       }
     }
 
+    const perspectiveForWinnerId = (winnerId: unknown, fallbackName: string) => {
+      if (winnerId == null) return fallbackName;
+      if (firstId && String(winnerId) === firstId) return firstName;
+      if (secondId && String(winnerId) === secondId) return secondName;
+      return fallbackName;
+    };
     const wins = { first: 0, second: 0 };
     for (const match of uniqueMeetings) {
       if (match.winner_id == null) continue;
@@ -218,6 +231,7 @@ export async function GET(
     return NextResponse.json({
       firstName,
       secondName,
+      characterPicks: { first: firstCharacter, second: secondCharacter },
       playerIds: { first: firstId ?? null, second: secondId ?? null },
       playerStats,
       headToHead: { ...wins, matches: wins.first + wins.second },
@@ -225,14 +239,24 @@ export async function GET(
         tournament: match.tournament_name,
         round: match.round_name,
         score: match.score
-          ? orientOfficialScore(match.score, match.player_one_name, firstName)
+          ? orientOfficialScore(
+            match.score,
+            match.player_one_name,
+            perspectiveForWinnerId(match.winner_id, firstName),
+          )
           : null,
         winnerName: String(match.winner_id) === firstId ? firstName
           : String(match.winner_id) === secondId ? secondName : null,
         playedAt: match.played_at,
       })),
       result: tournamentMatch ? {
-        score: orientOfficialScore(tournamentMatch.score, tournamentMatch.player_one_name, firstName),
+        score: orientOfficialScore(
+          tournamentMatch.score,
+          tournamentMatch.player_one_name,
+          hasRequestedWinner
+            ? scorePerspectiveName
+            : perspectiveForWinnerId(tournamentMatch.winner_id, firstName),
+        ),
         winnerName: String(tournamentMatch.winner_id) === firstId ? firstName
           : String(tournamentMatch.winner_id) === secondId ? secondName : null,
         stats: (() => {

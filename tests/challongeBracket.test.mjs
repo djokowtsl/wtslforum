@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
 import { getChallongeTournamentId, getChallongeTournamentUrl } from '../lib/challongeBracket.ts';
-import { parseChallongeBracketSvg } from '../lib/challongeBracketData.ts';
+import { parseChallongeBracketSvg, splitBracketParticipantLabel } from '../lib/challongeBracketData.ts';
 import { parseWTSLTournamentResults } from '../lib/wtsl.ts';
 import {
   attachOfficialTournamentResults,
@@ -71,12 +71,27 @@ test('parses a native bracket and formats player character picks', () => {
   assert.equal(result.connectors.length, 1);
 });
 
+test('splits scraped participant names from their character picks', () => {
+  assert.deepEqual(splitBracketParticipantLabel('gifu [S. Tsitsipas]'), {
+    name: 'gifu',
+    character: 'S. Tsitsipas',
+  });
+  assert.deepEqual(splitBracketParticipantLabel('Winner of match 2'), {
+    name: 'Winner of match 2',
+    character: null,
+  });
+});
+
 test('labels Challonge walkover and BCT totals while preserving official results', () => {
   const base = parseChallongeBracketSvg(bracketSvg()).main[0].matches[0];
   assert.equal(displayBracketScore({ ...base, scores: ['0', '0'] }), 'Walkover');
   assert.equal(displayBracketScore({ ...base, scores: ['1', '0'] }), 'BCT');
   assert.equal(displayBracketScore({ ...base, scores: ['0', '1'] }), 'BCT');
+  assert.equal(displayBracketScore({ ...base, scores: ['3', '6'], winner: 2 }), '6–3');
+  assert.equal(displayBracketScore({ ...base, scores: ['6', '3'], winner: 1 }), '6–3');
+  assert.equal(displayBracketScore({ ...base, scores: ['3', '6'], winner: null }), '6–3');
   assert.equal(displayBracketScore({ ...base, scores: ['0', '0'], officialScore: 'Coin Toss (6-3)' }), 'Coin Toss (6-3)');
+  assert.equal(displayBracketScore({ ...base, officialScore: '6-3,5-7,6-4' }), '6-3 5-7 6-4');
   assert.equal(displayBracketScore({ ...base, scores: ['', ''] }), null);
 });
 
@@ -186,7 +201,7 @@ test('rejects SVGs that are not complete bracket draws', () => {
   assert.throws(() => parseChallongeBracketSvg('<svg id="wrong"></svg>'), /bracket SVG/);
 });
 
-test('attaches full official set scores and the official winner in bracket order', () => {
+test('attaches full official set scores from the winner perspective', () => {
   const bracket = parseChallongeBracketSvg(bracketSvg());
   const enriched = attachOfficialTournamentResults(bracket, [{
     player_one_id: '2',
@@ -200,11 +215,11 @@ test('attaches full official set scores and the official winner in bracket order
   }]);
 
   const match = enriched.main[0].matches[0];
-  assert.equal(match.officialScore, '3-6 6-7(7) 4-6');
+  assert.equal(match.officialScore, '6-3 7-6(7) 6-4');
   assert.equal(match.winner, 2);
 });
 
-test('preserves special result text and refuses conflicting score matches', () => {
+test('orients special-result scores to the winner and refuses conflicting matches', () => {
   const bracket = parseChallongeBracketSvg(bracketSvg());
   const special = attachOfficialTournamentResults(bracket, [{
     player_one_id: '1',
@@ -217,6 +232,35 @@ test('preserves special result text and refuses conflicting score matches', () =
     source_id: 'recent:TE4:Paris',
   }]);
   assert.equal(special.main[0].matches[0].officialScore, 'Coin Toss (6-3)');
+
+  const winnerSecond = attachOfficialTournamentResults(bracket, [{
+    player_one_id: '1',
+    player_two_id: '2',
+    player_one_name: 'gifu',
+    player_two_name: 'Madferit',
+    winner_id: '2',
+    score: 'Coin Toss (3-6)',
+    round_name: 'Final',
+    source_id: 'recent:TE4:Paris',
+  }]);
+  assert.equal(winnerSecond.main[0].matches[0].officialScore, 'Coin Toss (6-3)');
+
+  const noWinnerMetadata = {
+    ...bracket,
+    main: bracket.main.map((round) => ({
+      ...round,
+      matches: round.matches.map((match) => ({ ...match, winner: null })),
+    })),
+  };
+  const inferredWinner = attachOfficialTournamentResults(noWinnerMetadata, [{
+    player_one_name: 'Madferit',
+    player_two_name: 'gifu',
+    score: '6-3 6-4',
+    round_name: 'Final',
+    source_id: 'recent:TE4:Paris',
+  }]);
+  assert.equal(inferredWinner.main[0].matches[0].officialScore, '6-3 6-4');
+  assert.equal(inferredWinner.main[0].matches[0].winner, 2);
 
   const ambiguous = attachOfficialTournamentResults(bracket, [
     {

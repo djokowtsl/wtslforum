@@ -1,12 +1,14 @@
 'use client';
 
 import { useEffect, useRef, useState } from 'react';
-import type { BracketMatch } from '@/lib/challongeBracketData';
+import { splitBracketParticipantLabel, type BracketMatch } from '@/lib/challongeBracketData';
+import { displayBracketScore } from '@/lib/tournamentBracketResults';
 import styles from './TournamentBracket.module.css';
 
 type MatchDetailsPayload = {
   firstName: string;
   secondName: string;
+  characterPicks?: { first: string | null; second: string | null };
   playerIds?: { first: string | null; second: string | null };
   headToHead: { first: number; second: number; matches: number };
   meetings: Array<{
@@ -61,6 +63,10 @@ function dateLabel(value: string | null) {
     : date.toLocaleDateString('en-GB', { day: 'numeric', month: 'short', year: 'numeric' });
 }
 
+function playerLabel(name: string, character: string | null) {
+  return character ? `${name} [${character}]` : name;
+}
+
 export default function TournamentMatchDetails({
   tournamentKey,
   match,
@@ -74,15 +80,26 @@ export default function TournamentMatchDetails({
   const [details, setDetails] = useState<MatchDetailsPayload | null>(null);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState(false);
+  const firstParticipant = match ? splitBracketParticipantLabel(match.team1) : null;
+  const secondParticipant = match ? splitBracketParticipantLabel(match.team2) : null;
+  const characterPicks = {
+    first: details?.characterPicks?.first ?? firstParticipant?.character ?? null,
+    second: details?.characterPicks?.second ?? secondParticipant?.character ?? null,
+  };
 
   useEffect(() => {
     if (!match) return;
     const controller = new AbortController();
+    const firstPlayer = splitBracketParticipantLabel(match.team1);
+    const secondPlayer = splitBracketParticipantLabel(match.team2);
     const query = new URLSearchParams({
-      first: match.team1,
-      second: match.team2,
+      first: firstPlayer.name,
+      second: secondPlayer.name,
+      firstCharacter: firstPlayer.character ?? '',
+      secondCharacter: secondPlayer.character ?? '',
       round: match.roundName,
       score: match.officialScore ?? '',
+      winner: match.winner === 1 ? firstPlayer.name : match.winner === 2 ? secondPlayer.name : '',
     });
     setDetails(null);
     setLoading(true);
@@ -120,8 +137,26 @@ export default function TournamentMatchDetails({
           <header className={styles.matchDialogHeader}>
             <div>
               <span className={styles.eyebrow}>{match.roundName || 'MATCH DETAILS'}</span>
-              <h2 id="tournament-match-details-title">{match.team1} <span>vs</span> {match.team2}</h2>
-              {(match.officialScore || details?.result?.score) && <p>{match.officialScore || details?.result?.score}</p>}
+              <h2 id="tournament-match-details-title">
+                {firstParticipant?.name ?? match.team1} <span>vs</span> {secondParticipant?.name ?? match.team2}
+              </h2>
+              <dl className={styles.characterPicks} aria-label="Character picks">
+                {firstParticipant && (
+                  <div>
+                    <dt>{firstParticipant.name}</dt>
+                    <dd>{characterPicks.first ? `Character: ${characterPicks.first}` : 'Character not listed'}</dd>
+                  </div>
+                )}
+                {secondParticipant && (
+                  <div>
+                    <dt>{secondParticipant.name}</dt>
+                    <dd>{characterPicks.second ? `Character: ${characterPicks.second}` : 'Character not listed'}</dd>
+                  </div>
+                )}
+              </dl>
+              {(displayBracketScore(match) || details?.result?.score) && (
+                <p>{displayBracketScore(match) || details?.result?.score}</p>
+              )}
             </div>
             <button type="button" className={styles.closeButton} onClick={() => dialogRef.current?.close()}>
               Close
@@ -137,7 +172,9 @@ export default function TournamentMatchDetails({
                   {details.headToHead.matches > 0 ? (
                     <>
                       <p className={styles.h2hScore}>
-                        {details.firstName} <strong>{details.headToHead.first}–{details.headToHead.second}</strong> {details.secondName}
+                        {playerLabel(details.firstName, characterPicks.first)}
+                        <strong>{details.headToHead.first}–{details.headToHead.second}</strong>
+                        {playerLabel(details.secondName, characterPicks.second)}
                       </p>
                       <div className={styles.meetingList}>
                         {details.meetings.map((meeting, index) => (
@@ -158,13 +195,13 @@ export default function TournamentMatchDetails({
                   {details.playerStats.length > 0 ? (
                     <div className={styles.playerStatGrid}>
                       {[
-                        { id: details.playerIds?.first, name: details.firstName },
-                        { id: details.playerIds?.second, name: details.secondName },
+                        { id: details.playerIds?.first, name: details.firstName, character: characterPicks.first },
+                        { id: details.playerIds?.second, name: details.secondName, character: characterPicks.second },
                       ].map((player) => {
                         const stats = details.playerStats.find((item) => item.player_id === player.id);
                         return (
                           <div className={styles.playerStatCard} key={player.id ?? player.name}>
-                            <strong>{player.name}</strong>
+                            <strong>{playerLabel(player.name, player.character)}</strong>
                             {stats ? (
                               <dl>
                                 <div><dt>Matches</dt><dd>{stats.matches}</dd></div>
@@ -185,7 +222,11 @@ export default function TournamentMatchDetails({
                       <h4>Recorded match stats</h4>
                       {matchStatSections(details.result.stats).map(({ title, entries }) => (
                         <div key={title}>
-                          <strong>{title === 'player1' ? details.firstName : title === 'player2' ? details.secondName : title}</strong>
+                          <strong>{title === 'player1'
+                            ? playerLabel(details.firstName, characterPicks.first)
+                            : title === 'player2'
+                              ? playerLabel(details.secondName, characterPicks.second)
+                              : title}</strong>
                           <ul>{entries.map(([label, value]) => <li key={label}><span>{label}</span><b>{value}</b></li>)}</ul>
                         </div>
                       ))}
@@ -194,11 +235,11 @@ export default function TournamentMatchDetails({
                 </section>
 
                 <section className={styles.detailSection}>
-                  <h3>Odds</h3>
+                  <h3>Current WTSL odds</h3>
                   {details.odds ? (
                     <div className={styles.oddsRows}>
-                      <p><span>{details.firstName}</span><strong>{details.odds.first.toFixed(2)}</strong></p>
-                      <p><span>{details.secondName}</span><strong>{details.odds.second.toFixed(2)}</strong></p>
+                      <p><span>{playerLabel(details.firstName, characterPicks.first)}</span><strong>{details.odds.first.toFixed(2)}</strong></p>
+                      <p><span>{playerLabel(details.secondName, characterPicks.second)}</span><strong>{details.odds.second.toFixed(2)}</strong></p>
                     </div>
                   ) : (
                     <p className={styles.muted}>No current WTSL odds are available for this matchup.</p>
