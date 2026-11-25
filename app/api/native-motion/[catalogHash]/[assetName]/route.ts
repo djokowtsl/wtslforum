@@ -41,9 +41,16 @@ export async function GET(
       signal: AbortSignal.timeout(20_000),
     });
     if (!upstream.ok) {
+      const retryAfter = upstream.headers.get('retry-after');
       return NextResponse.json(
         { error: upstream.status === 404 ? 'Native animation asset not found.' : 'Native animation delivery is temporarily unavailable.' },
-        { status: upstream.status === 404 ? 404 : 503, headers: { 'Cache-Control': 'no-store' } },
+        {
+          status: upstream.status === 404 ? 404 : 503,
+          headers: {
+            'Cache-Control': 'no-store',
+            ...(retryAfter ? { 'Retry-After': retryAfter } : {}),
+          },
+        },
       );
     }
     return new Response(upstream.body, {

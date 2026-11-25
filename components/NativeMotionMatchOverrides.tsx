@@ -16,6 +16,7 @@ import {
 } from '@/lib/nativeMotionCatalogData';
 import { NATIVE_MOTION_GESTURE_CATALOG_SHA256 } from '@/lib/nativeMotionCatalog';
 import { getDmoCharacterGruntGroups } from '@/lib/dmoCharacterAppearance.mjs';
+import { fetchNativeMotionAsset } from '@/lib/nativeMotionFetch';
 import styles from './NativeMotionAdmin.module.css';
 import SearchableClipSelect from './SearchableClipSelect';
 import GestureClipSetPicker from './GestureClipSetPicker';
@@ -63,7 +64,7 @@ export default function NativeMotionMatchOverrides({ catalog }: { catalog?: Nati
 
   useEffect(() => {
     let active = true;
-    fetch(`/api/native-motion/${NATIVE_MOTION_GESTURE_CATALOG_SHA256}/catalog.json`, { cache: 'force-cache' })
+    fetchNativeMotionAsset(`/api/native-motion/${NATIVE_MOTION_GESTURE_CATALOG_SHA256}/catalog.json`)
       .then(async (response) => {
         if (!response.ok) throw new Error();
         const body = await response.json() as NativeMotionCatalog;

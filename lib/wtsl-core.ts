@@ -12,10 +12,11 @@ const token = process.env.WTSL_CORE_API_KEY || '';
 // a small health request. Do not turn normal source latency into empty boards.
 export const WTSL_CORE_PUBLIC_TIMEOUT_MS = 20_000;
 export const WTSL_CORE_FIXTURES_TIMEOUT_MS = 120_000;
+export const WTSL_CORE_OPEN_FIXTURES_TIMEOUT_MS = 20_000;
 const WTSL_CORE_ACCOUNT_TIMEOUT_MS = 5_000;
 export const WTSL_CORE_LEDGER_TIMEOUT_MS = 20_000;
 const WTSL_CORE_CHARACTER_STATS_TIMEOUT_MS = 20_000;
-const WTSL_CORE_CHARACTER_CHART_TIMEOUT_MS = 55_000;
+const WTSL_CORE_CHARACTER_CHART_TIMEOUT_MS = 8_000;
 
 type CoreRequestOptions = {
   timeoutMs?: number;
@@ -81,7 +82,9 @@ async function core<T>(
     }
     return data;
   } catch (error) {
-    if (requestOptions.logLabel) {
+    const expectedPending = error instanceof Error
+      && error.message === 'character_chart_data_pending';
+    if (requestOptions.logLabel && !expectedPending) {
       console.warn('[wtsl-core] Public data request failed', {
         feed: requestOptions.logLabel,
         elapsedMs: Date.now() - startedAt,
@@ -362,6 +365,19 @@ export const wtslCore = {
     }>(
       '/api/core/betting/fixtures', { method: 'POST' }),
 
+  /** Verified open fixtures only; dashboard reads must not scan settlements. */
+  openFixtures: async () => {
+    const result = await core<{
+      open: CoreFixture[];
+      recent_settled: CoreFixture[];
+    }>(
+      '/api/core/betting/fixtures?include_recent_settled=false',
+      {},
+      { timeoutMs: WTSL_CORE_OPEN_FIXTURES_TIMEOUT_MS, logLabel: 'open-fixtures' },
+    );
+    return result.open;
+  },
+
   fixture: (fixtureKey: string | number) =>
     core<CoreFixture>(
       `/api/core/betting/fixtures/${encodeURIComponent(String(fixtureKey))}`,
@@ -468,24 +484,34 @@ export const wtslCore = {
     );
   },
 
-  characterRecommendations: (query: {
+  characterRecommendations: async (query: {
     tour: 'atp' | 'wta';
     metrics: CoreCharacterRecommendationMetric[];
-  }) =>
-    core<{
-      tour: string;
-      recommendations: CoreCharacterRecommendation[];
-    }>(
-      '/api/core/character-recommendations',
-      {
-        method: 'POST',
-        headers: { 'content-type': 'application/json' },
-        body: JSON.stringify(query),
-        signal: AbortSignal.timeout(
-          WTSL_CORE_CHARACTER_RECOMMENDATION_TIMEOUT_MS,
-        ),
-      },
-    ),
+  }) => {
+    for (let attempt = 0; ; attempt += 1) {
+      try {
+        return await core<{
+          tour: string;
+          recommendations: CoreCharacterRecommendation[];
+        }>(
+          '/api/core/character-recommendations',
+          {
+            method: 'POST',
+            headers: { 'content-type': 'application/json' },
+            body: JSON.stringify(query),
+            signal: AbortSignal.timeout(
+              WTSL_CORE_CHARACTER_RECOMMENDATION_TIMEOUT_MS,
+            ),
+          },
+        );
+      } catch (error) {
+        const pending = error instanceof Error
+          && error.message === 'character_recommendations_pending';
+        if (!pending || attempt >= 11) throw error;
+        await new Promise((resolve) => setTimeout(resolve, 3000));
+      }
+    }
+  },
 
   matchSchedules: () =>
     core<CoreMatchSchedulerStoredRecord[]>('/api/core/match-schedules'),

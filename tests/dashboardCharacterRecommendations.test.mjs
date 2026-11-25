@@ -16,11 +16,11 @@ const coreClient = readFileSync(
 );
 
 test('verified TE4 dashboard cards request player-specific suggestions from Core', () => {
-  assert.ok(dashboard.includes("c.tour === 'TE4' || c.tour === 'TE4_(F)'"));
-  assert.ok(dashboard.includes("c.tour === 'TE4_(F)' ? 'wta' : 'atp'"));
+  assert.ok(dashboard.includes("card.tour === 'TE4' || card.tour === 'TE4_(F)'"));
+  assert.ok(dashboard.includes("tour === 'TE4_(F)' ? 'wta' : 'atp'"));
   assert.ok(dashboard.includes('metrics: insights.metrics'));
   assert.ok(dashboard.includes('wtslCore.characterRecommendations'));
-  assert.ok(dashboard.includes('<CharacterSuggestions'));
+  assert.ok(dashboard.includes('<Suspense fallback={<CharacterSuggestions recommendations={null} />}>'));
   assert.ok(coreClient.includes("'/api/core/character-recommendations'"));
 });
 
