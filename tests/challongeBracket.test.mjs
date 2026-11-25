@@ -76,6 +76,9 @@ test('labels Challonge walkover and BCT totals while preserving official results
   assert.equal(displayBracketScore({ ...base, scores: ['0', '0'] }), 'Walkover');
   assert.equal(displayBracketScore({ ...base, scores: ['1', '0'] }), 'BCT');
   assert.equal(displayBracketScore({ ...base, scores: ['0', '1'] }), 'BCT');
+  assert.equal(displayBracketScore({ ...base, scores: ['3', '6'], winner: 2 }), '6–3');
+  assert.equal(displayBracketScore({ ...base, scores: ['6', '3'], winner: 1 }), '6–3');
+  assert.equal(displayBracketScore({ ...base, scores: ['3', '6'], winner: null }), '6–3');
   assert.equal(displayBracketScore({ ...base, scores: ['0', '0'], officialScore: 'Coin Toss (6-3)' }), 'Coin Toss (6-3)');
   assert.equal(displayBracketScore({ ...base, scores: ['', ''] }), null);
 });

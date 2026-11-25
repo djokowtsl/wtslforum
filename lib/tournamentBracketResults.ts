@@ -71,10 +71,23 @@ export function displayBracketScore(match: BracketMatch): string | null {
   const officialScore = match.officialScore?.trim();
   if (officialScore) return officialScore;
 
-  const challongeScore = match.scores.map((score) => score?.trim() ?? '').filter(Boolean).join('-');
+  const scores = match.scores.map((score) => score?.trim() ?? '');
+  const challongeScore = scores.filter(Boolean).join('-');
   if (!challongeScore) return null;
   if (/^0\s*-\s*0$/.test(challongeScore)) return 'Walkover';
   if (/^(?:1\s*-\s*0|0\s*-\s*1)$/.test(challongeScore)) return 'BCT';
+
+  if (scores.length === 2 && scores.every(Boolean)) {
+    const firstScore = Number.parseInt(scores[0], 10);
+    const secondScore = Number.parseInt(scores[1], 10);
+    const winner = match.winner ?? (
+      Number.isFinite(firstScore) && Number.isFinite(secondScore) && firstScore !== secondScore
+        ? firstScore > secondScore ? 1 : 2
+        : null
+    );
+    const [first, second] = winner === 2 ? [scores[1], scores[0]] : scores;
+    return `${first}–${second}`;
+  }
   return challongeScore.replace(/\s*-\s*/g, '–');
 }
 
