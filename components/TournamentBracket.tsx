@@ -4,6 +4,7 @@ import { useEffect, useRef, useState, type MutableRefObject, type TouchEvent } f
 import type { TournamentBracketData } from '@/lib/challongeBracketData';
 import TournamentBracketDiagram from './TournamentBracketDiagram';
 import styles from './TournamentBracket.module.css';
+import TournamentMatchDetails from './TournamentMatchDetails';
 
 const MIN_ZOOM = 1;
 const MAX_ZOOM = 5;
@@ -58,6 +59,7 @@ function BracketCanvas({
   zoom,
   setZoom,
   pinchStart,
+  onMatchSelect,
   fullscreen = false,
 }: {
   bracket: TournamentBracketData;
@@ -65,6 +67,7 @@ function BracketCanvas({
   zoom: number;
   setZoom: (value: number) => void;
   pinchStart: MutableRefObject<{ distance: number; zoom: number } | null>;
+  onMatchSelect: (match: TournamentBracketData['main'][number]['matches'][number]) => void;
   fullscreen?: boolean;
 }) {
   function handleTouchStart(event: TouchEvent<HTMLDivElement>) {
@@ -87,7 +90,7 @@ function BracketCanvas({
 
   return (
     <div className={fullscreen ? styles.fullscreenCanvas : styles.canvas}>
-      <p className={styles.panHint}>Use the controls or pinch to zoom, then scroll to inspect matches.</p>
+      <p className={styles.panHint}>Select a matchup to view its results and available stats.</p>
       <ZoomControls zoom={zoom} onZoomChange={setZoom} />
       <div
         className={styles.diagramViewport}
@@ -99,7 +102,12 @@ function BracketCanvas({
         onTouchEnd={(event) => { if (event.touches.length < 2) pinchStart.current = null; }}
         onTouchCancel={() => { pinchStart.current = null; }}
       >
-        <TournamentBracketDiagram bracket={bracket} tournamentName={tournamentName} zoom={zoom} />
+        <TournamentBracketDiagram
+          bracket={bracket}
+          tournamentName={tournamentName}
+          zoom={zoom}
+          onMatchSelect={onMatchSelect}
+        />
       </div>
     </div>
   );
@@ -119,6 +127,7 @@ export default function TournamentBracket({
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(false);
   const [fullscreen, setFullscreen] = useState(false);
+  const [selectedMatch, setSelectedMatch] = useState<TournamentBracketData['main'][number]['matches'][number] | null>(null);
   const dialogRef = useRef<HTMLDialogElement>(null);
   const openButtonRef = useRef<HTMLButtonElement>(null);
   const pinchStart = useRef<{ distance: number; zoom: number } | null>(null);
@@ -163,7 +172,6 @@ export default function TournamentBracket({
         <div>
           <span className={styles.eyebrow}>TOURNAMENT DRAW</span>
           <h2 id="tournament-bracket-title">{tournamentName}</h2>
-          <p>Our interactive bracket, with character picks shown beside each player.</p>
         </div>
         <div className={styles.actions}>
           {bracket && (
@@ -190,12 +198,25 @@ export default function TournamentBracket({
       )}
       {bracket && (
         <>
+          {bracket.resultsAvailable === false && (
+            <div className={styles.status} role="status">
+              The bracket loaded, but official match results could not be checked.
+            </div>
+          )}
+          {bracket.resultsAvailable
+            && (bracket.completedMatchCount ?? 0) > (bracket.officialResultCount ?? 0)
+            && (
+              <div className={styles.resultsNote} role="status">
+                WTSL set scores are shown for {bracket.officialResultCount ?? 0} of {bracket.completedMatchCount} completed matches; the rest keep the draw score.
+              </div>
+            )}
           <BracketCanvas
             bracket={bracket}
             tournamentName={tournamentName}
             zoom={zoom}
             setZoom={setZoom}
             pinchStart={pinchStart}
+            onMatchSelect={setSelectedMatch}
           />
           {fullscreen && (
             <dialog
@@ -224,11 +245,17 @@ export default function TournamentBracket({
                   zoom={zoom}
                   setZoom={setZoom}
                   pinchStart={pinchStart}
+                  onMatchSelect={setSelectedMatch}
                   fullscreen
                 />
               </div>
             </dialog>
           )}
+          <TournamentMatchDetails
+            tournamentKey={tournamentKey}
+            match={selectedMatch}
+            onClose={() => setSelectedMatch(null)}
+          />
         </>
       )}
     </section>

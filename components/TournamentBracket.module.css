@@ -1,10 +1,10 @@
 .bracket {
   margin: 26px 0 18px;
   overflow: hidden;
-  border: 1px solid #234b5c;
-  border-radius: 10px;
-  background: #071c2a;
-  box-shadow: 0 18px 44px rgba(4, 25, 37, .12);
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  background: var(--panel);
+  box-shadow: 0 18px 44px rgba(0, 0, 0, .12);
 }
 
 .header,
@@ -14,26 +14,26 @@
   justify-content: space-between;
   gap: 22px;
   padding: 24px 28px;
-  border-bottom: 1px solid #31586a;
-  color: #fff;
+  border-bottom: 1px solid var(--line);
+  color: var(--text);
 }
 
 .header h2,
 .fullscreenHeader h2 {
   margin: 12px 0 9px;
-  color: #fff;
+  color: var(--text-strong);
   font: 900 clamp(28px, 4vw, 42px)/.95 var(--font-display, 'Arial Narrow'), Impact, sans-serif;
 }
 
 .header p {
   margin: 0;
-  color: #b7d0d9;
+  color: var(--muted);
   font-size: 12px;
   line-height: 1.7;
 }
 
 .eyebrow {
-  color: #35d1af;
+  color: var(--cyan);
   font-size: 10px;
   font-weight: 800;
   letter-spacing: .17em;
@@ -55,10 +55,10 @@
   align-items: center;
   justify-content: center;
   padding: 0 15px;
-  border: 1px solid #315568;
-  border-radius: 4px;
-  background: linear-gradient(110deg, #1768ee, #18bda2);
-  color: #fff;
+  border: 1px solid var(--line-2);
+  border-radius: 9px;
+  background: var(--lime);
+  color: #07101d;
   font-family: inherit;
   font-size: 11px;
   font-weight: 800;
@@ -71,9 +71,9 @@
 
 .officialLink,
 .closeButton {
-  border-color: #315568;
-  background: #102d3d;
-  color: #d8e8ec;
+  border-color: var(--line-2);
+  background: var(--panel-2);
+  color: var(--text);
 }
 
 .fullscreenButton:hover,
@@ -85,29 +85,37 @@
 .officialLink:focus-visible,
 .closeButton:hover,
 .closeButton:focus-visible {
-  border-color: #35d1af;
-  color: #fff;
+  border-color: var(--cyan);
+  color: var(--text-strong);
 }
 
 .status {
   margin: 18px 28px;
   padding: 14px 16px;
-  border: 1px solid #315568;
-  background: #102d3d;
-  color: #d8e8ec;
+  border: 1px solid var(--line-2);
+  border-radius: 9px;
+  background: var(--panel-2);
+  color: var(--text);
   font-size: 13px;
   line-height: 1.55;
+}
+
+.resultsNote {
+  margin: 14px 28px 0;
+  color: var(--muted);
+  font-size: 11px;
+  line-height: 1.5;
 }
 
 .canvas,
 .fullscreenCanvas {
   padding: 18px 0 4px;
-  background: #071c2a;
+  background: var(--panel);
 }
 
 .panHint {
   margin: 0 28px 10px;
-  color: #a8c4cd;
+  color: var(--muted);
   font-size: 11px;
   line-height: 1.5;
 }
@@ -118,7 +126,7 @@
   justify-content: flex-end;
   gap: 7px;
   margin: 0 28px 10px;
-  color: #d8e8ec;
+  color: var(--text);
   line-height: 1;
 }
 
@@ -128,9 +136,10 @@
   height: 34px;
   place-items: center;
   padding: 0 10px;
-  border: 1px solid #315568;
-  background: #102d3d;
-  color: #fff;
+  border: 1px solid var(--line-2);
+  border-radius: 8px;
+  background: var(--panel-2);
+  color: var(--text-strong);
   font-family: inherit;
   font-size: 15px;
   font-weight: 800;
@@ -139,8 +148,8 @@
 }
 
 .zoomControls button:hover:not(:disabled) {
-  border-color: #35d1af;
-  background: #174254;
+  border-color: var(--cyan);
+  background: var(--panel-3);
 }
 
 .zoomControls button:disabled {
@@ -150,7 +159,7 @@
 
 .zoomControls output {
   min-width: 48px;
-  color: #bed0d5;
+  color: var(--muted);
   font-family: inherit;
   font-size: 11px;
   font-weight: 700;
@@ -171,15 +180,15 @@
   overflow: auto;
   overscroll-behavior: contain;
   -webkit-overflow-scrolling: touch;
-  scrollbar-color: #3a6b75 #0b2838;
+  scrollbar-color: var(--line-2) var(--bg-2);
   scrollbar-width: thin;
-  background: #f4f8f9;
+  background: var(--bg-2);
   line-height: 0;
   touch-action: pan-x pan-y;
 }
 
 .diagramViewport:focus-visible {
-  outline: 2px solid #35d1af;
+  outline: 2px solid var(--lime);
   outline-offset: -2px;
 }
 
@@ -187,12 +196,12 @@
   display: block;
   max-width: none;
   height: auto;
-  background: #f4f8f9;
+  background: var(--bg-2);
 }
 
 .connector {
   fill: none;
-  stroke: #78939b;
+  stroke: var(--line-2);
   stroke-width: 1.5;
   stroke-linecap: square;
   stroke-linejoin: round;
@@ -200,62 +209,77 @@
 }
 
 .sectionLabel {
-  fill: #26bfa1;
+  fill: var(--cyan);
   font: 800 10px var(--font-display, 'Arial Narrow'), Impact, sans-serif;
   letter-spacing: 1.6px;
 }
 
 .roundBackground {
-  fill: #0b2d3d;
-  stroke: #315568;
+  fill: var(--panel-2);
+  stroke: var(--line-2);
   stroke-width: 1;
   vector-effect: non-scaling-stroke;
 }
 
 .roundTitle {
-  fill: #fff;
+  fill: var(--text-strong);
   font: 800 12px var(--font-display, 'Arial Narrow'), Impact, sans-serif;
   letter-spacing: .2px;
 }
 
 .roundFormat {
-  fill: #35d1af;
+  fill: var(--cyan);
   font: 800 8px Arial, sans-serif;
   letter-spacing: 1px;
 }
 
 .matchBackground {
-  fill: #f9fbfc;
-  stroke: #b9cbd0;
+  fill: var(--panel);
+  stroke: var(--line-2);
   stroke-width: 1;
   vector-effect: non-scaling-stroke;
 }
 
 .matchDivider {
-  stroke: #d4e0e3;
+  stroke: var(--line);
   stroke-width: 1;
   vector-effect: non-scaling-stroke;
 }
 
 .playerName {
-  fill: #173543;
+  fill: var(--text);
   font: 600 10px Arial, sans-serif;
 }
 
 .seed {
-  fill: #6d858e;
+  fill: var(--muted);
   font-weight: 800;
-}
-
-.playerScore {
-  fill: #526b74;
-  font: 700 10px Arial, sans-serif;
 }
 
 .winner,
 .winner .seed {
-  fill: #08785f;
+  fill: var(--lime);
   font-weight: 800;
+}
+
+.winnerCheck {
+  fill: var(--lime);
+  font: 900 12px Arial, sans-serif;
+}
+
+.matchSetScore {
+  fill: var(--muted);
+  font: 700 9px Arial, sans-serif;
+}
+
+.match:focus-visible .matchBackground,
+.match:hover .matchBackground {
+  stroke: var(--cyan);
+  stroke-width: 2;
+}
+
+.match {
+  cursor: pointer;
 }
 
 .fullscreenDialog {
@@ -270,12 +294,12 @@
   padding: 0;
   overflow: hidden;
   border: 0;
-  background: #071c2a;
-  color: #fff;
+  background: var(--panel);
+  color: var(--text);
 }
 
 .fullscreenDialog::backdrop {
-  background: rgba(0, 0, 0, .75);
+  background: rgba(0, 0, 0, .72);
 }
 
 .fullscreenLayout {
@@ -297,6 +321,216 @@
   font-size: clamp(22px, 3vw, 32px);
 }
 
+.matchDialog {
+  width: min(760px, calc(100vw - 24px));
+  max-width: 760px;
+  max-height: min(90dvh, 900px);
+  padding: 0;
+  overflow: hidden;
+  border: 1px solid var(--line-2);
+  border-radius: var(--radius);
+  background: var(--panel);
+  color: var(--text);
+}
+
+.matchDialog::backdrop {
+  background: rgba(0, 0, 0, .72);
+  backdrop-filter: blur(3px);
+}
+
+.matchDialogLayout {
+  display: flex;
+  max-height: min(90dvh, 900px);
+  flex-direction: column;
+}
+
+.matchDialogHeader {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 16px;
+  padding: 20px 22px 16px;
+  border-bottom: 1px solid var(--line);
+  background: var(--panel-2);
+}
+
+.matchDialogHeader > div {
+  min-width: 0;
+}
+
+.matchDialogHeader h2 {
+  margin: 7px 0 0;
+  color: var(--text-strong);
+  font: 800 clamp(22px, 4vw, 32px)/1.05 var(--font-display);
+  overflow-wrap: anywhere;
+}
+
+.matchDialogHeader h2 span {
+  color: var(--muted);
+  font: 500 13px var(--font-body);
+}
+
+.matchDialogHeader p {
+  margin: 7px 0 0;
+  color: var(--soft);
+  font-size: 13px;
+  font-weight: 700;
+}
+
+.matchDialogBody {
+  display: grid;
+  gap: 14px;
+  padding: 18px 22px 22px;
+  overflow: auto;
+}
+
+.detailSection {
+  padding: 15px;
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  background: var(--bg-2);
+}
+
+.detailSection h3,
+.matchStats h4 {
+  margin: 0 0 12px;
+  color: var(--text-strong);
+  font-size: 14px;
+}
+
+.muted {
+  margin: 0;
+  color: var(--muted);
+  font-size: 12px;
+  line-height: 1.55;
+}
+
+.h2hScore {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 9px;
+  margin: 0 0 12px;
+  font-size: 13px;
+}
+
+.h2hScore strong {
+  padding: 5px 9px;
+  border-radius: 7px;
+  background: var(--panel-3);
+  color: var(--lime);
+  font-size: 16px;
+}
+
+.meetingList {
+  display: grid;
+  gap: 7px;
+}
+
+.meetingList > div,
+.oddsRows p,
+.playerStatCard dl > div,
+.matchStats li {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.meetingList > div {
+  padding-top: 7px;
+  border-top: 1px solid var(--line);
+  font-size: 11px;
+}
+
+.meetingList span,
+.playerStatCard dt,
+.matchStats li span,
+.oddsRows span {
+  color: var(--muted);
+}
+
+.meetingList strong {
+  color: var(--text);
+  white-space: nowrap;
+}
+
+.playerStatGrid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 10px;
+}
+
+.playerStatCard {
+  min-width: 0;
+  padding: 12px;
+  border: 1px solid var(--line);
+  border-radius: 9px;
+  background: var(--panel);
+}
+
+.playerStatCard > strong {
+  display: block;
+  margin-bottom: 10px;
+  overflow-wrap: anywhere;
+  color: var(--text-strong);
+  font-size: 12px;
+}
+
+.playerStatCard dl {
+  display: grid;
+  gap: 6px;
+  margin: 0;
+}
+
+.playerStatCard dl > div {
+  font-size: 11px;
+}
+
+.playerStatCard dd {
+  margin: 0;
+  color: var(--soft);
+  font-weight: 700;
+}
+
+.matchStats {
+  display: grid;
+  gap: 10px;
+  margin-top: 16px;
+}
+
+.matchStats h4 {
+  margin: 0;
+  font-size: 12px;
+}
+
+.matchStats ul {
+  display: grid;
+  gap: 5px;
+  margin: 7px 0 0;
+  padding: 0;
+  list-style: none;
+}
+
+.matchStats li {
+  font-size: 11px;
+}
+
+.matchStats li b,
+.oddsRows strong {
+  color: var(--lime);
+}
+
+.oddsRows {
+  display: grid;
+  gap: 7px;
+}
+
+.oddsRows p {
+  margin: 0;
+  font-size: 12px;
+}
+
 .closeButton {
   min-width: 72px;
   min-height: 38px;
@@ -316,7 +550,7 @@
 }
 
 .fullscreenDialog :focus-visible {
-  outline: 2px solid #35d1af;
+  outline: 2px solid var(--lime);
   outline-offset: 3px;
 }
 
@@ -362,6 +596,10 @@
     margin: 16px 17px;
   }
 
+  .resultsNote {
+    margin: 12px 17px 0;
+  }
+
   .fullscreenHeader {
     min-height: 68px;
     padding: 10px 14px;
@@ -375,5 +613,21 @@
   .fullscreenCanvas .zoomControls {
     margin-right: 14px;
     margin-left: 14px;
+  }
+
+  .matchDialogHeader {
+    padding: 16px 14px 13px;
+  }
+
+  .matchDialogBody {
+    padding: 13px;
+  }
+
+  .detailSection {
+    padding: 12px;
+  }
+
+  .playerStatGrid {
+    grid-template-columns: 1fr;
   }
 }

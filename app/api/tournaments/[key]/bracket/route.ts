@@ -2,6 +2,8 @@ import { NextResponse } from 'next/server';
 import { getTournament } from '@/lib/tournaments';
 import { getChallongeTournamentId } from '@/lib/challongeBracket';
 import { parseChallongeBracketSvg } from '@/lib/challongeBracketData';
+import { attachOfficialTournamentResults } from '@/lib/tournamentBracketResults';
+import { sql } from '@/lib/db';
 
 export const runtime = 'nodejs';
 
@@ -46,7 +48,50 @@ export async function GET(
       );
     }
 
-    const bracket = parseChallongeBracketSvg(await response.text());
+    let bracket = parseChallongeBracketSvg(await response.text());
+    let resultsAvailable = true;
+    try {
+      const normalizedTournamentName = String(tournament.name ?? '')
+        .toLocaleLowerCase('en')
+        .replace(/[^a-z0-9]/g, '');
+      const resultRows = await sql`
+        SELECT m.player_one_id, m.player_two_id, p1.name AS player_one_name, p2.name AS player_two_name,
+          m.winner_id, m.score, m.stats, m.round_name, m.source_id
+        FROM match_stats m
+        LEFT JOIN wtsl_players p1
+          ON p1.wtsl_player_id=m.player_one_id AND p1.tour=m.tour
+        LEFT JOIN wtsl_players p2
+          ON p2.wtsl_player_id=m.player_two_id AND p2.tour=m.tour
+        WHERE m.tour=${String(tournament.tour)}
+          AND m.score IS NOT NULL
+          AND (
+            m.tournament_key=${challongeId}
+            OR lower(regexp_replace(COALESCE(m.tournament_name,''),'[^a-z0-9]','','g'))
+              LIKE ${`${normalizedTournamentName}%`}
+          )
+          AND (
+            ${tournament.start_date ?? null}::date IS NULL
+            OR m.played_at IS NULL
+            OR m.played_at::date BETWEEN ${tournament.start_date ?? null}::date - 3
+              AND ${tournament.start_date ?? null}::date + 45
+          )
+        ORDER BY CASE WHEN COALESCE(m.source_id,'') LIKE 'recent:%' THEN 0 ELSE 1 END,
+          m.played_at DESC NULLS LAST
+        LIMIT 1000
+      `;
+      bracket = attachOfficialTournamentResults(bracket, resultRows);
+    } catch (error) {
+      resultsAvailable = false;
+      console.warn(
+        'Official tournament results could not be matched to the bracket:',
+        error instanceof Error ? error.message : 'unknown error',
+      );
+    }
+    bracket.resultsAvailable = resultsAvailable;
+    const allMatches = [...bracket.winners, ...bracket.losers, ...bracket.main]
+      .flatMap((round) => round.matches);
+    bracket.officialResultCount = allMatches.filter((match) => Boolean(match.officialScore)).length;
+    bracket.completedMatchCount = allMatches.filter((match) => match.status === 'complete').length;
     return NextResponse.json(bracket, {
       headers: {
         'Cache-Control': 'public, s-maxage=300, stale-while-revalidate=600',

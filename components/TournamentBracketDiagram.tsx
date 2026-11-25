@@ -1,11 +1,12 @@
 import type { BracketMatch, BracketRound, TournamentBracketData } from '@/lib/challongeBracketData';
 import styles from './TournamentBracket.module.css';
+import type { KeyboardEvent } from 'react';
 
 const TOP_PADDING = 34;
-const ROUND_WIDTH = 219;
+const ROUND_WIDTH = 236;
 const ROUND_HEIGHT = 76;
-const MATCH_WIDTH = 204;
-const MATCH_HEIGHT = 52;
+const MATCH_WIDTH = 226;
+const MATCH_HEIGHT = 72;
 
 function roundTitleLines(name: string): string[] {
   const title = name.split(/\s+-\s+/)[0].trim();
@@ -67,46 +68,61 @@ function accessiblePlayer(name: string, seed: string | null): string {
 }
 
 function matchLabel(match: BracketMatch): string {
-  const score = match.scores.some(Boolean)
-    ? `, score ${match.scores.filter(Boolean).join(' to ')}`
+  const score = match.officialScore || match.scores.some(Boolean)
+    ? `, score ${match.officialScore || match.scores.filter(Boolean).join(' to ')}`
     : '';
   return `${accessiblePlayer(match.team1, match.team1Seed)} versus ${accessiblePlayer(match.team2, match.team2Seed)}${score}`;
 }
 
-function bracketMatch(match: BracketMatch) {
+function bracketMatch(match: BracketMatch, onSelect: (match: BracketMatch) => void) {
   const players = [
-    { name: match.team1, seed: match.team1Seed, score: match.scores[0], y: 17, winner: match.winner === 1 },
-    { name: match.team2, seed: match.team2Seed, score: match.scores[1], y: 43, winner: match.winner === 2 },
+    { name: match.team1, seed: match.team1Seed, y: 20, winner: match.winner === 1 },
+    { name: match.team2, seed: match.team2Seed, y: 44, winner: match.winner === 2 },
   ];
+  const fullScore = match.officialScore || match.scores.filter(Boolean).join('–');
   return (
     <g
       key={match.matchId}
       className={styles.match}
       transform={`translate(${match.x} ${match.y})`}
-      role="group"
-      aria-label={matchLabel(match)}
+      role="button"
+      tabIndex={0}
+      aria-label={`${matchLabel(match)}. View matchup details.`}
+      onClick={() => onSelect(match)}
+      onKeyDown={(event: KeyboardEvent<SVGGElement>) => {
+        if (event.key === 'Enter' || event.key === ' ') {
+          event.preventDefault();
+          onSelect(match);
+        }
+      }}
     >
       <title>{matchLabel(match)}</title>
       <rect className={styles.matchBackground} width={MATCH_WIDTH} height={MATCH_HEIGHT} rx="3" />
-      <line className={styles.matchDivider} x1="0" x2={MATCH_WIDTH} y1={MATCH_HEIGHT / 2} y2={MATCH_HEIGHT / 2} />
+      <line className={styles.matchDivider} x1="0" x2={MATCH_WIDTH} y1="32" y2="32" />
       {players.map((player, index) => (
         <g key={`${match.matchId}-${index}`}>
-          <text className={`${styles.playerName}${player.winner ? ` ${styles.winner}` : ''}`} x="8" y={player.y}>
+          <text
+            className={`${styles.playerName}${player.winner ? ` ${styles.winner}` : ''}`}
+            x="8"
+            y={player.y}
+            textLength={Math.min(MATCH_WIDTH - 34, Math.max(8, `${player.seed ? `(${player.seed}) ` : ''}${player.name}`.length * 5.6))}
+            lengthAdjust="spacingAndGlyphs"
+          >
             {player.seed && <tspan className={styles.seed}>({player.seed}) </tspan>}
             {player.name}
           </text>
-          {player.score !== null && (
-            <text
-              className={`${styles.playerScore}${player.winner ? ` ${styles.winner}` : ''}`}
-              x={MATCH_WIDTH - 8}
-              y={player.y}
-              textAnchor="end"
-            >
-              {player.score}
+          {player.winner && (
+            <text className={styles.winnerCheck} x={MATCH_WIDTH - 8} y={player.y} textAnchor="end" aria-hidden="true">
+              ✓
             </text>
           )}
         </g>
       ))}
+      {fullScore && (
+        <text className={styles.matchSetScore} x="8" y="64" textLength={Math.min(MATCH_WIDTH - 16, Math.max(24, fullScore.length * 5.4))} lengthAdjust="spacingAndGlyphs">
+          {fullScore}
+        </text>
+      )}
     </g>
   );
 }
@@ -115,25 +131,35 @@ export default function TournamentBracketDiagram({
   bracket,
   tournamentName,
   zoom,
+  onMatchSelect,
 }: {
   bracket: TournamentBracketData;
   tournamentName: string;
   zoom: number;
+  onMatchSelect: (match: BracketMatch) => void;
 }) {
   const rounds = [...bracket.winners, ...bracket.losers, ...bracket.main];
+  const diagramWidth = Math.max(
+    bracket.width,
+    ...rounds.map((round) => round.x + Math.max(ROUND_WIDTH, MATCH_WIDTH)),
+  );
+  const diagramHeight = Math.max(
+    bracket.height,
+    ...rounds.flatMap((round) => round.matches.map((match) => match.y + MATCH_HEIGHT)),
+  );
   return (
     <svg
       className={styles.diagram}
-      width={bracket.width}
-      height={bracket.height + TOP_PADDING}
-      viewBox={`0 0 ${bracket.width} ${bracket.height + TOP_PADDING}`}
+      width={diagramWidth}
+      height={diagramHeight + TOP_PADDING}
+      viewBox={`0 0 ${diagramWidth} ${diagramHeight + TOP_PADDING}`}
       preserveAspectRatio="xMinYMin meet"
       style={{ width: `${zoom * 100}%` }}
       role="img"
       aria-label={`${tournamentName} bracket with player character picks`}
     >
       <title>{`${tournamentName} tournament bracket`}</title>
-      <desc>Our interactive bracket rendering, showing players, character picks, scores, rounds, and match progression.</desc>
+      <desc>Tournament rounds, players, scores and match progression.</desc>
       <g transform={`translate(0 ${TOP_PADDING})`}>
         {bracket.connectors.map((connector, index) => (
           <path
@@ -154,7 +180,7 @@ export default function TournamentBracketDiagram({
           </text>
         ))}
         {rounds.map(roundHeader)}
-        {rounds.flatMap((round) => round.matches).map(bracketMatch)}
+        {rounds.flatMap((round) => round.matches).map((match) => bracketMatch(match, onMatchSelect))}
       </g>
     </svg>
   );

@@ -6,11 +6,13 @@ export type BracketMatch = {
   number: string;
   team1: string;
   team2: string;
+  roundName: string;
   team1Seed: string | null;
   team2Seed: string | null;
   status: BracketMatchStatus;
   winner: 1 | 2 | null;
   scores: [string | null, string | null];
+  officialScore: string | null;
   x: number;
   y: number;
 };
@@ -44,6 +46,9 @@ export type TournamentBracketData = {
   height: number;
   sections: BracketSection[];
   connectors: BracketConnector[];
+  resultsAvailable?: boolean;
+  officialResultCount?: number;
+  completedMatchCount?: number;
 };
 
 type XmlElement = {
@@ -331,11 +336,13 @@ export function parseChallongeBracketSvg(svg: string): TournamentBracketData {
       number: match.attributes['data-identifier'] ?? match.attributes['data-match-id'] ?? '',
       team1: cleanParticipantName(names[0]),
       team2: cleanParticipantName(names[1]),
+      roundName: round.name,
       team1Seed: seeds[0],
       team2Seed: seeds[1],
       status,
       winner: winnerIndex === 0 ? 1 : winnerIndex === 1 ? 2 : null,
       scores: [scores[0], scores[1]],
+      officialScore: null,
       x: position.x,
       y: position.y,
     });
