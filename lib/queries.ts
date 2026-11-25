@@ -198,6 +198,8 @@ export async function getTopic(ref: string | number) {
             u.last_active_at IS NULL OR u.last_active_at < NOW() - ${ONLINE_PRESENCE_WINDOW_MINUTES} * INTERVAL '1 minute'
           ) THEN 'offline' ELSE COALESCE(u.status,'offline') END AS author_status,
           u.is_admin AS author_is_admin, u.is_moderator AS author_is_moderator, tn.logo_url AS tournament_logo,
+          tn.wtsl_tournament_key AS tournament_key, tn.name AS tournament_name,
+          tn.official_url AS tournament_official_url,
           thread_context.tour AS tournament_tour, topic_identity.wtsl_player_id AS official_player_id,
           topic_identity.tour AS official_tour
         FROM topics t
@@ -264,6 +266,8 @@ export async function getTopic(ref: string | number) {
             u.last_active_at IS NULL OR u.last_active_at < NOW() - ${ONLINE_PRESENCE_WINDOW_MINUTES} * INTERVAL '1 minute'
           ) THEN 'offline' ELSE COALESCE(u.status,'offline') END AS author_status,
           u.is_admin AS author_is_admin, u.is_moderator AS author_is_moderator, tn.logo_url AS tournament_logo,
+          tn.wtsl_tournament_key AS tournament_key, tn.name AS tournament_name,
+          tn.official_url AS tournament_official_url,
           thread_context.tour AS tournament_tour, topic_identity.wtsl_player_id AS official_player_id,
           topic_identity.tour AS official_tour
         FROM topics t
