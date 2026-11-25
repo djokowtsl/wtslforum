@@ -4,10 +4,11 @@ import styles from './TournamentBracket.module.css';
 import type { KeyboardEvent } from 'react';
 
 const TOP_PADDING = 34;
-const ROUND_WIDTH = 236;
+const ROUND_WIDTH = 216;
 const ROUND_HEIGHT = 76;
-const MATCH_WIDTH = 226;
+const MATCH_WIDTH = 204;
 const MATCH_HEIGHT = 72;
+const VERTICAL_SPACING_SCALE = 1.4;
 
 function roundTitleLines(name: string): string[] {
   const title = name.split(/\s+-\s+/)[0].trim();
@@ -36,7 +37,11 @@ function sectionTitle(side: string): string {
 function roundHeader(round: BracketRound) {
   const titleLines = roundTitleLines(round.name);
   return (
-    <g key={round.key} transform={`translate(${round.x} ${round.sectionY})`} className={styles.round}>
+    <g
+      key={round.key}
+      transform={`translate(${round.x} ${round.sectionY * VERTICAL_SPACING_SCALE})`}
+      className={styles.round}
+    >
       <title>{round.name}</title>
       <rect className={styles.roundBackground} width={ROUND_WIDTH} height={ROUND_HEIGHT} rx="3" />
       {titleLines.map((line, index) => (
@@ -144,8 +149,10 @@ export default function TournamentBracketDiagram({
     ...rounds.map((round) => round.x + Math.max(ROUND_WIDTH, MATCH_WIDTH)),
   );
   const diagramHeight = Math.max(
-    bracket.height,
-    ...rounds.flatMap((round) => round.matches.map((match) => match.y + MATCH_HEIGHT)),
+    bracket.height * VERTICAL_SPACING_SCALE,
+    ...rounds.flatMap((round) =>
+      round.matches.map((match) => match.y * VERTICAL_SPACING_SCALE + MATCH_HEIGHT),
+    ),
   );
   return (
     <svg
@@ -166,7 +173,7 @@ export default function TournamentBracketDiagram({
             className={styles.connector}
             key={`connector-${index}`}
             d={connector.path}
-            transform={`translate(${connector.x} ${connector.y})`}
+            transform={`translate(${connector.x} ${connector.y * VERTICAL_SPACING_SCALE}) scale(1 ${VERTICAL_SPACING_SCALE})`}
           />
         ))}
         {bracket.sections.map((section) => (
@@ -174,13 +181,18 @@ export default function TournamentBracketDiagram({
             className={styles.sectionLabel}
             key={`section-${section.index}`}
             x="0"
-            y={section.offsetY - 11}
+            y={section.offsetY * VERTICAL_SPACING_SCALE - 11}
           >
             {sectionTitle(section.side)}
           </text>
         ))}
         {rounds.map(roundHeader)}
-        {rounds.flatMap((round) => round.matches).map((match) => bracketMatch(match, onMatchSelect))}
+        {rounds.flatMap((round) => round.matches).map((match) =>
+          bracketMatch(
+            { ...match, y: match.y * VERTICAL_SPACING_SCALE },
+            onMatchSelect,
+          ),
+        )}
       </g>
     </svg>
   );

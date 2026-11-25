@@ -30,11 +30,35 @@ function normalizedPair(first: unknown, second: unknown): string {
 
 function reverseSetScores(score: string): string {
   const setPattern = /(\d+)\s*([-–])\s*(\d+)(\(\d+\))?/g;
-  const sets = [...score.matchAll(setPattern)];
-  const withoutSets = score.replace(setPattern, '').replace(/[\s,;:|]/g, '');
-  if (sets.length === 0 || withoutSets) return score;
-  return score.replace(setPattern, (_match, left: string, separator: string, right: string, tiebreak?: string) =>
-    `${right}${separator}${left}${tiebreak ?? ''}`);
+  return score.replace(
+    setPattern,
+    (_match, left: string, separator: string, right: string, tiebreak?: string) =>
+      `${right}${separator}${left}${tiebreak ?? ''}`,
+  );
+}
+
+function winnerFromSetScore(score: string): 1 | 2 | null {
+  const sets = [...score.matchAll(/(\d+)\s*[-–]\s*(\d+)(?:\(\d+\))?/g)];
+  if (sets.length === 0) return null;
+  let firstPlayerSets = 0;
+  let secondPlayerSets = 0;
+  for (const set of sets) {
+    const firstGames = Number(set[1]);
+    const secondGames = Number(set[2]);
+    if (firstGames > secondGames) firstPlayerSets += 1;
+    if (secondGames > firstGames) secondPlayerSets += 1;
+  }
+  if (firstPlayerSets === secondPlayerSets) return null;
+  return firstPlayerSets > secondPlayerSets ? 1 : 2;
+}
+
+function winnerFromScoreRow(match: BracketMatch, row: TournamentResultRow): 1 | 2 | null {
+  const winnerSide = winnerFromSetScore(String(row.score ?? ''));
+  if (!winnerSide) return null;
+  const winnerName = winnerSide === 1 ? row.player_one_name : row.player_two_name;
+  if (normalizeBracketPlayerName(winnerName) === normalizeBracketPlayerName(match.team1)) return 1;
+  if (normalizeBracketPlayerName(winnerName) === normalizeBracketPlayerName(match.team2)) return 2;
+  return null;
 }
 
 export function orientOfficialScore(score: string, playerOneName: unknown, bracketFirstName: unknown): string {
@@ -189,14 +213,13 @@ export function attachOfficialTournamentResults(
     const distinctScores = new Set(tiedCandidates.map((candidate) => candidate.score?.trim()));
     if (distinctScores.size > 1) continue;
 
-    const rowOrderMatchesBracket = normalizeBracketPlayerName(best.player_one_name)
-      === normalizeBracketPlayerName(match.team1);
-    const winner = officialWinner(match, best);
+    const winner = officialWinner(match, best)
+      ?? match.winner
+      ?? winnerFromScoreRow(match, best);
+    const winnerName = winner === 2 ? match.team2 : match.team1;
     enriched.set(match.matchId, {
       ...match,
-      officialScore: rowOrderMatchesBracket
-        ? best.score!.trim()
-        : orientOfficialScore(best.score!.trim(), best.player_one_name, match.team1),
+      officialScore: orientOfficialScore(best.score!.trim(), best.player_one_name, winnerName),
       ...(winner ? { winner } : {}),
     });
   }
