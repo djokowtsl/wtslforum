@@ -19,6 +19,8 @@ import AdminTopicControls from '@/components/AdminTopicControls';
 import ForumAvatar from '@/components/ForumAvatar';
 import { getThreadCommunityNotes, type CommunityNote } from '@/lib/communityNotes';
 import DiscussionVideo from '@/components/DiscussionVideo';
+import TournamentBracket from '@/components/TournamentBracket';
+import { getChallongeTournamentUrl } from '@/lib/challongeBracket';
 import ReplyToComment from '@/components/ReplyToComment';
 import ForumRoleBadges from '@/components/ForumRoleBadges';
 import { getForumRoleBadgeMap, type ForumRoleBadge } from '@/lib/forumRoles';
@@ -139,6 +141,15 @@ export default async function Thread({ params }: { params: Promise<{ id: string 
         <div className="post-content">
           <div className="post-date">{fmtDateTime(topic.created_at)}</div>
           <RichText text={topic.body} mentionables={mentionables} />
+          {topic.tournament_key && (
+            <TournamentBracket
+              tournamentKey={String(topic.tournament_key)}
+              tournamentName={String(topic.tournament_name || topic.title)}
+              challongeUrl={getChallongeTournamentUrl(
+                String(topic.tournament_official_url || ''),
+              )}
+            />
+          )}
           {video && <DiscussionVideo video={video} />}
           <ReactionBar topicId={Number(topic.id)} initial={reactions.topic} signedIn={!!u} />
           {(canModerateReplies || !!u || topicNotes.length > 0) && (
