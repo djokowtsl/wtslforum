@@ -3,6 +3,7 @@ import { getTournament } from '@/lib/tournaments';
 import { getChallongeTournamentId } from '@/lib/challongeBracket';
 import { parseChallongeBracketSvg } from '@/lib/challongeBracketData';
 import { attachOfficialTournamentResults } from '@/lib/tournamentBracketResults';
+import { fetchWTSLTournamentResults } from '@/lib/wtsl';
 import { sql } from '@/lib/db';
 
 export const runtime = 'nodejs';
@@ -79,7 +80,28 @@ export async function GET(
           m.played_at DESC NULLS LAST
         LIMIT 1000
       `;
-      bracket = attachOfficialTournamentResults(bracket, resultRows);
+      let tournamentPageRows: Awaited<ReturnType<typeof fetchWTSLTournamentResults>> = [];
+      try {
+        tournamentPageRows = await fetchWTSLTournamentResults(challongeId);
+      } catch (error) {
+        console.warn(
+          'WTSL tournament-page results could not be fetched:',
+          error instanceof Error ? error.message : 'unknown error',
+        );
+      }
+      const officialPageRows = tournamentPageRows.map((row) => ({
+        player_one_id: row.player1Id,
+        player_two_id: row.player2Id,
+        player_one_name: row.player1Name,
+        player_two_name: row.player2Name,
+        winner_id: row.player1Id,
+        score: row.score,
+        round_name: row.round,
+        source_id: `wtsl-tournament-page:${challongeId}`,
+        played_at: row.date,
+        tournament_name: row.tournamentName,
+      }));
+      bracket = attachOfficialTournamentResults(bracket, [...officialPageRows, ...resultRows]);
     } catch (error) {
       resultsAvailable = false;
       console.warn(

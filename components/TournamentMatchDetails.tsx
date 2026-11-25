@@ -82,6 +82,7 @@ export default function TournamentMatchDetails({
       first: match.team1,
       second: match.team2,
       round: match.roundName,
+      score: match.officialScore ?? '',
     });
     setDetails(null);
     setLoading(true);

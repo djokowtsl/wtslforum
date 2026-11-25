@@ -2,7 +2,12 @@ import assert from 'node:assert/strict';
 import test from 'node:test';
 import { getChallongeTournamentId, getChallongeTournamentUrl } from '../lib/challongeBracket.ts';
 import { parseChallongeBracketSvg } from '../lib/challongeBracketData.ts';
-import { attachOfficialTournamentResults } from '../lib/tournamentBracketResults.ts';
+import { parseWTSLTournamentResults } from '../lib/wtsl.ts';
+import {
+  attachOfficialTournamentResults,
+  dedupeEquivalentOfficialMeetings,
+  displayBracketScore,
+} from '../lib/tournamentBracketResults.ts';
 
 const PARIS_OFFICIAL_URL =
   'https://www.playwtsl.com/TE4/pages/tournament.php?tour=TE4&tournament=Paris_2026_TE4';
@@ -64,6 +69,69 @@ test('parses a native bracket and formats player character picks', () => {
   assert.equal(result.main[0].matches[0].winner, 1);
   assert.equal(result.main[0].matches[0].status, 'complete');
   assert.equal(result.connectors.length, 1);
+});
+
+test('labels Challonge walkover and BCT totals while preserving official results', () => {
+  const base = parseChallongeBracketSvg(bracketSvg()).main[0].matches[0];
+  assert.equal(displayBracketScore({ ...base, scores: ['0', '0'] }), 'Walkover');
+  assert.equal(displayBracketScore({ ...base, scores: ['1', '0'] }), 'BCT');
+  assert.equal(displayBracketScore({ ...base, scores: ['0', '1'] }), 'BCT');
+  assert.equal(displayBracketScore({ ...base, scores: ['0', '0'], officialScore: 'Coin Toss (6-3)' }), 'Coin Toss (6-3)');
+  assert.equal(displayBracketScore({ ...base, scores: ['', ''] }), null);
+});
+
+test('parses official WTSL tournament-page set and special scores', () => {
+  const results = parseWTSLTournamentResults(`<h1>Paris 2026</h1><table><tbody>
+    <tr>
+      <td>11.11.2026</td><td>Round of 64</td>
+      <td><a href="../pages/player_page.php?player=12">Winner</a></td>
+      <td><a href="../pages/player_page.php?player=34">Opponent</a></td>
+      <td></td><td>Coin Toss (3-6)</td>
+    </tr>
+    <tr>
+      <td>12.11.2026</td><td>Round of 32</td>
+      <td><a href="../pages/player_page.php?player=56">Player A</a></td>
+      <td><a href="../pages/player_page.php?player=78">Player B</a></td>
+      <td></td><td>Walkover ret.</td>
+    </tr>
+    <tr><td>Not a result</td><td>summary</td><td>only</td></tr>
+  </tbody></table>`);
+  assert.equal(results.length, 2);
+  assert.deepEqual(results[0], {
+    tournamentName: 'Paris 2026',
+    round: 'Round of 64',
+    player1Id: '12',
+    player1Name: 'Winner',
+    player2Id: '34',
+    player2Name: 'Opponent',
+    date: '2026-11-11',
+    score: 'Coin Toss (3-6)',
+  });
+  assert.equal(results[1].score, 'Walkover ret.');
+});
+
+test('deduplicates equivalent official rows across adjacent dates without merging distinct results', () => {
+  const rows = [
+    {
+      player_one_id: '1', player_two_id: '2', player_one_name: 'Angelo', player_two_name: 'XxJeteaglexX',
+      winner_id: '1', score: '7-5,6-0', tournament_name: 'Paris', round_name: 'Round of 64',
+      played_at: '2026-11-11T00:00:00.000Z', source_id: 'recent:TE4:Paris',
+    },
+    {
+      player_one_id: '1', player_two_id: '2', player_one_name: 'Angelo', player_two_name: 'XxJeteaglexX',
+      winner_id: '1', score: '7-5 6-0', tournament_name: 'Paris ATP 1000', round_name: null,
+      played_at: '2026-11-10T00:00:00.000Z', source_id: 'profile:TE4:Paris',
+    },
+    {
+      player_one_id: '1', player_two_id: '2', player_one_name: 'Angelo', player_two_name: 'XxJeteaglexX',
+      winner_id: '1', score: '6-3 6-2', tournament_name: 'Paris', round_name: 'Quarterfinal',
+      played_at: '2026-11-12T00:00:00.000Z', source_id: 'recent:TE4:Paris',
+    },
+  ];
+  assert.deepEqual(
+    dedupeEquivalentOfficialMeetings(rows, 'Angelo').map((row) => row.score),
+    ['7-5,6-0', '6-3 6-2'],
+  );
 });
 
 test('keeps empty character picks and placeholder names unchanged', () => {
