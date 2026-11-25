@@ -2,6 +2,7 @@ import assert from 'node:assert/strict';
 import test from 'node:test';
 import { getChallongeTournamentId, getChallongeTournamentUrl } from '../lib/challongeBracket.ts';
 import { parseChallongeBracketSvg } from '../lib/challongeBracketData.ts';
+import { attachOfficialTournamentResults } from '../lib/tournamentBracketResults.ts';
 
 const PARIS_OFFICIAL_URL =
   'https://www.playwtsl.com/TE4/pages/tournament.php?tour=TE4&tournament=Paris_2026_TE4';
@@ -115,4 +116,49 @@ test('rejects SVGs that are not complete bracket draws', () => {
     /progression paths/,
   );
   assert.throws(() => parseChallongeBracketSvg('<svg id="wrong"></svg>'), /bracket SVG/);
+});
+
+test('attaches full official set scores and the official winner in bracket order', () => {
+  const bracket = parseChallongeBracketSvg(bracketSvg());
+  const enriched = attachOfficialTournamentResults(bracket, [{
+    player_one_id: '2',
+    player_two_id: '1',
+    player_one_name: 'Madferit',
+    player_two_name: 'gifu',
+    winner_id: '2',
+    score: '6-3 7-6(7) 6-4',
+    round_name: 'Final',
+    source_id: 'recent:TE4:Paris',
+  }]);
+
+  const match = enriched.main[0].matches[0];
+  assert.equal(match.officialScore, '3-6 6-7(7) 4-6');
+  assert.equal(match.winner, 2);
+});
+
+test('preserves special result text and refuses conflicting score matches', () => {
+  const bracket = parseChallongeBracketSvg(bracketSvg());
+  const special = attachOfficialTournamentResults(bracket, [{
+    player_one_id: '1',
+    player_two_id: '2',
+    player_one_name: 'gifu',
+    player_two_name: 'Madferit',
+    winner_id: '1',
+    score: 'Coin Toss (6-3)',
+    round_name: 'Final',
+    source_id: 'recent:TE4:Paris',
+  }]);
+  assert.equal(special.main[0].matches[0].officialScore, 'Coin Toss (6-3)');
+
+  const ambiguous = attachOfficialTournamentResults(bracket, [
+    {
+      player_one_name: 'gifu', player_two_name: 'Madferit', score: '6-2 6-2',
+      round_name: 'Final', source_id: 'recent:TE4:first',
+    },
+    {
+      player_one_name: 'gifu', player_two_name: 'Madferit', score: '6-3 6-3',
+      round_name: 'Final', source_id: 'recent:TE4:second',
+    },
+  ]);
+  assert.equal(ambiguous.main[0].matches[0].officialScore, null);
 });
