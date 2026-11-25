@@ -6,6 +6,8 @@ import { ensureTournamentDiscussion } from '@/lib/tournamentDiscussions';
 import { recentMatches } from '@/lib/stats';
 import { ResultCard } from '@/components/MatchCards';
 import PlayerAvatar from '@/components/PlayerAvatar';
+import TournamentBracket from '@/components/TournamentBracket';
+import { getChallongeTournamentUrl } from '@/lib/challongeBracket';
 import { buildWtslTournamentNameLookup, lookupWtslTournamentName } from '@/lib/wtslResultDisplay';
 
 export const dynamic = 'force-dynamic';
@@ -21,6 +23,7 @@ export default async function TournamentPage({ params }: { params: Promise<{ slu
     safe(() => recentMatches(200), [] as any[]),
   ]);
   const tournamentNames = buildWtslTournamentNameLookup([t]);
+  const challongeUrl = getChallongeTournamentUrl(String(t.official_url ?? ''));
   const mine = matches
     .filter((m: any) => (
       lookupWtslTournamentName(m.tournament_key, tournamentNames) === t.name
@@ -46,6 +49,13 @@ export default async function TournamentPage({ params }: { params: Promise<{ slu
           {topic && <Link className="btn btn-primary" href={`/discussions/${topic.id}`}>💬 Tournament discussion</Link>}
           <a className="btn" href={t.official_url} target="_blank" rel="noreferrer">WTSL page ↗</a>
         </div>
+        {challongeUrl && (
+          <TournamentBracket
+            tournamentKey={String(t.wtsl_tournament_key)}
+            tournamentName={String(t.name)}
+            challongeUrl={challongeUrl}
+          />
+        )}
       </div>
       {mine.length > 0 && (
         <section className="section-block">

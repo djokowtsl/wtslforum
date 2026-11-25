@@ -1,9 +1,7 @@
 import { NextResponse } from 'next/server';
 import { getTournament } from '@/lib/tournaments';
-import {
-  addCharacterPickBrackets,
-  getChallongeTournamentId,
-} from '@/lib/challongeBracket';
+import { getChallongeTournamentId } from '@/lib/challongeBracket';
+import { parseChallongeBracketSvg } from '@/lib/challongeBracketData';
 
 export const runtime = 'nodejs';
 
@@ -48,12 +46,10 @@ export async function GET(
       );
     }
 
-    const svg = addCharacterPickBrackets(await response.text());
-    return new Response(svg, {
+    const bracket = parseChallongeBracketSvg(await response.text());
+    return NextResponse.json(bracket, {
       headers: {
-        'Content-Type': 'image/svg+xml; charset=utf-8',
         'Cache-Control': 'public, s-maxage=300, stale-while-revalidate=600',
-        'Content-Security-Policy': "sandbox; default-src 'none'; style-src 'unsafe-inline'; img-src data:",
         'X-Content-Type-Options': 'nosniff',
       },
     });
